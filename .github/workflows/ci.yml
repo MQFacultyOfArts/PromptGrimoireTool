@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run ty check
+        run: uvx ty check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run pytest
+        run: uv run pytest --cov=src/promptgrimoire --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5.5.2
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: uv run pytest tests/e2e/ --browser chromium

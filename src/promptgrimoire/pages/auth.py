@@ -6,6 +6,7 @@ Uses either real Stytch or MockAuthClient based on AUTH_MOCK env var.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from nicegui import app, ui
@@ -14,6 +15,11 @@ from promptgrimoire.auth import get_auth_client, get_config
 
 if TYPE_CHECKING:
     from starlette.requests import Request
+
+logger = logging.getLogger(__name__)
+
+# Time to display error message before redirecting (seconds)
+_ERROR_DISPLAY_SECONDS = 0.5
 
 
 def _get_session_user() -> dict | None:
@@ -93,19 +99,24 @@ async def login_page() -> None:
             auth_client = get_auth_client()
             config = get_config()
 
-            # Use configured base URL or default
-            base_url = config.base_url or "http://localhost:8080"
-            callback_url = f"{base_url}/auth/callback"
+            # Fail fast if organization not configured
+            if not config.default_org_id:
+                logger.error("STYTCH_DEFAULT_ORG_ID not configured")
+                ui.notify("Organization not configured", type="negative")
+                return
+
+            callback_url = f"{config.base_url}/auth/callback"
 
             result = await auth_client.send_magic_link(
                 email=email,
-                organization_id=config.default_org_id or "default-org",
+                organization_id=config.default_org_id,
                 callback_url=callback_url,
             )
 
             if result.success:
                 ui.notify("Magic link sent! Check your email.", type="positive")
             else:
+                logger.warning("Magic link failed: %s", result.error)
                 ui.notify(f"Error: {result.error}", type="negative")
 
         ui.button(
@@ -123,14 +134,26 @@ async def login_page() -> None:
             auth_client = get_auth_client()
             config = get_config()
 
+            # Fail fast if SSO not configured
+            if not config.sso_connection_id:
+                logger.error("STYTCH_SSO_CONNECTION_ID not configured")
+                ui.notify("SSO not configured", type="negative")
+                return
+
+            if not config.public_token:
+                logger.error("STYTCH_PUBLIC_TOKEN not configured")
+                ui.notify("SSO not configured", type="negative")
+                return
+
             result = auth_client.get_sso_start_url(
-                connection_id=config.sso_connection_id or "default-connection",
-                public_token=config.public_token or "default-public-token",
+                connection_id=config.sso_connection_id,
+                public_token=config.public_token,
             )
 
             if result.success and result.redirect_url:
                 ui.navigate.to(result.redirect_url)
             else:
+                logger.warning("SSO start failed: %s", result.error)
                 ui.notify(f"SSO Error: {result.error}", type="negative")
 
         ui.button(
@@ -148,7 +171,7 @@ async def magic_link_callback() -> None:
         # Show error and redirect immediately
         ui.label("No token provided").classes("text-xl text-red-500")
         ui.notify("No token provided", type="negative")
-        ui.timer(0.5, lambda: ui.navigate.to("/login"), once=True)
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
     # Show loading while processing
@@ -170,7 +193,7 @@ async def magic_link_callback() -> None:
     else:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"Authentication failed: {result.error}", type="negative")
-        ui.timer(0.5, lambda: ui.navigate.to("/login"), once=True)
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 
 @ui.page("/auth/sso/callback")
@@ -181,7 +204,7 @@ async def sso_callback() -> None:
     if not token:
         ui.label("No SSO token provided").classes("text-xl text-red-500")
         ui.notify("No SSO token provided", type="negative")
-        ui.timer(0.5, lambda: ui.navigate.to("/login"), once=True)
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
     ui.label("Processing SSO login...").classes("text-xl")
@@ -202,7 +225,7 @@ async def sso_callback() -> None:
     else:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"SSO authentication failed: {result.error}", type="negative")
-        ui.timer(0.5, lambda: ui.navigate.to("/login"), once=True)
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 
 @ui.page("/protected")

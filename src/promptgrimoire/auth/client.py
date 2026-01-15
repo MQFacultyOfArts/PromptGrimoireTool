@@ -7,6 +7,9 @@ and SSO authentication.
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 from stytch import B2BClient
 from stytch.core.response_base import StytchError
 
@@ -17,9 +20,31 @@ from promptgrimoire.auth.models import (
     SSOStartResult,
 )
 
+logger = logging.getLogger(__name__)
+
 # Stytch API base URLs
 STYTCH_TEST_API = "https://test.stytch.com"
 STYTCH_LIVE_API = "https://api.stytch.com"
+
+
+def _extract_roles(raw_roles: list[Any] | None) -> list[str]:
+    """Extract role IDs from Stytch response roles.
+
+    Handles both object roles (with role_id attr) and string roles,
+    depending on Stytch SDK version.
+
+    Args:
+        raw_roles: List of role objects or strings from Stytch response.
+
+    Returns:
+        List of role ID strings.
+    """
+    if not raw_roles:
+        return []
+    # Check first item to determine format
+    if hasattr(raw_roles[0], "role_id"):
+        return [role.role_id for role in raw_roles]
+    return list(raw_roles)
 
 
 class StytchB2BClient:
@@ -79,6 +104,10 @@ class StytchB2BClient:
                 member_created=response.member_created,
             )
         except StytchError as e:
+            logger.warning(
+                "Magic link send failed",
+                extra={"email": email, "error_type": e.details.error_type},
+            )
             return SendResult(
                 success=False,
                 error=e.details.error_type,
@@ -101,17 +130,13 @@ class StytchB2BClient:
 
             # Check if MFA is required
             if not response.member_authenticated:
+                logger.info("MFA required for member %s", response.member_id)
                 return AuthResult(
                     success=False,
                     error="mfa_required",
                 )
 
-            # Roles may be strings or objects depending on SDK version
-            raw_roles = response.member_session.roles
-            if raw_roles and hasattr(raw_roles[0], "role_id"):
-                roles = [role.role_id for role in raw_roles]
-            else:
-                roles = list(raw_roles) if raw_roles else []
+            roles = _extract_roles(response.member_session.roles)
 
             return AuthResult(
                 success=True,
@@ -123,6 +148,10 @@ class StytchB2BClient:
                 roles=roles,
             )
         except StytchError as e:
+            logger.warning(
+                "Magic link auth failed",
+                extra={"error_type": e.details.error_type},
+            )
             return AuthResult(
                 success=False,
                 error=e.details.error_type,
@@ -143,12 +172,7 @@ class StytchB2BClient:
                 session_duration_minutes=60 * 24 * 7,  # 1 week
             )
 
-            # Roles may be strings or objects depending on SDK version
-            raw_roles = response.member_session.roles
-            if raw_roles and hasattr(raw_roles[0], "role_id"):
-                roles = [role.role_id for role in raw_roles]
-            else:
-                roles = list(raw_roles) if raw_roles else []
+            roles = _extract_roles(response.member_session.roles)
 
             return AuthResult(
                 success=True,
@@ -160,6 +184,10 @@ class StytchB2BClient:
                 roles=roles,
             )
         except StytchError as e:
+            logger.warning(
+                "SSO auth failed",
+                extra={"error_type": e.details.error_type},
+            )
             return AuthResult(
                 success=False,
                 error=e.details.error_type,
@@ -179,12 +207,7 @@ class StytchB2BClient:
                 session_token=session_token,
             )
 
-            # Roles may be strings or objects depending on SDK version
-            raw_roles = response.member_session.roles
-            if raw_roles and hasattr(raw_roles[0], "role_id"):
-                roles = [role.role_id for role in raw_roles]
-            else:
-                roles = list(raw_roles) if raw_roles else []
+            roles = _extract_roles(response.member_session.roles)
 
             return SessionResult(
                 valid=True,
@@ -194,6 +217,10 @@ class StytchB2BClient:
                 roles=roles,
             )
         except StytchError as e:
+            logger.debug(
+                "Session validation failed",
+                extra={"error_type": e.details.error_type},
+            )
             return SessionResult(
                 valid=False,
                 error=e.details.error_type,

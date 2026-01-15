@@ -84,8 +84,8 @@ class TestMagicLinkCallback:
         """Missing token redirects to login."""
         page.goto(f"{app_server}/auth/callback")
 
-        # Should show error message first
-        expect(page.get_by_text("No token provided")).to_be_visible()
+        # Should show error message (use first() since text appears in label and toast)
+        expect(page.get_by_text("No token provided").first).to_be_visible()
 
         # Then redirect to login (wait for timer)
         expect(page).to_have_url(f"{app_server}/login", timeout=3000)
@@ -95,24 +95,26 @@ class TestSSOFlow:
     """Tests for SSO authentication flow."""
 
     def test_sso_start_redirects(self, page: Page, app_server: str):
-        """SSO start generates redirect URL."""
+        """SSO start generates redirect URL with correct parameters."""
         page.goto(f"{app_server}/login")
 
-        # Click SSO button - this will try to navigate to mock.stytch.com
-        # which doesn't exist, so we just verify the navigation attempt
+        # Capture the redirect URL using route interception
+        redirect_url = None
+
+        def capture_redirect(route):
+            nonlocal redirect_url
+            redirect_url = route.request.url
+            route.abort()  # Don't actually navigate to mock.stytch.com
+
+        page.route("**/mock.stytch.com/**", capture_redirect)
         page.get_by_test_id("sso-login-btn").click()
+        page.wait_for_timeout(200)  # Give time for navigation to be intercepted
 
-        # Wait a moment for the navigation attempt
-        page.wait_for_timeout(500)
-
-        # In mock mode, the page should have attempted to navigate to mock SSO URL
-        # We can't fully verify since it's a fake URL, but we can check
-        # that we're no longer on the login page or that navigation was attempted
-        # Since mock.stytch.com doesn't resolve, this will error.
-        # Instead, just verify the button was clickable and the navigation occurred.
-        # The error log shows "net::ERR_NAME_NOT_RESOLVED" for mock.stytch.com
-        # which proves the redirect happened.
-        assert "mock.stytch.com" in page.url or page.url != f"{app_server}/login"
+        # Verify the redirect URL was generated correctly
+        assert redirect_url is not None, "SSO redirect was not triggered"
+        assert "mock.stytch.com" in redirect_url
+        assert "connection_id=" in redirect_url
+        assert "public_token=" in redirect_url
 
     def test_sso_callback_with_valid_token(self, page: Page, app_server: str):
         """Valid SSO token authenticates and redirects."""
@@ -128,8 +130,8 @@ class TestSSOFlow:
         """Invalid SSO token shows error."""
         page.goto(f"{app_server}/auth/sso/callback?token=bad-sso-token")
 
-        # Should show error first
-        expect(page.get_by_text("invalid_token")).to_be_visible()
+        # Should show error (use first() since text appears in label and toast)
+        expect(page.get_by_text("invalid_token").first).to_be_visible()
 
         # Then redirect to login (wait for timer)
         expect(page).to_have_url(f"{app_server}/login", timeout=3000)

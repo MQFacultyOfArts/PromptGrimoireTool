@@ -50,3 +50,5 @@ Provide a structured review document with:
 6. Notes for future related work
 
 Be specific and critical. Consider whether this code enables future architectural goals.
+
+When done, please give the absolute path to the code review document so that the programmers may read it.

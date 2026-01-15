@@ -7,19 +7,50 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+
+class TestExtractRoles:
+    """Tests for the _extract_roles helper function."""
+
+    def test_returns_empty_list_for_none(self):
+        """Returns empty list when roles is None."""
+        from promptgrimoire.auth.client import _extract_roles
+
+        assert _extract_roles(None) == []
+
+    def test_returns_empty_list_for_empty_list(self):
+        """Returns empty list when roles is empty."""
+        from promptgrimoire.auth.client import _extract_roles
+
+        assert _extract_roles([]) == []
+
+    def test_extracts_string_roles(self):
+        """Handles string roles directly."""
+        from promptgrimoire.auth.client import _extract_roles
+
+        result = _extract_roles(["admin", "user", "moderator"])
+        assert result == ["admin", "user", "moderator"]
+
+    def test_extracts_object_roles_with_role_id(self):
+        """Handles role objects with role_id attribute."""
+        from promptgrimoire.auth.client import _extract_roles
+
+        role1 = MagicMock()
+        role1.role_id = "stytch_admin"
+        role2 = MagicMock()
+        role2.role_id = "instructor"
+
+        result = _extract_roles([role1, role2])
+        assert result == ["stytch_admin", "instructor"]
+
+    def test_handles_single_role(self):
+        """Handles list with single role."""
+        from promptgrimoire.auth.client import _extract_roles
+
+        assert _extract_roles(["only_role"]) == ["only_role"]
 
 
 class TestSendMagicLink:
     """Tests for the send_magic_link method."""
-
-    @pytest.fixture
-    def mock_stytch_client(self):
-        """Create a mocked Stytch B2BClient."""
-        with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            yield mock_client
 
     async def test_send_magic_link_success(self, mock_stytch_client):
         """Successfully sends magic link and returns member info."""
@@ -107,14 +138,6 @@ class TestSendMagicLink:
 class TestAuthenticateMagicLink:
     """Tests for the authenticate_magic_link method."""
 
-    @pytest.fixture
-    def mock_stytch_client(self):
-        """Create a mocked Stytch B2BClient."""
-        with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            yield mock_client
-
     async def test_authenticate_magic_link_success(self, mock_stytch_client):
         """Successfully authenticates token and returns session."""
         from promptgrimoire.auth.client import StytchB2BClient
@@ -197,14 +220,6 @@ class TestAuthenticateMagicLink:
 class TestAuthenticateSSO:
     """Tests for the authenticate_sso method."""
 
-    @pytest.fixture
-    def mock_stytch_client(self):
-        """Create a mocked Stytch B2BClient."""
-        with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            yield mock_client
-
     async def test_authenticate_sso_success(self, mock_stytch_client):
         """Successfully authenticates SSO token."""
         from promptgrimoire.auth.client import StytchB2BClient
@@ -260,14 +275,6 @@ class TestAuthenticateSSO:
 
 class TestValidateSession:
     """Tests for the validate_session method."""
-
-    @pytest.fixture
-    def mock_stytch_client(self):
-        """Create a mocked Stytch B2BClient."""
-        with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            yield mock_client
 
     async def test_validate_session_success(self, mock_stytch_client):
         """Successfully validates an active session."""

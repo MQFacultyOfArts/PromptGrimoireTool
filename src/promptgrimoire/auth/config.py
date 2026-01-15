@@ -55,7 +55,7 @@ class AuthConfig:
         """
         mock_enabled = os.environ.get("AUTH_MOCK", "false").lower() == "true"
 
-        # If mock is enabled, we don't need real credentials
+        # If mock is enabled, provide sensible defaults for testing
         if mock_enabled:
             return cls(
                 project_id=os.environ.get("STYTCH_PROJECT_ID", "mock-project"),
@@ -64,8 +64,10 @@ class AuthConfig:
                 base_url=os.environ.get("BASE_URL", "http://localhost:8080"),
                 storage_secret=os.environ.get("STORAGE_SECRET", "dev-storage-secret"),
                 mock_enabled=True,
-                default_org_id=os.environ.get("STYTCH_DEFAULT_ORG_ID"),
-                sso_connection_id=os.environ.get("STYTCH_SSO_CONNECTION_ID"),
+                default_org_id=os.environ.get("STYTCH_DEFAULT_ORG_ID", "mock-org-123"),
+                sso_connection_id=os.environ.get(
+                    "STYTCH_SSO_CONNECTION_ID", "mock-sso-connection"
+                ),
             )
 
         # Real mode - require credentials

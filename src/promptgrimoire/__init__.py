@@ -4,6 +4,8 @@ A classroom grimoire for prompt iteration, annotation, and sharing
 in educational contexts.
 """
 
+import os
+
 __version__ = "0.1.0"
 
 
@@ -15,10 +17,12 @@ def main() -> None:
     import promptgrimoire.pages.sync_demo  # noqa: PLC0415
     import promptgrimoire.pages.text_selection  # noqa: F401, PLC0415
 
-    print(f"PromptGrimoire v{__version__}")
-    print("Starting application on http://localhost:8080")
+    port = int(os.environ.get("PROMPTGRIMOIRE_PORT", "8080"))
 
-    ui.run(port=8080, reload=False)
+    print(f"PromptGrimoire v{__version__}")
+    print(f"Starting application on http://localhost:{port}")
+
+    ui.run(port=port, reload=False)
 
 
 if __name__ == "__main__":

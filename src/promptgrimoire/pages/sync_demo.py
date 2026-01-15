@@ -18,7 +18,10 @@ if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.label import Label
 
-# Server-side shared document (single instance for all clients)
+# Server-side shared document (single instance for all clients).
+# NOTE: This singleton pattern is intentional for demo purposes.
+# Production requires document-per-conversation isolation.
+# See: docs/pycrdt/nicegui-integration.md and future spike for DocumentRegistry.
 shared_doc = SharedDocument()
 
 # Track connected clients: client_id -> (label_element, input_element)

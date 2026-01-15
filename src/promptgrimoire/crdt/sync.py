@@ -4,12 +4,17 @@ This module provides the server-side document state management,
 handling multiple connected clients and broadcasting updates.
 """
 
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from pycrdt import Doc, Text, TransactionEvent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+# Async-safe storage for the origin client ID during updates.
+# Using ContextVar ensures concurrent async operations don't interfere.
+_origin_var: ContextVar[str | None] = ContextVar("origin", default=None)
 
 
 class SharedDocument:
@@ -23,6 +28,9 @@ class SharedDocument:
         """Initialize a new shared document with an empty Text field."""
         self.doc = Doc()
         self.doc["text"] = Text()
+        # Client data is intentionally Any to allow flexibility in what callers store.
+        # sync_demo.py stores (Label, Input) tuples; other uses may differ.
+        # TODO: Consider Generic[T] pattern if type safety becomes important.
         self._clients: dict[str, Any] = {}
         self._broadcast_callback: Callable[[bytes, str | None], None] | None = None
 
@@ -46,10 +54,11 @@ class SharedDocument:
             origin_client_id: ID of the client that sent the update
                 (for echo prevention)
         """
-        # Store origin for the broadcast callback to use
-        self._current_origin = origin_client_id
-        self.doc.apply_update(update)
-        self._current_origin = None
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.doc.apply_update(update)
+        finally:
+            _origin_var.reset(token)
 
     def set_text(self, content: str, origin_client_id: str | None = None) -> None:
         """Set the text content, replacing any existing content.
@@ -58,12 +67,14 @@ class SharedDocument:
             content: New text content
             origin_client_id: ID of the client making the change
         """
-        self._current_origin = origin_client_id
-        text = self.text
-        text.clear()
-        if content:
-            text += content
-        self._current_origin = None
+        token = _origin_var.set(origin_client_id)
+        try:
+            text = self.text
+            text.clear()
+            if content:
+                text += content
+        finally:
+            _origin_var.reset(token)
 
     def insert_at(
         self, position: int, content: str, origin_client_id: str | None = None
@@ -75,9 +86,11 @@ class SharedDocument:
             content: Text to insert
             origin_client_id: ID of the client making the change
         """
-        self._current_origin = origin_client_id
-        self.text.insert(position, content)
-        self._current_origin = None
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.text.insert(position, content)
+        finally:
+            _origin_var.reset(token)
 
     def delete_range(
         self, start: int, end: int, origin_client_id: str | None = None
@@ -89,9 +102,11 @@ class SharedDocument:
             end: End index (exclusive)
             origin_client_id: ID of the client making the change
         """
-        self._current_origin = origin_client_id
-        del self.text[start:end]
-        self._current_origin = None
+        token = _origin_var.set(origin_client_id)
+        try:
+            del self.text[start:end]
+        finally:
+            _origin_var.reset(token)
 
     def register_client(self, client_id: str, client_data: Any = None) -> None:
         """Register a new connected client.
@@ -128,7 +143,7 @@ class SharedDocument:
     def _on_update(self, event: TransactionEvent) -> None:
         """Handle document updates and broadcast to clients."""
         if self._broadcast_callback is not None:
-            origin = getattr(self, "_current_origin", None)
+            origin = _origin_var.get()
             self._broadcast_callback(event.update, origin)
 
     def get_content(self) -> str:

@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0",
+  "session": {
+    "id": "c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a",
+    "started_at": "2026-01-15T00:47:19.289Z",
+    "ended_at": "2026-01-15T02:22:37.651Z",
+    "duration_minutes": 95
+  },
+  "project": {
+    "name": "PromptGrimoire",
+    "directory": "/home/brian/people/Brian/PromptGrimoire"
+  },
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-opus-4-5-20251101",
+    "access_method": "claude-code-cli"
+  },
+  "statistics": {
+    "turns": 178,
+    "human_messages": 178,
+    "assistant_messages": 269,
+    "thinking_blocks": 0,
+    "tool_calls": {
+      "total": 164,
+      "by_type": {
+        "Bash": 52,
+        "Task": 2,
+        "Read": 33,
+        "AskUserQuestion": 2,
+        "Write": 9,
+        "ExitPlanMode": 1,
+        "TodoWrite": 10,
+        "Edit": 41,
+        "Grep": 4,
+        "WebFetch": 8,
+        "Skill": 1,
+        "Glob": 1
+      }
+    },
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cache_read": 0
+    },
+    "estimated_cost_usd": 0.0
+  },
+  "artifacts": {
+    "created": [
+      {
+        "path": "/home/brian/.claude/plans/wiggly-yawning-penguin.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/events.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/styling.md",
+        "type": "document"
+      },
+      {
+        "path": "src/promptgrimoire/pages/text_selection.py",
+        "type": "code"
+      },
+      {
+        "path": "src/promptgrimoire/static/annotations.css",
+        "type": "other"
+      },
+      {
+        "path": "tests/e2e/test_text_selection.py",
+        "type": "code"
+      }
+    ],
+    "modified": [
+      {
+        "path": "docs/_index.md",
+        "type": "document"
+      },
+      {
+        "path": "src/promptgrimoire/__init__.py",
+        "type": "code"
+      },
+      {
+        "path": "tests/conftest.py",
+        "type": "code"
+      }
+    ],
+    "referenced": [
+      {
+        "path": "/home/brian/.claude/plans/agile-chasing-flurry.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/browser/selection-api.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/ui-patterns.md",
+        "type": "document"
+      },
+      {
+        "path": "src/promptgrimoire/pages/sync_demo.py",
+        "type": "code"
+      },
+      {
+        "path": "tests/e2e/test_two_tab_sync.py",
+        "type": "code"
+      }
+    ]
+  },
+  "relationships": {
+    "continues": null,
+    "references": [
+      "c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a"
+    ],
+    "isPartOf": [
+      "PromptGrimoire"
+    ]
+  },
+  "auto_generated": {
+    "title": "Spike 2 Code Review and Hardening",
+    "purpose": "",
+    "tags": []
+  },
+  "three_ps": {
+    "prompt_summary": "",
+    "process_summary": "",
+    "provenance_summary": ""
+  },
+  "plan_files": [
+    "partitioned-petting-wand.md",
+    "tingly-sleeping-lecun.md",
+    "purring-humming-plum.md",
+    "rippling-meandering-barto.md",
+    "misty-wibbling-bear.md",
+    "dynamic-stirring-bunny.md",
+    "imperative-dreaming-lovelace.md",
+    "declarative-noodling-thacker.md",
+    "precious-nibbling-summit.md",
+    "swift-exploring-marshmallow.md",
+    "misty-kindling-snail.md",
+    "harmonic-nibbling-squid.md",
+    "hazy-zooming-eich.md",
+    "shiny-bouncing-hamster.md",
+    "polymorphic-hugging-boot.md",
+    "agile-chasing-flurry.md",
+    "harmonic-swimming-dahl.md",
+    "snoopy-seeking-storm.md",
+    "wiggly-yawning-penguin.md",
+    "spicy-conjuring-panda.md",
+    "mossy-snuggling-frost.md",
+    "merry-napping-tulip.md",
+    "cosmic-gathering-candle.md",
+    "stateless-dancing-plum.md",
+    "goofy-jingling-gosling.md"
+  ],
+  "archive": {
+    "archived_at": "2026-01-15T13:22:38.067151",
+    "directory_name": "2026-01-15-spike-2-code-review-and-hardening",
+    "jsonl_path": "raw-transcript.jsonl",
+    "jsonl_sha256": "2474fefeeb66584fe8ac5009a613e76cf709e19f24395c2976dab59bf89e20cb",
+    "jsonl_bytes": 1573572,
+    "needs_review": true
+  },
+  "_relationship_hints": {
+    "continues_hint": null,
+    "references_hints": [
+      "c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a"
+    ],
+    "detection_notes": [
+      "Found session ID reference: c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'",
+      "Found continuation language matching: 'previous\\s+session'"
+    ]
+  }
+}

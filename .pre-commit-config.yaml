@@ -28,5 +28,5 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: '^paper/'
+        exclude: '^(paper/|ai_transcripts/)'
       - id: check-merge-conflict

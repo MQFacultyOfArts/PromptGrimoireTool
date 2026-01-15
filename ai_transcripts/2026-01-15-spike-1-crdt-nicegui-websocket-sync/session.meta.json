@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "session": {
+    "id": "8c497bed-b719-4cb2-9cc6-2d8a507f51e8",
+    "started_at": "2026-01-14T23:06:04.709Z",
+    "ended_at": "2026-01-15T00:46:44.700Z",
+    "duration_minutes": 100
+  },
+  "project": {
+    "name": "PromptGrimoire",
+    "directory": "/home/brian/people/Brian/PromptGrimoire"
+  },
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-opus-4-5-20251101",
+    "access_method": "claude-code-cli"
+  },
+  "statistics": {
+    "turns": 160,
+    "human_messages": 160,
+    "assistant_messages": 216,
+    "thinking_blocks": 0,
+    "tool_calls": {
+      "total": 134,
+      "by_type": {
+        "Read": 26,
+        "Bash": 50,
+        "Glob": 3,
+        "Write": 14,
+        "AskUserQuestion": 1,
+        "Edit": 23,
+        "ExitPlanMode": 1,
+        "TodoWrite": 13,
+        "WebSearch": 1,
+        "WebFetch": 2
+      }
+    },
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cache_read": 0
+    },
+    "estimated_cost_usd": 0.0
+  },
+  "artifacts": {
+    "created": [
+      {
+        "path": "/home/brian/.claude/plans/hazy-zooming-eich.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/multi-client-sync.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/testing.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/pycrdt/nicegui-integration.md",
+        "type": "document"
+      },
+      {
+        "path": "src/promptgrimoire/__main__.py",
+        "type": "code"
+      },
+      {
+        "path": "src/promptgrimoire/crdt/__init__.py",
+        "type": "code"
+      },
+      {
+        "path": "src/promptgrimoire/crdt/sync.py",
+        "type": "code"
+      },
+      {
+        "path": "src/promptgrimoire/pages/__init__.py",
+        "type": "code"
+      },
+      {
+        "path": "src/promptgrimoire/pages/sync_demo.py",
+        "type": "code"
+      },
+      {
+        "path": "tests/e2e/test_two_tab_sync.py",
+        "type": "code"
+      },
+      {
+        "path": "tests/integration/test_crdt_sync.py",
+        "type": "code"
+      }
+    ],
+    "modified": [
+      {
+        "path": "docs/_index.md",
+        "type": "document"
+      },
+      {
+        "path": "src/promptgrimoire/__init__.py",
+        "type": "code"
+      },
+      {
+        "path": "tests/conftest.py",
+        "type": "code"
+      }
+    ],
+    "referenced": [
+      {
+        "path": "docs/ARCHITECTURE.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/realtime.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/nicegui/ui-patterns.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/playwright/e2e-testing.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/pycrdt/usage.md",
+        "type": "document"
+      },
+      {
+        "path": "docs/pycrdt/websocket-sync.md",
+        "type": "document"
+      },
+      {
+        "path": "pyproject.toml",
+        "type": "config"
+      },
+      {
+        "path": "/tmp/issue_body.md",
+        "type": "document"
+      }
+    ]
+  },
+  "relationships": {
+    "continues": null,
+    "references": [
+      "8c497bed-b719-4cb2-9cc6-2d8a507f51e8"
+    ],
+    "isPartOf": [
+      "PromptGrimoire"
+    ]
+  },
+  "auto_generated": {
+    "title": "Spike 1 CRDT NiceGUI WebSocket Sync",
+    "purpose": "",
+    "tags": []
+  },
+  "three_ps": {
+    "prompt_summary": "",
+    "process_summary": "",
+    "provenance_summary": ""
+  },
+  "plan_files": [
+    "partitioned-petting-wand.md",
+    "tingly-sleeping-lecun.md",
+    "purring-humming-plum.md",
+    "rippling-meandering-barto.md",
+    "misty-wibbling-bear.md",
+    "dynamic-stirring-bunny.md",
+    "imperative-dreaming-lovelace.md",
+    "declarative-noodling-thacker.md",
+    "swift-exploring-marshmallow.md",
+    "misty-kindling-snail.md",
+    "harmonic-nibbling-squid.md",
+    "hazy-zooming-eich.md",
+    "shiny-bouncing-hamster.md",
+    "polymorphic-hugging-boot.md",
+    "harmonic-swimming-dahl.md",
+    "snoopy-seeking-storm.md",
+    "spicy-conjuring-panda.md",
+    "mossy-snuggling-frost.md",
+    "merry-napping-tulip.md",
+    "cosmic-gathering-candle.md",
+    "stateless-dancing-plum.md",
+    "goofy-jingling-gosling.md"
+  ],
+  "archive": {
+    "archived_at": "2026-01-15T11:46:48.547197",
+    "directory_name": "2026-01-15-spike-1-crdt-nicegui-websocket-sync",
+    "jsonl_path": "raw-transcript.jsonl",
+    "jsonl_sha256": "fbda62a6dee3f2ce7f2996dccec89057f685037afe6a447662d6405893e27b43",
+    "jsonl_bytes": 1175156,
+    "needs_review": true
+  },
+  "_relationship_hints": {
+    "continues_hint": null,
+    "references_hints": [
+      "8c497bed-b719-4cb2-9cc6-2d8a507f51e8"
+    ],
+    "detection_notes": [
+      "Found session ID reference: 8c497bed-b719-4cb2-9cc6-2d8a507f51e8",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'"
+    ]
+  }
+}

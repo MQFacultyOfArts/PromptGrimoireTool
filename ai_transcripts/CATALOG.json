@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-15T13:22:38.067353",
+  "archive_location": "/home/brian/people/Brian/PromptGrimoire/ai_transcripts",
+  "total_sessions": 2,
+  "needs_review_count": 2,
+  "sessions": [
+    {
+      "id": "c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a",
+      "directory": "2026-01-15-spike-2-code-review-and-hardening",
+      "title": "Spike 2 Code Review and Hardening",
+      "purpose": "",
+      "started_at": "2026-01-15T00:47:19.289Z",
+      "duration_minutes": 95,
+      "tags": [],
+      "needs_review": true
+    },
+    {
+      "id": "8c497bed-b719-4cb2-9cc6-2d8a507f51e8",
+      "directory": "2026-01-15-spike-1-crdt-nicegui-websocket-sync",
+      "title": "Spike 1 CRDT NiceGUI WebSocket Sync",
+      "purpose": "",
+      "started_at": "2026-01-14T23:06:04.709Z",
+      "duration_minutes": 100,
+      "tags": [],
+      "needs_review": true
+    }
+  ]
+}

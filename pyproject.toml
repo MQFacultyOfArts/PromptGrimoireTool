@@ -75,6 +75,17 @@ ignore = [
     "PLR2004",  # Magic value comparison
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "PLC0415",  # Allow imports inside test functions (needed for mocking)
+]
+"src/promptgrimoire/auth/factory.py" = [
+    "PLC0415",  # Intentional lazy imports for conditional client loading
+]
+"src/promptgrimoire/__init__.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies at startup
+]
+
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]
 
@@ -84,7 +95,9 @@ indent-style = "space"
 docstring-code-format = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Run tests in this order: unit first (fast, async), integration, then E2E
+# This prevents event loop conflicts between pytest-asyncio and playwright
+testpaths = ["tests/unit", "tests/integration", "tests/e2e"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra -q"

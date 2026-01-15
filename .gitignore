@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.development
+.env.production
+.env.sandbox
+
+# Keep the example template
+!.env.example
+.nicegui/

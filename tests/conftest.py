@@ -35,13 +35,16 @@ for key in list(os.environ.keys()):
     if 'PYTEST' in key or 'NICEGUI' in key:
         del os.environ[key]
 
+# Enable mock auth for E2E tests
+os.environ['AUTH_MOCK'] = 'true'
+os.environ['STORAGE_SECRET'] = 'test-secret-for-e2e'
+
 port = int(sys.argv[1])
 
 from nicegui import ui
-import promptgrimoire.pages.sync_demo  # noqa: F401
-import promptgrimoire.pages.text_selection  # noqa: F401
+import promptgrimoire.pages  # noqa: F401 - registers routes
 
-ui.run(port=port, reload=False, show=False)
+ui.run(port=port, reload=False, show=False, storage_secret='test-secret-for-e2e')
 """
 
 

@@ -259,9 +259,25 @@ class TestEdgeCases:
             container.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
         """)
 
-        # Verify selection was captured and contains multiline content
+        # Verify selection was captured and spans both paragraphs
         selected_text = page.get_by_test_id("selected-text")
         expect(selected_text).not_to_have_text("No selection", timeout=2000)
-        # Verify it captured text spanning from first paragraph into second
-        # First paragraph: "This is a sample..." second starts with "Human:"
-        expect(selected_text).to_contain_text("sample")
+
+        # Verify the selection spans a significant range (multiline = longer selection)
+        # The display is truncated at 50 chars, so check offsets for span verification
+        start_offset = page.get_by_test_id("start-offset")
+        end_offset = page.get_by_test_id("end-offset")
+        expect(start_offset).not_to_have_text("Start: -")
+        expect(end_offset).not_to_have_text("End: -")
+
+        # Parse the offset values to verify the selection spans multiple paragraphs
+        start_text = start_offset.text_content()
+        end_text = end_offset.text_content()
+        assert start_text is not None and end_text is not None
+        start_value = int(start_text.replace("Start: ", ""))
+        end_value = int(end_text.replace("End: ", ""))
+        selection_length = end_value - start_value
+        # First paragraph alone is ~55 chars; multiline selection should be longer
+        assert selection_length > 55, (
+            f"Selection should span into second paragraph, length={selection_length}"
+        )

@@ -9,11 +9,14 @@ library references during development.
 - [Usage Guide](pycrdt/usage.md) - CRDT data types, sync, transactions, observers
 - [WebSocket Sync](pycrdt/websocket-sync.md) - Real-time sync patterns for collaboration
 - [API Reference](pycrdt/api-reference.md) - Complete API: Text, Doc, StickyIndex, sync functions
+- [NiceGUI Integration](pycrdt/nicegui-integration.md) - *Project notes: Spike 1 learnings*
 
 ## nicegui
 
 - [Real-Time & Reactivity](nicegui/realtime.md) - WebSocket, multi-client, JS integration
 - [UI Patterns](nicegui/ui-patterns.md) - timer, refreshable, pages, events, storage, styling
+- [E2E Testing](nicegui/testing.md) - *Project notes: Playwright testing with NiceGUI*
+- [Multi-Client Sync](nicegui/multi-client-sync.md) - *Project notes: Broadcasting updates*
 
 ## stytch
 

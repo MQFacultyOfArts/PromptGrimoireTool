@@ -1,5 +1,12 @@
 """Shared pytest fixtures for PromptGrimoire tests."""
 
+from __future__ import annotations
+
+import os
+import socket
+import subprocess
+import sys
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -8,6 +15,96 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
+
+
+def _find_free_port() -> int:
+    """Find an available port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+# Script to run NiceGUI server
+# Note: We clear PYTEST env vars to prevent NiceGUI from entering test mode
+_SERVER_SCRIPT = """
+import os
+import sys
+
+# Clear pytest-related environment variables that NiceGUI checks
+for key in list(os.environ.keys()):
+    if 'PYTEST' in key or 'NICEGUI' in key:
+        del os.environ[key]
+
+port = int(sys.argv[1])
+
+from nicegui import ui
+import promptgrimoire.pages.sync_demo  # noqa: F401
+
+ui.run(port=port, reload=False, show=False)
+"""
+
+
+@pytest.fixture(scope="session")
+def app_server() -> Generator[str]:
+    """Start the NiceGUI app server for E2E tests.
+
+    Returns the base URL of the running server.
+    Automatically starts before tests and stops after.
+
+    Note: NiceGUI detects pytest and enters test mode, expecting special
+    environment variables. We clear these in the subprocess to run normally.
+    """
+    port = _find_free_port()
+    url = f"http://localhost:{port}"
+
+    # Create clean environment without pytest variables
+    clean_env = {
+        k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
+    }
+
+    # Start server as subprocess with clean environment
+    process = subprocess.Popen(
+        [sys.executable, "-c", _SERVER_SCRIPT, str(port)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=clean_env,
+    )
+
+    # Wait for server to be ready
+    max_wait = 15  # seconds
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        # Check if process died
+        if process.poll() is not None:
+            stdout, stderr = process.communicate()
+            pytest.fail(
+                f"Server process died. Exit code: {process.returncode}\n"
+                f"stdout: {stdout.decode()}\n"
+                f"stderr: {stderr.decode()}"
+            )
+        try:
+            with socket.create_connection(("localhost", port), timeout=1):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        process.terminate()
+        pytest.fail(f"Server failed to start within {max_wait} seconds")
+
+    yield url
+
+    # Cleanup
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+@pytest.fixture
+def crdt_sync_url(app_server: str) -> str:
+    """URL for the CRDT sync demo page."""
+    return f"{app_server}/demo/crdt-sync"
 
 
 @pytest.fixture

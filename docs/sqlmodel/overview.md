@@ -82,6 +82,97 @@ async with AsyncSession(engine) as session:
     heroes = result.all()
 ```
 
+## Async Session Factory Pattern
+
+For production apps, use `async_sessionmaker` for proper session management:
+
+```python
+from sqlmodel import SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from contextlib import asynccontextmanager
+
+# Create engine with pool settings
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@localhost/db",
+    echo=False,  # Set True for SQL logging
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before use
+)
+
+# Create session factory
+async_session_factory = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,  # Prevent lazy load issues
+)
+
+# Dependency for getting sessions
+@asynccontextmanager
+async def get_session():
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+# Usage
+async def get_user(user_id: UUID) -> User | None:
+    async with get_session() as session:
+        statement = select(User).where(User.id == user_id)
+        result = await session.exec(statement)
+        return result.first()
+
+async def create_user(email: str, display_name: str) -> User:
+    async with get_session() as session:
+        user = User(email=email, display_name=display_name)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+```
+
+## Initialize Database
+
+```python
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+async def close_db():
+    await engine.dispose()
+
+# In your app startup
+import asyncio
+asyncio.run(init_db())
+```
+
+## NiceGUI Integration
+
+```python
+from nicegui import app, ui
+
+@app.on_startup
+async def startup():
+    await init_db()
+
+@app.on_shutdown
+async def shutdown():
+    await close_db()
+
+@ui.page('/')
+async def index():
+    async with get_session() as session:
+        users = await session.exec(select(User))
+        for user in users:
+            ui.label(user.email)
+
+ui.run()
+```
+
 ## PostgreSQL Driver
 
 For async PostgreSQL, use `asyncpg`:

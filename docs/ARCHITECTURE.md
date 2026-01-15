@@ -228,6 +228,13 @@ Before full implementation, build minimal proofs:
 - Type in one, see update in other
 - Validates: CRDT sync over NiceGUI WebSocket
 
+**Reference Docs:**
+
+- [pycrdt Usage Guide](pycrdt/usage.md) - Doc, Text, transactions, observers
+- [pycrdt WebSocket Sync](pycrdt/websocket-sync.md) - Sync patterns, NiceGUI integration
+- [NiceGUI Real-Time](nicegui/realtime.md) - WebSocket, multi-client, on_connect/on_disconnect
+- [NiceGUI UI Patterns](nicegui/ui-patterns.md) - timer (for sync), storage (for client tracking)
+
 ### Spike 2: Text Selection → Annotation
 
 - Display static text in NiceGUI
@@ -236,12 +243,24 @@ Before full implementation, build minimal proofs:
 - Create highlight (CSS class)
 - Validates: Browser JS ↔ Python bridge
 
+**Reference Docs:**
+
+- [Browser Selection API](browser/selection-api.md) - getSelection(), Range, coordinates
+- [NiceGUI UI Patterns](nicegui/ui-patterns.md) - run_javascript, add_css, element.on(), custom events
+
 ### Spike 3: Stytch Magic Link Flow
 
 - Send magic link
 - Handle callback
 - Create session
 - Validates: Auth flow works with NiceGUI
+
+**Reference Docs:**
+
+- [Stytch Magic Link Flow](stytch/magic-link-flow.md) - Complete flow with NiceGUI integration
+- [Stytch Passkeys](stytch/passkeys.md) - WebAuthn registration/authentication
+- [Stytch Python SDK](stytch/python-sdk.md) - Client setup, async methods
+- [NiceGUI UI Patterns](nicegui/ui-patterns.md) - @ui.page routing, storage for sessions
 
 ### Spike 4: SQLModel Async + PostgreSQL
 
@@ -250,8 +269,19 @@ Before full implementation, build minimal proofs:
 - Insert/query async
 - Validates: Async DB works
 
-### Spike 5: Full Annotation Flow
+**Reference Docs:**
+
+- [SQLModel Overview](sqlmodel/overview.md) - Models, relationships, async session factory, NiceGUI integration
+- [asyncpg Usage](asyncpg/usage.md) - Connection pools, SQLAlchemy integration
+- [Alembic SQLModel Setup](alembic/sqlmodel-setup.md) - Async migrations
+
+### Spike 5: Full Annotation Flow (E2E)
 
 - Combine spikes 1-4
 - User logs in → sees conversation → selects text → annotation syncs
 - Validates: End-to-end integration
+
+**Reference Docs:**
+
+- All docs from Spikes 1-4
+- [Playwright E2E Testing](playwright/e2e-testing.md) - Multi-user testing, locators, assertions

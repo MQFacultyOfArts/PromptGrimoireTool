@@ -69,7 +69,7 @@ uv run playwright test
 
 ## Project Structure
 
-```
+```text
 src/promptgrimoire/
 ├── __init__.py
 ├── main.py           # NiceGUI app entry
@@ -90,6 +90,8 @@ docs/                 # Cached documentation (auto-populated)
 ## Documentation Caching
 
 The `cache-docs` skill automatically saves fetched documentation to `docs/`. Every non-stdlib import should have reference docs cached. Check `docs/_index.md` for available documentation.
+
+Prefer to read cached docs over online searches. If you need to run an online search, don't forget to use the skill to write your results back to the docs.
 
 ## Database
 

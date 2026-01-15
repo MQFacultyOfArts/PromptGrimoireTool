@@ -201,6 +201,35 @@ class TestVisualHighlight:
         expect(highlights).to_have_count(2)
 
 
+class TestClickDragSelection:
+    """Test actual click-drag selection (primary use case)."""
+
+    def test_click_drag_selection(self, page: Page, text_selection_url: str) -> None:
+        """User can click-drag to select partial text within a paragraph."""
+        page.goto(text_selection_url)
+
+        content = page.get_by_test_id("selectable-content")
+        # Wait for JS handlers to be set up (indicated by data attribute)
+        expect(content).to_have_attribute("data-handlers-ready", "true", timeout=5000)
+
+        p = content.locator("p").first
+
+        # Get bounding box and drag within it to select partial text
+        box = p.bounding_box()
+        assert box is not None
+
+        # Drag from near left to middle of the paragraph
+        page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 150, box["y"] + box["height"] / 2)
+        page.mouse.up()
+
+        # Verify selection was captured
+        expect(page.get_by_test_id("selected-text")).not_to_have_text(
+            "No selection", timeout=2000
+        )
+
+
 class TestEdgeCases:
     """Edge cases for text selection."""
 
@@ -209,12 +238,8 @@ class TestEdgeCases:
         page.goto(text_selection_url)
 
         content = page.get_by_test_id("selectable-content")
-        # Wait for content to be visible and have paragraphs
-        expect(content.locator("p").first).to_be_visible()
-
-        # Wait for JavaScript event handlers to be set up
-        # The page runs async setup after client.connected()
-        page.wait_for_timeout(500)
+        # Wait for JS handlers to be set up (indicated by data attribute)
+        expect(content).to_have_attribute("data-handlers-ready", "true", timeout=5000)
 
         # Select across multiple paragraphs using JavaScript
         # (Playwright's click-drag is tricky for multi-line)
@@ -234,6 +259,9 @@ class TestEdgeCases:
             container.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
         """)
 
-        # Verify selection was captured
+        # Verify selection was captured and contains multiline content
         selected_text = page.get_by_test_id("selected-text")
         expect(selected_text).not_to_have_text("No selection", timeout=2000)
+        # Verify it captured text spanning from first paragraph into second
+        # First paragraph: "This is a sample..." second starts with "Human:"
+        expect(selected_text).to_contain_text("sample")

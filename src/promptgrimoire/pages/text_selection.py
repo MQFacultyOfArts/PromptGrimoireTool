@@ -9,11 +9,19 @@ Route: /demo/text-selection
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+if TYPE_CHECKING:
+    from nicegui.events import GenericEventArguments
+
 # Path to CSS file
 _CSS_FILE = Path(__file__).parent.parent / "static" / "annotations.css"
+
+# Constants
+SELECTION_DEBOUNCE_MS = 10  # Debounce to let browser finalize selection
+MAX_DISPLAY_LENGTH = 50  # Truncate displayed text for readability
 
 
 @ui.page("/demo/text-selection")
@@ -47,6 +55,8 @@ async def text_selection_demo_page() -> None:
                 .props('data-testid="selectable-content"')
             )
             with content_container:
+                # WARNING: sanitize=False is ONLY safe for static/trusted content.
+                # NEVER use with user-provided content - enables XSS attacks.
                 ui.html(
                     """
                     <p>This is a sample conversation for the PromptGrimoire demo.</p>
@@ -91,36 +101,64 @@ async def text_selection_demo_page() -> None:
                         try {
                             window._savedRange.surroundContents(span);
                             window._savedRange = null;
-                            return true;
+                            return {success: true};
                         } catch (e) {
                             // surroundContents fails if range spans multiple elements
-                            // Fall back to extractContents approach
-                            const fragment = window._savedRange.extractContents();
-                            span.appendChild(fragment);
-                            window._savedRange.insertNode(span);
-                            window._savedRange = null;
-                            return true;
+                            console.warn('surroundContents failed:', e.message);
+                            try {
+                                // Fall back to extractContents approach
+                                const fragment = window._savedRange.extractContents();
+                                span.appendChild(fragment);
+                                window._savedRange.insertNode(span);
+                                window._savedRange = null;
+                                return {success: true};
+                            } catch (e2) {
+                                console.error('Highlight fallback failed:', e2.message);
+                                return {success: false, error: e2.message};
+                            }
                         }
                     }
-                    return false;
+                    return {success: false, error: 'No saved range'};
                 """)
-                if result:
+                if result and result.get("success"):
                     ui.notify("Highlight created!")
                 else:
-                    ui.notify("No saved selection to highlight", type="warning")
+                    error = (
+                        result.get("error", "Unknown error") if result else "No result"
+                    )
+                    ui.notify(f"Highlight failed: {error}", type="warning")
 
             ui.button("Create Highlight", on_click=create_highlight).props(
                 'data-testid="create-highlight-btn"'
             ).classes("mt-4")
 
-    def handle_selection(e) -> None:
-        """Handle text selection from browser."""
+    def handle_selection(e: GenericEventArguments) -> None:
+        """Handle text selection from browser.
+
+        Expected e.args:
+            text (str): Selected text content
+            start (int): Start offset within container
+            end (int): End offset within container
+        """
         text = e.args.get("text", "")
         start = e.args.get("start", 0)
         end = e.args.get("end", 0)
 
+        # Validate input types and constraints
+        if (
+            not isinstance(text, str)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+        ):
+            return
+        if start < 0 or end < 0 or start > end:
+            return
+
         if text:
-            display = f'"{text[:50]}..."' if len(text) > 50 else f'"{text}"'
+            if len(text) > MAX_DISPLAY_LENGTH:
+                display = f'"{text[:MAX_DISPLAY_LENGTH]}..."'
+            else:
+                display = f'"{text}"'
             selection_data.update(
                 {"text": text, "start": start, "end": end, "display": display}
             )
@@ -135,6 +173,7 @@ async def text_selection_demo_page() -> None:
     container_id = content_container.id
     await ui.run_javascript(f"""
         const container = getHtmlElement({container_id});
+        const DEBOUNCE_MS = {SELECTION_DEBOUNCE_MS};
 
         function checkAndEmitSelection() {{
             const selection = window.getSelection();
@@ -149,6 +188,8 @@ async def text_selection_demo_page() -> None:
             if (!container.contains(range.commonAncestorContainer)) return;
 
             // Save range for later highlighting (clone it since selection can change)
+            // NOTE: Range objects become invalid if DOM changes. For production,
+            // consider storing text offsets and reconstructing the range on highlight.
             window._savedRange = range.cloneRange();
 
             // Calculate offsets relative to container
@@ -165,6 +206,9 @@ async def text_selection_demo_page() -> None:
         }}
 
         container.addEventListener('mouseup', function(e) {{
-            setTimeout(checkAndEmitSelection, 10);
+            setTimeout(checkAndEmitSelection, DEBOUNCE_MS);
         }});
+
+        // Mark handlers as ready for testing
+        container.setAttribute('data-handlers-ready', 'true');
     """)

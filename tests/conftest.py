@@ -39,6 +39,7 @@ port = int(sys.argv[1])
 
 from nicegui import ui
 import promptgrimoire.pages.sync_demo  # noqa: F401
+import promptgrimoire.pages.text_selection  # noqa: F401
 
 ui.run(port=port, reload=False, show=False)
 """
@@ -105,6 +106,12 @@ def app_server() -> Generator[str]:
 def crdt_sync_url(app_server: str) -> str:
     """URL for the CRDT sync demo page."""
     return f"{app_server}/demo/crdt-sync"
+
+
+@pytest.fixture
+def text_selection_url(app_server: str) -> str:
+    """URL for the text selection demo page."""
+    return f"{app_server}/demo/text-selection"
 
 
 @pytest.fixture

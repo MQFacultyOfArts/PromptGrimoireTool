@@ -1,0 +1,14 @@
+.annotation-highlight {
+    background-color: rgba(255, 235, 59, 0.4);
+    border-bottom: 2px solid #ffc107;
+    cursor: pointer;
+}
+
+.annotation-highlight:hover {
+    background-color: rgba(255, 235, 59, 0.6);
+}
+
+.selectable-content {
+    user-select: text;
+    cursor: text;
+}

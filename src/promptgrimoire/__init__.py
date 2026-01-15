@@ -12,7 +12,8 @@ def main() -> None:
     # Late imports to avoid circular dependencies and allow module-level usage
     from nicegui import ui  # noqa: PLC0415
 
-    import promptgrimoire.pages.sync_demo  # noqa: F401, PLC0415
+    import promptgrimoire.pages.sync_demo  # noqa: PLC0415
+    import promptgrimoire.pages.text_selection  # noqa: F401, PLC0415
 
     print(f"PromptGrimoire v{__version__}")
     print("Starting application on http://localhost:8080")

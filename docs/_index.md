@@ -54,3 +54,9 @@ library references during development.
 ## ruff
 
 - [Pre-commit Integration](ruff/pre-commit.md) - Pre-commit integration guide for Ruff linter and formatter
+
+---
+
+## Project Documents
+
+- [Case Brief Tool PRD](case-brief-tool-prd.md) - Product requirements for legal education case briefing tool

@@ -140,7 +140,7 @@ def _setup_session(
 
 
 @ui.page("/roleplay")
-async def roleplay_page() -> None:
+async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many statements
     """Roleplay chat page."""
     await ui.context.client.connected()
 
@@ -153,9 +153,11 @@ async def roleplay_page() -> None:
         ui.label("Load Character Card").classes("text-h6")
 
         async def handle_upload(e) -> None:
+            tmp_path = None
             try:
                 content = await e.file.read()
-                tmp_path = Path("/tmp") / e.file.name
+                # Write to temp file for parsing
+                tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")
                 tmp_path.write_bytes(content)
 
                 character, lorebook_entries = parse_character_card(tmp_path)
@@ -188,6 +190,10 @@ async def roleplay_page() -> None:
                 ui.notify(str(ve), type="negative")
             except Exception as ex:
                 ui.notify(f"Failed to load: {ex}", type="negative")
+            finally:
+                # Clean up temp file
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
 
         user_name_input = ui.input(
             label="Your name (used as {{user}})", value="User"

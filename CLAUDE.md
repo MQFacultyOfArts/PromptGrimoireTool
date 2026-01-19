@@ -93,18 +93,22 @@ uv run playwright test
 src/promptgrimoire/
 ├── __init__.py
 ├── main.py           # NiceGUI app entry
-├── models/           # SQLModel definitions
-├── parsers/          # Conversation format parsers
+├── models/           # Data models (Character, Session, Turn, LorebookEntry)
+├── parsers/          # SillyTavern character card parser
+├── llm/              # Claude API client, lorebook activation, prompt assembly
+├── pages/            # NiceGUI page routes (/roleplay, /logs, /auth, etc.)
 ├── auth/             # Stytch integration
 └── crdt/             # pycrdt collaboration logic
 
 tests/
 ├── conftest.py       # Shared fixtures
+├── fixtures/         # Test data (Becky Bennett character card)
 ├── unit/             # Unit tests
 ├── integration/      # Integration tests
 └── e2e/              # Playwright E2E tests
 
 docs/                 # Cached documentation (auto-populated)
+logs/sessions/        # JSONL session logs (auto-created)
 ```
 
 ## Documentation Caching
@@ -127,6 +131,20 @@ Stytch handles:
 - Passkey authentication
 - RBAC (admin/instructor/student roles)
 - Class invitations
+
+## Environment Variables
+
+### Required
+
+- `ANTHROPIC_API_KEY` - Claude API key for roleplay sessions
+
+### Optional
+
+- `CLAUDE_MODEL` - Model to use (default: `claude-sonnet-4-20250514`)
+- `CLAUDE_THINKING_BUDGET` - Extended thinking token budget (default: `1024`, 0 to disable)
+- `ROLEPLAY_LOG_DIR` - Directory for JSONL session logs (default: `logs/sessions`)
+- `STYTCH_PROJECT_ID` - Stytch project ID for auth
+- `STYTCH_SECRET` - Stytch secret key
 
 ## Conventions
 

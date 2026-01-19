@@ -1,6 +1,5 @@
 """Tests for Claude API client."""
 
-from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -55,9 +54,13 @@ class TestSendMessage:
     """Tests for sending messages and receiving responses."""
 
     @pytest.fixture
-    def mock_anthropic(self) -> Iterator[MagicMock]:
-        """Mock anthropic client."""
+    def mock_anthropic(self):
+        """Mock anthropic async client."""
         with patch("promptgrimoire.llm.client.anthropic") as mock:
+            # Create async mock for messages.create
+            from unittest.mock import AsyncMock
+
+            mock.AsyncAnthropic.return_value.messages.create = AsyncMock()
             yield mock
 
     @pytest.mark.asyncio
@@ -67,8 +70,10 @@ class TestSendMessage:
         """send_message returns character response."""
         # Setup mock response
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="I understand. Please, go on.")]
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = (
+        mock_response.content = [
+            MagicMock(text="I understand. Please, go on.", type="text")
+        ]
+        mock_anthropic.AsyncAnthropic.return_value.messages.create.return_value = (
             mock_response
         )
 
@@ -83,8 +88,8 @@ class TestSendMessage:
     ) -> None:
         """User message is added to session turns."""
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Response")]
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = (
+        mock_response.content = [MagicMock(text="Response", type="text")]
+        mock_anthropic.AsyncAnthropic.return_value.messages.create.return_value = (
             mock_response
         )
 
@@ -104,8 +109,8 @@ class TestSendMessage:
     ) -> None:
         """Assistant response is added to session turns."""
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="My response")]
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = (
+        mock_response.content = [MagicMock(text="My response", type="text")]
+        mock_anthropic.AsyncAnthropic.return_value.messages.create.return_value = (
             mock_response
         )
 
@@ -120,7 +125,7 @@ class TestStreamingResponse:
     """Tests for streaming response handling."""
 
     @pytest.fixture
-    def mock_anthropic(self) -> Iterator[MagicMock]:
+    def mock_anthropic(self):
         """Mock anthropic client."""
         with patch("promptgrimoire.llm.client.anthropic") as mock:
             yield mock

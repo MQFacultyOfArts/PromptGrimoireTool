@@ -17,7 +17,10 @@ if TYPE_CHECKING:
 
 
 class ClaudeClient:
-    """Client for interacting with Claude API."""
+    """Client for interacting with Claude API.
+
+    Uses the async Anthropic client for non-blocking API calls.
+    """
 
     def __init__(
         self,
@@ -41,7 +44,7 @@ class ClaudeClient:
 
         self.model = model
         self.thinking_budget = thinking_budget
-        self._client = anthropic.Anthropic(api_key=self.api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=self.api_key)
 
     async def send_message(self, session: Session, user_message: str) -> str:
         """Send a message and get a response.
@@ -52,6 +55,9 @@ class ClaudeClient:
 
         Returns:
             The assistant's response text.
+
+        Raises:
+            ValueError: If Claude returns an empty or non-text response.
         """
         # Add user turn to session
         session.add_turn(user_message, is_user=True)
@@ -67,16 +73,23 @@ class ClaudeClient:
         # Build messages array
         messages = build_messages(session.turns)
 
-        # Call Claude API
-        response = self._client.messages.create(
+        # Call Claude API (async)
+        response = await self._client.messages.create(
             model=self.model,
             max_tokens=1024,
             system=system_prompt,
             messages=messages,
         )
 
-        # Extract response text
-        response_text = response.content[0].text
+        # Extract response text safely
+        if not response.content:
+            raise ValueError("Empty response from Claude API")
+
+        first_block = response.content[0]
+        if first_block.type != "text":
+            raise ValueError(f"Unexpected response type: {first_block.type}")
+
+        response_text = first_block.text
 
         # Add assistant turn to session
         session.add_turn(
@@ -111,15 +124,15 @@ class ClaudeClient:
         )
         messages = build_messages(session.turns)
 
-        # Stream response
+        # Stream response (async)
         full_response = ""
-        with self._client.messages.stream(
+        async with self._client.messages.stream(
             model=self.model,
             max_tokens=1024,
             system=system_prompt,
             messages=messages,
         ) as stream:
-            for text in stream.text_stream:
+            async for text in stream.text_stream:
                 full_response += text
                 yield text
 
@@ -169,12 +182,12 @@ class ClaudeClient:
                 "budget_tokens": self.thinking_budget,
             }
 
-        # Stream response - collect thinking separately from response
+        # Stream response - collect thinking separately from response (async)
         full_response = ""
         thinking_content = ""
 
-        with self._client.messages.stream(**api_params) as stream:
-            for event in stream:
+        async with self._client.messages.stream(**api_params) as stream:
+            async for event in stream:
                 # Handle content block delta events
                 if (
                     hasattr(event, "type")

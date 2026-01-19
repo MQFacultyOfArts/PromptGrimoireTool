@@ -142,6 +142,7 @@ Stytch handles:
 
 - `CLAUDE_MODEL` - Model to use (default: `claude-sonnet-4-20250514`)
 - `CLAUDE_THINKING_BUDGET` - Extended thinking token budget (default: `1024`, 0 to disable)
+- `LOREBOOK_TOKEN_BUDGET` - Max tokens for lorebook entries (default: `0` = unlimited)
 - `ROLEPLAY_LOG_DIR` - Directory for JSONL session logs (default: `logs/sessions`)
 - `STYTCH_PROJECT_ID` - Stytch project ID for auth
 - `STYTCH_SECRET` - Stytch secret key

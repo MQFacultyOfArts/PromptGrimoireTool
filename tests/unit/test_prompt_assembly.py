@@ -176,3 +176,89 @@ class TestBuildMessages:
 
         assert len(messages) == 3
         assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+
+
+class TestTokenEstimation:
+    """Tests for token estimation and budget management."""
+
+    def test_estimate_tokens_empty_string(self) -> None:
+        """Empty string returns 0 tokens."""
+        from promptgrimoire.llm.prompt import estimate_tokens
+
+        assert estimate_tokens("") == 0
+
+    def test_estimate_tokens_short_text(self) -> None:
+        """Short text returns at least 1 token."""
+        from promptgrimoire.llm.prompt import estimate_tokens
+
+        assert estimate_tokens("Hi") == 1
+
+    def test_estimate_tokens_longer_text(self) -> None:
+        """Longer text returns roughly 1 token per 4 chars."""
+        from promptgrimoire.llm.prompt import estimate_tokens
+
+        # 400 chars should be ~100 tokens
+        text = "x" * 400
+        tokens = estimate_tokens(text)
+        assert 90 <= tokens <= 110
+
+
+class TestLorebookBudget:
+    """Tests for lorebook token budget enforcement."""
+
+    @pytest.fixture
+    def character(self) -> Character:
+        """Minimal character for budget tests."""
+        return Character(name="Test", system_prompt="System")
+
+    def test_no_budget_includes_all_entries(self, character: Character) -> None:
+        """With no budget, all entries are included."""
+        entries = [
+            LorebookEntry(keys=["a"], content="A" * 100, insertion_order=100),
+            LorebookEntry(keys=["b"], content="B" * 100, insertion_order=90),
+            LorebookEntry(keys=["c"], content="C" * 100, insertion_order=80),
+        ]
+
+        prompt = build_system_prompt(character, entries, user_name="User")
+
+        assert "A" * 100 in prompt
+        assert "B" * 100 in prompt
+        assert "C" * 100 in prompt
+
+    def test_budget_limits_entries(self, character: Character) -> None:
+        """Budget stops adding entries when exceeded."""
+        # Each entry is ~25 tokens (100 chars / 4)
+        entries = [
+            LorebookEntry(keys=["a"], content="A" * 100, insertion_order=100),
+            LorebookEntry(keys=["b"], content="B" * 100, insertion_order=90),
+            LorebookEntry(keys=["c"], content="C" * 100, insertion_order=80),
+        ]
+
+        # Budget of 40 tokens should allow first entry (~25) but not second
+        prompt = build_system_prompt(
+            character, entries, user_name="User", lorebook_budget=40
+        )
+
+        assert "A" * 100 in prompt
+        assert "B" * 100 not in prompt
+        assert "C" * 100 not in prompt
+
+    def test_budget_respects_insertion_order(self, character: Character) -> None:
+        """Higher priority entries are included first when budget limited."""
+        entries = [
+            LorebookEntry(
+                keys=["low"], content="LOW_PRIORITY_ENTRY", insertion_order=10
+            ),
+            LorebookEntry(
+                keys=["high"], content="HIGH_PRIORITY_ENTRY", insertion_order=100
+            ),
+        ]
+
+        # Budget of 5 tokens allows "HIGH_PRIORITY_ENTRY" (~5 tokens) but not both
+        prompt = build_system_prompt(
+            character, entries, user_name="User", lorebook_budget=5
+        )
+
+        # High priority should be included, low priority excluded
+        assert "HIGH_PRIORITY_ENTRY" in prompt
+        assert "LOW_PRIORITY_ENTRY" not in prompt

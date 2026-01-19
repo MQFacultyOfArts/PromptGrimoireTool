@@ -19,3 +19,6 @@ wheels/
 # Keep the example template
 !.env.example
 .nicegui/
+
+# Session logs (generated data)
+logs/

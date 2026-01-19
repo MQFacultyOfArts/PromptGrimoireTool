@@ -14,77 +14,129 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
-from promptgrimoire.models import Session
+from promptgrimoire.models import Character, Session
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
-
+    from nicegui.elements.scroll_area import ScrollArea
 
 # Default log directory
 LOG_DIR = Path(os.environ.get("ROLEPLAY_LOG_DIR", "logs/sessions"))
 
+# Claude model configuration
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 
-@ui.refreshable
-def message_list(session: Session) -> None:
-    """Render the conversation messages."""
+# Extended thinking budget (0 = disabled, 1024 = minimal, 10000+ = thorough)
+THINKING_BUDGET = int(os.environ.get("CLAUDE_THINKING_BUDGET", "1024"))
+
+
+def _render_messages(session: Session, scroll_area: ScrollArea) -> None:
+    """Render all messages in the session using chat_message components."""
     for turn in session.turns:
-        role_class = "bg-blue-100" if turn.is_user else "bg-gray-100"
-        align_class = "ml-auto" if turn.is_user else "mr-auto"
+        ui.chat_message(
+            text=turn.content,
+            name=turn.name,
+            sent=turn.is_user,
+        )
+    # Scroll to bottom after rendering
+    scroll_area.scroll_to(percent=1.0)
 
-        with ui.card().classes(f"{role_class} {align_class} max-w-3/4 mb-2"):
-            ui.label(turn.name).classes("text-sm font-bold text-gray-600")
-            ui.markdown(turn.content).classes("text-base")
 
-
-async def send_message_handler(
+async def _handle_send(
     session: Session,
     client: ClaudeClient,
     input_field: Input,
     log_path: Path,
-    response_container,
+    chat_container,
+    scroll_area: ScrollArea,
+    send_button,
 ) -> None:
-    """Handle sending a user message and streaming the response."""
+    """Handle sending a message and streaming the response."""
     user_message = input_field.value
     if not user_message or not user_message.strip():
         return
 
-    # Clear input
     input_field.value = ""
+    send_button.disable()
 
-    # Refresh to show user message immediately
+    # Add user message
     session.add_turn(user_message.strip(), is_user=True)
-    message_list.refresh(session)
+    with chat_container:
+        ui.chat_message(text=user_message.strip(), name=session.user_name, sent=True)
+    scroll_area.scroll_to(percent=1.0)
 
-    # Show streaming indicator
-    response_container.clear()
-    with response_container:
-        streaming_label = ui.label("").classes("text-base")
+    # Show thinking indicator
+    with chat_container:
+        thinking_msg = ui.chat_message(name=session.character.name, sent=False)
+        with thinking_msg:
+            with ui.row().classes("items-center gap-2"):
+                spinner = ui.spinner("dots", size="sm")
+                thinking_label = ui.label("Thinking...").classes("text-gray-500 italic")
+            streaming_label = ui.label("")
+    scroll_area.scroll_to(percent=1.0)
 
-    # Stream the response
+    # Stream response
     full_response = ""
+    first_chunk = True
     try:
-        async for chunk in client.stream_message_only(session, user_message.strip()):
+        async for chunk in client.stream_message_only(session):
+            if first_chunk:
+                spinner.visible = False
+                thinking_label.visible = False
+                first_chunk = False
             full_response += chunk
             streaming_label.text = full_response
-            streaming_label.update()
+            scroll_area.scroll_to(percent=1.0)
     except Exception as e:
         ui.notify(f"Error: {e}", type="negative")
+        send_button.enable()
         return
 
-    # Response is already added to session by stream_message_only
-    # Refresh to show final message in proper format
-    response_container.clear()
-    message_list.refresh(session)
+    # Replace streaming message with final rendered version
+    thinking_msg.delete()
+    with chat_container:
+        ui.chat_message(text=full_response, name=session.character.name, sent=False)
+    scroll_area.scroll_to(percent=1.0)
 
-    # Log the new turns
+    send_button.enable()
+
+    # Log turns
     with log_path.open("a") as f:
         logger = JSONLLogger(f)
-        # Log the last two turns (user + assistant)
         for turn in session.turns[-2:]:
             logger.write_turn(turn)
+
+
+def _setup_session(
+    character: Character,
+    lorebook_entries: list,
+    user_name: str,
+) -> tuple[Session, ClaudeClient, Path]:
+    """Initialize session, client, and log file."""
+    character.lorebook_entries = lorebook_entries
+    session = Session(character=character, user_name=user_name)
+
+    if character.first_mes:
+        first_msg = substitute_placeholders(
+            character.first_mes, char_name=character.name, user_name=user_name
+        )
+        session.add_turn(first_msg, is_user=False)
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOG_DIR / generate_log_filename(session)
+
+    with log_path.open("w") as f:
+        logger = JSONLLogger(f)
+        logger.write_header(session)
+        for turn in session.turns:
+            logger.write_turn(turn)
+
+    client = ClaudeClient(model=CLAUDE_MODEL, thinking_budget=THINKING_BUDGET)
+    return session, client, log_path
 
 
 @ui.page("/roleplay")
@@ -92,79 +144,50 @@ async def roleplay_page() -> None:
     """Roleplay chat page."""
     await ui.context.client.connected()
 
-    # State
-    session_holder: dict = {"session": None, "client": None, "log_path": None}
+    state: dict = {"session": None, "client": None, "log_path": None}
 
     ui.label("SillyTavern Roleplay").classes("text-h4 mb-4")
 
-    # File upload section
+    # Upload section
     with ui.card().classes("w-full mb-4") as upload_card:
         ui.label("Load Character Card").classes("text-h6")
 
         async def handle_upload(e) -> None:
-            """Handle character card upload."""
             try:
-                # Save uploaded file temporarily
-                content = e.content.read()
-                tmp_path = Path("/tmp") / e.name
+                content = await e.file.read()
+                tmp_path = Path("/tmp") / e.file.name
                 tmp_path.write_bytes(content)
 
-                # Parse character card
                 character, lorebook_entries = parse_character_card(tmp_path)
-
-                # Attach lorebook to character
-                character.lorebook_entries = lorebook_entries
-
-                # Create session
                 user_name = user_name_input.value or "User"
-                session = Session(character=character, user_name=user_name)
 
-                # Add first message if present
-                if character.first_mes:
-                    session.add_turn(character.first_mes, is_user=False)
-
-                # Create log file
-                LOG_DIR.mkdir(parents=True, exist_ok=True)
-                log_path = LOG_DIR / generate_log_filename(session)
-
-                # Write header
-                with log_path.open("w") as f:
-                    logger = JSONLLogger(f)
-                    logger.write_header(session)
-                    # Log first message if present
-                    for turn in session.turns:
-                        logger.write_turn(turn)
-
-                # Create Claude client
-                try:
-                    client = ClaudeClient()
-                except ValueError as ve:
-                    ui.notify(str(ve), type="negative")
-                    return
-
-                # Store state
-                session_holder["session"] = session
-                session_holder["client"] = client
-                session_holder["log_path"] = log_path
-
-                # Hide upload section, show chat
-                upload_card.visible = False
-                chat_container.visible = True
-
-                # Display character info
-                char_name_label.text = character.name
-                scenario_label.text = character.scenario or "No scenario provided"
-
-                # Refresh message list
-                message_list.refresh(session)
-
-                ui.notify(
-                    f"Loaded {character.name} with {len(lorebook_entries)} lorebook entries",
-                    type="positive",
+                session, client, log_path = _setup_session(
+                    character, lorebook_entries, user_name
                 )
 
+                state["session"] = session
+                state["client"] = client
+                state["log_path"] = log_path
+
+                upload_card.visible = False
+                chat_card.visible = True
+
+                char_name_label.text = character.name
+                scenario_label.text = substitute_placeholders(
+                    character.scenario or "No scenario",
+                    char_name=character.name,
+                    user_name=user_name,
+                )
+
+                # Render initial messages
+                _render_messages(session, scroll_area)
+
+                ui.notify(f"Loaded {character.name}")
+
+            except ValueError as ve:
+                ui.notify(str(ve), type="negative")
             except Exception as ex:
-                ui.notify(f"Failed to load character: {ex}", type="negative")
+                ui.notify(f"Failed to load: {ex}", type="negative")
 
         user_name_input = ui.input(
             label="Your name (used as {{user}})", value="User"
@@ -176,29 +199,17 @@ async def roleplay_page() -> None:
             auto_upload=True,
         ).classes("w-full").props('accept=".json"')
 
-    # Chat section (hidden until character loaded)
-    with ui.card().classes("w-full") as chat_container:
-        chat_container.visible = False
+    # Chat section
+    with ui.card().classes("w-full") as chat_card:
+        chat_card.visible = False
 
-        # Character header
-        with ui.row().classes("w-full items-center mb-4"):
+        with ui.row().classes("w-full items-center mb-2"):
             char_name_label = ui.label("").classes("text-h5")
         scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
 
-        # Message container
-        with ui.scroll_area().classes("w-full h-96 border rounded"):
-            message_list(
-                Session(
-                    character=__import__(
-                        "promptgrimoire.models", fromlist=["Character"]
-                    ).Character(name="")
-                )
-            )
+        with ui.scroll_area().classes("w-full h-96 border rounded p-2") as scroll_area:
+            chat_container = ui.column().classes("w-full")
 
-        # Response streaming container
-        response_container = ui.row().classes("w-full")
-
-        # Input area
         with ui.row().classes("w-full mt-4"):
             message_input = (
                 ui.input(placeholder="Type your message...")
@@ -207,20 +218,19 @@ async def roleplay_page() -> None:
             )
 
             async def on_send() -> None:
-                if session_holder["session"]:
-                    await send_message_handler(
-                        session_holder["session"],
-                        session_holder["client"],
+                if state["session"]:
+                    await _handle_send(
+                        state["session"],
+                        state["client"],
                         message_input,
-                        session_holder["log_path"],
-                        response_container,
+                        state["log_path"],
+                        chat_container,
+                        scroll_area,
+                        send_button,
                     )
 
-            ui.button("Send", on_click=on_send).classes("ml-2")
-
-            # Also send on Enter key
+            send_button = ui.button("Send", on_click=on_send).classes("ml-2")
             message_input.on("keydown.enter", on_send)
 
-    # Log path display
     with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
         ui.label("Log files are saved to: logs/sessions/")

@@ -20,13 +20,17 @@ class ClaudeClient:
     """Client for interacting with Claude API."""
 
     def __init__(
-        self, api_key: str | None = None, model: str = "claude-sonnet-4-20250514"
+        self,
+        api_key: str | None = None,
+        model: str = "claude-sonnet-4-20250514",
+        thinking_budget: int = 0,
     ) -> None:
         """Initialize the Claude client.
 
         Args:
             api_key: Anthropic API key. If not provided, reads from ANTHROPIC_API_KEY.
             model: Model identifier to use.
+            thinking_budget: Token budget for extended thinking. 0 disables thinking.
 
         Raises:
             ValueError: If no API key is available.
@@ -36,6 +40,7 @@ class ClaudeClient:
             raise ValueError("API key required. Set ANTHROPIC_API_KEY or pass api_key.")
 
         self.model = model
+        self.thinking_budget = thinking_budget
         self._client = anthropic.Anthropic(api_key=self.api_key)
 
     async def send_message(self, session: Session, user_message: str) -> str:
@@ -129,12 +134,13 @@ class ClaudeClient:
         """Stream response without adding user turn to session.
 
         Use when the UI has already added the user turn before calling.
+        Reasoning is captured in metadata but NOT yielded (hidden from students).
 
         Args:
             session: The current roleplay session (user turn already added).
 
         Yields:
-            Text chunks as they arrive.
+            Text chunks as they arrive (response only, not thinking).
         """
         # Activate lorebook entries
         activated = activate_entries(session.character.lorebook_entries, session.turns)
@@ -145,21 +151,59 @@ class ClaudeClient:
         )
         messages = build_messages(session.turns)
 
-        # Stream response
-        full_response = ""
-        with self._client.messages.stream(
-            model=self.model,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=messages,
-        ) as stream:
-            for text in stream.text_stream:
-                full_response += text
-                yield text
+        # Build metadata including activated lorebook entries
+        activated_names = [e.comment or ", ".join(e.keys[:3]) for e in activated]
 
-        # Add complete response as turn
+        # Build API params
+        api_params: dict = {
+            "model": self.model,
+            "max_tokens": 16000 if self.thinking_budget > 0 else 1024,
+            "system": system_prompt,
+            "messages": messages,
+        }
+
+        # Add thinking if budget > 0
+        if self.thinking_budget > 0:
+            api_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self.thinking_budget,
+            }
+
+        # Stream response - collect thinking separately from response
+        full_response = ""
+        thinking_content = ""
+
+        with self._client.messages.stream(**api_params) as stream:
+            for event in stream:
+                # Handle content block delta events
+                if (
+                    hasattr(event, "type")
+                    and event.type == "content_block_delta"
+                    and hasattr(event.delta, "type")
+                ):
+                    delta = event.delta
+                    if delta.type == "thinking_delta":
+                        # Capture thinking but don't yield it
+                        thinking_content += delta.thinking
+                    elif delta.type == "text_delta":
+                        # Yield text response to UI
+                        full_response += delta.text
+                        yield delta.text
+
+        # Build metadata
+        metadata: dict = {
+            "model": self.model,
+            "api": "claude",
+            "activated_lorebook": activated_names,
+        }
+
+        # Add thinking to metadata if present (for logging, not display)
+        if thinking_content:
+            metadata["reasoning"] = thinking_content
+
+        # Add complete response as turn with metadata
         session.add_turn(
             full_response,
             is_user=False,
-            metadata={"model": self.model, "api": "claude"},
+            metadata=metadata,
         )

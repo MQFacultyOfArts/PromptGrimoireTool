@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +16,23 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
+
+
+# Test secrets - keep in one place to avoid duplication
+TEST_STORAGE_SECRET = "test-secret-for-e2e"
+
+
+@pytest.fixture
+def mock_stytch_client():
+    """Create a mocked Stytch B2BClient for unit tests.
+
+    Patches the B2BClient constructor to return a mock, allowing
+    tests to set up expected responses without making real API calls.
+    """
+    with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        yield mock_client
 
 
 def _find_free_port() -> int:
@@ -26,7 +44,7 @@ def _find_free_port() -> int:
 
 # Script to run NiceGUI server
 # Note: We clear PYTEST env vars to prevent NiceGUI from entering test mode
-_SERVER_SCRIPT = """
+_SERVER_SCRIPT = f"""
 import os
 import sys
 
@@ -35,13 +53,16 @@ for key in list(os.environ.keys()):
     if 'PYTEST' in key or 'NICEGUI' in key:
         del os.environ[key]
 
+# Enable mock auth for E2E tests
+os.environ['AUTH_MOCK'] = 'true'
+os.environ['STORAGE_SECRET'] = '{TEST_STORAGE_SECRET}'
+
 port = int(sys.argv[1])
 
 from nicegui import ui
-import promptgrimoire.pages.sync_demo  # noqa: F401
-import promptgrimoire.pages.text_selection  # noqa: F401
+import promptgrimoire.pages  # noqa: F401 - registers routes
 
-ui.run(port=port, reload=False, show=False)
+ui.run(port=port, reload=False, show=False, storage_secret='{TEST_STORAGE_SECRET}')
 """
 
 

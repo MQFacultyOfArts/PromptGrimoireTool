@@ -13,6 +13,37 @@ Uses Playwright to simulate user text selection in the browser.
 from playwright.sync_api import Page, expect
 
 
+def select_paragraph_text(page: Page, paragraph_index: int = 0) -> None:
+    """Select all text in a paragraph using JavaScript.
+
+    More reliable than triple-click which can be flaky in headless browsers.
+    Waits for handlers to be ready before selecting.
+
+    Args:
+        page: Playwright page object.
+        paragraph_index: Which paragraph to select (0-indexed).
+    """
+    # Wait for JS handlers to be set up
+    content = page.get_by_test_id("selectable-content")
+    expect(content).to_have_attribute("data-handlers-ready", "true", timeout=5000)
+
+    page.evaluate(
+        f"""
+        const selector = '[data-testid="selectable-content"]';
+        const container = document.querySelector(selector);
+        const p = container.querySelectorAll('p')[{paragraph_index}];
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        // Trigger mouseup to fire our selection handler
+        container.dispatchEvent(new MouseEvent('mouseup', {{bubbles: true}}));
+        """
+    )
+
+
 class TestPageLoads:
     """Test that the demo page loads correctly."""
 
@@ -46,13 +77,11 @@ class TestTextSelection:
     """Test text selection capture."""
 
     def test_text_can_be_selected(self, page: Page, text_selection_url: str) -> None:
-        """Text can be selected via click-drag."""
+        """Text can be selected via JavaScript selection API."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-
-        # Select text by triple-clicking a paragraph (selects whole paragraph)
-        content.locator("p").first.click(click_count=3)
+        # Select text using reliable JavaScript method
+        select_paragraph_text(page, 0)
 
         # Verify browser has selection
         selection = page.evaluate("window.getSelection().toString()")
@@ -64,10 +93,8 @@ class TestTextSelection:
         """Selected text is captured and displayed in selection info panel."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-
-        # Triple-click to select a paragraph
-        content.locator("p").first.click(click_count=3)
+        # Select text using reliable JavaScript method
+        select_paragraph_text(page, 0)
 
         # Wait for Python handler to update UI
         selected_text = page.get_by_test_id("selected-text")
@@ -79,10 +106,8 @@ class TestTextSelection:
         """Start and end offsets are captured."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-
-        # Select text
-        content.locator("p").first.click(click_count=3)
+        # Select text using reliable JavaScript method
+        select_paragraph_text(page, 0)
 
         # Check offsets are populated
         start_offset = page.get_by_test_id("start-offset")
@@ -129,10 +154,8 @@ class TestVisualHighlight:
         """Selected text receives highlight CSS class after clicking button."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-
-        # Select text
-        content.locator("p").first.click(click_count=3)
+        # Select text using reliable JavaScript method
+        select_paragraph_text(page, 0)
 
         # Wait for selection to be captured
         expect(page.get_by_test_id("selected-text")).not_to_have_text(
@@ -152,10 +175,8 @@ class TestVisualHighlight:
         """Highlighted text has visible background color."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-
-        # Select and highlight text
-        content.locator("p").first.click(click_count=3)
+        # Select and highlight text using reliable JavaScript method
+        select_paragraph_text(page, 0)
         expect(page.get_by_test_id("selected-text")).not_to_have_text(
             "No selection", timeout=2000
         )
@@ -179,18 +200,15 @@ class TestVisualHighlight:
         """Multiple separate highlights can be created."""
         page.goto(text_selection_url)
 
-        content = page.get_by_test_id("selectable-content")
-        paragraphs = content.locator("p")
-
-        # First highlight
-        paragraphs.nth(0).click(click_count=3)
+        # First highlight using reliable JavaScript method
+        select_paragraph_text(page, 0)
         expect(page.get_by_test_id("selected-text")).not_to_have_text(
             "No selection", timeout=2000
         )
         page.get_by_test_id("create-highlight-btn").click()
 
         # Second highlight (different paragraph)
-        paragraphs.nth(1).click(click_count=3)
+        select_paragraph_text(page, 1)
         expect(page.get_by_test_id("selected-text")).not_to_have_text(
             "No selection", timeout=2000
         )

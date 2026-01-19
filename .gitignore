@@ -9,8 +9,16 @@ wheels/
 # Virtual environments
 .venv
 
-# Environment variables
+# Environment files (contain secrets)
 .env
+.env.local
+.env.development
+.env.production
+.env.sandbox
 
-# NiceGUI
+# Keep the example template
+!.env.example
 .nicegui/
+
+# Session logs (generated data)
+logs/

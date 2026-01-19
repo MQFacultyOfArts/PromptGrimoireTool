@@ -22,10 +22,40 @@ library references during development.
 
 ## stytch
 
+### B2B Overview
+
+- [B2B Basics](stytch/b2b-basics.md) - Organizations, Members, settings, core flows, features
+- [B2B Overview](stytch/b2b-overview.md) - Organizations, Members, Sessions, auth methods
+- [B2B Python Quickstart](stytch/b2b-quickstart.md) - Client setup, discovery flow, sessions
+
+### Magic Links (B2B)
+
+- [Login/Signup](stytch/b2b-magic-links.md) - Organization-scoped magic link emails
+- [Authenticate](stytch/b2b-authenticate.md) - Token authentication, session creation
+- [Invite](stytch/b2b-invite.md) - Invite new Members with roles
+
+### SSO
+
+- [SSO Overview](stytch/sso-overview.md) - SAML/OIDC setup, external connections
+- [OIDC Connections](stytch/sso-oidc.md) - OpenID Connect IdP integration
+- [SAML Connections](stytch/sso-saml.md) - SAML IdP integration, AAF setup
+
+### RBAC & Testing
+
+- [RBAC Guide](stytch/rbac-guide.md) - Roles, permissions, default resources
+- [Testing Guide](stytch/testing.md) - E2E testing, sandbox values
+
+### Reference (B2C)
+
 - [Python SDK](stytch/python-sdk.md) - Magic links, sessions, async support
 - [RBAC](stytch/rbac.md) - Resources, roles, permissions (B2B only)
 - [Magic Link Flow](stytch/magic-link-flow.md) - Complete auth flow with NiceGUI integration
 - [Passkeys](stytch/passkeys.md) - WebAuthn registration and authentication
+
+## aaf
+
+- [OIDC Integration](aaf/oidc-integration.md) - Endpoints, scopes, claims, registration process
+- [Rapid IdP](aaf/rapid-idp.md) - SAML identity provider for Australian research/education
 
 ## sqlmodel
 

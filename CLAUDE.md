@@ -6,6 +6,26 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 **Target:** Session 1 2025 (Feb 23)
 
+## Use Cases
+
+### 1. Prompt Annotation & Sharing (Core)
+
+Collaborative annotation of AI conversations for teaching prompt engineering. Students and instructors can highlight, comment on, and tag conversation turns.
+
+### 2. Legal Client Interview Simulation (Spike 4)
+
+Import SillyTavern character cards to run AI-powered roleplay scenarios. Initial use case: tort law training where students interview a simulated client (Becky Bennett workplace injury case).
+
+- **Input**: SillyTavern chara_card_v3 JSON with embedded lorebook
+- **Features**: Keyword-triggered context injection, empathy-based trust mechanics
+- **Output**: JSONL chat log for post-session annotation
+
+See: [Issue #32](https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/32)
+
+### 3. Legal Case Brief Tool (Planned)
+
+Structured legal case brief generation and analysis. PRD forthcoming.
+
 ## Tech Stack
 
 - **Python 3.14** - bleeding edge
@@ -73,18 +93,22 @@ uv run playwright test
 src/promptgrimoire/
 ├── __init__.py
 ├── main.py           # NiceGUI app entry
-├── models/           # SQLModel definitions
-├── parsers/          # Conversation format parsers
+├── models/           # Data models (Character, Session, Turn, LorebookEntry)
+├── parsers/          # SillyTavern character card parser
+├── llm/              # Claude API client, lorebook activation, prompt assembly
+├── pages/            # NiceGUI page routes (/roleplay, /logs, /auth, etc.)
 ├── auth/             # Stytch integration
 └── crdt/             # pycrdt collaboration logic
 
 tests/
 ├── conftest.py       # Shared fixtures
+├── fixtures/         # Test data (Becky Bennett character card)
 ├── unit/             # Unit tests
 ├── integration/      # Integration tests
 └── e2e/              # Playwright E2E tests
 
 docs/                 # Cached documentation (auto-populated)
+logs/sessions/        # JSONL session logs (auto-created)
 ```
 
 ## Documentation Caching
@@ -107,6 +131,21 @@ Stytch handles:
 - Passkey authentication
 - RBAC (admin/instructor/student roles)
 - Class invitations
+
+## Environment Variables
+
+### Required
+
+- `ANTHROPIC_API_KEY` - Claude API key for roleplay sessions
+
+### Optional
+
+- `CLAUDE_MODEL` - Model to use (default: `claude-sonnet-4-20250514`)
+- `CLAUDE_THINKING_BUDGET` - Extended thinking token budget (default: `1024`, 0 to disable)
+- `LOREBOOK_TOKEN_BUDGET` - Max tokens for lorebook entries (default: `0` = unlimited)
+- `ROLEPLAY_LOG_DIR` - Directory for JSONL session logs (default: `logs/sessions`)
+- `STYTCH_PROJECT_ID` - Stytch project ID for auth
+- `STYTCH_SECRET` - Stytch secret key
 
 ## Conventions
 

@@ -6,6 +6,26 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 **Target:** Session 1 2025 (Feb 23)
 
+## Use Cases
+
+### 1. Prompt Annotation & Sharing (Core)
+
+Collaborative annotation of AI conversations for teaching prompt engineering. Students and instructors can highlight, comment on, and tag conversation turns.
+
+### 2. Legal Client Interview Simulation (Spike 4)
+
+Import SillyTavern character cards to run AI-powered roleplay scenarios. Initial use case: tort law training where students interview a simulated client (Becky Bennett workplace injury case).
+
+- **Input**: SillyTavern chara_card_v3 JSON with embedded lorebook
+- **Features**: Keyword-triggered context injection, empathy-based trust mechanics
+- **Output**: JSONL chat log for post-session annotation
+
+See: [Issue #32](https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/32)
+
+### 3. Legal Case Brief Tool (Planned)
+
+Structured legal case brief generation and analysis. PRD forthcoming.
+
 ## Tech Stack
 
 - **Python 3.14** - bleeding edge

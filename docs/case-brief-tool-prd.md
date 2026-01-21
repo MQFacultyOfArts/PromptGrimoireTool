@@ -271,11 +271,29 @@ def word_count(text: str) -> int:
 
 ## Security and Privacy
 
+### Access Control
+
 - Student work visible only to: the student, instructors, assigned peer reviewers (Phase 2)
 - Case documents may be copyrighted: no public sharing, copy-paste prevention
 - Audit log of document access
+
+### Authentication Requirements
+
+- **Server-side session validation**: Do not trust client-side storage for auth state. Validate session tokens against Stytch on every protected request.
+- **Session expiration**: Validate that session tokens are still valid, not just present.
+- **Token validation**: Validate format and length of auth tokens before processing.
+
+### Input Validation
+
+- **RTF upload size limit**: Maximum 10MB per file to prevent DoS
+- **Text field length limits**: All user-input fields (notes, brief content, course names) must have reasonable length limits
+- **HTML sanitization**: WYSIWYG editor output must be sanitized before storage/display to prevent XSS
+
+### Infrastructure
+
 - HTTPS required
 - Encryption at rest: Phase 2
+- Rate limiting on auth endpoints (before public deployment)
 
 ## Success Metrics
 

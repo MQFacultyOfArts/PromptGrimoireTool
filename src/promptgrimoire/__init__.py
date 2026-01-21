@@ -77,8 +77,8 @@ def main() -> None:
     print(f"PromptGrimoire v{__version__}")
     print(f"Starting application on http://0.0.0.0:{port}")
 
-    ui.run(host="0.0.0.0", port=port, reload=False, storage_secret=storage_secret)
+    ui.run(host="0.0.0.0", port=port, reload=True, storage_secret=storage_secret)
 
 
-if __name__ == "__main__":
+if __name__ in {"__main__", "__mp_main__"}:
     main()

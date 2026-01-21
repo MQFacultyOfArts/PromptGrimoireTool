@@ -504,6 +504,7 @@ async def case_tool_page() -> None:
                     comment_dialog.open()
 
                 # Card with click-to-scroll on entire background
+                # Store start_offset for scroll sync
                 with (
                     ui.element("div")
                     .classes("comment-card cursor-pointer")
@@ -511,7 +512,10 @@ async def case_tool_page() -> None:
                         f"background-color: {tag_color}15; "
                         f"border-left: 3px solid {tag_color};"
                     )
-                    .props(f'data-highlight-id="{highlight_id}"')
+                    .props(
+                        f'data-highlight-id="{highlight_id}" '
+                        f'data-start-offset="{h.start_offset}"'
+                    )
                     .on("click", scroll_to_highlight)
                 ):
                     # Author and timestamp header row
@@ -595,6 +599,91 @@ async def case_tool_page() -> None:
             }});
         """)
 
+    async def _setup_scroll_sync(container: ui.element) -> None:
+        """Set up scroll synchronization between content and annotation sidebar.
+
+        When scrolling down, syncs to the last visible highlight (emerging at bottom).
+        When scrolling up, syncs to the first visible highlight (emerging at top).
+        """
+        container_id = container.id
+        await ui.run_javascript(f"""
+            const container = getHtmlElement({container_id});
+            if (!container) {{
+                console.error('Scroll sync: container not found');
+                return;
+            }}
+
+            // The actual scrollable element might be the container itself
+            // or we need to find the element with case-content class
+            const scrollable = container.classList.contains('case-content')
+                ? container
+                : container.querySelector('.case-content') || container;
+
+            // Remove existing scroll handler if any
+            if (scrollable._scrollSyncHandler) {{
+                scrollable.removeEventListener('scroll', scrollable._scrollSyncHandler);
+            }}
+
+            // Track scroll position for direction detection
+            let lastScrollTop = scrollable.scrollTop;
+            // Track which highlight is currently "active" to avoid re-scrolling
+            let currentHighlightId = null;
+
+            // Throttle to avoid excessive updates
+            let scrollTimeout = null;
+
+            scrollable._scrollSyncHandler = function() {{
+                if (scrollTimeout) return;
+                scrollTimeout = setTimeout(() => {{
+                    scrollTimeout = null;
+
+                    // Determine scroll direction
+                    const currentScrollTop = scrollable.scrollTop;
+                    const scrollingDown = currentScrollTop > lastScrollTop;
+                    lastScrollTop = currentScrollTop;
+
+                    // Find visible highlight marks
+                    const containerRect = scrollable.getBoundingClientRect();
+                    const marks = scrollable.querySelectorAll('mark.case-highlight');
+                    const visibleMarks = [];
+
+                    for (const mark of marks) {{
+                        const markRect = mark.getBoundingClientRect();
+                        // Mark is visible (within container bounds)
+                        if (markRect.top >= containerRect.top &&
+                            markRect.bottom <= containerRect.bottom) {{
+                            visibleMarks.push(mark);
+                        }}
+                    }}
+
+                    // Pick the appropriate mark based on scroll direction
+                    // Scrolling down: use last visible (emerging from bottom)
+                    // Scrolling up: use first visible (emerging from top)
+                    const targetMark = scrollingDown
+                        ? visibleMarks[visibleMarks.length - 1]
+                        : visibleMarks[0];
+
+                    if (targetMark && targetMark.dataset.highlightId !== currentHighlightId) {{
+                        currentHighlightId = targetMark.dataset.highlightId;
+
+                        // Scroll the corresponding sidebar card into view
+                        const card = document.querySelector(
+                            '.annotation-sidebar [data-highlight-id="' +
+                            currentHighlightId + '"]'
+                        );
+                        if (card) {{
+                            card.scrollIntoView({{
+                                behavior: 'smooth',
+                                block: 'nearest'
+                            }});
+                        }}
+                    }}
+                }}, 100);
+            }};
+
+            scrollable.addEventListener('scroll', scrollable._scrollSyncHandler);
+        """)
+
     async def _render_case_content(
         container: ui.element, preserve_scroll: bool = False
     ) -> None:
@@ -667,6 +756,7 @@ async def case_tool_page() -> None:
 
         # Set up JS event handlers after content is rendered
         await _setup_selection_handlers(content_container)
+        await _setup_scroll_sync(content_container)
 
     case_select.on("update:model-value", lambda _: load_selected_case())
 

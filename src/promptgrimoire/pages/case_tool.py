@@ -34,7 +34,7 @@ from promptgrimoire.models import (
     BriefTag,
     ParsedRTF,
 )
-from promptgrimoire.parsers import parse_rtf
+from promptgrimoire.parsers import HighlightSpec, insert_highlights, parse_rtf
 
 
 def _get_current_user() -> dict | None:
@@ -107,7 +107,6 @@ async def case_tool_page() -> None:
         "start": 0,
         "end": 0,
         "para_num": None,
-        "header": None,
     }
     editing_highlight: dict[str, DBHighlight | None] = {"highlight": None}
     # Cache for loaded comments (highlight_id -> list of comments)
@@ -332,8 +331,8 @@ async def case_tool_page() -> None:
                     await db_delete_highlight(h.id)
                     ui.notify("Annotation deleted")
                     comment_dialog.close()
-                    # Re-render to remove the highlight marker
-                    await _render_case_content(content_container)
+                    # Re-render to remove the highlight marker (preserve scroll)
+                    await _render_case_content(content_container, preserve_scroll=True)
                     await _setup_selection_handlers(content_container)
                     await refresh_sidebar()
 
@@ -411,11 +410,7 @@ async def case_tool_page() -> None:
         para_num_raw = selection_state.get("para_num")
         para_num = int(para_num_raw) if para_num_raw is not None else None
 
-        # Extract section_header as str if present
-        header = selection_state.get("header")
-        section_header = str(header) if header else None
-
-        await create_highlight(
+        new_highlight = await create_highlight(
             case_id=str(case_id),
             tag=tag.value,
             start_offset=start_offset,
@@ -423,7 +418,6 @@ async def case_tool_page() -> None:
             text=str(text),
             created_by=_get_username(),
             para_num=para_num,
-            section_header=section_header,
         )
 
         # Clear selection
@@ -433,25 +427,30 @@ async def case_tool_page() -> None:
                 "start": 0,
                 "end": 0,
                 "para_num": None,
-                "header": None,
             }
         )
 
         ui.notify(f"Tagged as {tag.value.replace('_', ' ').title()}")
 
-        # Re-render content to show the new highlight marker
-        await _render_case_content(content_container)
+        # Re-render content to show the new highlight marker (preserve scroll)
+        await _render_case_content(content_container, preserve_scroll=True)
         await _setup_selection_handlers(content_container)
-        await refresh_sidebar()
+        await refresh_sidebar(scroll_to_highlight_id=str(new_highlight.id))
 
-    async def refresh_sidebar() -> None:
-        """Refresh the annotations sidebar."""
+    async def refresh_sidebar(scroll_to_highlight_id: str | None = None) -> None:
+        """Refresh the annotations sidebar.
+
+        Args:
+            scroll_to_highlight_id: If provided, scroll the sidebar to show this annotation.
+        """
         annotations_container.clear()
         if not current_case.get("id"):
             return
 
         case_id = str(current_case["id"])
         case_highlights = await get_highlights_for_case(case_id)
+        # Sort by document position (start_offset)
+        case_highlights.sort(key=lambda h: h.start_offset)
 
         if not case_highlights:
             with annotations_container:
@@ -522,23 +521,16 @@ async def case_tool_page() -> None:
                         )
                         ui.label(timestamp).classes("comment-timestamp")
 
-                    # Tag badge and location info row
+                    # Tag badge and paragraph number
                     with ui.row().classes("items-center gap-2 mb-1"):
                         ui.label(tag_name).classes("comment-tag-badge").style(
                             f"background-color: {tag_color}; "
                             "color: white; padding: 2px 6px; border-radius: 3px; "
                             "font-size: 0.7rem; display: inline-block;"
                         )
-                        # Location context: paragraph number and section header
-                        location_parts = []
+                        # Paragraph number for location context
                         if h.para_num is not None:
-                            location_parts.append(f"[{h.para_num}]")
-                        if h.section_header:
-                            location_parts.append(h.section_header)
-                        if location_parts:
-                            ui.label(" · ".join(location_parts)).classes(
-                                "text-xs text-grey"
-                            )
+                            ui.label(f"[{h.para_num}]").classes("text-xs text-grey")
 
                     # Quoted text from document
                     preview = h.text[:120]
@@ -574,100 +566,48 @@ async def case_tool_page() -> None:
                         f"color: {tag_color}; font-size: 0.75rem;"
                     ).on("click", open_thread)
 
-    async def _apply_highlights_to_content(container: ui.element) -> None:
-        """Apply visual highlight markers to the document content."""
-        case_id = current_case.get("id")
-        if not case_id:
-            return
+        # Scroll to specific annotation if requested
+        if scroll_to_highlight_id:
+            await ui.run_javascript(f"""
+                const card = document.querySelector(
+                    '.annotation-sidebar [data-highlight-id="{scroll_to_highlight_id}"]'
+                );
+                if (card) {{
+                    card.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                }}
+            """)
 
-        case_highlights = await get_highlights_for_case(str(case_id))
-        if not case_highlights:
-            return
-
-        # Build highlight data for JavaScript
-        # Sort by start offset descending so we apply from end to start
-        # (to avoid offset shifting issues)
-        highlight_data = [
-            {
-                "id": str(h.id),
-                "start": h.start_offset,
-                "end": h.end_offset,
-                "color": TAG_COLORS.get(BriefTag(h.tag), "#666"),
-                "tag": h.tag,
-            }
-            for h in sorted(case_highlights, key=lambda x: x.start_offset, reverse=True)
-        ]
-
+    async def _setup_highlight_click_handlers(container: ui.element) -> None:
+        """Set up click handlers for pre-rendered highlight marks."""
         container_id = container.id
-        # Use longer timeout for large documents with many text nodes
-        await ui.run_javascript(
-            f"""
+        await ui.run_javascript(f"""
             const container = getHtmlElement({container_id});
             if (!container) return;
 
-            const highlights = {highlight_data};
-
-            // Find text node and offset for a given character position
-            function findTextPosition(root, targetOffset) {{
-                const walker = document.createTreeWalker(
-                    root, NodeFilter.SHOW_TEXT, null
-                );
-                let currentOffset = 0;
-                let node;
-
-                while ((node = walker.nextNode())) {{
-                    const nodeLength = node.textContent.length;
-                    if (currentOffset + nodeLength >= targetOffset) {{
-                        return {{
-                            node: node,
-                            offset: targetOffset - currentOffset
-                        }};
+            container.querySelectorAll('mark.case-highlight').forEach(mark => {{
+                mark.addEventListener('click', function(e) {{
+                    e.stopPropagation();
+                    const highlightId = this.dataset.highlightId;
+                    if (highlightId) {{
+                        emitEvent('highlight_clicked', {{ highlightId: highlightId }});
                     }}
-                    currentOffset += nodeLength;
-                }}
-                return null;
-            }}
-
-            // Apply each highlight
-            highlights.forEach(h => {{
-                try {{
-                    const startPos = findTextPosition(container, h.start);
-                    const endPos = findTextPosition(container, h.end);
-
-                    if (!startPos || !endPos) return;
-
-                    const range = document.createRange();
-                    range.setStart(startPos.node, startPos.offset);
-                    range.setEnd(endPos.node, endPos.offset);
-
-                    // Create highlight mark element
-                    const mark = document.createElement('mark');
-                    mark.className = 'case-highlight';
-                    mark.dataset.highlightId = h.id;
-                    mark.dataset.tag = h.tag;
-                    mark.style.backgroundColor = h.color + '40';
-                    mark.style.borderBottom = '2px solid ' + h.color;
-                    mark.style.cursor = 'pointer';
-
-                    // Wrap the range
-                    range.surroundContents(mark);
-
-                    // Add click handler to open editor
-                    mark.addEventListener('click', function(e) {{
-                        e.stopPropagation();
-                        emitEvent('highlight_clicked', {{ highlightId: h.id }});
-                    }});
-                }} catch (e) {{
-                    // Range may cross element boundaries - skip this highlight
-                    console.warn('Could not apply highlight:', h.id, e);
-                }}
+                }});
             }});
-        """,
-            timeout=5.0,
-        )
+        """)
 
-    async def _render_case_content(container: ui.element) -> None:
-        """Render case HTML."""
+    async def _render_case_content(
+        container: ui.element, preserve_scroll: bool = False
+    ) -> None:
+        """Render case HTML with highlights applied server-side."""
+        container_id = container.id
+
+        # Save scroll position if preserving
+        scroll_top = 0
+        if preserve_scroll:
+            scroll_top = await ui.run_javascript(
+                f"getHtmlElement({container_id})?.scrollTop || 0"
+            )
+
         container.clear()
 
         data = current_case.get("data")
@@ -677,14 +617,38 @@ async def case_tool_page() -> None:
             return
 
         parsed = data
+        case_id = current_case.get("id")
+
+        # Build highlight specs from database
+        html_with_highlights = parsed.html
+        if case_id:
+            case_highlights = await get_highlights_for_case(str(case_id))
+            if case_highlights:
+                specs = [
+                    HighlightSpec(
+                        id=str(h.id),
+                        start=h.start_offset,
+                        end=h.end_offset,
+                        color=TAG_COLORS.get(BriefTag(h.tag), "#666"),
+                        tag=h.tag,
+                    )
+                    for h in case_highlights
+                ]
+                html_with_highlights = insert_highlights(parsed.html, specs)
 
         # SECURITY: RTF files must come from trusted sources (CaseLaw NSW).
         # If user uploads are ever allowed, implement allowlist-based sanitization.
         with container:
-            ui.html(parsed.html, sanitize=False)
+            ui.html(html_with_highlights, sanitize=False)
 
-        # Apply highlight markers after rendering
-        await _apply_highlights_to_content(container)
+        # Add click handlers for pre-rendered highlight marks
+        await _setup_highlight_click_handlers(container)
+
+        # Restore scroll position
+        if preserve_scroll and scroll_top:
+            await ui.run_javascript(
+                f"getHtmlElement({container_id}).scrollTop = {scroll_top}"
+            )
 
     async def load_selected_case() -> None:
         """Load the currently selected case."""
@@ -714,7 +678,6 @@ async def case_tool_page() -> None:
         client_x = e.args.get("clientX", 0)
         client_y = e.args.get("clientY", 0)
         para_num = e.args.get("paraNum")
-        header = e.args.get("header")
 
         if not isinstance(text, str) or not text.strip():
             return
@@ -727,7 +690,6 @@ async def case_tool_page() -> None:
                 "start": start,
                 "end": end,
                 "para_num": para_num,
-                "header": header,
             }
         )
 
@@ -815,58 +777,55 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                 // Save range for potential highlighting
                 window._savedRange = range.cloneRange();
 
-                // Find paragraph number: look for ancestor <li> in an <ol>
+                // Find paragraph number
+                // Strategy: First try manual paragraph numbers (e.g., "48." in a <p>),
+                // then fall back to <ol start="N"> if that's a meaningful paragraph number.
+                // This handles nested lists inside numbered paragraphs correctly.
                 let paraNum = null;
-                let node = range.startContainer;
-                while (node && node !== container) {{
-                    if (node.nodeName === 'LI') {{
-                        const ol = node.closest('ol');
-                        if (ol) {{
-                            const start = ol.getAttribute('start') || '1';
-                            const startNum = parseInt(start, 10);
-                            const idx = Array.from(ol.children).indexOf(node);
-                            paraNum = startNum + idx;
+
+                // First: look for manual paragraph numbers in ancestor <p> or <div>
+                // These are the main paragraph numbers like "48." before a list
+                let pNode = range.startContainer;
+                while (pNode && pNode !== container) {{
+                    if (pNode.nodeName === 'P' || pNode.nodeName === 'DIV') {{
+                        const pText = pNode.textContent.trim();
+                        // Match "48." or "[48]" at the start of text
+                        const re = /^(?:\[(\d+)\]|(\d+)\.)\s/;
+                        const match = pText.match(re);
+                        if (match) {{
+                            const num = match[1] || match[2];
+                            paraNum = parseInt(num, 10);
+                            break;
                         }}
-                        break;
                     }}
-                    node = node.parentNode;
+                    pNode = pNode.parentNode;
                 }}
 
-                // Fallback: manual paragraph numbers [1], (1), or 1.
+                // Second: if no manual number found, try outermost <ol>/<li> with start > 1
+                // (start="1" usually means a sub-list, not the main paragraph)
                 if (paraNum === null) {{
-                    let pNode = range.startContainer;
-                    while (pNode && pNode !== container) {{
-                        if (pNode.nodeName === 'P' || pNode.nodeName === 'DIV') {{
-                            const pText = pNode.textContent.trim();
-                            const re = /^(?:\[(\d+)\]|\((\d+)\)|(\d+)\.)\s/;
-                            const match = pText.match(re);
-                            if (match) {{
-                                const num = match[1] || match[2] || match[3];
-                                paraNum = parseInt(num, 10);
+                    let node = range.startContainer;
+                    let outerOl = null;
+                    let outerLi = null;
+                    while (node && node !== container) {{
+                        if (node.nodeName === 'LI') {{
+                            const ol = node.parentElement;
+                            if (ol && ol.nodeName === 'OL') {{
+                                outerOl = ol;
+                                outerLi = node;
                             }}
-                            break;
                         }}
-                        pNode = pNode.parentNode;
+                        node = node.parentNode;
                     }}
-                }}
-
-                // Find nearest preceding header (bold uppercase)
-                let header = null;
-                const sel = 'b, h1, h2, h3, h4, h5, h6';
-                const headers = container.querySelectorAll(sel);
-                for (const h of headers) {{
-                    const hText = h.textContent.trim();
-                    // Uppercase heading like JUDGMENT, GROUNDS OF APPEAL
-                    if (hText === hText.toUpperCase() && hText.length > 3) {{
-                        // Check if header comes before our selection
-                        const hRange = document.createRange();
-                        hRange.selectNodeContents(h);
-                        const cmp = range.compareBoundaryPoints(
-                            Range.START_TO_START, hRange);
-                        if (cmp >= 0) {{
-                            header = hText;
-                        }} else {{
-                            break;
+                    if (outerOl && outerLi) {{
+                        const olStart = outerOl.getAttribute('start') || '1';
+                        const olStartNum = parseInt(olStart, 10);
+                        const liIdx = Array.from(outerOl.children).indexOf(outerLi);
+                        const listParaNum = olStartNum + liIdx;
+                        // Only use list number if it's > 1 (meaningful paragraph number)
+                        // or if the <ol> explicitly has a start attribute
+                        if (olStartNum > 1 || outerOl.hasAttribute('start')) {{
+                            paraNum = listParaNum;
                         }}
                     }}
                 }}
@@ -877,8 +836,7 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                     end: start + text.length,
                     clientX: e.clientX,
                     clientY: e.clientY,
-                    paraNum: paraNum,
-                    header: header
+                    paraNum: paraNum
                 }});
             }}, 10);
         }};

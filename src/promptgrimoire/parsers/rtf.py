@@ -6,8 +6,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import pypandoc
-
 from promptgrimoire.models import ParsedRTF
 
 # Maximum file size: 10MB (per PRD security requirements)
@@ -15,16 +13,15 @@ _MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 def parse_rtf(path: Path) -> ParsedRTF:
-    """Parse an RTF file to HTML and plain text.
+    """Parse an RTF file to HTML.
 
-    Uses LibreOffice for HTML conversion (preserves styles/layout) and
-    pandoc for plain text (for search/indexing).
+    Uses LibreOffice for HTML conversion (preserves styles/layout).
 
     Args:
         path: Path to the RTF file.
 
     Returns:
-        ParsedRTF with original blob, HTML, and plain text.
+        ParsedRTF with original blob and HTML.
 
     Raises:
         FileNotFoundError: If the file doesn't exist.
@@ -49,16 +46,9 @@ def parse_rtf(path: Path) -> ParsedRTF:
     # Convert to HTML using LibreOffice (preserves styles)
     html = _convert_rtf_to_html_libreoffice(path)
 
-    # Convert to plain text using pandoc (for search/indexing)
-    try:
-        plain_text = pypandoc.convert_file(str(path), "plain")
-    except Exception as e:
-        raise ValueError(f"Failed to convert RTF to plain text: {e}") from e
-
     return ParsedRTF(
         original_blob=original_blob,
         html=html,
-        plain_text=plain_text,
         source_filename=path.name,
     )
 

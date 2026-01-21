@@ -53,27 +53,6 @@ class TestParseRTF:
         # LibreOffice uses <i> tags for italics
         assert "<em>" in result.html or "<i>" in result.html
 
-    def test_generates_plain_text(self, lawlis_rtf_path: Path) -> None:
-        """Plain text output is generated for search."""
-        result = parse_rtf(lawlis_rtf_path)
-
-        assert isinstance(result.plain_text, str)
-        assert len(result.plain_text) > 0
-
-    def test_plain_text_contains_case_name(self, lawlis_rtf_path: Path) -> None:
-        """Case name appears in plain text output."""
-        result = parse_rtf(lawlis_rtf_path)
-
-        assert "Lawlis v R" in result.plain_text
-
-    def test_plain_text_has_paragraph_numbers(self, lawlis_rtf_path: Path) -> None:
-        """Paragraph numbers are preserved in plain text."""
-        result = parse_rtf(lawlis_rtf_path)
-
-        # NSW judgments use "1." style numbering
-        assert "1." in result.plain_text
-        assert "2." in result.plain_text
-
     def test_stores_source_filename(self, lawlis_rtf_path: Path) -> None:
         """Source filename is preserved."""
         result = parse_rtf(lawlis_rtf_path)

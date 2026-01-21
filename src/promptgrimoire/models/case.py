@@ -63,13 +63,11 @@ class ParsedRTF:
     Attributes:
         original_blob: Raw RTF file content as bytes for DB storage.
         html: LibreOffice HTML output for faithful browser rendering.
-        plain_text: Plain text for search and indexing.
         source_filename: Original filename for metadata.
     """
 
     original_blob: bytes
     html: str
-    plain_text: str
     source_filename: str
 
 
@@ -98,7 +96,7 @@ class Highlight:
         id: Unique identifier.
         case_id: Which case this highlight belongs to.
         tag: The brief tag categorizing this highlight.
-        start_offset: Character position in plain_text where highlight starts.
+        start_offset: Character position in HTML text content where highlight starts.
         end_offset: Character position where highlight ends.
         text: The highlighted text content.
         comments: Thread of comments (replies) on this highlight.

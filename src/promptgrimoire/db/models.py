@@ -96,3 +96,51 @@ class Conversation(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
+
+
+class Highlight(SQLModel, table=True):
+    """A highlighted passage in a case document for annotation.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        case_id: Identifier for the case document (e.g., filename stem).
+        tag: The brief tag type (e.g., 'jurisdiction', 'legal_issues').
+        start_offset: Character position where highlight starts.
+        end_offset: Character position where highlight ends.
+        text: The highlighted text content.
+        created_by: Display name of the user who created this highlight.
+        created_at: Timestamp when highlight was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    case_id: str = Field(index=True, max_length=255)
+    tag: str = Field(max_length=50)
+    start_offset: int
+    end_offset: int
+    text: str
+    created_by: str = Field(max_length=100, default="Unknown")
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class HighlightComment(SQLModel, table=True):
+    """A comment in a reply thread on a highlight.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        highlight_id: Foreign key to the parent Highlight (CASCADE DELETE).
+        author: Display name of the comment author.
+        text: The comment content.
+        created_at: Timestamp when comment was posted.
+    """
+
+    __tablename__ = "highlight_comment"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    highlight_id: UUID = Field(sa_column=_cascade_fk_column("highlight.id"))
+    author: str = Field(max_length=100)
+    text: str
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )

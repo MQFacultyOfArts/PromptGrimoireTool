@@ -10,15 +10,28 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from nicegui import app, ui
 
+from promptgrimoire.db import (
+    Highlight as DBHighlight,
+)
+from promptgrimoire.db import (
+    HighlightComment,
+    create_comment,
+    create_highlight,
+    get_comments_for_highlight,
+    get_highlight_by_id,
+    get_highlights_for_case,
+)
+from promptgrimoire.db import (
+    delete_highlight as db_delete_highlight,
+)
 from promptgrimoire.models import (
     TAG_COLORS,
     TAG_SHORTCUTS,
     BriefTag,
-    Comment,
-    Highlight,
     ParsedRTF,
 )
 from promptgrimoire.parsers import parse_rtf
@@ -40,8 +53,6 @@ def _get_username() -> str:
 
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from nicegui.events import GenericEventArguments
 
 # Path to fixtures for demo
@@ -86,8 +97,7 @@ async def case_tool_page() -> None:
         """Convert tag to Quasar color name (underscores -> hyphens)."""
         return f"tag-{tag.value.replace('_', '-')}"
 
-    # Page-local state (not shared between users)
-    highlights: dict[str, list[Highlight]] = {}
+    # Page-local state
     current_case: dict[str, ParsedRTF | str | None] = {
         "id": None,
         "data": None,
@@ -97,31 +107,9 @@ async def case_tool_page() -> None:
         "start": 0,
         "end": 0,
     }
-    editing_highlight: dict[str, Highlight | None] = {"highlight": None}
-
-    # Helper functions using page-local state
-    def get_highlights(case_id: str) -> list[Highlight]:
-        return highlights.get(case_id, [])
-
-    def add_highlight(highlight: Highlight) -> None:
-        if highlight.case_id not in highlights:
-            highlights[highlight.case_id] = []
-        highlights[highlight.case_id].append(highlight)
-
-    def add_comment_to_highlight(
-        case_id: str, highlight_id: UUID, author: str, text: str
-    ) -> None:
-        """Add a new comment to a highlight's thread."""
-        for h in highlights.get(case_id, []):
-            if h.id == highlight_id:
-                h.comments.append(Comment(author=author, text=text))
-                break
-
-    def delete_highlight(case_id: str, highlight_id: UUID) -> None:
-        if case_id in highlights:
-            highlights[case_id] = [
-                h for h in highlights[case_id] if h.id != highlight_id
-            ]
+    editing_highlight: dict[str, DBHighlight | None] = {"highlight": None}
+    # Cache for loaded comments (highlight_id -> list of comments)
+    comments_cache: dict[str, list[HighlightComment]] = {}
 
     # CSS for case tool - tag color classes for non-button elements
     tag_color_css = "\n".join(
@@ -330,7 +318,7 @@ async def case_tool_page() -> None:
             async def delete_current_highlight() -> None:
                 if editing_highlight["highlight"]:
                     h = editing_highlight["highlight"]
-                    delete_highlight(str(h.case_id), h.id)
+                    await db_delete_highlight(h.id)
                     ui.notify("Annotation deleted")
                     comment_dialog.close()
                     # Re-render to remove the highlight marker
@@ -341,9 +329,9 @@ async def case_tool_page() -> None:
             async def add_reply() -> None:
                 if editing_highlight["highlight"] and comment_input.value.strip():
                     h = editing_highlight["highlight"]
-                    add_comment_to_highlight(
-                        str(h.case_id), h.id, _get_username(), comment_input.value
-                    )
+                    await create_comment(h.id, _get_username(), comment_input.value)
+                    # Clear cache for this highlight
+                    comments_cache.pop(str(h.id), None)
                     comment_input.value = ""
                     ui.notify("Reply added")
                     # Refresh the dialog to show new comment
@@ -355,11 +343,12 @@ async def case_tool_page() -> None:
             )
             ui.button("Add Reply", on_click=add_reply, color="primary")
 
-    async def _populate_comment_dialog(highlight: Highlight) -> None:
+    async def _populate_comment_dialog(highlight: DBHighlight) -> None:
         """Populate the comment dialog with existing comments."""
         comments_container.clear()
-        tag_name = highlight.tag.value.replace("_", " ").title()
-        tag_color = TAG_COLORS.get(highlight.tag, "#666")
+        tag = BriefTag(highlight.tag)
+        tag_name = tag.value.replace("_", " ").title()
+        tag_color = TAG_COLORS.get(tag, "#666")
         dialog_tag_label.set_text(f"Tag: {tag_name}")
 
         # Truncate preview text
@@ -368,13 +357,19 @@ async def case_tool_page() -> None:
             preview += "..."
         dialog_text_preview.set_text(f'"{preview}"')
 
+        # Load comments from database (or cache)
+        hid = str(highlight.id)
+        if hid not in comments_cache:
+            comments_cache[hid] = await get_comments_for_highlight(highlight.id)
+        comments = comments_cache[hid]
+
         with comments_container:
-            if not highlight.comments:
+            if not comments:
                 ui.label("No comments yet. Be the first to reply!").classes(
                     "text-grey text-sm"
                 )
             else:
-                for comment in highlight.comments:
+                for comment in comments:
                     timestamp = comment.created_at.strftime("%d/%m/%Y %H:%M")
                     with (
                         ui.element("div")
@@ -392,15 +387,14 @@ async def case_tool_page() -> None:
             ui.notify("No text selected", type="warning")
             return
 
-        highlight = Highlight(
+        await create_highlight(
             case_id=str(current_case["id"]),
-            tag=tag,
+            tag=tag.value,
             start_offset=int(selection_state["start"]),
             end_offset=int(selection_state["end"]),
             text=str(selection_state["text"]),
             created_by=_get_username(),
         )
-        add_highlight(highlight)
 
         # Clear selection
         selection_state.update({"text": "", "start": 0, "end": 0})
@@ -419,49 +413,70 @@ async def case_tool_page() -> None:
             return
 
         case_id = str(current_case["id"])
-        case_highlights = get_highlights(case_id)
+        case_highlights = await get_highlights_for_case(case_id)
 
         if not case_highlights:
             with annotations_container:
                 ui.label("No annotations yet").classes("text-grey")
             return
 
+        # Preload comments for all highlights
+        for h in case_highlights:
+            hid = str(h.id)
+            if hid not in comments_cache:
+                comments_cache[hid] = await get_comments_for_highlight(h.id)
+
         with annotations_container:
             for h in case_highlights:
-                tag_name = h.tag.value.replace("_", " ").title()
+                tag = BriefTag(h.tag)
+                tag_name = tag.value.replace("_", " ").title()
                 timestamp = h.created_at.strftime("%d/%m/%Y %H:%M")
-                tag_color = TAG_COLORS.get(h.tag, "#666")
+                tag_color = TAG_COLORS.get(tag, "#666")
                 highlight_id = str(h.id)
+                comments = comments_cache.get(highlight_id, [])
 
                 # Word-style comment card with tag color via inline style
+                # Define handlers before creating the card element
+                async def scroll_to_highlight(hid: str = highlight_id) -> None:
+                    # Scroll to highlight and flash it
+                    await ui.run_javascript(f"""
+                        const mark = document.querySelector(
+                            'mark[data-highlight-id="{hid}"]'
+                        );
+                        if (mark) {{
+                            const container = mark.closest('.case-content');
+                            if (container) {{
+                                const markRect = mark.getBoundingClientRect();
+                                const containerRect = container.getBoundingClientRect();
+                                const scrollTop = markRect.top - containerRect.top
+                                    + container.scrollTop - container.clientHeight / 2;
+                                container.scrollTo({{
+                                    top: Math.max(0, scrollTop),
+                                    behavior: 'smooth'
+                                }});
+                            }}
+                            mark.style.outline = '3px solid #ff0';
+                            setTimeout(() => mark.style.outline = '', 1500);
+                        }}
+                    """)
+
+                async def open_thread(highlight: DBHighlight = h) -> None:
+                    editing_highlight["highlight"] = highlight
+                    comment_input.value = ""
+                    await _populate_comment_dialog(highlight)
+                    comment_dialog.open()
+
+                # Card with click-to-scroll on entire background
                 with (
                     ui.element("div")
-                    .classes("comment-card")
+                    .classes("comment-card cursor-pointer")
                     .style(
                         f"background-color: {tag_color}15; "
                         f"border-left: 3px solid {tag_color};"
                     )
                     .props(f'data-highlight-id="{highlight_id}"')
+                    .on("click", scroll_to_highlight)
                 ):
-
-                    async def open_thread(highlight: Highlight = h) -> None:
-                        editing_highlight["highlight"] = highlight
-                        comment_input.value = ""
-                        await _populate_comment_dialog(highlight)
-                        comment_dialog.open()
-
-                    async def scroll_to_highlight(hid: str = highlight_id) -> None:
-                        await ui.run_javascript(f"""
-                            const m = document.querySelector(
-                                'mark[data-highlight-id="{hid}"]'
-                            );
-                            if (m) {{
-                                m.scrollIntoView({{behavior:'smooth', block:'center'}});
-                                m.style.outline = '3px solid #ff0';
-                                setTimeout(() => m.style.outline = '', 1500);
-                            }}
-                        """)
-
                     # Author and timestamp header row
                     with ui.element("div").classes("comment-header"):
                         ui.label(h.created_by).classes("comment-author").style(
@@ -476,18 +491,18 @@ async def case_tool_page() -> None:
                         "font-size: 0.7rem; display: inline-block; margin-bottom: 4px;"
                     )
 
-                    # Quoted text from document (clickable to scroll)
+                    # Quoted text from document
                     preview = h.text[:120]
                     if len(h.text) > 120:
                         preview += "..."
-                    ui.label(preview).classes("comment-quote cursor-pointer").style(
+                    ui.label(preview).classes("comment-quote").style(
                         f"border-left: 2px solid {tag_color}80;"
-                    ).on("click", scroll_to_highlight)
+                    )
 
                     # Show comment count and latest reply preview
-                    comment_count = len(h.comments)
+                    comment_count = len(comments)
                     if comment_count > 0:
-                        latest = h.comments[-1]
+                        latest = comments[-1]
                         preview_text = latest.text[:80]
                         if len(latest.text) > 80:
                             preview_text += "..."
@@ -516,7 +531,7 @@ async def case_tool_page() -> None:
         if not case_id:
             return
 
-        case_highlights = get_highlights(str(case_id))
+        case_highlights = await get_highlights_for_case(str(case_id))
         if not case_highlights:
             return
 
@@ -528,8 +543,8 @@ async def case_tool_page() -> None:
                 "id": str(h.id),
                 "start": h.start_offset,
                 "end": h.end_offset,
-                "color": TAG_COLORS.get(h.tag, "#666"),
-                "tag": h.tag.value,
+                "color": TAG_COLORS.get(BriefTag(h.tag), "#666"),
+                "tag": h.tag,
             }
             for h in sorted(case_highlights, key=lambda x: x.start_offset, reverse=True)
         ]
@@ -667,14 +682,12 @@ async def case_tool_page() -> None:
         if not highlight_id or not current_case.get("id"):
             return
 
-        case_id = str(current_case["id"])
-        for h in get_highlights(case_id):
-            if str(h.id) == highlight_id:
-                editing_highlight["highlight"] = h
-                comment_input.value = ""
-                await _populate_comment_dialog(h)
-                comment_dialog.open()
-                break
+        h = await get_highlight_by_id(UUID(highlight_id))
+        if h:
+            editing_highlight["highlight"] = h
+            comment_input.value = ""
+            await _populate_comment_dialog(h)
+            comment_dialog.open()
 
     ui.on("text_selected", handle_selection)
     ui.on("highlight_clicked", handle_highlight_click)

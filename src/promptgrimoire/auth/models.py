@@ -85,3 +85,18 @@ class SSOStartResult:
     success: bool
     redirect_url: str | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class OAuthStartResult:
+    """Result of starting an OAuth flow.
+
+    Attributes:
+        success: Whether the OAuth URL was generated.
+        redirect_url: The URL to redirect the user to for OAuth.
+        error: Error type if the operation failed.
+    """
+
+    success: bool
+    redirect_url: str | None = None
+    error: str | None = None

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from promptgrimoire.auth.models import (
     AuthResult,
+    OAuthStartResult,
     SendResult,
     SessionResult,
     SSOStartResult,
@@ -19,6 +20,7 @@ MOCK_VALID_EMAILS = frozenset(
 )
 MOCK_VALID_MAGIC_TOKEN = "mock-valid-token"
 MOCK_VALID_SSO_TOKEN = "mock-valid-sso-token"
+MOCK_VALID_OAUTH_TOKEN = "mock-valid-oauth-token"
 MOCK_VALID_SESSION = "mock-session-token"
 
 # Test organization and member IDs
@@ -176,6 +178,56 @@ class MockAuthClient:
         return SSOStartResult(
             success=True,
             redirect_url=redirect_url,
+        )
+
+    def get_oauth_start_url(
+        self,
+        provider: str,
+        public_token: str,
+        discovery_redirect_url: str,
+    ) -> OAuthStartResult:
+        """Mock generating an OAuth start URL.
+
+        Args:
+            provider: The OAuth provider (e.g., "github").
+            public_token: The public token.
+            discovery_redirect_url: The redirect URL after OAuth.
+
+        Returns:
+            OAuthStartResult with a mock redirect URL.
+        """
+        redirect_url = (
+            f"https://mock.stytch.com/v1/b2b/public/oauth/{provider}/discovery/start"
+            f"?public_token={public_token}"
+            f"&discovery_redirect_url={discovery_redirect_url}"
+        )
+        return OAuthStartResult(
+            success=True,
+            redirect_url=redirect_url,
+        )
+
+    async def authenticate_oauth(self, token: str) -> AuthResult:
+        """Mock authenticating an OAuth token.
+
+        Args:
+            token: The OAuth callback token.
+
+        Returns:
+            AuthResult - success if token equals MOCK_VALID_OAUTH_TOKEN.
+        """
+        if token == MOCK_VALID_OAUTH_TOKEN:
+            return AuthResult(
+                success=True,
+                session_token=MOCK_VALID_SESSION,
+                session_jwt="mock-oauth-jwt",
+                member_id=MOCK_MEMBER_ID,
+                organization_id=MOCK_ORG_ID,
+                email="github-user@example.com",
+                roles=["stytch_member"],
+            )
+        return AuthResult(
+            success=False,
+            error="invalid_token",
         )
 
     # Test helper methods

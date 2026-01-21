@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dotenv import load_dotenv
+
+# Load .env for TEST_DATABASE_URL and other test config
+load_dotenv()
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator

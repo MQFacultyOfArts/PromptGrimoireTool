@@ -25,7 +25,10 @@ EXCLUDE_PATTERNS = {
 
 
 def _extract_env_vars_from_code() -> set[str]:
-    """Extract all environment variable names used in Python code."""
+    """Extract all environment variable names used in Python code.
+
+    Scans both src/ and tests/ directories.
+    """
     env_vars: set[str] = set()
 
     # Patterns to match environment variable access
@@ -35,32 +38,57 @@ def _extract_env_vars_from_code() -> set[str]:
         r'os\.getenv\(["\']([A-Z_][A-Z0-9_]*)["\']',
     ]
 
-    src_dir = PROJECT_ROOT / "src"
-    for py_file in src_dir.rglob("*.py"):
-        if any(excl in str(py_file) for excl in EXCLUDE_PATTERNS):
-            continue
+    # Scan both src/ and tests/ directories
+    scan_dirs = [PROJECT_ROOT / "src", PROJECT_ROOT / "tests"]
+    for scan_dir in scan_dirs:
+        for py_file in scan_dir.rglob("*.py"):
+            if any(excl in str(py_file) for excl in EXCLUDE_PATTERNS):
+                continue
 
-        content = py_file.read_text()
-        for pattern in patterns:
-            matches = re.findall(pattern, content)
-            env_vars.update(matches)
+            content = py_file.read_text()
+            for pattern in patterns:
+                matches = re.findall(pattern, content)
+                env_vars.update(matches)
 
     return env_vars
 
 
-def _extract_env_vars_from_file(filepath: Path) -> set[str]:
-    """Extract all environment variable names defined in an env file."""
+def _extract_env_vars_from_file(
+    filepath: Path, include_commented: bool = False
+) -> set[str]:
+    """Extract all environment variable names defined in an env file.
+
+    Args:
+        filepath: Path to the env file.
+        include_commented: If True, also extract vars from commented lines like
+            `# VAR_NAME=value` (for .env.example optional vars).
+
+    Returns:
+        Set of environment variable names found.
+    """
     env_vars: set[str] = set()
 
     if not filepath.exists():
         return env_vars
 
+    # Pattern for commented-out env vars: # VAR_NAME=value
+    commented_var_pattern = re.compile(r"^#\s*([A-Z_][A-Z0-9_]*)\s*=")
+
     content = filepath.read_text()
     for line in content.splitlines():
         stripped = line.strip()
-        # Skip comments and empty lines
-        if not stripped or stripped.startswith("#"):
+
+        if not stripped:
             continue
+
+        # Check for commented-out variable definitions
+        if stripped.startswith("#"):
+            if include_commented:
+                match = commented_var_pattern.match(stripped)
+                if match:
+                    env_vars.add(match.group(1))
+            continue
+
         # Extract variable name (before =)
         if "=" in stripped:
             var_name = stripped.split("=", 1)[0].strip()
@@ -70,9 +98,18 @@ def _extract_env_vars_from_file(filepath: Path) -> set[str]:
     return env_vars
 
 
-def _extract_env_vars_from_env_example() -> set[str]:
-    """Extract all environment variable names defined in .env.example."""
-    return _extract_env_vars_from_file(PROJECT_ROOT / ".env.example")
+def _extract_env_vars_from_env_example(include_commented: bool = True) -> set[str]:
+    """Extract all environment variable names defined in .env.example.
+
+    Args:
+        include_commented: If True (default), include commented-out optional vars.
+
+    Returns:
+        Set of environment variable names found.
+    """
+    return _extract_env_vars_from_file(
+        PROJECT_ROOT / ".env.example", include_commented=include_commented
+    )
 
 
 def _extract_env_vars_from_env() -> set[str]:
@@ -148,18 +185,19 @@ class TestEnvVarsSync:
 class TestEnvFileSync:
     """Tests to ensure .env matches .env.example."""
 
-    def test_env_has_all_example_vars(self) -> None:
-        """.env must have all variables from .env.example."""
+    def test_env_has_all_required_vars(self) -> None:
+        """.env must have all required (uncommented) variables from .env.example."""
         env_file = PROJECT_ROOT / ".env"
         if not env_file.exists():
             pytest.skip(".env file does not exist")
 
-        example_vars = _extract_env_vars_from_env_example()
+        # Only require uncommented (non-optional) vars
+        required_vars = _extract_env_vars_from_env_example(include_commented=False)
         env_vars = _extract_env_vars_from_env()
 
-        missing = example_vars - env_vars
+        missing = required_vars - env_vars
         assert not missing, (
-            f"Variables in .env.example but missing from .env:\n"
+            f"Required variables in .env.example but missing from .env:\n"
             f"{sorted(missing)}\n\n"
             f"Add these to .env (copy from .env.example)."
         )
@@ -170,7 +208,8 @@ class TestEnvFileSync:
         if not env_file.exists():
             pytest.skip(".env file does not exist")
 
-        example_vars = _extract_env_vars_from_env_example()
+        # Include commented vars - any var in .env should be documented somewhere
+        example_vars = _extract_env_vars_from_env_example(include_commented=True)
         env_vars = _extract_env_vars_from_env()
 
         extra = env_vars - example_vars

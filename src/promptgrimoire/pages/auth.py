@@ -66,18 +66,8 @@ def _get_query_param(name: str) -> str | None:
     return request.query_params.get(name)
 
 
-@ui.page("/login")
-async def login_page() -> None:
-    """Login page with magic link and SSO options."""
-    # Check if already logged in
-    user = _get_session_user()
-    if user:
-        ui.navigate.to("/")
-        return
-
-    ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
-
-    # Magic link section
+def _build_magic_link_section() -> None:
+    """Build the magic link login section."""
     with ui.card().classes("w-96 p-4"):
         ui.label("Email Magic Link").classes("text-lg font-semibold mb-2")
 
@@ -99,7 +89,6 @@ async def login_page() -> None:
             auth_client = get_auth_client()
             config = get_config()
 
-            # Fail fast if organization not configured
             if not config.default_org_id:
                 logger.error("STYTCH_DEFAULT_ORG_ID not configured")
                 ui.notify("Organization not configured", type="negative")
@@ -124,9 +113,9 @@ async def login_page() -> None:
             on_click=send_magic_link,
         ).props('data-testid="send-magic-link-btn"').classes("mt-2")
 
-    ui.label("— or —").classes("my-4")
 
-    # SSO section
+def _build_sso_section() -> None:
+    """Build the SSO login section."""
     with ui.card().classes("w-96 p-4"):
         ui.label("University Login (AAF)").classes("text-lg font-semibold mb-2")
 
@@ -134,7 +123,6 @@ async def login_page() -> None:
             auth_client = get_auth_client()
             config = get_config()
 
-            # Fail fast if SSO not configured
             if not config.sso_connection_id:
                 logger.error("STYTCH_SSO_CONNECTION_ID not configured")
                 ui.notify("SSO not configured", type="negative")
@@ -160,6 +148,57 @@ async def login_page() -> None:
             "Login with AAF",
             on_click=start_sso,
         ).props('data-testid="sso-login-btn"').classes("w-full")
+
+
+def _build_github_oauth_section() -> None:
+    """Build the GitHub OAuth login section."""
+    with ui.card().classes("w-96 p-4"):
+        ui.label("GitHub Login").classes("text-lg font-semibold mb-2")
+
+        def start_github_oauth() -> None:
+            auth_client = get_auth_client()
+            config = get_config()
+
+            if not config.public_token:
+                logger.error("STYTCH_PUBLIC_TOKEN not configured")
+                ui.notify("GitHub login not configured", type="negative")
+                return
+
+            callback_url = f"{config.base_url}/auth/oauth/callback"
+
+            result = auth_client.get_oauth_start_url(
+                provider="github",
+                public_token=config.public_token,
+                discovery_redirect_url=callback_url,
+            )
+
+            if result.success and result.redirect_url:
+                ui.navigate.to(result.redirect_url)
+            else:
+                logger.warning("GitHub OAuth start failed: %s", result.error)
+                ui.notify(f"GitHub login error: {result.error}", type="negative")
+
+        ui.button(
+            "Login with GitHub",
+            on_click=start_github_oauth,
+        ).props('data-testid="github-login-btn"').classes("w-full")
+
+
+@ui.page("/login")
+async def login_page() -> None:
+    """Login page with magic link, SSO, and GitHub OAuth options."""
+    user = _get_session_user()
+    if user:
+        ui.navigate.to("/")
+        return
+
+    ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
+
+    _build_magic_link_section()
+    ui.label("— or —").classes("my-4")
+    _build_sso_section()
+    ui.label("— or —").classes("my-4")
+    _build_github_oauth_section()
 
 
 @ui.page("/auth/callback")
@@ -225,6 +264,38 @@ async def sso_callback() -> None:
     else:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"SSO authentication failed: {result.error}", type="negative")
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
+
+
+@ui.page("/auth/oauth/callback")
+async def oauth_callback() -> None:
+    """Handle OAuth callback and authenticate the token."""
+    token = _get_query_param("token")
+
+    if not token:
+        ui.label("No OAuth token provided").classes("text-xl text-red-500")
+        ui.notify("No OAuth token provided", type="negative")
+        ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
+        return
+
+    ui.label("Processing GitHub login...").classes("text-xl")
+    ui.spinner()
+
+    auth_client = get_auth_client()
+    result = await auth_client.authenticate_oauth(token=token)
+
+    if result.success:
+        _set_session_user(
+            email=result.email or "",
+            member_id=result.member_id or "",
+            organization_id=result.organization_id or "",
+            session_token=result.session_token or "",
+            roles=result.roles,
+        )
+        ui.navigate.to("/")
+    else:
+        ui.label(f"Error: {result.error}").classes("text-red-500")
+        ui.notify(f"GitHub authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 

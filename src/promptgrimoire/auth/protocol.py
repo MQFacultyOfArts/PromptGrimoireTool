@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from promptgrimoire.auth.models import (
         AuthResult,
+        OAuthStartResult,
         SendResult,
         SessionResult,
         SSOStartResult,
@@ -88,5 +89,34 @@ class AuthClientProtocol(Protocol):
 
         Returns:
             SSOStartResult with the redirect URL.
+        """
+        ...
+
+    def get_oauth_start_url(
+        self,
+        provider: str,
+        public_token: str,
+        discovery_redirect_url: str,
+    ) -> OAuthStartResult:
+        """Generate the URL to start an OAuth discovery flow.
+
+        Args:
+            provider: The OAuth provider (e.g., "github").
+            public_token: The Stytch public token.
+            discovery_redirect_url: URL to redirect to after OAuth completes.
+
+        Returns:
+            OAuthStartResult with the redirect URL.
+        """
+        ...
+
+    async def authenticate_oauth(self, token: str) -> AuthResult:
+        """Authenticate an OAuth token from the provider callback.
+
+        Args:
+            token: The OAuth token from the callback URL.
+
+        Returns:
+            AuthResult with session info if successful.
         """
         ...

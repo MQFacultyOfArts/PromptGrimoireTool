@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlencode
 
 from stytch import B2BClient
 from stytch.core.response_base import StytchError
 
 from promptgrimoire.auth.models import (
     AuthResult,
+    OAuthStartResult,
     SendResult,
     SessionResult,
     SSOStartResult,
@@ -251,3 +253,80 @@ class StytchB2BClient:
             success=True,
             redirect_url=redirect_url,
         )
+
+    def get_oauth_start_url(
+        self,
+        provider: str,
+        public_token: str,
+        discovery_redirect_url: str,
+    ) -> OAuthStartResult:
+        """Generate the URL to start an OAuth discovery flow.
+
+        Uses the discovery flow which handles organization selection after OAuth.
+
+        Args:
+            provider: The OAuth provider (e.g., "github").
+            public_token: The Stytch public token.
+            discovery_redirect_url: URL to redirect to after OAuth completes.
+
+        Returns:
+            OAuthStartResult with the redirect URL.
+        """
+
+        base_url = STYTCH_TEST_API if self._environment == "test" else STYTCH_LIVE_API
+        params = {
+            "public_token": public_token,
+            "discovery_redirect_url": discovery_redirect_url,
+        }
+        redirect_url = (
+            f"{base_url}/v1/b2b/public/oauth/{provider}/discovery/start"
+            f"?{urlencode(params)}"
+        )
+        return OAuthStartResult(
+            success=True,
+            redirect_url=redirect_url,
+        )
+
+    async def authenticate_oauth(self, token: str) -> AuthResult:
+        """Authenticate an OAuth token from the provider callback.
+
+        Args:
+            token: The OAuth token from the callback URL.
+
+        Returns:
+            AuthResult with session info if successful.
+        """
+        try:
+            response = await self._client.oauth.authenticate_async(
+                oauth_token=token,
+                session_duration_minutes=60 * 24 * 7,  # 1 week
+            )
+
+            # Check if MFA is required
+            if not response.member_authenticated:
+                logger.info("MFA required for OAuth member %s", response.member_id)
+                return AuthResult(
+                    success=False,
+                    error="mfa_required",
+                )
+
+            roles = _extract_roles(response.member_session.roles)
+
+            return AuthResult(
+                success=True,
+                session_token=response.session_token,
+                session_jwt=response.session_jwt,
+                member_id=response.member_id,
+                organization_id=response.organization_id,
+                email=response.member.email_address,
+                roles=roles,
+            )
+        except StytchError as e:
+            logger.warning(
+                "OAuth auth failed",
+                extra={"error_type": e.details.error_type},
+            )
+            return AuthResult(
+                success=False,
+                error=e.details.error_type,
+            )

@@ -53,10 +53,53 @@ def _get_username() -> str:
 
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from nicegui.events import GenericEventArguments
 
 # Path to fixtures for demo
 _FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures"
+
+# Track clients viewing each case for live sync
+# case_id -> {client_id -> (refresh_sidebar, render_content, container_element)}
+_case_viewers: dict[
+    str,
+    dict[
+        str,
+        tuple[
+            Callable[[], Awaitable[None]],
+            Callable[[], Awaitable[None]],
+            ui.element,
+        ],
+    ],
+] = {}
+
+
+async def _broadcast_annotation_change(case_id: str, origin_client_id: str) -> None:
+    """Notify other clients viewing this case to refresh their annotations.
+
+    Args:
+        case_id: The case document identifier.
+        origin_client_id: Client that made the change (won't be notified).
+    """
+    viewers = _case_viewers.get(case_id, {})
+    for cid, (refresh_sidebar, render_content, container) in viewers.items():
+        if cid != origin_client_id:
+            try:
+                # Save scroll position, re-render, restore scroll
+                container_id = container.id
+                scroll_pos = await ui.run_javascript(
+                    f"getHtmlElement({container_id})?.scrollTop || 0"
+                )
+                await render_content()
+                await refresh_sidebar()
+                if scroll_pos:
+                    await ui.run_javascript(
+                        f"getHtmlElement({container_id}).scrollTop = {scroll_pos}"
+                    )
+            except Exception:
+                # Client may have disconnected
+                pass
 
 
 def _get_available_cases() -> list[tuple[str, str]]:
@@ -87,6 +130,17 @@ def _load_case(case_id: str) -> ParsedRTF | None:
 @ui.page("/case-tool")
 async def case_tool_page() -> None:
     """Case Brief Tool main page."""
+    # Get client for live sync (don't await connected() - it blocks rendering)
+    client = ui.context.client
+    client_id = str(id(client))
+
+    # Cleanup on disconnect - remove from all case viewer lists
+    def on_disconnect() -> None:
+        for viewers in _case_viewers.values():
+            viewers.pop(client_id, None)
+
+    client.on_disconnect(on_disconnect)
+
     # Register custom colors for each tag type using Quasar's color system
     # kwargs use underscores, but color= parameter uses hyphens (Quasar convention)
     # e.g., tag_jurisdiction in Python -> color="tag-jurisdiction" in usage
@@ -328,6 +382,7 @@ async def case_tool_page() -> None:
             async def delete_current_highlight() -> None:
                 if editing_highlight["highlight"]:
                     h = editing_highlight["highlight"]
+                    case_id = current_case.get("id")
                     await db_delete_highlight(h.id)
                     ui.notify("Annotation deleted")
                     comment_dialog.close()
@@ -335,10 +390,14 @@ async def case_tool_page() -> None:
                     await _render_case_content(content_container, preserve_scroll=True)
                     await _setup_selection_handlers(content_container)
                     await refresh_sidebar()
+                    # Broadcast to other clients
+                    if case_id:
+                        await _broadcast_annotation_change(str(case_id), client_id)
 
             async def add_reply() -> None:
                 if editing_highlight["highlight"] and comment_input.value.strip():
                     h = editing_highlight["highlight"]
+                    case_id = current_case.get("id")
                     await create_comment(h.id, _get_username(), comment_input.value)
                     # Clear cache for this highlight
                     comments_cache.pop(str(h.id), None)
@@ -347,6 +406,9 @@ async def case_tool_page() -> None:
                     # Refresh the dialog to show new comment
                     await _populate_comment_dialog(h)
                     await refresh_sidebar()
+                    # Broadcast to other clients
+                    if case_id:
+                        await _broadcast_annotation_change(str(case_id), client_id)
 
             ui.button(
                 "Delete Highlight", on_click=delete_current_highlight, color="red"
@@ -437,11 +499,14 @@ async def case_tool_page() -> None:
         await _setup_selection_handlers(content_container)
         await refresh_sidebar(scroll_to_highlight_id=str(new_highlight.id))
 
+        # Broadcast to other clients viewing this case
+        await _broadcast_annotation_change(str(case_id), client_id)
+
     async def refresh_sidebar(scroll_to_highlight_id: str | None = None) -> None:
         """Refresh the annotations sidebar.
 
         Args:
-            scroll_to_highlight_id: If provided, scroll the sidebar to show this annotation.
+            scroll_to_highlight_id: If provided, scroll sidebar to this annotation.
         """
         annotations_container.clear()
         if not current_case.get("id"):
@@ -663,8 +728,9 @@ async def case_tool_page() -> None:
                         ? visibleMarks[visibleMarks.length - 1]
                         : visibleMarks[0];
 
-                    if (targetMark && targetMark.dataset.highlightId !== currentHighlightId) {{
-                        currentHighlightId = targetMark.dataset.highlightId;
+                    const newId = targetMark?.dataset.highlightId;
+                    if (targetMark && newId !== currentHighlightId) {{
+                        currentHighlightId = newId;
 
                         // Scroll the corresponding sidebar card into view
                         const card = document.querySelector(
@@ -749,6 +815,29 @@ async def case_tool_page() -> None:
         if not parsed:
             ui.notify(f"Failed to load case: {case_id}", type="negative")
             return
+
+        # Unregister from any previous case
+        for viewers in _case_viewers.values():
+            viewers.pop(client_id, None)
+
+        # Register for live sync on this case
+        if case_id not in _case_viewers:
+            _case_viewers[case_id] = {}
+
+        # Wrapper functions for broadcast compatibility
+        async def _refresh_for_broadcast() -> None:
+            await refresh_sidebar()
+
+        async def _render_for_broadcast() -> None:
+            # Re-render content without scroll handling (handled by broadcast function)
+            await _render_case_content(content_container, preserve_scroll=False)
+            await _setup_selection_handlers(content_container)
+
+        _case_viewers[case_id][client_id] = (
+            _refresh_for_broadcast,
+            _render_for_broadcast,
+            content_container,
+        )
 
         current_case.update({"id": case_id, "data": parsed})
         await _render_case_content(content_container)
@@ -868,9 +957,9 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                 window._savedRange = range.cloneRange();
 
                 // Find paragraph number
-                // Strategy: First try manual paragraph numbers (e.g., "48." in a <p>),
-                // then fall back to <ol start="N"> if that's a meaningful paragraph number.
-                // This handles nested lists inside numbered paragraphs correctly.
+                // Strategy: First try manual paragraph numbers (e.g., "48." in <p>),
+                // then fall back to <ol start="N"> if meaningful.
+                // Handles nested lists inside numbered paragraphs correctly.
                 let paraNum = null;
 
                 // First: look for manual paragraph numbers in ancestor <p> or <div>
@@ -891,8 +980,8 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                     pNode = pNode.parentNode;
                 }}
 
-                // Second: if no manual number found, try outermost <ol>/<li> with start > 1
-                // (start="1" usually means a sub-list, not the main paragraph)
+                // Second: if no manual number, try outermost <ol>/<li> with start > 1
+                // (start="1" usually means a sub-list, not main paragraph)
                 if (paraNum === null) {{
                     let node = range.startContainer;
                     let outerOl = null;
@@ -912,8 +1001,7 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                         const olStartNum = parseInt(olStart, 10);
                         const liIdx = Array.from(outerOl.children).indexOf(outerLi);
                         const listParaNum = olStartNum + liIdx;
-                        // Only use list number if it's > 1 (meaningful paragraph number)
-                        // or if the <ol> explicitly has a start attribute
+                        // Only use list number if > 1 (meaningful) or has start attr
                         if (olStartNum > 1 || outerOl.hasAttribute('start')) {{
                             paraNum = listParaNum;
                         }}

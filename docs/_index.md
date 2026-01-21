@@ -16,6 +16,7 @@ library references during development.
 - [Real-Time & Reactivity](nicegui/realtime.md) - WebSocket, multi-client, JS integration
 - [UI Patterns](nicegui/ui-patterns.md) - timer, refreshable, pages, events, storage, styling
 - [Styling & Static Files](nicegui/styling.md) - CSS, Tailwind, Quasar, ui.add_css(), static files
+- [Color Theming](nicegui/colors.md) - ui.colors(), custom colors for branding, Quasar color system
 - [Events](nicegui/events.md) - GenericEventArguments, event handler types
 - [E2E Testing](nicegui/testing.md) - *Project notes: Playwright testing with NiceGUI*
 - [Multi-Client Sync](nicegui/multi-client-sync.md) - *Project notes: Broadcasting updates*

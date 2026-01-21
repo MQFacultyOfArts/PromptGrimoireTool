@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
+    "pypandoc>=1.14",
 ]
 
 [project.optional-dependencies]
@@ -89,6 +90,10 @@ ignore = [
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
 ]
+"src/promptgrimoire/pages/case_tool.py" = [
+    "PLR0915",  # Page function needs many statements for UI setup
+    "SIM117",   # Nested with is cleaner for NiceGUI UI composition
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]
@@ -116,6 +121,9 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.ty.src]
+exclude = ["alembic/"]
 
 [dependency-groups]
 dev = [

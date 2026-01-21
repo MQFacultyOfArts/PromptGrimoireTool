@@ -152,10 +152,19 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
     with ui.card().classes("w-full mb-4") as upload_card:
         ui.label("Load Character Card").classes("text-h6")
 
+        # CRIT-6: Maximum upload size limit to prevent DoS
+        max_upload_size = 100 * 1024 * 1024  # 100 MB
+
         async def handle_upload(e) -> None:
             tmp_path = None
             try:
                 content = await e.file.read()
+
+                # CRIT-6: Check upload size before processing
+                if len(content) > max_upload_size:
+                    ui.notify("File too large (max 100MB)", type="negative")
+                    return
+
                 # Write to temp file for parsing
                 tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")
                 tmp_path.write_bytes(content)

@@ -9,10 +9,13 @@ Route: /logs
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
 from nicegui import ui
+
+logger = logging.getLogger(__name__)
 
 # Default log directory
 LOG_DIR = Path(os.environ.get("ROLEPLAY_LOG_DIR", "logs/sessions"))
@@ -66,7 +69,10 @@ def _render_metadata(extra: dict) -> None:
     if "reasoning" in extra:
         ui.label("Reasoning Trace:").classes("text-sm font-bold mt-2")
         with ui.card().classes("w-full bg-yellow-50 p-2"):
-            ui.markdown(extra["reasoning"]).classes("text-sm whitespace-pre-wrap")
+            # HIGH-1: Render as preformatted text to prevent XSS from LLM output
+            ui.label(extra["reasoning"]).classes(
+                "text-sm whitespace-pre-wrap font-mono"
+            )
 
 
 def _render_turn(i: int, turn: dict) -> None:
@@ -116,9 +122,16 @@ async def logs_page() -> None:
         file_options = {str(p): p.name for p in log_files}
 
         def on_select(e) -> None:
-            path = Path(e.value)
-            state["selected_path"] = path
-            header, turns = parse_log_file(path)
+            # CRIT-1: Path traversal protection
+            requested_path = Path(e.value).resolve()
+            safe_base = LOG_DIR.resolve()
+            if not str(requested_path).startswith(str(safe_base) + os.sep):
+                logger.warning("Path traversal attempt blocked: %s", e.value)
+                ui.notify("Invalid log file path", type="negative")
+                return
+
+            state["selected_path"] = requested_path
+            header, turns = parse_log_file(requested_path)
             state["header"] = header
             state["turns"] = turns
             log_content.refresh()

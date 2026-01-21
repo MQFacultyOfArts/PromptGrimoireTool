@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,8 @@ import anthropic
 
 from promptgrimoire.llm.lorebook import activate_entries
 from promptgrimoire.llm.prompt import build_messages, build_system_prompt
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -186,34 +189,54 @@ class ClaudeClient:
         # Uses high-level SDK events: "text" and "thinking" (not raw deltas)
         full_response = ""
         thinking_content = ""
+        error_occurred: Exception | None = None
 
-        async with self._client.messages.stream(**api_params) as stream:
-            async for event in stream:
-                if event.type == "thinking":
-                    # Capture thinking but don't yield it (hidden from students)
-                    # getattr for type checker - ThinkingEvent always has .thinking
-                    thinking_content += getattr(event, "thinking", "")
-                elif event.type == "text":
-                    # Yield text response to UI
-                    # getattr for type checker - TextEvent always has .text
-                    text: str = getattr(event, "text", "")
-                    full_response += text
-                    yield text
+        # HIGH-4: Wrap in try/finally to capture partial responses on error
+        try:
+            async with self._client.messages.stream(**api_params) as stream:
+                async for event in stream:
+                    if event.type == "thinking":
+                        # Capture thinking but don't yield it (hidden from students)
+                        # getattr for type checker - ThinkingEvent always has .thinking
+                        thinking_content += getattr(event, "thinking", "")
+                    elif event.type == "text":
+                        # Yield text response to UI
+                        # getattr for type checker - TextEvent always has .text
+                        text: str = getattr(event, "text", "")
+                        full_response += text
+                        yield text
+        except Exception as e:
+            error_occurred = e
+            logger.error(
+                "Stream error after %d chars: %s",
+                len(full_response),
+                e,
+                exc_info=True,
+            )
+        finally:
+            # Always add turn to session (even if partial) for audit trail
+            metadata: dict = {
+                "model": self.model,
+                "api": "claude",
+                "activated_lorebook": activated_names,
+            }
 
-        # Build metadata
-        metadata: dict = {
-            "model": self.model,
-            "api": "claude",
-            "activated_lorebook": activated_names,
-        }
+            # Add thinking to metadata if present (for logging, not display)
+            if thinking_content:
+                metadata["reasoning"] = thinking_content
 
-        # Add thinking to metadata if present (for logging, not display)
-        if thinking_content:
-            metadata["reasoning"] = thinking_content
+            # HIGH-4: Mark partial responses with error info
+            if error_occurred:
+                metadata["partial"] = True
+                metadata["error"] = str(error_occurred)
 
-        # Add complete response as turn with metadata
-        session.add_turn(
-            full_response,
-            is_user=False,
-            metadata=metadata,
-        )
+            # Add response as turn (complete or partial)
+            session.add_turn(
+                full_response,
+                is_user=False,
+                metadata=metadata,
+            )
+
+        # Re-raise the error after logging the partial turn
+        if error_occurred:
+            raise error_occurred

@@ -5,8 +5,11 @@ Load Stytch credentials and app settings from environment variables.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,15 +40,15 @@ class AuthConfig:
     def from_env(cls) -> AuthConfig:
         """Load configuration from environment variables.
 
-        Required environment variables:
-            - STYTCH_PROJECT_ID
-            - STYTCH_SECRET
-            - STORAGE_SECRET
+        Required environment variables (always required, even in mock mode):
+            - STYTCH_PROJECT_ID: Must point to Stytch test realm for AUTH_MOCK=true
+            - STYTCH_SECRET: Must be valid for the project
+            - STORAGE_SECRET: NiceGUI session encryption secret
 
         Optional environment variables:
             - STYTCH_PUBLIC_TOKEN (default: empty string)
             - BASE_URL (default: http://localhost:8080)
-            - AUTH_MOCK (default: false)
+            - AUTH_MOCK (default: false) - uses Stytch test realm with real credentials
 
         Returns:
             AuthConfig instance populated from environment.
@@ -55,19 +58,12 @@ class AuthConfig:
         """
         mock_enabled = os.environ.get("AUTH_MOCK", "false").lower() == "true"
 
-        # If mock is enabled, provide sensible defaults for testing
+        # HIGH-6: Mock mode requires Stytch TEST realm credentials, not hardcoded
+        # defaults. This ensures we're always using real (test) Stytch infra.
         if mock_enabled:
-            return cls(
-                project_id=os.environ.get("STYTCH_PROJECT_ID", "mock-project"),
-                secret=os.environ.get("STYTCH_SECRET", "mock-secret"),
-                public_token=os.environ.get("STYTCH_PUBLIC_TOKEN", "mock-public-token"),
-                base_url=os.environ.get("BASE_URL", "http://localhost:8080"),
-                storage_secret=os.environ.get("STORAGE_SECRET", "dev-storage-secret"),
-                mock_enabled=True,
-                default_org_id=os.environ.get("STYTCH_DEFAULT_ORG_ID", "mock-org-123"),
-                sso_connection_id=os.environ.get(
-                    "STYTCH_SSO_CONNECTION_ID", "mock-sso-connection"
-                ),
+            logger.warning(
+                "AUTH_MOCK=true: Using Stytch test realm. "
+                "Ensure STYTCH_PROJECT_ID and STYTCH_SECRET point to test environment."
             )
 
         # Real mode - require credentials
@@ -98,7 +94,7 @@ class AuthConfig:
             public_token=os.environ.get("STYTCH_PUBLIC_TOKEN", ""),
             base_url=os.environ.get("BASE_URL", "http://localhost:8080"),
             storage_secret=storage_secret,
-            mock_enabled=False,
+            mock_enabled=mock_enabled,  # HIGH-6: Requires real credentials
             default_org_id=os.environ.get("STYTCH_DEFAULT_ORG_ID"),
             sso_connection_id=os.environ.get("STYTCH_SSO_CONNECTION_ID"),
         )

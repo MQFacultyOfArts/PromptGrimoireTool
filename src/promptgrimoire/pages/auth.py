@@ -66,6 +66,27 @@ def _get_query_param(name: str) -> str | None:
     return request.query_params.get(name)
 
 
+# CRIT-3: Maximum token length to prevent DoS/injection attacks
+_MAX_TOKEN_LENGTH = 1000
+
+
+def _validate_token(token: str | None) -> bool:
+    """Validate that a token is safe to process.
+
+    Args:
+        token: The token string to validate.
+
+    Returns:
+        True if the token is valid and safe, False otherwise.
+    """
+    if not token:
+        return False
+    if len(token) > _MAX_TOKEN_LENGTH:
+        logger.warning("Token exceeds max length: %d chars", len(token))
+        return False
+    return True
+
+
 def _build_magic_link_section() -> None:
     """Build the magic link login section."""
     with ui.card().classes("w-96 p-4"):
@@ -206,16 +227,19 @@ async def magic_link_callback() -> None:
     """Handle magic link callback and authenticate the token."""
     token = _get_query_param("token")
 
-    if not token:
-        # Show error and redirect immediately
-        ui.label("No token provided").classes("text-xl text-red-500")
-        ui.notify("No token provided", type="negative")
+    # CRIT-3: Validate token before processing
+    if not _validate_token(token):
+        ui.label("Invalid or missing token").classes("text-xl text-red-500")
+        ui.notify("Invalid or missing token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
     # Show loading while processing
     ui.label("Authenticating...").classes("text-xl")
     ui.spinner()
+
+    # Type narrowing: _validate_token already checked token is not None
+    assert token is not None
 
     auth_client = get_auth_client()
     result = await auth_client.authenticate_magic_link(token=token)
@@ -240,14 +264,18 @@ async def sso_callback() -> None:
     """Handle SSO callback and authenticate the token."""
     token = _get_query_param("token")
 
-    if not token:
-        ui.label("No SSO token provided").classes("text-xl text-red-500")
-        ui.notify("No SSO token provided", type="negative")
+    # CRIT-3: Validate token before processing
+    if not _validate_token(token):
+        ui.label("Invalid or missing SSO token").classes("text-xl text-red-500")
+        ui.notify("Invalid or missing SSO token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
     ui.label("Processing SSO login...").classes("text-xl")
     ui.spinner()
+
+    # Type narrowing: _validate_token already checked token is not None
+    assert token is not None
 
     auth_client = get_auth_client()
     result = await auth_client.authenticate_sso(token=token)
@@ -272,14 +300,18 @@ async def oauth_callback() -> None:
     """Handle OAuth callback and authenticate the token."""
     token = _get_query_param("token")
 
-    if not token:
-        ui.label("No OAuth token provided").classes("text-xl text-red-500")
-        ui.notify("No OAuth token provided", type="negative")
+    # CRIT-3: Validate token before processing
+    if not _validate_token(token):
+        ui.label("Invalid or missing OAuth token").classes("text-xl text-red-500")
+        ui.notify("Invalid or missing OAuth token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
     ui.label("Processing GitHub login...").classes("text-xl")
     ui.spinner()
+
+    # Type narrowing: _validate_token already checked token is not None
+    assert token is not None
 
     auth_client = get_auth_client()
     result = await auth_client.authenticate_oauth(token=token)
@@ -305,6 +337,23 @@ async def protected_page() -> None:
     user = _get_session_user()
 
     if not user:
+        ui.navigate.to("/login")
+        return
+
+    # CRIT-2: Validate session with Stytch before granting access
+    session_token = user.get("session_token")
+    if not session_token:
+        logger.warning("Session missing token, clearing session")
+        _clear_session()
+        ui.navigate.to("/login")
+        return
+
+    auth_client = get_auth_client()
+    session_result = await auth_client.validate_session(session_token)
+
+    if not session_result.valid:
+        logger.info("Session expired or invalid: %s", session_result.error)
+        _clear_session()
         ui.navigate.to("/login")
         return
 

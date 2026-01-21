@@ -11,6 +11,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+# CRIT-5: Maximum file size limit to prevent DoS via large files
+_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
 def parse_character_card(path: Path) -> tuple[Character, list[LorebookEntry]]:
     """Parse a SillyTavern chara_card_v3 JSON file.
 
@@ -22,10 +26,16 @@ def parse_character_card(path: Path) -> tuple[Character, list[LorebookEntry]]:
 
     Raises:
         FileNotFoundError: If the file doesn't exist.
-        ValueError: If the JSON is invalid or missing required fields.
+        ValueError: If the JSON is invalid, missing required fields, or too large.
     """
     if not path.exists():
         raise FileNotFoundError(f"Character card not found: {path}")
+
+    # CRIT-5: Check file size before reading
+    file_size = path.stat().st_size
+    if file_size > _MAX_FILE_SIZE:
+        msg = f"Character card exceeds maximum size ({file_size} > {_MAX_FILE_SIZE})"
+        raise ValueError(msg)
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))

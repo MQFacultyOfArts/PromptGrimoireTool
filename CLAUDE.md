@@ -134,18 +134,17 @@ Stytch handles:
 
 ## Environment Variables
 
-### Required
+**Source of truth:** `.env.example`
 
-- `ANTHROPIC_API_KEY` - Claude API key for roleplay sessions
+All environment variables are documented in `.env.example`. Copy it to `.env` and configure for your environment.
 
-### Optional
+A test (`tests/unit/test_env_vars.py`) ensures `.env.example` stays in sync with code:
 
-- `CLAUDE_MODEL` - Model to use (default: `claude-sonnet-4-20250514`)
-- `CLAUDE_THINKING_BUDGET` - Extended thinking token budget (default: `1024`, 0 to disable)
-- `LOREBOOK_TOKEN_BUDGET` - Max tokens for lorebook entries (default: `0` = unlimited)
-- `ROLEPLAY_LOG_DIR` - Directory for JSONL session logs (default: `logs/sessions`)
-- `STYTCH_PROJECT_ID` - Stytch project ID for auth
-- `STYTCH_SECRET` - Stytch secret key
+- All env vars used in code must be in `.env.example`
+- All vars in `.env.example` must be used in code
+- Each variable must have a documentation comment
+
+**When adding new env vars:** Add them to `.env.example` with a comment, then use in code. The test will fail if they're out of sync.
 
 ## Conventions
 

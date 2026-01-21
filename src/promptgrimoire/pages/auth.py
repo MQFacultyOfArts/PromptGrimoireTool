@@ -72,7 +72,7 @@ async def login_page() -> None:
     # Check if already logged in
     user = _get_session_user()
     if user:
-        ui.navigate.to("/protected")
+        ui.navigate.to("/")
         return
 
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
@@ -189,7 +189,7 @@ async def magic_link_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
         )
-        ui.navigate.to("/protected")
+        ui.navigate.to("/")
     else:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"Authentication failed: {result.error}", type="negative")
@@ -221,7 +221,7 @@ async def sso_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
         )
-        ui.navigate.to("/protected")
+        ui.navigate.to("/")
     else:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"SSO authentication failed: {result.error}", type="negative")

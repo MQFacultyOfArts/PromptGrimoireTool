@@ -25,6 +25,7 @@ def main() -> None:
         @app.on_startup
         async def startup() -> None:
             await init_db()
+            print("Database connected")
 
         @app.on_shutdown
         async def shutdown() -> None:

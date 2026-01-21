@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
-from sqlmodel import select
+from sqlmodel import col, select
 
 from promptgrimoire.db import Class, Conversation, User
 from promptgrimoire.db.engine import close_db, get_session, init_db
@@ -38,7 +38,7 @@ async def setup_db() -> AsyncIterator[None]:
     """
     from sqlmodel import SQLModel
 
-    import promptgrimoire.db.engine as db_engine
+    from promptgrimoire.db.engine import get_engine
 
     test_url = os.environ.get("TEST_DATABASE_URL")
     if not test_url:
@@ -50,8 +50,8 @@ async def setup_db() -> AsyncIterator[None]:
 
     await init_db()
 
-    # Access engine after init_db() has set it
-    engine = db_engine._engine
+    # Access engine via public API
+    engine = get_engine()
     assert engine is not None, "Engine should be initialized"
 
     # Create tables for testing
@@ -198,9 +198,69 @@ async def test_conversation_crud() -> None:
 @pytest.mark.usefixtures("setup_db")
 async def test_connection_pool_configured() -> None:
     """Connection pooling is properly configured."""
-    import promptgrimoire.db.engine as db_engine
+    from promptgrimoire.db.engine import get_engine
 
-    engine = db_engine._engine
+    engine = get_engine()
     assert engine is not None
     # AsyncAdaptedQueuePool has size() method
     assert engine.pool.size() == 5  # type: ignore[union-attr]
+    # Verify pool_recycle is set (HIGH-8 fix)
+    assert engine.pool._recycle == 3600
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("setup_db")
+async def test_cascade_delete_removes_dependent_records() -> None:
+    """Deleting a User cascades to Class and Conversation (HIGH-9 fix)."""
+    from sqlmodel import delete, select
+
+    async with get_session() as session:
+        # Create user
+        user = User(
+            email=f"cascade-test-{uuid4()}@example.com",
+            display_name="Cascade Test User",
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        user_id = user.id
+
+        # Create class owned by user
+        cls = Class(
+            name="Cascade Test Class",
+            owner_id=user_id,
+            invite_code=f"CSC{uuid4().hex[:8].upper()}",
+        )
+        session.add(cls)
+        await session.commit()
+        await session.refresh(cls)
+        class_id = cls.id
+
+        # Create conversation in that class
+        conv = Conversation(
+            class_id=class_id,
+            owner_id=user_id,
+            raw_text="Cascade test conversation",
+        )
+        session.add(conv)
+        await session.commit()
+        conv_id = conv.id
+
+    # Delete the user - should cascade
+    # Use col() for proper type inference with SQLModel
+    async with get_session() as session:
+        stmt = delete(User).where(col(User.id) == user_id)
+        await session.exec(stmt)
+        await session.commit()
+
+    # Verify cascade deleted dependent records
+    async with get_session() as session:
+        # Class should be gone
+        cls_result = await session.exec(select(Class).where(Class.id == class_id))
+        assert cls_result.first() is None, "Class should be cascade deleted"
+
+        # Conversation should be gone
+        conv_result = await session.exec(
+            select(Conversation).where(Conversation.id == conv_id)
+        )
+        assert conv_result.first() is None, "Conversation should be cascade deleted"

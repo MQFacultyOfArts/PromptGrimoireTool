@@ -5,8 +5,8 @@ Provides async PostgreSQL connections via SQLModel and asyncpg.
 
 from __future__ import annotations
 
+import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class _DatabaseState:
@@ -30,9 +32,6 @@ class _DatabaseState:
 
 # Module-level state (initialized on startup)
 _state = _DatabaseState()
-
-# Expose engine for direct access (e.g., in tests)
-_engine: AsyncEngine | None = None  # Updated by init_db/close_db
 
 
 def get_database_url() -> str:
@@ -51,6 +50,17 @@ def get_database_url() -> str:
     return url
 
 
+def get_engine() -> AsyncEngine | None:
+    """Get the database engine for direct access.
+
+    Primarily for test fixtures that need to call create_all/drop_all.
+
+    Returns:
+        The async engine if initialized, None otherwise.
+    """
+    return _state.engine
+
+
 async def init_db() -> None:
     """Initialize database engine and session factory.
 
@@ -63,6 +73,11 @@ async def init_db() -> None:
         pool_size=5,
         max_overflow=10,
         pool_pre_ping=True,
+        pool_recycle=3600,  # Recycle stale connections after 1 hour
+        connect_args={
+            "timeout": 10,  # Connection timeout in seconds
+            "command_timeout": 30,  # Query timeout in seconds
+        },
     )
 
     _state.session_factory = async_sessionmaker(
@@ -70,9 +85,6 @@ async def init_db() -> None:
         class_=AsyncSession,
         expire_on_commit=False,
     )
-
-    # Update module-level reference for direct access
-    sys.modules[__name__]._engine = _state.engine  # type: ignore[attr-defined]
 
 
 async def close_db() -> None:
@@ -85,7 +97,6 @@ async def close_db() -> None:
         await _state.engine.dispose()
         _state.engine = None
         _state.session_factory = None
-        sys.modules[__name__]._engine = None  # type: ignore[attr-defined]
 
 
 @asynccontextmanager
@@ -93,6 +104,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """Get an async database session.
 
     Yields a session that auto-commits on success and rolls back on error.
+    Exceptions are logged before re-raising.
 
     Usage:
         async with get_session() as session:
@@ -113,5 +125,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             yield session
             await session.commit()
         except Exception:
+            logger.exception("Database session error, rolling back transaction")
             await session.rollback()
             raise

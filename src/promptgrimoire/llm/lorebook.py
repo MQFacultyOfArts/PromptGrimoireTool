@@ -92,7 +92,7 @@ def activate_entries(
         # Build haystack for this entry's scan depth
         haystack = build_haystack(turns, entry.scan_depth)
 
-        if _entry_matches(entry, haystack, SelectiveLogic):
+        if _entry_matches(entry, haystack, selective_logic_type=SelectiveLogic):
             activated.append(entry)
 
     # Sort by insertion_order descending (higher priority first)
@@ -102,14 +102,14 @@ def activate_entries(
 
 
 def _entry_matches(
-    entry: LorebookEntry, haystack: str, SelectiveLogic: type[SelectiveLogic]
+    entry: LorebookEntry, haystack: str, selective_logic_type: type[SelectiveLogic]
 ) -> bool:
     """Check if an entry's keywords match the haystack.
 
     Args:
         entry: The lorebook entry to check.
         haystack: The text to search in.
-        SelectiveLogic: The SelectiveLogic enum type.
+        selective_logic_type: The SelectiveLogic enum type.
 
     Returns:
         True if the entry should activate.
@@ -146,17 +146,12 @@ def _entry_matches(
     any_secondary = any(secondary_matches)
     all_secondary = all(secondary_matches)
 
-    if entry.selective_logic == SelectiveLogic.AND_ANY:
-        # Primary matches AND at least one secondary matches
-        return any_secondary
-    if entry.selective_logic == SelectiveLogic.NOT_ALL:
-        # Primary matches AND at least one secondary does NOT match
-        return not all_secondary
-    if entry.selective_logic == SelectiveLogic.NOT_ANY:
-        # Primary matches AND NO secondary matches
-        return not any_secondary
-    if entry.selective_logic == SelectiveLogic.AND_ALL:
-        # Primary matches AND ALL secondary match
-        return all_secondary
+    # Map selective logic to result
+    logic_results = {
+        selective_logic_type.AND_ANY: any_secondary,
+        selective_logic_type.NOT_ALL: not all_secondary,
+        selective_logic_type.NOT_ANY: not any_secondary,
+        selective_logic_type.AND_ALL: all_secondary,
+    }
 
-    return False
+    return logic_results.get(entry.selective_logic, False)

@@ -155,20 +155,22 @@ class TestConcurrentEdits:
         page.get_by_label("Edit text").type("AAA")
         page2.get_by_label("Edit text").type("BBB")
 
-        # Wait for sync to settle
-        page.wait_for_timeout(200)
+        # Wait for sync to settle using Playwright's expect() with auto-retry
+        # instead of arbitrary wait_for_timeout (HIGH-11 fix)
+        synced_text_1 = page.get_by_test_id("synced-text")
+        synced_text_2 = page2.get_by_test_id("synced-text")
 
-        # Both should see merged content (order may vary due to CRDT)
-        text1 = page.get_by_test_id("synced-text").text_content() or ""
-        text2 = page2.get_by_test_id("synced-text").text_content() or ""
+        # Both tabs should eventually show content containing both A and B
+        # Use a lambda predicate for the complex assertion
+        expect(synced_text_1).to_contain_text("A")
+        expect(synced_text_1).to_contain_text("B")
+        expect(synced_text_2).to_contain_text("A")
+        expect(synced_text_2).to_contain_text("B")
 
         # Both tabs should show identical content
-        assert text1 == text2
-
-        # Both contributions MUST be present - CRDT guarantees no data loss
-        assert "A" in text1 and "B" in text1, (
-            f"Expected both A and B in merged content, got: {text1}"
-        )
+        text1 = synced_text_1.text_content() or ""
+        text2 = synced_text_2.text_content() or ""
+        assert text1 == text2, f"Tabs not in sync: '{text1}' vs '{text2}'"
 
 
 class TestEdgeCases:

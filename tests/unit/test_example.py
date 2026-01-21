@@ -17,9 +17,13 @@ def test_version_exists() -> None:
 
 
 def test_version_format() -> None:
-    """Version should follow semver format (x.y.z)."""
+    """Version should follow semver format (major.minor.patch).
+
+    HIGH-12 fix: Strengthened assertion to require exactly 3 parts.
+    """
     parts = __version__.split(".")
-    assert len(parts) >= 2, "Version should have at least major.minor"
-    # First two parts should be numeric
-    assert parts[0].isdigit(), "Major version should be numeric"
-    assert parts[1].isdigit(), "Minor version should be numeric"
+    assert len(parts) == 3, f"Version should be major.minor.patch, got: {__version__}"
+    # All three parts should be numeric
+    assert parts[0].isdigit(), f"Major version should be numeric, got: {parts[0]}"
+    assert parts[1].isdigit(), f"Minor version should be numeric, got: {parts[1]}"
+    assert parts[2].isdigit(), f"Patch version should be numeric, got: {parts[2]}"

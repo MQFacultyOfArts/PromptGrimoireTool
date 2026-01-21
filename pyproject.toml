@@ -86,6 +86,9 @@ ignore = [
 "src/promptgrimoire/__init__.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies at startup
 ]
+"src/promptgrimoire/llm/lorebook.py" = [
+    "PLC0415",  # Import inside function to avoid circular imports with models
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]

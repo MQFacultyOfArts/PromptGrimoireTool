@@ -183,25 +183,22 @@ class ClaudeClient:
             }
 
         # Stream response - collect thinking separately from response (async)
+        # Uses high-level SDK events: "text" and "thinking" (not raw deltas)
         full_response = ""
         thinking_content = ""
 
         async with self._client.messages.stream(**api_params) as stream:
             async for event in stream:
-                # Handle content block delta events
-                if (
-                    hasattr(event, "type")
-                    and event.type == "content_block_delta"
-                    and hasattr(event.delta, "type")
-                ):
-                    delta = event.delta
-                    if delta.type == "thinking_delta":
-                        # Capture thinking but don't yield it
-                        thinking_content += delta.thinking
-                    elif delta.type == "text_delta":
-                        # Yield text response to UI
-                        full_response += delta.text
-                        yield delta.text
+                if event.type == "thinking":
+                    # Capture thinking but don't yield it (hidden from students)
+                    # getattr for type checker - ThinkingEvent always has .thinking
+                    thinking_content += getattr(event, "thinking", "")
+                elif event.type == "text":
+                    # Yield text response to UI
+                    # getattr for type checker - TextEvent always has .text
+                    text: str = getattr(event, "text", "")
+                    full_response += text
+                    yield text
 
         # Build metadata
         metadata: dict = {

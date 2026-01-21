@@ -289,10 +289,10 @@ class TestValidateSession:
 
         mock_session = MagicMock()
         mock_session.roles = [mock_role]
+        mock_session.member_id = "member-123"
+        mock_session.organization_id = "org-456"
 
         mock_response = MagicMock()
-        mock_response.member_id = "member-123"
-        mock_response.organization_id = "org-456"
         mock_response.member = mock_member
         mock_response.member_session = mock_session
 

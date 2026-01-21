@@ -130,8 +130,8 @@ class StytchB2BClient:
                 session_duration_minutes=60 * 24 * 7,  # 1 week
             )
 
-            # Check if MFA is required
-            if not response.member_authenticated:
+            # Check if MFA is required (member_session is None when MFA needed)
+            if not response.member_authenticated or response.member_session is None:
                 logger.info("MFA required for member %s", response.member_id)
                 return AuthResult(
                     success=False,
@@ -174,6 +174,10 @@ class StytchB2BClient:
                 session_duration_minutes=60 * 24 * 7,  # 1 week
             )
 
+            # SSO always creates a session, but check for type safety
+            if response.member_session is None:
+                return AuthResult(success=False, error="no_session")
+
             roles = _extract_roles(response.member_session.roles)
 
             return AuthResult(
@@ -209,12 +213,17 @@ class StytchB2BClient:
                 session_token=session_token,
             )
 
-            roles = _extract_roles(response.member_session.roles)
+            # Session authenticate always has member_session, but check for type safety
+            member_session = response.member_session
+            if member_session is None:
+                return SessionResult(valid=False, error="no_session")
+
+            roles = _extract_roles(member_session.roles)
 
             return SessionResult(
                 valid=True,
-                member_id=response.member_id,
-                organization_id=response.organization_id,
+                member_id=member_session.member_id,
+                organization_id=member_session.organization_id,
                 email=response.member.email_address,
                 roles=roles,
             )
@@ -302,8 +311,8 @@ class StytchB2BClient:
                 session_duration_minutes=60 * 24 * 7,  # 1 week
             )
 
-            # Check if MFA is required
-            if not response.member_authenticated:
+            # Check if MFA is required (member_session is None when MFA needed)
+            if not response.member_authenticated or response.member_session is None:
                 logger.info("MFA required for OAuth member %s", response.member_id)
                 return AuthResult(
                     success=False,

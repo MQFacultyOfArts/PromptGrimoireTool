@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Post-write hook to run ruff and ty on Python files.
+"""Post-write hook to run ruff and ty on Python files (read-only checks).
 
 This hook runs after any Write or Edit operation on .py files:
-1. ruff check --fix (autofix lint issues)
-2. ruff format (format code)
+1. ruff format (format code)
+2. ruff check (report issues WITHOUT autofix)
 3. ty check (type checking)
+
+Note: Autofix (--fix) is intentionally NOT used here to avoid removing
+"unused" imports before all files are written. The Stop hook runs
+comprehensive linting with --fix when Claude finishes work.
 
 Exit codes:
 - 0: Success (or non-Python file, skipped)
@@ -38,17 +42,7 @@ def main() -> int:
 
     errors = []
 
-    # Step 1: ruff check --fix (autofix)
-    subprocess.run(
-        ["uv", "run", "ruff", "check", "--fix", file_path],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    # Don't fail on autofix, it modifies the file
-
-    # Step 2: ruff format
+    # Step 1: ruff format
     result = subprocess.run(
         ["uv", "run", "ruff", "format", file_path],
         capture_output=True,
@@ -59,7 +53,7 @@ def main() -> int:
     if result.returncode != 0:
         errors.append(f"ruff format failed:\n{result.stderr}")
 
-    # Step 3: ruff check (verify no remaining issues)
+    # Step 2: ruff check (report issues, no autofix)
     result = subprocess.run(
         ["uv", "run", "ruff", "check", file_path],
         capture_output=True,
@@ -68,9 +62,9 @@ def main() -> int:
         check=False,
     )
     if result.returncode != 0:
-        errors.append(f"ruff check failed:\n{result.stdout}{result.stderr}")
+        errors.append(f"ruff check issues:\n{result.stdout}{result.stderr}")
 
-    # Step 4: ty check (via uvx)
+    # Step 3: ty check (via uvx)
     result = subprocess.run(
         ["uvx", "ty", "check", file_path],
         capture_output=True,

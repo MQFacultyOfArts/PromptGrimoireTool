@@ -11,6 +11,21 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/final_lint.py",
+            "timeout": 120
+          },
+          {
+            "type": "prompt",
+            "prompt": "If Write or Edit tools were used this session to modify Python files, remind the user to run /code-review before committing. Keep the reminder brief (one line)."
+          }
+        ]
+      }
     ]
   }
 }

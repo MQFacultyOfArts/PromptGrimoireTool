@@ -244,11 +244,11 @@ class StytchB2BClient:
         """
         base_url = STYTCH_TEST_API if self._environment == "test" else STYTCH_LIVE_API
         # Use the public SSO start endpoint - works for both OIDC and SAML
-        redirect_url = (
-            f"{base_url}/v1/public/sso/start"
-            f"?connection_id={connection_id}"
-            f"&public_token={public_token}"
-        )
+        params = {
+            "connection_id": connection_id,
+            "public_token": public_token,
+        }
+        redirect_url = f"{base_url}/v1/public/sso/start?{urlencode(params)}"
         return SSOStartResult(
             success=True,
             redirect_url=redirect_url,

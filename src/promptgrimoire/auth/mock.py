@@ -6,6 +6,8 @@ that can be used in tests without making real Stytch API calls.
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from promptgrimoire.auth.models import (
     AuthResult,
     OAuthStartResult,
@@ -169,12 +171,13 @@ class MockAuthClient:
         Returns:
             SSOStartResult with a mock redirect URL.
         """
+
         # Return a mock URL that can be detected in tests
-        redirect_url = (
-            f"https://mock.stytch.com/v1/b2b/sso/start"
-            f"?connection_id={connection_id}"
-            f"&public_token={public_token}"
-        )
+        params = {
+            "connection_id": connection_id,
+            "public_token": public_token,
+        }
+        redirect_url = f"https://mock.stytch.com/v1/b2b/sso/start?{urlencode(params)}"
         return SSOStartResult(
             success=True,
             redirect_url=redirect_url,

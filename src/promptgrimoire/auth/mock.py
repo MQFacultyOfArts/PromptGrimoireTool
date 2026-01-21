@@ -199,10 +199,13 @@ class MockAuthClient:
         Returns:
             OAuthStartResult with a mock redirect URL.
         """
+        params = {
+            "public_token": public_token,
+            "discovery_redirect_url": discovery_redirect_url,
+        }
         redirect_url = (
             f"https://mock.stytch.com/v1/b2b/public/oauth/{provider}/discovery/start"
-            f"?public_token={public_token}"
-            f"&discovery_redirect_url={discovery_redirect_url}"
+            f"?{urlencode(params)}"
         )
         return OAuthStartResult(
             success=True,

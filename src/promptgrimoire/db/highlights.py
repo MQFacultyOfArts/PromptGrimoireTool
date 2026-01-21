@@ -52,6 +52,8 @@ async def create_highlight(
     end_offset: int,
     text: str,
     created_by: str,
+    para_num: int | None = None,
+    section_header: str | None = None,
 ) -> Highlight:
     """Create a new highlight.
 
@@ -62,6 +64,8 @@ async def create_highlight(
         end_offset: Character position where highlight ends.
         text: The highlighted text content.
         created_by: Display name of the user.
+        para_num: Paragraph number where highlight starts (from <ol><li>).
+        section_header: Nearest preceding section header (e.g., JUDGMENT).
 
     Returns:
         The created Highlight with generated ID.
@@ -74,6 +78,8 @@ async def create_highlight(
             end_offset=end_offset,
             text=text,
             created_by=created_by,
+            para_num=para_num,
+            section_header=section_header,
         )
         session.add(highlight)
         await session.flush()

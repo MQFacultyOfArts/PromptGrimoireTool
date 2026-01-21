@@ -102,10 +102,12 @@ async def case_tool_page() -> None:
         "id": None,
         "data": None,
     }
-    selection_state: dict[str, str | int] = {
+    selection_state: dict[str, str | int | None] = {
         "text": "",
         "start": 0,
         "end": 0,
+        "para_num": None,
+        "header": None,
     }
     editing_highlight: dict[str, DBHighlight | None] = {"highlight": None}
     # Cache for loaded comments (highlight_id -> list of comments)
@@ -136,6 +138,15 @@ async def case_tool_page() -> None:
             overflow-y: auto;
             padding: 1rem;
             background: white;
+        }}
+        /* Restore ordered list numbering (Tailwind/Quasar resets these) */
+        .case-content ol {{
+            list-style-type: decimal;
+            padding-left: 2.5em;
+            margin-left: 0;
+        }}
+        .case-content ol li {{
+            display: list-item;
         }}
         .case-content table {{
             border-collapse: collapse;
@@ -383,21 +394,48 @@ async def case_tool_page() -> None:
 
     async def _apply_tag_to_selection(tag: BriefTag) -> None:
         """Apply a tag to the current selection."""
-        if not selection_state.get("text") or not current_case.get("id"):
+        text = selection_state.get("text")
+        case_id = current_case.get("id")
+        if not text or not case_id:
             ui.notify("No text selected", type="warning")
             return
 
+        # Extract offsets (guaranteed to be ints when text is present)
+        start_offset = selection_state.get("start")
+        end_offset = selection_state.get("end")
+        if not isinstance(start_offset, int) or not isinstance(end_offset, int):
+            ui.notify("Invalid selection offsets", type="warning")
+            return
+
+        # Extract para_num as int if present
+        para_num_raw = selection_state.get("para_num")
+        para_num = int(para_num_raw) if para_num_raw is not None else None
+
+        # Extract section_header as str if present
+        header = selection_state.get("header")
+        section_header = str(header) if header else None
+
         await create_highlight(
-            case_id=str(current_case["id"]),
+            case_id=str(case_id),
             tag=tag.value,
-            start_offset=int(selection_state["start"]),
-            end_offset=int(selection_state["end"]),
-            text=str(selection_state["text"]),
+            start_offset=start_offset,
+            end_offset=end_offset,
+            text=str(text),
             created_by=_get_username(),
+            para_num=para_num,
+            section_header=section_header,
         )
 
         # Clear selection
-        selection_state.update({"text": "", "start": 0, "end": 0})
+        selection_state.update(
+            {
+                "text": "",
+                "start": 0,
+                "end": 0,
+                "para_num": None,
+                "header": None,
+            }
+        )
 
         ui.notify(f"Tagged as {tag.value.replace('_', ' ').title()}")
 
@@ -484,12 +522,23 @@ async def case_tool_page() -> None:
                         )
                         ui.label(timestamp).classes("comment-timestamp")
 
-                    # Tag badge
-                    ui.label(tag_name).classes("comment-tag-badge").style(
-                        f"background-color: {tag_color}; "
-                        "color: white; padding: 2px 6px; border-radius: 3px; "
-                        "font-size: 0.7rem; display: inline-block; margin-bottom: 4px;"
-                    )
+                    # Tag badge and location info row
+                    with ui.row().classes("items-center gap-2 mb-1"):
+                        ui.label(tag_name).classes("comment-tag-badge").style(
+                            f"background-color: {tag_color}; "
+                            "color: white; padding: 2px 6px; border-radius: 3px; "
+                            "font-size: 0.7rem; display: inline-block;"
+                        )
+                        # Location context: paragraph number and section header
+                        location_parts = []
+                        if h.para_num is not None:
+                            location_parts.append(f"[{h.para_num}]")
+                        if h.section_header:
+                            location_parts.append(h.section_header)
+                        if location_parts:
+                            ui.label(" · ".join(location_parts)).classes(
+                                "text-xs text-grey"
+                            )
 
                     # Quoted text from document
                     preview = h.text[:120]
@@ -550,7 +599,9 @@ async def case_tool_page() -> None:
         ]
 
         container_id = container.id
-        await ui.run_javascript(f"""
+        # Use longer timeout for large documents with many text nodes
+        await ui.run_javascript(
+            f"""
             const container = getHtmlElement({container_id});
             if (!container) return;
 
@@ -611,7 +662,9 @@ async def case_tool_page() -> None:
                     console.warn('Could not apply highlight:', h.id, e);
                 }}
             }});
-        """)
+        """,
+            timeout=5.0,
+        )
 
     async def _render_case_content(container: ui.element) -> None:
         """Render case HTML."""
@@ -660,13 +713,23 @@ async def case_tool_page() -> None:
         end = e.args.get("end", 0)
         client_x = e.args.get("clientX", 0)
         client_y = e.args.get("clientY", 0)
+        para_num = e.args.get("paraNum")
+        header = e.args.get("header")
 
         if not isinstance(text, str) or not text.strip():
             return
         if not isinstance(start, int) or not isinstance(end, int):
             return
 
-        selection_state.update({"text": text, "start": start, "end": end})
+        selection_state.update(
+            {
+                "text": text,
+                "start": start,
+                "end": end,
+                "para_num": para_num,
+                "header": header,
+            }
+        )
 
         # Show floating menu near selection
         ui.run_javascript(f"""
@@ -722,7 +785,7 @@ async def case_tool_page() -> None:
 async def _setup_selection_handlers(container: ui.element) -> None:
     """Set up JavaScript selection handlers on the content container."""
     container_id = container.id
-    await ui.run_javascript(f"""
+    await ui.run_javascript(rf"""
         const container = getHtmlElement({container_id});
         if (!container) return;
 
@@ -752,12 +815,70 @@ async def _setup_selection_handlers(container: ui.element) -> None:
                 // Save range for potential highlighting
                 window._savedRange = range.cloneRange();
 
+                // Find paragraph number: look for ancestor <li> in an <ol>
+                let paraNum = null;
+                let node = range.startContainer;
+                while (node && node !== container) {{
+                    if (node.nodeName === 'LI') {{
+                        const ol = node.closest('ol');
+                        if (ol) {{
+                            const start = ol.getAttribute('start') || '1';
+                            const startNum = parseInt(start, 10);
+                            const idx = Array.from(ol.children).indexOf(node);
+                            paraNum = startNum + idx;
+                        }}
+                        break;
+                    }}
+                    node = node.parentNode;
+                }}
+
+                // Fallback: manual paragraph numbers [1], (1), or 1.
+                if (paraNum === null) {{
+                    let pNode = range.startContainer;
+                    while (pNode && pNode !== container) {{
+                        if (pNode.nodeName === 'P' || pNode.nodeName === 'DIV') {{
+                            const pText = pNode.textContent.trim();
+                            const re = /^(?:\[(\d+)\]|\((\d+)\)|(\d+)\.)\s/;
+                            const match = pText.match(re);
+                            if (match) {{
+                                const num = match[1] || match[2] || match[3];
+                                paraNum = parseInt(num, 10);
+                            }}
+                            break;
+                        }}
+                        pNode = pNode.parentNode;
+                    }}
+                }}
+
+                // Find nearest preceding header (bold uppercase)
+                let header = null;
+                const sel = 'b, h1, h2, h3, h4, h5, h6';
+                const headers = container.querySelectorAll(sel);
+                for (const h of headers) {{
+                    const hText = h.textContent.trim();
+                    // Uppercase heading like JUDGMENT, GROUNDS OF APPEAL
+                    if (hText === hText.toUpperCase() && hText.length > 3) {{
+                        // Check if header comes before our selection
+                        const hRange = document.createRange();
+                        hRange.selectNodeContents(h);
+                        const cmp = range.compareBoundaryPoints(
+                            Range.START_TO_START, hRange);
+                        if (cmp >= 0) {{
+                            header = hText;
+                        }} else {{
+                            break;
+                        }}
+                    }}
+                }}
+
                 emitEvent('text_selected', {{
                     text: text,
                     start: start,
                     end: start + text.length,
                     clientX: e.clientX,
-                    clientY: e.clientY
+                    clientY: e.clientY,
+                    paraNum: paraNum,
+                    header: header
                 }});
             }}, 10);
         }};

@@ -108,6 +108,8 @@ class Highlight(SQLModel, table=True):
         start_offset: Character position where highlight starts.
         end_offset: Character position where highlight ends.
         text: The highlighted text content.
+        para_num: Paragraph number where highlight starts (from <ol><li>).
+        section_header: Nearest preceding section header (e.g., JUDGMENT).
         created_by: Display name of the user who created this highlight.
         created_at: Timestamp when highlight was created.
     """
@@ -118,6 +120,8 @@ class Highlight(SQLModel, table=True):
     start_offset: int
     end_offset: int
     text: str
+    para_num: int | None = Field(default=None)
+    section_header: str | None = Field(default=None, max_length=200)
     created_by: str = Field(max_length=100, default="Unknown")
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

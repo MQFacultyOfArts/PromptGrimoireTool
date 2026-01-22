@@ -18,6 +18,7 @@ library references during development.
 - [Styling & Static Files](nicegui/styling.md) - CSS, Tailwind, Quasar, ui.add_css(), static files
 - [Color Theming](nicegui/colors.md) - ui.colors(), custom colors for branding, Quasar color system
 - [Events](nicegui/events.md) - GenericEventArguments, event handler types
+- [Elements & Text](nicegui/elements-text.md) - ui.element, ui.html, ui.label, ui.markdown
 - [E2E Testing](nicegui/testing.md) - *Project notes: Playwright testing with NiceGUI*
 - [Multi-Client Sync](nicegui/multi-client-sync.md) - *Project notes: Broadcasting updates*
 

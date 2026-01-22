@@ -7,6 +7,7 @@ from promptgrimoire.pages import (
     auth,
     case_tool,
     index,
+    live_annotation_demo,
     logviewer,
     roleplay,
     sync_demo,
@@ -17,6 +18,7 @@ __all__ = [
     "auth",
     "case_tool",
     "index",
+    "live_annotation_demo",
     "logviewer",
     "roleplay",
     "sync_demo",
@@ -25,4 +27,13 @@ __all__ = [
 
 # Touch modules to prevent linter from removing "unused" imports.
 # These imports register @ui.page decorators as a side effect.
-_PAGES = (auth, case_tool, index, logviewer, roleplay, sync_demo, text_selection)
+_PAGES = (
+    auth,
+    case_tool,
+    index,
+    live_annotation_demo,
+    logviewer,
+    roleplay,
+    sync_demo,
+    text_selection,
+)

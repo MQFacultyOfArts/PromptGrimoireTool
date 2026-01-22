@@ -326,6 +326,97 @@ ui.notify('Click to dismiss', close_button='OK')
 ui.notify('Line 1\nLine 2', multi_line=True)
 ```
 
+## Page Layout Components
+
+For app-level layout with fixed headers, footers, drawers, etc., use Quasar's layout components.
+
+### ui.header() - Fixed Header
+
+Creates a sticky header at the top of the page. Content scrolls beneath it.
+
+```python
+from nicegui import ui
+
+# Basic header
+with ui.header().classes('bg-primary'):
+    ui.label('My App')
+
+# Header with custom styling
+with ui.header().classes('bg-gray-100 q-py-xs'):
+    with ui.row().classes('w-full items-center'):
+        ui.button(icon='menu').props('flat')
+        ui.label('Title').classes('text-h6')
+
+# The rest of the page content scrolls under the header
+ui.label('Page content here')
+
+ui.run()
+```
+
+**Why use ui.header() instead of CSS position: fixed?**
+
+- NiceGUI/Quasar wraps content in layout containers
+- CSS `position: fixed` doesn't work reliably inside these containers
+- `ui.header()` is Quasar's built-in solution and integrates properly
+
+### ui.footer() - Fixed Footer
+
+```python
+with ui.footer(value=False) as footer:  # value=False means hidden initially
+    ui.label('Footer content')
+
+ui.button('Toggle footer', on_click=footer.toggle)
+```
+
+### ui.left_drawer() / ui.right_drawer() - Side Panels
+
+```python
+with ui.left_drawer().classes('bg-blue-100') as drawer:
+    ui.label('Side menu')
+    ui.button('Item 1')
+    ui.button('Item 2')
+
+# Toggle from a button in header
+with ui.header():
+    ui.button(icon='menu', on_click=drawer.toggle).props('flat')
+```
+
+### ui.page_sticky() - Floating Action Button
+
+```python
+with ui.page_sticky(position='bottom-right', x_offset=20, y_offset=20):
+    ui.button(icon='add').props('fab')
+```
+
+### Complete Layout Example
+
+```python
+from nicegui import ui
+
+with ui.header().classes('items-center'):
+    ui.button(icon='menu', on_click=lambda: drawer.toggle()).props('flat color=white')
+    with ui.tabs() as tabs:
+        ui.tab('Home')
+        ui.tab('Settings')
+
+with ui.left_drawer() as drawer:
+    ui.label('Navigation')
+
+with ui.footer(value=False) as footer:
+    ui.label('Footer')
+
+with ui.page_sticky(position='bottom-right', x_offset=20, y_offset=20):
+    ui.button(icon='help', on_click=footer.toggle).props('fab')
+
+with ui.tab_panels(tabs, value='Home').classes('w-full'):
+    with ui.tab_panel('Home'):
+        ui.label('Home content')
+    with ui.tab_panel('Settings'):
+        ui.label('Settings content')
+
+ui.run()
+```
+
 ## Complete Example: Annotation UI
 
 ```python

@@ -6,7 +6,7 @@ Tests the annotation workflow including:
 - Testing the "highest para seen" heuristic for court orders
 - Multi-paragraph highlights with en-dash format
 - Highlight deletion, comments, keyboard shortcuts
-- Floating tag menu, go-to-text, tag colors
+- Go-to-text, tag colors
 - Multiple highlights and multi-user collaboration
 """
 
@@ -340,50 +340,6 @@ class TestKeyboardShortcuts:
         ann_card = page.locator(".ann-card-positioned").first
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("Reflection")
-
-
-class TestFloatingTagMenu:
-    """Test floating tag menu behavior."""
-
-    def test_floating_menu_appears_on_selection(self, clean_page: Page) -> None:
-        """Floating tag menu appears when text is selected."""
-        page = clean_page
-
-        floating_menu = page.locator("#floating-tag-menu")
-        # Initially hidden
-        expect(floating_menu).not_to_have_class("visible")
-
-        # Select text
-        word_400 = page.locator('.doc-container [data-w="400"]')
-        word_401 = page.locator('.doc-container [data-w="401"]')
-        expect(word_400).to_be_visible(timeout=5000)
-
-        word_400.click()
-        word_401.click(modifiers=["Shift"])
-
-        # Menu should be visible
-        expect(floating_menu).to_have_class(re.compile("visible"), timeout=5000)
-
-    def test_floating_menu_hides_on_click_outside(self, clean_page: Page) -> None:
-        """Floating menu hides when clicking outside."""
-        page = clean_page
-
-        # Select text to show menu
-        word_400 = page.locator('.doc-container [data-w="400"]')
-        word_401 = page.locator('.doc-container [data-w="401"]')
-        expect(word_400).to_be_visible(timeout=5000)
-
-        word_400.click()
-        word_401.click(modifiers=["Shift"])
-
-        floating_menu = page.locator("#floating-tag-menu")
-        expect(floating_menu).to_have_class(re.compile("visible"), timeout=5000)
-
-        # Click outside (on the header)
-        page.locator("header").click()
-
-        # Menu should be hidden
-        expect(floating_menu).not_to_have_class(re.compile("visible"), timeout=5000)
 
 
 class TestGoToTextButton:

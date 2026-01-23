@@ -995,18 +995,10 @@ def _setup_event_handlers(
     async def handle_selection(e: GenericEventArguments) -> None:
         start = e.args.get("start")
         end = e.args.get("end")
-        client_x = e.args.get("clientX", 0)
-        client_y = e.args.get("clientY", 0)
 
         if start is not None and end is not None:
             ctx.current_selection["start"] = start
             ctx.current_selection["end"] = end
-            await ui.run_javascript(
-                f"const menu = document.getElementById('floating-tag-menu');"
-                f"menu.style.left = '{client_x}px';"
-                f"menu.style.top = '{client_y + 10}px';"
-                "menu.classList.add('visible');"
-            )
             await broadcast_selection_update()
 
     async def handle_selection_cleared(_e: GenericEventArguments) -> None:
@@ -1022,19 +1014,10 @@ def _setup_event_handlers(
         key = e.args.get("key", "")
         if key in TAG_SHORTCUTS and ctx.current_selection.get("start") is not None:
             await apply_tag_to_selection(TAG_SHORTCUTS[key])
-            await ui.run_javascript(
-                'document.getElementById("floating-tag-menu")?.classList.remove("visible")'
-            )
 
     ui.on("words_selected", handle_selection)
     ui.on("selection_cleared", handle_selection_cleared)
     ui.on("cursor_moved", handle_cursor_moved)
-    ui.on(
-        "click",
-        lambda _: ui.run_javascript(
-            'document.getElementById("floating-tag-menu")?.classList.remove("visible")'
-        ),
-    )
     ui.on("keydown", handle_keydown)
 
 

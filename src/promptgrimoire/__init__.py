@@ -61,11 +61,12 @@ def main() -> None:
     # Database lifecycle hooks (only if DATABASE_URL is configured)
     if os.environ.get("DATABASE_URL"):
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db import close_db, init_db
+        from promptgrimoire.db import close_db, get_engine, init_db, verify_schema
 
         @app.on_startup
         async def startup() -> None:
             await init_db()
+            await verify_schema(get_engine())
             print("Database connected")
 
         @app.on_shutdown

@@ -5,6 +5,9 @@ environment variable to point to a test database.
 
 Example:
     TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+
+Note: Schema is created by Alembic migrations in conftest.py (db_schema_guard).
+Tests use UUID-based isolation - no table drops or truncations.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import pytest
 from sqlmodel import col, select
 
 from promptgrimoire.db import Class, Conversation, User
-from promptgrimoire.db.engine import close_db, get_session, init_db
+from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -29,46 +32,24 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="function")
-async def setup_db() -> AsyncIterator[None]:
-    """Initialize test database connection and create tables.
+@pytest.fixture
+async def db_engine() -> AsyncIterator[None]:
+    """Initialize database engine for each test.
 
-    Sets DATABASE_URL from TEST_DATABASE_URL, initializes the engine,
-    and creates all tables. Cleans up after each test.
+    Schema already exists from Alembic migrations (db_schema_guard in conftest).
+    This fixture only manages the engine connection.
     """
-    from sqlmodel import SQLModel
-
-    from promptgrimoire.db.engine import get_engine
-
-    test_url = os.environ.get("TEST_DATABASE_URL")
-    if not test_url:
-        pytest.skip("TEST_DATABASE_URL not set")
-        return  # Unreachable but helps type checker
-
-    # Set DATABASE_URL for the engine
-    os.environ["DATABASE_URL"] = test_url
-
     await init_db()
-
-    # Access engine via public API
     engine = get_engine()
-    assert engine is not None, "Engine should be initialized"
-
-    # Create tables for testing
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    assert engine is not None, "Engine should be initialized after init_db()"
 
     yield
-
-    # Drop tables after tests
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
 
     await close_db()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_insert_user() -> None:
     """Async insert operation works for User model."""
     async with get_session() as session:
@@ -85,7 +66,7 @@ async def test_insert_user() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_query_user() -> None:
     """Async query operation works for User model."""
     test_email = f"test-query-{uuid4()}@example.com"
@@ -108,7 +89,7 @@ async def test_query_user() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_class_with_foreign_key() -> None:
     """Class correctly references User via foreign key."""
     async with get_session() as session:
@@ -136,7 +117,7 @@ async def test_class_with_foreign_key() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_conversation_crud() -> None:
     """Full CRUD cycle works for Conversation model."""
     async with get_session() as session:
@@ -195,7 +176,7 @@ async def test_conversation_crud() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_connection_pool_configured() -> None:
     """Connection pooling is properly configured."""
     from promptgrimoire.db.engine import get_engine
@@ -209,7 +190,7 @@ async def test_connection_pool_configured() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 async def test_cascade_delete_removes_dependent_records() -> None:
     """Deleting a User cascades to Class and Conversation (HIGH-9 fix)."""
     from sqlmodel import delete, select

@@ -7,6 +7,7 @@ Route: /case-tool
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -130,6 +131,22 @@ def _load_case(case_id: str) -> ParsedRTF | None:
 @ui.page("/case-tool")
 async def case_tool_page() -> None:
     """Case Brief Tool main page."""
+    # Check database availability - this page requires PostgreSQL
+    if not os.environ.get("DATABASE_URL"):
+        with ui.card().classes("max-w-md mx-auto mt-8 p-6"):
+            ui.label("Database Required").classes("text-xl font-bold text-red-600")
+            ui.label(
+                "The Case Tool requires a PostgreSQL database to store annotations."
+            ).classes("mt-2")
+            ui.label(
+                "Set the DATABASE_URL environment variable and restart the server."
+            ).classes("text-gray-600 text-sm mt-1")
+            with ui.row().classes("mt-4"):
+                ui.link("Go to Home", "/").classes(
+                    "text-blue-600 hover:text-blue-800 underline"
+                )
+        return
+
     # Get client for live sync (don't await connected() - it blocks rendering)
     client = ui.context.client
     client_id = str(id(client))

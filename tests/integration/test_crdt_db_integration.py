@@ -5,6 +5,9 @@ environment variable to point to a test database.
 
 Example:
     TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+
+Note: Schema is created by Alembic migrations in conftest.py (db_schema_guard).
+Tests use UUID-based isolation - no table drops or truncations.
 """
 
 from __future__ import annotations
@@ -31,35 +34,24 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="function")
-async def setup_db() -> AsyncIterator[None]:
-    """Initialize test database connection and create tables."""
-    from sqlmodel import SQLModel
+@pytest.fixture
+async def db_engine() -> AsyncIterator[None]:
+    """Initialize database engine for each test.
 
-    test_url = os.environ.get("TEST_DATABASE_URL")
-    if not test_url:
-        pytest.skip("TEST_DATABASE_URL not set")
-        return
-
-    os.environ["DATABASE_URL"] = test_url
+    Schema already exists from Alembic migrations (db_schema_guard in conftest).
+    This fixture only manages the engine connection.
+    """
     await init_db()
-
     engine = get_engine()
-    assert engine is not None
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    assert engine is not None, "Engine should be initialized after init_db()"
 
     yield
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
 
     await close_db()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("setup_db")
+@pytest.mark.usefixtures("db_engine")
 class TestCRDTDatabaseIntegration:
     """Test CRDT state round-trips through database."""
 

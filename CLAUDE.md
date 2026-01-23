@@ -54,8 +54,15 @@ No feature code without corresponding tests. Playwright for E2E, pytest for unit
 - **Keyboard input**: Use `page.keyboard.press()` or `locator.press()`
 - **Clicks**: Use `locator.click()` with modifiers if needed
 - **Assertions**: Use `expect()` from `playwright.sync_api`
+- **Scroll into view**: Use `locator.scroll_into_view_if_needed()` before interacting with elements that may be off-screen
 
 Tests must simulate real user behavior through Playwright events, not bypass the UI with JavaScript injection like `page.evaluate()` or `ui.run_javascript()`.
+
+**Common E2E pitfalls:**
+
+- Elements may be off-screen in headless mode - always scroll into view before assertions
+- NiceGUI pages may need time to hydrate - use `expect().to_be_visible()` with appropriate timeouts
+- Floating menus/popups often require scroll context to position correctly
 
 ### Code Quality Hooks
 
@@ -130,9 +137,48 @@ Prefer to read cached docs over online searches. If you need to run an online se
 
 ## Database
 
-PostgreSQL with SQLModel. Schema migrations via Alembic (to be configured).
+PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-Key entities: User, Class, Conversation, Turn, Annotation, Tag, Comment
+### Tables (6 SQLModel classes)
+
+- **User** - Stytch-linked user accounts
+- **Class** - Student enrollment containers
+- **Conversation** - Imported conversations for annotation
+- **Highlight** - Annotated passages in case documents
+- **HighlightComment** - Comment threads on highlights
+- **AnnotationDocumentState** - Persisted CRDT state
+
+### Database Rules
+
+1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations themselves
+2. **All models must be imported before schema operations** - The `promptgrimoire.db.models` module must be imported to register tables with SQLModel.metadata
+3. **Pages requiring DB must check availability** - Use `os.environ.get("DATABASE_URL")` and show a helpful error if not configured
+4. **Use `verify_schema()` at startup** - Fail fast if tables are missing
+
+### Page Database Dependencies
+
+| Page | Route | DB Required |
+|------|-------|-------------|
+| case_tool | `/case-tool` | **Yes** |
+| live_annotation_demo | `/demo/live-annotation` | Optional |
+| roleplay | `/roleplay` | No |
+| logs | `/logs` | No |
+| auth | `/login`, `/logout` | Optional |
+
+## Testing Rules
+
+### Database Test Isolation
+
+1. **UUID-based isolation is MANDATORY** - All test data must use unique identifiers (uuid4) to prevent collisions
+2. **NEVER use `drop_all()` or `truncate`** - These break parallel test execution (pytest-xdist)
+3. **NEVER use `create_all()` in tests** - Schema comes from Alembic migrations run once at session start
+4. **Tests must be parallel-safe** - Assume pytest-xdist; tests may run concurrently
+
+### Test Database Configuration
+
+1. **Use `TEST_DATABASE_URL`** - Tests set `DATABASE_URL` from `TEST_DATABASE_URL` for isolation
+2. **Schema is set up ONCE per test session** - `db_schema_guard` runs migrations before any tests
+3. **Each test owns its data** - Create with UUIDs, don't rely on cleanup between tests
 
 ## Authentication
 

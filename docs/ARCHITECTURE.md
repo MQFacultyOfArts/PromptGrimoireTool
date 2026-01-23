@@ -217,6 +217,73 @@ if not user:
     session.add(user)
 ```
 
+## Database Initialization
+
+### Schema Management: Alembic Only
+
+All database schema changes go through Alembic migrations. Never use `SQLModel.metadata.create_all()` outside of Alembic.
+
+**Why:**
+
+- Migrations capture schema evolution history
+- `create_all()` can diverge from migrations
+- Production requires controlled schema changes
+
+**Files:**
+
+- `alembic/env.py` - Imports all models, sets `target_metadata = SQLModel.metadata`
+- `alembic/versions/*.py` - Individual migrations
+- `src/promptgrimoire/db/models.py` - All 6 SQLModel table classes
+- `src/promptgrimoire/db/bootstrap.py` - Unified initialization functions
+
+### Startup Sequence
+
+```python
+# src/promptgrimoire/__init__.py
+@app.on_startup
+async def startup():
+    await init_db()                      # Create engine
+    await verify_schema(get_engine())    # Validate tables exist
+```
+
+### Model Registration
+
+SQLModel requires all table classes to be imported before schema operations:
+
+```python
+# This import registers all 6 tables with SQLModel.metadata
+import promptgrimoire.db.models  # noqa: F401
+
+# Now metadata.tables contains: user, class, conversation,
+# highlight, highlight_comment, annotation_document_state
+```
+
+### Test Database Setup
+
+Tests use UUID-based isolation for parallel execution:
+
+```text
+1. pytest starts
+2. db_schema_guard fixture (session-scoped) runs:
+   - Sets DATABASE_URL from TEST_DATABASE_URL
+   - Runs `alembic upgrade head`
+3. Tests run (potentially in parallel with pytest-xdist)
+   - Each test uses unique UUIDs for its data
+   - No table drops or truncations
+4. Session ends, DB remains populated (harmless with UUIDs)
+```
+
+### Bootstrap Functions
+
+```python
+from promptgrimoire.db import (
+    is_db_configured,      # Check if DATABASE_URL is set
+    run_alembic_upgrade,   # Run migrations (subprocess)
+    verify_schema,         # Validate tables exist (async)
+    get_expected_tables,   # Get table names from metadata
+)
+```
+
 ## Derisking Spikes
 
 Before full implementation, build minimal proofs:

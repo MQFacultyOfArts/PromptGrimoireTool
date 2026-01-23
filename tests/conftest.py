@@ -13,7 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from dotenv import load_dotenv
 
-# Load .env for TEST_DATABASE_URL and other test config
+from promptgrimoire.db import run_alembic_upgrade
+
 load_dotenv()
 
 if TYPE_CHECKING:
@@ -22,8 +23,38 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext
 
 
-# Test secrets - keep in one place to avoid duplication
 TEST_STORAGE_SECRET = "test-secret-for-e2e"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def db_schema_guard() -> Generator[None]:
+    """Run migrations once at session start for test database isolation.
+
+    This fixture:
+    1. Sets DATABASE_URL from TEST_DATABASE_URL for test isolation
+    2. Runs Alembic migrations to ensure schema exists
+    3. Does NOT initialize the engine (tests do that as needed)
+
+    Schema verification happens at app startup, not here.
+    """
+    test_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_url:
+        pytest.fail(
+            "TEST_DATABASE_URL environment variable is required for tests. "
+            "Set it to point to a test database (not production!)."
+        )
+
+    # Set DATABASE_URL from TEST_DATABASE_URL for test isolation
+    os.environ["DATABASE_URL"] = test_url
+
+    # Run migrations (sync - Alembic uses subprocess)
+    try:
+        run_alembic_upgrade()
+    except RuntimeError as e:
+        pytest.fail(str(e))
+
+    yield
+    # No cleanup needed - UUID-based isolation means data doesn't collide
 
 
 @pytest.fixture
@@ -60,6 +91,11 @@ for key in list(os.environ.keys()):
 # Enable mock auth for E2E tests
 os.environ['AUTH_MOCK'] = 'true'
 os.environ['STORAGE_SECRET'] = '{TEST_STORAGE_SECRET}'
+
+# Set mock SSO config values so SSO flow can be tested
+# Without these, the SSO code returns early before generating a redirect URL
+os.environ.setdefault('STYTCH_SSO_CONNECTION_ID', 'test-sso-connection-id')
+os.environ.setdefault('STYTCH_PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 

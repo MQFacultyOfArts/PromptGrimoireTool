@@ -24,7 +24,14 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
 # Import all models to register them with SQLModel.metadata
-from promptgrimoire.db.models import Class, Conversation, User  # noqa: E402, F401
+from promptgrimoire.db.models import (  # noqa: E402, F401
+    AnnotationDocumentState,
+    Class,
+    Conversation,
+    Highlight,
+    HighlightComment,
+    User,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -775,7 +775,7 @@ def _create_annotation_card(
         para_ref = f"[{start_para}]"
     else:
         # Span multiple paragraphs - use en-dash for proper typography
-        para_ref = f"[{start_para}–{end_para}]"  # noqa: RUF001
+        para_ref = f"[{start_para}]–[{end_para}]"  # noqa: RUF001
 
     with ctx.annotations_container:
         card = (

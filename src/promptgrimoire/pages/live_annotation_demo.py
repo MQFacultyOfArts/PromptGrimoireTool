@@ -247,6 +247,9 @@ class _WordSpanProcessor:
     _CLOSING_TAG_PATTERN = re.compile(r"</(\w+)")
     _PUA_PATTERN = re.compile(r"[\ue000-\uf8ff]")
 
+    # Regex for extracting start attribute from ol tags
+    _OL_START_PATTERN = re.compile(r'start\s*=\s*["\']?(\d+)["\']?', re.IGNORECASE)
+
     def __init__(self) -> None:
         self.words: list[str] = []
         self.word_to_para: dict[int, int] = {}
@@ -254,6 +257,14 @@ class _WordSpanProcessor:
         self._para_index = 0
         self._word_index = 0
         self._para_start_word: int | None = None
+
+        # Legal paragraph number tracking (for court judgments)
+        self._highest_para_seen: int = 0
+        self._current_legal_para: int | None = None
+        self._current_ol_start: int | None = None  # Start value of current valid ol
+        self._current_ol_li_count: int = 0  # Count of li elements in current ol
+        self._in_valid_ol: bool = False  # Whether we're in a paragraph-numbered ol
+        self.word_to_legal_para: dict[int, int | None] = {}
 
     def _wrap_text(self, text: str) -> str:
         """Wrap words in spans, preserving HTML entities via PUA placeholders."""
@@ -268,6 +279,8 @@ class _WordSpanProcessor:
             word = m.group(0)
             self.words.append(word)
             self.word_to_para[self._word_index] = self._para_index
+            # Track legal paragraph number for this word
+            self.word_to_legal_para[self._word_index] = self._current_legal_para
             # Track first word of this paragraph
             if self._para_start_word is None:
                 self._para_start_word = self._word_index
@@ -291,6 +304,80 @@ class _WordSpanProcessor:
             )
             self._para_start_word = None
 
+    def _handle_ol_open(self, tag: str) -> None:
+        """Handle opening <ol> tag for legal paragraph tracking.
+
+        Uses the "highest para seen" heuristic: an <ol> is only considered
+        a paragraph list if its start value is greater than any paragraph
+        number we've seen so far (or if it's the first list).
+
+        Content between paragraphs keeps the previous para number until
+        a new higher-numbered paragraph starts.
+        """
+        # Extract start attribute, default to 1
+        start_match = self._OL_START_PATTERN.search(tag)
+        start = int(start_match.group(1)) if start_match else 1
+
+        # Check if this is a valid paragraph list using the heuristic
+        # - First list (highest_para_seen == 0) with start == 1 is valid
+        # - Any list with start > highest_para_seen is valid
+        # - Otherwise it's a sub-list (court orders, nested lists, etc.)
+        is_valid = (
+            self._highest_para_seen == 0 and start == 1
+        ) or start > self._highest_para_seen
+
+        if is_valid:
+            self._in_valid_ol = True
+            self._current_ol_start = start
+            self._current_ol_li_count = 0
+            # Reset current para - will be set by first <li>
+            # This makes content BEFORE the first <li> in this list have None
+            # (e.g., section headings between paragraphs)
+            self._current_legal_para = None
+        else:
+            # Sub-list: keep current para (content continues from previous)
+            self._in_valid_ol = False
+            self._current_ol_start = None
+
+    def _handle_li_open(self) -> None:
+        """Handle opening <li> tag within a valid paragraph list.
+
+        Calculates the legal paragraph number as start + li_count.
+        """
+        if self._current_ol_start is None:
+            return
+
+        self._current_ol_li_count += 1
+        para_num = self._current_ol_start + self._current_ol_li_count - 1
+        self._current_legal_para = para_num
+        self._highest_para_seen = max(self._highest_para_seen, para_num)
+
+    def _handle_tag(self, tag: str) -> None:
+        """Handle HTML tag for paragraph tracking."""
+        # Check for closing tags - finalize paragraph
+        close_match = self._CLOSING_TAG_PATTERN.match(tag)
+        if close_match:
+            tag_name = close_match.group(1).lower()
+            if tag_name in self._PARA_TAGS:
+                self._finalize_paragraph()
+            # Handle </ol> - exit current ordered list
+            # Keep _current_legal_para so content after </ol> continues
+            if tag_name == "ol":
+                self._in_valid_ol = False
+                self._current_ol_start = None
+                self._current_ol_li_count = 0
+
+        # Check for opening tags - increment paragraph index
+        tag_match = self._TAG_NAME_PATTERN.match(tag)
+        if tag_match and not tag.startswith("</"):
+            tag_name = tag_match.group(1).lower()
+            if tag_name in self._PARA_TAGS:
+                self._para_index += 1
+            if tag_name == "ol":
+                self._handle_ol_open(tag)
+            if tag_name == "li" and self._in_valid_ol:
+                self._handle_li_open()
+
     def process(self, html: str) -> str:
         """Process HTML content, wrapping text nodes in word spans."""
         # Extract body content if full HTML document
@@ -311,19 +398,7 @@ class _WordSpanProcessor:
                 tag = html[i : tag_end + 1]
                 result.append(tag)
 
-                # Check for closing tags - finalize paragraph
-                close_match = self._CLOSING_TAG_PATTERN.match(tag)
-                if close_match and close_match.group(1).lower() in self._PARA_TAGS:
-                    self._finalize_paragraph()
-
-                # Check for opening tags - increment paragraph index
-                tag_match = self._TAG_NAME_PATTERN.match(tag)
-                if (
-                    tag_match
-                    and tag_match.group(1).lower() in self._PARA_TAGS
-                    and not tag.startswith("</")
-                ):
-                    self._para_index += 1
+                self._handle_tag(tag)
 
                 i = tag_end + 1
             else:
@@ -348,11 +423,15 @@ class _ProcessedDocument:
         words: list[str],
         word_to_para: dict[int, int],
         para_word_ranges: dict[int, tuple[int, int]],
+        word_to_legal_para: dict[int, int | None],
     ) -> None:
         self.html = html
         self.words = words
         self.word_to_para = word_to_para
         self.para_word_ranges = para_word_ranges  # para_idx -> (start_word, end_word)
+        self.word_to_legal_para = (
+            word_to_legal_para  # word_idx -> legal para num or None
+        )
 
 
 def _html_to_word_spans(html: str) -> _ProcessedDocument:
@@ -371,6 +450,7 @@ def _html_to_word_spans(html: str) -> _ProcessedDocument:
         words=processor.words,
         word_to_para=processor.word_to_para,
         para_word_ranges=processor.para_word_ranges,
+        word_to_legal_para=processor.word_to_legal_para,
     )
 
 
@@ -542,6 +622,7 @@ class _PageContext:
         doc_id: str,
         ann_doc: Any,
         words: list[str],
+        word_to_legal_para: dict[int, int | None],
     ) -> None:
         self.client_id = client_id
         self.username = username
@@ -549,6 +630,7 @@ class _PageContext:
         self.doc_id = doc_id
         self.ann_doc = ann_doc
         self.words = words
+        self.word_to_legal_para = word_to_legal_para
         self.current_selection: dict[str, int | None] = {"start": None, "end": None}
         self.annotation_cards: dict[str, ui.element] = {}
         self.comment_refreshers: dict[str, Any] = {}  # ui.refreshable.refresh methods
@@ -678,6 +760,23 @@ def _create_annotation_card(
     start_word = int(h.get("start_word", 0))
     end_word = int(h.get("end_word", start_word))
 
+    # Get legal paragraph number(s) for this highlight
+    # end_word is exclusive (one past last word), so use end_word - 1
+    start_para = ctx.word_to_legal_para.get(start_word)
+    last_word = end_word - 1 if end_word > start_word else start_word
+    end_para = ctx.word_to_legal_para.get(last_word)
+
+    # Build paragraph reference string
+    if start_para is None and end_para is None:
+        para_ref = ""
+    elif start_para is None:
+        para_ref = f"[{end_para}]"
+    elif end_para is None or start_para == end_para:
+        para_ref = f"[{start_para}]"
+    else:
+        # Span multiple paragraphs - use en-dash for proper typography
+        para_ref = f"[{start_para}–{end_para}]"  # noqa: RUF001
+
     with ctx.annotations_container:
         card = (
             ui.card()
@@ -697,7 +796,11 @@ def _create_annotation_card(
                 update_highlight_css,
                 broadcast_update,
             )
-            ui.label(f"by {author}").classes("text-xs text-grey")
+            # Author and paragraph reference on same line
+            with ui.row().classes("gap-2 items-center"):
+                ui.label(f"by {author}").classes("text-xs text-grey")
+                if para_ref:
+                    ui.label(para_ref).classes("text-xs font-mono text-grey-7")
             ui.label(f'"{text}"').classes("text-sm italic")
             _build_go_to_text_button(start_word, end_word)
 
@@ -975,7 +1078,13 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
 
     # Create page context
     ctx = _PageContext(
-        client_id, username, client_color, doc_id, ann_doc, processed_doc.words
+        client_id,
+        username,
+        client_color,
+        doc_id,
+        ann_doc,
+        processed_doc.words,
+        processed_doc.word_to_legal_para,
     )
 
     # Create functions that need ctx

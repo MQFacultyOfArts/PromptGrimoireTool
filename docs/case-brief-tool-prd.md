@@ -16,7 +16,7 @@ Case Brief Tool is a legal education application for teaching students to read, 
 - **SQLModel** - ORM (Pydantic + SQLAlchemy)
 - **PostgreSQL** - persistence
 - **Stytch** - auth (magic links, passkeys, RBAC)
-- **pycrdt** - CRDT for real-time collaboration (Phase 2)
+- **pycrdt** - CRDT for real-time collaboration (MVP - all screens)
 
 ### Additional Dependencies
 
@@ -40,8 +40,9 @@ Course
 └── Week
     └── Case (uploaded RTF)
         └── Brief (per student or per group)
-            ├── Brief tags (11)
-            └── Linked highlights (from case annotations)
+            ├── Highlights with tags (10 categories)
+            ├── Card ordering (user-defined per tag)
+            └── Brief content (freeform WYSIWYG)
 ```
 
 ## Data Model
@@ -78,39 +79,35 @@ Brief
 ├── id: UUID
 ├── case_id: FK → Case
 ├── student_id: FK → User
-├── group_id: FK → Group (nullable, for collaborative briefs - Phase 2)
-├── reflection_mode: enum (individual | collaborative)
+├── group_id: FK → Group (nullable, for collaborative briefs)
+├── content: str (HTML from freeform WYSIWYG - CRDT synced)
+├── card_ordering: JSON (tag → ordered list of highlight IDs - CRDT synced)
+├── word_limit: int | None (instructor-configured max, nullable)
 ├── created_at: datetime
-├── updated_at: datetime
-└── tags: BriefTags (embedded, HTML content from WYSIWYG)
-
-BriefTags
-├── jurisdiction: str (HTML)
-├── procedural_history: str (HTML)
-├── legally_relevant_facts: str (HTML)
-├── legal_issues: str (HTML)
-├── reasons: str (HTML)
-├── courts_reasoning: str (HTML)
-├── decision: str (HTML)
-├── order: str (HTML)
-├── domestic_sources: str (HTML, free-text: cases and legislation)
-└── reflection: str (HTML)
+└── updated_at: datetime
 
 Highlight
 ├── id: UUID
 ├── case_id: FK → Case
 ├── brief_id: FK → Brief
 ├── student_id: FK → User
-├── start_offset: int (character position in extracted_text)
-├── end_offset: int
+├── start_word: int (word index - word-level, not character)
+├── end_word: int
+├── paragraph_num: int | None (auto-detected from document structure)
 ├── tag: enum (jurisdiction | procedural_history | legally_relevant_facts | legal_issues | reasons | courts_reasoning | decision | order | domestic_sources | reflection)
+├── text: str (highlighted text content)
 ├── note: str (optional annotation)
+├── comments: List[Comment] (threaded discussion)
 └── created_at: datetime
+
+Case (additional fields)
+├── enable_card_organization: bool (instructor toggle per case)
+└── word_limit: int | None (max words for brief, enforced)
 ```
 
 ## Brief Tags Specification
 
-The 11 brief tags are used to categorize both highlights (on the case) and sections (in the brief form). Terminology: use "tag" consistently throughout.
+The **10 brief tags** are used to categorize highlights on the case document. Students use these tags to organize their annotations before writing their freeform brief.
 
 | Tag | Description | Guidance for Students |
 |-----|-------------|----------------------|
@@ -129,63 +126,82 @@ The 11 brief tags are used to categorize both highlights (on the case) and secti
 
 ### MVP (Feb 2025)
 
-#### 1. Case Upload and Viewing
-- Instructor uploads RTF file of court judgment (paragraph numbers should be included in the RTF by instructor)
-- System extracts plain text for annotation layer
-- Students view case text in annotation interface
-- Metadata: case title, citation, week assignment
-- **Copy-paste prevention**: CSS `user-select: none` + disabled right-click context menu (basic friction, not security)
+#### Three-Screen Workflow
 
-#### 2. Document Annotation and Highlighting
-- Select text passages in the case document
-- Tag each highlight with one of the 11 brief tags (dropdown selection)
-- Optional free-text note on each highlight
-- Visual differentiation of highlights by tag (color-coding, must be colorblind accessible)
-- Highlights persist and are visible when writing brief
-- Clicking a highlight shows its note only - does NOT insert text into brief (students must type themselves)
+The application uses a **single-page carousel** with three screens. All screens are CRDT-synced for real-time collaboration. Navigation via **always-visible tab bar**: Annotate | Organize | Write.
 
-#### 3. Brief Creation
-- Structured form with all 11 tag sections
-- **WYSIWYG editor** for each field (NiceGUI `ui.editor` - supports bold, italic, underline, lists)
-- Each section shows linked highlights from case annotations (view only, no auto-insert)
-- **Auto-save** functionality via CRDT
-- Reflection tag configurable per assignment (individual or collaborative)
-- **Word count display**: regex-based (series of letters delimited by non-letters), excludes footnotes
-- **Copy-paste prevention**: Same as case viewer (basic friction)
+Students can navigate freely between screens at any time (no validation gates).
+
+#### Screen 1: Document Annotation (Annotate Tab)
+
+- Instructor uploads RTF file of court judgment (paragraph numbers in ordered lists or at paragraph start)
+- System extracts HTML with word-level spans for CSS-based highlighting
+- **Word-level highlighting**: Select words, tag with one of 10 categories via toolbar or keyboard shortcuts [1-0]
+- **Paragraph number detection**: System auto-detects containing paragraph from topmost `<ol>` parent or leading number in `<p>`
+- Color-coded highlights by tag (colorblind-accessible palette)
+- Optional free-text comments on each highlight (threaded discussion, CRDT-synced)
+- Annotation cards in sidebar, scroll-synced to document position
+- "Go to text" button scrolls and temporarily highlights source passage
+- **Real-time collaboration**: Live cursor/selection sharing, presence indicators
+- **Copy-paste prevention**: CSS `user-select: none` + disabled right-click (pedagogical friction, not security)
+
+#### Screen 2: Card Organization (Organize Tab)
+
+- View all annotation cards grouped by tag category
+- **Drag-and-drop reordering** within each category
+- Supports organizing non-contiguous document themes
+- **CRDT-collaborative**: Group members see and manipulate same ordering in real-time
+- **Per-case toggle**: Instructor can enable/disable this screen per case assignment
+- When disabled, students skip directly from Screen 1 to Screen 3
+
+#### Screen 3: Brief Writing (Write Tab)
+
+- **Single freeform WYSIWYG editor** - students create their own structure (no forced tag sections)
+- **Left sidebar** with:
+  - Collapsible accordion of tag categories
+  - Cards ordered per user's Screen 2 arrangement
+  - Full-text search across all annotation cards
+  - Cards show paragraph number reference (e.g., "[48]")
+- Case document NOT visible - forces students to synthesize from their annotations
+- **Word count display** below editor (regex-based: sequences of letters)
+- **Word limit enforcement**: Instructor-configurable max per case; prevents export if exceeded
+- **CRDT real-time collaboration** on brief content
 - Students cite passages using paragraph numbers in brackets, e.g., [42]
 
-#### 4. PDF Export
+#### PDF Export
+
+- Accessed from Screen 3 only
 - Combined document containing:
   1. Case metadata (title, citation, court)
-  2. Annotated excerpts organized by brief tag
-  3. Complete brief with all tags
+  2. Organized annotations (respecting Screen 2 ordering)
+  3. Complete brief content
 - Clean, printable format suitable for submission to iLearn
 - Students export their own work
 - **Instructors can export on behalf of any student** (for grading, troubleshooting)
+- Export blocked if word count exceeds configured limit
 
-#### 5. Instructor Student View
+#### Case Upload and Management
+
+- Instructor uploads RTF file with paragraph numbers (in ordered lists or paragraph-leading)
+- Metadata: case title, citation, week assignment
+- **Per-case configuration**:
+  - Enable/disable card organization (Screen 2)
+  - Word limit for brief (optional)
+
+#### Instructor Student View
+
 - Instructors can navigate to any student's work for a given case
-- Read-only view of student's annotations and brief in progress
+- Read-only view of student's annotations, card ordering, and brief in progress
 - Export PDF on behalf of student
 - No inline commenting for MVP
 
-#### 6. Responsive Layout
-- **Desktop**: Split-pane view (case left, brief right)
-- **Tablet/Mobile**: Tabbed interface (switch between case view and brief view)
-
 ### Phase 2 (Post-MVP)
 
-#### 7. Highlight Minimap
+#### Highlight Minimap
 - Scrolling heat map showing highlight density across document
 - Visual indicator of current position
 
-#### 8. Real-Time Collaboration
-- Multiple students editing same brief simultaneously
-- CRDT-based conflict resolution (pycrdt)
-- Presence indicators showing who is editing
-- Configurable: individual vs. group briefs per assignment
-
-#### 9. Peer Review
+#### Peer Review
 - Inline annotations on peer briefs
 - Rubric-based scoring:
   - Criteria per brief tag
@@ -193,12 +209,25 @@ The 11 brief tags are used to categorize both highlights (on the case) and secti
   - Written feedback
 - Anonymous or attributed (instructor choice)
 
-#### 10. Instructor Comments
+#### Instructor Comments
 - Optional inline comments on student work
 - Feedback visible to student
 
-#### 11. Encryption at Rest
+#### Click-to-Insert References
+- Clicking a card in Screen 3 inserts paragraph reference (e.g., `[48]`) at cursor
+- Card content becomes footnote in PDF export
+
+#### AGLC4 Citation Support
+- Optional formal citation formatting
+- Auto-generate citation strings from case metadata
+
+#### Encryption at Rest
 - Database-level encryption for stored content
+
+#### Secondary Source Database
+- Support for multiple documents per assignment
+- Cross-document annotation and organization
+- Use case: Remedies course with scholarly sources
 
 ## User Workflows
 
@@ -206,39 +235,65 @@ The 11 brief tags are used to categorize both highlights (on the case) and secti
 
 1. **Create Course** → Set course name, code
 2. **Configure Weeks** → Add weekly modules with titles
-3. **Upload Cases** → Attach RTF files to weeks, set metadata (ensure paragraph numbers are in the RTF)
-4. **Configure Assignments** → Set reflection mode (individual/collaborative)
+3. **Upload Cases** → Attach RTF files to weeks, set metadata (ensure paragraph numbers in ordered lists or paragraph-leading)
+4. **Configure Per-Case Settings**:
+   - Enable/disable card organization (Screen 2)
+   - Set word limit for brief (optional)
 5. **Monitor Progress** → View individual student briefs and annotations (read-only)
 6. **Export for Grading** → Generate PDF on behalf of any student
 
 ### Student Workflow
 
 1. **Access Course** → View weekly case assignments
-2. **Open Case** → View case text in annotation interface
-3. **Read and Highlight** → Select passages, tag to brief sections, add notes
-4. **Write Brief** → Type content in WYSIWYG editor for each tag (reference highlights but type manually)
-5. **Add Reflection** → Personal analysis and learning
-6. **Export PDF** → Download combined annotated case + brief for iLearn submission
+2. **Open Case** → Enter three-screen workflow
+3. **Screen 1 - Annotate** → Read case, highlight passages with tags, add comments
+4. **Screen 2 - Organize** → Drag/drop cards to arrange by theme within each tag (if enabled)
+5. **Screen 3 - Write** → Compose freeform brief using organized annotations as reference
+6. **Export PDF** → Download combined document for iLearn submission (blocked if over word limit)
 
 ## UI/UX Considerations
 
-### Case Viewer
-- Split-pane (desktop) or tabbed (mobile) interface
-- Highlight toolbar with 11 tags as color-coded buttons
-- Colorblind-accessible palette (test with deuteranopia)
-- Minimap showing highlight density (Phase 2)
+### Platform Support
 
-### Brief Editor
-- Accordion or tabbed sections for 11 tags
-- Each section shows count of linked highlights
-- "View highlights" expands to show tagged passages (read-only reference)
-- Word count per field (letters-only regex, excludes any footnotes)
+- **Desktop only** - no tablet/mobile support
+- Students without computers should use library facilities
+
+### Navigation
+
+- **Tab bar** always visible at top: Annotate | Organize | Write
+- Single-page carousel with smooth transitions between screens
+- All state maintained in-page (no page reloads)
+
+### Screen 1: Annotate
+
+- Document on left (70%), annotation cards on right (30%)
+- Tag toolbar in header with 10 color-coded buttons + keyboard shortcuts [1-0]
+- Scroll-synced annotation cards with "Go to text" navigation
+- Real-time cursor/selection indicators for collaborators
+- Colorblind-accessible palette (tested with deuteranopia)
+
+### Screen 2: Organize
+
+- Cards grouped by tag category in collapsible sections
+- Drag handles for reordering within each category
+- Visual feedback during drag operations
+- CRDT sync shows other users' reordering in real-time
+
+### Screen 3: Write
+
+- Sidebar on left (30%) with accordion of tag categories
+- Full-text search box at top of sidebar
+- Cards show: tag color, paragraph reference, truncated text
+- WYSIWYG editor on right (70%)
+- Word count display below editor
+- Warning/block when approaching/exceeding word limit
 - WYSIWYG formatting: bold, italic, underline, bullets, numbered lists
 
 ### Export Preview
+
 - Preview modal before download
-- Option to include/exclude certain sections
-- Watermark for draft vs. final submissions
+- Shows combined document structure
+- Blocked if word count exceeds limit
 
 ## Technical Considerations
 
@@ -248,8 +303,22 @@ The 11 brief tags are used to categorize both highlights (on the case) and secti
 - Store both original RTF blob and extracted text
 
 ### Highlight Storage
-- Character offsets into extracted text
+
+- **Word-level indexing** (not character offsets) - simplifies selection handling
+- CRDT Map storing highlights by UUID
+- Comments stored as array within each highlight
 - Efficient queries: "all highlights for this tag"
+
+### Paragraph Number Detection
+
+Algorithm for detecting containing paragraph number:
+
+1. Find the word span element for the highlight start
+2. Walk up DOM tree looking for:
+   - Topmost `<ol>` ancestor → use `<li>` position as paragraph number
+   - OR `<p>` with leading number pattern (e.g., "48." or "[48]") → extract number
+3. Store detected paragraph number with highlight
+4. Display as "[48]" in annotation cards
 
 ### Copy-Paste Prevention
 - CSS: `user-select: none` on case text and brief content
@@ -257,12 +326,21 @@ The 11 brief tags are used to categorize both highlights (on the case) and secti
 - Note: This is pedagogical friction, not security. Determined students can bypass.
 
 ### Word Count Algorithm
+
 ```python
 import re
 def word_count(text: str) -> int:
     """Count words as sequences of letters."""
     return len(re.findall(r'[a-zA-Z]+', text))
 ```
+
+### Word Limit Enforcement
+
+- Instructor sets optional word limit per case
+- Word count displayed in real-time below editor
+- Visual warning when approaching limit (e.g., 90%)
+- **Hard enforcement**: Export blocked if count exceeds limit
+- Error message explains limit and current count
 
 ### Export Generation
 - Template-based PDF generation (WeasyPrint)
@@ -299,18 +377,24 @@ def word_count(text: str) -> int:
 
 - Students complete briefs for assigned cases
 - Students create highlights before/during brief writing (pedagogical goal)
+- Students use card organization to structure their analysis
 - PDF exports successfully generated
 - Instructor can view all student work per case
-- Tablet/mobile users can complete workflow via tabbed interface
+- Real-time collaboration works smoothly for group work
 
 ## Resolved Questions
 
 1. **Input format**: RTF only (not PDF) - simpler processing, instructor prepares with paragraph numbers
 2. **Copyright/copy protection**: Basic CSS + right-click prevention; acknowledged as friction not security
-3. **Mobile support**: Yes, via tabbed interface instead of split pane
+3. **Mobile support**: No - desktop only, students use library if needed
 4. **AI assistance**: No - tool intentionally avoids doing work for students
-5. **Citation automation**: No - clicking highlights shows notes only, students type their own text
+5. **Citation automation**: No for MVP - clicking highlights shows notes only, students type their own text (Phase 2: click-to-insert)
 6. **Encryption at rest**: Phase 2
+7. **Brief structure**: Freeform single WYSIWYG - students create their own structure, no forced tag sections
+8. **Tag count**: 10 tags (jurisdiction through reflection)
+9. **Highlight granularity**: Word-level (not character or mid-word)
+10. **Card organization**: Optional per-case toggle, CRDT-collaborative when enabled
+11. **Real-time collaboration**: MVP for all screens (annotations, card ordering, brief content)
 
 ## Open Questions
 
@@ -323,8 +407,9 @@ def word_count(text: str) -> int:
 |--------|----------------|-----------------|
 | Domain | Prompt engineering | Legal education |
 | Core content | Conversation transcripts | Court judgment RTFs |
-| Annotation target | Prompts and responses | Case text passages |
-| Structured output | Tags, comments | 11 brief tags |
-| Collaboration | CRDT prompts | Phase 2 |
+| Annotation target | Prompts and responses | Case text passages (word-level) |
+| Structured output | Tags, comments | 10 brief tags + freeform brief |
+| Collaboration | CRDT prompts | CRDT all screens (MVP) |
 | Export | - | Combined PDF |
-| Organization | Class | Course > Week |
+| Organization | Class | Course > Week > Case |
+| Workflow | Linear | Three-screen carousel |

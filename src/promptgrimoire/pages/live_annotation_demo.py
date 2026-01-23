@@ -723,30 +723,6 @@ def _build_main_layout(
     return doc_container, annotations_container
 
 
-def _build_floating_menu(apply_tag_callback: Any) -> ui.element:
-    """Build the floating tag menu."""
-    floating_menu = ui.element("div").classes("floating-menu")
-    floating_menu.props('id="floating-tag-menu"')
-    with floating_menu, ui.column().classes("gap-1").style("min-width: 180px"):
-        for i, tag in enumerate(BriefTag):
-            shortcut = list(TAG_SHORTCUTS.keys())[i] if i < len(TAG_SHORTCUTS) else ""
-            tag_name = tag.value.replace("_", " ").title()
-            label = f"[{shortcut}] {tag_name}" if shortcut else tag_name
-
-            async def apply_tag_floating(t: BriefTag = tag) -> None:
-                await apply_tag_callback(t)
-                await ui.run_javascript(
-                    'document.getElementById("floating-tag-menu")'
-                    '.classList.remove("visible")'
-                )
-
-            color_name = tag.value.replace("_", "-")
-            ui.button(label, on_click=apply_tag_floating, color=color_name).classes(
-                "w-full text-xs"
-            )
-    return floating_menu
-
-
 def _build_dynamic_style_elements() -> tuple[ui.element, ui.element, ui.element]:
     """Build the dynamic CSS style elements for highlights, selections, cursors."""
     highlight_style = ui.element("style")
@@ -1158,7 +1134,6 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
     _build_tag_toolbar(apply_tag_to_selection)
     ctx.client_count_label = _build_header_info(username, client_color)
     _, ctx.annotations_container = _build_main_layout(processed_doc)
-    _build_floating_menu(apply_tag_to_selection)
     (
         ctx.highlight_style,
         ctx.selection_style,

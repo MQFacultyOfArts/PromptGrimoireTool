@@ -96,14 +96,16 @@ class AuthClientProtocol(Protocol):
         self,
         provider: str,
         public_token: str,
-        discovery_redirect_url: str,
+        organization_id: str,
+        login_redirect_url: str,
     ) -> OAuthStartResult:
-        """Generate the URL to start an OAuth discovery flow.
+        """Generate the URL to start an OAuth flow for a known organization.
 
         Args:
             provider: The OAuth provider (e.g., "github").
             public_token: The Stytch public token.
-            discovery_redirect_url: URL to redirect to after OAuth completes.
+            organization_id: The Stytch organization ID.
+            login_redirect_url: URL to redirect to after OAuth completes.
 
         Returns:
             OAuthStartResult with the redirect URL.

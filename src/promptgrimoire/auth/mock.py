@@ -190,24 +190,28 @@ class MockAuthClient:
         self,
         provider: str,
         public_token: str,
-        discovery_redirect_url: str,
+        organization_id: str,
+        login_redirect_url: str,
     ) -> OAuthStartResult:
         """Mock generating an OAuth start URL.
 
         Args:
             provider: The OAuth provider (e.g., "github").
             public_token: The public token.
-            discovery_redirect_url: The redirect URL after OAuth.
+            organization_id: The Stytch organization ID.
+            login_redirect_url: The redirect URL after OAuth.
 
         Returns:
             OAuthStartResult with a mock redirect URL.
         """
         params = {
             "public_token": public_token,
-            "discovery_redirect_url": discovery_redirect_url,
+            "organization_id": organization_id,
+            "login_redirect_url": login_redirect_url,
+            "signup_redirect_url": login_redirect_url,
         }
         redirect_url = (
-            f"https://mock.stytch.com/v1/b2b/public/oauth/{provider}/discovery/start"
+            f"https://mock.stytch.com/v1/b2b/public/oauth/{provider}/start"
             f"?{urlencode(params)}"
         )
         return OAuthStartResult(

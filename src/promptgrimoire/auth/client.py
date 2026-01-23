@@ -270,29 +270,31 @@ class StytchB2BClient:
         self,
         provider: str,
         public_token: str,
-        discovery_redirect_url: str,
+        organization_id: str,
+        login_redirect_url: str,
     ) -> OAuthStartResult:
-        """Generate the URL to start an OAuth discovery flow.
+        """Generate the URL to start an OAuth flow for a known organization.
 
-        Uses the discovery flow which handles organization selection after OAuth.
+        Uses the direct OAuth flow (not discovery) since organization is known.
 
         Args:
             provider: The OAuth provider (e.g., "github").
             public_token: The Stytch public token.
-            discovery_redirect_url: URL to redirect to after OAuth completes.
+            organization_id: The Stytch organization ID.
+            login_redirect_url: URL to redirect to after OAuth completes.
 
         Returns:
             OAuthStartResult with the redirect URL.
         """
-
         base_url = STYTCH_TEST_API if self._environment == "test" else STYTCH_LIVE_API
         params = {
             "public_token": public_token,
-            "discovery_redirect_url": discovery_redirect_url,
+            "organization_id": organization_id,
+            "login_redirect_url": login_redirect_url,
+            "signup_redirect_url": login_redirect_url,
         }
         redirect_url = (
-            f"{base_url}/v1/b2b/public/oauth/{provider}/discovery/start"
-            f"?{urlencode(params)}"
+            f"{base_url}/v1/b2b/public/oauth/{provider}/start?{urlencode(params)}"
         )
         return OAuthStartResult(
             success=True,

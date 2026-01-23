@@ -38,8 +38,15 @@ def _set_session_user(
     session_token: str,
     roles: list[str],
     name: str | None = None,
+    auth_method: str = "unknown",
 ) -> None:
     """Store authenticated user in session storage."""
+    logger.info(
+        "Login successful: email=%s, member_id=%s, auth_method=%s",
+        email,
+        member_id,
+        auth_method,
+    )
     app.storage.user["auth_user"] = {
         "email": email,
         "member_id": member_id,
@@ -47,6 +54,7 @@ def _set_session_user(
         "session_token": session_token,
         "roles": roles,
         "name": name,
+        "auth_method": auth_method,
     }
 
 
@@ -109,6 +117,8 @@ def _build_magic_link_section() -> None:
                 ui.notify("Please enter an email address", type="warning")
                 return
 
+            logger.info("Magic link requested for email=%s", email)
+
             auth_client = get_auth_client()
             config = get_config()
 
@@ -118,6 +128,7 @@ def _build_magic_link_section() -> None:
                 return
 
             callback_url = f"{config.base_url}/auth/callback"
+            logger.debug("Magic link callback_url=%s", callback_url)
 
             result = await auth_client.send_magic_link(
                 email=email,
@@ -126,6 +137,7 @@ def _build_magic_link_section() -> None:
             )
 
             if result.success:
+                logger.info("Magic link sent successfully to %s", email)
                 ui.notify("Magic link sent! Check your email.", type="positive")
             else:
                 logger.warning("Magic link failed: %s", result.error)
@@ -143,6 +155,7 @@ def _build_sso_section() -> None:
         ui.label("University Login (AAF)").classes("text-lg font-semibold mb-2")
 
         def start_sso() -> None:
+            logger.info("SSO login button clicked (AAF)")
             auth_client = get_auth_client()
             config = get_config()
 
@@ -156,12 +169,18 @@ def _build_sso_section() -> None:
                 ui.notify("SSO not configured", type="negative")
                 return
 
+            logger.info(
+                "Starting SSO flow: connection_id=%s",
+                config.sso_connection_id,
+            )
+
             result = auth_client.get_sso_start_url(
                 connection_id=config.sso_connection_id,
                 public_token=config.public_token,
             )
 
             if result.success and result.redirect_url:
+                logger.info("SSO redirect URL generated: %s", result.redirect_url)
                 ui.navigate.to(result.redirect_url)
             else:
                 logger.warning("SSO start failed: %s", result.error)
@@ -179,6 +198,7 @@ def _build_github_oauth_section() -> None:
         ui.label("GitHub Login").classes("text-lg font-semibold mb-2")
 
         def start_github_oauth() -> None:
+            logger.info("GitHub OAuth login button clicked")
             auth_client = get_auth_client()
             config = get_config()
 
@@ -187,15 +207,27 @@ def _build_github_oauth_section() -> None:
                 ui.notify("GitHub login not configured", type="negative")
                 return
 
+            if not config.default_org_id:
+                logger.error("STYTCH_DEFAULT_ORG_ID not configured")
+                ui.notify("GitHub login not configured", type="negative")
+                return
+
             callback_url = f"{config.base_url}/auth/oauth/callback"
+            logger.info(
+                "Starting GitHub OAuth: org_id=%s, callback=%s",
+                config.default_org_id,
+                callback_url,
+            )
 
             result = auth_client.get_oauth_start_url(
                 provider="github",
                 public_token=config.public_token,
-                discovery_redirect_url=callback_url,
+                organization_id=config.default_org_id,
+                login_redirect_url=callback_url,
             )
 
             if result.success and result.redirect_url:
+                logger.info("GitHub OAuth redirect URL: %s", result.redirect_url)
                 ui.navigate.to(result.redirect_url)
             else:
                 logger.warning("GitHub OAuth start failed: %s", result.error)
@@ -227,10 +259,12 @@ async def login_page() -> None:
 @ui.page("/auth/callback")
 async def magic_link_callback() -> None:
     """Handle magic link callback and authenticate the token."""
+    logger.info("Magic link callback received")
     token = _get_query_param("token")
 
     # CRIT-3: Validate token before processing
     if not _validate_token(token):
+        logger.warning("Magic link callback: invalid or missing token")
         ui.label("Invalid or missing token").classes("text-xl text-red-500")
         ui.notify("Invalid or missing token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
@@ -243,6 +277,7 @@ async def magic_link_callback() -> None:
     # Type narrowing: _validate_token already checked token is not None
     assert token is not None
 
+    logger.debug("Authenticating magic link token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_magic_link(token=token)
 
@@ -254,9 +289,11 @@ async def magic_link_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
             name=result.name,
+            auth_method="magic_link",
         )
         ui.navigate.to("/")
     else:
+        logger.warning("Magic link auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"Authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
@@ -265,10 +302,12 @@ async def magic_link_callback() -> None:
 @ui.page("/auth/sso/callback")
 async def sso_callback() -> None:
     """Handle SSO callback and authenticate the token."""
+    logger.info("SSO callback received")
     token = _get_query_param("token")
 
     # CRIT-3: Validate token before processing
     if not _validate_token(token):
+        logger.warning("SSO callback: invalid or missing token")
         ui.label("Invalid or missing SSO token").classes("text-xl text-red-500")
         ui.notify("Invalid or missing SSO token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
@@ -280,6 +319,7 @@ async def sso_callback() -> None:
     # Type narrowing: _validate_token already checked token is not None
     assert token is not None
 
+    logger.debug("Authenticating SSO token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_sso(token=token)
 
@@ -291,9 +331,11 @@ async def sso_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
             name=result.name,
+            auth_method="sso_aaf",
         )
         ui.navigate.to("/")
     else:
+        logger.warning("SSO auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"SSO authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
@@ -302,10 +344,12 @@ async def sso_callback() -> None:
 @ui.page("/auth/oauth/callback")
 async def oauth_callback() -> None:
     """Handle OAuth callback and authenticate the token."""
+    logger.info("OAuth callback received (GitHub)")
     token = _get_query_param("token")
 
     # CRIT-3: Validate token before processing
     if not _validate_token(token):
+        logger.warning("OAuth callback: invalid or missing token")
         ui.label("Invalid or missing OAuth token").classes("text-xl text-red-500")
         ui.notify("Invalid or missing OAuth token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
@@ -317,6 +361,7 @@ async def oauth_callback() -> None:
     # Type narrowing: _validate_token already checked token is not None
     assert token is not None
 
+    logger.debug("Authenticating OAuth token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_oauth(token=token)
 
@@ -328,9 +373,11 @@ async def oauth_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
             name=result.name,
+            auth_method="github",
         )
         ui.navigate.to("/")
     else:
+        logger.warning("OAuth auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"GitHub authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)

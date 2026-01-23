@@ -407,11 +407,18 @@ class TestGoToTextButton:
         ann_card = page.locator(".ann-card-positioned").first
         expect(ann_card).to_be_visible(timeout=5000)
 
-        page.evaluate("document.querySelector('.doc-container').scrollTop = 0")
+        # Scroll document away from the highlight by scrolling to beginning of document
+        # Use first word in document as scroll target
+        word_0 = page.locator('.doc-container [data-w="0"]')
+        word_0.scroll_into_view_if_needed()
         page.wait_for_timeout(300)
 
+        # Verify word is no longer in viewport before clicking Go to text
+        expect(word_4335).not_to_be_in_viewport(timeout=2000)
+
+        # The annotation card may have scrolled out of view, dispatch click directly
         go_to_btn = ann_card.locator("button", has_text="Go to text")
-        go_to_btn.click()
+        go_to_btn.dispatch_event("click")
 
         page.wait_for_timeout(1000)
 

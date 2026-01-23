@@ -411,11 +411,12 @@ class TestCursorPositionSync:
         input_field.fill("HelloWorld")
         expect(page2.get_by_test_id("synced-text")).to_have_text("HelloWorld")
 
-        # Move cursor to middle and insert
+        # Move cursor to middle using keyboard navigation and insert
         input_field.click()
-
-        # Use setSelectionRange via evaluate for precise cursor positioning
-        input_field.evaluate("(el) => el.setSelectionRange(5, 5)")
+        # Go to start, then move right 5 characters to position after "Hello"
+        input_field.press("Home")
+        for _ in range(5):
+            input_field.press("ArrowRight")
         input_field.press_sequentially(" ")  # Insert space at position 5
 
         # Should sync the insertion
@@ -436,9 +437,12 @@ class TestCursorPositionSync:
         input_field.fill("Hello, World")
         expect(page2.get_by_test_id("synced-text")).to_have_text("Hello, World")
 
-        # Position cursor after comma and delete it with backspace
+        # Position cursor after comma (position 6) and delete it with backspace
+        # Use keyboard navigation: Home + 6 ArrowRight to position cursor
         input_field.click()
-        input_field.evaluate("(el) => el.setSelectionRange(6, 6)")
+        input_field.press("Home")
+        for _ in range(6):
+            input_field.press("ArrowRight")
         input_field.press("Backspace")  # Delete the comma
 
         expect(page2.get_by_test_id("synced-text")).to_have_text("Hello World")
@@ -458,9 +462,16 @@ class TestCursorPositionSync:
         input_field.fill("Hello World")
         expect(page2.get_by_test_id("synced-text")).to_have_text("Hello World")
 
-        # Select "World" (positions 6-11) and replace
+        # Select "World" (positions 6-11) and replace using keyboard navigation
+        # Home + 6 ArrowRight to position, then Shift+ArrowRight 5 times to select
         input_field.click()
-        input_field.evaluate("(el) => el.setSelectionRange(6, 11)")
-        input_field.press_sequentially("Universe")
+        input_field.press("Home")
+        for _ in range(6):
+            input_field.press("ArrowRight")
+        for _ in range(5):
+            input_field.press("Shift+ArrowRight")
+        # Use keyboard.type() instead of press_sequentially to type all at once
+        # This ensures the selection is replaced in one operation
+        page.keyboard.type("Universe")
 
         expect(page2.get_by_test_id("synced-text")).to_have_text("Hello Universe")

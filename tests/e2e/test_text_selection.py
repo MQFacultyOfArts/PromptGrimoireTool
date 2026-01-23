@@ -14,9 +14,9 @@ from playwright.sync_api import Page, expect
 
 
 def select_paragraph_text(page: Page, paragraph_index: int = 0) -> None:
-    """Select all text in a paragraph using JavaScript.
+    """Select all text in a paragraph using mouse drag.
 
-    More reliable than triple-click which can be flaky in headless browsers.
+    Uses Playwright's native mouse APIs to click-drag across a paragraph.
     Waits for handlers to be ready before selecting.
 
     Args:
@@ -27,21 +27,21 @@ def select_paragraph_text(page: Page, paragraph_index: int = 0) -> None:
     content = page.get_by_test_id("selectable-content")
     expect(content).to_have_attribute("data-handlers-ready", "true", timeout=5000)
 
-    page.evaluate(
-        f"""
-        const selector = '[data-testid="selectable-content"]';
-        const container = document.querySelector(selector);
-        const p = container.querySelectorAll('p')[{paragraph_index}];
-        const range = document.createRange();
-        range.selectNodeContents(p);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+    # Get the target paragraph
+    paragraph = content.locator("p").nth(paragraph_index)
+    box = paragraph.bounding_box()
+    assert box is not None, f"Paragraph {paragraph_index} not found"
 
-        // Trigger mouseup to fire our selection handler
-        container.dispatchEvent(new MouseEvent('mouseup', {{bubbles: true}}));
-        """
-    )
+    # Drag from start to end of paragraph to select its text
+    # Start just inside the left edge, end just inside the right edge
+    start_x = box["x"] + 5
+    end_x = box["x"] + box["width"] - 5
+    y = box["y"] + box["height"] / 2
+
+    page.mouse.move(start_x, y)
+    page.mouse.down()
+    page.mouse.move(end_x, y)
+    page.mouse.up()
 
 
 class TestPageLoads:
@@ -77,15 +77,15 @@ class TestTextSelection:
     """Test text selection capture."""
 
     def test_text_can_be_selected(self, page: Page, text_selection_url: str) -> None:
-        """Text can be selected via JavaScript selection API."""
+        """Text can be selected and captured by the app."""
         page.goto(text_selection_url)
 
-        # Select text using reliable JavaScript method
+        # Select text using mouse drag
         select_paragraph_text(page, 0)
 
-        # Verify browser has selection
-        selection = page.evaluate("window.getSelection().toString()")
-        assert len(selection) > 0
+        # Verify selection was captured (UI shows selected text)
+        selected_text = page.get_by_test_id("selected-text")
+        expect(selected_text).not_to_have_text("No selection", timeout=2000)
 
     def test_selection_captured_in_python(
         self, page: Page, text_selection_url: str
@@ -186,13 +186,9 @@ class TestVisualHighlight:
         highlight = page.locator(".annotation-highlight")
         expect(highlight).to_be_visible()
 
-        # Verify background is not transparent
-        bg_color = highlight.evaluate(
-            "el => window.getComputedStyle(el).backgroundColor"
-        )
-        assert bg_color != "rgba(0, 0, 0, 0)", (
-            f"Expected background color, got {bg_color}"
-        )
+        # Verify background is not transparent using Playwright's to_have_css
+        # The annotation-highlight class should apply a yellow background
+        expect(highlight).not_to_have_css("background-color", "rgba(0, 0, 0, 0)")
 
     def test_multiple_highlights_supported(
         self, page: Page, text_selection_url: str
@@ -259,23 +255,23 @@ class TestEdgeCases:
         # Wait for JS handlers to be set up (indicated by data attribute)
         expect(content).to_have_attribute("data-handlers-ready", "true", timeout=5000)
 
-        # Select across multiple paragraphs using JavaScript
-        # (Playwright's click-drag is tricky for multi-line)
-        page.evaluate("""
-            const selector = '[data-testid="selectable-content"]';
-            const container = document.querySelector(selector);
-            const range = document.createRange();
-            const p1 = container.querySelector('p:first-child');
-            const p2 = container.querySelector('p:nth-child(2)');
-            range.setStart(p1.firstChild, 0);
-            range.setEnd(p2.firstChild, 5);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
+        # Select across multiple paragraphs using mouse drag
+        p1 = content.locator("p").first
+        p2 = content.locator("p").nth(1)
+        box1 = p1.bounding_box()
+        box2 = p2.bounding_box()
+        assert box1 is not None and box2 is not None
 
-            // Trigger mouseup to fire our handler
-            container.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
-        """)
+        # Drag from start of first paragraph to partway into second paragraph
+        start_x = box1["x"] + 5
+        start_y = box1["y"] + box1["height"] / 2
+        end_x = box2["x"] + 50  # A bit into second paragraph
+        end_y = box2["y"] + box2["height"] / 2
+
+        page.mouse.move(start_x, start_y)
+        page.mouse.down()
+        page.mouse.move(end_x, end_y)
+        page.mouse.up()
 
         # Verify selection was captured and spans both paragraphs
         selected_text = page.get_by_test_id("selected-text")

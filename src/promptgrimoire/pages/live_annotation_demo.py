@@ -43,6 +43,22 @@ _doc_registry = AnnotationDocumentRegistry()
 _connected_clients: dict[str, dict[str, ClientState]] = {}
 
 
+# Test-only endpoint to reset CRDT state between test runs
+# Only available when AUTH_MOCK=true (test mode)
+def _reset_crdt_state_handler() -> dict[str, Any]:
+    """Reset all CRDT document state. Test-only endpoint."""
+    count = _doc_registry.clear_all()
+    _connected_clients.clear()
+    return {"status": "ok", "cleared_docs": count}
+
+
+if os.environ.get("AUTH_MOCK") == "true":
+    with contextlib.suppress(ValueError):
+        app.add_api_route(
+            "/api/test/reset-crdt", _reset_crdt_state_handler, methods=["GET"]
+        )
+
+
 class ClientState:
     """State for a connected client."""
 
@@ -1126,10 +1142,15 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
         await broadcast_update()
         ui.notify(f"Tagged as {tag.value.replace('_', ' ').title()}")
 
+    def update_client_count() -> None:
+        count = len(_connected_clients.get(doc_id, {}))
+        ctx.client_count_label.text = f"{count} user(s) online"
+
     async def handle_update_from_other() -> None:
         update_highlight_css()
         update_remote_selection_css()
         update_remote_cursor_css()
+        update_client_count()
         await refresh_annotations()
 
     # Build UI
@@ -1149,16 +1170,16 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
         callback=handle_update_from_other, color=client_color, name=username
     )
 
-    def update_client_count() -> None:
-        count = len(_connected_clients.get(doc_id, {}))
-        ctx.client_count_label.text = f"{count} user(s) online"
-
     update_client_count()
+    # Broadcast to existing clients so they update their user counts
+    await broadcast_update()
 
     async def on_disconnect() -> None:
         ann_doc.unregister_client(client_id)
         if doc_id in _connected_clients:
             _connected_clients[doc_id].pop(client_id, None)
+        # Broadcast to remaining clients so they update their user counts
+        await broadcast_update()
 
         # Force persist when last client disconnects
         if not _connected_clients.get(doc_id) and os.environ.get("DATABASE_URL"):

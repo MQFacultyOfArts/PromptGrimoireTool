@@ -510,3 +510,15 @@ class AnnotationDocumentRegistry:
     def list_ids(self) -> list[str]:
         """List all document IDs in the registry."""
         return list(self._documents.keys())
+
+    def clear_all(self) -> int:
+        """Remove all documents from the registry.
+
+        This is primarily for testing to reset state between test runs.
+
+        Returns:
+            Number of documents that were cleared.
+        """
+        count = len(self._documents)
+        self._documents.clear()
+        return count

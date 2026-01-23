@@ -74,6 +74,7 @@ library references during development.
 ## playwright
 
 - [E2E Testing](playwright/e2e-testing.md) - pytest-playwright, locators, assertions, multi-user testing
+- [Browser API](playwright/browser-api.md) - Browser class, multi-context testing, new_context()
 
 ## browser
 

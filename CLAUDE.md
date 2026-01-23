@@ -46,6 +46,17 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 
 No feature code without corresponding tests. Playwright for E2E, pytest for unit/integration.
 
+### E2E Test Guidelines
+
+**NEVER inject JavaScript in E2E tests.** Use Playwright's native APIs exclusively:
+
+- **Text selection**: Use `page.mouse` to drag-select (move, down, move, up)
+- **Keyboard input**: Use `page.keyboard.press()` or `locator.press()`
+- **Clicks**: Use `locator.click()` with modifiers if needed
+- **Assertions**: Use `expect()` from `playwright.sync_api`
+
+Tests must simulate real user behavior through Playwright events, not bypass the UI with JavaScript injection like `page.evaluate()` or `ui.run_javascript()`.
+
 ### Code Quality Hooks
 
 Claude Code hooks automatically run on every `.py` file write:

@@ -146,6 +146,26 @@ def live_annotation_url(app_server: str) -> str:
 
 
 @pytest.fixture
+def reset_crdt_state(app_server: str) -> Generator[None]:
+    """Reset CRDT state before each test.
+
+    This ensures each E2E test starts with a clean CRDT document state.
+    Function-scoped (default) so it runs before every test that uses it.
+    """
+    import urllib.request
+
+    reset_url = f"{app_server}/api/test/reset-crdt"
+    try:
+        with urllib.request.urlopen(reset_url, timeout=5) as resp:
+            if resp.status != 200:
+                pytest.fail(f"Failed to reset CRDT state: {resp.status}")
+    except Exception as e:
+        pytest.fail(f"Failed to reset CRDT state: {e}")
+
+    yield
+
+
+@pytest.fixture
 def new_context(browser: Browser) -> Generator[Callable[[], BrowserContext]]:
     """Factory fixture for creating new browser contexts.
 

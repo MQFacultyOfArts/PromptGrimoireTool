@@ -13,6 +13,7 @@ from promptgrimoire.auth.mock import (
     MOCK_ORG_ID,
     MOCK_VALID_EMAILS,
     MOCK_VALID_MAGIC_TOKEN,
+    MOCK_VALID_OAUTH_TOKEN,
     MOCK_VALID_SESSION,
     MOCK_VALID_SSO_TOKEN,
     MockAuthClient,
@@ -104,6 +105,7 @@ class TestMockAuthenticateMagicLink:
         assert result.member_id == MOCK_MEMBER_ID
         assert result.organization_id == MOCK_ORG_ID
         assert result.email == "test@example.com"
+        assert result.name == "Test User"
         assert "stytch_member" in result.roles
 
     async def test_authenticate_invalid_token(self, client):
@@ -130,6 +132,7 @@ class TestMockAuthenticateSSO:
         assert result.success is True
         assert result.session_token == MOCK_VALID_SESSION
         assert result.email == "aaf-user@uni.edu"
+        assert result.name == "SSO User"
         assert "instructor" in result.roles
 
     async def test_authenticate_invalid_sso_token(self, client):
@@ -155,6 +158,7 @@ class TestMockValidateSession:
         assert result.valid is True
         assert result.member_id == MOCK_MEMBER_ID
         assert result.email == "test@example.com"
+        assert result.name == "Test User"
 
     async def test_validate_invalid_session(self, client):
         """Returns error for invalid session."""
@@ -162,6 +166,32 @@ class TestMockValidateSession:
 
         assert result.valid is False
         assert result.error == "session_not_found"
+
+
+class TestMockAuthenticateOAuth:
+    """Tests for MockAuthClient.authenticate_oauth."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a MockAuthClient instance."""
+        return MockAuthClient()
+
+    async def test_authenticate_valid_oauth_token(self, client):
+        """Successfully authenticates with valid OAuth token."""
+        result = await client.authenticate_oauth(token=MOCK_VALID_OAUTH_TOKEN)
+
+        assert result.success is True
+        assert result.session_token == MOCK_VALID_SESSION
+        assert result.email == "github-user@example.com"
+        assert result.name == "GitHub User"
+        assert "stytch_member" in result.roles
+
+    async def test_authenticate_invalid_oauth_token(self, client):
+        """Returns error for invalid OAuth token."""
+        result = await client.authenticate_oauth(token="bad-oauth-token")
+
+        assert result.success is False
+        assert result.error == "invalid_token"
 
 
 class TestMockGetSSOStartUrl:

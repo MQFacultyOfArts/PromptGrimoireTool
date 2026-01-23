@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nicegui import ui
+from nicegui import app, ui
 
 from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
@@ -34,14 +34,42 @@ CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 THINKING_BUDGET = int(os.environ.get("CLAUDE_THINKING_BUDGET", "1024"))
 
 
-def _render_messages(session: Session, scroll_area: ScrollArea) -> None:
+def _get_default_user_name() -> str:
+    """Get default user name from Stytch auth or fallback to 'User'.
+
+    Priority:
+    1. Stytch member name (if set)
+    2. Parsed email local part (john.smith@example.com -> John Smith)
+    3. Fallback to 'User'
+    """
+    auth_user = app.storage.user.get("auth_user")
+    if auth_user:
+        # Try Stytch name field first
+        if auth_user.get("name"):
+            return auth_user["name"]
+        # Fall back to parsing email
+        if auth_user.get("email"):
+            local_part = auth_user["email"].split("@")[0]
+            # Convert john.smith or john_smith to "John Smith"
+            return " ".join(
+                word.title()
+                for word in local_part.replace(".", " ").replace("_", " ").split()
+            )
+    return "User"
+
+
+def _create_chat_message(content: str, name: str, sent: bool) -> None:
+    """Create a chat message with markdown-rendered content."""
+    msg = ui.chat_message(name=name, sent=sent)
+    with msg:
+        ui.markdown(content).classes("text-base")
+
+
+def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) -> None:
     """Render all messages in the session using chat_message components."""
-    for turn in session.turns:
-        ui.chat_message(
-            text=turn.content,
-            name=turn.name,
-            sent=turn.is_user,
-        )
+    with chat_container:
+        for turn in session.turns:
+            _create_chat_message(turn.content, turn.name, turn.is_user)
     # Scroll to bottom after rendering
     scroll_area.scroll_to(percent=1.0)
 
@@ -66,7 +94,7 @@ async def _handle_send(
     # Add user message
     session.add_turn(user_message.strip(), is_user=True)
     with chat_container:
-        ui.chat_message(text=user_message.strip(), name=session.user_name, sent=True)
+        _create_chat_message(user_message.strip(), session.user_name, sent=True)
     scroll_area.scroll_to(percent=1.0)
 
     # Show thinking indicator
@@ -99,7 +127,7 @@ async def _handle_send(
     # Replace streaming message with final rendered version
     thinking_msg.delete()
     with chat_container:
-        ui.chat_message(text=full_response, name=session.character.name, sent=False)
+        _create_chat_message(full_response, session.character.name, sent=False)
     scroll_area.scroll_to(percent=1.0)
 
     send_button.enable()
@@ -191,7 +219,7 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
                 )
 
                 # Render initial messages
-                _render_messages(session, scroll_area)
+                _render_messages(session, chat_container, scroll_area)
 
                 ui.notify(f"Loaded {character.name}")
 
@@ -205,7 +233,7 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
                     tmp_path.unlink()
 
         user_name_input = ui.input(
-            label="Your name (used as {{user}})", value="User"
+            label="Your name (used as {{user}})", value=_get_default_user_name()
         ).classes("w-64 mb-2")
 
         ui.upload(
@@ -222,8 +250,8 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
             char_name_label = ui.label("").classes("text-h5")
         scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
 
-        with ui.scroll_area().classes("w-full h-96 border rounded p-2") as scroll_area:
-            chat_container = ui.column().classes("w-full")
+        with ui.scroll_area().classes("w-full h-96 border rounded p-4") as scroll_area:
+            chat_container = ui.column().classes("w-full gap-3")
 
         with ui.row().classes("w-full mt-4"):
             message_input = (

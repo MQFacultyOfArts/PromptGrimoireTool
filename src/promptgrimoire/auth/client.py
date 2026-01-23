@@ -147,6 +147,7 @@ class StytchB2BClient:
                 member_id=response.member_id,
                 organization_id=response.organization_id,
                 email=response.member.email_address,
+                name=getattr(response.member, "name", None),
                 roles=roles,
             )
         except StytchError as e:
@@ -187,6 +188,7 @@ class StytchB2BClient:
                 member_id=response.member_id,
                 organization_id=response.organization_id,
                 email=response.member.email_address,
+                name=getattr(response.member, "name", None),
                 roles=roles,
             )
         except StytchError as e:
@@ -225,6 +227,7 @@ class StytchB2BClient:
                 member_id=member_session.member_id,
                 organization_id=member_session.organization_id,
                 email=response.member.email_address,
+                name=getattr(response.member, "name", None),
                 roles=roles,
             )
         except StytchError as e:
@@ -328,6 +331,7 @@ class StytchB2BClient:
                 member_id=response.member_id,
                 organization_id=response.organization_id,
                 email=response.member.email_address,
+                name=getattr(response.member, "name", None),
                 roles=roles,
             )
         except StytchError as e:

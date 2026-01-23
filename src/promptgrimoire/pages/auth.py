@@ -37,6 +37,7 @@ def _set_session_user(
     organization_id: str,
     session_token: str,
     roles: list[str],
+    name: str | None = None,
 ) -> None:
     """Store authenticated user in session storage."""
     app.storage.user["auth_user"] = {
@@ -45,6 +46,7 @@ def _set_session_user(
         "organization_id": organization_id,
         "session_token": session_token,
         "roles": roles,
+        "name": name,
     }
 
 
@@ -251,6 +253,7 @@ async def magic_link_callback() -> None:
             organization_id=result.organization_id or "",
             session_token=result.session_token or "",
             roles=result.roles,
+            name=result.name,
         )
         ui.navigate.to("/")
     else:
@@ -287,6 +290,7 @@ async def sso_callback() -> None:
             organization_id=result.organization_id or "",
             session_token=result.session_token or "",
             roles=result.roles,
+            name=result.name,
         )
         ui.navigate.to("/")
     else:
@@ -323,6 +327,7 @@ async def oauth_callback() -> None:
             organization_id=result.organization_id or "",
             session_token=result.session_token or "",
             roles=result.roles,
+            name=result.name,
         )
         ui.navigate.to("/")
     else:

@@ -37,6 +37,7 @@ class AuthResult:
         member_id: The authenticated member's ID.
         organization_id: The organization the member authenticated into.
         email: The member's email address.
+        name: The member's display name (from Stytch).
         roles: List of role IDs assigned to the member.
         error: Error type if authentication failed.
     """
@@ -47,6 +48,7 @@ class AuthResult:
     member_id: str | None = None
     organization_id: str | None = None
     email: str | None = None
+    name: str | None = None
     roles: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -60,6 +62,7 @@ class SessionResult:
         member_id: The member ID associated with the session.
         organization_id: The organization ID for the session.
         email: The member's email address.
+        name: The member's display name (from Stytch).
         roles: List of role IDs from the session.
         error: Error type if validation failed.
     """
@@ -68,6 +71,7 @@ class SessionResult:
     member_id: str | None = None
     organization_id: str | None = None
     email: str | None = None
+    name: str | None = None
     roles: list[str] = field(default_factory=list)
     error: str | None = None
 

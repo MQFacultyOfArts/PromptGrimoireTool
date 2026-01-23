@@ -104,6 +104,7 @@ class MockAuthClient:
                 member_id=MOCK_MEMBER_ID,
                 organization_id=MOCK_ORG_ID,
                 email="test@example.com",
+                name="Test User",
                 roles=["stytch_member"],
             )
         return AuthResult(
@@ -128,6 +129,7 @@ class MockAuthClient:
                 member_id=MOCK_MEMBER_ID,
                 organization_id=MOCK_ORG_ID,
                 email="aaf-user@uni.edu",
+                name="SSO User",
                 roles=["stytch_member", "instructor"],
             )
         return AuthResult(
@@ -150,6 +152,7 @@ class MockAuthClient:
                 member_id=MOCK_MEMBER_ID,
                 organization_id=MOCK_ORG_ID,
                 email="test@example.com",
+                name="Test User",
                 roles=["stytch_member"],
             )
         return SessionResult(
@@ -229,6 +232,7 @@ class MockAuthClient:
                 member_id=MOCK_MEMBER_ID,
                 organization_id=MOCK_ORG_ID,
                 email="github-user@example.com",
+                name="GitHub User",
                 roles=["stytch_member"],
             )
         return AuthResult(

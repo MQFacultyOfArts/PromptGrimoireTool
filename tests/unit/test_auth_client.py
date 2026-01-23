@@ -145,6 +145,7 @@ class TestAuthenticateMagicLink:
         # Build mock response
         mock_member = MagicMock()
         mock_member.email_address = "user@example.com"
+        mock_member.name = "Test User"
 
         # Roles are objects with role_id attribute
         mock_role = MagicMock()
@@ -175,6 +176,7 @@ class TestAuthenticateMagicLink:
         assert result.member_id == "member-123"
         assert result.organization_id == "org-456"
         assert result.email == "user@example.com"
+        assert result.name == "Test User"
         assert "role-student" in result.roles
 
     async def test_authenticate_magic_link_invalid_token(self, mock_stytch_client):
@@ -226,6 +228,7 @@ class TestAuthenticateSSO:
 
         mock_member = MagicMock()
         mock_member.email_address = "aaf-user@uni.edu"
+        mock_member.name = "SSO User"
 
         # Roles are objects with role_id attribute
         mock_role = MagicMock()
@@ -252,6 +255,7 @@ class TestAuthenticateSSO:
         assert result.success is True
         assert result.session_token == "sso-session-token"
         assert result.email == "aaf-user@uni.edu"
+        assert result.name == "SSO User"
         assert "role-instructor" in result.roles
 
     async def test_authenticate_sso_invalid_token(self, mock_stytch_client):
@@ -282,6 +286,7 @@ class TestValidateSession:
 
         mock_member = MagicMock()
         mock_member.email_address = "user@example.com"
+        mock_member.name = "Test User"
 
         # Roles are objects with role_id attribute
         mock_role = MagicMock()
@@ -306,6 +311,7 @@ class TestValidateSession:
         assert result.valid is True
         assert result.member_id == "member-123"
         assert result.email == "user@example.com"
+        assert result.name == "Test User"
 
     async def test_validate_session_expired(self, mock_stytch_client):
         """Handles expired/invalid session."""

@@ -60,15 +60,12 @@ class TestMagicLinkCallback:
     """Tests for the /auth/callback page (magic link authentication)."""
 
     def test_callback_with_valid_token(self, page: Page, app_server: str):
-        """Valid token authenticates and redirects to protected page."""
+        """Valid token authenticates and redirects to index page."""
         # Navigate to callback with valid mock token
         page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
 
-        # Should redirect to protected page
-        expect(page).to_have_url(f"{app_server}/protected")
-
-        # Should show authenticated content
-        expect(page.get_by_text("test@example.com")).to_be_visible()
+        # Should redirect to index page after successful auth
+        expect(page).to_have_url(f"{app_server}/")
 
     def test_callback_with_invalid_token(self, page: Page, app_server: str):
         """Invalid token shows error and redirects to login."""
@@ -85,7 +82,7 @@ class TestMagicLinkCallback:
         page.goto(f"{app_server}/auth/callback")
 
         # Should show error message (use first() since text appears in label and toast)
-        expect(page.get_by_text("No token provided").first).to_be_visible()
+        expect(page.get_by_text("Invalid or missing token").first).to_be_visible()
 
         # Then redirect to login (wait for timer)
         expect(page).to_have_url(f"{app_server}/login", timeout=3000)
@@ -120,11 +117,8 @@ class TestSSOFlow:
         """Valid SSO token authenticates and redirects."""
         page.goto(f"{app_server}/auth/sso/callback?token={MOCK_VALID_SSO_TOKEN}")
 
-        # Should redirect to protected page
-        expect(page).to_have_url(f"{app_server}/protected")
-
-        # Should show SSO user's email
-        expect(page.get_by_text("aaf-user@uni.edu")).to_be_visible()
+        # Should redirect to index page after successful auth
+        expect(page).to_have_url(f"{app_server}/")
 
     def test_sso_callback_with_invalid_token(self, page: Page, app_server: str):
         """Invalid SSO token shows error."""
@@ -151,7 +145,10 @@ class TestProtectedPage:
         """Protected page shows user info when authenticated."""
         # First authenticate
         page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(page).to_have_url(f"{app_server}/protected")
+        expect(page).to_have_url(f"{app_server}/")
+
+        # Navigate to protected page
+        page.goto(f"{app_server}/protected")
 
         # Should show user email and roles
         expect(page.get_by_text("test@example.com")).to_be_visible()
@@ -161,7 +158,10 @@ class TestProtectedPage:
         """Logout clears session and redirects to login."""
         # First authenticate
         page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(page).to_have_url(f"{app_server}/protected")
+        expect(page).to_have_url(f"{app_server}/")
+
+        # Navigate to protected page to get logout button
+        page.goto(f"{app_server}/protected")
 
         # Click logout
         page.get_by_test_id("logout-btn").click()
@@ -181,12 +181,13 @@ class TestSessionPersistence:
         """Session persists after page refresh."""
         # Authenticate
         page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(page).to_have_url(f"{app_server}/protected")
+        expect(page).to_have_url(f"{app_server}/")
 
-        # Refresh the page
+        # Navigate to protected and refresh
+        page.goto(f"{app_server}/protected")
         page.reload()
 
-        # Should still be on protected page
+        # Should still be on protected page (not redirected to login)
         expect(page).to_have_url(f"{app_server}/protected")
         expect(page.get_by_text("test@example.com")).to_be_visible()
 
@@ -194,11 +195,11 @@ class TestSessionPersistence:
         """Session persists when navigating to other pages."""
         # Authenticate
         page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(page).to_have_url(f"{app_server}/protected")
+        expect(page).to_have_url(f"{app_server}/")
 
-        # Navigate away and back
+        # Navigate away and back to protected
         page.goto(f"{app_server}/login")
         page.goto(f"{app_server}/protected")
 
-        # Should still be authenticated
+        # Should still be authenticated (not redirected to login)
         expect(page).to_have_url(f"{app_server}/protected")

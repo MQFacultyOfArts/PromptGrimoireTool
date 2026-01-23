@@ -4,6 +4,8 @@ This module provides the server-side document state management,
 handling multiple connected clients and broadcasting updates.
 """
 
+from __future__ import annotations
+
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 

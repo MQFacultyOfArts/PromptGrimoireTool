@@ -88,7 +88,7 @@ class AuthConfig:
         assert secret is not None
         assert storage_secret is not None
 
-        return cls(
+        config = cls(
             project_id=project_id,
             secret=secret,
             public_token=os.environ.get("STYTCH_PUBLIC_TOKEN", ""),
@@ -98,6 +98,40 @@ class AuthConfig:
             default_org_id=os.environ.get("STYTCH_DEFAULT_ORG_ID"),
             sso_connection_id=os.environ.get("STYTCH_SSO_CONNECTION_ID"),
         )
+
+        # Validate config to fail fast on misconfiguration
+        config.validate()
+
+        return config
+
+    def validate(self) -> None:
+        """Validate configuration and fail fast on misconfigurations.
+
+        Raises:
+            ValueError: If configuration is incomplete or inconsistent.
+        """
+        errors: list[str] = []
+
+        # SSO requires both connection_id AND public_token
+        if self.sso_connection_id and not self.public_token:
+            errors.append(
+                "STYTCH_SSO_CONNECTION_ID is set but STYTCH_PUBLIC_TOKEN is empty. "
+                "SSO requires both to be configured."
+            )
+
+        # If public_token is set, we expect some SSO/OAuth use
+        # But SSO specifically requires connection_id
+        # (OAuth only needs public_token + default_org_id, so that's fine)
+
+        # Magic links require default_org_id
+        # But this is optional - app can work without magic links
+
+        if errors:
+            error_msg = "Auth configuration errors:\n" + "\n".join(
+                f"  - {e}" for e in errors
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     @property
     def magic_link_callback_url(self) -> str:

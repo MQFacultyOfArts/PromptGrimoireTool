@@ -353,3 +353,74 @@ class TestGetSSOStartUrl:
         assert "saml-connection-abc" in result.redirect_url
         assert "public-token-xyz" in result.redirect_url
         assert "stytch.com" in result.redirect_url
+
+
+class TestAuthConfigValidation:
+    """Tests for AuthConfig startup validation."""
+
+    def test_sso_connection_id_without_public_token_fails(self, monkeypatch):
+        """SSO connection ID without public token raises ValueError."""
+        import pytest
+
+        from promptgrimoire.auth.config import AuthConfig
+
+        # Set required vars
+        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
+        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
+        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
+
+        # Set SSO connection ID but NOT public token
+        monkeypatch.setenv("STYTCH_SSO_CONNECTION_ID", "sso-conn-123")
+        monkeypatch.delenv("STYTCH_PUBLIC_TOKEN", raising=False)
+
+        with pytest.raises(
+            ValueError,
+            match="STYTCH_SSO_CONNECTION_ID is set but STYTCH_PUBLIC_TOKEN is empty",
+        ):
+            AuthConfig.from_env()
+
+    def test_sso_connection_id_with_public_token_succeeds(self, monkeypatch):
+        """SSO connection ID with public token validates successfully."""
+        from promptgrimoire.auth.config import AuthConfig
+
+        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
+        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
+        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
+        monkeypatch.setenv("STYTCH_SSO_CONNECTION_ID", "sso-conn-123")
+        monkeypatch.setenv("STYTCH_PUBLIC_TOKEN", "public-token-456")
+
+        config = AuthConfig.from_env()
+
+        assert config.sso_connection_id == "sso-conn-123"
+        assert config.public_token == "public-token-456"
+
+    def test_public_token_without_sso_connection_id_succeeds(self, monkeypatch):
+        """Public token alone is valid (for OAuth without SSO)."""
+        from promptgrimoire.auth.config import AuthConfig
+
+        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
+        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
+        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
+        monkeypatch.setenv("STYTCH_PUBLIC_TOKEN", "public-token-456")
+        monkeypatch.delenv("STYTCH_SSO_CONNECTION_ID", raising=False)
+
+        config = AuthConfig.from_env()
+
+        assert config.public_token == "public-token-456"
+        assert config.sso_connection_id is None
+
+    def test_minimal_config_validates(self, monkeypatch):
+        """Minimal required config (no SSO) validates successfully."""
+        from promptgrimoire.auth.config import AuthConfig
+
+        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
+        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
+        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
+        monkeypatch.delenv("STYTCH_PUBLIC_TOKEN", raising=False)
+        monkeypatch.delenv("STYTCH_SSO_CONNECTION_ID", raising=False)
+
+        config = AuthConfig.from_env()
+
+        assert config.project_id == "proj-test"
+        assert config.public_token == ""  # defaults to empty string
+        assert config.sso_connection_id is None

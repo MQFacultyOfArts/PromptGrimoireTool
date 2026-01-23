@@ -869,6 +869,7 @@ name = "promptgrimoire"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "alembic" },
     { name = "anthropic" },
     { name = "asyncpg" },
     { name = "nicegui" },
@@ -893,11 +894,16 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-playwright" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "alembic", specifier = ">=1.18.0" },
     { name = "alembic", marker = "extra == 'dev'", specifier = ">=1.14" },
     { name = "anthropic", specifier = ">=0.76.0" },
     { name = "asyncpg", specifier = ">=0.30" },
@@ -918,7 +924,13 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-playwright", specifier = ">=0.7.2" }]
+dev = [
+    { name = "pre-commit", specifier = ">=4.5.1" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest-playwright", specifier = ">=0.7.2" },
+    { name = "ruff", specifier = ">=0.14.11" },
+]
 
 [[package]]
 name = "propcache"

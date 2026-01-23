@@ -148,3 +148,34 @@ class HighlightComment(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
+
+
+class AnnotationDocumentState(SQLModel, table=True):
+    """Persisted CRDT state for annotation documents.
+
+    Stores the full pycrdt document state for recovery after server restart.
+    Each case_id has at most one state record.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        case_id: Unique identifier for the document (e.g., "demo-case-183").
+        crdt_state: Serialized pycrdt state bytes.
+        highlight_count: Cached count of highlights (denormalized for quick display).
+        last_editor: Display name of last user to edit.
+        created_at: Timestamp when document was first persisted.
+        updated_at: Timestamp when document was last persisted.
+    """
+
+    __tablename__ = "annotation_document_state"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    case_id: str = Field(unique=True, index=True, max_length=255)
+    crdt_state: bytes
+    highlight_count: int = Field(default=0)
+    last_editor: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )

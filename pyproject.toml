@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
+    "alembic>=1.18.0",
 ]
 
 [project.optional-dependencies]
@@ -93,6 +94,21 @@ ignore = [
     "PLR0915",  # Page function needs many statements for UI setup
     "SIM117",   # Nested with is cleaner for NiceGUI UI composition
 ]
+"src/promptgrimoire/pages/live_annotation_demo.py" = [
+    "PLR0915",  # Page function needs many statements for UI setup
+    "SIM117",   # Nested with is cleaner for NiceGUI UI composition
+    "PLC0415",  # Late imports to avoid circular dependencies
+]
+"src/promptgrimoire/crdt/annotation_doc.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies with persistence
+]
+"src/promptgrimoire/crdt/persistence.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies with db
+    "PLW0603",  # Global singleton pattern is intentional
+]
+"alembic/versions/*.py" = [
+    "TC003",  # Alembic generates imports outside TYPE_CHECKING block
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]
@@ -126,5 +142,9 @@ exclude = ["alembic/"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
     "pytest-playwright>=0.7.2",
+    "ruff>=0.14.11",
 ]

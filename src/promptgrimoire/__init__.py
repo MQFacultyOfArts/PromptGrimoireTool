@@ -60,6 +60,7 @@ def main() -> None:
 
     # Database lifecycle hooks (only if DATABASE_URL is configured)
     if os.environ.get("DATABASE_URL"):
+        from promptgrimoire.crdt.persistence import get_persistence_manager
         from promptgrimoire.db import close_db, init_db
 
         @app.on_startup
@@ -69,6 +70,8 @@ def main() -> None:
 
         @app.on_shutdown
         async def shutdown() -> None:
+            # Persist all dirty CRDT documents before closing DB
+            await get_persistence_manager().persist_all_dirty()
             await close_db()
 
     port = int(os.environ.get("PROMPTGRIMOIRE_PORT", "8080"))

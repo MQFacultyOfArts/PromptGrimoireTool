@@ -10,6 +10,7 @@ Route: /demo/live-annotation
 from __future__ import annotations
 
 import contextlib
+import os
 import random
 import re
 from pathlib import Path
@@ -550,6 +551,7 @@ class _PageContext:
         self.words = words
         self.current_selection: dict[str, int | None] = {"start": None, "end": None}
         self.annotation_cards: dict[str, ui.element] = {}
+        self.comment_refreshers: dict[str, Any] = {}  # ui.refreshable.refresh methods
         # UI elements set during page build (typed as non-None for convenience)
         self.highlight_style: ui.element = None
         self.selection_style: ui.element = None
@@ -663,7 +665,6 @@ def _create_annotation_card(
     h: dict,
     update_highlight_css: Any,
     broadcast_update: Any,
-    refresh_annotations: Any,
 ) -> None:
     """Create an annotation card for a highlight."""
     highlight_id = h.get("id", "")
@@ -674,7 +675,6 @@ def _create_annotation_card(
     text = h.get("text", "")[:80]
     if len(h.get("text", "")) > 80:
         text += "..."
-    comments = h.get("comments", [])
     start_word = int(h.get("start_word", 0))
     end_word = int(h.get("end_word", start_word))
 
@@ -700,9 +700,20 @@ def _create_annotation_card(
             ui.label(f"by {author}").classes("text-xs text-grey")
             ui.label(f'"{text}"').classes("text-sm italic")
             _build_go_to_text_button(start_word, end_word)
-            _build_card_comments(comments)
+
+            # Create refreshable comments section
+            @ui.refreshable
+            def comments_section() -> None:
+                highlight = ctx.ann_doc.get_highlight(highlight_id)
+                comments = highlight.get("comments", []) if highlight else []
+                _build_card_comments(comments)
+
+            # Store the refresher so we can call it later
+            ctx.comment_refreshers[highlight_id] = comments_section.refresh
+
+            comments_section()
             _build_card_comment_input(
-                ctx, highlight_id, refresh_annotations, broadcast_update
+                ctx, highlight_id, comments_section.refresh, broadcast_update
             )
 
 
@@ -771,7 +782,7 @@ def _build_card_comments(comments: list) -> None:
 def _build_card_comment_input(
     ctx: _PageContext,
     highlight_id: str,
-    refresh_annotations: Any,
+    refresh_comments: Any,  # ui.refreshable.refresh method
     broadcast_update: Any,
 ) -> None:
     """Build the comment input for an annotation card."""
@@ -787,10 +798,7 @@ def _build_card_comment_input(
                 hid, ctx.username, inp.value, origin_client_id=ctx.client_id
             )
             inp.value = ""
-            if hid in ctx.annotation_cards:
-                ctx.annotation_cards[hid].delete()
-                del ctx.annotation_cards[hid]
-            await refresh_annotations()
+            refresh_comments()  # Just refresh comments, not whole card
             await broadcast_update()
 
     ui.button("Post", on_click=add_comment).props("dense size=sm")
@@ -813,14 +821,18 @@ def _make_refresh_annotations(
             if hid not in current_ids:
                 ctx.annotation_cards[hid].delete()
                 del ctx.annotation_cards[hid]
+                ctx.comment_refreshers.pop(hid, None)
 
-        # Create cards for each highlight
+        # Create new cards or refresh existing ones
         for h in highlights:
             highlight_id = h.get("id", "")
-            if highlight_id not in ctx.annotation_cards:
-                _create_annotation_card(
-                    ctx, h, update_highlight_css, broadcast_update, refresh_annotations
-                )
+            if highlight_id in ctx.annotation_cards:
+                # Card exists - just refresh comments
+                if highlight_id in ctx.comment_refreshers:
+                    ctx.comment_refreshers[highlight_id]()
+            else:
+                # New highlight - create card
+                _create_annotation_card(ctx, h, update_highlight_css, broadcast_update)
 
     return refresh_annotations
 
@@ -932,7 +944,7 @@ def _setup_event_handlers(
 
 
 @ui.page("/demo/live-annotation")
-async def live_annotation_demo_page() -> None:  # noqa: PLR0915  # TODO: refactor further
+async def live_annotation_demo_page() -> None:  # TODO: refactor further
     """Live annotation demo page with CRDT-based collaboration."""
     await ui.context.client.connected()
 
@@ -941,7 +953,12 @@ async def live_annotation_demo_page() -> None:  # noqa: PLR0915  # TODO: refacto
     username = _get_username()
     doc_id = "demo-case-183"
 
-    ann_doc = _doc_registry.get_or_create(doc_id)
+    # Use persistence if database is configured
+    if os.environ.get("DATABASE_URL"):
+        ann_doc = await _doc_registry.get_or_create_with_persistence(doc_id)
+        ann_doc.enable_persistence()
+    else:
+        ann_doc = _doc_registry.get_or_create(doc_id)
     client_color = ann_doc.register_client(client_id, username)
 
     if doc_id not in _connected_clients:
@@ -1029,10 +1046,16 @@ async def live_annotation_demo_page() -> None:  # noqa: PLR0915  # TODO: refacto
 
     update_client_count()
 
-    def on_disconnect() -> None:
+    async def on_disconnect() -> None:
         ann_doc.unregister_client(client_id)
         if doc_id in _connected_clients:
             _connected_clients[doc_id].pop(client_id, None)
+
+        # Force persist when last client disconnects
+        if not _connected_clients.get(doc_id) and os.environ.get("DATABASE_URL"):
+            from promptgrimoire.crdt.persistence import get_persistence_manager
+
+            await get_persistence_manager().force_persist(doc_id)
 
     client.on_disconnect(on_disconnect)
 
@@ -1045,7 +1068,7 @@ async def live_annotation_demo_page() -> None:  # noqa: PLR0915  # TODO: refacto
     update_highlight_css()
     await refresh_annotations()
 
-    # Load JavaScript
+    # Load JavaScript (fire-and-forget, no return value expected)
     js_file = _ASSETS_DIR / "js" / "live-annotation.js"
     js_code = js_file.read_text()
-    await ui.run_javascript(f"{js_code}\nwindow.LiveAnnotation.init(emitEvent);")
+    ui.run_javascript(f"{js_code}\nwindow.LiveAnnotation.init(emitEvent);")

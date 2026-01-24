@@ -1,7 +1,14 @@
 """Tests for server-side highlight insertion."""
 
+from uuid import uuid4
+
 import pytest
 
+from promptgrimoire.db.highlights import (
+    MAX_COMMENT_LENGTH,
+    CommentTooLongError,
+    create_comment,
+)
 from promptgrimoire.parsers.highlights import HighlightSpec, insert_highlights
 
 
@@ -88,3 +95,46 @@ the trial judge erred in applying the standard.</p></li></ol>"""
 
         assert 'data-highlight-id="xyz"' in result
         assert 'data-tag="reasons"' in result
+
+
+class TestCommentValidation:
+    """Tests for comment text validation."""
+
+    @pytest.mark.asyncio
+    async def test_comment_too_long_raises_error(self) -> None:
+        """Comments exceeding MAX_COMMENT_LENGTH raise CommentTooLongError."""
+        long_text = "x" * (MAX_COMMENT_LENGTH + 1)
+
+        with pytest.raises(CommentTooLongError) as exc_info:
+            await create_comment(
+                highlight_id=uuid4(),
+                author="test_user",
+                text=long_text,
+            )
+
+        assert exc_info.value.length == MAX_COMMENT_LENGTH + 1
+        assert str(MAX_COMMENT_LENGTH) in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_comment_at_max_length_is_valid(self) -> None:
+        """Comments exactly at MAX_COMMENT_LENGTH should not raise.
+
+        Note: This test will fail without a database connection, but the
+        validation check happens before any DB operation, so the test
+        verifies that no CommentTooLongError is raised.
+        """
+        max_text = "x" * MAX_COMMENT_LENGTH
+
+        # Should not raise CommentTooLongError - will fail on DB connection
+        # but that's expected in unit tests without a database
+        try:
+            await create_comment(
+                highlight_id=uuid4(),
+                author="test_user",
+                text=max_text,
+            )
+        except CommentTooLongError:
+            pytest.fail("Should not raise CommentTooLongError at max length")
+        except Exception:
+            # Expected - no database connection in unit tests
+            pass

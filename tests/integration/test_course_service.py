@@ -303,6 +303,46 @@ class TestEnrollment:
         assert exc_info.value.course_id == course.id
         assert exc_info.value.member_id == member_id
 
+    @pytest.mark.asyncio
+    async def test_concurrent_enrollment_acid_compliance(self) -> None:
+        """Concurrent enrollments are ACID-compliant: exactly one succeeds."""
+        import asyncio
+
+        from promptgrimoire.db.courses import (
+            DuplicateEnrollmentError,
+            create_course,
+            enroll_member,
+            get_enrollment,
+        )
+
+        course = await create_course(
+            code="LAWS8802",
+            name="Concurrent Test",
+            semester="2025-S1",
+        )
+        member_id = f"member-{uuid4().hex[:8]}"
+
+        async def try_enroll() -> str:
+            """Attempt enrollment, return 'success' or 'duplicate'."""
+            try:
+                await enroll_member(course_id=course.id, member_id=member_id)
+                return "success"
+            except DuplicateEnrollmentError:
+                return "duplicate"
+
+        # Run two enrollments concurrently
+        results = await asyncio.gather(try_enroll(), try_enroll())
+
+        # Exactly one should succeed, one should fail
+        assert sorted(results) == ["duplicate", "success"], (
+            f"Expected exactly one success and one duplicate, got {results}"
+        )
+
+        # Verify enrollment exists
+        enrollment = await get_enrollment(course_id=course.id, member_id=member_id)
+        assert enrollment is not None
+        assert enrollment.member_id == member_id
+
 
 @pytest.mark.usefixtures("db_engine")
 class TestWeeks:

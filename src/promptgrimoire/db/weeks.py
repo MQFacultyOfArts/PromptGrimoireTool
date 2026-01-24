@@ -7,12 +7,9 @@ Handles student visibility based on is_published and visible_from.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlmodel import or_, select
-
-if TYPE_CHECKING:
-    from uuid import UUID
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import CourseEnrollment, CourseRole, Week
@@ -69,7 +66,7 @@ async def list_weeks(course_id: UUID) -> list[Week]:
     """
     async with get_session() as session:
         result = await session.exec(
-            select(Week).where(Week.course_id == course_id).order_by(Week.week_number)
+            select(Week).where(Week.course_id == course_id).order_by("week_number")
         )
         return list(result.all())
 
@@ -202,9 +199,9 @@ async def delete_week(week_id: UUID) -> bool:
 
 async def get_visible_weeks(
     course_id: UUID,
-    member_id: str,
+    user_id: UUID,
 ) -> list[Week]:
-    """Get weeks visible to a member based on their enrollment role.
+    """Get weeks visible to a user based on their enrollment role.
 
     Visibility rules:
     - coordinator/instructor/tutor: See all weeks
@@ -213,7 +210,7 @@ async def get_visible_weeks(
 
     Args:
         course_id: The course UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
 
     Returns:
         List of visible Week objects ordered by week_number.
@@ -223,7 +220,7 @@ async def get_visible_weeks(
         enrollment_result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         enrollment = enrollment_result.first()
         if not enrollment:
@@ -236,9 +233,7 @@ async def get_visible_weeks(
             CourseRole.tutor,
         ):
             result = await session.exec(
-                select(Week)
-                .where(Week.course_id == course_id)
-                .order_by(Week.week_number)
+                select(Week).where(Week.course_id == course_id).order_by("week_number")
             )
             return list(result.all())
 
@@ -251,26 +246,26 @@ async def get_visible_weeks(
             .where(
                 or_(
                     Week.visible_from == None,  # noqa: E711
-                    Week.visible_from <= now,
+                    Week.visible_from <= now,  # type: ignore[operator]  # or_ handles None
                 )
             )
-            .order_by(Week.week_number)
+            .order_by("week_number")
         )
         return list(result.all())
 
 
 async def can_access_week(
     week_id: UUID,
-    member_id: str,
+    user_id: UUID,
 ) -> bool:
-    """Check if a member can access a specific week.
+    """Check if a user can access a specific week.
 
     Args:
         week_id: The week UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
 
     Returns:
-        True if the member can access the week.
+        True if the user can access the week.
     """
     async with get_session() as session:
         week = await session.get(Week, week_id)
@@ -281,7 +276,7 @@ async def can_access_week(
         enrollment_result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == week.course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         enrollment = enrollment_result.first()
         if not enrollment:

@@ -183,70 +183,80 @@ class TestEnrollment:
     """Tests for course enrollment."""
 
     @pytest.mark.asyncio
-    async def test_enroll_member_in_course(self) -> None:
-        """Member is enrolled with specified role."""
-        from promptgrimoire.db.courses import create_course, enroll_member
+    async def test_enroll_user_in_course(self) -> None:
+        """User is enrolled with specified role."""
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
 
         course = await create_course(
             code="LAWS6600",
             name="Evidence",
             semester="2025-S1",
         )
-        member_id = f"member-{uuid4().hex[:8]}"
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
 
-        enrollment = await enroll_member(
+        enrollment = await enroll_user(
             course_id=course.id,
-            member_id=member_id,
+            user_id=user.id,
             role=CourseRole.student,
         )
 
         assert enrollment.course_id == course.id
-        assert enrollment.member_id == member_id
+        assert enrollment.user_id == user.id
         assert enrollment.role == CourseRole.student
 
     @pytest.mark.asyncio
     async def test_get_enrollment(self) -> None:
-        """Can retrieve enrollment by member and course."""
+        """Can retrieve enrollment by user and course."""
         from promptgrimoire.db.courses import (
             create_course,
-            enroll_member,
+            enroll_user,
             get_enrollment,
         )
+        from promptgrimoire.db.users import create_user
 
         course = await create_course(
             code="LAWS7700",
             name="Criminal",
             semester="2025-S1",
         )
-        member_id = f"member-{uuid4().hex[:8]}"
-        await enroll_member(course_id=course.id, member_id=member_id)
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
+        await enroll_user(course_id=course.id, user_id=user.id)
 
-        enrollment = await get_enrollment(course_id=course.id, member_id=member_id)
+        enrollment = await get_enrollment(course_id=course.id, user_id=user.id)
 
         assert enrollment is not None
-        assert enrollment.member_id == member_id
+        assert enrollment.user_id == user.id
 
     @pytest.mark.asyncio
-    async def test_list_enrollments_for_member(self) -> None:
-        """Returns all courses a member is enrolled in."""
+    async def test_list_enrollments_for_user(self) -> None:
+        """Returns all courses a user is enrolled in."""
         from promptgrimoire.db.courses import (
             create_course,
-            enroll_member,
-            list_member_enrollments,
+            enroll_user,
+            list_user_enrollments,
         )
+        from promptgrimoire.db.users import create_user
 
-        member_id = f"member-{uuid4().hex[:8]}"
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
         semester = f"test-{uuid4().hex[:8]}"
 
         course1 = await create_course(code="LAWS1111", name="One", semester=semester)
         course2 = await create_course(code="LAWS2222", name="Two", semester=semester)
 
-        await enroll_member(course_id=course1.id, member_id=member_id)
-        await enroll_member(
-            course_id=course2.id, member_id=member_id, role=CourseRole.tutor
-        )
+        await enroll_user(course_id=course1.id, user_id=user.id)
+        await enroll_user(course_id=course2.id, user_id=user.id, role=CourseRole.tutor)
 
-        enrollments = await list_member_enrollments(member_id)
+        enrollments = await list_user_enrollments(user.id)
 
         assert len(enrollments) >= 2
         course_ids = [e.course_id for e in enrollments]
@@ -254,54 +264,62 @@ class TestEnrollment:
         assert course2.id in course_ids
 
     @pytest.mark.asyncio
-    async def test_unenroll_member(self) -> None:
-        """Member can be removed from course."""
+    async def test_unenroll_user(self) -> None:
+        """User can be removed from course."""
         from promptgrimoire.db.courses import (
             create_course,
-            enroll_member,
+            enroll_user,
             get_enrollment,
-            unenroll_member,
+            unenroll_user,
         )
+        from promptgrimoire.db.users import create_user
 
         course = await create_course(
             code="LAWS8800",
             name="Property",
             semester="2025-S1",
         )
-        member_id = f"member-{uuid4().hex[:8]}"
-        await enroll_member(course_id=course.id, member_id=member_id)
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
+        await enroll_user(course_id=course.id, user_id=user.id)
 
-        result = await unenroll_member(course_id=course.id, member_id=member_id)
+        result = await unenroll_user(course_id=course.id, user_id=user.id)
 
         assert result is True
-        enrollment = await get_enrollment(course_id=course.id, member_id=member_id)
+        enrollment = await get_enrollment(course_id=course.id, user_id=user.id)
         assert enrollment is None
 
     @pytest.mark.asyncio
     async def test_duplicate_enrollment_raises_error(self) -> None:
-        """Enrolling same member twice raises DuplicateEnrollmentError."""
+        """Enrolling same user twice raises DuplicateEnrollmentError."""
         from promptgrimoire.db.courses import (
             DuplicateEnrollmentError,
             create_course,
-            enroll_member,
+            enroll_user,
         )
+        from promptgrimoire.db.users import create_user
 
         course = await create_course(
             code="LAWS8801",
             name="Duplicate Test",
             semester="2025-S1",
         )
-        member_id = f"member-{uuid4().hex[:8]}"
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
 
         # First enrollment succeeds
-        await enroll_member(course_id=course.id, member_id=member_id)
+        await enroll_user(course_id=course.id, user_id=user.id)
 
         # Second enrollment fails
         with pytest.raises(DuplicateEnrollmentError) as exc_info:
-            await enroll_member(course_id=course.id, member_id=member_id)
+            await enroll_user(course_id=course.id, user_id=user.id)
 
         assert exc_info.value.course_id == course.id
-        assert exc_info.value.member_id == member_id
+        assert exc_info.value.user_id == user.id
 
     @pytest.mark.asyncio
     async def test_concurrent_enrollment_acid_compliance(self) -> None:
@@ -311,21 +329,25 @@ class TestEnrollment:
         from promptgrimoire.db.courses import (
             DuplicateEnrollmentError,
             create_course,
-            enroll_member,
+            enroll_user,
             get_enrollment,
         )
+        from promptgrimoire.db.users import create_user
 
         course = await create_course(
             code="LAWS8802",
             name="Concurrent Test",
             semester="2025-S1",
         )
-        member_id = f"member-{uuid4().hex[:8]}"
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
 
         async def try_enroll() -> str:
             """Attempt enrollment, return 'success' or 'duplicate'."""
             try:
-                await enroll_member(course_id=course.id, member_id=member_id)
+                await enroll_user(course_id=course.id, user_id=user.id)
                 return "success"
             except DuplicateEnrollmentError:
                 return "duplicate"
@@ -339,9 +361,9 @@ class TestEnrollment:
         )
 
         # Verify enrollment exists
-        enrollment = await get_enrollment(course_id=course.id, member_id=member_id)
+        enrollment = await get_enrollment(course_id=course.id, user_id=user.id)
         assert enrollment is not None
-        assert enrollment.member_id == member_id
+        assert enrollment.user_id == user.id
 
 
 @pytest.mark.usefixtures("db_engine")
@@ -448,7 +470,8 @@ class TestWeekVisibility:
     @pytest.mark.asyncio
     async def test_get_visible_weeks_for_instructor(self) -> None:
         """Instructors see all weeks regardless of publish status."""
-        from promptgrimoire.db.courses import create_course, enroll_member
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.weeks import create_week, get_visible_weeks, publish_week
 
         course = await create_course(
@@ -456,9 +479,12 @@ class TestWeekVisibility:
             name="Visibility Test 1",
             semester="2025-S1",
         )
-        member_id = f"instructor-{uuid4().hex[:8]}"
-        await enroll_member(
-            course_id=course.id, member_id=member_id, role=CourseRole.instructor
+        user = await create_user(
+            email=f"instructor-{uuid4().hex[:8]}@example.com",
+            display_name="Instructor",
+        )
+        await enroll_user(
+            course_id=course.id, user_id=user.id, role=CourseRole.instructor
         )
 
         # Create published and unpublished weeks
@@ -466,14 +492,15 @@ class TestWeekVisibility:
         await publish_week(week1.id)
         await create_week(course_id=course.id, week_number=2, title="Unpublished")
 
-        weeks = await get_visible_weeks(course_id=course.id, member_id=member_id)
+        weeks = await get_visible_weeks(course_id=course.id, user_id=user.id)
 
         assert len(weeks) == 2
 
     @pytest.mark.asyncio
     async def test_get_visible_weeks_for_student_only_published(self) -> None:
         """Students only see published weeks."""
-        from promptgrimoire.db.courses import create_course, enroll_member
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.weeks import create_week, get_visible_weeks, publish_week
 
         course = await create_course(
@@ -481,17 +508,18 @@ class TestWeekVisibility:
             name="Visibility Test 2",
             semester="2025-S1",
         )
-        member_id = f"student-{uuid4().hex[:8]}"
-        await enroll_member(
-            course_id=course.id, member_id=member_id, role=CourseRole.student
+        user = await create_user(
+            email=f"student-{uuid4().hex[:8]}@example.com",
+            display_name="Student",
         )
+        await enroll_user(course_id=course.id, user_id=user.id, role=CourseRole.student)
 
         # Create published and unpublished weeks
         week1 = await create_week(course_id=course.id, week_number=1, title="Published")
         await publish_week(week1.id)
         await create_week(course_id=course.id, week_number=2, title="Unpublished")
 
-        weeks = await get_visible_weeks(course_id=course.id, member_id=member_id)
+        weeks = await get_visible_weeks(course_id=course.id, user_id=user.id)
 
         assert len(weeks) == 1
         assert weeks[0].title == "Published"
@@ -499,7 +527,8 @@ class TestWeekVisibility:
     @pytest.mark.asyncio
     async def test_get_visible_weeks_respects_visible_from(self) -> None:
         """Students don't see weeks with future visible_from."""
-        from promptgrimoire.db.courses import create_course, enroll_member
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.weeks import (
             create_week,
             get_visible_weeks,
@@ -512,10 +541,11 @@ class TestWeekVisibility:
             name="Visibility Test 3",
             semester="2025-S1",
         )
-        member_id = f"student-{uuid4().hex[:8]}"
-        await enroll_member(
-            course_id=course.id, member_id=member_id, role=CourseRole.student
+        user = await create_user(
+            email=f"student-{uuid4().hex[:8]}@example.com",
+            display_name="Student",
         )
+        await enroll_user(course_id=course.id, user_id=user.id, role=CourseRole.student)
 
         # Week 1: published, no schedule (visible now)
         week1 = await create_week(course_id=course.id, week_number=1, title="Now")
@@ -528,15 +558,16 @@ class TestWeekVisibility:
             week2.id, visible_from=datetime.now(UTC) + timedelta(days=7)
         )
 
-        weeks = await get_visible_weeks(course_id=course.id, member_id=member_id)
+        weeks = await get_visible_weeks(course_id=course.id, user_id=user.id)
 
         assert len(weeks) == 1
         assert weeks[0].title == "Now"
 
     @pytest.mark.asyncio
-    async def test_unenrolled_member_sees_no_weeks(self) -> None:
-        """Members not enrolled in course see no weeks."""
+    async def test_unenrolled_user_sees_no_weeks(self) -> None:
+        """Users not enrolled in course see no weeks."""
         from promptgrimoire.db.courses import create_course
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.weeks import create_week, get_visible_weeks, publish_week
 
         course = await create_course(
@@ -547,8 +578,11 @@ class TestWeekVisibility:
         week = await create_week(course_id=course.id, week_number=1, title="Week 1")
         await publish_week(week.id)
 
-        member_id = f"unenrolled-{uuid4().hex[:8]}"
+        user = await create_user(
+            email=f"unenrolled-{uuid4().hex[:8]}@example.com",
+            display_name="Unenrolled",
+        )
 
-        weeks = await get_visible_weeks(course_id=course.id, member_id=member_id)
+        weeks = await get_visible_weeks(course_id=course.id, user_id=user.id)
 
         assert len(weeks) == 0

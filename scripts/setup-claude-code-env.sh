@@ -65,12 +65,30 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 7. Pin Python 3.13 (without committing)
+# 7. Install Python 3.14 from debs, or fall back to 3.13
 # -----------------------------------------------------------------------------
-echo "[7/7] Pinning Python 3.13 locally..."
-git update-index --assume-unchanged pyproject.toml .python-version uv.lock 2>/dev/null || true
-sed -i 's/requires-python = ">=3.14"/requires-python = ">=3.13"/' pyproject.toml
-echo "3.13" > .python-version
+echo "[7/7] Setting up Python..."
+DEB_DIR="$PROJECT_DIR/scripts/deb"
+
+if [ -f "$DEB_DIR/python3.14_"*".deb" ] 2>/dev/null; then
+    echo "  Installing Python 3.14 from local debs..."
+    dpkg -i "$DEB_DIR"/*.deb 2>/dev/null || apt-get install -f -y > /dev/null 2>&1
+    if command -v python3.14 &> /dev/null; then
+        echo "  Python 3.14 installed successfully"
+    else
+        echo "  Warning: Python 3.14 install failed, falling back to 3.13"
+        git update-index --assume-unchanged pyproject.toml .python-version uv.lock 2>/dev/null || true
+        sed -i 's/requires-python = ">=3.14"/requires-python = ">=3.13"/' pyproject.toml
+        echo "3.13" > .python-version
+    fi
+elif command -v python3.14 &> /dev/null; then
+    echo "  Python 3.14 already available"
+else
+    echo "  Python 3.14 not available, pinning to 3.13 locally..."
+    git update-index --assume-unchanged pyproject.toml .python-version uv.lock 2>/dev/null || true
+    sed -i 's/requires-python = ">=3.14"/requires-python = ">=3.13"/' pyproject.toml
+    echo "3.13" > .python-version
+fi
 
 # -----------------------------------------------------------------------------
 # Done

@@ -35,6 +35,7 @@ from promptgrimoire.models import (
     BriefTag,
     ParsedRTF,
 )
+from promptgrimoire.export.pdf import Annotation, ExportOptions, export_brief_to_pdf
 from promptgrimoire.parsers import HighlightSpec, insert_highlights, parse_rtf
 
 
@@ -353,6 +354,72 @@ async def case_tool_page() -> None:
         with sidebar:
             ui.label("Annotations").classes("text-h6 mb-2")
             annotations_container = ui.column().classes("w-full gap-2")
+
+    # =========================================================================
+    # TEMPORARY: PDF Export button for UAT testing
+    # TODO: Move to navigation menu and Tab 3 after UAT complete
+    # =========================================================================
+    async def export_pdf() -> None:
+        """Export current case with annotations to PDF."""
+        if not current_case.get("id") or not current_case.get("data"):
+            ui.notify("No case loaded", type="warning")
+            return
+
+        case_id = str(current_case["id"])
+        parsed = current_case["data"]
+        if not isinstance(parsed, ParsedRTF):
+            ui.notify("Invalid case data", type="warning")
+            return
+
+        # Get highlights and convert to Annotation objects
+        case_highlights = await get_highlights_for_case(case_id)
+        annotations = [
+            Annotation(
+                id=str(h.id),
+                quoted_text=h.text[:200] + ("..." if len(h.text) > 200 else ""),
+                tag=h.tag.replace("_", " ").title(),
+                paragraph_ref=str(h.para_num) if h.para_num else None,
+            )
+            for h in sorted(case_highlights, key=lambda x: x.start_offset)
+        ]
+
+        # Build HTML with highlights
+        html_content = parsed.html
+        if case_highlights:
+            specs = [
+                HighlightSpec(
+                    id=str(h.id),
+                    start=h.start_offset,
+                    end=h.end_offset,
+                    color=TAG_COLORS.get(BriefTag(h.tag), "#666"),
+                    tag=h.tag,
+                )
+                for h in case_highlights
+            ]
+            html_content = insert_highlights(parsed.html, specs)
+
+        # Generate PDF
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            output_path = Path(f.name)
+
+        options = ExportOptions(
+            title=f"Case Brief: {case_id}",
+            author=_get_username(),
+        )
+        export_brief_to_pdf(html_content, annotations, output_path, options)
+
+        # Trigger download
+        ui.download(output_path, f"{case_id}_brief.pdf")
+        ui.notify("PDF exported!", type="positive")
+
+    with ui.row().classes(
+        "w-full justify-end mt-4 p-2 bg-yellow-50 border border-yellow-200 rounded"
+    ):
+        ui.label("⚠️ UAT Testing").classes("text-yellow-800 text-sm self-center mr-2")
+        ui.button("Export PDF", on_click=export_pdf, color="amber").props("outline")
+    # =========================================================================
 
     # Floating tag menu (hidden by default) - with full names
     floating_menu = ui.element("div").classes("floating-menu")

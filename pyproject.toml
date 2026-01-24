@@ -29,6 +29,7 @@ dependencies = [
     "alembic>=1.18.0",
     "pytest-xdist[psutil]>=3.8.0",
     "ast-grep-cli>=0.40.5",
+    "weasyprint>=63.0",
 ]
 
 [project.optional-dependencies]

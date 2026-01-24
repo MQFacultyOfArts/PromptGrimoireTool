@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from promptgrimoire.export.pdf import (
     Annotation,
     ExportOptions,
@@ -229,3 +227,41 @@ class TestExportBriefToPdf:
         export_brief_to_pdf(brief, annotations, output)
 
         assert output.exists()
+
+    def test_renders_html_with_code_blocks(self, tmp_path: Path) -> None:
+        """HTML content with code blocks renders correctly in PDF."""
+        output = tmp_path / "water_cycle.pdf"
+
+        # Student prompt about the water cycle with HTML and code blocks
+        brief = """
+        <h2>Student Prompt: Explain the Water Cycle</h2>
+        <p>The water cycle describes how water moves through the environment.
+        Key stages include:</p>
+        <ul>
+            <li><strong>Evaporation</strong> - Water turns to vapor from oceans</li>
+            <li><strong>Condensation</strong> - Vapor forms clouds</li>
+            <li><strong>Precipitation</strong> - Water falls as rain or snow</li>
+        </ul>
+        <p>Here's a simple model in Python:</p>
+        <pre><code>def water_cycle():
+    stages = ["evaporation", "condensation", "precipitation", "collection"]
+    for stage in stages:
+        print(f"Current stage: {stage}")
+</code></pre>
+        <p>This continuous cycle is essential for life on Earth.</p>
+        """
+
+        annotations = [
+            Annotation(
+                id="1",
+                quoted_text="Evaporation - Water turns to vapor",
+                tag="facts",
+                comment="Good scientific explanation",
+            ),
+        ]
+
+        export_brief_to_pdf(brief, annotations, output)
+
+        assert output.exists()
+        # PDF should have reasonable size for content with code
+        assert output.stat().st_size > 2000

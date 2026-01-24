@@ -169,6 +169,35 @@ body {
     color: #333;
 }
 
+/* Code block styling */
+pre {
+    background-color: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.5cm;
+    margin: 0.5em 0;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10pt;
+    line-height: 1.4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+code {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10pt;
+    background-color: #f4f4f4;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
+
 /* Sidebar header */
 .sidebar-header {
     font-size: 14pt;
@@ -182,7 +211,7 @@ body {
 
 def _build_annotation_card(annotation: Annotation, include_para_ref: bool) -> str:
     """Build HTML for a single annotation card."""
-    parts = [f'<div class="annotation-card">']
+    parts = ['<div class="annotation-card">']
     parts.append(f'<span class="tag {annotation.tag}">{annotation.tag}</span>')
 
     if include_para_ref and annotation.paragraph_ref:
@@ -202,7 +231,7 @@ def _build_annotation_card(annotation: Annotation, include_para_ref: bool) -> st
 
 
 def _build_sidebar_html(
-    annotations: "Sequence[Annotation]", include_para_refs: bool
+    annotations: Sequence[Annotation], include_para_refs: bool
 ) -> str:
     """Build the annotations sidebar HTML."""
     if not annotations:
@@ -220,7 +249,7 @@ def _build_sidebar_html(
 
 def _build_document_html(
     brief_html: str,
-    annotations: "Sequence[Annotation]",
+    annotations: Sequence[Annotation],
     options: ExportOptions,
 ) -> str:
     """Build the complete document HTML."""
@@ -248,7 +277,7 @@ def _build_document_html(
 
 def export_brief_to_pdf(
     brief_html: str,
-    annotations: "Sequence[Annotation]",
+    annotations: Sequence[Annotation],
     output_path: str | Path,
     options: ExportOptions | None = None,
 ) -> Path:

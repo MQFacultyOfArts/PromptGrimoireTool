@@ -15,6 +15,20 @@ if TYPE_CHECKING:
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import Highlight, HighlightComment
 
+# Maximum length for comment text
+MAX_COMMENT_LENGTH = 1000
+
+
+class CommentTooLongError(Exception):
+    """Raised when a comment exceeds the maximum allowed length."""
+
+    def __init__(self, length: int) -> None:
+        self.length = length
+        super().__init__(
+            f"Comment text exceeds maximum length of {MAX_COMMENT_LENGTH} characters "
+            f"(got {length})"
+        )
+
 
 async def get_highlights_for_case(case_id: str) -> list[Highlight]:
     """Get all highlights for a case, ordered by creation time.
@@ -132,11 +146,17 @@ async def create_comment(
     Args:
         highlight_id: The parent highlight UUID.
         author: Display name of the comment author.
-        text: The comment content.
+        text: The comment content (max 1000 characters).
 
     Returns:
         The created HighlightComment with generated ID.
+
+    Raises:
+        CommentTooLongError: If text exceeds MAX_COMMENT_LENGTH.
     """
+    if len(text) > MAX_COMMENT_LENGTH:
+        raise CommentTooLongError(len(text))
+
     async with get_session() as session:
         comment = HighlightComment(
             highlight_id=highlight_id,

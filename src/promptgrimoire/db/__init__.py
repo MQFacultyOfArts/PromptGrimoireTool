@@ -14,6 +14,8 @@ from promptgrimoire.db.bootstrap import (
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.highlights import (
+    MAX_COMMENT_LENGTH,
+    CommentTooLongError,
     create_comment,
     create_highlight,
     delete_highlight,
@@ -37,12 +39,14 @@ from promptgrimoire.db.models import (
 __all__ = [
     "AnnotationDocumentState",
     "Class",
+    "CommentTooLongError",
     "Conversation",
     "Course",
     "CourseEnrollment",
     "CourseRole",
     "Highlight",
     "HighlightComment",
+    "MAX_COMMENT_LENGTH",
     "User",
     "Week",
     "close_db",

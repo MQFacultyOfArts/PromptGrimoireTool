@@ -83,6 +83,28 @@ Git commits trigger:
 
 Commits will be rejected if checks fail.
 
+### Pull Request Guidelines
+
+**One PR = One Concern.** Every PR should address a single logical change. If you need "and" to describe it, split it.
+
+**Size limits:**
+- Target: 5-10 files, 100-300 lines
+- Maximum: 20 files, 500 lines
+- If exceeding limits, split into a PR stack
+
+**Required for all PRs:**
+1. Clear title describing the change
+2. Summary explaining WHY (not just what)
+3. Link to related issue
+4. Tests passing
+
+**Common mistakes to avoid:**
+- Bundling refactoring with new features (do refactoring first)
+- Mixing infrastructure changes with application code
+- Including unrelated formatting/style changes
+
+See `.github/PR_GUIDELINES.md` for detailed guidance and examples.
+
 ## Key Commands
 
 ```bash

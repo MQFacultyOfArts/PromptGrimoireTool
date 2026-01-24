@@ -14,9 +14,8 @@ from sqlmodel import or_, select
 if TYPE_CHECKING:
     from uuid import UUID
 
-from promptgrimoire.db.courses import get_enrollment
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import CourseRole, Week
+from promptgrimoire.db.models import CourseEnrollment, CourseRole, Week
 
 
 async def create_week(
@@ -219,12 +218,17 @@ async def get_visible_weeks(
     Returns:
         List of visible Week objects ordered by week_number.
     """
-    # Check enrollment
-    enrollment = await get_enrollment(course_id=course_id, member_id=member_id)
-    if not enrollment:
-        return []
-
     async with get_session() as session:
+        # Check enrollment within the same transaction
+        enrollment_result = await session.exec(
+            select(CourseEnrollment)
+            .where(CourseEnrollment.course_id == course_id)
+            .where(CourseEnrollment.member_id == member_id)
+        )
+        enrollment = enrollment_result.first()
+        if not enrollment:
+            return []
+
         # Instructors and above see all weeks
         if enrollment.role in (
             CourseRole.coordinator,
@@ -273,7 +277,13 @@ async def can_access_week(
         if not week:
             return False
 
-        enrollment = await get_enrollment(course_id=week.course_id, member_id=member_id)
+        # Check enrollment within the same transaction
+        enrollment_result = await session.exec(
+            select(CourseEnrollment)
+            .where(CourseEnrollment.course_id == week.course_id)
+            .where(CourseEnrollment.member_id == member_id)
+        )
+        enrollment = enrollment_result.first()
         if not enrollment:
             return False
 

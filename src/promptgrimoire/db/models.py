@@ -10,7 +10,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, Uuid
+from sqlalchemy import Column, DateTime, ForeignKey, UniqueConstraint, Uuid
 from sqlmodel import Field, SQLModel
 
 
@@ -233,6 +233,11 @@ class CourseEnrollment(SQLModel, table=True):
     """
 
     __tablename__ = "course_enrollment"
+    __table_args__ = (
+        UniqueConstraint(
+            "course_id", "member_id", name="uq_course_enrollment_course_member"
+        ),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
@@ -258,6 +263,10 @@ class Week(SQLModel, table=True):
         visible_from: Optional auto-publish datetime (UTC).
         created_at: Timestamp when week was created.
     """
+
+    __table_args__ = (
+        UniqueConstraint("course_id", "week_number", name="uq_week_course_number"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))

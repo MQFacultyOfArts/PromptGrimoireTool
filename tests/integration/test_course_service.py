@@ -277,6 +277,32 @@ class TestEnrollment:
         enrollment = await get_enrollment(course_id=course.id, member_id=member_id)
         assert enrollment is None
 
+    @pytest.mark.asyncio
+    async def test_duplicate_enrollment_raises_error(self) -> None:
+        """Enrolling same member twice raises DuplicateEnrollmentError."""
+        from promptgrimoire.db.courses import (
+            DuplicateEnrollmentError,
+            create_course,
+            enroll_member,
+        )
+
+        course = await create_course(
+            code="LAWS8801",
+            name="Duplicate Test",
+            semester="2025-S1",
+        )
+        member_id = f"member-{uuid4().hex[:8]}"
+
+        # First enrollment succeeds
+        await enroll_member(course_id=course.id, member_id=member_id)
+
+        # Second enrollment fails
+        with pytest.raises(DuplicateEnrollmentError) as exc_info:
+            await enroll_member(course_id=course.id, member_id=member_id)
+
+        assert exc_info.value.course_id == course.id
+        assert exc_info.value.member_id == member_id
+
 
 @pytest.mark.usefixtures("db_engine")
 class TestWeeks:

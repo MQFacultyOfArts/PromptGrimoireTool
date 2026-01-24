@@ -5,12 +5,9 @@ Provides async database functions for course management.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlmodel import select
-
-if TYPE_CHECKING:
-    from uuid import UUID
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import Course, CourseEnrollment, CourseRole
@@ -103,47 +100,45 @@ async def archive_course(course_id: UUID) -> bool:
 
 
 class DuplicateEnrollmentError(Exception):
-    """Raised when attempting to enroll a member who is already enrolled."""
+    """Raised when attempting to enroll a user who is already enrolled."""
 
-    def __init__(self, course_id: UUID, member_id: str) -> None:
+    def __init__(self, course_id: UUID, user_id: UUID) -> None:
         self.course_id = course_id
-        self.member_id = member_id
-        super().__init__(
-            f"Member {member_id} is already enrolled in course {course_id}"
-        )
+        self.user_id = user_id
+        super().__init__(f"User {user_id} is already enrolled in course {course_id}")
 
 
-async def enroll_member(
+async def enroll_user(
     course_id: UUID,
-    member_id: str,
+    user_id: UUID,
     role: CourseRole = CourseRole.student,
 ) -> CourseEnrollment:
-    """Enroll a member in a course.
+    """Enroll a user in a course.
 
     Args:
         course_id: The course UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
         role: Course-level role (default: student).
 
     Returns:
         The created CourseEnrollment.
 
     Raises:
-        DuplicateEnrollmentError: If member is already enrolled in this course.
+        DuplicateEnrollmentError: If user is already enrolled in this course.
     """
     async with get_session() as session:
         # Check for existing enrollment within same transaction
         existing = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         if existing.first():
-            raise DuplicateEnrollmentError(course_id, member_id)
+            raise DuplicateEnrollmentError(course_id, user_id)
 
         enrollment = CourseEnrollment(
             course_id=course_id,
-            member_id=member_id,
+            user_id=user_id,
             role=role,
         )
         session.add(enrollment)
@@ -154,13 +149,13 @@ async def enroll_member(
 
 async def get_enrollment(
     course_id: UUID,
-    member_id: str,
+    user_id: UUID,
 ) -> CourseEnrollment | None:
-    """Get enrollment for a member in a course.
+    """Get enrollment for a user in a course.
 
     Args:
         course_id: The course UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
 
     Returns:
         The CourseEnrollment or None if not enrolled.
@@ -169,16 +164,16 @@ async def get_enrollment(
         result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         return result.first()
 
 
-async def list_member_enrollments(member_id: str) -> list[CourseEnrollment]:
-    """List all course enrollments for a member.
+async def list_user_enrollments(user_id: UUID) -> list[CourseEnrollment]:
+    """List all course enrollments for a user.
 
     Args:
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
 
     Returns:
         List of CourseEnrollment objects.
@@ -186,8 +181,8 @@ async def list_member_enrollments(member_id: str) -> list[CourseEnrollment]:
     async with get_session() as session:
         result = await session.exec(
             select(CourseEnrollment)
-            .where(CourseEnrollment.member_id == member_id)
-            .order_by(CourseEnrollment.created_at)
+            .where(CourseEnrollment.user_id == user_id)
+            .order_by("created_at")
         )
         return list(result.all())
 
@@ -205,20 +200,20 @@ async def list_course_enrollments(course_id: UUID) -> list[CourseEnrollment]:
         result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .order_by(CourseEnrollment.role, CourseEnrollment.member_id)
+            .order_by("role", "user_id")
         )
         return list(result.all())
 
 
-async def unenroll_member(
+async def unenroll_user(
     course_id: UUID,
-    member_id: str,
+    user_id: UUID,
 ) -> bool:
-    """Remove a member from a course.
+    """Remove a user from a course.
 
     Args:
         course_id: The course UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
 
     Returns:
         True if removed, False if not found.
@@ -227,7 +222,7 @@ async def unenroll_member(
         result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         enrollment = result.first()
         if not enrollment:
@@ -236,16 +231,16 @@ async def unenroll_member(
         return True
 
 
-async def update_member_role(
+async def update_user_role(
     course_id: UUID,
-    member_id: str,
+    user_id: UUID,
     role: CourseRole,
 ) -> CourseEnrollment | None:
-    """Update a member's role in a course.
+    """Update a user's role in a course.
 
     Args:
         course_id: The course UUID.
-        member_id: Stytch member_id.
+        user_id: The user's UUID.
         role: New course-level role.
 
     Returns:
@@ -255,7 +250,7 @@ async def update_member_role(
         result = await session.exec(
             select(CourseEnrollment)
             .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.member_id == member_id)
+            .where(CourseEnrollment.user_id == user_id)
         )
         enrollment = result.first()
         if not enrollment:

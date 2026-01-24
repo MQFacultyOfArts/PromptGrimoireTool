@@ -49,15 +49,21 @@ class User(SQLModel, table=True):
         email: Unique email address for the user.
         display_name: Human-readable name shown in UI.
         stytch_member_id: Optional link to Stytch B2B member.
+        is_admin: Whether user has org-level admin rights.
         created_at: Timestamp when user was created.
+        last_login: Timestamp of last successful login.
     """
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     email: str = Field(unique=True, index=True, max_length=255)
     display_name: str = Field(max_length=100)
     stytch_member_id: str | None = Field(default=None, unique=True, index=True)
+    is_admin: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    last_login: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
 
 
@@ -220,14 +226,14 @@ class Course(SQLModel, table=True):
 
 
 class CourseEnrollment(SQLModel, table=True):
-    """Maps a Stytch member to a course with a course-level role.
+    """Maps a User to a course with a course-level role.
 
-    This provides course-scoped authorization on top of Stytch org-level roles.
+    This provides course-scoped authorization on top of org-level roles.
 
     Attributes:
         id: Primary key UUID, auto-generated.
         course_id: Foreign key to Course (CASCADE DELETE).
-        member_id: Stytch member_id (not FK, external reference).
+        user_id: Foreign key to User (CASCADE DELETE).
         role: Course-level role (coordinator, instructor, tutor, student).
         created_at: Timestamp when enrollment was created.
     """
@@ -235,13 +241,13 @@ class CourseEnrollment(SQLModel, table=True):
     __tablename__ = "course_enrollment"
     __table_args__ = (
         UniqueConstraint(
-            "course_id", "member_id", name="uq_course_enrollment_course_member"
+            "course_id", "user_id", name="uq_course_enrollment_course_user"
         ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
-    member_id: str = Field(max_length=100, index=True)
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
     role: CourseRole = Field(default=CourseRole.student)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

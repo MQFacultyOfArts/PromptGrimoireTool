@@ -22,12 +22,18 @@ def _get_current_user() -> dict | None:
     return app.storage.user.get("auth_user")
 
 
-def _get_member_id() -> str | None:
-    """Get Stytch member_id from session."""
+def _get_user_id() -> UUID | None:
+    """Get local User UUID from session."""
     user = _get_current_user()
-    if user:
-        return user.get("member_id") or user.get("email")
+    if user and user.get("user_id"):
+        return UUID(user["user_id"])
     return None
+
+
+def _is_admin() -> bool:
+    """Check if current user is an admin."""
+    user = _get_current_user()
+    return bool(user and user.get("is_admin"))
 
 
 def _is_db_available() -> bool:
@@ -53,22 +59,27 @@ async def courses_list_page() -> None:
         ui.label("Database not configured").classes("text-red-500")
         return
 
-    from promptgrimoire.db.courses import list_courses, list_member_enrollments
+    from promptgrimoire.db.courses import list_courses, list_user_enrollments
     from promptgrimoire.db.engine import init_db
     from promptgrimoire.db.models import CourseRole
 
     await init_db()
 
-    member_id = _get_member_id()
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
 
     ui.label("Courses").classes("text-2xl font-bold mb-4")
 
-    # Get enrolled courses for this member
-    enrollments = await list_member_enrollments(member_id) if member_id else []
+    # Get enrolled courses for this user
+    enrollments = await list_user_enrollments(user_id)
     enrollment_map = {e.course_id: e for e in enrollments}
 
-    # Check if user is instructor in any course (can create new courses)
-    is_instructor = any(
+    # Check if user is instructor in any course (or is org admin)
+    is_instructor = _is_admin() or any(
         e.role in (CourseRole.coordinator, CourseRole.instructor) for e in enrollments
     )
 
@@ -113,11 +124,18 @@ async def create_course_page() -> None:
         ui.label("Database not configured").classes("text-red-500")
         return
 
-    from promptgrimoire.db.courses import create_course, enroll_member
+    from promptgrimoire.db.courses import create_course, enroll_user
     from promptgrimoire.db.engine import init_db
     from promptgrimoire.db.models import CourseRole
 
     await init_db()
+
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
 
     ui.label("Create New Course").classes("text-2xl font-bold mb-4")
 
@@ -137,13 +155,11 @@ async def create_course_page() -> None:
         )
 
         # Auto-enroll creator as coordinator
-        member_id = _get_member_id()
-        if member_id:
-            await enroll_member(
-                course_id=course.id,
-                member_id=member_id,
-                role=CourseRole.coordinator,
-            )
+        await enroll_user(
+            course_id=course.id,
+            user_id=user_id,
+            role=CourseRole.coordinator,
+        )
 
         ui.notify(f"Created course: {course.code}", type="positive")
         ui.navigate.to(f"/courses/{course.id}")
@@ -181,10 +197,14 @@ async def course_detail_page(course_id: str) -> None:
         ui.label("Course not found").classes("text-red-500")
         return
 
-    member_id = _get_member_id()
-    enrollment = (
-        await get_enrollment(course_id=cid, member_id=member_id) if member_id else None
-    )
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
+
+    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment:
         ui.label("You are not enrolled in this course").classes("text-red-500")
@@ -228,11 +248,7 @@ async def course_detail_page(course_id: str) -> None:
     @ui.refreshable
     async def weeks_list() -> None:
         """Render the weeks list with publish/unpublish controls."""
-        weeks = (
-            await get_visible_weeks(course_id=cid, member_id=member_id)
-            if member_id
-            else []
-        )
+        weeks = await get_visible_weeks(course_id=cid, user_id=user_id)
 
         if not weeks:
             ui.label("No weeks available yet.").classes("text-gray-500")
@@ -305,10 +321,14 @@ async def create_week_page(course_id: str) -> None:
         ui.label("Course not found").classes("text-red-500")
         return
 
-    member_id = _get_member_id()
-    enrollment = (
-        await get_enrollment(course_id=cid, member_id=member_id) if member_id else None
-    )
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
+
+    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment or enrollment.role not in (
         CourseRole.coordinator,
@@ -362,14 +382,15 @@ async def manage_enrollments_page(course_id: str) -> None:
         return
 
     from promptgrimoire.db.courses import (
-        enroll_member,
+        enroll_user,
         get_course_by_id,
         get_enrollment,
         list_course_enrollments,
-        unenroll_member,
+        unenroll_user,
     )
     from promptgrimoire.db.engine import init_db
     from promptgrimoire.db.models import CourseRole
+    from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 
     await init_db()
 
@@ -384,10 +405,14 @@ async def manage_enrollments_page(course_id: str) -> None:
         ui.label("Course not found").classes("text-red-500")
         return
 
-    member_id = _get_member_id()
-    enrollment = (
-        await get_enrollment(course_id=cid, member_id=member_id) if member_id else None
-    )
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
+
+    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment or enrollment.role not in (
         CourseRole.coordinator,
@@ -410,18 +435,26 @@ async def manage_enrollments_page(course_id: str) -> None:
 
         with ui.column().classes("gap-2 w-full max-w-2xl"):
             for e in enrollments:
+                # Look up user for display
+                enrolled_user = await get_user_by_id(e.user_id)
+                display_name = (
+                    enrolled_user.display_name if enrolled_user else "Unknown"
+                )
+                email = enrolled_user.email if enrolled_user else str(e.user_id)
+
                 with ui.card().classes("w-full"):
                     with ui.row().classes("items-center justify-between w-full"):
                         with ui.column().classes("gap-1"):
-                            ui.label(e.member_id).classes("font-semibold")
+                            ui.label(display_name).classes("font-semibold")
+                            ui.label(email).classes("text-sm text-gray-500")
                             ui.label(
                                 f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}"
-                            ).classes("text-sm text-gray-500")
+                            ).classes("text-xs text-gray-400")
                         with ui.row().classes("gap-2 items-center"):
                             ui.badge(e.role.value)
 
-                            async def remove(mid: str = e.member_id) -> None:
-                                await unenroll_member(course_id=cid, member_id=mid)
+                            async def remove(uid: UUID = e.user_id) -> None:
+                                await unenroll_user(course_id=cid, user_id=uid)
                                 ui.notify("Enrollment removed", type="positive")
                                 enrollments_list.refresh()
 
@@ -429,11 +462,14 @@ async def manage_enrollments_page(course_id: str) -> None:
                                 "flat round dense color=negative"
                             )
 
-    # Add enrollment form
+    # Add enrollment form - now uses email to find or create user
     with ui.card().classes("mb-4 p-4"):
         ui.label("Add Enrollment").classes("font-semibold mb-2")
+        ui.label(
+            "Enter email address. User will be created if they don't exist yet."
+        ).classes("text-sm text-gray-500 mb-2")
         with ui.row().classes("gap-2 items-end"):
-            new_member_id = ui.input("Member ID or Email").classes("w-64")
+            new_email = ui.input("Email Address").classes("w-64")
             new_role = ui.select(
                 options=[r.value for r in CourseRole],
                 value=CourseRole.student.value,
@@ -441,17 +477,30 @@ async def manage_enrollments_page(course_id: str) -> None:
             ).classes("w-32")
 
             async def add_enrollment() -> None:
-                if not new_member_id.value:
-                    ui.notify("Member ID is required", type="negative")
+                if not new_email.value:
+                    ui.notify("Email is required", type="negative")
                     return
-                await enroll_member(
-                    course_id=cid,
-                    member_id=new_member_id.value,
-                    role=CourseRole(new_role.value),
+
+                # Find or create user by email
+                new_user, created = await find_or_create_user(
+                    email=new_email.value,
+                    display_name=new_email.value.split("@")[0],
                 )
-                ui.notify("Enrollment added", type="positive")
-                new_member_id.value = ""  # Clear input after add
-                enrollments_list.refresh()
+
+                try:
+                    await enroll_user(
+                        course_id=cid,
+                        user_id=new_user.id,
+                        role=CourseRole(new_role.value),
+                    )
+                    msg = "Enrollment added"
+                    if created:
+                        msg += " (new user created)"
+                    ui.notify(msg, type="positive")
+                    new_email.value = ""  # Clear input after add
+                    enrollments_list.refresh()
+                except Exception as e:
+                    ui.notify(f"Failed to enroll: {e}", type="negative")
 
             ui.button("Add", on_click=add_enrollment)
 

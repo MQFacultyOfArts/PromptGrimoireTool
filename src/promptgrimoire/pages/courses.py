@@ -194,7 +194,11 @@ async def course_detail_page(course_id: str) -> None:
         ui.label("You are not enrolled in this course").classes("text-red-500")
         return
 
-    is_instructor = enrollment.role in (
+    # Permission levels:
+    # - can_manage: create weeks, manage enrollments (coordinator/instructor only)
+    # - can_view_drafts: see unpublished weeks, publish/unpublish (includes tutors)
+    can_manage = enrollment.role in (CourseRole.coordinator, CourseRole.instructor)
+    can_view_drafts = enrollment.role in (
         CourseRole.coordinator,
         CourseRole.instructor,
         CourseRole.tutor,
@@ -210,8 +214,8 @@ async def course_detail_page(course_id: str) -> None:
 
     ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 
-    # Week management for instructors
-    if is_instructor:
+    # Week management for coordinators/instructors only
+    if can_manage:
         with ui.row().classes("gap-2 mb-4"):
             ui.button(
                 "Add Week",
@@ -234,11 +238,19 @@ async def course_detail_page(course_id: str) -> None:
     else:
         with ui.column().classes("gap-2 w-full max-w-2xl"):
             for week in weeks:
-                await _render_week_card(week, is_instructor)
+                await _render_week_card(week, can_view_drafts, can_manage)
 
 
-async def _render_week_card(week: Week, is_instructor: bool) -> None:
-    """Render a week card."""
+async def _render_week_card(
+    week: Week, can_view_drafts: bool, can_manage: bool
+) -> None:
+    """Render a week card.
+
+    Args:
+        week: The Week to render.
+        can_view_drafts: Whether to show draft/published status.
+        can_manage: Whether to show publish/unpublish buttons.
+    """
     from promptgrimoire.db.weeks import publish_week, unpublish_week
 
     with ui.card().classes("w-full"):
@@ -247,7 +259,7 @@ async def _render_week_card(week: Week, is_instructor: bool) -> None:
                 ui.label(f"Week {week.week_number}: {week.title}").classes(
                     "font-semibold"
                 )
-                if is_instructor:
+                if can_view_drafts:
                     status = "Published" if week.is_published else "Draft"
                     if week.visible_from:
                         status += (
@@ -255,7 +267,7 @@ async def _render_week_card(week: Week, is_instructor: bool) -> None:
                         )
                     ui.label(status).classes("text-sm text-gray-500")
 
-            if is_instructor:
+            if can_manage:
                 with ui.row().classes("gap-1"):
                     if week.is_published:
 

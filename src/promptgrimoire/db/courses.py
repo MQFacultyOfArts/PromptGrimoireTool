@@ -102,6 +102,17 @@ async def archive_course(course_id: UUID) -> bool:
         return True
 
 
+class DuplicateEnrollmentError(Exception):
+    """Raised when attempting to enroll a member who is already enrolled."""
+
+    def __init__(self, course_id: UUID, member_id: str) -> None:
+        self.course_id = course_id
+        self.member_id = member_id
+        super().__init__(
+            f"Member {member_id} is already enrolled in course {course_id}"
+        )
+
+
 async def enroll_member(
     course_id: UUID,
     member_id: str,
@@ -116,8 +127,20 @@ async def enroll_member(
 
     Returns:
         The created CourseEnrollment.
+
+    Raises:
+        DuplicateEnrollmentError: If member is already enrolled in this course.
     """
     async with get_session() as session:
+        # Check for existing enrollment within same transaction
+        existing = await session.exec(
+            select(CourseEnrollment)
+            .where(CourseEnrollment.course_id == course_id)
+            .where(CourseEnrollment.member_id == member_id)
+        )
+        if existing.first():
+            raise DuplicateEnrollmentError(course_id, member_id)
+
         enrollment = CourseEnrollment(
             course_id=course_id,
             member_id=member_id,

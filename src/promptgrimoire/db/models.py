@@ -6,11 +6,24 @@ These models define the core database schema for users, classes, and conversatio
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, Uuid
 from sqlmodel import Field, SQLModel
+
+
+class CourseRole(StrEnum):
+    """Role within a specific course enrollment.
+
+    These are course-scoped roles, separate from Stytch org-level roles.
+    """
+
+    coordinator = "coordinator"  # Course owner, full control
+    instructor = "instructor"  # Can manage content, see all student work
+    tutor = "tutor"  # Can see assigned tutorial groups
+    student = "student"  # Can access published content only
 
 
 def _utcnow() -> datetime:
@@ -177,5 +190,83 @@ class AnnotationDocumentState(SQLModel, table=True):
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
     updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class Course(SQLModel, table=True):
+    """A course/unit of study with weeks and enrolled members.
+
+    Courses contain weeks which can be published on a schedule.
+    Members are enrolled via CourseEnrollment with course-specific roles.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        code: Course code (e.g., "LAWS1100").
+        name: Course name (e.g., "Contracts").
+        semester: Semester identifier (e.g., "2025-S1").
+        is_archived: Whether course is archived and read-only.
+        created_at: Timestamp when course was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    code: str = Field(max_length=20, index=True)
+    name: str = Field(max_length=200)
+    semester: str = Field(max_length=20, index=True)
+    is_archived: bool = Field(default=False)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class CourseEnrollment(SQLModel, table=True):
+    """Maps a Stytch member to a course with a course-level role.
+
+    This provides course-scoped authorization on top of Stytch org-level roles.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        course_id: Foreign key to Course (CASCADE DELETE).
+        member_id: Stytch member_id (not FK, external reference).
+        role: Course-level role (coordinator, instructor, tutor, student).
+        created_at: Timestamp when enrollment was created.
+    """
+
+    __tablename__ = "course_enrollment"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
+    member_id: str = Field(max_length=100, index=True)
+    role: CourseRole = Field(default=CourseRole.student)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class Week(SQLModel, table=True):
+    """A week within a course, with visibility controls for students.
+
+    Instructors see all weeks. Students only see published weeks
+    where visible_from has passed.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        course_id: Foreign key to Course (CASCADE DELETE).
+        week_number: Week number within course (1-13 typically).
+        title: Week title (e.g., "Introduction to Contract Law").
+        is_published: Master switch - False means hidden from students.
+        visible_from: Optional auto-publish datetime (UTC).
+        created_at: Timestamp when week was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
+    week_number: int = Field(ge=1, le=52)
+    title: str = Field(max_length=200)
+    is_published: bool = Field(default=False)
+    visible_from: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

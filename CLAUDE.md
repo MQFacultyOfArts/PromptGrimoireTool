@@ -210,3 +210,10 @@ A test (`tests/unit/test_env_vars.py`) ensures `.env.example` stays in sync with
 - No `# type: ignore` without explanation
 - Prefer composition over inheritance
 - Keep functions small and focused
+
+## Critical, for autonomous mode
+
+- If you have a hook for making a PR, pause and ask the user.
+- If you are working in a branch that is associated with a PR, ask the user if there is work they requested that is not part of that pr topic. Always keep the PR description up to date.
+- Push back on new feature requests. Instead of doing work outside the scope of an extant PR, ask the user if they would like to make design notes in a github issue, and then start a new chat.
+- When you are claude code running in autonomous mode, make sure to agree on a contract for the PR and the UAT before running it.

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from promptgrimoire.crdt import SharedDocument
+from promptgrimoire.pages.layout import require_demo_enabled
 
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
@@ -48,6 +49,8 @@ def _broadcast_to_other_clients(origin_client_id: str | None) -> None:
 @ui.page("/demo/crdt-sync")
 async def crdt_sync_demo_page() -> None:
     """Demo page: Real-time CRDT text synchronization."""
+    if not require_demo_enabled():
+        return
     # Wait for WebSocket connection
     await ui.context.client.connected()
 

@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.pages.layout import require_demo_enabled
+
 if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
 
@@ -27,6 +29,8 @@ MAX_DISPLAY_LENGTH = 50  # Truncate displayed text for readability
 @ui.page("/demo/text-selection")
 async def text_selection_demo_page() -> None:
     """Demo page: Text selection for annotations."""
+    if not require_demo_enabled():
+        return
     # Per-page selection state bound to UI
     selection_data: dict[str, str | int] = {
         "text": "",

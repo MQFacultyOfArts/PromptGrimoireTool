@@ -20,6 +20,7 @@ from nicegui import app, ui
 
 from promptgrimoire.crdt import AnnotationDocumentRegistry
 from promptgrimoire.models import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.layout import require_demo_enabled
 from promptgrimoire.parsers import parse_rtf
 
 if TYPE_CHECKING:
@@ -1024,6 +1025,9 @@ def _setup_event_handlers(
 @ui.page("/demo/live-annotation")
 async def live_annotation_demo_page() -> None:  # TODO: refactor further
     """Live annotation demo page with CRDT-based collaboration."""
+    if not require_demo_enabled():
+        return
+
     await ui.context.client.connected()
 
     client = ui.context.client

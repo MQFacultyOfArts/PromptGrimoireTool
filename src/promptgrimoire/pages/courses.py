@@ -12,13 +12,9 @@ Route: /courses
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from nicegui import app, ui
-
-if TYPE_CHECKING:
-    from promptgrimoire.db.models import Week
 
 
 def _get_current_user() -> dict | None:
@@ -170,7 +166,7 @@ async def course_detail_page(course_id: str) -> None:
     from promptgrimoire.db.courses import get_course_by_id, get_enrollment
     from promptgrimoire.db.engine import init_db
     from promptgrimoire.db.models import CourseRole
-    from promptgrimoire.db.weeks import get_visible_weeks
+    from promptgrimoire.db.weeks import get_visible_weeks, publish_week, unpublish_week
 
     await init_db()
 
@@ -226,63 +222,59 @@ async def course_detail_page(course_id: str) -> None:
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
             ).props("flat")
 
-    # Weeks list
+    # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
-    weeks = (
-        await get_visible_weeks(course_id=cid, member_id=member_id) if member_id else []
-    )
+    @ui.refreshable
+    async def weeks_list() -> None:
+        """Render the weeks list with publish/unpublish controls."""
+        weeks = (
+            await get_visible_weeks(course_id=cid, member_id=member_id)
+            if member_id
+            else []
+        )
 
-    if not weeks:
-        ui.label("No weeks available yet.").classes("text-gray-500")
-    else:
+        if not weeks:
+            ui.label("No weeks available yet.").classes("text-gray-500")
+            return
+
         with ui.column().classes("gap-2 w-full max-w-2xl"):
             for week in weeks:
-                await _render_week_card(week, can_view_drafts, can_manage)
+                with ui.card().classes("w-full"):
+                    with ui.row().classes("items-center justify-between w-full"):
+                        with ui.column().classes("gap-1"):
+                            ui.label(f"Week {week.week_number}: {week.title}").classes(
+                                "font-semibold"
+                            )
+                            if can_view_drafts:
+                                status = "Published" if week.is_published else "Draft"
+                                if week.visible_from:
+                                    date_str = week.visible_from.strftime("%Y-%m-%d")
+                                    status += f" (visible from {date_str})"
+                                ui.label(status).classes("text-sm text-gray-500")
 
+                        if can_manage:
+                            with ui.row().classes("gap-1"):
+                                if week.is_published:
 
-async def _render_week_card(
-    week: Week, can_view_drafts: bool, can_manage: bool
-) -> None:
-    """Render a week card.
+                                    async def unpub(wid: UUID = week.id) -> None:
+                                        await unpublish_week(wid)
+                                        weeks_list.refresh()
 
-    Args:
-        week: The Week to render.
-        can_view_drafts: Whether to show draft/published status.
-        can_manage: Whether to show publish/unpublish buttons.
-    """
-    from promptgrimoire.db.weeks import publish_week, unpublish_week
+                                    ui.button("Unpublish", on_click=unpub).props(
+                                        "flat dense"
+                                    )
+                                else:
 
-    with ui.card().classes("w-full"):
-        with ui.row().classes("items-center justify-between w-full"):
-            with ui.column().classes("gap-1"):
-                ui.label(f"Week {week.week_number}: {week.title}").classes(
-                    "font-semibold"
-                )
-                if can_view_drafts:
-                    status = "Published" if week.is_published else "Draft"
-                    if week.visible_from:
-                        status += (
-                            f" (visible from {week.visible_from.strftime('%Y-%m-%d')})"
-                        )
-                    ui.label(status).classes("text-sm text-gray-500")
+                                    async def pub(wid: UUID = week.id) -> None:
+                                        await publish_week(wid)
+                                        weeks_list.refresh()
 
-            if can_manage:
-                with ui.row().classes("gap-1"):
-                    if week.is_published:
+                                    ui.button("Publish", on_click=pub).props(
+                                        "flat dense"
+                                    )
 
-                        async def unpub(wid=week.id) -> None:
-                            await unpublish_week(wid)
-                            ui.navigate.to(ui.context.client.page.path)
-
-                        ui.button("Unpublish", on_click=unpub).props("flat dense")
-                    else:
-
-                        async def pub(wid=week.id) -> None:
-                            await publish_week(wid)
-                            ui.navigate.to(ui.context.client.page.path)
-
-                        ui.button("Publish", on_click=pub).props("flat dense")
+    await weeks_list()
 
 
 @ui.page("/courses/{course_id}/weeks/new")
@@ -406,37 +398,16 @@ async def manage_enrollments_page(course_id: str) -> None:
 
     ui.label(f"Enrollments for {course.code}").classes("text-2xl font-bold mb-4")
 
-    # Add enrollment form
-    with ui.card().classes("mb-4 p-4"):
-        ui.label("Add Enrollment").classes("font-semibold mb-2")
-        with ui.row().classes("gap-2 items-end"):
-            new_member_id = ui.input("Member ID or Email").classes("w-64")
-            new_role = ui.select(
-                "Role",
-                options=[r.value for r in CourseRole],
-                value=CourseRole.student.value,
-            ).classes("w-32")
+    # Enrollments list - refreshable for in-place updates
+    @ui.refreshable
+    async def enrollments_list() -> None:
+        """Render the enrollments list with add/remove controls."""
+        enrollments = await list_course_enrollments(cid)
 
-            async def add_enrollment() -> None:
-                if not new_member_id.value:
-                    ui.notify("Member ID is required", type="negative")
-                    return
-                await enroll_member(
-                    course_id=cid,
-                    member_id=new_member_id.value,
-                    role=CourseRole(new_role.value),
-                )
-                ui.notify("Enrollment added", type="positive")
-                ui.navigate.to(ui.context.client.page.path)
+        if not enrollments:
+            ui.label("No enrollments").classes("text-gray-500")
+            return
 
-            ui.button("Add", on_click=add_enrollment)
-
-    # List current enrollments
-    enrollments = await list_course_enrollments(cid)
-
-    if not enrollments:
-        ui.label("No enrollments").classes("text-gray-500")
-    else:
         with ui.column().classes("gap-2 w-full max-w-2xl"):
             for e in enrollments:
                 with ui.card().classes("w-full"):
@@ -449,14 +420,43 @@ async def manage_enrollments_page(course_id: str) -> None:
                         with ui.row().classes("gap-2 items-center"):
                             ui.badge(e.role.value)
 
-                            async def remove(mid=e.member_id) -> None:
+                            async def remove(mid: str = e.member_id) -> None:
                                 await unenroll_member(course_id=cid, member_id=mid)
                                 ui.notify("Enrollment removed", type="positive")
-                                ui.navigate.to(ui.context.client.page.path)
+                                enrollments_list.refresh()
 
                             ui.button(icon="delete", on_click=remove).props(
                                 "flat round dense color=negative"
                             )
+
+    # Add enrollment form
+    with ui.card().classes("mb-4 p-4"):
+        ui.label("Add Enrollment").classes("font-semibold mb-2")
+        with ui.row().classes("gap-2 items-end"):
+            new_member_id = ui.input("Member ID or Email").classes("w-64")
+            new_role = ui.select(
+                options=[r.value for r in CourseRole],
+                value=CourseRole.student.value,
+                label="Role",
+            ).classes("w-32")
+
+            async def add_enrollment() -> None:
+                if not new_member_id.value:
+                    ui.notify("Member ID is required", type="negative")
+                    return
+                await enroll_member(
+                    course_id=cid,
+                    member_id=new_member_id.value,
+                    role=CourseRole(new_role.value),
+                )
+                ui.notify("Enrollment added", type="positive")
+                new_member_id.value = ""  # Clear input after add
+                enrollments_list.refresh()
+
+            ui.button("Add", on_click=add_enrollment)
+
+    # Render the enrollments list
+    await enrollments_list()
 
     ui.button(
         "Back to Course", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")

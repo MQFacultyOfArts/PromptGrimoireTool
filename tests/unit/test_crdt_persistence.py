@@ -165,8 +165,9 @@ class TestPersistenceManager:
         assert len(pm._dirty_docs) == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_debounced_save_fires_after_delay(self) -> None:
-        """Debounced save should fire after DEBOUNCE_SECONDS."""
+        """Debounced save should fire after DEBOUNCE_SECONDS (real timing)."""
         pm = PersistenceManager()
         mock_doc = MagicMock()
         mock_doc.doc_id = "test-doc"
@@ -194,8 +195,9 @@ class TestPersistenceManager:
             )
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_debounce_resets_on_new_edit(self) -> None:
-        """New edit should reset debounce timer."""
+        """New edit should reset debounce timer (real timing)."""
         pm = PersistenceManager()
         mock_doc = MagicMock()
         mock_doc.doc_id = "test-doc"
@@ -226,3 +228,58 @@ class TestPersistenceManager:
 
             # Now it should have saved
             mock_save.assert_called_once()
+
+
+class TestPersistenceManagerFast:
+    """Fast debounce tests - verify scheduling without waiting."""
+
+    @pytest.mark.asyncio
+    async def test_mark_dirty_schedules_debounced_save(self) -> None:
+        """mark_dirty schedules a save task that will call save_state."""
+        pm = PersistenceManager()
+        mock_doc = MagicMock()
+        mock_doc.doc_id = "test-doc"
+        mock_doc.get_full_state.return_value = b"state"
+        mock_doc.get_all_highlights.return_value = [{"id": "1"}]
+        pm.register_document(mock_doc)
+
+        pm.mark_dirty("test-doc", last_editor="User1")
+
+        # Verify task was scheduled
+        assert "test-doc" in pm._pending_saves
+        assert not pm._pending_saves["test-doc"].done()
+        assert "test-doc" in pm._dirty_docs
+        assert pm._last_editors.get("test-doc") == "User1"
+
+        # Clean up
+        pm._cancel_pending_save("test-doc")
+
+    @pytest.mark.asyncio
+    async def test_second_edit_cancels_first_task(self) -> None:
+        """Second edit cancels first pending save and schedules new one."""
+        pm = PersistenceManager()
+        mock_doc = MagicMock()
+        mock_doc.doc_id = "test-doc"
+        mock_doc.get_full_state.return_value = b"state"
+        mock_doc.get_all_highlights.return_value = []
+        pm.register_document(mock_doc)
+
+        # First edit
+        pm.mark_dirty("test-doc")
+        first_task = pm._pending_saves.get("test-doc")
+
+        # Second edit - should cancel first
+        pm.mark_dirty("test-doc")
+        second_task = pm._pending_saves.get("test-doc")
+
+        # Tasks should be different
+        assert first_task is not second_task
+
+        # Give event loop a chance to process cancellation
+        await asyncio.sleep(0.01)
+
+        # First task should be cancelled
+        assert first_task.cancelled() or first_task.done()
+
+        # Clean up
+        pm._cancel_pending_save("test-doc")

@@ -14,50 +14,48 @@ def lawlis_rtf_path() -> Path:
     return Path(__file__).parent.parent / "fixtures" / "183.rtf"
 
 
+@pytest.fixture(scope="module")
+def parsed_lawlis() -> ParsedRTF:
+    """Parse RTF once, reuse across all tests in module.
+
+    This saves ~13s by avoiding repeated LibreOffice spawns.
+    """
+    path = Path(__file__).parent.parent / "fixtures" / "183.rtf"
+    return parse_rtf(path)
+
+
 class TestParseRTF:
     """Tests for parse_rtf function."""
 
-    def test_returns_parsed_rtf(self, lawlis_rtf_path: Path) -> None:
+    def test_returns_parsed_rtf(self, parsed_lawlis: ParsedRTF) -> None:
         """Parser returns a ParsedRTF dataclass."""
-        result = parse_rtf(lawlis_rtf_path)
+        assert isinstance(parsed_lawlis, ParsedRTF)
 
-        assert isinstance(result, ParsedRTF)
-
-    def test_preserves_original_blob(self, lawlis_rtf_path: Path) -> None:
+    def test_preserves_original_blob(self, parsed_lawlis: ParsedRTF) -> None:
         """Original RTF content is stored as bytes."""
-        result = parse_rtf(lawlis_rtf_path)
+        assert isinstance(parsed_lawlis.original_blob, bytes)
+        assert parsed_lawlis.original_blob.lstrip().startswith(b"{\\rtf")
 
-        assert isinstance(result.original_blob, bytes)
-        assert result.original_blob.lstrip().startswith(b"{\\rtf")
-
-    def test_generates_html(self, lawlis_rtf_path: Path) -> None:
+    def test_generates_html(self, parsed_lawlis: ParsedRTF) -> None:
         """HTML output is generated for rendering."""
-        result = parse_rtf(lawlis_rtf_path)
-
-        assert isinstance(result.html, str)
+        assert isinstance(parsed_lawlis.html, str)
         # LibreOffice uses <p class="western"> style
-        assert "<table" in result.html or "<p " in result.html
+        assert "<table" in parsed_lawlis.html or "<p " in parsed_lawlis.html
 
-    def test_html_contains_case_name(self, lawlis_rtf_path: Path) -> None:
+    def test_html_contains_case_name(self, parsed_lawlis: ParsedRTF) -> None:
         """Case name appears in HTML output."""
-        result = parse_rtf(lawlis_rtf_path)
+        assert "Lawlis" in parsed_lawlis.html
+        assert "v" in parsed_lawlis.html
+        assert "R" in parsed_lawlis.html
 
-        assert "Lawlis" in result.html
-        assert "v" in result.html
-        assert "R" in result.html
-
-    def test_html_preserves_emphasis(self, lawlis_rtf_path: Path) -> None:
+    def test_html_preserves_emphasis(self, parsed_lawlis: ParsedRTF) -> None:
         """HTML preserves italic/emphasis formatting."""
-        result = parse_rtf(lawlis_rtf_path)
-
         # LibreOffice uses <i> tags for italics
-        assert "<em>" in result.html or "<i>" in result.html
+        assert "<em>" in parsed_lawlis.html or "<i>" in parsed_lawlis.html
 
-    def test_stores_source_filename(self, lawlis_rtf_path: Path) -> None:
+    def test_stores_source_filename(self, parsed_lawlis: ParsedRTF) -> None:
         """Source filename is preserved."""
-        result = parse_rtf(lawlis_rtf_path)
-
-        assert result.source_filename == "183.rtf"
+        assert parsed_lawlis.source_filename == "183.rtf"
 
     def test_file_not_found_raises(self, tmp_path: Path) -> None:
         """Missing file raises FileNotFoundError."""

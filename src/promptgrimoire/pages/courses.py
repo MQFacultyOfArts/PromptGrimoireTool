@@ -11,10 +11,58 @@ Route: /courses
 
 from __future__ import annotations
 
+import logging
 import os
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from nicegui import app, ui
+
+from promptgrimoire.db.courses import (
+    create_course,
+    enroll_user,
+    get_course_by_id,
+    get_enrollment,
+    list_course_enrollments,
+    list_courses,
+    list_user_enrollments,
+    unenroll_user,
+)
+from promptgrimoire.db.engine import init_db
+from promptgrimoire.db.models import CourseRole
+from promptgrimoire.db.users import find_or_create_user, get_user_by_id
+from promptgrimoire.db.weeks import (
+    create_week,
+    get_visible_weeks,
+    list_weeks,
+    publish_week,
+    unpublish_week,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
+
+# Track connected clients per course for broadcasting updates
+# course_id -> {client_id -> weeks_list_refresh_func}
+_course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
+
+
+def _broadcast_weeks_refresh(
+    course_id: UUID, exclude_client: str | None = None
+) -> None:
+    """Broadcast weeks list refresh to all clients viewing a course."""
+    if course_id not in _course_clients:
+        return
+
+    for client_id, refresh_func in list(_course_clients[course_id].items()):
+        if client_id != exclude_client:
+            try:
+                refresh_func()
+            except Exception:
+                # Client may have disconnected
+                _course_clients[course_id].pop(client_id, None)
 
 
 def _get_current_user() -> dict | None:
@@ -58,10 +106,6 @@ async def courses_list_page() -> None:
     if not _is_db_available():
         ui.label("Database not configured").classes("text-red-500")
         return
-
-    from promptgrimoire.db.courses import list_courses, list_user_enrollments
-    from promptgrimoire.db.engine import init_db
-    from promptgrimoire.db.models import CourseRole
 
     await init_db()
 
@@ -124,10 +168,6 @@ async def create_course_page() -> None:
         ui.label("Database not configured").classes("text-red-500")
         return
 
-    from promptgrimoire.db.courses import create_course, enroll_user
-    from promptgrimoire.db.engine import init_db
-    from promptgrimoire.db.models import CourseRole
-
     await init_db()
 
     user_id = _get_user_id()
@@ -179,11 +219,6 @@ async def course_detail_page(course_id: str) -> None:
         ui.label("Database not configured").classes("text-red-500")
         return
 
-    from promptgrimoire.db.courses import get_course_by_id, get_enrollment
-    from promptgrimoire.db.engine import init_db
-    from promptgrimoire.db.models import CourseRole
-    from promptgrimoire.db.weeks import get_visible_weeks, publish_week, unpublish_week
-
     await init_db()
 
     try:
@@ -191,6 +226,11 @@ async def course_detail_page(course_id: str) -> None:
     except ValueError:
         ui.label("Invalid course ID").classes("text-red-500")
         return
+
+    # Track this client for broadcasting updates
+    await ui.context.client.connected()
+    client = ui.context.client
+    client_id = str(id(client))
 
     course = await get_course_by_id(cid)
     if not course:
@@ -276,6 +316,7 @@ async def course_detail_page(course_id: str) -> None:
                                     async def unpub(wid: UUID = week.id) -> None:
                                         await unpublish_week(wid)
                                         weeks_list.refresh()
+                                        _broadcast_weeks_refresh(cid, client_id)
 
                                     ui.button("Unpublish", on_click=unpub).props(
                                         "flat dense"
@@ -285,12 +326,27 @@ async def course_detail_page(course_id: str) -> None:
                                     async def pub(wid: UUID = week.id) -> None:
                                         await publish_week(wid)
                                         weeks_list.refresh()
+                                        _broadcast_weeks_refresh(cid, client_id)
 
                                     ui.button("Publish", on_click=pub).props(
                                         "flat dense"
                                     )
 
     await weeks_list()
+
+    # Register this client for receiving broadcasts
+    if cid not in _course_clients:
+        _course_clients[cid] = {}
+    _course_clients[cid][client_id] = weeks_list.refresh
+
+    # Cleanup on disconnect
+    def on_disconnect() -> None:
+        if cid in _course_clients:
+            _course_clients[cid].pop(client_id, None)
+            if not _course_clients[cid]:
+                del _course_clients[cid]
+
+    client.on_disconnect(on_disconnect)
 
 
 @ui.page("/courses/{course_id}/weeks/new")
@@ -302,11 +358,6 @@ async def create_week_page(course_id: str) -> None:
     if not _is_db_available():
         ui.label("Database not configured").classes("text-red-500")
         return
-
-    from promptgrimoire.db.courses import get_course_by_id, get_enrollment
-    from promptgrimoire.db.engine import init_db
-    from promptgrimoire.db.models import CourseRole
-    from promptgrimoire.db.weeks import create_week, list_weeks
 
     await init_db()
 
@@ -380,17 +431,6 @@ async def manage_enrollments_page(course_id: str) -> None:
     if not _is_db_available():
         ui.label("Database not configured").classes("text-red-500")
         return
-
-    from promptgrimoire.db.courses import (
-        enroll_user,
-        get_course_by_id,
-        get_enrollment,
-        list_course_enrollments,
-        unenroll_user,
-    )
-    from promptgrimoire.db.engine import init_db
-    from promptgrimoire.db.models import CourseRole
-    from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 
     await init_db()
 

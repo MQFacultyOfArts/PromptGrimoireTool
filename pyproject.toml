@@ -104,6 +104,10 @@ ignore = [
     "SIM117",   # Nested with is cleaner for NiceGUI UI composition
     "PLC0415",  # Late imports to avoid circular dependencies
 ]
+"src/promptgrimoire/pages/courses.py" = [
+    "PLR0915",  # Page function needs many statements for UI setup
+    "SIM117",   # Nested with is cleaner for NiceGUI UI composition
+]
 "src/promptgrimoire/crdt/annotation_doc.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with persistence
 ]

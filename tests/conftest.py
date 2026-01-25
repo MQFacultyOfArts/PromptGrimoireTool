@@ -43,6 +43,7 @@ def db_schema_guard() -> Generator[None]:
             "TEST_DATABASE_URL environment variable is required for tests. "
             "Set it to point to a test database (not production!)."
         )
+        return  # Unreachable, but helps type checker
 
     # Set DATABASE_URL from TEST_DATABASE_URL for test isolation
     os.environ["DATABASE_URL"] = test_url
@@ -58,11 +59,13 @@ def db_schema_guard() -> Generator[None]:
 
 
 @pytest.fixture
-def mock_stytch_client():
+async def mock_stytch_client():
     """Create a mocked Stytch B2BClient for unit tests.
 
     Patches the B2BClient constructor to return a mock, allowing
     tests to set up expected responses without making real API calls.
+
+    Made async to ensure proper event loop handling with pytest-asyncio.
     """
     with patch("promptgrimoire.auth.client.B2BClient") as mock_cls:
         mock_client = MagicMock()

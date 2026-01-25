@@ -47,11 +47,25 @@ _connected_clients: dict[str, dict[str, ClientState]] = {}
 
 # Test-only endpoint to reset CRDT state between test runs
 # Only available when AUTH_MOCK=true (test mode)
-def _reset_crdt_state_handler() -> dict[str, Any]:
-    """Reset all CRDT document state. Test-only endpoint."""
+async def _reset_crdt_state_handler() -> dict[str, Any]:
+    """Reset all CRDT document state (memory and DB). Test-only endpoint."""
     count = _doc_registry.clear_all()
     _connected_clients.clear()
-    return {"status": "ok", "cleared_docs": count}
+
+    # Also delete persisted test states from database
+    # Database may not be configured in some test scenarios
+    db_deleted = await _safe_delete_test_states()
+
+    return {"status": "ok", "cleared_docs": count, "db_deleted": db_deleted}
+
+
+async def _safe_delete_test_states() -> int:
+    """Delete test states, returning 0 if DB not configured."""
+    from promptgrimoire.db.annotation_state import delete_test_states
+
+    with contextlib.suppress(Exception):
+        return await delete_test_states()
+    return 0
 
 
 if os.environ.get("AUTH_MOCK") == "true":
@@ -246,11 +260,39 @@ _QUASAR_OVERRIDES = """
 """
 
 
-def _get_username() -> str:
-    """Get display name for current user."""
+def _get_session_user() -> dict | None:
+    """Get the current user from session storage."""
+    return app.storage.user.get("auth_user")
+
+
+def _get_username_from_session(user: dict | None) -> str:
+    """Get display name for current user from session, with fallback."""
+    if user:
+        # Prefer name, fall back to email prefix
+        if user.get("name"):
+            return user["name"]
+        if user.get("email"):
+            return user["email"].split("@")[0]
+    # Fallback for anonymous users (shouldn't happen with auth required)
     adjectives = ["Happy", "Clever", "Swift", "Bright", "Calm"]
     nouns = ["Panda", "Eagle", "Tiger", "Dolphin", "Fox"]
     return f"{random.choice(adjectives)}{random.choice(nouns)}"
+
+
+def _get_user_doc_id(user: dict | None) -> str:
+    """Generate a user-specific document ID for isolation.
+
+    Args:
+        user: Session user dict with email.
+
+    Returns:
+        Document ID like "demo-user@example.com" or "demo-anonymous-{random}".
+    """
+    if user and user.get("email"):
+        # Use email for per-user isolation
+        return f"demo-{user['email']}"
+    # Fallback - shouldn't happen with auth required
+    return f"demo-anonymous-{random.randint(1000, 9999)}"
 
 
 class _WordSpanProcessor:
@@ -1036,12 +1078,18 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
     if not require_demo_enabled():
         return
 
+    # Require authentication for user isolation
+    user = _get_session_user()
+    if not user:
+        ui.navigate.to("/login")
+        return
+
     await ui.context.client.connected()
 
     client = ui.context.client
     client_id = str(id(client))
-    username = _get_username()
-    doc_id = "demo-case-183"
+    username = _get_username_from_session(user)
+    doc_id = _get_user_doc_id(user)
 
     # Use persistence if database is configured
     if os.environ.get("DATABASE_URL"):

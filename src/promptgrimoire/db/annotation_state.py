@@ -75,3 +75,30 @@ async def save_state(
         await session.flush()
         await session.refresh(state)
         return state
+
+
+async def delete_test_states() -> int:
+    """Delete all annotation states with test-pattern case IDs.
+
+    Removes states where case_id matches test patterns:
+    - Starts with 'demo-test_' (test function names)
+    - Contains '@test.example.edu.au' (test emails)
+
+    This is for test isolation - clearing persisted state between runs.
+
+    Returns:
+        Number of states deleted.
+    """
+    async with get_session() as session:
+        # Find all test states
+        result = await session.exec(
+            select(AnnotationDocumentState).where(
+                AnnotationDocumentState.case_id.like("demo-test_%")  # type: ignore[union-attr]
+            )
+        )
+        states = result.all()
+        count = len(states)
+        for state in states:
+            await session.delete(state)
+        await session.flush()
+        return count

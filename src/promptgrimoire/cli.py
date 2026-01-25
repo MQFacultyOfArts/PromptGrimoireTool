@@ -1,10 +1,13 @@
 """Command-line utilities for PromptGrimoire development.
 
 Provides pytest wrappers with logging and timing for debugging test failures.
+Also includes admin bootstrap commands.
 """
 
 from __future__ import annotations
 
+import asyncio
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -139,3 +142,53 @@ Exit code: {exit_code}
 
     print(f"\nLog saved to: {log_path}")
     sys.exit(exit_code)
+
+
+def set_admin() -> None:
+    """Set a user as admin by email.
+
+    Usage:
+        uv run set-admin user@example.com
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    if len(sys.argv) < 2:
+        print("Usage: uv run set-admin <email>")
+        sys.exit(1)
+
+    email = sys.argv[1]
+
+    if not os.environ.get("DATABASE_URL"):
+        print("Error: DATABASE_URL not set")
+        sys.exit(1)
+
+    async def _set_admin() -> None:
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session, init_db
+        from promptgrimoire.db.models import User
+
+        await init_db()
+
+        async with get_session() as session:
+            result = await session.exec(select(User).where(User.email == email))
+            user = result.one_or_none()
+
+            if user is None:
+                print(f"Error: No user found with email '{email}'")
+                print("User must log in at least once before being set as admin.")
+                sys.exit(1)
+                return  # unreachable, but helps type checker
+
+            if user.is_admin:
+                print(f"User '{email}' is already an admin.")
+                return
+
+            user.is_admin = True
+            session.add(user)
+            await session.commit()
+            print(f"Success: '{email}' is now an admin.")
+
+    asyncio.run(_set_admin())

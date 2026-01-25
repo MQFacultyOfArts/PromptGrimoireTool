@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from promptgrimoire.crdt.persistence import DEBOUNCE_SECONDS, PersistenceManager
+from promptgrimoire.crdt.persistence import PersistenceManager
 
 
 class TestPersistenceManager:
@@ -165,10 +165,10 @@ class TestPersistenceManager:
         assert len(pm._dirty_docs) == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
     async def test_debounced_save_fires_after_delay(self) -> None:
-        """Debounced save should fire after DEBOUNCE_SECONDS (real timing)."""
+        """Debounced save should fire after debounce_seconds."""
         pm = PersistenceManager()
+        pm.debounce_seconds = 0.1  # Fast for testing
         mock_doc = MagicMock()
         mock_doc.doc_id = "test-doc"
         mock_doc.get_full_state.return_value = b"state"
@@ -184,7 +184,7 @@ class TestPersistenceManager:
             mock_save.assert_not_called()
 
             # Wait for debounce (with some buffer)
-            await asyncio.sleep(DEBOUNCE_SECONDS + 0.5)
+            await asyncio.sleep(pm.debounce_seconds + 0.05)
 
             # Should have saved now
             mock_save.assert_called_once_with(
@@ -195,10 +195,10 @@ class TestPersistenceManager:
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
     async def test_debounce_resets_on_new_edit(self) -> None:
-        """New edit should reset debounce timer (real timing)."""
+        """New edit should reset debounce timer."""
         pm = PersistenceManager()
+        pm.debounce_seconds = 0.1  # Fast for testing
         mock_doc = MagicMock()
         mock_doc.doc_id = "test-doc"
         mock_doc.get_full_state.return_value = b"state"
@@ -212,19 +212,19 @@ class TestPersistenceManager:
             pm.mark_dirty("test-doc")
 
             # Wait less than debounce time
-            await asyncio.sleep(DEBOUNCE_SECONDS / 2)
+            await asyncio.sleep(pm.debounce_seconds / 2)
 
             # Second edit - should reset timer
             pm.mark_dirty("test-doc")
 
             # Wait less than debounce time again
-            await asyncio.sleep(DEBOUNCE_SECONDS / 2)
+            await asyncio.sleep(pm.debounce_seconds / 2)
 
             # Should not have saved yet (timer was reset)
             mock_save.assert_not_called()
 
             # Wait for the rest of the debounce
-            await asyncio.sleep(DEBOUNCE_SECONDS / 2 + 0.5)
+            await asyncio.sleep(pm.debounce_seconds / 2 + 0.05)
 
             # Now it should have saved
             mock_save.assert_called_once()

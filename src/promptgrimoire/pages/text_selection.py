@@ -11,7 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nicegui import ui
+from nicegui import app, ui
+
+from promptgrimoire.pages.layout import require_demo_enabled
+from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
@@ -24,9 +27,30 @@ SELECTION_DEBOUNCE_MS = 10  # Debounce to let browser finalize selection
 MAX_DISPLAY_LENGTH = 50  # Truncate displayed text for readability
 
 
-@ui.page("/demo/text-selection")
+def _get_session_user() -> dict | None:
+    """Get the current user from session storage."""
+    return app.storage.user.get("auth_user")
+
+
+@page_route(
+    "/demo/text-selection",
+    title="Text Selection",
+    icon="text_fields",
+    category="demo",
+    requires_demo=True,
+    order=10,
+)
 async def text_selection_demo_page() -> None:
     """Demo page: Text selection for annotations."""
+    if not require_demo_enabled():
+        return
+
+    # Require authentication
+    user = _get_session_user()
+    if not user:
+        ui.navigate.to("/login")
+        return
+
     # Per-page selection state bound to UI
     selection_data: dict[str, str | int] = {
         "text": "",

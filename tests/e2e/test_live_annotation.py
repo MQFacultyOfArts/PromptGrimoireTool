@@ -16,26 +16,96 @@ import re
 from typing import TYPE_CHECKING
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Page, expect
+from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+def _select_words(page: Page, start_word: int, end_word: int) -> None:
+    """Select a range of words by clicking start and shift-clicking end.
+
+    Scrolls elements into view before clicking.
+    """
+    word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
+    word_end = page.locator(f'.doc-container [data-w="{end_word}"]')
+
+    word_start.scroll_into_view_if_needed()
+    expect(word_start).to_be_visible(timeout=5000)
+
+    word_start.click()
+    word_end.click(modifiers=["Shift"])
+
+
+def _click_tag(page: Page, index: int = 0) -> None:
+    """Click a tag button to create a highlight from current selection."""
+    tag_buttons = page.locator(".tag-toolbar-compact button")
+    tag_button = tag_buttons.nth(index)
+    tag_button.scroll_into_view_if_needed()
+    expect(tag_button).to_be_visible(timeout=5000)
+    tag_button.click()
+
+
+def _create_highlight(
+    page: Page, start_word: int, end_word: int, tag_index: int = 0
+) -> None:
+    """Select words and apply a tag to create a highlight."""
+    _select_words(page, start_word, end_word)
+    _click_tag(page, tag_index)
+
+
+def _get_ann_cards(page: Page) -> tuple[int, Locator]:
+    """Get annotation cards locator and current count."""
+    cards = page.locator(".ann-card-positioned")
+    return cards.count(), cards
+
+
+def _login_as_test_user(page: Page, app_server: str, test_name: str) -> None:
+    """Login as a test-specific user for isolation.
+
+    Each test run gets a unique UUID to ensure complete isolation -
+    no data persists between test runs.
+
+    Args:
+        page: Playwright page.
+        app_server: Base URL of the app server.
+        test_name: Test name (used for debugging, UUID provides isolation).
+    """
+    from uuid import uuid4
+
+    # UUID ensures each test run is completely isolated
+    run_id = uuid4().hex[:8]
+    email = f"{test_name}-{run_id}@test.example.edu.au"
+    token = f"mock-token-{email}"
+    page.goto(f"{app_server}/auth/callback?token={token}")
+    page.wait_for_load_state("networkidle", timeout=15000)
+    expect(page).to_have_url(f"{app_server}/", timeout=5000)
+
+
 @pytest.fixture
 def clean_page(
-    fresh_page: Page, live_annotation_url: str, reset_crdt_state: None
+    fresh_page: Page,
+    app_server: str,
+    live_annotation_url: str,
+    reset_crdt_state: None,
+    request: pytest.FixtureRequest,
 ) -> Generator[Page]:
     """Navigate to live annotation page with clean CRDT state.
 
     Uses fresh_page fixture for browser-level isolation (fresh context per test).
     The reset_crdt_state fixture resets all CRDT state server-side.
+    Logs in as a test-specific user for per-user document isolation.
 
     This ensures:
     - No shared browser state (cookies, localStorage, WebSocket connections)
     - No shared CRDT document state
+    - Per-user document isolation
     """
     _ = reset_crdt_state
+    # Login as test-specific user
+    test_name = request.node.name.replace("[", "-").replace("]", "")
+    _login_as_test_user(fresh_page, app_server, test_name)
+
     # Navigate to the demo page with fresh browser context and CRDT state
     fresh_page.goto(live_annotation_url)
     doc_container = fresh_page.locator(".doc-container")
@@ -46,8 +116,12 @@ def clean_page(
 class TestAnnotationCardParagraphNumbers:
     """Test that annotation cards display correct paragraph numbers."""
 
-    def test_page_loads(self, page: Page, live_annotation_url: str) -> None:
-        """Live annotation demo page loads successfully."""
+    def test_page_loads(
+        self, page: Page, app_server: str, live_annotation_url: str
+    ) -> None:
+        """Live annotation demo page loads successfully after login."""
+        # Login first (auth required)
+        _login_as_test_user(page, app_server, "test_page_loads")
         page.goto(live_annotation_url)
 
         # Verify the page has the document container
@@ -76,6 +150,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for annotation card to appear
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Verify the card contains paragraph reference [1]
@@ -101,6 +176,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for annotation card to be created
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Verify the card does NOT contain a paragraph reference like [1], [2], etc.
@@ -128,6 +204,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("[48]")
 
@@ -149,6 +226,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Court orders are part of para 48
@@ -162,38 +240,18 @@ class TestHighlightCreation:
         """User can select text and apply a tag to create a highlight."""
         page = clean_page
 
-        # Get first two word spans
-        word_0 = page.locator('.doc-container [data-w="0"]')
-        word_1 = page.locator('.doc-container [data-w="1"]')
-        expect(word_0).to_be_visible(timeout=5000)
-
-        # Click and shift-click to create selection range
-        word_0.click()
-        word_1.click(modifiers=["Shift"])
-
-        # Click a tag button
-        tag_buttons = page.locator(".tag-toolbar-compact button")
-        tag_buttons.first.click()
-
-        # Verify highlight was created (card appears)
-        ann_card = page.locator(".ann-card-positioned")
-        expect(ann_card).to_have_count(1, timeout=5000)
+        initial_count, ann_cards = _get_ann_cards(page)
+        _create_highlight(page, 0, 1)
+        expect(ann_cards).to_have_count(initial_count + 1, timeout=5000)
 
     def test_highlight_shows_quoted_text(self, clean_page: Page) -> None:
         """Annotation card shows the highlighted text in quotes."""
         page = clean_page
 
-        word_10 = page.locator('.doc-container [data-w="10"]')
-        word_11 = page.locator('.doc-container [data-w="11"]')
-        expect(word_10).to_be_visible(timeout=5000)
-
-        word_10.click()
-        word_11.click(modifiers=["Shift"])
-
-        tag_buttons = page.locator(".tag-toolbar-compact button")
-        tag_buttons.first.click()
+        _create_highlight(page, 10, 11)
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
 
@@ -204,21 +262,11 @@ class TestMultiParagraphHighlights:
         """Highlighting across paragraphs shows [N-M] format with en-dash."""
         page = clean_page
 
-        # Select from paragraph 5 (word 848 "Judge") to paragraph 6 (word 870)
-        # Para 5: words 848-860, Para 6: words 861-892
-        word_848 = page.locator('.doc-container [data-w="848"]')
-        word_870 = page.locator('.doc-container [data-w="870"]')
-        word_848.scroll_into_view_if_needed()
-        expect(word_848).to_be_visible(timeout=5000)
+        # Select from paragraph 5 (word 848) to paragraph 6 (word 870)
+        _create_highlight(page, 848, 870)
 
-        word_848.click()
-        word_870.click(modifiers=["Shift"])
-
-        tag_buttons = page.locator(".tag-toolbar-compact button")
-        tag_buttons.first.click()
-
-        # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         card_text = ann_card.inner_text()
@@ -234,23 +282,21 @@ class TestHighlightDeletion:
         """Clicking close button removes the annotation card."""
         page = clean_page
 
-        word_0 = page.locator('.doc-container [data-w="0"]')
-        word_1 = page.locator('.doc-container [data-w="1"]')
-        expect(word_0).to_be_visible(timeout=5000)
+        _create_highlight(page, 0, 1)
 
-        word_0.click()
-        word_1.click(modifiers=["Shift"])
+        # Verify highlight was created
+        _, ann_cards = _get_ann_cards(page)
+        expect(ann_cards.first).to_be_visible(timeout=5000)
+        count_before_delete = ann_cards.count()
 
-        tag_buttons = page.locator(".tag-toolbar-compact button")
-        tag_buttons.first.click()
-
-        ann_card = page.locator(".ann-card-positioned")
-        expect(ann_card).to_have_count(1, timeout=5000)
-
-        close_btn = ann_card.locator("button").first
+        # Click close button on the first card
+        first_card = ann_cards.first
+        first_card.scroll_into_view_if_needed()
+        close_btn = first_card.locator("button").first
         close_btn.click()
 
-        expect(ann_card).to_have_count(0, timeout=5000)
+        # Verify count decreased by 1
+        expect(ann_cards).to_have_count(count_before_delete - 1, timeout=5000)
 
 
 class TestCommentCreation:
@@ -260,17 +306,10 @@ class TestCommentCreation:
         """User can add a comment to an annotation card."""
         page = clean_page
 
-        word_100 = page.locator('.doc-container [data-w="100"]')
-        word_101 = page.locator('.doc-container [data-w="101"]')
-        expect(word_100).to_be_visible(timeout=5000)
-
-        word_100.click()
-        word_101.click(modifiers=["Shift"])
-
-        tag_buttons = page.locator(".tag-toolbar-compact button")
-        tag_buttons.first.click()
+        _create_highlight(page, 100, 101)
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         comment_input = ann_card.locator("input[placeholder*='comment']")
@@ -312,6 +351,7 @@ class TestKeyboardShortcuts:
 
         # Verify highlight was created with correct tag
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("Procedural History")
 
@@ -338,6 +378,7 @@ class TestKeyboardShortcuts:
         page.keyboard.press("0")
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("Reflection")
 
@@ -361,6 +402,7 @@ class TestGoToTextButton:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Scroll document away from the highlight by scrolling to beginning of document
@@ -399,6 +441,7 @@ class TestTagColors:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         style = ann_card.get_attribute("style")
@@ -495,10 +538,28 @@ class TestMultipleHighlights:
 
 
 class TestMultiUserCollaboration:
-    """Test real-time collaboration between multiple users."""
+    """Test real-time collaboration between multiple users.
+
+    For collaboration tests, both users log in with the same email
+    to share the same document (doc_id = demo-{email}).
+    """
+
+    # Shared email for collaboration tests - both users get same document
+    COLLAB_EMAIL = "collab-test@test.example.edu.au"
+
+    def _login_for_collab(self, page: Page, app_server: str) -> None:
+        """Login with shared email for collaboration testing."""
+        token = f"mock-token-{self.COLLAB_EMAIL}"
+        page.goto(f"{app_server}/auth/callback?token={token}")
+        page.wait_for_load_state("networkidle", timeout=15000)
+        expect(page).to_have_url(f"{app_server}/", timeout=5000)
 
     def test_two_users_see_each_others_highlights(
-        self, context: BrowserContext, live_annotation_url: str, reset_crdt_state: None
+        self,
+        context: BrowserContext,
+        app_server: str,
+        live_annotation_url: str,
+        reset_crdt_state: None,
     ) -> None:
         """Two users in different browser contexts see shared highlights."""
         _ = reset_crdt_state
@@ -506,9 +567,12 @@ class TestMultiUserCollaboration:
         page2 = context.new_page()
 
         try:
+            # Both users login with same email to share document
+            self._login_for_collab(page1, app_server)
             page1.goto(live_annotation_url)
             expect(page1.locator(".doc-container")).to_be_visible(timeout=15000)
 
+            self._login_for_collab(page2, app_server)
             page2.goto(live_annotation_url)
             expect(page2.locator(".doc-container")).to_be_visible(timeout=15000)
 
@@ -516,17 +580,22 @@ class TestMultiUserCollaboration:
             word_51 = page1.locator('.doc-container [data-w="51"]')
             expect(word_50).to_be_visible(timeout=5000)
 
+            # Count existing cards before creating new highlight
+            cards_page1 = page1.locator(".ann-card-positioned")
+            cards_page2 = page2.locator(".ann-card-positioned")
+            initial_count = cards_page1.count()
+
             word_50.click()
             word_51.click(modifiers=["Shift"])
 
             tag_buttons = page1.locator(".tag-toolbar-compact button")
             tag_buttons.first.click()
 
-            cards_page1 = page1.locator(".ann-card-positioned")
-            expect(cards_page1).to_have_count(1, timeout=5000)
+            # Verify page1 sees the new highlight
+            expect(cards_page1).to_have_count(initial_count + 1, timeout=5000)
 
-            cards_page2 = page2.locator(".ann-card-positioned")
-            expect(cards_page2).to_have_count(1, timeout=10000)
+            # Verify page2 also sees it (collaboration working)
+            expect(cards_page2).to_have_count(initial_count + 1, timeout=10000)
         finally:
             page1.close()
             page2.close()
@@ -534,6 +603,7 @@ class TestMultiUserCollaboration:
     def test_user_count_updates_with_connections(
         self,
         browser: Browser,
+        app_server: str,
         live_annotation_url: str,
         reset_crdt_state: None,
     ) -> None:
@@ -546,6 +616,8 @@ class TestMultiUserCollaboration:
         page2: Page | None = None
 
         try:
+            # Both users login with same email to share document
+            self._login_for_collab(page1, app_server)
             page1.goto(live_annotation_url)
             expect(page1.locator(".doc-container")).to_be_visible(timeout=15000)
 
@@ -553,6 +625,7 @@ class TestMultiUserCollaboration:
             expect(count_label).to_contain_text("1 user")
 
             page2 = context2.new_page()
+            self._login_for_collab(page2, app_server)
             page2.goto(live_annotation_url)
             expect(page2.locator(".doc-container")).to_be_visible(timeout=15000)
 

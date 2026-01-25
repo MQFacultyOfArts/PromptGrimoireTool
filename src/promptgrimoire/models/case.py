@@ -1,15 +1,12 @@
 """Data models for legal case documents.
 
-These are plain dataclasses for RTF parsing results. PostgreSQL/SQLModel
-persistence deferred to a future spike.
+BriefTag enum and associated tag colors/shortcuts for case annotation.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import StrEnum
-from uuid import UUID, uuid4
 
 
 class BriefTag(StrEnum):
@@ -69,47 +66,3 @@ class ParsedRTF:
     original_blob: bytes
     html: str
     source_filename: str
-
-
-@dataclass
-class Comment:
-    """A comment in a reply thread on a highlight.
-
-    Attributes:
-        id: Unique identifier.
-        author: Display name or email of the comment author.
-        text: The comment content.
-        created_at: When the comment was posted.
-    """
-
-    author: str
-    text: str
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=datetime.now)
-
-
-@dataclass
-class Highlight:
-    """A highlighted passage in a case document.
-
-    Attributes:
-        id: Unique identifier.
-        case_id: Which case this highlight belongs to.
-        tag: The brief tag categorizing this highlight.
-        start_offset: Character position in HTML text content where highlight starts.
-        end_offset: Character position where highlight ends.
-        text: The highlighted text content.
-        comments: Thread of comments (replies) on this highlight.
-        created_at: When the highlight was created.
-        created_by: Display name of who created the highlight.
-    """
-
-    case_id: str
-    tag: BriefTag
-    start_offset: int
-    end_offset: int
-    text: str
-    comments: list[Comment] = field(default_factory=list)
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=datetime.now)
-    created_by: str = "Unknown"

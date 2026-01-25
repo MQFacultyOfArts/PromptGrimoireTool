@@ -52,20 +52,29 @@ class TestGetSession:
             _state.session_factory = original_factory
 
     @pytest.mark.asyncio
-    async def test_session_raises_when_not_initialized(self) -> None:
-        """Getting a session before init raises RuntimeError."""
-        from promptgrimoire.db.engine import _state, get_session
+    async def test_session_lazy_initializes_when_factory_is_none(self) -> None:
+        """Getting a session when factory is None lazily initializes the engine."""
+        from promptgrimoire.db.engine import _state, close_db, get_session
 
-        # Ensure factory is None
+        # Ensure factory is None (simulating first use)
         original_factory = _state.session_factory
+        original_engine = _state.engine
         _state.session_factory = None
+        _state.engine = None
 
         try:
-            with pytest.raises(RuntimeError, match="not initialized"):
-                async with get_session():
-                    pass
+            # get_session should lazily call init_db
+            async with get_session() as session:
+                # Should have initialized the engine and factory
+                assert _state.engine is not None
+                assert _state.session_factory is not None
+                # Session should be usable
+                assert session is not None
         finally:
+            # Clean up the lazily-created engine
+            await close_db()
             _state.session_factory = original_factory
+            _state.engine = original_engine
 
 
 class TestGetEngine:

@@ -118,11 +118,13 @@ class MockAuthClient:
         email: str | None = None
 
         # Check for email-specific token format: mock-token-{email}
+        # For per-test isolation use: mock-token-{testname}@test.example.edu.au
         if token.startswith("mock-token-"):
             email = token[len("mock-token-") :]
         elif token == MOCK_VALID_MAGIC_TOKEN:
-            # Use pending email from most recent send_magic_link call
+            # Legacy token - uses pending email, then clears to prevent pollution
             email = self._pending_email or "test@example.com"
+            self._pending_email = None
 
         if email:
             session_token = _email_to_session_token(email)

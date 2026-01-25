@@ -106,6 +106,10 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     Yields a session that auto-commits on success and rolls back on error.
     Exceptions are logged before re-raising.
 
+    Lazily initializes the database engine on first use if not already
+    initialized. This ensures the engine is created in the current
+    event loop context.
+
     Usage:
         async with get_session() as session:
             user = await session.exec(select(User).where(User.id == id))
@@ -114,13 +118,17 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         AsyncSession: Database session for executing queries.
 
     Raises:
-        RuntimeError: If database has not been initialized via init_db().
+        ValueError: If DATABASE_URL is not set.
     """
+    # Lazy init: create engine in the current event loop if not yet created
     if _state.session_factory is None:
-        msg = "Database not initialized. Call init_db() first."
-        raise RuntimeError(msg)
+        await init_db()
 
-    async with _state.session_factory() as session:
+    # After init_db(), session_factory is guaranteed to be set
+    session_factory = _state.session_factory
+    assert session_factory is not None  # For type narrowing
+
+    async with session_factory() as session:
         try:
             yield session
             await session.commit()

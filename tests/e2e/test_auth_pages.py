@@ -45,16 +45,16 @@ class TestLoginPage:
         # Should show success message
         expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 
-    def test_magic_link_send_invalid_email(self, fresh_page: Page, app_server: str):
-        """Submitting invalid email shows error message."""
+    def test_magic_link_send_arbitrary_email(self, fresh_page: Page, app_server: str):
+        """Mock accepts any email for testing flexibility."""
         fresh_page.goto(f"{app_server}/login")
 
-        # Fill in an invalid email (not in MOCK_VALID_EMAILS)
-        fresh_page.get_by_test_id("email-input").fill("invalid@nowhere.com")
+        # Fill in an arbitrary email (not in MOCK_VALID_EMAILS but still accepted)
+        fresh_page.get_by_test_id("email-input").fill("arbitrary@anywhere.com")
         fresh_page.get_by_test_id("send-magic-link-btn").click()
 
-        # Should show error message
-        expect(fresh_page.get_by_text("invalid_email")).to_be_visible()
+        # Should show success - mock accepts any email
+        expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 
 
 class TestMagicLinkCallback:

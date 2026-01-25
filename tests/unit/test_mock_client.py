@@ -17,6 +17,8 @@ from promptgrimoire.auth.mock import (
     MOCK_VALID_SESSION,
     MOCK_VALID_SSO_TOKEN,
     MockAuthClient,
+    _email_to_member_id,
+    _email_to_session_token,
 )
 
 
@@ -37,13 +39,13 @@ class TestMockSendMagicLink:
         )
 
         assert result.success is True
-        assert result.member_id == MOCK_MEMBER_ID
+        assert result.member_id == _email_to_member_id("test@example.com")
         assert result.error is None
 
     async def test_send_magic_link_new_member(self, client):
-        """Returns member_created=True for student@uni.edu."""
+        """Returns member_created=True for emails not in MOCK_VALID_EMAILS."""
         result = await client.send_magic_link(
-            email="student@uni.edu",
+            email="newuser@example.com",
             organization_id="org-123",
             callback_url="http://localhost/callback",
         )
@@ -51,17 +53,17 @@ class TestMockSendMagicLink:
         assert result.success is True
         assert result.member_created is True
 
-    async def test_send_magic_link_invalid_email(self, client):
-        """Returns error for invalid email."""
+    async def test_send_magic_link_arbitrary_email(self, client):
+        """Accepts any email for testing flexibility."""
         result = await client.send_magic_link(
-            email="invalid@nowhere.com",
+            email="arbitrary@anywhere.com",
             organization_id="org-123",
             callback_url="http://localhost/callback",
         )
 
-        assert result.success is False
-        assert result.error == "invalid_email"
-        assert result.member_id is None
+        assert result.success is True
+        assert result.member_id == _email_to_member_id("arbitrary@anywhere.com")
+        assert result.member_created is True  # Not in MOCK_VALID_EMAILS
 
     async def test_tracks_sent_magic_links(self, client):
         """Tracks magic links sent for test assertions."""
@@ -101,11 +103,11 @@ class TestMockAuthenticateMagicLink:
         result = await client.authenticate_magic_link(token=MOCK_VALID_MAGIC_TOKEN)
 
         assert result.success is True
-        assert result.session_token == MOCK_VALID_SESSION
-        assert result.member_id == MOCK_MEMBER_ID
+        assert result.session_token == _email_to_session_token("test@example.com")
+        assert result.member_id == _email_to_member_id("test@example.com")
         assert result.organization_id == MOCK_ORG_ID
         assert result.email == "test@example.com"
-        assert result.name == "Test User"
+        assert result.name == "Test"
         assert "stytch_member" in result.roles
 
     async def test_authenticate_invalid_token(self, client):

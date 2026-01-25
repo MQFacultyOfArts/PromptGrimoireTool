@@ -7,6 +7,9 @@ import pytest
 from promptgrimoire.models import ParsedRTF
 from promptgrimoire.parsers.rtf import _MAX_FILE_SIZE, parse_rtf
 
+# Run all RTF tests on same worker to share LibreOffice process
+pytestmark = pytest.mark.xdist_group("rtf_parser")
+
 
 @pytest.fixture
 def lawlis_rtf_path() -> Path:

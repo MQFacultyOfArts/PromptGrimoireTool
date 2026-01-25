@@ -103,6 +103,8 @@ def test_debug() -> None:
     """Run pytest with debug flags, capturing output to a log file.
 
     Flags applied:
+        -n auto: Parallel execution with auto-detected workers
+        --dist=loadfile: Keep tests from same file on same worker
         -x: Stop on first failure
         --ff: Run failed tests first, then remaining tests
         --durations=10: Show 10 slowest tests
@@ -113,19 +115,33 @@ def test_debug() -> None:
     _run_pytest(
         title="Test Debug Run",
         log_path=Path("test-failures.log"),
-        default_args=["-x", "--ff", "--durations=10", "--tb=short"],
+        default_args=[
+            "-n",
+            "auto",
+            "--dist=loadfile",
+            "-x",
+            "--ff",
+            "--durations=10",
+            "--tb=short",
+        ],
     )
 
 
 def test_all() -> None:
-    """Run full test suite with timing.
+    """Run full test suite with parallel execution and timing.
+
+    Flags applied:
+        -n auto: Parallel execution with auto-detected workers
+        --dist=loadfile: Keep tests from same file on same worker
+        --durations=10: Show 10 slowest tests
+        -v: Verbose output
 
     Output saved to: test-all.log
     """
     _run_pytest(
         title="Full Test Suite",
         log_path=Path("test-all.log"),
-        default_args=["--durations=10", "-v"],
+        default_args=["-n", "auto", "--dist=loadfile", "--durations=10", "-v"],
     )
 
 

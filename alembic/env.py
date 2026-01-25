@@ -28,9 +28,10 @@ from promptgrimoire.db.models import (  # noqa: E402, F401
     AnnotationDocumentState,
     Class,
     Conversation,
-    Highlight,
-    HighlightComment,
+    Course,
+    CourseEnrollment,
     User,
+    Week,
 )
 
 # this is the Alembic Config object, which provides

@@ -14,6 +14,7 @@ from nicegui import ui
 
 from promptgrimoire.crdt import SharedDocument
 from promptgrimoire.pages.layout import require_demo_enabled
+from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
@@ -46,7 +47,14 @@ def _broadcast_to_other_clients(origin_client_id: str | None) -> None:
                 pass
 
 
-@ui.page("/demo/crdt-sync")
+@page_route(
+    "/demo/crdt-sync",
+    title="CRDT Sync",
+    icon="sync",
+    category="demo",
+    requires_demo=True,
+    order=20,
+)
 async def crdt_sync_demo_page() -> None:
     """Demo page: Real-time CRDT text synchronization."""
     if not require_demo_enabled():

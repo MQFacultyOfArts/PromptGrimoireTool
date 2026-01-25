@@ -3,6 +3,7 @@
 from nicegui import app, ui
 
 from promptgrimoire.pages.layout import page_layout
+from promptgrimoire.pages.registry import page_route
 
 
 def _get_session_user() -> dict | None:
@@ -10,7 +11,7 @@ def _get_session_user() -> dict | None:
     return app.storage.user.get("auth_user")
 
 
-@ui.page("/")
+@page_route("/", title="Home", icon="home", order=10)
 async def index_page() -> None:
     """Index page with welcome message. Requires authentication."""
     user = _get_session_user()

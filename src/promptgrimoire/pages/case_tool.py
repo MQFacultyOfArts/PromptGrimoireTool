@@ -35,6 +35,7 @@ from promptgrimoire.models import (
     BriefTag,
     ParsedRTF,
 )
+from promptgrimoire.pages.registry import page_route
 from promptgrimoire.parsers import HighlightSpec, insert_highlights, parse_rtf
 
 
@@ -128,7 +129,7 @@ def _load_case(case_id: str) -> ParsedRTF | None:
     return parse_rtf(rtf_path)
 
 
-@ui.page("/case-tool")
+@page_route("/case-tool", title="Case Tool", icon="gavel", order=50)
 async def case_tool_page() -> None:
     """Case Brief Tool main page."""
     # Check database availability - this page requires PostgreSQL

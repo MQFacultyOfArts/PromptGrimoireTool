@@ -21,6 +21,7 @@ from nicegui import app, ui
 from promptgrimoire.crdt import AnnotationDocumentRegistry
 from promptgrimoire.models import TAG_COLORS, TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.layout import require_demo_enabled
+from promptgrimoire.pages.registry import page_route
 from promptgrimoire.parsers import parse_rtf
 
 if TYPE_CHECKING:
@@ -1022,7 +1023,14 @@ def _setup_event_handlers(
     ui.on("keydown", handle_keydown)
 
 
-@ui.page("/demo/live-annotation")
+@page_route(
+    "/demo/live-annotation",
+    title="Live Annotation",
+    icon="edit_note",
+    category="demo",
+    requires_demo=True,
+    order=30,
+)
 async def live_annotation_demo_page() -> None:  # TODO: refactor further
     """Live annotation demo page with CRDT-based collaboration."""
     if not require_demo_enabled():

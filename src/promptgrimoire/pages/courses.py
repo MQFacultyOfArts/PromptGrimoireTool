@@ -38,6 +38,7 @@ from promptgrimoire.db.weeks import (
     publish_week,
     unpublish_week,
 )
+from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -97,7 +98,7 @@ async def _check_auth() -> bool:
     return True
 
 
-@ui.page("/courses")
+@page_route("/courses", title="Courses", icon="school", order=20)
 async def courses_list_page() -> None:
     """List courses page."""
     if not await _check_auth():

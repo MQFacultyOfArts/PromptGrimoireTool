@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from promptgrimoire.pages.layout import require_demo_enabled
+from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
@@ -26,7 +27,14 @@ SELECTION_DEBOUNCE_MS = 10  # Debounce to let browser finalize selection
 MAX_DISPLAY_LENGTH = 50  # Truncate displayed text for readability
 
 
-@ui.page("/demo/text-selection")
+@page_route(
+    "/demo/text-selection",
+    title="Text Selection",
+    icon="text_fields",
+    category="demo",
+    requires_demo=True,
+    order=10,
+)
 async def text_selection_demo_page() -> None:
     """Demo page: Text selection for annotations."""
     if not require_demo_enabled():

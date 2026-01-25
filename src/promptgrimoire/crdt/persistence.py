@@ -15,18 +15,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Debounce interval in seconds
-DEBOUNCE_SECONDS = 5.0
-
 
 class PersistenceManager:
     """Manages debounced persistence of CRDT documents to database.
 
     Attributes:
+        debounce_seconds: Delay before persisting (class attr, override in tests).
         _pending_saves: Dict of doc_id -> asyncio.Task for pending debounced saves.
         _dirty_docs: Set of doc_ids that have unsaved changes.
         _doc_registry: Dict of doc_id -> AnnotationDocument for accessing documents.
     """
+
+    # Debounce interval - override in tests for faster execution
+    debounce_seconds: float = 5.0
 
     def __init__(self) -> None:
         """Initialize the persistence manager."""
@@ -70,7 +71,7 @@ class PersistenceManager:
         self._cancel_pending_save(doc_id)
 
         async def debounced_save() -> None:
-            await asyncio.sleep(DEBOUNCE_SECONDS)
+            await asyncio.sleep(self.debounce_seconds)
             await self._persist_document(doc_id)
 
         self._pending_saves[doc_id] = asyncio.create_task(debounced_save())

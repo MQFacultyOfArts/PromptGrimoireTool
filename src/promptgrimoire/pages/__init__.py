@@ -6,6 +6,7 @@ Import this module to register all page routes with NiceGUI.
 from promptgrimoire.pages import (
     auth,
     case_tool,
+    courses,
     index,
     live_annotation_demo,
     logviewer,
@@ -17,6 +18,7 @@ from promptgrimoire.pages import (
 __all__ = [
     "auth",
     "case_tool",
+    "courses",
     "index",
     "live_annotation_demo",
     "logviewer",
@@ -30,6 +32,7 @@ __all__ = [
 _PAGES = (
     auth,
     case_tool,
+    courses,
     index,
     live_annotation_demo,
     logviewer,

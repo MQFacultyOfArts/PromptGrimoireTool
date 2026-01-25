@@ -24,24 +24,23 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def clean_page(
-    page: Page, live_annotation_url: str, reset_crdt_state: None
+    fresh_page: Page, live_annotation_url: str, reset_crdt_state: None
 ) -> Generator[Page]:
     """Navigate to live annotation page with clean CRDT state.
 
-    The reset_crdt_state fixture (function-scoped) resets all CRDT state
-    server-side before each test, ensuring complete isolation.
+    Uses fresh_page fixture for browser-level isolation (fresh context per test).
+    The reset_crdt_state fixture resets all CRDT state server-side.
 
-    We navigate to about:blank first to close any existing WebSocket connections,
-    then navigate to the demo page to get a fresh connection to the reset CRDT.
+    This ensures:
+    - No shared browser state (cookies, localStorage, WebSocket connections)
+    - No shared CRDT document state
     """
     _ = reset_crdt_state
-    # Close existing connections by navigating away
-    page.goto("about:blank")
-    # Now navigate to the demo page with fresh state
-    page.goto(live_annotation_url)
-    doc_container = page.locator(".doc-container")
+    # Navigate to the demo page with fresh browser context and CRDT state
+    fresh_page.goto(live_annotation_url)
+    doc_container = fresh_page.locator(".doc-container")
     expect(doc_container).to_be_visible(timeout=15000)
-    yield page
+    yield fresh_page
 
 
 class TestAnnotationCardParagraphNumbers:
@@ -63,6 +62,7 @@ class TestAnnotationCardParagraphNumbers:
         # Select words 482-483 which are in paragraph 1
         word_482 = page.locator('.doc-container [data-w="482"]')
         word_483 = page.locator('.doc-container [data-w="483"]')
+        word_482.scroll_into_view_if_needed()
         expect(word_482).to_be_visible(timeout=5000)
 
         # Select these words by clicking and shift-clicking

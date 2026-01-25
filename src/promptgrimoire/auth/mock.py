@@ -2,10 +2,13 @@
 
 This module provides a mock implementation of the AuthClientProtocol
 that can be used in tests without making real Stytch API calls.
+
+Supports arbitrary users - any email can request a magic link and authenticate.
 """
 
 from __future__ import annotations
 
+import hashlib
 from urllib.parse import urlencode
 
 from promptgrimoire.auth.models import (
@@ -17,6 +20,7 @@ from promptgrimoire.auth.models import (
 )
 
 # Predefined test values for consistent behavior in tests
+# These are kept for backwards compatibility with existing tests
 MOCK_VALID_EMAILS = frozenset(
     {"test@example.com", "student@uni.edu", "instructor@uni.edu"}
 )
@@ -30,24 +34,39 @@ MOCK_ORG_ID = "mock-org-123"
 MOCK_MEMBER_ID = "mock-member-456"
 
 
+def _email_to_member_id(email: str) -> str:
+    """Generate a deterministic member ID from an email."""
+    return f"mock-member-{hashlib.md5(email.encode()).hexdigest()[:8]}"
+
+
+def _email_to_session_token(email: str) -> str:
+    """Generate a deterministic session token from an email."""
+    return f"mock-session-{hashlib.md5(email.encode()).hexdigest()[:12]}"
+
+
 class MockAuthClient:
     """Mock implementation of AuthClientProtocol for testing.
 
     This client provides predictable responses for testing auth flows
-    without making real API calls. It recognizes specific test values
-    and returns appropriate success/failure responses.
+    without making real API calls. Supports arbitrary users.
 
-    Test Values:
-        - Valid emails: test@example.com, student@uni.edu, instructor@uni.edu
-        - Valid magic link token: "mock-valid-token"
-        - Valid SSO token: "mock-valid-sso-token"
-        - Valid session token: "mock-session-token"
+    Token Formats:
+        - "mock-valid-token" - authenticates as last email that requested magic link
+        - "mock-token-{email}" - authenticates as specific email
+        - "mock-valid-sso-token" - authenticates as SSO user
+        - "mock-valid-oauth-token" - authenticates as GitHub user
+
+    Session tokens are email-specific for multi-user testing.
     """
 
     def __init__(self) -> None:
         """Initialize the mock client."""
         # Track sent magic links for testing
         self._sent_magic_links: list[dict] = []
+        # Track pending magic link email (most recent)
+        self._pending_email: str | None = None
+        # Track active sessions: session_token -> email
+        self._active_sessions: dict[str, str] = {}
 
     async def send_magic_link(
         self,
@@ -57,13 +76,15 @@ class MockAuthClient:
     ) -> SendResult:
         """Mock sending a magic link email.
 
+        Accepts any email address for testing flexibility.
+
         Args:
             email: The recipient's email address.
             organization_id: The organization ID.
             callback_url: The callback URL (ignored in mock).
 
         Returns:
-            SendResult - success if email is in MOCK_VALID_EMAILS.
+            SendResult - always succeeds for any email.
         """
         # Track the call for testing
         self._sent_magic_links.append(
@@ -74,39 +95,49 @@ class MockAuthClient:
             }
         )
 
-        if email in MOCK_VALID_EMAILS:
-            # Determine if this is a "new" user
-            is_new = email == "student@uni.edu"
-            return SendResult(
-                success=True,
-                member_id=MOCK_MEMBER_ID,
-                member_created=is_new,
-            )
+        # Store pending email for when token is authenticated
+        self._pending_email = email
+
         return SendResult(
-            success=False,
-            error="invalid_email",
+            success=True,
+            member_id=_email_to_member_id(email),
+            member_created=email not in MOCK_VALID_EMAILS,
         )
 
     async def authenticate_magic_link(self, token: str) -> AuthResult:
         """Mock authenticating a magic link token.
 
         Args:
-            token: The magic link token.
+            token: The magic link token. Accepts:
+                - "mock-valid-token" - uses pending email from send_magic_link
+                - "mock-token-{email}" - authenticates as specific email
 
         Returns:
-            AuthResult - success if token equals MOCK_VALID_MAGIC_TOKEN.
+            AuthResult - success for valid token formats.
         """
-        if token == MOCK_VALID_MAGIC_TOKEN:
+        email: str | None = None
+
+        # Check for email-specific token format: mock-token-{email}
+        if token.startswith("mock-token-"):
+            email = token[len("mock-token-") :]
+        elif token == MOCK_VALID_MAGIC_TOKEN:
+            # Use pending email from most recent send_magic_link call
+            email = self._pending_email or "test@example.com"
+
+        if email:
+            session_token = _email_to_session_token(email)
+            self._active_sessions[session_token] = email
             return AuthResult(
                 success=True,
-                session_token=MOCK_VALID_SESSION,
-                session_jwt="mock-jwt-token",
-                member_id=MOCK_MEMBER_ID,
+                session_token=session_token,
+                session_jwt=f"mock-jwt-{email}",
+                member_id=_email_to_member_id(email),
                 organization_id=MOCK_ORG_ID,
-                email="test@example.com",
-                name="Test User",
+                email=email,
+                name=email.split("@")[0].replace(".", " ").title(),
                 roles=["stytch_member"],
             )
+
         return AuthResult(
             success=False,
             error="invalid_token",
@@ -144,8 +175,21 @@ class MockAuthClient:
             session_token: The session token to validate.
 
         Returns:
-            SessionResult - valid if token equals MOCK_VALID_SESSION.
+            SessionResult - valid if token is in active sessions or is legacy token.
         """
+        # Check active sessions first (from authenticate_magic_link)
+        if session_token in self._active_sessions:
+            email = self._active_sessions[session_token]
+            return SessionResult(
+                valid=True,
+                member_id=_email_to_member_id(email),
+                organization_id=MOCK_ORG_ID,
+                email=email,
+                name=email.split("@")[0].replace(".", " ").title(),
+                roles=["stytch_member"],
+            )
+
+        # Legacy support for hardcoded token
         if session_token == MOCK_VALID_SESSION:
             return SessionResult(
                 valid=True,
@@ -155,6 +199,7 @@ class MockAuthClient:
                 name="Test User",
                 roles=["stytch_member"],
             )
+
         return SessionResult(
             valid=False,
             error="session_not_found",

@@ -24,6 +24,7 @@ async def index_page() -> None:
         ui.label("Available Pages").classes("text-lg font-semibold mb-2")
 
         with ui.column().classes("gap-2"):
+            ui.link("Courses", "/courses")
             ui.link("Roleplay", "/roleplay")
             ui.link("Session Logs", "/logs")
             ui.link("Text Selection Demo", "/demo/text-selection")

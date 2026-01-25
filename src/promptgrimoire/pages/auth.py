@@ -7,13 +7,17 @@ Uses either real Stytch or MockAuthClient based on AUTH_MOCK env var.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from nicegui import app, ui
 
 from promptgrimoire.auth import get_auth_client, get_config
+from promptgrimoire.db import init_db, upsert_user_on_login
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from starlette.requests import Request
 
 logger = logging.getLogger(__name__)
@@ -39,13 +43,16 @@ def _set_session_user(
     roles: list[str],
     name: str | None = None,
     auth_method: str = "unknown",
+    user_id: UUID | None = None,
+    is_admin: bool = False,
 ) -> None:
     """Store authenticated user in session storage."""
     logger.info(
-        "Login successful: email=%s, member_id=%s, auth_method=%s",
+        "Login successful: email=%s, member_id=%s, auth_method=%s, user_id=%s",
         email,
         member_id,
         auth_method,
+        user_id,
     )
     app.storage.user["auth_user"] = {
         "email": email,
@@ -55,12 +62,52 @@ def _set_session_user(
         "roles": roles,
         "name": name,
         "auth_method": auth_method,
+        "user_id": str(user_id) if user_id else None,
+        "is_admin": is_admin,
     }
 
 
 def _clear_session() -> None:
     """Clear the current session."""
     app.storage.user.pop("auth_user", None)
+
+
+async def _upsert_local_user(
+    email: str,
+    stytch_member_id: str,
+    display_name: str | None = None,
+) -> tuple[UUID | None, bool]:
+    """Upsert user in local database if configured.
+
+    Args:
+        email: User's email from Stytch auth.
+        stytch_member_id: Stytch member_id from auth.
+        display_name: Optional name from Stytch.
+
+    Returns:
+        Tuple of (user_id, is_admin) or (None, False) if DB not configured.
+    """
+    if not os.environ.get("DATABASE_URL"):
+        logger.debug("DATABASE_URL not configured, skipping user upsert")
+        return None, False
+
+    try:
+        await init_db()
+        user = await upsert_user_on_login(
+            email=email,
+            stytch_member_id=stytch_member_id,
+            display_name=display_name,
+        )
+        logger.info(
+            "User upserted: id=%s, email=%s, is_admin=%s",
+            user.id,
+            user.email,
+            user.is_admin,
+        )
+        return user.id, user.is_admin
+    except Exception:
+        logger.exception("Failed to upsert user in local database")
+        return None, False
 
 
 def _get_query_param(name: str) -> str | None:
@@ -239,6 +286,34 @@ def _build_github_oauth_section() -> None:
         ).props('data-testid="github-login-btn"').classes("w-full")
 
 
+def _build_mock_login_section() -> None:
+    """Build mock login section for testing (only when AUTH_MOCK=true)."""
+    with ui.card().classes("w-96 p-4 bg-yellow-50 border-yellow-200"):
+        ui.label("Mock Login (Testing Only)").classes(
+            "text-lg font-semibold mb-2 text-yellow-800"
+        )
+        ui.label("Click to instantly log in as:").classes(
+            "text-sm text-yellow-700 mb-2"
+        )
+
+        test_users = [
+            ("test@example.com", "Test User"),
+            ("student@uni.edu", "Student"),
+            ("instructor@uni.edu", "Instructor"),
+        ]
+
+        for email, label in test_users:
+            token = f"mock-token-{email}"
+
+            def login_as(t: str = token) -> None:
+                ui.navigate.to(f"/auth/callback?token={t}")
+
+            ui.button(
+                f"{label} ({email})",
+                on_click=login_as,
+            ).classes("w-full mb-1").props("flat")
+
+
 @ui.page("/login")
 async def login_page() -> None:
     """Login page with magic link, SSO, and GitHub OAuth options."""
@@ -248,6 +323,11 @@ async def login_page() -> None:
         return
 
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
+
+    # Show mock login section when in test mode
+    if os.environ.get("AUTH_MOCK") == "true":
+        _build_mock_login_section()
+        ui.label("— or —").classes("my-4")
 
     _build_magic_link_section()
     ui.label("— or —").classes("my-4")
@@ -282,6 +362,13 @@ async def magic_link_callback() -> None:
     result = await auth_client.authenticate_magic_link(token=token)
 
     if result.success:
+        # Upsert user in local database
+        user_id, is_admin = await _upsert_local_user(
+            email=result.email or "",
+            stytch_member_id=result.member_id or "",
+            display_name=result.name,
+        )
+
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -290,6 +377,8 @@ async def magic_link_callback() -> None:
             roles=result.roles,
             name=result.name,
             auth_method="magic_link",
+            user_id=user_id,
+            is_admin=is_admin,
         )
         ui.navigate.to("/")
     else:
@@ -324,6 +413,13 @@ async def sso_callback() -> None:
     result = await auth_client.authenticate_sso(token=token)
 
     if result.success:
+        # Upsert user in local database
+        user_id, is_admin = await _upsert_local_user(
+            email=result.email or "",
+            stytch_member_id=result.member_id or "",
+            display_name=result.name,
+        )
+
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -332,6 +428,8 @@ async def sso_callback() -> None:
             roles=result.roles,
             name=result.name,
             auth_method="sso_aaf",
+            user_id=user_id,
+            is_admin=is_admin,
         )
         ui.navigate.to("/")
     else:
@@ -366,6 +464,13 @@ async def oauth_callback() -> None:
     result = await auth_client.authenticate_oauth(token=token)
 
     if result.success:
+        # Upsert user in local database
+        user_id, is_admin = await _upsert_local_user(
+            email=result.email or "",
+            stytch_member_id=result.member_id or "",
+            display_name=result.name,
+        )
+
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -374,6 +479,8 @@ async def oauth_callback() -> None:
             roles=result.roles,
             name=result.name,
             auth_method="github",
+            user_id=user_id,
+            is_admin=is_admin,
         )
         ui.navigate.to("/")
     else:

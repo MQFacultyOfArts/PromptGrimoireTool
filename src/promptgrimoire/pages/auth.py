@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 from nicegui import app, ui
 
@@ -306,7 +307,7 @@ def _build_mock_login_section() -> None:
             token = f"mock-token-{email}"
 
             def login_as(t: str = token) -> None:
-                ui.navigate.to(f"/auth/callback?token={t}")
+                ui.navigate.to(f"/auth/callback?{urlencode({'token': t})}")
 
             ui.button(
                 f"{label} ({email})",

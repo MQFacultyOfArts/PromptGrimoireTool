@@ -14,13 +14,39 @@ All tests use fresh_page fixture for proper isolation.
 from playwright.sync_api import Page, expect
 
 
-def setup_text_selection_page(page: Page, url: str) -> None:
+def _login_as_test_user(page: Page, app_server: str, test_name: str) -> None:
+    """Login as a test-specific user for isolation.
+
+    Args:
+        page: Playwright page.
+        app_server: Base URL of the app server.
+        test_name: Test name used to create unique user email.
+    """
+    email = f"text-sel-{test_name}@test.example.edu.au"
+    token = f"mock-token-{email}"
+    page.goto(f"{app_server}/auth/callback?token={token}")
+    # Wait for navigation to complete and page to fully load
+    page.wait_for_load_state("networkidle", timeout=15000)
+    # Verify we're on the home page
+    expect(page).to_have_url(f"{app_server}/", timeout=5000)
+
+
+def setup_text_selection_page(
+    page: Page, app_server: str, url: str, test_name: str
+) -> None:
     """Navigate to text selection page and wait for it to be ready.
+
+    Logs in as a test-specific user for per-user isolation before navigating.
 
     Args:
         page: Playwright page object.
+        app_server: Base URL of the app server.
         url: URL of the text selection demo page.
+        test_name: Test name for creating unique user identity.
     """
+    # Login first (auth required for demo pages)
+    _login_as_test_user(page, app_server, test_name)
+
     page.goto(url)
     content = page.get_by_test_id("selectable-content")
     expect(content).to_be_visible(timeout=10000)
@@ -61,10 +87,12 @@ class TestPageLoads:
     """Test that the demo page loads correctly."""
 
     def test_page_loads_with_sample_text(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Demo page loads and displays sample text."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "page_loads_with_sample_text"
+        )
 
         # Verify the page title/header is visible
         expect(fresh_page.locator("text=Text Selection Demo")).to_be_visible()
@@ -75,10 +103,12 @@ class TestPageLoads:
         expect(content).to_contain_text("sample")
 
     def test_selection_info_panel_exists(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Selection info panel is visible."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "selection_info_panel_exists"
+        )
 
         # Verify selection display elements exist
         expect(fresh_page.get_by_test_id("selected-text")).to_be_visible()
@@ -90,10 +120,12 @@ class TestTextSelection:
     """Test text selection capture."""
 
     def test_text_can_be_selected(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Text can be selected and captured by the app."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "text_can_be_selected"
+        )
 
         # Select text using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -103,10 +135,12 @@ class TestTextSelection:
         expect(selected_text).not_to_have_text("No selection", timeout=2000)
 
     def test_selection_captured_in_python(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Selected text is captured and displayed in selection info panel."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "selection_captured_in_python"
+        )
 
         # Select text using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -116,10 +150,12 @@ class TestTextSelection:
         expect(selected_text).not_to_have_text("No selection", timeout=2000)
 
     def test_selection_offsets_captured(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Start and end offsets are captured."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "selection_offsets_captured"
+        )
 
         # Select text using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -136,10 +172,15 @@ class TestEmptySelection:
     """Test handling of empty or whitespace selections."""
 
     def test_click_without_drag_no_selection(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Single click (no drag) does not trigger selection capture."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page,
+            app_server,
+            text_selection_url,
+            "click_without_drag_no_selection",
+        )
 
         content = fresh_page.get_by_test_id("selectable-content")
 
@@ -155,19 +196,23 @@ class TestVisualHighlight:
     """Test CSS highlighting of selections."""
 
     def test_create_highlight_button_exists(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Create Highlight button is present."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "create_highlight_button_exists"
+        )
 
         button = fresh_page.get_by_test_id("create-highlight-btn")
         expect(button).to_be_visible()
 
     def test_highlight_applied_to_selection(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Selected text receives highlight CSS class after clicking button."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "highlight_applied_to_selection"
+        )
 
         # Select text using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -185,10 +230,12 @@ class TestVisualHighlight:
         expect(highlight).to_be_visible()
 
     def test_highlight_has_background_color(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Highlighted text has visible background color."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "highlight_has_background_color"
+        )
 
         # Select and highlight text using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -206,10 +253,12 @@ class TestVisualHighlight:
         expect(highlight).not_to_have_css("background-color", "rgba(0, 0, 0, 0)")
 
     def test_multiple_highlights_supported(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Multiple separate highlights can be created."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "multiple_highlights_supported"
+        )
 
         # First highlight using mouse drag
         select_paragraph_text(fresh_page, 0)
@@ -234,10 +283,12 @@ class TestClickDragSelection:
     """Test actual click-drag selection (primary use case)."""
 
     def test_click_drag_selection(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """User can click-drag to select partial text within a paragraph."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "click_drag_selection"
+        )
 
         content = fresh_page.get_by_test_id("selectable-content")
         p = content.locator("p").first
@@ -262,10 +313,12 @@ class TestEdgeCases:
     """Edge cases for text selection."""
 
     def test_multiline_selection(
-        self, fresh_page: Page, text_selection_url: str
+        self, fresh_page: Page, app_server: str, text_selection_url: str
     ) -> None:
         """Selection spanning multiple lines works."""
-        setup_text_selection_page(fresh_page, text_selection_url)
+        setup_text_selection_page(
+            fresh_page, app_server, text_selection_url, "multiline_selection"
+        )
 
         content = fresh_page.get_by_test_id("selectable-content")
 

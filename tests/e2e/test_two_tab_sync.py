@@ -455,6 +455,6 @@ class TestCursorPositionSync:
             input_field.press("ArrowRight")
         for _ in range(5):
             input_field.press("Shift+ArrowRight")
-        tab1.keyboard.type("Universe")
+        input_field.press_sequentially("Universe", delay=20)
 
         _expect_synced_text(tab2, "Hello Universe")

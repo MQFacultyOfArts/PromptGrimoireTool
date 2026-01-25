@@ -104,7 +104,7 @@ def test_debug() -> None:
 
     Flags applied:
         -x: Stop on first failure
-        --lf: Run last-failed tests first
+        --ff: Run failed tests first, then remaining tests
         --durations=10: Show 10 slowest tests
         --tb=short: Shorter tracebacks
 
@@ -113,7 +113,7 @@ def test_debug() -> None:
     _run_pytest(
         title="Test Debug Run",
         log_path=Path("test-failures.log"),
-        default_args=["-x", "--lf", "--durations=10", "--tb=short"],
+        default_args=["-x", "--ff", "--durations=10", "--tb=short"],
     )
 
 

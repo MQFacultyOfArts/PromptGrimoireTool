@@ -67,33 +67,6 @@ def _nav_item(label: str, route: str, icon: str | None = None) -> None:
             ui.item_label(label)
 
 
-def _info_item(route: str) -> None:
-    """Create a disabled info item showing a parameterised route."""
-    with ui.item().classes("w-full opacity-50"):
-        with ui.item_section().props("avatar"):
-            ui.icon("info")
-        with ui.item_section():
-            ui.item_label(route).classes("text-xs")
-
-
-def _build_all_routes_section() -> None:
-    """Build the 'All Routes' section for demo mode."""
-    ui.separator().classes("q-my-md")
-    ui.label("All Routes").classes("text-caption q-px-md text-grey-7")
-    _nav_item("Protected Test", "/protected", "lock")
-    _nav_item("Login", "/login", "login")
-    _nav_item("Logout", "/logout", "logout")
-    _nav_item("New Course", "/courses/new", "add_circle")
-
-    # Show parameterised routes as disabled info items
-    _info_item("/courses/{id}")
-    _info_item("/courses/{id}/weeks/new")
-    _info_item("/courses/{id}/enrollments")
-    _info_item("/auth/callback")
-    _info_item("/auth/sso/callback")
-    _info_item("/auth/oauth/callback")
-
-
 @contextmanager
 def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
     """Context manager for consistent page layout with header and nav drawer.
@@ -147,9 +120,6 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
                 _nav_item("Text Selection", "/demo/text-selection", "text_fields")
                 _nav_item("CRDT Sync", "/demo/crdt-sync", "sync")
                 _nav_item("Live Annotation", "/demo/live-annotation", "edit_note")
-
-                # Dev/Debug routes - show all endpoints for development
-                _build_all_routes_section()
 
             # Admin section
             if _is_admin():

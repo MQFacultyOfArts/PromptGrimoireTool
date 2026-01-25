@@ -76,6 +76,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for annotation card to appear
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Verify the card contains paragraph reference [1]
@@ -101,6 +102,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for annotation card to be created
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Verify the card does NOT contain a paragraph reference like [1], [2], etc.
@@ -128,6 +130,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("[48]")
 
@@ -149,6 +152,7 @@ class TestAnnotationCardParagraphNumbers:
 
         # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Court orders are part of para 48
@@ -194,6 +198,7 @@ class TestHighlightCreation:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
 
@@ -219,6 +224,7 @@ class TestMultiParagraphHighlights:
 
         # Wait for card
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         card_text = ann_card.inner_text()
@@ -271,6 +277,7 @@ class TestCommentCreation:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         comment_input = ann_card.locator("input[placeholder*='comment']")
@@ -312,6 +319,7 @@ class TestKeyboardShortcuts:
 
         # Verify highlight was created with correct tag
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("Procedural History")
 
@@ -338,6 +346,7 @@ class TestKeyboardShortcuts:
         page.keyboard.press("0")
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
         expect(ann_card).to_contain_text("Reflection")
 
@@ -361,6 +370,7 @@ class TestGoToTextButton:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         # Scroll document away from the highlight by scrolling to beginning of document
@@ -399,6 +409,7 @@ class TestTagColors:
         tag_buttons.first.click()
 
         ann_card = page.locator(".ann-card-positioned").first
+        ann_card.scroll_into_view_if_needed()
         expect(ann_card).to_be_visible(timeout=5000)
 
         style = ann_card.get_attribute("style")

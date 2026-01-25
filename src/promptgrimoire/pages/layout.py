@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 from nicegui import app, ui
 
+from promptgrimoire.pages.registry import get_pages_by_category
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -18,12 +20,6 @@ if TYPE_CHECKING:
 def _get_session_user() -> dict | None:
     """Get the current user from session storage."""
     return app.storage.user.get("auth_user")
-
-
-def _is_admin() -> bool:
-    """Check if current user is an admin."""
-    user = _get_session_user()
-    return bool(user and user.get("is_admin"))
 
 
 def demos_enabled() -> bool:
@@ -51,10 +47,6 @@ def require_demo_enabled() -> bool:
     )
     ui.button("Go Home", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
     return False
-
-
-# Alias for internal use in navigation
-_demos_enabled = demos_enabled
 
 
 def _nav_item(label: str, route: str, icon: str | None = None) -> None:
@@ -107,25 +99,29 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
         ui.separator()
 
         with ui.list().props("padding"):
-            _nav_item("Home", "/", "home")
-            _nav_item("Courses", "/courses", "school")
-            _nav_item("Roleplay", "/roleplay", "chat")
-            _nav_item("Session Logs", "/logs", "description")
-            _nav_item("Case Tool", "/case-tool", "gavel")
+            # Build navigation dynamically from page registry
+            pages_by_cat = get_pages_by_category(user, demos_enabled())
 
-            # Demo section (feature-flagged)
-            if _demos_enabled():
-                ui.separator().classes("q-my-md")
-                ui.label("Demos").classes("text-caption q-px-md text-grey-7")
-                _nav_item("Text Selection", "/demo/text-selection", "text_fields")
-                _nav_item("CRDT Sync", "/demo/crdt-sync", "sync")
-                _nav_item("Live Annotation", "/demo/live-annotation", "edit_note")
+            # Category display config
+            category_labels = {
+                "main": None,  # No header for main section
+                "demo": "Demos",
+                "admin": "Admin",
+            }
 
-            # Admin section
-            if _is_admin():
-                ui.separator().classes("q-my-md")
-                ui.label("Admin").classes("text-caption q-px-md text-grey-7")
-                _nav_item("Users", "/admin/users", "people")
+            for category in ["main", "demo", "admin"]:
+                pages = pages_by_cat.get(category, [])
+                if not pages:
+                    continue
+
+                # Add section header (except for main)
+                label = category_labels.get(category)
+                if label:
+                    ui.separator().classes("q-my-md")
+                    ui.label(label).classes("text-caption q-px-md text-grey-7")
+
+                for page in pages:
+                    _nav_item(page.title, page.route, page.icon)
 
     # Connect menu button to drawer
     menu_btn.on("click", drawer.toggle)

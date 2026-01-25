@@ -5,12 +5,16 @@ Provides async database functions for course management.
 
 from __future__ import annotations
 
-from uuid import UUID
+from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import Course, CourseEnrollment, CourseRole
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 async def create_course(
@@ -142,7 +146,13 @@ async def enroll_user(
             role=role,
         )
         session.add(enrollment)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError as e:
+            # Handle race condition: another transaction won the insert
+            if "uq_course_enrollment_course_user" in str(e):
+                raise DuplicateEnrollmentError(course_id, user_id) from e
+            raise
         await session.refresh(enrollment)
         return enrollment
 

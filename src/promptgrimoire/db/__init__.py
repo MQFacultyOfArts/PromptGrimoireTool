@@ -26,16 +26,6 @@ from promptgrimoire.db.courses import (
     update_user_role,
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
-from promptgrimoire.db.highlights import (
-    MAX_COMMENT_LENGTH,
-    CommentTooLongError,
-    create_comment,
-    create_highlight,
-    delete_highlight,
-    get_comments_for_highlight,
-    get_highlight_by_id,
-    get_highlights_for_case,
-)
 from promptgrimoire.db.models import (
     AnnotationDocumentState,
     Class,
@@ -43,8 +33,6 @@ from promptgrimoire.db.models import (
     Course,
     CourseEnrollment,
     CourseRole,
-    Highlight,
-    HighlightComment,
     User,
     Week,
 )
@@ -64,64 +52,45 @@ from promptgrimoire.db.users import (
 )
 
 __all__ = [
-    # Models
     "AnnotationDocumentState",
     "Class",
     "Conversation",
     "Course",
     "CourseEnrollment",
     "CourseRole",
-    "Highlight",
-    "HighlightComment",
+    "DuplicateEnrollmentError",
     "User",
     "Week",
-    # Exceptions
-    "CommentTooLongError",
-    "DuplicateEnrollmentError",
-    # Constants
-    "MAX_COMMENT_LENGTH",
-    # Engine
-    "close_db",
-    "get_engine",
-    "get_session",
-    "init_db",
-    # Bootstrap
-    "get_expected_tables",
-    "is_db_configured",
-    "run_alembic_upgrade",
-    "verify_schema",
-    # Annotation state
-    "get_state_by_case_id",
-    "save_state",
-    # Highlights
-    "create_comment",
-    "create_highlight",
-    "delete_highlight",
-    "get_comments_for_highlight",
-    "get_highlight_by_id",
-    "get_highlights_for_case",
-    # Courses
     "archive_course",
+    "close_db",
     "create_course",
-    "enroll_user",
-    "get_course_by_id",
-    "get_enrollment",
-    "list_course_enrollments",
-    "list_courses",
-    "list_user_enrollments",
-    "unenroll_user",
-    "update_user_role",
-    # Users
     "create_user",
+    "enroll_user",
     "find_or_create_user",
+    "get_course_by_id",
+    "get_engine",
+    "get_enrollment",
+    "get_expected_tables",
+    "get_session",
+    "get_state_by_case_id",
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",
+    "init_db",
+    "is_db_configured",
     "link_stytch_member",
     "list_all_users",
+    "list_course_enrollments",
+    "list_courses",
+    "list_user_enrollments",
     "list_users",
+    "run_alembic_upgrade",
+    "save_state",
     "set_admin",
+    "unenroll_user",
     "update_display_name",
     "update_last_login",
+    "update_user_role",
     "upsert_user_on_login",
+    "verify_schema",
 ]

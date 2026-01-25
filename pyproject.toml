@@ -44,6 +44,8 @@ dev = [
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
+test-debug = "promptgrimoire.cli:test_debug"
+test-all = "promptgrimoire.cli:test_all"
 
 [build-system]
 requires = ["hatchling"]
@@ -107,6 +109,9 @@ ignore = [
 "src/promptgrimoire/crdt/persistence.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with db
     "PLW0603",  # Global singleton pattern is intentional
+]
+"src/promptgrimoire/cli.py" = [
+    "PLC0415",  # Late import of pytest for CLI commands
 ]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block

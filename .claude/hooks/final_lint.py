@@ -108,9 +108,11 @@ def main() -> int:
 
     # Report results (never block Stop)
     if errors:
-        print(json.dumps({"status": "issues", "files": files, "errors": errors}))
+        error_summary = "\n".join(errors)
+        msg = f"Lint issues in {len(files)} file(s):\n{error_summary}"
+        print(json.dumps({"decision": "approve", "reason": msg}))
     else:
-        print(json.dumps({"status": "success", "files": files}))
+        print(json.dumps({"decision": "approve"}))
 
     return 0
 

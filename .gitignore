@@ -25,3 +25,7 @@ logs/
 
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json
+
+# Test output logs
+test-failures.log
+test-all.log

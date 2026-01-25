@@ -63,6 +63,7 @@ Tests must simulate real user behavior through Playwright events, not bypass the
 - Elements may be off-screen in headless mode - always scroll into view before assertions
 - NiceGUI pages may need time to hydrate - use `expect().to_be_visible()` with appropriate timeouts
 - Floating menus/popups often require scroll context to position correctly
+- **Annotation cards are scroll-sensitive** - they won't display if their anchor element is not visible; always `scroll_into_view_if_needed()` before selecting text for annotation
 
 ### Code Quality Hooks
 
@@ -90,7 +91,7 @@ Commits will be rejected if checks fail.
 uv sync
 
 # Run tests
-uv run pytest
+uv run pytest 
 
 # Run linting
 uv run ruff check .
@@ -101,8 +102,8 @@ uvx ty check
 # Run the app
 uv run python -m promptgrimoire
 
-# Run E2E tests
-uv run playwright test
+# Find first failing test
+uv run test-debug
 ```
 
 ## Project Structure

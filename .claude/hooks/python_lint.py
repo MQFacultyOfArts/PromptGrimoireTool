@@ -76,11 +76,14 @@ def main() -> int:
         errors.append(f"ty check failed:\n{result.stdout}{result.stderr}")
 
     if errors:
-        # Output errors as JSON for Claude to see
-        print(json.dumps({"status": "error", "errors": errors}))
-        return 2  # Blocking error
+        error_summary = "\n".join(errors)
+        msg = f"Lint/type errors in {file_path}:\n{error_summary}"
+        # Exit 2 with stderr for blocking errors
+        print(msg, file=sys.stderr)
+        return 2
 
-    print(json.dumps({"status": "success", "file": file_path}))
+    # Success - empty JSON or simple continue
+    print(json.dumps({"continue": True, "suppressOutput": True}))
     return 0
 
 

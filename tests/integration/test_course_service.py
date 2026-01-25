@@ -7,31 +7,24 @@ environment variable to point to a test database.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
-from promptgrimoire.db.engine import close_db, init_db
 from promptgrimoire.db.models import CourseRole
 
 # Skip all tests if no test database URL is configured
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set - skipping database integration tests",
-)
+# Run sequentially to avoid DB engine conflicts in parallel mode
+pytestmark = [
+    pytest.mark.skipif(
+        not os.environ.get("TEST_DATABASE_URL"),
+        reason="TEST_DATABASE_URL not set - skipping database integration tests",
+    ),
+    pytest.mark.xdist_group("db_integration"),
+]
 
 
-@pytest.fixture
-async def db_engine() -> AsyncIterator[None]:
-    """Initialize database engine for each test."""
-    await init_db()
-    yield
-    await close_db()
-
-
-@pytest.mark.usefixtures("db_engine")
 class TestCreateCourse:
     """Tests for create_course."""
 
@@ -71,7 +64,6 @@ class TestCreateCourse:
         assert course1.id != course2.id
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestGetCourse:
     """Tests for get_course_by_id."""
 
@@ -102,7 +94,6 @@ class TestGetCourse:
         assert found is None
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestListCourses:
     """Tests for list_courses."""
 
@@ -142,7 +133,6 @@ class TestListCourses:
         assert all(c.code != "LAWS9999" for c in courses)
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestArchiveCourse:
     """Tests for archive_course."""
 
@@ -178,7 +168,6 @@ class TestArchiveCourse:
         assert result is False
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestEnrollment:
     """Tests for course enrollment."""
 
@@ -366,7 +355,6 @@ class TestEnrollment:
         assert enrollment.user_id == user.id
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestWeeks:
     """Tests for week CRUD operations."""
 
@@ -463,7 +451,6 @@ class TestWeeks:
         assert updated.visible_from >= future_date - timedelta(seconds=1)
 
 
-@pytest.mark.usefixtures("db_engine")
 class TestWeekVisibility:
     """Tests for week visibility logic."""
 

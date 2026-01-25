@@ -28,14 +28,15 @@ TEST_STORAGE_SECRET = "test-secret-for-e2e"
 
 @pytest.fixture(scope="session", autouse=True)
 def db_schema_guard() -> Generator[None]:
-    """Run migrations once at session start for test database isolation.
+    """Set up database schema once at session start.
 
     This fixture:
     1. Sets DATABASE_URL from TEST_DATABASE_URL for test isolation
     2. Runs Alembic migrations to ensure schema exists
-    3. Does NOT initialize the engine (tests do that as needed)
 
-    Schema verification happens at app startup, not here.
+    The database engine is initialized lazily on first use within each
+    test's event loop context. Tests use UUID-based isolation so they
+    don't interfere with each other.
     """
     test_url = os.environ.get("TEST_DATABASE_URL")
     if not test_url:
@@ -55,7 +56,6 @@ def db_schema_guard() -> Generator[None]:
         pytest.fail(str(e))
 
     yield
-    # No cleanup needed - UUID-based isolation means data doesn't collide
 
 
 @pytest.fixture

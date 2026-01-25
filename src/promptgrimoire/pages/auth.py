@@ -9,13 +9,15 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from nicegui import app, ui
 
 from promptgrimoire.auth import get_auth_client, get_config
+from promptgrimoire.db import init_db, upsert_user_on_login
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from starlette.requests import Request
 
 logger = logging.getLogger(__name__)
@@ -90,8 +92,6 @@ async def _upsert_local_user(
         return None, False
 
     try:
-        from promptgrimoire.db import init_db, upsert_user_on_login
-
         await init_db()
         user = await upsert_user_on_login(
             email=email,
@@ -286,6 +286,34 @@ def _build_github_oauth_section() -> None:
         ).props('data-testid="github-login-btn"').classes("w-full")
 
 
+def _build_mock_login_section() -> None:
+    """Build mock login section for testing (only when AUTH_MOCK=true)."""
+    with ui.card().classes("w-96 p-4 bg-yellow-50 border-yellow-200"):
+        ui.label("Mock Login (Testing Only)").classes(
+            "text-lg font-semibold mb-2 text-yellow-800"
+        )
+        ui.label("Click to instantly log in as:").classes(
+            "text-sm text-yellow-700 mb-2"
+        )
+
+        test_users = [
+            ("test@example.com", "Test User"),
+            ("student@uni.edu", "Student"),
+            ("instructor@uni.edu", "Instructor"),
+        ]
+
+        for email, label in test_users:
+            token = f"mock-token-{email}"
+
+            def login_as(t: str = token) -> None:
+                ui.navigate.to(f"/auth/callback?token={t}")
+
+            ui.button(
+                f"{label} ({email})",
+                on_click=login_as,
+            ).classes("w-full mb-1").props("flat")
+
+
 @ui.page("/login")
 async def login_page() -> None:
     """Login page with magic link, SSO, and GitHub OAuth options."""
@@ -295,6 +323,11 @@ async def login_page() -> None:
         return
 
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
+
+    # Show mock login section when in test mode
+    if os.environ.get("AUTH_MOCK") == "true":
+        _build_mock_login_section()
+        ui.label("— or —").classes("my-4")
 
     _build_magic_link_section()
     ui.label("— or —").classes("my-4")

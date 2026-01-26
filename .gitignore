@@ -29,3 +29,9 @@ logs/
 # Test output logs
 test-failures.log
 test-all.log
+
+# Temporary output directory (experiments, exports)
+output/
+
+# Editor backup files
+*~

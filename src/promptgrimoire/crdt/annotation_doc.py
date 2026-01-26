@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from pycrdt import Awareness, Doc, Map, TransactionEvent
+from pycrdt import Awareness, Doc, Map, Text, TransactionEvent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -60,6 +60,7 @@ class AnnotationDocument:
         # Root-level Maps
         self.doc["highlights"] = Map()  # {highlight_id: HighlightData}
         self.doc["client_meta"] = Map()  # {client_id: {name, color}}
+        self.doc["general_notes"] = Text()  # Collaborative text for general notes
 
         # Awareness for ephemeral state (cursors, selections)
         self.awareness = Awareness(self.doc)
@@ -85,6 +86,39 @@ class AnnotationDocument:
     def client_meta(self) -> Map:
         """Get the client metadata Map."""
         return self.doc["client_meta"]
+
+    @property
+    def general_notes(self) -> Text:
+        """Get the general notes Text object."""
+        return self.doc["general_notes"]
+
+    def get_general_notes(self) -> str:
+        """Get the current general notes content.
+
+        Returns:
+            The general notes as a string.
+        """
+        return str(self.general_notes)
+
+    def set_general_notes(
+        self, content: str, origin_client_id: str | None = None
+    ) -> None:
+        """Set the general notes content, replacing existing content.
+
+        Args:
+            content: The new notes content.
+            origin_client_id: Client making the change (for echo prevention).
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            # Clear existing content and set new
+            notes = self.general_notes
+            current_len = len(notes)
+            if current_len > 0:
+                del notes[:current_len]
+            notes += content
+        finally:
+            _origin_var.reset(token)
 
     def _get_next_color(self) -> str:
         """Get the next available client color."""

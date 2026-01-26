@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from nicegui import app, ui
 
 from promptgrimoire.crdt import AnnotationDocumentRegistry
+from promptgrimoire.export.pdf_export import export_annotation_pdf
 from promptgrimoire.models import TAG_COLORS, TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.layout import require_demo_enabled
 from promptgrimoire.pages.registry import page_route
@@ -700,6 +701,7 @@ class _PageContext:
         self.cursor_style: ui.element = None
         self.annotations_container: ui.element = None
         self.client_count_label: ui.label = None
+        self.general_notes_editor: ui.editor = None
 
 
 def _setup_page_css() -> None:
@@ -765,6 +767,47 @@ def _build_main_layout(
             .props('id="annotations-container"')
         )
     return doc_container, annotations_container
+
+
+def _build_general_notes_section(ctx: _PageContext, export_callback: Any) -> ui.editor:
+    """Build the General Notes section with WYSIWYG editor and export button.
+
+    The editor syncs content to the CRDT doc for collaboration.
+
+    Args:
+        ctx: Page context with annotation doc reference.
+        export_callback: Async callback to trigger PDF export.
+
+    Returns:
+        The editor element for later reference.
+    """
+    with ui.card().classes("mt-4").style("max-width: 1200px; margin: 0 auto;"):
+        ui.label("General Notes").classes("text-lg font-bold")
+        ui.label("Shared notes visible to all collaborators").classes(
+            "text-caption text-grey mb-2"
+        )
+
+        # Get initial content from CRDT
+        initial_content = ctx.ann_doc.get_general_notes()
+
+        async def on_notes_change(e: Any) -> None:
+            """Handle editor content change."""
+            ctx.ann_doc.set_general_notes(e.value, origin_client_id=ctx.client_id)
+
+        editor = (
+            ui.editor(value=initial_content, on_change=on_notes_change)
+            .classes("w-full")
+            .style("min-height: 150px;")
+        )
+
+        # Export button
+        ui.separator().classes("my-4")
+        with ui.row().classes("w-full justify-end"):
+            ui.button(
+                "Export PDF", icon="picture_as_pdf", on_click=export_callback
+            ).props("color=primary")
+
+        return editor
 
 
 def _build_dynamic_style_elements() -> tuple[ui.element, ui.element, ui.element]:
@@ -1073,8 +1116,14 @@ def _setup_event_handlers(
     requires_demo=True,
     order=30,
 )
-async def live_annotation_demo_page() -> None:  # TODO: refactor further
-    """Live annotation demo page with CRDT-based collaboration."""
+async def live_annotation_demo_page(doc: str | None = None) -> None:
+    """Live annotation demo page with CRDT-based collaboration.
+
+    Args:
+        doc: Optional document ID for shared collaboration.
+             If not provided, uses user's email-based doc ID.
+             Usage: /demo/live-annotation?doc=shared-doc-id
+    """
     if not require_demo_enabled():
         return
 
@@ -1089,7 +1138,7 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
     client = ui.context.client
     client_id = str(id(client))
     username = _get_username_from_session(user)
-    doc_id = _get_user_doc_id(user)
+    doc_id = doc if doc else _get_user_doc_id(user)
 
     # Use persistence if database is configured
     if os.environ.get("DATABASE_URL"):
@@ -1171,12 +1220,44 @@ async def live_annotation_demo_page() -> None:  # TODO: refactor further
         update_remote_cursor_css()
         update_client_count()
         await refresh_annotations()
+        # Sync general notes from CRDT (remote changes)
+        if ctx.general_notes_editor is not None:
+            remote_notes = ctx.ann_doc.get_general_notes()
+            if ctx.general_notes_editor.value != remote_notes:
+                ctx.general_notes_editor.value = remote_notes
+
+    async def handle_export_pdf() -> None:
+        """Handle PDF export button click."""
+        ui.notify("Generating PDF...", type="info")
+        try:
+            # Get tag colours as dict[str, str] from TAG_COLORS
+            tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
+
+            # Get highlights and general notes from CRDT
+            highlights = ann_doc.get_all_highlights()
+            general_notes = ann_doc.get_general_notes()
+
+            # Generate PDF
+            pdf_path = await export_annotation_pdf(
+                html_content=parsed.html,
+                highlights=highlights,
+                tag_colours=tag_colours,
+                general_notes=general_notes,
+                word_to_legal_para=processed_doc.word_to_legal_para,
+            )
+
+            # Serve for download
+            ui.download(pdf_path)
+            ui.notify("PDF generated successfully!", type="positive")
+        except Exception as e:
+            ui.notify(f"Export failed: {e}", type="negative")
 
     # Build UI
     _setup_page_css()
     _build_tag_toolbar(apply_tag_to_selection)
     ctx.client_count_label = _build_header_info(username, client_color)
     _, ctx.annotations_container = _build_main_layout(processed_doc)
+    ctx.general_notes_editor = _build_general_notes_section(ctx, handle_export_pdf)
     (
         ctx.highlight_style,
         ctx.selection_style,

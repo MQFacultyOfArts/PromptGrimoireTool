@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlmodel import select
+from sqlmodel import or_, select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import AnnotationDocumentState
@@ -83,6 +83,7 @@ async def delete_test_states() -> int:
     Removes states where case_id matches test patterns:
     - Starts with 'demo-test_' (test function names)
     - Contains '@test.example.edu.au' (test emails)
+    - Starts with 'test-' (shared test doc IDs)
 
     This is for test isolation - clearing persisted state between runs.
 
@@ -90,10 +91,14 @@ async def delete_test_states() -> int:
         Number of states deleted.
     """
     async with get_session() as session:
-        # Find all test states
+        # Find all test states matching any test pattern
         result = await session.exec(
             select(AnnotationDocumentState).where(
-                AnnotationDocumentState.case_id.like("demo-test_%")  # type: ignore[union-attr]
+                or_(
+                    AnnotationDocumentState.case_id.like("demo-test_%"),  # type: ignore[union-attr]
+                    AnnotationDocumentState.case_id.like("%@test.example.edu.au%"),  # type: ignore[union-attr]
+                    AnnotationDocumentState.case_id.like("test-%"),  # type: ignore[union-attr]
+                )
             )
         )
         states = result.all()

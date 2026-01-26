@@ -84,6 +84,11 @@ library references during development.
 
 - [Skills](claude-code/skills.md) - How to create and configure Claude Code skills
 
+## pandoc
+
+- [Lua Filters](pandoc/lua-filters.md) - AST manipulation, Table/Cell/Div elements, custom LaTeX output
+- [Templates](pandoc/templates.md) - Template syntax, LaTeX variables, PDF generation
+
 ## ruff
 
 - [Pre-commit Integration](ruff/pre-commit.md) - Pre-commit integration guide for Ruff linter and formatter

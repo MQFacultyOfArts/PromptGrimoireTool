@@ -56,7 +56,7 @@ This ensures highlights don't span across:
 **Symptoms:**
 - When annotation 5 ends at word 1640, creating annotation 6 starting at word 1640 fails
 - Card count stays at 5 instead of increasing to 6
-- Same pattern with adjacent annotations at words 2480
+- Same pattern with overlapping annotations at word 2480
 
 **What we know:**
 1. The CRDT supports overlapping highlights - no deduplication or rejection
@@ -113,11 +113,11 @@ The word indices in the plan came from HTML rendering of the RTF document. The r
 ### Test Data Overlap Intent
 
 Per the spec:
-- `reasons` and `order` intentionally overlap at words 893-905 (testing overlapping highlights)
-- `domestic_sources` and `reflection` are on "same passage" in para 23 (testing adjacent/overlapping)
-- `reasons para 15` and `courts_reasoning para 16` are adjacent at word boundary
+- `reasons` and `order` intentionally overlap at words 893-905
+- `domestic_sources` (2422-2480) and `reflection` (2480-2526) overlap at word 2480
+- `reasons para 15` (1575-1640) and `courts_reasoning para 16` (1640-1700) overlap at word 1640
 
-These are deliberate edge cases, not mistakes.
+These are deliberate edge cases testing overlapping highlights, not mistakes.
 
 ---
 

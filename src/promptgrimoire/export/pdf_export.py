@@ -10,6 +10,7 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 from __future__ import annotations
 
 import re
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,25 @@ def _build_general_notes_section(general_notes: str) -> str:
 _LIBREOFFICE_FILTER = Path(__file__).parent / "filters" / "libreoffice.lua"
 
 
+def _get_export_dir(user_id: str) -> Path:
+    """Get or create user's export directory, cleaning up previous exports.
+
+    Each user gets a single export directory that is cleaned on new export,
+    preventing accumulation of stale temp directories.
+
+    Args:
+        user_id: User identifier (e.g., hashed email).
+
+    Returns:
+        Path to the export directory.
+    """
+    export_dir = Path(tempfile.gettempdir()) / f"promptgrimoire_export_{user_id}"
+    if export_dir.exists():
+        shutil.rmtree(export_dir)  # Clean previous export
+    export_dir.mkdir(parents=True)
+    return export_dir
+
+
 async def export_annotation_pdf(
     html_content: str,
     highlights: list[dict[str, Any]],
@@ -130,6 +150,7 @@ async def export_annotation_pdf(
     general_notes: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     output_dir: Path | None = None,
+    user_id: str | None = None,
 ) -> Path:
     """Generate PDF with annotations from live annotation data.
 
@@ -146,6 +167,8 @@ async def export_annotation_pdf(
         general_notes: HTML content from general notes editor.
         word_to_legal_para: Optional mapping for paragraph references.
         output_dir: Optional output directory for PDF. Defaults to temp dir.
+        user_id: Optional user identifier for scoped temp directory.
+            If provided, creates a per-user export dir that is cleaned on reuse.
 
     Returns:
         Path to the generated PDF file.
@@ -178,7 +201,10 @@ async def export_annotation_pdf(
 
     # Write to temp file and compile
     if output_dir is None:
-        output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
+        if user_id:
+            output_dir = _get_export_dir(user_id)
+        else:
+            output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
 
     tex_path = output_dir / "annotated_document.tex"
     tex_path.write_text(document)

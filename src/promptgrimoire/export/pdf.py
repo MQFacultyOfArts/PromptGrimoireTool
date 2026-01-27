@@ -9,6 +9,19 @@ import os
 import subprocess
 from pathlib import Path
 
+
+class LaTeXCompilationError(Exception):
+    """LaTeX compilation failed with paths to debug files."""
+
+    def __init__(self, message: str, tex_path: Path, log_path: Path) -> None:
+        self.tex_path = tex_path
+        self.log_path = log_path
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return f"{self.args[0]}\n  TeX: {self.tex_path}\n  Log: {self.log_path}"
+
+
 # TinyTeX installation paths
 TINYTEX_DIR = Path.home() / ".TinyTeX"
 TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
@@ -82,7 +95,15 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         str(tex_path),
     ]
 
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        log_file = output_dir / (tex_path.stem + ".log")
+        raise LaTeXCompilationError(
+            f"LaTeX compilation failed (exit {e.returncode})",
+            tex_path=tex_path,
+            log_path=log_file,
+        ) from e
 
     # Return path to generated PDF
     pdf_name = tex_path.stem + ".pdf"

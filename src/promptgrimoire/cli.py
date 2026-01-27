@@ -195,3 +195,120 @@ def set_admin() -> None:
             console.print(f"[green]Success:[/] '{email}' is now an admin.")
 
     asyncio.run(_set_admin())
+
+
+def _find_export_dir(user_id: str | None) -> Path:
+    """Find the export directory for a user or most recent."""
+    import tempfile
+
+    tmp_dir = Path(tempfile.gettempdir())
+
+    if user_id:
+        export_dir = tmp_dir / f"promptgrimoire_export_{user_id}"
+        if not export_dir.exists():
+            console.print(f"[red]Error:[/] Export directory not found: {export_dir}")
+            sys.exit(1)
+        return export_dir
+
+    export_dirs = list(tmp_dir.glob("promptgrimoire_export_*"))
+    if not export_dirs:
+        console.print("[red]Error:[/] No export directories found in temp folder")
+        console.print(f"[dim]Searched in: {tmp_dir}[/]")
+        sys.exit(1)
+
+    return max(export_dirs, key=lambda p: p.stat().st_mtime)
+
+
+def _show_error_context(log_file: Path, tex_file: Path) -> None:
+    """Show LaTeX error with context from both log and tex file."""
+    import re
+
+    from rich.syntax import Syntax
+
+    log_content = log_file.read_text()
+    tex_lines = tex_file.read_text().splitlines()
+
+    # Find error line number from log (pattern: "l.123")
+    error_line_match = re.search(r"^l\.(\d+)", log_content, re.MULTILINE)
+    error_line = int(error_line_match.group(1)) if error_line_match else None
+
+    # Show last part of log (where errors appear)
+    console.print("\n[bold red]LaTeX Error (last 100 lines of log):[/]")
+    for line in log_content.splitlines()[-100:]:
+        if line.startswith("!") or "Error" in line:
+            console.print(f"[red]{line}[/]")
+        elif line.startswith("l."):
+            console.print(f"[yellow]{line}[/]")
+        else:
+            console.print(line)
+
+    # Show tex context around error line
+    if error_line:
+        console.print(f"\n[bold yellow]TeX Source around line {error_line}:[/]")
+        start = max(0, error_line - 15)
+        end = min(len(tex_lines), error_line + 10)
+        context = "\n".join(tex_lines[start:end])
+        console.print(
+            Syntax(
+                context,
+                "latex",
+                line_numbers=True,
+                start_line=start + 1,
+                highlight_lines={error_line},
+            )
+        )
+    else:
+        console.print("\n[dim]Could not find error line number in log[/]")
+
+
+def show_export_log() -> None:
+    """Show the most recent PDF export LaTeX log and/or source.
+
+    Usage:
+        uv run show-export-log [--tex | --both] [user_id]
+
+    Options:
+        --tex   Show the .tex source file instead of the log
+        --both  Show error context from both log and tex files
+    """
+    from rich.syntax import Syntax
+
+    # Parse arguments
+    args = sys.argv[1:]
+    show_tex = "--tex" in args
+    show_both = "--both" in args
+    positional = [a for a in args if not a.startswith("--")]
+    user_id = positional[0] if positional else None
+
+    export_dir = _find_export_dir(user_id)
+    log_file = export_dir / "annotated_document.log"
+    tex_file = export_dir / "annotated_document.tex"
+
+    # Print file paths for easy access
+    console.print(
+        Panel(
+            f"[bold]Export Directory:[/] {export_dir}\n"
+            f"[bold]TeX Source:[/] {tex_file}\n"
+            f"[bold]LaTeX Log:[/] {log_file}",
+            title="PDF Export Debug Files",
+            border_style="blue",
+        )
+    )
+
+    if show_both:
+        if not tex_file.exists() or not log_file.exists():
+            console.print("[red]Error:[/] Missing .tex or .log file")
+            sys.exit(1)
+        _show_error_context(log_file, tex_file)
+    elif show_tex:
+        if not tex_file.exists():
+            console.print(f"[red]Error:[/] TeX file not found: {tex_file}")
+            sys.exit(1)
+        with console.pager():
+            console.print(Syntax(tex_file.read_text(), "latex", line_numbers=True))
+    else:
+        if not log_file.exists():
+            console.print(f"[red]Error:[/] Log file not found: {log_file}")
+            sys.exit(1)
+        with console.pager():
+            console.print(log_file.read_text())

@@ -10,6 +10,7 @@ Route: /demo/live-annotation
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import random
 import re
@@ -1237,6 +1238,10 @@ async def live_annotation_demo_page(doc: str | None = None) -> None:
             highlights = ann_doc.get_all_highlights()
             general_notes = ann_doc.get_general_notes()
 
+            # Create user_id from email hash for scoped export directory
+            user_email = user.get("email", "") if user else ""
+            export_user_id = hashlib.sha256(user_email.encode()).hexdigest()[:16]
+
             # Generate PDF
             pdf_path = await export_annotation_pdf(
                 html_content=parsed.html,
@@ -1244,6 +1249,7 @@ async def live_annotation_demo_page(doc: str | None = None) -> None:
                 tag_colours=tag_colours,
                 general_notes=general_notes,
                 word_to_legal_para=processed_doc.word_to_legal_para,
+                user_id=export_user_id,
             )
 
             # Serve for download

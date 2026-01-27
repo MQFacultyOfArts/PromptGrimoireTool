@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
+from tests.e2e.helpers import click_tag
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -37,21 +39,12 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
     word_end.click(modifiers=["Shift"])
 
 
-def _click_tag(page: Page, index: int = 0) -> None:
-    """Click a tag button to create a highlight from current selection."""
-    tag_buttons = page.locator(".tag-toolbar-compact button")
-    tag_button = tag_buttons.nth(index)
-    tag_button.scroll_into_view_if_needed()
-    expect(tag_button).to_be_visible(timeout=5000)
-    tag_button.click()
-
-
 def _create_highlight(
     page: Page, start_word: int, end_word: int, tag_index: int = 0
 ) -> None:
     """Select words and apply a tag to create a highlight."""
     _select_words(page, start_word, end_word)
-    _click_tag(page, tag_index)
+    click_tag(page, tag_index)
 
 
 def _get_ann_cards(page: Page) -> tuple[int, Locator]:

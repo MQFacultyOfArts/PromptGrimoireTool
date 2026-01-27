@@ -14,6 +14,8 @@ from uuid import uuid4
 
 from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
+from tests.e2e.helpers import click_tag
+
 # Output directory for test artifacts
 _OUTPUT_DIR = Path("output/e2e/test_pdf_export")
 
@@ -71,21 +73,12 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
     page.wait_for_timeout(200)  # Let selection event fire
 
 
-def _click_tag(page: Page, index: int = 0) -> None:
-    """Click a tag button to create a highlight from current selection."""
-    tag_buttons = page.locator(".tag-toolbar-compact button")
-    tag_button = tag_buttons.nth(index)
-    tag_button.scroll_into_view_if_needed()
-    expect(tag_button).to_be_visible(timeout=5000)
-    tag_button.click()
-
-
 def _create_highlight(
     page: Page, start_word: int, end_word: int, tag_index: int = 0
 ) -> None:
     """Select words and apply a tag to create a highlight."""
     _select_words(page, start_word, end_word)
-    _click_tag(page, tag_index)
+    click_tag(page, tag_index)
 
 
 def _add_comment_to_card(page: Page, card_index: int, comment_text: str) -> None:

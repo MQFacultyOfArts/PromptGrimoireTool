@@ -45,19 +45,18 @@ def main() -> int:
     try:
         input_data = json.load(sys.stdin)
     except json.JSONDecodeError:
-        print(json.dumps({"decision": "approve"}))
+        # No JSON output needed - just exit 0 to allow stop
         return 0
 
     # Prevent infinite loops if Stop hook already fired
     if input_data.get("stop_hook_active"):
-        print(json.dumps({"decision": "approve"}))
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
     files = get_modified_python_files()
 
     if not files:
-        print(json.dumps({"decision": "approve"}))
+        # No modified Python files - nothing to lint
         return 0
 
     errors = []
@@ -110,12 +109,14 @@ def main() -> int:
         errors.append(f"ty check issues:\n{result.stdout}{result.stderr}")
 
     # Report results (never block Stop)
+    # Note: Stop hooks should NOT output JSON unless blocking.
+    # Valid decision values are "block" (with reason) or undefined (allow stop).
+    # There is no "approve" value - just exit 0 with no JSON output.
     if errors:
         error_summary = "\n".join(errors)
         msg = f"Lint issues in {len(files)} file(s):\n{error_summary}"
-        print(json.dumps({"decision": "approve", "reason": msg}))
-    else:
-        print(json.dumps({"decision": "approve"}))
+        # Print to stderr as informational (not blocking)
+        print(msg, file=sys.stderr)
 
     return 0
 

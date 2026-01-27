@@ -9,13 +9,21 @@ Tests the complete export workflow:
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import uuid4
 
 from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
+# Output directory for test artifacts
+_OUTPUT_DIR = Path("output/e2e/test_pdf_export")
+
 
 def _login_as_user(page: Page, app_server: str, user_email: str) -> None:
-    """Login as a specific user."""
+    """Login as a specific user.
+
+    Note: This uses explicit emails for multi-user collaboration tests
+    where Alice and Bob need deterministic emails to share the same document.
+    """
     token = f"mock-token-{user_email}"
     page.goto(f"{app_server}/auth/callback?token={token}")
     page.wait_for_load_state("networkidle", timeout=15000)
@@ -25,33 +33,33 @@ def _login_as_user(page: Page, app_server: str, user_email: str) -> None:
 def _select_words(page: Page, start_word: int, end_word: int) -> None:
     """Select a range of words by dragging from start to end.
 
-    Note: end_word is the last word to include in selection (inclusive).
-    Uses drag selection which is more reliable than shift-click.
+    Uses mouse drag for selection to handle overlapping highlights correctly.
+    Per CLAUDE.md: no JS injection - uses click outside content to clear selection.
     """
     word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
     word_end = page.locator(f'.doc-container [data-w="{end_word}"]')
 
-    # Ensure both words exist and are visible
     word_start.scroll_into_view_if_needed()
     expect(word_start).to_be_visible(timeout=5000)
 
     word_end.scroll_into_view_if_needed()
     expect(word_end).to_be_visible(timeout=5000)
 
-    # Get bounding boxes for drag selection
     start_box = word_start.bounding_box()
     end_box = word_end.bounding_box()
 
     if start_box is None or end_box is None:
-        raise AssertionError(
-            f"Could not get bounding box for words {start_word}-{end_word}"
-        )
+        msg = f"Could not get bounding box for words {start_word}-{end_word}"
+        raise AssertionError(msg)
 
-    # Clear any existing selection before starting a new drag.
-    # This fixes the issue where dragging from already-highlighted text
-    # doesn't create a new selection because the browser thinks you're
-    # trying to drag the existing selection.
-    page.evaluate("() => window.getSelection().removeAllRanges()")
+    # Clear any existing selection by clicking outside the document content.
+    # This is needed because browsers interpret mousedown on highlighted text as
+    # "drag existing selection" rather than starting a new selection.
+    # The tag toolbar is a safe neutral area to click.
+    tag_toolbar = page.locator(".tag-toolbar-compact")
+    if tag_toolbar.count() > 0:
+        tag_toolbar.first.click()
+        page.wait_for_timeout(50)
 
     # Drag from start word to end word to create selection
     page.mouse.move(start_box["x"] + 2, start_box["y"] + start_box["height"] / 2)
@@ -267,23 +275,46 @@ def _alice_writes_general_notes(page: Page) -> None:
     expect(editor).to_contain_text("Lorem ipsum", timeout=5000)
 
 
-def _alice_exports_pdf(page: Page) -> None:
-    """Alice clicks export and verifies PDF generation succeeds.
+def _alice_exports_pdf(page: Page) -> Path | None:
+    """Alice clicks export and captures the downloaded PDF.
 
-    Note: NiceGUI's ui.download() may not trigger a standard browser download
-    event in headless mode, so we verify via the success notification.
+    Attempts to intercept the download and save to output/ for inspection.
+    Falls back to notification-only verification if download interception fails.
+
+    Returns:
+        Path to saved PDF if download was captured, None otherwise.
     """
     export_btn = page.locator("button", has_text="Export PDF")
     export_btn.scroll_into_view_if_needed()
     expect(export_btn).to_be_visible(timeout=5000)
 
-    export_btn.click()
+    # Set up download interception BEFORE clicking
+    pdf_path: Path | None = None
+    try:
+        with page.expect_download(timeout=120000) as download_info:
+            export_btn.click()
+            # Wait for "Generating PDF..." to confirm export started
+            expect(page.locator("text=Generating PDF")).to_be_visible(timeout=5000)
 
-    # Wait for "Generating PDF..." notification
-    expect(page.locator("text=Generating PDF")).to_be_visible(timeout=5000)
+        download = download_info.value
 
-    # Wait for either success or failure notification
-    # Check for error first (quick check)
+        # Save to output directory for inspection
+        _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        pdf_path = _OUTPUT_DIR / "annotated_document.pdf"
+        download.save_as(pdf_path)
+
+        # Verify it's a valid PDF
+        assert pdf_path.exists(), f"PDF not saved to {pdf_path}"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+            assert header == b"%PDF", f"Invalid PDF header: {header!r}"
+
+    except TimeoutError:
+        # NiceGUI's ui.download() may not trigger Playwright download in headless mode
+        # Fall back to notification-based verification
+        pass
+
+    # Always verify via notification (works regardless of download interception)
     page.wait_for_timeout(2000)
     error_locator = page.locator("text=/Export failed/i")
     if error_locator.count() > 0:
@@ -294,6 +325,8 @@ def _alice_exports_pdf(page: Page) -> None:
     expect(page.locator("text=PDF generated successfully")).to_be_visible(
         timeout=120000
     )
+
+    return pdf_path
 
 
 def _setup_user_page(
@@ -353,7 +386,11 @@ class TestPdfExportWorkflow:
             _alice_replies_back(page1)
             _alice_adds_lipsum_comments(page1)
             _alice_writes_general_notes(page1)
-            _alice_exports_pdf(page1)
+            pdf_path = _alice_exports_pdf(page1)
+
+            # Report artifact location if captured
+            if pdf_path and pdf_path.exists():
+                print(f"\nPDF artifact saved to: {pdf_path.absolute()}")
 
         finally:
             context1.close()

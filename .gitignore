@@ -35,3 +35,4 @@ output/
 
 # Editor backup files
 *~
+.serena/

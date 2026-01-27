@@ -17,7 +17,7 @@ from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 from tests.e2e.helpers import click_tag
 
 # Output directory for test artifacts
-_OUTPUT_DIR = Path("output/e2e/test_pdf_export")
+_OUTPUT_DIR = Path("output/test_output")
 
 
 def _login_as_user(page: Page, app_server: str, user_email: str) -> None:
@@ -170,7 +170,7 @@ def _alice_creates_annotations(page: Page) -> int:
     # Annotations Alice will create (Bob does procedural_history separately)
     # Each tuple: start_word, end_word, tag_index, description
     # Selection bounds are INCLUSIVE - backend adds +1 for exclusive CRDT storage
-    # Testing overlapping/adjacent highlights as edge cases per spec
+    # Testing overlapping highlights as edge cases per spec
     annotations = [
         (4346, 4360, 0, "jurisdiction - para 48 court order item"),
         (789, 840, 2, "legally_relevant_facts - grounds section"),
@@ -249,7 +249,7 @@ def _alice_adds_lipsum_comments(page: Page) -> None:
 
 
 def _alice_writes_general_notes(page: Page) -> None:
-    """Alice writes lorem ipsum in the general notes editor."""
+    """Alice writes acceptance criteria in the general notes editor."""
     notes_section = page.locator("text=General Notes")
     notes_section.scroll_into_view_if_needed()
     expect(notes_section).to_be_visible(timeout=5000)
@@ -259,13 +259,35 @@ def _alice_writes_general_notes(page: Page) -> None:
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
-    lorem_text = (
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
-        "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-    )
-    page.keyboard.type(lorem_text)
+    # Write acceptance criteria so reviewer can verify test proves what it claims
+    acceptance_text = """TEST ACCEPTANCE CRITERIA (test_pdf_export.py)
 
-    expect(editor).to_contain_text("Lorem ipsum", timeout=5000)
+This PDF should demonstrate:
+
+1. ALL 10 TAGS present with distinct highlight colors:
+   - Jurisdiction (blue), Procedural History (orange), Legally Relevant Facts,
+   - Legal Issues, Reasons (2 instances), Court's Reasoning, Decision,
+   - Order, Domestic Sources, Reflection
+
+2. OVERLAPPING HIGHLIGHTS work correctly:
+   - Reasons (1575-1640) and Court's Reasoning (1640-1700) share word 1640
+   - Domestic Sources (2422-2480) and Reflection (2480-2526) share word 2480
+   - Order (848-905) overlaps with Reasons (893-905)
+
+3. MULTI-USER COLLABORATION:
+   - Alice's comment "it's excessive" on Jurisdiction
+   - Bob's reply "no it's not"
+   - Alice's counter "yes it is"
+
+4. MULTI-PARAGRAPH COMMENTS on Court's Reasoning card (3 lipsum paragraphs)
+
+5. MARGIN ANNOTATIONS visible with author names and timestamps
+
+If any of the above is missing or broken, the test has not proven what it claims."""
+
+    page.keyboard.type(acceptance_text)
+
+    expect(editor).to_contain_text("TEST ACCEPTANCE CRITERIA", timeout=5000)
 
 
 def _alice_exports_pdf(page: Page) -> Path | None:

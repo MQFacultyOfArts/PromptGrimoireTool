@@ -530,6 +530,134 @@ class TestMultipleHighlights:
         expect(cards).to_have_count(1, timeout=5000)
 
 
+def _select_words_drag(page: Page, start_word: int, end_word: int) -> None:
+    """Select words using mouse drag (handles overlapping highlights).
+
+    Unlike click+shift-click, this approach clears existing selection first
+    and uses drag to avoid browser 'drag existing selection' behavior.
+    """
+    word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
+    word_end = page.locator(f'.doc-container [data-w="{end_word}"]')
+
+    word_start.scroll_into_view_if_needed()
+    expect(word_start).to_be_visible(timeout=5000)
+
+    word_end.scroll_into_view_if_needed()
+    expect(word_end).to_be_visible(timeout=5000)
+
+    start_box = word_start.bounding_box()
+    end_box = word_end.bounding_box()
+
+    if start_box is None or end_box is None:
+        msg = f"Could not get bounding box for words {start_word}-{end_word}"
+        raise AssertionError(msg)
+
+    # Clear any existing selection by clicking outside document content
+    tag_toolbar = page.locator(".tag-toolbar-compact")
+    if tag_toolbar.count() > 0:
+        tag_toolbar.first.click()
+        page.wait_for_timeout(50)
+
+    # Drag from start word to end word
+    page.mouse.move(start_box["x"] + 2, start_box["y"] + start_box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(
+        end_box["x"] + end_box["width"] - 2, end_box["y"] + end_box["height"] / 2
+    )
+    page.mouse.up()
+    page.wait_for_timeout(200)
+
+
+def _create_highlight_drag(
+    page: Page, start_word: int, end_word: int, tag_index: int = 0
+) -> None:
+    """Create highlight using drag selection."""
+    _select_words_drag(page, start_word, end_word)
+    click_tag(page, tag_index)
+
+
+class TestOverlappingHighlights:
+    """Test creating highlights that overlap with existing highlights.
+
+    Regression tests for GitHub issue #78: Selection fails when starting
+    on already-highlighted word.
+    """
+
+    def test_can_select_starting_on_highlighted_word(self, clean_page: Page) -> None:
+        """Selection starting on an already-highlighted word succeeds.
+
+        Regression test for #78: When a word is already highlighted,
+        starting a new selection on that word should work normally.
+        Uses drag selection which handles overlapping highlights.
+        """
+        page = clean_page
+
+        initial_count, ann_cards = _get_ann_cards(page)
+
+        # Create first highlight on words 100-120 (wide range)
+        _create_highlight_drag(page, 100, 120, tag_index=0)
+        expect(ann_cards).to_have_count(initial_count + 1, timeout=5000)
+
+        # Create second highlight starting on word 110 (clearly in the middle of first)
+        # This is the exact scenario that failed in #78
+        _create_highlight_drag(page, 110, 130, tag_index=1)
+        expect(ann_cards).to_have_count(initial_count + 2, timeout=5000)
+
+    def test_can_create_fully_overlapping_highlights(self, clean_page: Page) -> None:
+        """Can create a highlight that fully overlaps an existing one.
+
+        Both highlights should exist - the CRDT supports multiple highlights
+        on the same text.
+        """
+        page = clean_page
+
+        initial_count, ann_cards = _get_ann_cards(page)
+
+        # Create first highlight on words 200-210
+        _create_highlight_drag(page, 200, 210, tag_index=0)
+        expect(ann_cards).to_have_count(initial_count + 1, timeout=5000)
+
+        # Create second highlight on the same words with different tag
+        _create_highlight_drag(page, 200, 210, tag_index=1)
+        expect(ann_cards).to_have_count(initial_count + 2, timeout=5000)
+
+    def test_can_select_ending_on_highlighted_word(self, clean_page: Page) -> None:
+        """Selection ending on an already-highlighted word succeeds."""
+        page = clean_page
+
+        initial_count, ann_cards = _get_ann_cards(page)
+
+        # Create first highlight on words 300-310
+        _create_highlight_drag(page, 300, 310, tag_index=0)
+        expect(ann_cards).to_have_count(initial_count + 1, timeout=5000)
+
+        # Create second highlight ending on word 300 (already highlighted)
+        _create_highlight_drag(page, 290, 300, tag_index=1)
+        expect(ann_cards).to_have_count(initial_count + 2, timeout=5000)
+
+    def test_can_select_starting_at_highlight_boundary(self, clean_page: Page) -> None:
+        """Selection starting at exact end of previous highlight succeeds.
+
+        This is the specific boundary case that fails in #78:
+        - Highlight 1: words 400-410
+        - Highlight 2: words 410-420 (starts at 410, last word of highlight 1)
+
+        Word 410 is highlighted by both, making them overlap at that word.
+        """
+        page = clean_page
+
+        initial_count, ann_cards = _get_ann_cards(page)
+
+        # Create first highlight on words 400-410
+        _create_highlight_drag(page, 400, 410, tag_index=0)
+        expect(ann_cards).to_have_count(initial_count + 1, timeout=5000)
+
+        # Create second highlight starting at word 410 (the boundary)
+        # This is the exact scenario that fails in #78
+        _create_highlight_drag(page, 410, 420, tag_index=1)
+        expect(ann_cards).to_have_count(initial_count + 2, timeout=5000)
+
+
 class TestMultiUserCollaboration:
     """Test real-time collaboration between multiple users.
 

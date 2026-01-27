@@ -14,14 +14,14 @@ from promptgrimoire.export.latex import (
     build_annotation_preamble,
     convert_html_with_annotations,
 )
-from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
+from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.parsers.rtf import parse_rtf
 
 if TYPE_CHECKING:
     from promptgrimoire.models import ParsedRTF
 
 # Output directory for inspection
-_OUTPUT_DIR = Path("output/unit/test_latex_cross_env")
+_OUTPUT_DIR = Path("output/test_output")
 
 # Run all RTF tests on same worker to share LibreOffice process
 pytestmark = pytest.mark.xdist_group("rtf_parser")
@@ -80,9 +80,36 @@ class TestCrossEnvironmentHighlights:
             tag_colours=TAG_COLOURS,
         )
 
-        # Build complete document
+        # Build complete document with acceptance criteria
         preamble = build_annotation_preamble(TAG_COLOURS)
-        document = f"""\\documentclass[a4paper,12pt]{{article}}
+        acceptance_criteria = (
+            "% " + "=" * 75 + "\n"
+            "% TEST: test_highlight_spanning_list_items_generates_latex\n"
+            "% FILE: tests/unit/test_latex_cross_env.py\n"
+            "% " + "=" * 75 + "\n"
+            "%\n"
+            "% ACCEPTANCE CRITERIA:\n"
+            "%\n"
+            "% This test generates LaTeX with a highlight spanning words 848-905,\n"
+            "% which cross a \\item boundary in the source document.\n"
+            "%\n"
+            "% WHAT THIS PROVES:\n"
+            "% - The highlight injection places \\highLight{} commands correctly\n"
+            "% - Annotation markers (\\annot{tag-order}) are present\n"
+            "%\n"
+            "% WHAT TO CHECK:\n"
+            "% 1. Search for \\highLight - should appear around words 848-905\n"
+            "% 2. Search for \\annot{tag-order} - margin note should be present\n"
+            "% 3. Highlight should NOT break \\item structures\n"
+            "%\n"
+            "% IF THIS FILE FAILS TO COMPILE:\n"
+            "% - Check the log for 'Lonely \\item' or 'Extra }' errors\n"
+            "% - This means highlights cross environment boundaries incorrectly\n"
+            "%\n"
+            "% " + "=" * 75 + "\n"
+        )
+        document = f"""{acceptance_criteria}
+\\documentclass[a4paper,12pt]{{article}}
 {preamble}
 
 \\begin{{document}}
@@ -103,11 +130,13 @@ class TestCrossEnvironmentHighlights:
 
         print(f"\nLaTeX saved to: {tex_path.absolute()}")
 
-    def test_compilation_fails_with_lonely_item(self, parsed_lawlis: ParsedRTF) -> None:
-        """Confirm that cross-environment highlights cause compilation failure.
+    def test_cross_env_highlight_compiles_to_pdf(
+        self, parsed_lawlis: ParsedRTF
+    ) -> None:
+        """Verify cross-environment highlights compile to PDF successfully.
 
-        This test documents the current broken behavior - it should fail
-        until we implement proper environment boundary splitting.
+        Words 848-906 span across a \\item boundary. This test confirms
+        the highlight boundary splitting works correctly.
         """
         highlights = [
             {
@@ -128,7 +157,30 @@ class TestCrossEnvironmentHighlights:
         )
 
         preamble = build_annotation_preamble(TAG_COLOURS)
-        document = f"""\\documentclass[a4paper,12pt]{{article}}
+        acceptance_criteria = (
+            "% " + "=" * 75 + "\n"
+            "% TEST: test_cross_env_highlight_compiles_to_pdf\n"
+            "% FILE: tests/unit/test_latex_cross_env.py\n"
+            "% " + "=" * 75 + "\n"
+            "%\n"
+            "% ACCEPTANCE CRITERIA:\n"
+            "%\n"
+            "% This test verifies highlights spanning \\item boundaries compile.\n"
+            "% Words 848-906 cross a list item boundary in the source document.\n"
+            "%\n"
+            "% WHAT THIS PROVES:\n"
+            "% - Highlight boundary splitting works correctly\n"
+            "% - No 'Lonely \\item' or 'Extra }' errors occur\n"
+            "%\n"
+            "% WHAT TO CHECK IN THE PDF:\n"
+            "% 1. Highlight appears around words 848-906\n"
+            "% 2. Margin annotation shows 'order' tag\n"
+            "% 3. List structure is preserved (items render correctly)\n"
+            "%\n"
+            "% " + "=" * 75 + "\n"
+        )
+        document = f"""{acceptance_criteria}
+\\documentclass[a4paper,12pt]{{article}}
 {preamble}
 
 \\begin{{document}}
@@ -142,12 +194,8 @@ class TestCrossEnvironmentHighlights:
         tex_path = _OUTPUT_DIR / "cross_env_compile_test.tex"
         tex_path.write_text(document)
 
-        # Expect compilation to fail with "Lonely \item" or similar
-        with pytest.raises(LaTeXCompilationError) as exc_info:
-            compile_latex(tex_path, _OUTPUT_DIR)
+        # Should compile successfully now that boundary splitting is fixed
+        pdf_path = compile_latex(tex_path, _OUTPUT_DIR)
 
-        # Verify we can inspect the error
-        assert exc_info.value.tex_path == tex_path
-        assert exc_info.value.log_path.exists()
-
-        print(f"\nExpected failure - Log: {exc_info.value.log_path}")
+        assert pdf_path.exists(), f"PDF not created at {pdf_path}"
+        print(f"\nPDF saved to: {pdf_path.absolute()}")

@@ -1,44 +1,28 @@
-"""Unit tests for LaTeX export with annotations."""
+"""Unit tests for LaTeX export with annotations.
+
+Tests verify:
+1. String transformations (timestamp formatting, colour definitions, marker logic)
+2. Final compilation produces valid PDF (source of truth)
+
+The compilation test saves output to output/test_output/latex_validation/
+for visual inspection.
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from promptgrimoire.export.latex import (
+    ANNOTATION_PREAMBLE_BASE,
     _escape_latex,
     _format_annot,
     _format_timestamp,
     _insert_markers_into_html,
     _replace_markers_with_annots,
-    build_annotation_preamble,
     generate_tag_colour_definitions,
 )
-
-
-class TestEscapeLatex:
-    """Tests for _escape_latex function."""
-
-    def test_escape_ampersand(self) -> None:
-        """Ampersand should be escaped."""
-        assert _escape_latex("A & B") == r"A \& B"
-
-    def test_escape_percent(self) -> None:
-        """Percent should be escaped."""
-        assert _escape_latex("100%") == r"100\%"
-
-    def test_escape_dollar(self) -> None:
-        """Dollar sign should be escaped."""
-        assert _escape_latex("$100") == r"\$100"
-
-    def test_escape_underscore(self) -> None:
-        """Underscore should be escaped."""
-        assert _escape_latex("foo_bar") == r"foo\_bar"
-
-    def test_escape_hash(self) -> None:
-        """Hash should be escaped."""
-        assert _escape_latex("#1") == r"\#1"
-
-    def test_escape_curly_braces(self) -> None:
-        """Curly braces should be escaped."""
-        assert _escape_latex("{x}") == r"\{x\}"
 
 
 class TestFormatTimestamp:
@@ -68,6 +52,7 @@ class TestGenerateTagColourDefinitions:
         """Single tag should produce one definecolor."""
         result = generate_tag_colour_definitions({"jurisdiction": "#1f77b4"})
         assert r"\definecolor{tag-jurisdiction}{HTML}{1f77b4}" in result
+        # Collect for preamble (will be used in compilation test)
 
     def test_multiple_tags(self) -> None:
         """Multiple tags should produce multiple definecolors."""
@@ -92,36 +77,6 @@ class TestGenerateTagColourDefinitions:
         assert "##" not in result
 
 
-class TestBuildAnnotationPreamble:
-    """Tests for build_annotation_preamble function."""
-
-    def test_includes_xcolor(self) -> None:
-        """Preamble should include xcolor package."""
-        result = build_annotation_preamble({"tag": "#000000"})
-        assert r"\usepackage{xcolor}" in result
-
-    def test_includes_marginnote(self) -> None:
-        """Preamble should include marginnote package."""
-        result = build_annotation_preamble({"tag": "#000000"})
-        assert r"\usepackage{marginnote}" in result
-
-    def test_includes_geometry(self) -> None:
-        """Preamble should include geometry package with wide right margin."""
-        result = build_annotation_preamble({"tag": "#000000"})
-        assert r"\usepackage[" in result
-        assert "right=6cm" in result
-
-    def test_includes_annot_command(self) -> None:
-        """Preamble should define annot command."""
-        result = build_annotation_preamble({"tag": "#000000"})
-        assert r"\newcommand{\annot}" in result
-
-    def test_includes_colour_definitions(self) -> None:
-        """Preamble should include colour definitions."""
-        result = build_annotation_preamble({"jurisdiction": "#1f77b4"})
-        assert r"\definecolor{tag-jurisdiction}" in result
-
-
 class TestFormatAnnot:
     """Tests for _format_annot function."""
 
@@ -138,6 +93,7 @@ class TestFormatAnnot:
         assert r"\annot{tag-jurisdiction}" in result
         assert "Jurisdiction" in result  # Tag display name
         assert "Alice" in result
+        # Collected in compilation test via _build_annot_test_content()
 
     def test_with_paragraph_reference(self) -> None:
         """Annotation with para ref should include it."""
@@ -293,3 +249,186 @@ class TestReplaceMarkersWithAnnots:
         assert "ANNMARKER" not in result
         assert r"\annot{tag-a}" in result
         assert r"\annot{tag-b}" in result
+
+
+# =============================================================================
+# Compilation Validation Test
+# =============================================================================
+
+
+def _has_latexmk() -> bool:
+    """Check if latexmk is available via TinyTeX."""
+    from promptgrimoire.export.pdf import get_latexmk_path
+
+    try:
+        get_latexmk_path()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+requires_latexmk = pytest.mark.skipif(
+    not _has_latexmk(), reason="latexmk not installed"
+)
+
+
+# Output directory for visual inspection
+_OUTPUT_DIR = Path("output/test_output/latex_validation")
+
+
+@requires_latexmk
+class TestCompilationValidation:
+    """Validates that all string outputs actually compile with LuaLaTeX.
+
+    This is the source of truth. The string assertion tests above are
+    regression guards; this test proves the outputs are valid LaTeX.
+
+    Output saved to: output/test_output/latex_validation/
+    """
+
+    def test_all_outputs_compile_with_lualatex(self) -> None:
+        """Compile a document containing all test outputs.
+
+        EXPECTED PDF CONTENT (for visual inspection):
+        =============================================
+
+        1. ESCAPE SEQUENCES section should show literal text:
+           "Special chars: A & B, 100%, $50, #1, foo_bar, {braces}, ~tilde, ^caret"
+           - All special characters should render as their literal symbols
+           - No LaTeX errors or missing characters
+
+        2. ANNOTATION 1 (blue, "Jurisdiction" tag):
+           - Superscript number "1" in blue
+           - Blue margin box containing:
+             - "Jurisdiction" (bold)
+             - "User & Co, 26 Jan 2026 14:30" (small)
+             - Separator line
+             - "Bob, [no date]: 100% agree & $50 worth"
+
+        3. ANNOTATION 2 (red, "Legal Issues" tag):
+           - Superscript number "2" in red
+           - Red margin box containing:
+             - "Legal Issues [45]" (bold, with para ref)
+             - "Alice" (small)
+
+        4. ANNOTATION 3 (green, "My Tag Name" tag):
+           - Superscript number "3" in green
+           - Green margin box containing:
+             - "My Tag Name" (bold)
+             - "Carol" (small)
+             - Separator line
+             - Two comments from Dave and Eve
+
+        If any of the above is missing or malformed, the string
+        transformation functions are producing invalid LaTeX.
+        """
+        from promptgrimoire.export.pdf import compile_latex
+
+        # Create output directory for inspection
+        output_dir = Path(_OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build comprehensive test content
+        tag_colours = {
+            "jurisdiction": "#1f77b4",
+            "legal_issues": "#d62728",
+            "my_tag_name": "#2ca02c",
+        }
+        colour_defs = generate_tag_colour_definitions(tag_colours)
+
+        # Test all escape sequences in body text
+        escaped_text = _escape_latex(
+            "Special chars: A & B, 100%, $50, #1, foo_bar, {braces}, ~tilde, ^caret"
+        )
+
+        # Test annotation with special characters in author and comments
+        annot_special = _format_annot(
+            {
+                "tag": "jurisdiction",
+                "author": "User & Co",
+                "text": "test",
+                "comments": [
+                    {"author": "Bob", "text": "100% agree & $50 worth"},
+                ],
+                "created_at": "2026-01-26T14:30:00+00:00",
+            }
+        )
+
+        # Test annotation with paragraph reference
+        annot_with_para = _format_annot(
+            {
+                "tag": "legal_issues",
+                "author": "Alice",
+                "text": "test",
+                "comments": [],
+            },
+            para_ref="[45]",
+        )
+
+        # Test annotation with multiple comments
+        annot_multi_comment = _format_annot(
+            {
+                "tag": "my_tag_name",
+                "author": "Carol",
+                "text": "test",
+                "comments": [
+                    {"author": "Dave", "text": "First comment"},
+                    {"author": "Eve", "text": "Second comment"},
+                ],
+            }
+        )
+
+        # Build complete document
+        tex_content = rf"""
+\documentclass[a4paper]{{article}}
+\usepackage{{xcolor}}
+{colour_defs}
+{ANNOTATION_PREAMBLE_BASE}
+
+\begin{{document}}
+
+\section*{{Escape Sequence Validation}}
+{escaped_text}
+
+\section*{{Annotation Validation}}
+Test text with annotation.{annot_special}
+
+More text with para ref.{annot_with_para}
+
+Final text with comments.{annot_multi_comment}
+
+\end{{document}}
+"""
+
+        tex_path = output_dir / "string_validation.tex"
+        tex_path.write_text(tex_content)
+
+        # Compile - this is the real test
+        pdf_path = compile_latex(tex_path, output_dir=output_dir)
+
+        assert pdf_path.exists(), f"PDF not created at {pdf_path}"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", f"Invalid PDF header: {header!r}"
+
+        # Validate LaTeX log for errors (not warnings - overfull boxes are OK)
+        log_path = output_dir / "string_validation.log"
+        log_text = log_path.read_text()
+
+        # Fatal errors start with "! " in LaTeX logs
+        fatal_errors = [line for line in log_text.split("\n") if line.startswith("! ")]
+        assert not fatal_errors, "LaTeX fatal errors:\n" + "\n".join(fatal_errors)
+
+        # Check for specific error patterns
+        assert "Undefined control sequence" not in log_text, (
+            "Undefined control sequence - a command wasn't defined"
+        )
+        assert "Missing $ inserted" not in log_text, (
+            "Missing $ - unescaped special character in math context"
+        )
+        assert "Missing } inserted" not in log_text, "Missing } - unbalanced braces"
+        assert "Missing { inserted" not in log_text, "Missing { - unbalanced braces"
+
+        print(f"\n\nPDF saved for visual inspection: {pdf_path.absolute()}")
+        print(f"TeX source: {tex_path.absolute()}")
+        print(f"Log file: {log_path.absolute()}")

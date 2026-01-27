@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import socket
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,6 +24,114 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
+
+
+# =============================================================================
+# PDF Export Test Fixtures
+# =============================================================================
+
+# Standard tag colours used across the application
+TAG_COLOURS: dict[str, str] = {
+    "jurisdiction": "#1f77b4",
+    "procedural_history": "#ff7f0e",
+    "legally_relevant_facts": "#2ca02c",
+    "legal_issues": "#d62728",
+    "reasons": "#9467bd",
+    "courts_reasoning": "#8c564b",
+    "decision": "#e377c2",
+    "order": "#7f7f7f",
+    "domestic_sources": "#bcbd22",
+    "reflection": "#17becf",
+}
+
+# Shared output directory for test artifacts (gitignored)
+PDF_TEST_OUTPUT_DIR = Path("output/test_output")
+
+
+@dataclass
+class PdfExportResult:
+    """Result from PDF export containing paths for inspection."""
+
+    pdf_path: Path
+    tex_path: Path
+    output_dir: Path
+
+
+@pytest.fixture
+def pdf_exporter() -> Callable[..., PdfExportResult]:
+    """Factory fixture for exporting PDFs using the production pipeline.
+
+    Uses export_annotation_pdf which goes through the full workflow:
+    - HTML normalisation
+    - Pandoc with libreoffice.lua filter
+    - Full preamble with proper settings
+    - LuaLaTeX compilation via latexmk
+
+    Usage:
+        def test_something(pdf_exporter, parsed_rtf):
+            result = pdf_exporter(
+                html=parsed_rtf.html,
+                highlights=[...],
+                test_name="my_test",
+            )
+            assert result.pdf_path.exists()
+    """
+    from promptgrimoire.export.pdf_export import export_annotation_pdf
+
+    def _export(
+        html: str,
+        highlights: list[dict[str, Any]],
+        test_name: str,
+        general_notes: str = "",
+        acceptance_criteria: str = "",
+    ) -> PdfExportResult:
+        """Export PDF using production pipeline.
+
+        Args:
+            html: HTML content to convert.
+            highlights: List of highlight dicts.
+            test_name: Name for output files (e.g., "cross_env_test").
+            general_notes: Optional HTML content for general notes section.
+            acceptance_criteria: Optional text prepended to general notes
+                describing what the test validates.
+
+        Returns:
+            PdfExportResult with paths to generated files.
+        """
+        # Combine acceptance criteria with general notes
+        if acceptance_criteria:
+            notes_content = (
+                f"<p><b>TEST ACCEPTANCE CRITERIA</b></p><p>{acceptance_criteria}</p>"
+            )
+            if general_notes:
+                notes_content += general_notes
+        else:
+            notes_content = general_notes
+
+        # Create output directory
+        output_dir = PDF_TEST_OUTPUT_DIR / test_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Run the async export in a new event loop
+        pdf_path = asyncio.run(
+            export_annotation_pdf(
+                html_content=html,
+                highlights=highlights,
+                tag_colours=TAG_COLOURS,
+                general_notes=notes_content,
+                output_dir=output_dir,
+            )
+        )
+
+        tex_path = output_dir / "annotated_document.tex"
+
+        return PdfExportResult(
+            pdf_path=pdf_path,
+            tex_path=tex_path,
+            output_dir=output_dir,
+        )
+
+    return _export
 
 
 TEST_STORAGE_SECRET = "test-secret-for-e2e"

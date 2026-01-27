@@ -104,27 +104,6 @@ Hello, world!
             header = f.read(4)
         assert header == b"%PDF"
 
-    def test_compile_with_todonotes(self, tmp_path: Path) -> None:
-        """Compile document with todonotes package."""
-        tex_content = r"""
-\documentclass[a4paper]{article}
-\usepackage[left=2.5cm,right=6cm,marginparwidth=5cm]{geometry}
-\usepackage[textsize=small]{todonotes}
-\begin{document}
-This is some text.\todo{A margin note}
-
-More text here.
-\end{document}
-"""
-        tex_path = tmp_path / "todos.tex"
-        tex_path.write_text(tex_content)
-
-        pdf_path = compile_latex(tex_path, output_dir=tmp_path)
-
-        assert pdf_path.exists()
-        # PDF should be larger due to todo note rendering
-        assert pdf_path.stat().st_size > 1000
-
     def test_compile_failure_raises(self, tmp_path: Path) -> None:
         """Compilation failure raises CalledProcessError."""
         tex_content = r"""

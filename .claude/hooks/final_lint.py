@@ -45,16 +45,19 @@ def main() -> int:
     try:
         input_data = json.load(sys.stdin)
     except json.JSONDecodeError:
+        print(json.dumps({"decision": "approve"}))
         return 0
 
     # Prevent infinite loops if Stop hook already fired
     if input_data.get("stop_hook_active"):
+        print(json.dumps({"decision": "approve"}))
         return 0
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
     files = get_modified_python_files()
 
     if not files:
+        print(json.dumps({"decision": "approve"}))
         return 0
 
     errors = []

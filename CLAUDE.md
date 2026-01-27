@@ -91,7 +91,7 @@ Commits will be rejected if checks fail.
 uv sync
 
 # Run tests
-uv run pytest 
+uv run pytest
 
 # Run linting
 uv run ruff check .
@@ -135,6 +135,36 @@ logs/sessions/        # JSONL session logs (auto-created)
 The `cache-docs` skill automatically saves fetched documentation to `docs/`. Every non-stdlib import should have reference docs cached. Check `docs/_index.md` for available documentation.
 
 Prefer to read cached docs over online searches. If you need to run an online search, don't forget to use the skill to write your results back to the docs.
+
+## PDF Export / LaTeX
+
+PDF export uses TinyTeX for portable, consistent LaTeX compilation.
+
+### Setup
+
+```bash
+# Install TinyTeX and required packages
+uv run python scripts/setup_latex.py
+```
+
+This installs TinyTeX to `~/.TinyTeX` and the required packages:
+- `lua-ul` - highlighting with LuaLaTeX
+- `fontspec` - system font support
+- `luacolor` - color support
+- `todonotes` - margin notes
+- `geometry` - page layout
+- `marginnote` - margin annotations
+- `latexmk` - build automation
+
+### Configuration
+
+The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave empty to use TinyTeX.
+
+### Architecture
+
+- `src/promptgrimoire/export/pdf.py` - `get_latexmk_path()` resolves latexmk location
+- `scripts/setup_latex.py` - installs TinyTeX and packages
+- Does NOT fall back to system PATH - TinyTeX only for consistency
 
 ## Database
 

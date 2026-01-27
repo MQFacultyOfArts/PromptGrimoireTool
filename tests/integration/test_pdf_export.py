@@ -26,16 +26,14 @@ def _has_pandoc() -> bool:
 
 
 def _has_latexmk() -> bool:
-    """Check if latexmk is available (including TinyTeX path)."""
-    from pathlib import Path
+    """Check if latexmk is available via TinyTeX."""
+    from promptgrimoire.export.pdf import get_latexmk_path
 
-    # Check standard PATH
-    if shutil.which("latexmk") is not None:
+    try:
+        get_latexmk_path()
         return True
-
-    # Check TinyTeX installation
-    tinytex_path = Path.home() / ".TinyTeX" / "bin" / "x86_64-linux" / "latexmk"
-    return tinytex_path.exists()
+    except FileNotFoundError:
+        return False
 
 
 requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not installed")

@@ -5,8 +5,48 @@ Uses LuaLaTeX for better font support (fontspec) and highlighting (lua-ul).
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+# TinyTeX installation paths
+TINYTEX_DIR = Path.home() / ".TinyTeX"
+TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
+TINYTEX_LATEXMK = TINYTEX_BIN / "latexmk"
+
+
+def get_latexmk_path() -> str:
+    """Resolve path to latexmk executable.
+
+    Resolution order:
+    1. LATEXMK_PATH env var (explicit override)
+    2. TinyTeX installation (~/.TinyTeX/bin/x86_64-linux/latexmk)
+
+    Does NOT fall back to system PATH - use TinyTeX only for consistency.
+
+    Returns:
+        Path to latexmk executable.
+
+    Raises:
+        FileNotFoundError: If latexmk cannot be found.
+    """
+    # Check env var override first
+    env_path = os.environ.get("LATEXMK_PATH")
+    if env_path:
+        path = Path(env_path)
+        if path.exists():
+            return str(path)
+        msg = f"LATEXMK_PATH set to '{env_path}' but file does not exist"
+        raise FileNotFoundError(msg)
+
+    # Check TinyTeX installation
+    if TINYTEX_LATEXMK.exists():
+        return str(TINYTEX_LATEXMK)
+
+    msg = (
+        "latexmk not found. Install TinyTeX with: uv run python scripts/setup_latex.py"
+    )
+    raise FileNotFoundError(msg)
 
 
 def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
@@ -26,12 +66,15 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
 
     Raises:
         subprocess.CalledProcessError: If compilation fails.
+        FileNotFoundError: If latexmk cannot be found.
     """
     tex_path = Path(tex_path)
     output_dir = tex_path.parent if output_dir is None else Path(output_dir)
 
+    latexmk = get_latexmk_path()
+
     cmd = [
-        "latexmk",
+        latexmk,
         "-lualatex",  # Use LuaLaTeX engine
         "-interaction=nonstopmode",
         "-halt-on-error",

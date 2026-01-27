@@ -33,15 +33,19 @@ window.LiveAnnotation = (function() {
         }
 
         // Find all word spans that intersect with a range
+        // Uses range.intersectsNode() which is more robust than selection.containsNode()
+        // when selecting text that starts/ends on already-highlighted spans
         function getWordRangeFromSelection(selection) {
             if (!selection.rangeCount) return null;
 
+            const range = selection.getRangeAt(0);
             const allWordSpans = container.querySelectorAll('[data-w]');
             let minWord = Infinity;
             let maxWord = -Infinity;
 
             for (const span of allWordSpans) {
-                if (selection.containsNode(span, true)) {
+                // intersectsNode is more reliable than containsNode for styled elements
+                if (range.intersectsNode(span)) {
                     const wordIdx = parseInt(span.dataset.w);
                     minWord = Math.min(minWord, wordIdx);
                     maxWord = Math.max(maxWord, wordIdx);
@@ -49,6 +53,7 @@ window.LiveAnnotation = (function() {
             }
 
             if (minWord === Infinity || maxWord === -Infinity) {
+                // Fallback: use anchor/focus nodes directly
                 const anchorSpan = findWordSpan(selection.anchorNode);
                 const focusSpan = findWordSpan(selection.focusNode);
                 if (anchorSpan && focusSpan) {
@@ -62,12 +67,15 @@ window.LiveAnnotation = (function() {
             return { start: minWord, end: maxWord };
         }
 
-        document.addEventListener('selectionchange', () => {
+        // Shared function to process current selection
+        function processSelection(source) {
             if (!_emitEvent) return;
 
             const selection = window.getSelection();
             if (!selection || selection.isCollapsed) {
-                _emitEvent('selection_cleared', {});
+                if (source === 'selectionchange') {
+                    _emitEvent('selection_cleared', {});
+                }
                 return;
             }
 
@@ -88,6 +96,16 @@ window.LiveAnnotation = (function() {
                     clientY: rect.bottom
                 });
             }
+        }
+
+        // Use both selectionchange and mouseup to catch all selection events
+        // selectionchange sometimes doesn't fire when drag-selecting from highlighted text
+        document.addEventListener('selectionchange', () => processSelection('selectionchange'));
+
+        // mouseup on container catches selections that selectionchange misses
+        container.addEventListener('mouseup', () => {
+            // Small delay to let selection finalize
+            setTimeout(() => processSelection('mouseup'), 10);
         });
 
         let lastCursorWord = null;
@@ -134,21 +152,12 @@ window.LiveAnnotation = (function() {
             const cards = Array.from(annContainer.querySelectorAll('[data-start-word]'));
             if (cards.length === 0) return;
 
-            // DEBUG: Log coordinate system info
-            const scrollY = window.scrollY;
             const docRect = docContainer.getBoundingClientRect();
             const annRect = annContainer.getBoundingClientRect();
-
-            console.log('=== positionCards DEBUG ===');
-            console.log(`scrollY: ${scrollY}`);
-            console.log(`docContainer: top=${docRect.top.toFixed(0)} (viewport), offsetTop=${docContainer.offsetTop}`);
-            console.log(`annContainer: top=${annRect.top.toFixed(0)} (viewport), offsetTop=${annContainer.offsetTop}`);
-            console.log(`annContainer.offsetParent:`, annContainer.offsetParent);
 
             // Offset between doc container top and annotation container top
             // (they should be aligned, but may differ due to padding/margins)
             const containerOffset = annRect.top - docRect.top;
-            console.log(`containerOffset (ann.top - doc.top): ${containerOffset.toFixed(0)}`);
 
             // Build card info
             const cardInfos = cards.map(card => {
@@ -158,19 +167,9 @@ window.LiveAnnotation = (function() {
 
                 const wordRect = wordSpan.getBoundingClientRect();
 
-                // Calculate offset from doc container top using offsetTop chain
-                let offsetFromDoc = 0;
-                let el = wordSpan;
-                while (el && el !== docContainer && docContainer.contains(el)) {
-                    offsetFromDoc += el.offsetTop;
-                    el = el.offsetParent;
-                }
-
                 // Target Y: word position relative to doc container, adjusted for annotation container offset
                 // This gives us where the word is relative to the annotation container's coordinate system
                 const targetY = (wordRect.top - docRect.top) - containerOffset;
-
-                console.log(`  Word ${startWord}: getBoundingClientRect().top=${wordRect.top.toFixed(0)}, offsetFromDoc=${offsetFromDoc}, targetY=${targetY.toFixed(0)}`);
 
                 return {
                     card,

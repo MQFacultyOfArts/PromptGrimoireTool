@@ -23,9 +23,9 @@ def _login_as_user(page: Page, app_server: str, user_email: str) -> None:
 
 
 def _select_words(page: Page, start_word: int, end_word: int) -> None:
-    """Select a range of words by clicking start and shift-clicking end.
+    """Select a range of words by dragging from start to end.
 
-    Note: end_word is the last word to include in selection (inclusive for clicking).
+    Note: end_word is the last word to include in selection (inclusive).
     Uses drag selection which is more reliable than shift-click.
     """
     word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
@@ -47,9 +47,11 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
             f"Could not get bounding box for words {start_word}-{end_word}"
         )
 
-    # Check if start word has highlight styling (for debugging)
-    start_bg = word_start.evaluate("el => getComputedStyle(el).backgroundColor")
-    print(f"DEBUG: Selecting {start_word}-{end_word}, start word bg: {start_bg}")
+    # Clear any existing selection before starting a new drag.
+    # This fixes the issue where dragging from already-highlighted text
+    # doesn't create a new selection because the browser thinks you're
+    # trying to drag the existing selection.
+    page.evaluate("() => window.getSelection().removeAllRanges()")
 
     # Drag from start word to end word to create selection
     page.mouse.move(start_box["x"] + 2, start_box["y"] + start_box["height"] / 2)
@@ -59,10 +61,6 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
     )
     page.mouse.up()
     page.wait_for_timeout(200)  # Let selection event fire
-
-    # Check what the browser selection contains
-    selection_text = page.evaluate("() => window.getSelection().toString()")
-    print(f"DEBUG: Browser selection text length: {len(selection_text)}")
 
 
 def _click_tag(page: Page, index: int = 0) -> None:

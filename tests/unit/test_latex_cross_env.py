@@ -57,13 +57,13 @@ class TestCrossEnvironmentHighlights:
         ]
 
         acceptance_criteria = """
-This test verifies highlights spanning \\item boundaries compile correctly.
+This test verifies highlights spanning list item boundaries compile correctly.
 
 Words 848-906 cross a list item boundary in the source document.
 
 WHAT THIS PROVES:
 - Highlight boundary splitting works correctly
-- No 'Lonely \\item' or 'Extra }' errors occur
+- No 'Lonely item' or 'Extra brace' errors occur
 - Production pipeline (libreoffice.lua filter, full preamble) is used
 
 WHAT TO CHECK IN THE PDF:

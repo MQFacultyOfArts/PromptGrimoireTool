@@ -7,13 +7,12 @@ Tests are skipped if dependencies are not available.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
 
 from promptgrimoire.export.latex import convert_html_to_latex
-from promptgrimoire.export.pdf import compile_latex
+from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 
 if TYPE_CHECKING:
@@ -105,7 +104,7 @@ Hello, world!
         assert header == b"%PDF"
 
     def test_compile_failure_raises(self, tmp_path: Path) -> None:
-        """Compilation failure raises CalledProcessError."""
+        """Compilation failure raises LaTeXCompilationError."""
         tex_content = r"""
 \documentclass{article}
 \begin{document}
@@ -115,7 +114,7 @@ This has an \undefined command.
         tex_path = tmp_path / "bad.tex"
         tex_path.write_text(tex_content)
 
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(LaTeXCompilationError):
             compile_latex(tex_path, output_dir=tmp_path)
 
     def test_output_dir_defaults_to_tex_parent(self, tmp_path: Path) -> None:

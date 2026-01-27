@@ -35,6 +35,7 @@ dependencies = [
     "odfdo>=3.19.0",
     "selectolax>=0.4.6",
     "html5lib>=1.1",
+    "pylatexenc>=2.10",
 ]
 
 [project.optional-dependencies]
@@ -166,6 +167,7 @@ exclude = ["alembic/"]
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
+    "pylatexenc>=2.10",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-playwright>=0.7.2",

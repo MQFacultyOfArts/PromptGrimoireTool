@@ -21,6 +21,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pylatexenc.latexwalker import (
+    LatexEnvironmentNode,
+    LatexGroupNode,
+    LatexWalker,
+)
+
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
@@ -314,6 +320,134 @@ def _insert_markers_into_html(
     return "".join(result), marker_to_highlight
 
 
+def _extract_env_boundaries(latex: str) -> list[tuple[int, int, str]]:
+    """Extract environment boundary positions from LaTeX using AST parsing.
+
+    Uses pylatexenc to parse the LaTeX and find all \\begin{...} and \\end{...}
+    commands with their exact positions. This is more robust than regex because
+    it correctly handles \\begin{env}{args} with arguments.
+
+    Args:
+        latex: LaTeX content to parse.
+
+    Returns:
+        List of (start_pos, end_pos, boundary_text) tuples, sorted by position.
+        boundary_text is the full command (e.g., "\\begin{adjustwidth}{0.94in}{}").
+    """
+    boundaries: list[tuple[int, int, str]] = []
+
+    try:
+        walker = LatexWalker(latex, tolerant_parsing=True)
+        nodelist, _, _ = walker.get_latex_nodes(pos=0)
+    except Exception:
+        # If parsing fails, return empty list - fall back to regex splitting
+        return []
+
+    def collect_from_nodes(nodes: list) -> None:
+        for node in nodes:
+            if isinstance(node, LatexEnvironmentNode):
+                env_name = node.environmentname
+                begin_pos = node.pos
+
+                # Find where \begin{env}{args...} ends
+                # Start with just the \begin{name} part
+                begin_end = begin_pos + len(f"\\begin{{{env_name}}}")
+
+                # Check nodeargd for known arguments
+                if node.nodeargd and node.nodeargd.argnlist:
+                    for arg in node.nodeargd.argnlist:
+                        if arg is not None:
+                            begin_end = arg.pos + arg.len
+
+                # Check for leading LatexGroupNodes in nodelist (unknown arguments)
+                # pylatexenc doesn't know argument specs for all environments,
+                # so it puts arguments like {0.5in}{} in nodelist as children
+                if node.nodelist:
+                    for child in node.nodelist:
+                        if isinstance(child, LatexGroupNode):
+                            # This GroupNode is likely an argument
+                            begin_end = child.pos + child.len
+                        else:
+                            # First non-GroupNode child - stop looking for args
+                            break
+
+                begin_text = latex[begin_pos:begin_end]
+                boundaries.append((begin_pos, begin_end, begin_text))
+
+                # \end{env} position: at end of environment node
+                env_total_end = node.pos + node.len
+                end_text = f"\\end{{{env_name}}}"
+                end_start = env_total_end - len(end_text)
+                boundaries.append((end_start, env_total_end, end_text))
+
+                # Recurse into environment content
+                if node.nodelist:
+                    collect_from_nodes(node.nodelist)
+
+            elif isinstance(node, LatexGroupNode) and node.nodelist:
+                collect_from_nodes(node.nodelist)
+
+    collect_from_nodes(nodelist)
+    boundaries.sort(key=lambda x: x[0])
+    return boundaries
+
+
+def _wrap_content_with_highlight(
+    content: str,
+    colour_name: str,
+    boundaries_in_content: list[tuple[int, int, str]],
+) -> str:
+    """Wrap content in \\highLight commands, splitting at boundaries.
+
+    Splits content at environment boundaries and inline delimiters (\\par, \\\\, etc.),
+    wrapping text segments in \\highLight while keeping delimiters outside.
+
+    Args:
+        content: The text content to highlight.
+        colour_name: LaTeX colour name for highlighting.
+        boundaries_in_content: List of (rel_start, rel_end, text) for env boundaries.
+
+    Returns:
+        LaTeX with \\highLight commands wrapping text segments.
+    """
+    # Split content at environment boundaries first
+    if boundaries_in_content:
+        boundaries_in_content = sorted(boundaries_in_content, key=lambda x: x[0])
+        segments: list[str] = []
+        prev_end = 0
+        for rel_start, rel_end, boundary_text in boundaries_in_content:
+            if rel_start > prev_end:
+                segments.append(content[prev_end:rel_start])
+            segments.append(boundary_text)  # Keep boundary as delimiter
+            prev_end = rel_end
+        if prev_end < len(content):
+            segments.append(content[prev_end:])
+    else:
+        segments = [content]
+
+    # Further split each segment on paragraph/table delimiters and wrap in \highLight
+    inline_split_pattern = re.compile(r"(\\par\b|\\\\|\\tabularnewline\b|(?<!\\)&)")
+    boundary_texts = {text for _, _, text in boundaries_in_content}
+    result_parts: list[str] = []
+
+    for seg in segments:
+        # Environment boundaries stay outside highlight
+        if seg in boundary_texts:
+            result_parts.append(seg)
+            continue
+
+        # Split on inline delimiters
+        for subseg in inline_split_pattern.split(seg):
+            if subseg in ("\\par", "\\\\", "\\tabularnewline", "&"):
+                result_parts.append(subseg)
+            elif subseg.strip():
+                result_parts.append(f"\\highLight[{colour_name}]{{{subseg}}}")
+            else:
+                result_parts.append(subseg)
+
+    return "".join(result_parts)
+
+
 def _replace_markers_with_annots(
     latex: str,
     marker_highlights: list[dict],
@@ -369,35 +503,37 @@ def _replace_markers_with_annots(
     # Step 1: Replace ANNMARKER{n} with \annot commands
     result = _MARKER_PATTERN.sub(annot_replacer, latex)
 
-    # Step 2: Wrap HLSTART{n}...HLEND{n} with \highLight[color]{...}
+    # Step 2: Extract environment boundaries for splitting highlights
+    # This must happen AFTER annot replacement so positions are correct
+    env_boundaries = _extract_env_boundaries(result)
+
+    # Step 3: Wrap HLSTART{n}...HLEND{n} with \highLight[color]{...}
     # Pattern captures: HLSTART{index}...content...HLEND{index}
     # Using non-greedy match and backreference to match paired markers
     def highlight_wrapper(match: re.Match[str]) -> str:
         idx = int(match.group(1))
         content = match.group(2)
-        if idx < len(marker_highlights):
-            highlight = marker_highlights[idx]
-            tag = highlight.get("tag", "jurisdiction")
-            # Use pre-defined -light colour for highlight background
-            colour_name = f"tag-{tag.replace('_', '-')}-light"
-            # lua-ul can't handle \par or table boundaries inside \highLight
-            # Split on: \par, \\, \tabularnewline, & (table column separator)
-            # This handles multi-paragraph and table-spanning highlights correctly
-            split_pattern = r"(\\par\b|\\\\|\\tabularnewline\b|(?<!\\)&)"
-            segments = re.split(split_pattern, content)
-            result_parts: list[str] = []
-            for seg in segments:
-                if seg in ("\\par", "\\\\", "\\tabularnewline", "&"):
-                    # Keep structural delimiters outside highlight groups
-                    result_parts.append(seg)
-                elif seg.strip():
-                    # Wrap non-empty text in \highLight
-                    result_parts.append(f"\\highLight[{colour_name}]{{{seg}}}")
-                else:
-                    # Preserve whitespace-only segments
-                    result_parts.append(seg)
-            return "".join(result_parts)
-        return content
+        if idx >= len(marker_highlights):
+            return content
+
+        highlight = marker_highlights[idx]
+        tag = highlight.get("tag", "jurisdiction")
+        colour_name = f"tag-{tag.replace('_', '-')}-light"
+
+        # Calculate absolute position of content in the string
+        marker_prefix = f"HLSTART{idx}ENDHL"
+        marker_suffix = f"HLEND{idx}ENDHL"
+        content_start = match.start() + len(marker_prefix)
+        content_end = match.end() - len(marker_suffix)
+
+        # Find environment boundaries within this content span
+        boundaries_in_content = [
+            (abs_start - content_start, abs_end - content_start, text)
+            for abs_start, abs_end, text in env_boundaries
+            if content_start < abs_start < content_end
+        ]
+
+        return _wrap_content_with_highlight(content, colour_name, boundaries_in_content)
 
     # Match HLSTART{n}...HLEND{n} with same index (backreference)
     highlight_pattern = re.compile(r"HLSTART(\d+)ENDHL(.*?)HLEND\1ENDHL", re.DOTALL)

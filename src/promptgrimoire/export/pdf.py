@@ -95,16 +95,19 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         str(tex_path),
     ]
 
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        log_file = output_dir / (tex_path.stem + ".log")
-        raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {e.returncode})",
-            tex_path=tex_path,
-            log_path=log_file,
-        ) from e
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     # Return path to generated PDF
     pdf_name = tex_path.stem + ".pdf"
-    return output_dir / pdf_name
+    pdf_path = output_dir / pdf_name
+
+    # Check if PDF was actually created (latexmk may return non-zero for warnings)
+    if not pdf_path.exists():
+        log_file = output_dir / (tex_path.stem + ".log")
+        raise LaTeXCompilationError(
+            f"LaTeX compilation failed (exit {result.returncode})",
+            tex_path=tex_path,
+            log_path=log_file,
+        )
+
+    return pdf_path

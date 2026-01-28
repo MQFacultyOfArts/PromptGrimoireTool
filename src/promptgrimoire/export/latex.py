@@ -17,7 +17,9 @@ import re
 import subprocess
 import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,36 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+
+
+class MarkerTokenType(Enum):
+    """Token types for marker lexer."""
+
+    TEXT = "TEXT"
+    HLSTART = "HLSTART"
+    HLEND = "HLEND"
+    ANNMARKER = "ANNMARKER"
+
+
+@dataclass(frozen=True, slots=True)
+class MarkerToken:
+    """A token from the marker lexer.
+
+    Attributes:
+        type: The token type (TEXT, HLSTART, HLEND, ANNMARKER)
+        value: The raw string value matched
+        index: For marker tokens, the highlight index (e.g., 1 from HLSTART{1}ENDHL).
+               None for TEXT tokens.
+        start_pos: Start byte position in input
+        end_pos: End byte position in input
+    """
+
+    type: MarkerTokenType
+    value: str
+    index: int | None
+    start_pos: int
+    end_pos: int
+
 
 # Unique marker format that survives Pandoc conversion
 # Format: ANNMARKER{index}ENDMARKER for annotation insertion point

@@ -58,10 +58,27 @@ class TestPdfPipeline:
             },
         ]
 
+        acceptance_criteria = """
+TEST: Issue #85 Regression - No Literal Markers
+
+WHAT THIS TESTS:
+Two interleaved highlights ("quick brown fox" and "brown fox jumps over")
+that overlap. The lexer must process highlight markers into LaTeX commands.
+
+WHAT TO CHECK:
+1. "quick" has ONE highlight (jurisdiction - blue)
+2. "brown fox" has TWO highlights overlapping (jurisdiction + legal_issues)
+3. "jumps over" has ONE highlight (legal_issues - pink)
+4. NO literal marker text visible (no HL-START, HL-END, etc.)
+5. Underlines visible under highlighted text
+
+IF YOU SEE RAW MARKER TEXT: Issue #85 has regressed!
+"""
         result = pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="issue_85_regression",
+            acceptance_criteria=acceptance_criteria,
         )
 
         latex_content = result.tex_path.read_text()
@@ -115,10 +132,26 @@ class TestPdfPipeline:
             },
         ]
 
+        acceptance_criteria = """
+TEST: Interleaved Highlights Compile
+
+WHAT THIS TESTS:
+Two highlights that interleave (not properly nested):
+- Highlight 1: words 1-5 ("two three four five")
+- Highlight 2: words 3-7 ("four five six seven")
+
+WHAT TO CHECK:
+1. "two three" has ONE highlight (jurisdiction - blue)
+2. "four five" has TWO highlights overlapping
+3. "six seven" has ONE highlight (legal_issues - pink)
+4. Underlines visible (stacked where overlapping)
+5. Document compiles without errors
+"""
         result = pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="interleaved_compile",
+            acceptance_criteria=acceptance_criteria,
         )
 
         assert result.pdf_path.exists()
@@ -157,10 +190,28 @@ class TestPdfPipeline:
             },
         ]
 
+        acceptance_criteria = """
+TEST: Three Overlapping Highlights
+
+WHAT THIS TESTS:
+Three highlights all overlapping in the middle:
+- Highlight 1: words 0-6 (jurisdiction - blue)
+- Highlight 2: words 1-5 (legal_issues - pink)
+- Highlight 3: words 2-4 (reasons - green)
+
+WHAT TO CHECK:
+1. "Word" has ONE highlight (jurisdiction - blue)
+2. "one" has TWO highlights
+3. "word two" has THREE highlights (all colours visible)
+4. "word" has TWO highlights
+5. "three" has ONE highlight (jurisdiction)
+6. Three overlapping = single thick "many-dark" underline (not stacked)
+"""
         result = pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="three_overlapping",
+            acceptance_criteria=acceptance_criteria,
         )
 
         assert result.pdf_path.exists()

@@ -65,6 +65,21 @@ class MarkerToken:
     end_pos: int
 
 
+@dataclass(frozen=True, slots=True)
+class Region:
+    """A contiguous span of text with a constant set of active highlights.
+
+    Attributes:
+        text: The text content of this region
+        active: Frozenset of highlight indices currently active in this region
+        annots: List of annotation marker indices that appeared in this region
+    """
+
+    text: str
+    active: frozenset[int]
+    annots: list[int]
+
+
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead

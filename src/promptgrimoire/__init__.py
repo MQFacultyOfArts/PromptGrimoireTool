@@ -16,7 +16,7 @@ def _setup_logging() -> None:
     """Configure logging to both console and rotating file."""
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "promptgrimoire.log"
+    log_file = log_dir / f"promptgrimoire.{os.getpid()}.log"
 
     # Root logger config
     root_logger = logging.getLogger()

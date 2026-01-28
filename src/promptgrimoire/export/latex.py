@@ -13,6 +13,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 import tempfile
@@ -37,6 +38,8 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MarkerTokenType(Enum):
@@ -1019,6 +1022,11 @@ def convert_html_with_annotations(
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
     """
+    logger.debug(
+        "[LATEX] convert_html_with_annotations: count=%d, ids=%s",
+        len(highlights),
+        [h.get("id", "")[:8] for h in highlights],
+    )
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
 

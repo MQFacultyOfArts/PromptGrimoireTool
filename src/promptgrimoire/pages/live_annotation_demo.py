@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
 import os
 import random
 import re
@@ -28,6 +29,8 @@ from promptgrimoire.parsers import parse_rtf
 
 if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
+
+logger = logging.getLogger(__name__)
 
 # Path to fixtures for demo
 _FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures"
@@ -840,22 +843,22 @@ def _create_annotation_card(
     start_word = int(h.get("start_word", 0))
     end_word = int(h.get("end_word", start_word))
 
-    # Get legal paragraph number(s) for this highlight
-    # end_word is exclusive (one past last word), so use end_word - 1
-    start_para = ctx.word_to_legal_para.get(start_word)
-    last_word = end_word - 1 if end_word > start_word else start_word
-    end_para = ctx.word_to_legal_para.get(last_word)
+    # Use stored para_ref if present, otherwise calculate (for old highlights)
+    para_ref = h.get("para_ref", "")
+    if not para_ref:
+        # Calculate para_ref for highlights created before para_ref was stored
+        start_para = ctx.word_to_legal_para.get(start_word)
+        last_word = end_word - 1 if end_word > start_word else start_word
+        end_para = ctx.word_to_legal_para.get(last_word)
 
-    # Build paragraph reference string
-    if start_para is None and end_para is None:
-        para_ref = ""
-    elif start_para is None:
-        para_ref = f"[{end_para}]"
-    elif end_para is None or start_para == end_para:
-        para_ref = f"[{start_para}]"
-    else:
-        # Span multiple paragraphs - use en-dash for proper typography
-        para_ref = f"[{start_para}]–[{end_para}]"  # noqa: RUF001
+        if start_para is None and end_para is None:
+            para_ref = ""
+        elif start_para is None:
+            para_ref = f"[{end_para}]"
+        elif end_para is None or start_para == end_para:
+            para_ref = f"[{start_para}]"
+        else:
+            para_ref = f"[{start_para}]–[{end_para}]"  # noqa: RUF001 (en-dash)
 
     with ctx.annotations_container:
         card = (
@@ -997,6 +1000,12 @@ def _make_refresh_annotations(
     async def refresh_annotations() -> None:
         """Refresh annotation cards in the sidebar."""
         highlights = ctx.ann_doc.get_all_highlights()
+        logger.debug(
+            "[WEB DISPLAY] ann_doc=%s, count=%d, ids=%s",
+            id(ctx.ann_doc),
+            len(highlights),
+            [h.get("id", "")[:8] for h in highlights],
+        )
         current_ids = {h.get("id", "") for h in highlights}
 
         # Remove cards for deleted highlights
@@ -1251,6 +1260,12 @@ async def live_annotation_demo_page(doc: str | None = None) -> None:
             # Get highlights and general notes from CRDT
             highlights = ann_doc.get_all_highlights()
             general_notes = ann_doc.get_general_notes()
+            logger.debug(
+                "[PDF EXPORT] ann_doc=%s, count=%d, ids=%s",
+                id(ann_doc),
+                len(highlights),
+                [h.get("id", "")[:8] for h in highlights],
+            )
 
             # Create user_id from email hash for scoped export directory
             user_email = user.get("email", "") if user else ""

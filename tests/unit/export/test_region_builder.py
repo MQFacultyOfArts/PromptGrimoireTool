@@ -169,42 +169,45 @@ class TestBuildRegions:
         assert regions[4] == Region(" e", frozenset({3}), [])
 
     def test_annmarker_associated_by_index(self) -> None:
-        """ANNMARKER stores its index in the region where it appears."""
+        """ANNMARKER after HLEND attaches annotation to highlighted region."""
+        # Real marker placement: HLSTART text HLEND ANNMARKER
         tokens = [
             MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
             MarkerToken(MarkerTokenType.TEXT, "text", None, 15, 19),
-            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 19, 40),
-            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 40, 53),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 19, 32),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 32, 53),
         ]
         regions = build_regions(tokens)
 
-        # The annmarker appears after "text", so it's part of that region
+        # ANNMARKER after HLEND attaches to the just-flushed highlighted region
         assert len(regions) == 1
         assert regions[0].text == "text"
         assert regions[0].active == frozenset({1})
         assert regions[0].annots == [1]
 
     def test_annmarker_not_position_dependent(self) -> None:
-        """ANNMARKER{2} in a region where only {1} is active still records index 2."""
+        """ANNMARKER{2} after HLEND{1} still records index 2."""
+        # Real marker placement: HLSTART text HLEND ANNMARKER
         tokens = [
             MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
             MarkerToken(MarkerTokenType.TEXT, "text", None, 15, 19),
-            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{2}ENDMARKER", 2, 19, 40),
-            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 40, 53),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 19, 32),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{2}ENDMARKER", 2, 32, 53),
         ]
         regions = build_regions(tokens)
 
-        # ANNMARKER{2} records index 2, even though only highlight 1 is active
+        # ANNMARKER{2} records index 2, even though highlight 1's region
         assert regions[0].annots == [2]
 
-    def test_multiple_annmarkers_in_region(self) -> None:
-        """Multiple ANNMARKER tokens in same region accumulate."""
+    def test_multiple_annmarkers_after_hlend(self) -> None:
+        """Multiple ANNMARKER tokens after HLEND all attach to previous region."""
+        # Real marker placement: HLSTART text HLEND ANNMARKER ANNMARKER
         tokens = [
             MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
             MarkerToken(MarkerTokenType.TEXT, "text", None, 15, 19),
-            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 19, 40),
-            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{2}ENDMARKER", 2, 40, 61),
-            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 61, 74),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 19, 32),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 32, 53),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{2}ENDMARKER", 2, 53, 74),
         ]
         regions = build_regions(tokens)
 

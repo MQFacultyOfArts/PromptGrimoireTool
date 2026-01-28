@@ -108,21 +108,19 @@ def build_regions(tokens: list[MarkerToken]) -> list[Region]:
     regions: list[Region] = []
     active: set[int] = set()
     current_text = ""
-    current_annots: list[int] = []
 
     def flush_region() -> None:
         """Emit current region if there's accumulated text."""
-        nonlocal current_text, current_annots
+        nonlocal current_text
         if current_text:
             regions.append(
                 Region(
                     text=current_text,
                     active=frozenset(active),
-                    annots=current_annots,
+                    annots=[],  # Annotations added by ANNMARKER after flush
                 )
             )
             current_text = ""
-            current_annots = []
 
     for token in tokens:
         if token.type == MarkerTokenType.TEXT:
@@ -139,7 +137,13 @@ def build_regions(tokens: list[MarkerToken]) -> list[Region]:
                 active.discard(token.index)
 
         elif token.type == MarkerTokenType.ANNMARKER and token.index is not None:
-            current_annots.append(token.index)
+            # Attach annotation to the PREVIOUS region (highlight just ended).
+            # ANNMARKER appears after HLEND, so belongs to the flushed region.
+            # If no region exists yet but we have text, flush it first.
+            if not regions and current_text:
+                flush_region()
+            if regions:
+                regions[-1].annots.append(token.index)
 
     # Flush any remaining text
     flush_region()
@@ -739,8 +743,8 @@ def _insert_markers_into_html(
                 # Add the word
                 text_result.append(match.group(0))
 
-                # Insert END markers after this word (HLEND then ANNMARKER)
-                # ANNMARKER AFTER HLEND so \annot{} (with \par) is outside \highLight{}
+                # Insert HLEND then ANNMARKER after this word
+                # (ANNMARKER after HLEND so annotation appears after highlight ends)
                 if word_idx in end_markers:
                     for marker_idx in end_markers[word_idx]:
                         text_result.append(_HLEND_TEMPLATE.format(marker_idx))

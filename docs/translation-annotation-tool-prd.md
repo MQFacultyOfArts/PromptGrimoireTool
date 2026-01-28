@@ -6,7 +6,7 @@ Translation Annotation & Iteration Tool is an educational application for teachi
 
 **Target:** Session 1 2025 (Feb 23 student training - Week 2)
 **Deployment:** Single institution (Macquarie University)
-**Cohort Size:** ~25 students (Japanese, Korean, Chinese, Spanish language pairs)
+**Cohort Size:** ~25 students (Japanese, Korean, Chinese [Traditional/Simplified], Spanish, French language pairs)
 **Relationship to PromptGrimoire:** Domain-specific extension for translation pedagogy, shares core infrastructure (CRDT collaboration, annotation layer, PDF export)
 
 ## Pedagogical Framework
@@ -338,9 +338,9 @@ Students can navigate freely between tabs at any time (no validation gates).
   - "Go to text" button (scrolls and temporarily highlights source)
   - Delete button (removes highlight)
 - **Multi-language input support**:
-  - Full Unicode support for Japanese, Korean, Chinese, Spanish, French
+  - Full Unicode support for Japanese, Korean, Chinese (Traditional and Simplified), Spanish, French
   - Test against [Big List of Naughty Strings](https://github.com/minimaxir/big-list-of-naughty-strings)
-  - Proper font rendering for CJK characters
+  - Proper font rendering for CJK characters (including both Traditional and Simplified Chinese)
   - No special keyboard switching required (native OS input methods)
 
 **Translation Draft Documents (Special Display):**
@@ -730,7 +730,8 @@ Inherited from existing PromptGrimoire structure:
   - Native browser IME support (no custom keyboard logic)
   - Test with Japanese IME (hiragana → kanji conversion)
   - Test with Korean IME (jamo → syllable composition)
-  - Test with Chinese IME (pinyin input)
+  - Test with Chinese IME (pinyin input for Simplified, zhuyin/pinyin for Traditional)
+  - Test with French/Spanish keyboard layouts (accented characters: é, ñ, ü, etc.)
 
 ### Input Validation (Security)
 - **Text field length limits**:
@@ -777,8 +778,8 @@ Inherited from existing PromptGrimoire structure:
     - Iteration timeline
 - **CJK font support**:
   - Use xeCJK LaTeX package
-  - System fonts: Noto Sans CJK, Noto Serif CJK (open-source, bundled)
-  - Test rendering: Japanese kanji, Korean hangul, Chinese hanzi, Spanish tildes
+  - System fonts: Noto Sans CJK JP/KR/SC/TC, Noto Serif CJK (open-source, bundled)
+  - Test rendering: Japanese kanji, Korean hangul, Chinese hanzi (Traditional and Simplified), Spanish/French accented characters (é, ñ, ü, ç, etc.)
 
 ### Database Indexes (Performance)
 - `Document.assignment_id` + `Document.student_id` (query student's documents)
@@ -957,7 +958,7 @@ Inherited from existing PromptGrimoire structure:
 | Organization | Course > Week > Case | Course > Week > TranslationAssignment |
 | Workflow | Three-screen carousel (annotate → organize → write) | Three-tab interface (annotate → organize → write) |
 | Proleptic reasoning | Implicit (students predict issues in brief) | Explicit (Stage 1 predict → Stage 2 decide → Stage 3 verify) |
-| Multi-language | English only | Japanese, Korean, Chinese, Spanish, French |
+| Multi-language | English only | Japanese, Korean, Chinese (Traditional/Simplified), Spanish, French |
 | Iteration | Single brief per case | Multiple drafts per task (timestamped snapshots) |
 | Decision log | Not present | Core feature (Tab 3 panel + Tab 1 sidebar metadata) |
 | AI integration | No direct AI interaction | Central to workflow (both scenarios) |

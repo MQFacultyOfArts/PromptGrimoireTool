@@ -23,6 +23,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from lark import Lark
 from pylatexenc.latexwalker import (
     LatexEnvironmentNode,
     LatexGroupNode,
@@ -62,6 +63,76 @@ class MarkerToken:
     index: int | None
     start_pos: int
     end_pos: int
+
+
+# Lark grammar for marker tokenization
+# Literals have higher priority than regex, so markers match first
+# TEXT catches everything else with negative lookahead
+_MARKER_GRAMMAR = r"""
+    HLSTART: "HLSTART{" /[0-9]+/ "}ENDHL"
+    HLEND: "HLEND{" /[0-9]+/ "}ENDHL"
+    ANNMARKER: "ANNMARKER{" /[0-9]+/ "}ENDMARKER"
+
+    // TEXT matches any character that isn't the start of a marker
+    // Uses negative lookahead to stop before marker sequences
+    TEXT: /(?:(?!HLSTART\{|HLEND\{|ANNMARKER\{).)+/s
+"""
+
+# Compile once at module load
+_marker_lexer = Lark(_MARKER_GRAMMAR, parser=None, lexer="basic")
+
+# Regex to extract index from marker value
+_INDEX_EXTRACT_PATTERN = re.compile(r"\{(\d+)\}")
+
+
+def tokenize_markers(latex: str) -> list[MarkerToken]:
+    """Tokenize LaTeX text containing highlight markers.
+
+    Converts a string containing HLSTART{n}ENDHL, HLEND{n}ENDHL, and
+    ANNMARKER{n}ENDMARKER markers into a list of MarkerToken objects.
+    All text between markers becomes TEXT tokens.
+
+    Args:
+        latex: LaTeX string potentially containing markers
+
+    Returns:
+        List of MarkerToken objects preserving order and positions
+
+    Example:
+        >>> tokens = tokenize_markers("Hello HLSTART{1}ENDHL world")
+        >>> [(t.type.value, t.value) for t in tokens]
+        [('TEXT', 'Hello '), ('HLSTART', 'HLSTART{1}ENDHL'), ('TEXT', ' world')]
+    """
+    if not latex:
+        return []
+
+    tokens: list[MarkerToken] = []
+
+    for lark_token in _marker_lexer.lex(latex):
+        token_type = MarkerTokenType[lark_token.type]
+
+        # Extract index for marker tokens
+        index: int | None = None
+        if token_type != MarkerTokenType.TEXT:
+            match = _INDEX_EXTRACT_PATTERN.search(lark_token.value)
+            if match:
+                index = int(match.group(1))
+
+        # Lark lexer always provides start_pos and end_pos for tokens
+        start_pos = lark_token.start_pos if lark_token.start_pos is not None else 0
+        end_pos = lark_token.end_pos if lark_token.end_pos is not None else 0
+
+        tokens.append(
+            MarkerToken(
+                type=token_type,
+                value=lark_token.value,
+                index=index,
+                start_pos=start_pos,
+                end_pos=end_pos,
+            )
+        )
+
+    return tokens
 
 
 # Unique marker format that survives Pandoc conversion

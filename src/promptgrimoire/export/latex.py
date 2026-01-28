@@ -80,6 +80,70 @@ class Region:
     annots: list[int]
 
 
+def build_regions(tokens: list[MarkerToken]) -> list[Region]:
+    """Convert a token stream into regions with active highlight tracking.
+
+    Implements a linear state machine that tracks which highlights are
+    currently active as we scan through the tokens. Each time the active
+    set changes (at HLSTART or HLEND), a new region boundary is created.
+
+    Args:
+        tokens: List of MarkerToken from tokenize_markers()
+
+    Returns:
+        List of Region objects, each with constant active highlight set
+
+    Example:
+        >>> tokens = tokenize_markers("a HLSTART{1}ENDHL b HLEND{1}ENDHL c")
+        >>> regions = build_regions(tokens)
+        >>> [(r.text, r.active) for r in regions]
+        [('a ', frozenset()), ('b ', frozenset({1})), ('c', frozenset())]
+    """
+    if not tokens:
+        return []
+
+    regions: list[Region] = []
+    active: set[int] = set()
+    current_text = ""
+    current_annots: list[int] = []
+
+    def flush_region() -> None:
+        """Emit current region if there's accumulated text."""
+        nonlocal current_text, current_annots
+        if current_text:
+            regions.append(
+                Region(
+                    text=current_text,
+                    active=frozenset(active),
+                    annots=current_annots,
+                )
+            )
+            current_text = ""
+            current_annots = []
+
+    for token in tokens:
+        if token.type == MarkerTokenType.TEXT:
+            current_text += token.value
+
+        elif token.type == MarkerTokenType.HLSTART:
+            flush_region()
+            if token.index is not None:
+                active.add(token.index)
+
+        elif token.type == MarkerTokenType.HLEND:
+            flush_region()
+            if token.index is not None:
+                active.discard(token.index)
+
+        elif token.type == MarkerTokenType.ANNMARKER and token.index is not None:
+            current_annots.append(token.index)
+
+    # Flush any remaining text
+    flush_region()
+
+    return regions
+
+
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead

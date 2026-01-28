@@ -476,15 +476,16 @@ _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 # Pattern for words - matches _WordSpanProcessor._WORD_PATTERN
 _WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
 
-# Base LaTeX preamble for LuaLaTeX with marginnote+lua-ul annotation approach
+# Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
 # Note: The \annot command takes 2 parameters: colour name and margin content.
 # It places a superscript number at the insertion point with a coloured margin note.
 # Highlighting uses lua-ul's \highLight for robust cross-line-break backgrounds.
+# marginalia package auto-stacks overlapping margin notes (requires 2+ lualatex runs).
 ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{fontspec}
 \setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
 \usepackage{microtype}         % Better typography (kerning, protrusion)
-\usepackage{marginnote}
+\usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
 \usepackage{longtable}
 \usepackage{booktabs}
 \usepackage{array}
@@ -498,11 +499,12 @@ ANNOTATION_PREAMBLE_BASE = r"""
 % Annotation counter and macro
 % Usage: \annot{colour-name}{margin content}
 % Uses footnotesize for compact margin notes
+% marginalia auto-stacks overlapping notes with ysep spacing
 \newcounter{annotnum}
 \newcommand{\annot}[2]{%
   \stepcounter{annotnum}%
   \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
-  \marginnote{%
+  \marginalia[ysep=3pt]{%
     \fcolorbox{#1}{#1!20}{%
       \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
     }%

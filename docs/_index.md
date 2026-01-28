@@ -93,6 +93,11 @@ library references during development.
 
 - [Pre-commit Integration](ruff/pre-commit.md) - Pre-commit integration guide for Ruff linter and formatter
 
+## lark
+
+- [Lexer Usage](lark/lexer-usage.md) - Standalone lexer mode, Token attributes, grammar syntax, catch-all terminals
+- [Lua-UL Reference](lark/lua-ul-reference.md) - LuaLaTeX underline/highlight package syntax and nesting
+
 ---
 
 ## Project Documents

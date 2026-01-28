@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from promptgrimoire.export.latex import (
     ANNOTATION_PREAMBLE_BASE,
     _escape_latex,
@@ -19,6 +17,7 @@ from promptgrimoire.export.latex import (
     _format_timestamp,
     generate_tag_colour_definitions,
 )
+from tests.conftest import requires_latexmk
 
 
 class TestFormatTimestamp:
@@ -160,22 +159,6 @@ class TestFormatAnnot:
 # =============================================================================
 # Compilation Validation Test
 # =============================================================================
-
-
-def _has_latexmk() -> bool:
-    """Check if latexmk is available via TinyTeX."""
-    from promptgrimoire.export.pdf import get_latexmk_path
-
-    try:
-        get_latexmk_path()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-requires_latexmk = pytest.mark.skipif(
-    not _has_latexmk(), reason="latexmk not installed"
-)
 
 
 # Output directory for visual inspection

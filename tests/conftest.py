@@ -17,6 +17,7 @@ import pytest
 from dotenv import load_dotenv
 
 from promptgrimoire.db import run_alembic_upgrade
+from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
 
@@ -24,6 +25,25 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
+
+
+# =============================================================================
+# LaTeX/PDF Testing Utilities
+# =============================================================================
+
+
+def _has_latexmk() -> bool:
+    """Check if latexmk is available via TinyTeX."""
+    try:
+        get_latexmk_path()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+requires_latexmk = pytest.mark.skipif(
+    not _has_latexmk(), reason="latexmk not installed"
+)
 
 
 # =============================================================================

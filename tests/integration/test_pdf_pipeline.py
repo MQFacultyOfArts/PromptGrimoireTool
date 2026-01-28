@@ -10,28 +10,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
+from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tests.conftest import PdfExportResult
-
-
-def _has_latexmk() -> bool:
-    """Check if latexmk is available via TinyTeX."""
-    from promptgrimoire.export.pdf import get_latexmk_path
-
-    try:
-        get_latexmk_path()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-requires_latexmk = pytest.mark.skipif(
-    not _has_latexmk(), reason="latexmk not installed"
-)
 
 
 class TestPdfPipeline:

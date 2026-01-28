@@ -243,6 +243,137 @@ def generate_highlight_wrapper(
     return wrap
 
 
+def _wrap_content_with_nested_highlights(
+    content: str,
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> str:
+    """Wrap content in nested highlights, splitting at environment boundaries.
+
+    Similar to _wrap_content_with_highlight but handles multiple nested
+    highlight layers and underlines.
+
+    Args:
+        content: Text content that may contain environment boundaries
+        active: Frozenset of active highlight indices
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        LaTeX with properly split and wrapped highlight commands
+    """
+    underline_wrap = generate_underline_wrapper(active, highlights)
+    highlight_wrap = generate_highlight_wrapper(active, highlights)
+
+    # Inline delimiters that require splitting
+    inline_delimiters = [r"\par", r"\\", r"\tabularnewline", "&"]
+
+    # Find all split points from inline delimiters
+    split_points: list[tuple[int, int, str]] = []
+
+    for delim in inline_delimiters:
+        start = 0
+        while True:
+            pos = content.find(delim, start)
+            if pos == -1:
+                break
+            split_points.append((pos, pos + len(delim), delim))
+            start = pos + 1
+
+    # Sort by position
+    split_points.sort(key=lambda x: x[0])
+
+    if not split_points:
+        # No splits needed
+        return highlight_wrap(underline_wrap(content))
+
+    # Build result by iterating through segments
+    result_parts: list[str] = []
+    pos = 0
+
+    for start, end, boundary_text in split_points:
+        if start > pos:
+            # Text before this boundary
+            segment = content[pos:start]
+            if segment.strip():
+                result_parts.append(highlight_wrap(underline_wrap(segment)))
+            else:
+                result_parts.append(segment)  # Preserve whitespace-only
+
+        # The boundary itself (not wrapped in highlight)
+        result_parts.append(boundary_text)
+        pos = end
+
+    # Text after last boundary
+    if pos < len(content):
+        segment = content[pos:]
+        if segment.strip():
+            result_parts.append(highlight_wrap(underline_wrap(segment)))
+        else:
+            result_parts.append(segment)
+
+    return "".join(result_parts)
+
+
+def generate_highlighted_latex(
+    regions: list[Region],
+    highlights: dict[int, dict[str, Any]],
+    env_boundaries: list[tuple[int, int, str]],  # noqa: ARG001 - kept for API
+) -> str:
+    """Generate LaTeX with highlight and underline commands from regions.
+
+    For each region:
+    1. If active highlights: wrap in nested \\highLight commands
+    2. If active highlights: wrap in \\underLine commands (based on overlap count)
+    3. Split at environment boundaries using _wrap_content_with_nested_highlights
+    4. Emit \\annot commands for any annotation markers in the region
+
+    Args:
+        regions: List of Region objects from build_regions()
+        highlights: Mapping from highlight index to highlight dict
+        env_boundaries: Environment boundaries from _extract_env_boundaries()
+                       (not currently used - boundaries are detected per-region)
+
+    Returns:
+        Complete LaTeX string with all highlight/underline/annot commands
+    """
+    if not regions:
+        return ""
+
+    result_parts: list[str] = []
+
+    for region in regions:
+        if not region.active:
+            # No highlights - pass through unchanged
+            result_parts.append(region.text)
+        else:
+            # Get wrappers for this region's active set
+            underline_wrap = generate_underline_wrapper(region.active, highlights)
+            highlight_wrap = generate_highlight_wrapper(region.active, highlights)
+
+            # Check for inline delimiters that require splitting
+            inline_delimiters = [r"\par", r"\\", r"\tabularnewline", "&"]
+            has_delimiters = any(delim in region.text for delim in inline_delimiters)
+
+            if has_delimiters:
+                # Has boundaries - use splitting logic
+                wrapped = _wrap_content_with_nested_highlights(
+                    region.text, region.active, highlights
+                )
+            else:
+                # No boundaries - simple wrap
+                wrapped = highlight_wrap(underline_wrap(region.text))
+
+            result_parts.append(wrapped)
+
+        # Emit annotation commands for this region
+        for annot_idx in region.annots:
+            if annot_idx in highlights:
+                annot_latex = _format_annot(highlights[annot_idx])
+                result_parts.append(annot_latex)
+
+    return "".join(result_parts)
+
+
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead

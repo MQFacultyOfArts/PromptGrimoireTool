@@ -5,7 +5,9 @@ Uses regions directly - does NOT call lexer or region builder.
 """
 
 from promptgrimoire.export.latex import (
+    Region,
     generate_highlight_wrapper,
+    generate_highlighted_latex,
     generate_underline_wrapper,
 )
 
@@ -131,3 +133,92 @@ class TestGenerateHighlightWrapper:
 
         # tag-a (index 0) should be outer
         assert result.startswith(r"\highLight[tag-a-light]")
+
+
+class TestGenerateHighlightedLatex:
+    """Tests for generate_highlighted_latex main function."""
+
+    def test_empty_regions_returns_empty(self) -> None:
+        """Empty region list returns empty string."""
+        result = generate_highlighted_latex([], {}, [])
+        assert result == ""
+
+    def test_no_active_highlights_passthrough(self) -> None:
+        """Regions with no active highlights pass through unchanged."""
+        regions = [Region("plain text", frozenset(), [])]
+        result = generate_highlighted_latex(regions, {}, [])
+        assert result == "plain text"
+
+    def test_single_highlight_full_wrapping(self) -> None:
+        """Single active highlight produces highLight + underLine."""
+        regions = [Region("text", frozenset({0}), [])]
+        highlights = {0: {"tag": "alpha"}}
+        result = generate_highlighted_latex(regions, highlights, [])
+
+        # Should have both highLight and underLine
+        assert r"\highLight[tag-alpha-light]" in result
+        assert r"\underLine[color=tag-alpha-dark" in result
+
+    def test_multiple_regions_concatenated(self) -> None:
+        """Multiple regions are concatenated in order."""
+        regions = [
+            Region("before ", frozenset(), []),
+            Region("highlighted", frozenset({0}), []),
+            Region(" after", frozenset(), []),
+        ]
+        highlights = {0: {"tag": "alpha"}}
+        result = generate_highlighted_latex(regions, highlights, [])
+
+        assert result.startswith("before ")
+        assert result.endswith(" after")
+        assert r"\highLight" in result
+
+    def test_annmarker_emits_annot_command(self) -> None:
+        """Regions with annots emit \\annot commands."""
+        regions = [Region("text", frozenset({0}), [0])]
+        highlights = {
+            0: {
+                "tag": "alpha",
+                "author": "Test User",
+                "comments": [],
+                "created_at": "2026-01-28T10:00:00Z",
+            }
+        }
+        result = generate_highlighted_latex(regions, highlights, [])
+
+        assert r"\annot{" in result
+
+    def test_env_boundary_splits_highlight(self) -> None:
+        """Environment boundaries within region split the highlight."""
+        # Text with a \\par in the middle
+        regions = [Region(r"before\par after", frozenset({0}), [])]
+        highlights = {0: {"tag": "alpha"}}
+        result = generate_highlighted_latex(regions, highlights, [])
+
+        # Should have two separate \\highLight blocks around \\par
+        assert result.count(r"\highLight") == 2
+        assert r"\par" in result
+
+    def test_interleaved_example_b(self) -> None:
+        """Example B from design: interleaved highlights."""
+        # Regions from build_regions for interleaved case
+        regions = [
+            Region("The ", frozenset(), []),
+            Region(" quick ", frozenset({1}), []),
+            Region(" fox ", frozenset({1, 2}), []),
+            Region(" over ", frozenset({2}), []),
+            Region(" dog", frozenset(), []),
+        ]
+        highlights = {1: {"tag": "alpha"}, 2: {"tag": "beta"}}
+        result = generate_highlighted_latex(regions, highlights, [])
+
+        # Plain text regions
+        assert "The " in result
+        assert " dog" in result
+
+        # Highlighted regions have commands
+        # " quick " has only highlight 1
+        # " fox " has both highlights (overlapping)
+        # " over " has only highlight 2
+        assert r"\highLight[tag-alpha-light]" in result
+        assert r"\highLight[tag-beta-light]" in result

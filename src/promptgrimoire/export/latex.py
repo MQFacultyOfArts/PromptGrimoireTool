@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from lark import Lark
 from pylatexenc.latexwalker import (
@@ -142,6 +145,64 @@ def build_regions(tokens: list[MarkerToken]) -> list[Region]:
     flush_region()
 
     return regions
+
+
+def generate_underline_wrapper(
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> Callable[[str], str]:
+    """Create a function that wraps text in underline commands.
+
+    Based on overlap count:
+    - 0 highlights: identity function (no underlines)
+    - 1 highlight: single 1pt underline in tag's dark colour
+    - 2 highlights: stacked 2pt + 1pt underlines (outer is lower index)
+    - 3+ highlights: single 4pt underline in many-dark colour
+
+    Args:
+        active: Frozenset of highlight indices currently active
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        Function that takes text and returns text wrapped in underlines
+    """
+    if not active:
+        return lambda text: text
+
+    count = len(active)
+
+    if count >= 3:
+        # Many overlapping: single thick line
+        def wrap_many(text: str) -> str:
+            return rf"\underLine[color=many-dark, height=4pt, bottom=-5pt]{{{text}}}"
+
+        return wrap_many
+
+    # Sort indices for deterministic ordering (lower index = outer)
+    sorted_indices = sorted(active)
+
+    def get_dark_colour(idx: int) -> str:
+        tag = highlights.get(idx, {}).get("tag", "unknown")
+        safe_tag = tag.replace("_", "-")
+        return f"tag-{safe_tag}-dark"
+
+    if count == 1:
+        colour = get_dark_colour(sorted_indices[0])
+
+        def wrap_single(text: str) -> str:
+            return rf"\underLine[color={colour}, height=1pt, bottom=-3pt]{{{text}}}"
+
+        return wrap_single
+
+    # count == 2: stacked underlines
+    outer_colour = get_dark_colour(sorted_indices[0])
+    inner_colour = get_dark_colour(sorted_indices[1])
+
+    def wrap_double(text: str) -> str:
+        inner = rf"\underLine[color={inner_colour}, height=1pt, bottom=-3pt]{{{text}}}"
+        return rf"\underLine[color={outer_colour}, height=2pt, bottom=-3pt]{{{inner}}}"
+
+    return wrap_double
 
 
 # Lark grammar for marker tokenization

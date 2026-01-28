@@ -227,3 +227,141 @@ class TestBuildRegions:
         ]
         regions = build_regions(tokens)
         assert regions[0].text == "  spaces  "
+
+
+class TestBuildRegionsEdgeCases:
+    """Edge case tests for build_regions - falsifiability scenarios."""
+
+    def test_adjacent_markers_no_empty_regions(self) -> None:
+        """Adjacent markers produce no empty TEXT regions between them."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{2}ENDHL", 2, 15, 30),
+            MarkerToken(MarkerTokenType.TEXT, "x", None, 30, 31),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 31, 44),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{2}ENDHL", 2, 44, 57),
+        ]
+        regions = build_regions(tokens)
+
+        # Should be exactly one region with both highlights active
+        assert len(regions) == 1
+        assert regions[0].text == "x"
+        assert regions[0].active == frozenset({1, 2})
+
+    def test_hlend_without_matching_hlstart(self) -> None:
+        """HLEND for non-active highlight is no-op (no crash)."""
+        tokens = [
+            MarkerToken(MarkerTokenType.TEXT, "text", None, 0, 4),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{99}ENDHL", 99, 4, 17),
+        ]
+        regions = build_regions(tokens)
+
+        # Should produce one region, HLEND is ignored
+        assert len(regions) == 1
+        assert regions[0].active == frozenset()
+
+    def test_hlstart_without_hlend(self) -> None:
+        """HLSTART without HLEND keeps highlight active until end."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.TEXT, "forever highlighted", None, 15, 34),
+        ]
+        regions = build_regions(tokens)
+
+        assert len(regions) == 1
+        assert regions[0].active == frozenset({1})
+
+    def test_duplicate_hlstart_same_index(self) -> None:
+        """Duplicate HLSTART for same index is idempotent."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.TEXT, "a", None, 15, 16),
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 16, 31),
+            MarkerToken(MarkerTokenType.TEXT, "b", None, 31, 32),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 32, 45),
+        ]
+        regions = build_regions(tokens)
+
+        # Both regions have highlight 1 active (duplicate HLSTART is no-op)
+        assert all(1 in r.active for r in regions)
+
+    def test_marker_at_very_start(self) -> None:
+        """HLSTART at position 0 (no preceding text)."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.TEXT, "text", None, 15, 19),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 19, 32),
+        ]
+        regions = build_regions(tokens)
+
+        # No empty leading region
+        assert len(regions) == 1
+        assert regions[0].text == "text"
+
+    def test_marker_at_very_end(self) -> None:
+        """HLEND at end (no following text)."""
+        tokens = [
+            MarkerToken(MarkerTokenType.TEXT, "text", None, 0, 4),
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 4, 19),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 19, 32),
+        ]
+        regions = build_regions(tokens)
+
+        # Only the "text" region before HLSTART
+        assert len(regions) == 1
+        assert regions[0].text == "text"
+        assert regions[0].active == frozenset()
+
+    def test_only_markers_no_text(self) -> None:
+        """Sequence of only markers produces no regions."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{2}ENDHL", 2, 15, 30),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 30, 43),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{2}ENDHL", 2, 43, 56),
+        ]
+        regions = build_regions(tokens)
+
+        # No TEXT tokens means no regions
+        assert len(regions) == 0
+
+    def test_annmarker_alone_no_text(self) -> None:
+        """ANNMARKER without surrounding text doesn't create region."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 15, 36),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 36, 49),
+        ]
+        regions = build_regions(tokens)
+
+        # No text = no region, but annots should not be lost
+        # Actually, design decision: annots attach to text. No text = lost.
+        assert len(regions) == 0
+
+    def test_annmarker_before_hlstart(self) -> None:
+        """ANNMARKER before any HLSTART still records correctly."""
+        tokens = [
+            MarkerToken(MarkerTokenType.TEXT, "prefix ", None, 0, 7),
+            MarkerToken(MarkerTokenType.ANNMARKER, "ANNMARKER{1}ENDMARKER", 1, 7, 28),
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 28, 43),
+            MarkerToken(MarkerTokenType.TEXT, "hl", None, 43, 45),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 45, 58),
+        ]
+        regions = build_regions(tokens)
+
+        assert len(regions) == 2
+        assert regions[0].text == "prefix "
+        assert regions[0].annots == [1]  # ANNMARKER attached to prefix
+        assert regions[0].active == frozenset()
+
+    def test_newlines_preserved_in_text(self) -> None:
+        """Newlines are part of text, not region boundaries."""
+        tokens = [
+            MarkerToken(MarkerTokenType.HLSTART, "HLSTART{1}ENDHL", 1, 0, 15),
+            MarkerToken(MarkerTokenType.TEXT, "line1\nline2\n", None, 15, 27),
+            MarkerToken(MarkerTokenType.HLEND, "HLEND{1}ENDHL", 1, 27, 40),
+        ]
+        regions = build_regions(tokens)
+
+        assert len(regions) == 1
+        assert regions[0].text == "line1\nline2\n"

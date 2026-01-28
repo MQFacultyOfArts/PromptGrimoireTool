@@ -368,7 +368,9 @@ def generate_highlighted_latex(
         # Emit annotation commands for this region
         for annot_idx in region.annots:
             if annot_idx in highlights:
-                annot_latex = _format_annot(highlights[annot_idx])
+                hl = highlights[annot_idx]
+                para_ref = hl.get("para_ref", "")
+                annot_latex = _format_annot(hl, para_ref)
                 result_parts.append(annot_latex)
 
     return "".join(result_parts)
@@ -378,16 +380,16 @@ def generate_highlighted_latex(
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead
 #
-# Note: TEXT uses a full-marker lookahead (not just prefix) so incomplete
-# marker-like text (e.g., "HLSTART{123 ") is correctly treated as TEXT.
+# Note: The marker format is HLSTART0ENDHL (no braces around index),
+# matching the production templates _HLSTART_TEMPLATE, _HLEND_TEMPLATE, etc.
 _MARKER_GRAMMAR = (
-    'HLSTART: "HLSTART{" /[0-9]+/ "}ENDHL"\n'
-    'HLEND: "HLEND{" /[0-9]+/ "}ENDHL"\n'
-    'ANNMARKER: "ANNMARKER{" /[0-9]+/ "}ENDMARKER"\n'
+    'HLSTART: "HLSTART" /[0-9]+/ "ENDHL"\n'
+    'HLEND: "HLEND" /[0-9]+/ "ENDHL"\n'
+    'ANNMARKER: "ANNMARKER" /[0-9]+/ "ENDMARKER"\n'
     r"TEXT: /(?:(?!"
-    r"HLSTART\{[0-9]+\}ENDHL|"
-    r"HLEND\{[0-9]+\}ENDHL|"
-    r"ANNMARKER\{[0-9]+\}ENDMARKER"
+    r"HLSTART[0-9]+ENDHL|"
+    r"HLEND[0-9]+ENDHL|"
+    r"ANNMARKER[0-9]+ENDMARKER"
     r").)+/s"
 )
 
@@ -395,14 +397,15 @@ _MARKER_GRAMMAR = (
 _marker_lexer = Lark(_MARKER_GRAMMAR, parser=None, lexer="basic")
 
 # Regex to extract index from marker value
-_INDEX_EXTRACT_PATTERN = re.compile(r"\{(\d+)\}")
+# Matches HLSTART0ENDHL, HLEND0ENDHL, ANNMARKER0ENDMARKER formats
+_INDEX_EXTRACT_PATTERN = re.compile(r"(\d+)")
 
 
 def tokenize_markers(latex: str) -> list[MarkerToken]:
     """Tokenize LaTeX text containing highlight markers.
 
-    Converts a string containing HLSTART{n}ENDHL, HLEND{n}ENDHL, and
-    ANNMARKER{n}ENDMARKER markers into a list of MarkerToken objects.
+    Converts a string containing HLSTARTnENDHL, HLENDnENDHL, and
+    ANNMARKERnENDMARKER markers into a list of MarkerToken objects.
     All text between markers becomes TEXT tokens.
 
     Args:
@@ -881,21 +884,21 @@ def _replace_markers_with_annots(
 ) -> str:
     """Replace markers in LaTeX with \\annot and \\highLight commands.
 
-    Uses lua-ul's \\highLight[color]{text} for highlighting.
-    The marker structure is: HLSTART{n}ANNMARKER{n}...text...HLEND{n}
-
-    Processing order:
-    1. Replace ANNMARKER{n} with \\annot commands
-    2. Wrap HLSTART{n}...HLEND{n} spans with \\highLight[color]{...}
+    Handles arbitrarily interleaved highlights by:
+    1. Tokenizing markers with lark lexer
+    2. Building regions with active highlight sets
+    3. Generating nested LaTeX for each region using generate_highlighted_latex()
 
     Args:
-        latex: LaTeX content with markers.
-        marker_highlights: List of highlights in marker order.
+        latex: LaTeX content with HLSTART{n}ENDHL, HLEND{n}ENDHL, ANNMARKER{n}ENDMARKER
+        marker_highlights: List of highlights in marker order (index = position).
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
 
     Returns:
-        LaTeX with markers replaced by commands.
+        LaTeX with \\highLight and \\underLine commands.
     """
+    if not latex:
+        return latex
 
     def build_para_ref(highlight: dict) -> str:
         """Build paragraph reference string for a highlight."""
@@ -918,54 +921,25 @@ def _replace_markers_with_annots(
         # Use en-dash for ranges
         return f"[{start_para}]–[{end_para}]"  # noqa: RUF001
 
-    def annot_replacer(match: re.Match[str]) -> str:
-        idx = int(match.group(1))
-        if idx < len(marker_highlights):
-            highlight = marker_highlights[idx]
-            para_ref = build_para_ref(highlight)
-            return _format_annot(highlight, para_ref)
-        return ""
+    # Step 1: Tokenize markers using lark lexer
+    tokens = tokenize_markers(latex)
 
-    # Step 1: Replace ANNMARKER{n} with \annot commands
-    result = _MARKER_PATTERN.sub(annot_replacer, latex)
+    # Step 2: Build regions with active highlight tracking
+    regions = build_regions(tokens)
 
-    # Step 2: Extract environment boundaries for splitting highlights
-    # This must happen AFTER annot replacement so positions are correct
-    env_boundaries = _extract_env_boundaries(result)
+    # Step 3: Convert list to dict and add para_refs
+    # marker_highlights is indexed by position (list), convert to dict[int, dict]
+    highlights: dict[int, dict[str, Any]] = {}
+    for idx, hl in enumerate(marker_highlights):
+        # Copy the highlight dict and add para_ref
+        hl_copy = dict(hl)
+        hl_copy["para_ref"] = build_para_ref(hl)
+        highlights[idx] = hl_copy
 
-    # Step 3: Wrap HLSTART{n}...HLEND{n} with \highLight[color]{...}
-    # Pattern captures: HLSTART{index}...content...HLEND{index}
-    # Using non-greedy match and backreference to match paired markers
-    def highlight_wrapper(match: re.Match[str]) -> str:
-        idx = int(match.group(1))
-        content = match.group(2)
-        if idx >= len(marker_highlights):
-            return content
-
-        highlight = marker_highlights[idx]
-        tag = highlight.get("tag", "jurisdiction")
-        colour_name = f"tag-{tag.replace('_', '-')}-light"
-
-        # Calculate absolute position of content in the string
-        marker_prefix = f"HLSTART{idx}ENDHL"
-        marker_suffix = f"HLEND{idx}ENDHL"
-        content_start = match.start() + len(marker_prefix)
-        content_end = match.end() - len(marker_suffix)
-
-        # Find environment boundaries within this content span
-        boundaries_in_content = [
-            (abs_start - content_start, abs_end - content_start, text)
-            for abs_start, abs_end, text in env_boundaries
-            if content_start < abs_start < content_end
-        ]
-
-        return _wrap_content_with_highlight(content, colour_name, boundaries_in_content)
-
-    # Match HLSTART{n}...HLEND{n} with same index (backreference)
-    highlight_pattern = re.compile(r"HLSTART(\d+)ENDHL(.*?)HLEND\1ENDHL", re.DOTALL)
-    result = highlight_pattern.sub(highlight_wrapper, result)
-
-    return result
+    # Step 4: Generate LaTeX using the region-based generator
+    # env_boundaries parameter kept for API compatibility but not used
+    # (inline delimiters are detected per-region in generate_highlighted_latex)
+    return generate_highlighted_latex(regions, highlights, [])
 
 
 def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:

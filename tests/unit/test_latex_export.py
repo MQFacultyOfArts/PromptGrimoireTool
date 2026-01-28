@@ -76,6 +76,22 @@ class TestGenerateTagColourDefinitions:
         assert "{AABBCC}" in result
         assert "##" not in result
 
+    def test_generates_dark_colour_variants(self) -> None:
+        """Dark colour variants are generated for underlines."""
+        tag_colours = {"alpha": "#1f77b4"}
+        result = generate_tag_colour_definitions(tag_colours)
+
+        assert "tag-alpha-dark" in result
+        # Dark is 70% of base mixed with black
+        assert r"\colorlet{tag-alpha-dark}{tag-alpha!70!black}" in result
+
+    def test_generates_many_dark_colour(self) -> None:
+        """many-dark colour (#333333) is always generated."""
+        tag_colours = {"alpha": "#1f77b4"}
+        result = generate_tag_colour_definitions(tag_colours)
+
+        assert r"\definecolor{many-dark}{HTML}{333333}" in result
+
 
 class TestFormatAnnot:
     """Tests for _format_annot function."""

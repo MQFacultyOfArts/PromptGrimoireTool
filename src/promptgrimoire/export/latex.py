@@ -269,25 +269,35 @@ ANNOTATION_PREAMBLE_BASE = r"""
 def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     """Generate LaTeX \\definecolor commands from tag→colour mapping.
 
-    Generates both full-strength and light (30%) versions of each colour.
-    The light versions are used for text highlighting backgrounds.
+    Generates full-strength, light (30%), and dark (70% black mix) versions
+    of each colour. The light versions are used for text highlighting backgrounds,
+    and dark versions are used for underlines.
 
     Args:
         tag_colours: Dict of tag_name → hex colour (e.g., {"jurisdiction": "#1f77b4"})
 
     Returns:
-        LaTeX \\definecolor commands for each tag (full and light variants).
+        LaTeX \\definecolor commands for each tag (full, light, and dark variants),
+        plus the many-dark colour for 3+ overlapping highlights.
     """
-    lines = []
+    definitions: list[str] = []
     for tag, colour in tag_colours.items():
         hex_code = colour.lstrip("#")
         safe_name = tag.replace("_", "-")  # LaTeX-safe name
         # Full colour for borders and text
-        lines.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
+        definitions.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
         # Light colour (30% strength) for highlight backgrounds
         # Using xcolor's mixing: 30% of tag colour + 70% white
-        lines.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
-    return "\n".join(lines)
+        definitions.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
+        # Dark variant for underlines (70% base, 30% black)
+        definitions.append(
+            f"\\colorlet{{tag-{safe_name}-dark}}{{tag-{safe_name}!70!black}}"
+        )
+
+    # many-dark colour for 3+ overlapping highlights
+    definitions.append(r"\definecolor{many-dark}{HTML}{333333}")
+
+    return "\n".join(definitions)
 
 
 def build_annotation_preamble(tag_colours: dict[str, str]) -> str:

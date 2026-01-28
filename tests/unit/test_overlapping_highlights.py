@@ -5,7 +5,17 @@ _replace_markers_with_annots() correctly handles interleaved highlights,
 which the previous regex-based implementation could not handle.
 """
 
+from __future__ import annotations
+
+import subprocess
+from typing import TYPE_CHECKING
+
+import pytest
+
 from promptgrimoire.export.latex import _replace_markers_with_annots
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_replace_markers_interleaved_highlights():
@@ -120,3 +130,73 @@ def test_replace_markers_preserves_latex_commands():
     result = _replace_markers_with_annots(text, marker_highlights)
 
     assert "\\textbf{bold}" in result
+
+
+# =============================================================================
+# Compilation Validation Test
+# =============================================================================
+
+
+def _has_latexmk() -> bool:
+    """Check if latexmk is available via TinyTeX."""
+    from promptgrimoire.export.pdf import get_latexmk_path
+
+    try:
+        get_latexmk_path()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+requires_latexmk = pytest.mark.skipif(
+    not _has_latexmk(), reason="latexmk not installed"
+)
+
+
+@requires_latexmk
+def test_overlapping_highlights_compile_to_pdf(tmp_path: Path):
+    """Generated LaTeX for overlapping highlights must compile without errors."""
+    text = "The HLSTART0ENDHLquick HLSTART1ENDHLbrown HLEND0ENDHLfox HLEND1ENDHLjumps"
+    marker_highlights = [
+        {"tag": "alpha", "author": "Test", "text": "quick brown", "comments": []},
+        {"tag": "beta", "author": "Test", "text": "brown fox", "comments": []},
+    ]
+
+    highlighted = _replace_markers_with_annots(text, marker_highlights)
+
+    # Wrap in minimal LaTeX document
+    # Note: luacolor is required by lua-ul for colored highlights
+    document = f"""\\documentclass{{article}}
+\\usepackage{{luacolor}}
+\\usepackage{{lua-ul}}
+\\usepackage{{xcolor}}
+\\definecolor{{tag-alpha-light}}{{HTML}}{{FFE4B5}}
+\\definecolor{{tag-alpha-dark}}{{HTML}}{{8B4513}}
+\\definecolor{{tag-beta-light}}{{HTML}}{{E6E6FA}}
+\\definecolor{{tag-beta-dark}}{{HTML}}{{4B0082}}
+\\definecolor{{many-dark}}{{HTML}}{{333333}}
+\\begin{{document}}
+{highlighted}
+\\end{{document}}
+"""
+
+    tex_file = tmp_path / "test.tex"
+    tex_file.write_text(document)
+
+    # Get latexmk path
+    from promptgrimoire.export.pdf import get_latexmk_path
+
+    latexmk = get_latexmk_path()
+
+    result = subprocess.run(
+        [str(latexmk), "-lualatex", "-interaction=nonstopmode", str(tex_file)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    # Check compilation succeeded
+    assert result.returncode == 0, f"LaTeX compilation failed:\n{result.stderr}"
+    assert (tmp_path / "test.pdf").exists()

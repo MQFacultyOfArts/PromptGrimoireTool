@@ -215,3 +215,98 @@ class TestTokenizeMarkers:
         assert tokens[0].end_pos == 4  # "abc " ends at 4
         assert tokens[1].end_pos == 19  # HLSTART{1}ENDHL ends at 19 (4 + 15)
         assert tokens[2].end_pos == 23  # " xyz" ends at 23 (total length)
+
+
+class TestTokenizeMarkersEdgeCases:
+    """Edge case tests for tokenize_markers - falsifiability scenarios."""
+
+    def test_marker_at_very_start(self) -> None:
+        """Marker at position 0 (no preceding text)."""
+        tokens = tokenize_markers("HLSTART{1}ENDHL after")
+        assert tokens[0].type == MarkerTokenType.HLSTART
+        assert tokens[0].start_pos == 0
+
+    def test_marker_at_very_end(self) -> None:
+        """Marker at end of string (no following text)."""
+        tokens = tokenize_markers("before HLEND{1}ENDHL")
+        assert tokens[-1].type == MarkerTokenType.HLEND
+
+    def test_only_markers_no_text(self) -> None:
+        """String with only markers, no text at all."""
+        tokens = tokenize_markers("HLSTART{1}ENDHLHLEND{1}ENDHL")
+        assert len(tokens) == 2
+        assert all(t.type != MarkerTokenType.TEXT for t in tokens)
+
+    def test_marker_like_text_not_marker(self) -> None:
+        """Text containing 'HLSTART' without proper format is TEXT.
+
+        This tests that partial matches don't confuse the lexer.
+        'HLSTART' alone (without {n}ENDHL) should be TEXT.
+        """
+        tokens = tokenize_markers("The word HLSTART appears here")
+        assert len(tokens) == 1
+        assert tokens[0].type == MarkerTokenType.TEXT
+        assert "HLSTART" in tokens[0].value
+
+    def test_partial_marker_is_text(self) -> None:
+        """Incomplete marker syntax is treated as TEXT."""
+        tokens = tokenize_markers("HLSTART{123 is incomplete")
+        assert len(tokens) == 1
+        assert tokens[0].type == MarkerTokenType.TEXT
+
+    def test_large_index_number(self) -> None:
+        """Large index numbers are handled correctly."""
+        tokens = tokenize_markers("HLSTART{999999}ENDHL")
+        assert tokens[0].index == 999999
+
+    def test_index_zero(self) -> None:
+        """Index 0 is valid."""
+        tokens = tokenize_markers("HLSTART{0}ENDHL")
+        assert tokens[0].index == 0
+
+    def test_unicode_in_text(self) -> None:
+        """Unicode characters in TEXT are preserved."""
+        tokens = tokenize_markers("Héllo wörld HLSTART{1}ENDHL émoji: ")
+        text_values = [t.value for t in tokens if t.type == MarkerTokenType.TEXT]
+        assert text_values[0] == "Héllo wörld "
+
+    def test_backslash_sequences(self) -> None:
+        """LaTeX backslash sequences don't confuse the lexer."""
+        tokens = tokenize_markers(r"\begin{document} HLSTART{1}ENDHL \end{document}")
+        assert len(tokens) == 3
+        assert tokens[1].type == MarkerTokenType.HLSTART
+
+    def test_curly_braces_in_text(self) -> None:
+        """Curly braces in text (not part of markers) are TEXT."""
+        tokens = tokenize_markers("some {text} with HLSTART{1}ENDHL braces {here}")
+        text_tokens = [t for t in tokens if t.type == MarkerTokenType.TEXT]
+        assert "{text}" in text_tokens[0].value
+        assert "{here}" in text_tokens[1].value
+
+    def test_newlines_between_markers(self) -> None:
+        """Newlines between markers are preserved in TEXT."""
+        tokens = tokenize_markers("HLSTART{1}ENDHL\n\n\nHLEND{1}ENDHL")
+        assert len(tokens) == 3
+        assert tokens[1].type == MarkerTokenType.TEXT
+        assert tokens[1].value == "\n\n\n"
+
+    def test_annmarker_with_other_markers(self) -> None:
+        """ANNMARKER can appear alongside HLSTART/HLEND."""
+        tokens = tokenize_markers(
+            "HLSTART{1}ENDHL text ANNMARKER{1}ENDMARKER more HLEND{1}ENDHL"
+        )
+        types = [t.type for t in tokens]
+        assert MarkerTokenType.ANNMARKER in types
+
+    def test_positions_sum_to_input_length(self) -> None:
+        """All token positions together cover entire input."""
+        input_text = "abc HLSTART{1}ENDHL def HLEND{1}ENDHL ghi"
+        tokens = tokenize_markers(input_text)
+
+        # First token starts at 0
+        assert tokens[0].start_pos == 0
+        # Last token ends at input length
+        assert tokens[-1].end_pos == len(input_text)
+        # Each token starts where previous ended
+        for i in range(1, len(tokens)):
+            assert tokens[i].start_pos == tokens[i - 1].end_pos

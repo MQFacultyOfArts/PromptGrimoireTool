@@ -68,15 +68,19 @@ class MarkerToken:
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead
-_MARKER_GRAMMAR = r"""
-    HLSTART: "HLSTART{" /[0-9]+/ "}ENDHL"
-    HLEND: "HLEND{" /[0-9]+/ "}ENDHL"
-    ANNMARKER: "ANNMARKER{" /[0-9]+/ "}ENDMARKER"
-
-    // TEXT matches any character that isn't the start of a marker
-    // Uses negative lookahead to stop before marker sequences
-    TEXT: /(?:(?!HLSTART\{|HLEND\{|ANNMARKER\{).)+/s
-"""
+#
+# Note: TEXT uses a full-marker lookahead (not just prefix) so incomplete
+# marker-like text (e.g., "HLSTART{123 ") is correctly treated as TEXT.
+_MARKER_GRAMMAR = (
+    'HLSTART: "HLSTART{" /[0-9]+/ "}ENDHL"\n'
+    'HLEND: "HLEND{" /[0-9]+/ "}ENDHL"\n'
+    'ANNMARKER: "ANNMARKER{" /[0-9]+/ "}ENDMARKER"\n'
+    r"TEXT: /(?:(?!"
+    r"HLSTART\{[0-9]+\}ENDHL|"
+    r"HLEND\{[0-9]+\}ENDHL|"
+    r"ANNMARKER\{[0-9]+\}ENDMARKER"
+    r").)+/s"
+)
 
 # Compile once at module load
 _marker_lexer = Lark(_MARKER_GRAMMAR, parser=None, lexer="basic")

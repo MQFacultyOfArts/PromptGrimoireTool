@@ -47,7 +47,7 @@ What each test claims to verify vs what it actually validates.
 | Test | Claimed Purpose | Actual Validation |
 |------|-----------------|-------------------|
 | `test_includes_xcolor` | Preamble should include xcolor package | `r"\usepackage{xcolor}" in result` |
-| `test_includes_marginnote` | Preamble should include marginnote package | `r"\usepackage{marginnote}" in result` |
+| `test_includes_marginalia` | Preamble should include marginalia package | `r"\usepackage{marginalia}" in result` |
 | `test_includes_geometry` | Preamble should include geometry with wide margin | `r"\usepackage[" in result` and `"right=6cm" in result` |
 | `test_includes_annot_command` | Preamble should define annot command | `r"\newcommand{\annot}" in result` |
 | `test_includes_colour_definitions` | Preamble should include colour definitions | `r"\definecolor{tag-jurisdiction}" in result` |
@@ -128,7 +128,7 @@ What each test claims to verify vs what it actually validates.
 | `test_compile_failure_raises` | Compilation failure raises CalledProcessError | ✅ Verifies error handling works |
 | `test_output_dir_defaults_to_tex_parent` | Output directory defaults to tex file's parent | ✅ Tests path logic |
 
-**Assessment:** `test_compile_with_todonotes` tests a package (`todonotes`) that production code doesn't use. Production uses `marginnote` + `lua-ul`.
+**Assessment:** `test_compile_with_todonotes` tests a package (`todonotes`) that production code doesn't use. Production uses `marginalia` + `lua-ul`.
 
 ### TestMarginnoteExportPipeline
 
@@ -180,7 +180,7 @@ What each test claims to verify vs what it actually validates.
 |------|------|--------|
 | `test_latex_export.py` | `TestEscapeLatex` (6 tests) | Just checked string transformations without proving they compile |
 | `test_latex_export.py` | `TestBuildAnnotationPreamble` (5 tests) | Just checked if strings like `\usepackage{xcolor}` existed |
-| `test_pdf_export.py` (integration) | `test_compile_with_todonotes` | Tested `todonotes` package; production uses `marginnote` + `lua-ul` |
+| `test_pdf_export.py` (integration) | `test_compile_with_todonotes` | Tested `todonotes` package; production uses `marginalia` + `lua-ul` |
 
 ### Tests Added (2026-01-27)
 

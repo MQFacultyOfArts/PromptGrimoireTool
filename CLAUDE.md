@@ -153,7 +153,7 @@ This installs TinyTeX to `~/.TinyTeX` and the required packages:
 - `luacolor` - color support
 - `todonotes` - margin notes
 - `geometry` - page layout
-- `marginnote` - margin annotations
+- `marginalia` - auto-stacking margin notes (LuaLaTeX)
 - `latexmk` - build automation
 
 ### Configuration

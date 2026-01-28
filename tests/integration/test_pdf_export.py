@@ -126,7 +126,7 @@ Test.
 @requires_pandoc
 @requires_latexmk
 class TestMarginnoteExportPipeline:
-    """Tests for the new marginnote+soul export pipeline."""
+    """Tests for the marginalia+lua-ul export pipeline."""
 
     @pytest.mark.asyncio
     async def test_export_annotation_pdf_basic(self, tmp_path: Path) -> None:

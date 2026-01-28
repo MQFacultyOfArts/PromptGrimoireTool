@@ -65,3 +65,40 @@ class TestGeneralNotes:
         # Property should return pycrdt Text object
         notes = doc.general_notes
         assert hasattr(notes, "__iadd__")  # Text has __iadd__ for appending
+
+
+class TestHighlights:
+    """Tests for highlight operations."""
+
+    def test_add_highlight_stores_para_ref(self) -> None:
+        """add_highlight should store the para_ref field."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_word=0,
+            end_word=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+            para_ref="[3]",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["para_ref"] == "[3]"
+
+    def test_add_highlight_para_ref_defaults_to_empty(self) -> None:
+        """add_highlight without para_ref should default to empty string."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_word=0,
+            end_word=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["para_ref"] == ""

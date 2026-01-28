@@ -941,13 +941,14 @@ def _replace_markers_with_annots(
     # Step 2: Build regions with active highlight tracking
     regions = build_regions(tokens)
 
-    # Step 3: Convert list to dict and add para_refs
+    # Step 3: Convert list to dict and ensure para_refs exist
     # marker_highlights is indexed by position (list), convert to dict[int, dict]
     highlights: dict[int, dict[str, Any]] = {}
     for idx, hl in enumerate(marker_highlights):
-        # Copy the highlight dict and add para_ref
         hl_copy = dict(hl)
-        hl_copy["para_ref"] = build_para_ref(hl)
+        # Use stored para_ref if present, otherwise calculate (fallback for old data)
+        if not hl_copy.get("para_ref"):
+            hl_copy["para_ref"] = build_para_ref(hl)
         highlights[idx] = hl_copy
 
     # Step 4: Generate LaTeX using the region-based generator

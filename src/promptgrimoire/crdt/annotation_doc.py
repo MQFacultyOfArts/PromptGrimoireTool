@@ -214,6 +214,7 @@ class AnnotationDocument:
         tag: str,
         text: str,
         author: str,
+        para_ref: str = "",
         origin_client_id: str | None = None,
     ) -> str:
         """Add a new highlight to the document.
@@ -224,6 +225,7 @@ class AnnotationDocument:
             tag: Tag type (e.g., 'jurisdiction', 'legal_issues').
             text: The highlighted text content.
             author: Display name of the author.
+            para_ref: Paragraph reference string (e.g., "[3]", "[3]-[4]").
             origin_client_id: Client making the change (for echo prevention).
 
         Returns:
@@ -241,6 +243,7 @@ class AnnotationDocument:
                 "tag": tag,
                 "text": text,
                 "author": author,
+                "para_ref": para_ref,
                 "created_at": datetime.now(UTC).isoformat(),
                 "comments": [],  # Will be converted to Array by pycrdt
             }

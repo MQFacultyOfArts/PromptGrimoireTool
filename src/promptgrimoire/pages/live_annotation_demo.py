@@ -1196,12 +1196,26 @@ async def live_annotation_demo_page(doc: str | None = None) -> None:
         if start > end:
             start, end = end, start
         text = " ".join(ctx.words[start : end + 1])
+
+        # Calculate para_ref to store with the highlight
+        start_para = ctx.word_to_legal_para.get(start)
+        end_para = ctx.word_to_legal_para.get(end)
+        if start_para is None and end_para is None:
+            para_ref = ""
+        elif start_para is None:
+            para_ref = f"[{end_para}]"
+        elif end_para is None or start_para == end_para:
+            para_ref = f"[{start_para}]"
+        else:
+            para_ref = f"[{start_para}]–[{end_para}]"  # noqa: RUF001 (en-dash)
+
         ctx.ann_doc.add_highlight(
             start_word=start,
             end_word=end + 1,
             tag=tag.value,
             text=text,
             author=username,
+            para_ref=para_ref,
             origin_client_id=client_id,
         )
         ctx.current_selection["start"] = None

@@ -1,3 +1,58 @@
+# Nested Highlight Marker Parser Implementation Plan
+
+**Goal:** Replace regex-based marker matching with a Lark lexer and linear state machine for handling interleaved highlights.
+
+**Architecture:** Three-stage pipeline: Lark lexer tokenizes markers → Region builder tracks active highlights → LaTeX generator emits nested commands.
+
+**Tech Stack:** Python 3.14, lark (lexer), pylatexenc (existing), lua-ul (existing LaTeX package)
+
+**Scope:** 5 phases from original design (all phases)
+
+**Codebase verified:** 2026-01-28
+
+---
+
+## Phase 1: Lark Lexer
+
+<!-- START_TASK_1 -->
+### Task 1: Add lark dependency
+
+**Files:**
+- Modify: `pyproject.toml`
+
+**Step 1: Add lark to dependencies**
+
+Add to `[project.dependencies]` section (around line 25):
+
+```toml
+"lark>=1.1.0",
+```
+
+**Step 2: Verify installation**
+
+Run: `uv sync`
+Expected: Installs without errors
+
+**Step 3: Commit**
+
+```bash
+git add pyproject.toml uv.lock
+git commit -m "deps: add lark parsing library for marker tokenization"
+```
+<!-- END_TASK_1 -->
+
+<!-- START_TASK_2 -->
+### Task 2: Create MarkerToken dataclass
+
+**Files:**
+- Modify: `src/promptgrimoire/export/latex.py` (add near top, after imports)
+- Create: `tests/unit/test_marker_lexer.py`
+
+**Step 1: Write the test**
+
+Create test file `tests/unit/test_marker_lexer.py`:
+
+```python
 """Unit tests for marker lexer.
 
 Tests tokenization stage ONLY - no region building or LaTeX generation.
@@ -5,11 +60,7 @@ Tests tokenization stage ONLY - no region building or LaTeX generation.
 
 import pytest
 
-from promptgrimoire.export.latex import (
-    MarkerToken,
-    MarkerTokenType,
-    tokenize_markers,
-)
+from promptgrimoire.export.latex import MarkerToken, MarkerTokenType
 
 
 class TestMarkerTokenDataclass:
@@ -41,8 +92,6 @@ class TestMarkerTokenDataclass:
 
     def test_token_is_frozen(self) -> None:
         """MarkerToken is immutable (frozen dataclass)."""
-        from dataclasses import FrozenInstanceError
-
         token = MarkerToken(
             type=MarkerTokenType.TEXT,
             value="x",
@@ -51,8 +100,83 @@ class TestMarkerTokenDataclass:
             end_pos=1,
         )
         # Should raise FrozenInstanceError
-        with pytest.raises(FrozenInstanceError):
-            token.value = "changed"  # type: ignore[invalid-assignment]
+        with pytest.raises(Exception):  # FrozenInstanceError
+            token.value = "changed"  # type: ignore[misc]
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `uv run pytest tests/unit/test_marker_lexer.py -v`
+Expected: ImportError (MarkerToken doesn't exist yet)
+
+**Step 3: Write the implementation**
+
+Add to `src/promptgrimoire/export/latex.py` after the existing imports (around line 20):
+
+```python
+from dataclasses import dataclass
+from enum import Enum
+
+
+class MarkerTokenType(Enum):
+    """Token types for marker lexer."""
+
+    TEXT = "TEXT"
+    HLSTART = "HLSTART"
+    HLEND = "HLEND"
+    ANNMARKER = "ANNMARKER"
+
+
+@dataclass(frozen=True, slots=True)
+class MarkerToken:
+    """A token from the marker lexer.
+
+    Attributes:
+        type: The token type (TEXT, HLSTART, HLEND, ANNMARKER)
+        value: The raw string value matched
+        index: For marker tokens, the highlight index (e.g., 1 from HLSTART{1}ENDHL).
+               None for TEXT tokens.
+        start_pos: Start byte position in input
+        end_pos: End byte position in input
+    """
+
+    type: MarkerTokenType
+    value: str
+    index: int | None
+    start_pos: int
+    end_pos: int
+```
+
+**Step 4: Run test to verify it passes**
+
+Run: `uv run pytest tests/unit/test_marker_lexer.py::TestMarkerTokenDataclass -v`
+Expected: All tests pass
+
+**Step 5: Commit**
+
+```bash
+git add src/promptgrimoire/export/latex.py tests/unit/test_marker_lexer.py
+git commit -m "feat(latex): add MarkerToken dataclass for lexer output"
+```
+<!-- END_TASK_2 -->
+
+<!-- START_TASK_3 -->
+### Task 3: Create Lark grammar and tokenize_markers function
+
+**Files:**
+- Modify: `src/promptgrimoire/export/latex.py`
+- Modify: `tests/unit/test_marker_lexer.py`
+
+**Step 1: Write the tests**
+
+Add to `tests/unit/test_marker_lexer.py`:
+
+```python
+from promptgrimoire.export.latex import (
+    MarkerToken,
+    MarkerTokenType,
+    tokenize_markers,
+)
 
 
 class TestTokenizeMarkers:
@@ -134,57 +258,53 @@ class TestTokenizeMarkers:
         )
         types = [t.type for t in tokens]
         assert types == [
-            MarkerTokenType.TEXT,  # "a "
-            MarkerTokenType.HLSTART,  # {1}
-            MarkerTokenType.TEXT,  # " b "
-            MarkerTokenType.HLEND,  # {1}
-            MarkerTokenType.TEXT,  # " c "
-            MarkerTokenType.HLSTART,  # {2}
-            MarkerTokenType.TEXT,  # " d "
-            MarkerTokenType.HLEND,  # {2}
-            MarkerTokenType.TEXT,  # " e"
+            MarkerTokenType.TEXT,      # "a "
+            MarkerTokenType.HLSTART,   # {1}
+            MarkerTokenType.TEXT,      # " b "
+            MarkerTokenType.HLEND,     # {1}
+            MarkerTokenType.TEXT,      # " c "
+            MarkerTokenType.HLSTART,   # {2}
+            MarkerTokenType.TEXT,      # " d "
+            MarkerTokenType.HLEND,     # {2}
+            MarkerTokenType.TEXT,      # " e"
         ]
 
     def test_nested_markers(self) -> None:
         """Properly nested markers tokenize correctly."""
         # Example A from design: nested
-        input_text = (
-            "The HLSTART{1}ENDHLquick HLSTART{2}ENDHLfox"
-            "HLEND{2}ENDHL brownHLEND{1}ENDHL dog"
+        tokens = tokenize_markers(
+            "The HLSTART{1}ENDHLquick HLSTART{2}ENDHLfoxHLEND{2}ENDHL brownHLEND{1}ENDHL dog"
         )
-        tokens = tokenize_markers(input_text)
         types = [(t.type, t.index) for t in tokens]
         assert types == [
-            (MarkerTokenType.TEXT, None),  # "The "
+            (MarkerTokenType.TEXT, None),       # "The "
             (MarkerTokenType.HLSTART, 1),
-            (MarkerTokenType.TEXT, None),  # "quick "
+            (MarkerTokenType.TEXT, None),       # "quick "
             (MarkerTokenType.HLSTART, 2),
-            (MarkerTokenType.TEXT, None),  # "fox"
+            (MarkerTokenType.TEXT, None),       # "fox"
             (MarkerTokenType.HLEND, 2),
-            (MarkerTokenType.TEXT, None),  # " brown"
+            (MarkerTokenType.TEXT, None),       # " brown"
             (MarkerTokenType.HLEND, 1),
-            (MarkerTokenType.TEXT, None),  # " dog"
+            (MarkerTokenType.TEXT, None),       # " dog"
         ]
 
     def test_interleaved_markers(self) -> None:
         """Interleaved (not properly nested) markers tokenize correctly."""
         # Example B from design: interleaved
-        input_text = (
-            "The HLSTART{1}ENDHLquick HLSTART{2}ENDHLfox"
-            "HLEND{1}ENDHL overHLEND{2}ENDHL dog"
+        tokens = tokenize_markers(
+            "The HLSTART{1}ENDHLquick HLSTART{2}ENDHLfoxHLEND{1}ENDHL overHLEND{2}ENDHL dog"
         )
-        tokens = tokenize_markers(input_text)
         types = [(t.type, t.index) for t in tokens]
         assert types == [
-            (MarkerTokenType.TEXT, None),  # "The "
+            (MarkerTokenType.TEXT, None),       # "The "
             (MarkerTokenType.HLSTART, 1),
-            (MarkerTokenType.TEXT, None),  # "quick "
+            (MarkerTokenType.TEXT, None),       # "quick "
             (MarkerTokenType.HLSTART, 2),
-            (MarkerTokenType.TEXT, None),  # "fox"
+            (MarkerTokenType.TEXT, None),       # "fox"
             (MarkerTokenType.HLEND, 1),
-            (MarkerTokenType.TEXT, None),  # " over"
+            (MarkerTokenType.TEXT, None),       # " over"
             (MarkerTokenType.HLEND, 2),
-            (MarkerTokenType.TEXT, None),  # " dog"
+            (MarkerTokenType.TEXT, None),       # " dog"
         ]
 
     def test_extracts_correct_indices(self) -> None:
@@ -202,21 +322,121 @@ class TestTokenizeMarkers:
 
     def test_start_positions_are_correct(self) -> None:
         """Token start_pos values are accurate byte offsets."""
-        # "abc " = 4 chars, "HLSTART{1}ENDHL" = 15 chars, " xyz" = 4 chars
         tokens = tokenize_markers("abc HLSTART{1}ENDHL xyz")
-        assert tokens[0].start_pos == 0  # "abc " starts at 0
-        assert tokens[1].start_pos == 4  # HLSTART{1}ENDHL starts at 4
-        assert tokens[2].start_pos == 19  # " xyz" starts at 19 (4 + 15)
+        assert tokens[0].start_pos == 0   # "abc "
+        assert tokens[1].start_pos == 4   # HLSTART{1}ENDHL
+        assert tokens[2].start_pos == 20  # " xyz"
 
     def test_end_positions_are_correct(self) -> None:
         """Token end_pos values are accurate byte offsets."""
-        # "abc " = 4 chars, "HLSTART{1}ENDHL" = 15 chars, " xyz" = 4 chars
         tokens = tokenize_markers("abc HLSTART{1}ENDHL xyz")
-        assert tokens[0].end_pos == 4  # "abc " ends at 4
-        assert tokens[1].end_pos == 19  # HLSTART{1}ENDHL ends at 19 (4 + 15)
-        assert tokens[2].end_pos == 23  # " xyz" ends at 23 (total length)
+        assert tokens[0].end_pos == 4    # "abc " ends at 4
+        assert tokens[1].end_pos == 20   # HLSTART{1}ENDHL ends at 20
+        assert tokens[2].end_pos == 24   # " xyz" ends at 24
+```
+
+**Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/unit/test_marker_lexer.py::TestTokenizeMarkers -v`
+Expected: ImportError (tokenize_markers doesn't exist yet)
+
+**Step 3: Write the implementation**
+
+Add to `src/promptgrimoire/export/latex.py` after the MarkerToken class:
+
+```python
+from lark import Lark
+
+# Lark grammar for marker tokenization
+# Literals have higher priority than regex, so markers match first
+# TEXT catches everything else with negative lookahead
+_MARKER_GRAMMAR = r'''
+    HLSTART: "HLSTART{" /[0-9]+/ "}ENDHL"
+    HLEND: "HLEND{" /[0-9]+/ "}ENDHL"
+    ANNMARKER: "ANNMARKER{" /[0-9]+/ "}ENDMARKER"
+
+    // TEXT matches any character that isn't the start of a marker
+    // Uses negative lookahead to stop before marker sequences
+    TEXT: /(?:(?!HLSTART\{|HLEND\{|ANNMARKER\{).)+/s
+'''
+
+# Compile once at module load
+_marker_lexer = Lark(_MARKER_GRAMMAR, parser=None, lexer='basic')
+
+# Regex to extract index from marker value
+_INDEX_EXTRACT_PATTERN = re.compile(r'\{(\d+)\}')
 
 
+def tokenize_markers(latex: str) -> list[MarkerToken]:
+    """Tokenize LaTeX text containing highlight markers.
+
+    Converts a string containing HLSTART{n}ENDHL, HLEND{n}ENDHL, and
+    ANNMARKER{n}ENDMARKER markers into a list of MarkerToken objects.
+    All text between markers becomes TEXT tokens.
+
+    Args:
+        latex: LaTeX string potentially containing markers
+
+    Returns:
+        List of MarkerToken objects preserving order and positions
+
+    Example:
+        >>> tokens = tokenize_markers("Hello HLSTART{1}ENDHL world")
+        >>> [(t.type.value, t.value) for t in tokens]
+        [('TEXT', 'Hello '), ('HLSTART', 'HLSTART{1}ENDHL'), ('TEXT', ' world')]
+    """
+    if not latex:
+        return []
+
+    tokens: list[MarkerToken] = []
+
+    for lark_token in _marker_lexer.lex(latex):
+        token_type = MarkerTokenType[lark_token.type]
+
+        # Extract index for marker tokens
+        index: int | None = None
+        if token_type != MarkerTokenType.TEXT:
+            match = _INDEX_EXTRACT_PATTERN.search(lark_token.value)
+            if match:
+                index = int(match.group(1))
+
+        tokens.append(
+            MarkerToken(
+                type=token_type,
+                value=lark_token.value,
+                index=index,
+                start_pos=lark_token.start_pos,
+                end_pos=lark_token.end_pos,
+            )
+        )
+
+    return tokens
+```
+
+**Step 4: Run tests to verify they pass**
+
+Run: `uv run pytest tests/unit/test_marker_lexer.py::TestTokenizeMarkers -v`
+Expected: All tests pass
+
+**Step 5: Commit**
+
+```bash
+git add src/promptgrimoire/export/latex.py tests/unit/test_marker_lexer.py
+git commit -m "feat(latex): add tokenize_markers() with Lark lexer"
+```
+<!-- END_TASK_3 -->
+
+<!-- START_TASK_4 -->
+### Task 4: Add edge case tests (falsifiability)
+
+**Files:**
+- Modify: `tests/unit/test_marker_lexer.py`
+
+**Step 1: Write additional edge case tests**
+
+Add to `tests/unit/test_marker_lexer.py`:
+
+```python
 class TestTokenizeMarkersEdgeCases:
     """Edge case tests for tokenize_markers - falsifiability scenarios."""
 
@@ -310,3 +530,54 @@ class TestTokenizeMarkersEdgeCases:
         # Each token starts where previous ended
         for i in range(1, len(tokens)):
             assert tokens[i].start_pos == tokens[i - 1].end_pos
+```
+
+**Step 2: Run tests**
+
+Run: `uv run pytest tests/unit/test_marker_lexer.py::TestTokenizeMarkersEdgeCases -v`
+Expected: All pass (if implementation is correct) or some fail (revealing bugs)
+
+**Step 3: Fix any failures, then commit**
+
+```bash
+git add tests/unit/test_marker_lexer.py
+git commit -m "test(latex): add edge case tests for marker tokenization"
+```
+<!-- END_TASK_4 -->
+
+---
+
+## Phase 1 UAT
+
+After all tasks complete:
+
+1. **Run all lexer tests:**
+   ```bash
+   uv run pytest tests/unit/test_marker_lexer.py -v
+   ```
+   Expected: All tests pass
+
+2. **Manual verification with worked examples:**
+   ```python
+   from promptgrimoire.export.latex import tokenize_markers, MarkerTokenType
+
+   # Example A: Simple nesting
+   tokens = tokenize_markers(
+       "The HLSTART{1}ENDHLquick HLSTART{2}ENDHLfoxHLEND{2}ENDHL brownHLEND{1}ENDHL dog"
+   )
+   for t in tokens:
+       print(f"{t.type.value}: {t.value!r} index={t.index}")
+   ```
+
+   Expected output:
+   ```
+   TEXT: 'The ' index=None
+   HLSTART: 'HLSTART{1}ENDHL' index=1
+   TEXT: 'quick ' index=None
+   HLSTART: 'HLSTART{2}ENDHL' index=2
+   TEXT: 'fox' index=None
+   HLEND: 'HLEND{2}ENDHL' index=2
+   TEXT: ' brown' index=None
+   HLEND: 'HLEND{1}ENDHL' index=1
+   TEXT: ' dog' index=None
+   ```

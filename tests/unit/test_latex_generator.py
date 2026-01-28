@@ -4,7 +4,10 @@ Tests highlight/underline generation from regions.
 Uses regions directly - does NOT call lexer or region builder.
 """
 
-from promptgrimoire.export.latex import generate_underline_wrapper
+from promptgrimoire.export.latex import (
+    generate_highlight_wrapper,
+    generate_underline_wrapper,
+)
 
 
 class TestGenerateUnderlineWrapper:
@@ -82,3 +85,49 @@ class TestGenerateUnderlineWrapper:
         # But we can test with a mock that captures the order
         # For now, just verify it doesn't crash
         assert "many-dark" in result
+
+
+class TestGenerateHighlightWrapper:
+    """Tests for generate_highlight_wrapper helper."""
+
+    def test_empty_active_returns_identity(self) -> None:
+        """No active highlights means no wrapping."""
+        wrapper = generate_highlight_wrapper(frozenset(), {})
+        assert wrapper("text") == "text"
+
+    def test_single_highlight_wraps_with_light_colour(self) -> None:
+        """Single highlight wraps in highLight with light colour."""
+        highlights = {0: {"tag": "alpha"}}
+        wrapper = generate_highlight_wrapper(frozenset({0}), highlights)
+        result = wrapper("text")
+
+        assert result == r"\highLight[tag-alpha-light]{text}"
+
+    def test_two_highlights_nested_wrapping(self) -> None:
+        """Two highlights produce nested highLight commands."""
+        highlights = {0: {"tag": "alpha"}, 1: {"tag": "beta"}}
+        wrapper = generate_highlight_wrapper(frozenset({0, 1}), highlights)
+        result = wrapper("text")
+
+        # Lower index is outer
+        assert (
+            result == r"\highLight[tag-alpha-light]{\highLight[tag-beta-light]{text}}"
+        )
+
+    def test_three_highlights_triple_nested(self) -> None:
+        """Three highlights produce triple-nested commands."""
+        highlights = {0: {"tag": "a"}, 1: {"tag": "b"}, 2: {"tag": "c"}}
+        wrapper = generate_highlight_wrapper(frozenset({0, 1, 2}), highlights)
+        result = wrapper("text")
+
+        # Should have 3 \highLight commands
+        assert result.count(r"\highLight") == 3
+
+    def test_sorted_indices_for_deterministic_nesting(self) -> None:
+        """Highlights are sorted by index regardless of set iteration order."""
+        highlights = {2: {"tag": "c"}, 0: {"tag": "a"}}
+        wrapper = generate_highlight_wrapper(frozenset({0, 2}), highlights)
+        result = wrapper("text")
+
+        # tag-a (index 0) should be outer
+        assert result.startswith(r"\highLight[tag-a-light]")

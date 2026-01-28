@@ -205,6 +205,44 @@ def generate_underline_wrapper(
     return wrap_double
 
 
+def generate_highlight_wrapper(
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> Callable[[str], str]:
+    """Create a function that wraps text in highLight commands.
+
+    Each active highlight adds a nested \\highLight[tag-X-light]{...} wrapper.
+    Lower indices are outer (sorted for deterministic output).
+
+    Args:
+        active: Frozenset of highlight indices currently active
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        Function that takes text and returns text wrapped in highlights
+    """
+    if not active:
+        return lambda text: text
+
+    # Sort indices for deterministic ordering (lower index = outer)
+    sorted_indices = sorted(active)
+
+    def get_light_colour(idx: int) -> str:
+        tag = highlights.get(idx, {}).get("tag", "unknown")
+        safe_tag = tag.replace("_", "-")
+        return f"tag-{safe_tag}-light"
+
+    def wrap(text: str) -> str:
+        result = text
+        # Wrap from innermost (highest index) to outermost (lowest index)
+        for idx in reversed(sorted_indices):
+            colour = get_light_colour(idx)
+            result = rf"\highLight[{colour}]{{{result}}}"
+        return result
+
+    return wrap
+
+
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead

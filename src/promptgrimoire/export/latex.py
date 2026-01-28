@@ -279,6 +279,13 @@ def _wrap_content_with_nested_highlights(
             split_points.append((pos, pos + len(delim), delim))
             start = pos + 1
 
+    # Also split on environment boundaries (\begin{...} and \end{...})
+    # Use regex instead of pylatexenc to catch partial environments
+    # (e.g., \end{enumerate} without matching \begin in this content)
+    env_pattern = re.compile(r"(\\(?:begin|end)\{[^}]+\}(?:\{[^}]*\})*)")
+    for match in env_pattern.finditer(content):
+        split_points.append((match.start(), match.end(), match.group(0)))
+
     # Sort by position
     split_points.sort(key=lambda x: x[0])
 
@@ -350,11 +357,12 @@ def generate_highlighted_latex(
             underline_wrap = generate_underline_wrapper(region.active, highlights)
             highlight_wrap = generate_highlight_wrapper(region.active, highlights)
 
-            # Check for inline delimiters that require splitting
+            # Check for inline delimiters or env boundaries that require splitting
             inline_delimiters = [r"\par", r"\\", r"\tabularnewline", "&"]
-            has_delimiters = any(delim in region.text for delim in inline_delimiters)
+            has_inline = any(delim in region.text for delim in inline_delimiters)
+            has_env = r"\begin{" in region.text or r"\end{" in region.text
 
-            if has_delimiters:
+            if has_inline or has_env:
                 # Has boundaries - use splitting logic
                 wrapped = _wrap_content_with_nested_highlights(
                     region.text, region.active, highlights

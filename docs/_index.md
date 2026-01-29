@@ -100,6 +100,12 @@ library references during development.
 
 ---
 
+## Design Plans
+
+- [Nested Highlight Marker Parser](design-plans/2026-01-28-nested-highlight-marker-parser.md) - Lark-based lexer for interleaved highlight markers
+- [CSS Fidelity PDF Export](design-plans/2026-01-29-css-fidelity-pdf-export.md) - Tiered CSS handling for HTML-to-PDF pipeline
+- [Unicode Robustness](design-plans/2026-01-29-unicode-robustness.md) - Unicode handling in marker tokenization
+
 ## Project Documents
 
 - [Case Brief Tool PRD](case-brief-tool-prd.md) - Product requirements for legal education case briefing tool

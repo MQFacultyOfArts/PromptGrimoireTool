@@ -1,0 +1,210 @@
+# Unicode Robustness Design
+
+## Summary
+
+This design adds robust unicode handling to PromptGrimoire's PDF export system. Currently, LaTeX export only handles ASCII special characters—documents containing CJK text (Chinese, Japanese, Korean) or emoji fail to compile or render incorrectly. This work implements a detect-and-wrap approach: text is scanned for unicode ranges (CJK ideographs, emoji), then wrapped in appropriate LaTeX commands before compilation. A new `escape_unicode_latex()` function extends the existing ASCII escape logic, preserving compatibility while adding unicode support.
+
+The implementation includes a comprehensive test corpus (Big List of Naughty Strings, curated CJK samples, emoji edge cases) with pytest markers to separate fast smoke tests from slow full-corpus validation. Round-trip tests verify that unicode text survives storage in PostgreSQL, transmission through pycrdt CRDTs, and rendering via LaTeX/LuaLaTeX. TinyTeX package management is extended to install required LaTeX packages (luatexja, emoji, Noto fonts) for unicode rendering.
+
+## Definition of Done
+
+- [ ] Core unicode tests (CJK + common emoji) run on every `pytest` invocation
+- [ ] BLNS corpus tests available via `pytest -m blns`
+- [ ] `uv run test-all-fixtures` runs full corpus including BLNS and slow LaTeX tests
+- [ ] `uv run test-debug` excludes BLNS and slow tests
+- [ ] LaTeX export renders CJK text correctly (Japanese, Chinese, Korean)
+- [ ] LaTeX export renders emoji correctly (including ZWJ sequences)
+- [ ] All text storage/retrieval paths pass unicode round-trip tests
+
+## Glossary
+
+- **BLNS (Big List of Naughty Strings)**: A corpus of pathological input strings (unicode edge cases, control characters, RTL text, etc.) used to stress-test string handling in applications
+- **CJK**: Chinese, Japanese, and Korean writing systems; use unified ideographic characters from Unicode ranges U+4E00–U+9FFF
+- **CRDT (Conflict-free Replicated Data Type)**: Data structure that allows concurrent edits from multiple users without conflicts; PromptGrimoire uses pycrdt for collaborative annotation
+- **Emoji ZWJ sequences**: Multi-codepoint emoji formed by joining base emoji with Zero-Width Joiner (U+200D), e.g. family emoji, profession emoji with skin tones
+- **Hiragana/Katakana**: Japanese syllabic writing systems (U+3040–U+309F, U+30A0–U+30FF)
+- **Hangul**: Korean alphabet characters (U+AC00–U+D7AF)
+- **LaTeX**: Document preparation system using plain-text markup; PromptGrimoire uses it for PDF generation
+- **LuaLaTeX**: Modern LaTeX engine with native Unicode support and Lua scripting; required for advanced font handling
+- **Noto fonts**: Google's open-source font family with comprehensive Unicode coverage, including CJK
+- **Parameterized tests**: pytest feature to run the same test logic against multiple input values
+- **pytest markers**: Tags (`@pytest.mark.blns`) to categorise tests and control which run via command-line filters
+- **Round-trip test**: Test that stores data, retrieves it, and verifies it's unchanged; validates encoding/decoding correctness
+- **TinyTeX**: Minimal LaTeX distribution; PromptGrimoire uses it for portable, consistent PDF generation
+- **Unicode range detection**: Scanning text to identify character blocks (CJK, emoji, ASCII) for targeted handling
+
+## Architecture
+
+**Primary approach:** Fontspec fallback chain. Configure LuaLaTeX with a font fallback sequence (TeX Gyre → Noto CJK → Noto Color Emoji) so the compiler handles unicode natively without detection logic.
+
+**Fallback approach:** If fontspec fallback proves inadequate (emoji naming, specific font requirements), fall back to detect-and-wrap where text is scanned for CJK/emoji ranges and wrapped in appropriate LaTeX commands.
+
+Phase 1 investigates which approach is viable before committing to implementation.
+
+**Components:**
+
+1. **Unicode LaTeX Handler** (`src/promptgrimoire/export/unicode_latex.py`)
+   - If fontspec fallback works: minimal changes, font configuration only
+   - If detect-and-wrap needed: range detection, command wrapping
+
+2. **Test Fixtures** (`tests/fixtures/unicode/`)
+   - BLNS corpus (`blns.json`) — full corpus for opt-in runs
+   - BLNS injection subset (`blns_injection.json`) — ~50 curated strings targeting LaTeX/SQL/XSS injection, runs always
+   - Curated CJK samples (`cjk_samples.json`)
+   - Emoji edge cases (`emoji_samples.json`)
+
+3. **Test Infrastructure** (`tests/unit/test_unicode_handling.py`)
+   - Parameterized tests with pytest markers
+   - Round-trip tests for DB, CRDT, and LaTeX layers
+   - **Injection tests** for all text input paths (not just preservation)
+
+4. **Test Runner Scripts**
+   - `test-all-fixtures` script for full confidence runs
+
+## Existing Patterns
+
+Investigation found existing LaTeX escaping in `src/promptgrimoire/export/latex.py:572-588`. The `_escape_latex()` function handles ASCII special characters only.
+
+This design extends that pattern:
+- Keep existing ASCII escape logic
+- Add unicode range detection before escaping
+- Wrap non-ASCII in appropriate LaTeX commands
+
+The existing pattern of a single escape function is preserved—`escape_unicode_latex()` becomes the new entry point, calling the existing ASCII logic internally.
+
+Test runner scripts follow existing pattern in `scripts/test_debug.py`.
+
+## Implementation Phases
+
+<!-- START_PHASE_1 -->
+### Phase 1: Investigation and Test Infrastructure
+
+**Goal:** Determine viable LaTeX approach; set up test corpus and pytest markers
+
+**Components:**
+- **Fontspec investigation** — Test if TeX Gyre Termes + Noto CJK + Noto Color Emoji fallback chain works in LuaLaTeX
+- `tests/fixtures/unicode/blns.json` — Big List of Naughty Strings corpus
+- `tests/fixtures/unicode/blns_injection.json` — Curated ~50 strings targeting injection (LaTeX command injection, SQL, XSS)
+- `tests/fixtures/unicode/cjk_samples.json` — Curated CJK strings (Japanese, Chinese simplified/traditional, Korean)
+- `tests/fixtures/unicode/emoji_samples.json` — Emoji edge cases (skin tones, ZWJ sequences, flags)
+- `pyproject.toml` — Add `blns` and `slow` pytest markers, configure default exclusion
+- `scripts/test_all_fixtures.py` — Script to run full corpus
+
+**Dependencies:** None
+
+**Done when:**
+- Decision documented: fontspec fallback OR detect-and-wrap
+- `pytest --collect-only` shows markers registered
+- `uv run pytest` excludes `blns` and `slow` by default (but runs `blns_injection` always)
+- `uv run test-all-fixtures` runs without marker filtering
+- `uv run test-debug` continues to work (excludes slow tests)
+<!-- END_PHASE_1 -->
+
+<!-- START_PHASE_2 -->
+### Phase 2: Unicode Detection Module
+
+**Goal:** Create unicode range detection utilities
+
+**Components:**
+- `src/promptgrimoire/export/unicode_latex.py` — Unicode detection and LaTeX wrapping
+  - `is_cjk(char)` — Detect CJK unified ideographs, hiragana, katakana, hangul
+  - `is_emoji(char)` — Detect emoji ranges (may use `emoji` library or regex)
+  - `escape_unicode_latex(text)` — Main entry point
+
+**Dependencies:** Phase 1 (test fixtures)
+
+**Done when:**
+- Detection correctly identifies CJK ranges (U+4E00–U+9FFF, U+3040–U+30FF, U+AC00–U+D7AF)
+- Detection correctly identifies emoji (including multi-codepoint sequences)
+- Unit tests pass for detection functions
+<!-- END_PHASE_2 -->
+
+<!-- START_PHASE_3 -->
+### Phase 3: LaTeX Wrapping Implementation
+
+**Goal:** Wrap detected unicode in appropriate LaTeX commands
+
+**Components:**
+- `src/promptgrimoire/export/unicode_latex.py` — Extend with wrapping logic
+  - CJK text wrapped for font switching
+  - Emoji wrapped with `\emoji{}` command or font switch
+  - Preserve existing ASCII escape logic from `_escape_latex()`
+
+**Dependencies:** Phase 2 (detection module)
+
+**Done when:**
+- `escape_unicode_latex("Hello 世界")` produces valid LaTeX with CJK handling
+- `escape_unicode_latex("Test 🎉")` produces valid LaTeX with emoji handling
+- Mixed content handled correctly
+- Unit tests pass
+<!-- END_PHASE_3 -->
+
+<!-- START_PHASE_4 -->
+### Phase 4: TinyTeX Package Setup
+
+**Goal:** Add required LaTeX packages for CJK and emoji
+
+**Components:**
+- `scripts/setup_latex.py` — Add package installation
+  - `emoji` package
+  - `luatexja` bundle
+  - `noto` fonts (or configure system font usage)
+
+**Dependencies:** Phase 3 (wrapping implementation)
+
+**Done when:**
+- `uv run python scripts/setup_latex.py` installs required packages
+- LuaLaTeX can compile documents with `\usepackage{emoji}` and `\usepackage{luatexja-fontspec}`
+<!-- END_PHASE_4 -->
+
+<!-- START_PHASE_5 -->
+### Phase 5: Integration with Existing Export
+
+**Goal:** Replace `_escape_latex()` with unicode-aware version
+
+**Components:**
+- `src/promptgrimoire/export/latex.py` — Update to use `escape_unicode_latex()`
+- `src/promptgrimoire/export/pdf_export.py` — Update HTML-to-LaTeX conversion
+- LaTeX preamble updates for emoji and CJK font setup
+
+**Dependencies:** Phase 4 (TinyTeX packages)
+
+**Done when:**
+- Existing PDF export tests still pass
+- PDF export with CJK content compiles successfully
+- PDF export with emoji content compiles successfully
+<!-- END_PHASE_5 -->
+
+<!-- START_PHASE_6 -->
+### Phase 6: Round-Trip and Injection Tests
+
+**Goal:** Verify all text handling layers preserve unicode AND resist injection
+
+**Components:**
+- `tests/unit/test_unicode_handling.py` — Parameterized tests
+  - `test_db_roundtrip` — SQLModel storage and retrieval preserves content
+  - `test_crdt_roundtrip` — pycrdt Text preservation
+  - `test_latex_escape_no_crash` — escape function doesn't raise
+  - `test_latex_compiles` — generated LaTeX compiles (marked `slow`)
+  - `test_latex_no_command_injection` — BLNS injection subset doesn't execute LaTeX commands
+  - `test_html_no_xss` — BLNS injection subset doesn't break HTML rendering
+  - `test_sql_no_injection` — BLNS injection subset stored safely via SQLModel
+
+**Dependencies:** Phase 5 (integration)
+
+**Done when:**
+- Core unicode samples pass all round-trip tests
+- BLNS injection subset passes all injection tests (runs always)
+- Full BLNS corpus passes round-trip tests (via `pytest -m blns`)
+- LaTeX compilation tests pass for representative samples
+<!-- END_PHASE_6 -->
+
+## Additional Considerations
+
+**Architecture decision in Phase 1:** If fontspec fallback chain works cleanly, Phases 2-3 simplify significantly (font config only, no detection logic). If emoji proves problematic (likely), detect-and-wrap may be needed for emoji only while CJK uses native fallback.
+
+**Memory usage:** First compilation with Noto CJK fonts can use ~6GB RAM for font cache generation. Document this in setup instructions. CI runners may need larger instances or pre-cached fonts.
+
+**Test performance:** BLNS has ~500 strings. LaTeX compilation is slow (~2-5s per document). Full corpus runs are for pre-release confidence, not every commit. Injection subset (~50 strings) runs always.
+
+**Font availability:** Design assumes Noto fonts available. If not installed, LaTeX compilation will fail with clear error. Setup script handles installation.

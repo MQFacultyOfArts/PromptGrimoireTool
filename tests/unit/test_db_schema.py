@@ -19,8 +19,6 @@ def test_all_models_registered() -> None:
 
     expected_tables = {
         "user",
-        "class",
-        "conversation",
         "annotation_document_state",
         "course",
         "course_enrollment",
@@ -38,15 +36,13 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 7 table names."""
+    """get_expected_tables() returns all 5 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 7
+    assert len(tables) == 5
     assert "user" in tables
-    assert "class" in tables
-    assert "conversation" in tables
     assert "annotation_document_state" in tables
     assert "course" in tables
     assert "course_enrollment" in tables

@@ -67,56 +67,6 @@ class User(SQLModel, table=True):
     )
 
 
-class Class(SQLModel, table=True):
-    """A class instance for student enrollment.
-
-    Classes are enrollment containers that can be linked to courses.
-    Students join via invite codes.
-
-    Attributes:
-        id: Primary key UUID, auto-generated.
-        name: Display name for the class.
-        owner_id: Foreign key to the instructor/owner User (CASCADE DELETE).
-        invite_code: Unique code students use to join.
-        created_at: Timestamp when class was created.
-    """
-
-    __tablename__ = "class"
-
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    name: str = Field(max_length=200)
-    owner_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
-    invite_code: str = Field(unique=True, max_length=20)
-    created_at: datetime = Field(
-        default_factory=_utcnow, sa_column=_timestamptz_column()
-    )
-
-
-class Conversation(SQLModel, table=True):
-    """A conversation submitted by a user for annotation.
-
-    Stores the raw conversation text and optional CRDT state for
-    real-time collaborative annotation.
-
-    Attributes:
-        id: Primary key UUID, auto-generated.
-        class_id: Foreign key to the Class (CASCADE DELETE).
-        owner_id: Foreign key to the User (CASCADE DELETE).
-        raw_text: Full conversation text.
-        crdt_state: Serialized pycrdt state for collaborative editing.
-        created_at: Timestamp when conversation was created.
-    """
-
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    class_id: UUID = Field(sa_column=_cascade_fk_column("class.id"))
-    owner_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
-    raw_text: str
-    crdt_state: bytes | None = None
-    created_at: datetime = Field(
-        default_factory=_utcnow, sa_column=_timestamptz_column()
-    )
-
-
 class AnnotationDocumentState(SQLModel, table=True):
     """Persisted CRDT state for annotation documents.
 

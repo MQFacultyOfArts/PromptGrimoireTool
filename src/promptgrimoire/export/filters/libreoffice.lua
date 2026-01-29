@@ -5,14 +5,21 @@
 --   - margin-left → adjustwidth environment
 --   - text-transform: uppercase → \MakeUppercase
 
--- Parse CSS margin-left value, return inches as number or nil
+-- Parse CSS margin-left value, return value and unit or nil
+-- Supports both inches (in) and centimeters (cm)
 local function parse_margin_left(style)
-  if not style then return nil end
+  if not style then return nil, nil end
+  -- Try inches first
   local value = style:match('margin%-left:%s*([%d%.]+)in')
   if value then
-    return tonumber(value)
+    return tonumber(value), 'in'
   end
-  return nil
+  -- Try centimeters
+  value = style:match('margin%-left:%s*([%d%.]+)cm')
+  if value then
+    return tonumber(value), 'cm'
+  end
+  return nil, nil
 end
 
 -- Escape special LaTeX characters in text
@@ -128,11 +135,11 @@ function Div(elem)
   local style = elem.attr.attributes['style']
   if not style then return elem end
 
-  local margin = parse_margin_left(style)
+  local margin, unit = parse_margin_left(style)
   if margin and margin > 0 then
-    -- Use adjustwidth environment for indentation
+    -- Use adjustwidth environment for indentation (preserves original unit)
     local open = pandoc.RawBlock('latex',
-      string.format('\\begin{adjustwidth}{%sin}{}', margin))
+      string.format('\\begin{adjustwidth}{%s%s}{}', margin, unit))
     local close = pandoc.RawBlock('latex', '\\end{adjustwidth}')
 
     local result = {open}

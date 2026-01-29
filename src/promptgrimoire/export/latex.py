@@ -499,6 +499,12 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
 
+% Pandoc compatibility
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{-\maxdimen}  % no section numbering
+
 % Annotation counter and macro
 % Usage: \annot{colour-name}{margin content}
 % Uses footnotesize for compact margin notes

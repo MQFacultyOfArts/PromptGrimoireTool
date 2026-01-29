@@ -215,3 +215,70 @@ WHAT TO CHECK:
         )
 
         assert result.pdf_path.exists()
+
+    @requires_latexmk
+    def test_overlapping_highlights_crossing_list_boundary(
+        self, pdf_exporter: Callable[..., PdfExportResult]
+    ) -> None:
+        """Compound case: overlapping highlights that cross environment boundary.
+
+        Issue #87: Tests that both overlap handling AND boundary splitting
+        work correctly together.
+        """
+        # HTML with a list - pandoc will convert to enumerate environment
+        html = """
+        <p>Before the list starts here.</p>
+        <ol>
+            <li>First item in the list.</li>
+            <li>Second item in the list.</li>
+        </ol>
+        <p>After the list ends here.</p>
+        """
+        # Two overlapping highlights that both cross the list boundary
+        # Words: Before(0) the(1) list(2) starts(3) here(4) First(5) item(6)
+        #        in(7) the(8) list(9) Second(10) item(11) in(12) the(13) list(14)
+        #        After(15) the(16) list(17) ends(18) here(19)
+        highlights = [
+            {
+                "start_word": 3,  # "starts"
+                "end_word": 11,  # through "item" (second)
+                "tag": "jurisdiction",
+                "author": "Test",
+                "text": "starts here First item in the list Second item",
+                "comments": [],
+            },
+            {
+                "start_word": 6,  # "item" (first)
+                "end_word": 15,  # through "After"
+                "tag": "legal_issues",
+                "author": "Test",
+                "text": "item in the list Second item in the list After",
+                "comments": [],
+            },
+        ]
+
+        acceptance_criteria = """
+TEST: Overlapping Highlights Crossing List Boundary (Issue #87)
+
+WHAT THIS TESTS:
+Two overlapping highlights that BOTH cross the list environment boundary.
+This compound case exercises both the overlap handling AND boundary splitting.
+
+- Highlight 1 (jurisdiction): words 3-11, crosses into list
+- Highlight 2 (legal_issues): words 6-15, crosses out of list
+
+WHAT TO CHECK:
+1. "starts here" has ONE highlight (jurisdiction - blue)
+2. "First item in the list Second item" has TWO highlights overlapping
+3. "in the list After" has ONE highlight (legal_issues - pink)
+4. List structure preserved (numbered items render correctly)
+5. No compilation errors or 'Lonely item' warnings
+"""
+        result = pdf_exporter(
+            html=html,
+            highlights=highlights,
+            test_name="overlapping_cross_boundary",
+            acceptance_criteria=acceptance_criteria,
+        )
+
+        assert result.pdf_path.exists()

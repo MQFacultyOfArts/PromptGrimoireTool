@@ -140,10 +140,11 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
                 tag_colours=TAG_COLOURS,
                 general_notes=notes_content,
                 output_dir=output_dir,
+                filename=test_name,
             )
         )
 
-        tex_path = output_dir / "annotated_document.tex"
+        tex_path = output_dir / f"{test_name}.tex"
 
         return PdfExportResult(
             pdf_path=pdf_path,

@@ -151,6 +151,7 @@ async def export_annotation_pdf(
     word_to_legal_para: dict[int, int | None] | None = None,
     output_dir: Path | None = None,
     user_id: str | None = None,
+    filename: str = "annotated_document",
 ) -> Path:
     """Generate PDF with annotations from live annotation data.
 
@@ -206,7 +207,7 @@ async def export_annotation_pdf(
         else:
             output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
 
-    tex_path = output_dir / "annotated_document.tex"
+    tex_path = output_dir / f"{filename}.tex"
     tex_path.write_text(document)
 
     # Compile to PDF

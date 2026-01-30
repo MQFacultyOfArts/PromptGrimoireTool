@@ -265,30 +265,37 @@ Use `scripts/test_pdf_export.py` to generate PDFs. Human review for:
 ### LaTeX Post-processing
 - `_fix_invalid_newlines()` removes `\newline{}` in invalid table contexts
 
-### UAT FAILED (2026-01-31)
+### Progress (2026-01-31 Session 2)
 
-PDFs compile but output quality is poor. **Visual review criteria NOT met:**
+**Fixed:**
+- ✓ AustLII navigation chrome removed (ribbon, page-header, page-side, page-tertiary)
+- ✓ Added `list_normalizer.py` - converts `<li value="N">` to `<ol start="N">` for Pandoc
+- ✓ Paragraph numbering now preserved via `\setcounter{enumi}` in LaTeX
+- ✓ Added `hidelinks` option to hyperref (removes blue link boxes)
+- ✓ Generalized `parse_margin` in Lua filter for future margin-top/bottom support
+
+**Verified working:**
+- Chrome removal pipeline: `inject_speaker_labels()` → `remove_ui_chrome()` → `convert_html_to_latex()`
+- AustLII HTML (113KB) → preprocessed (64KB, 44% reduction) → clean LaTeX
+
+**Still broken:**
+- Table structure: Pandoc mangles AustLII table cells (missing `&` delimiters)
+- First table shows "Court of Criminal Appeal" / "Supreme Court" / "New South Wales" in wrong columns
+
+### UAT Status
 
 **austlii.html:**
-- Link menus at top still present (chrome removal incomplete)
-- Decision column incorrectly placed (should be col 2, not col 1)
-- Tables structurally wrong
-- Grounds of appeal para 4 has huge whitespace
-- Paragraph numbering resets
-- Indents not correct
-- Regression vs RTF-based approach (183.rtf worked better)
+- ~~Link menus at top still present~~ ✓ FIXED - chrome removed
+- Decision column incorrectly placed (Pandoc table parsing issue)
+- Tables structurally wrong (Pandoc issue, not preprocessing)
+- ~~Paragraph numbering resets~~ ✓ FIXED - list_normalizer preserves numbering
 
-**claude_cooking.html:**
-- Paragraph indents don't work
-- General formatting issues
-
-**claude_maths.html:**
-- Missing math content (possibly due to `--no-highlight` or other Pandoc options)
+**Blocking issue:**
+- Database migration mismatch (`fe6d5d784dab` not found) - blocks pytest integration tests
+- Unrelated to PDF export work, needs separate fix
 
 ### Next Steps
-1. Compare against 183.rtf approach - understand what worked there
-2. Fix table structure handling (Pandoc mangling tables)
-3. More aggressive chrome removal for austlii navigation
-4. Preserve paragraph numbering/indentation from source
-5. Investigate math content loss
-6. Consider whether HTML→LaTeX pipeline is fundamentally limited vs RTF→LaTeX
+1. Fix Pandoc table parsing - investigate why cell structure is lost
+2. Compare HTML table structure before/after preprocessing
+3. Consider custom Lua filter for AustLII table structure
+4. Fix database migration issue (separate task)

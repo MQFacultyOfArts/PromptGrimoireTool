@@ -129,6 +129,32 @@ class TestMarginLeft:
         assert "\\begin{adjustwidth}{0.75in}{}" in result
         assert "Styled paragraph" in result
 
+    @requires_pandoc
+    def test_margin_left_em_units(self) -> None:
+        """margin-left with em units converts to LaTeX em."""
+        html = '<div style="margin-left: 2em"><p>Indented text</p></div>'
+        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        assert r"\begin{adjustwidth}{2em}{}" in latex
+        assert "Indented text" in latex
+
+    @requires_pandoc
+    def test_margin_left_rem_units(self) -> None:
+        """margin-left with rem units converts to LaTeX em (1:1 mapping)."""
+        html = '<div style="margin-left: 1.5rem"><p>Indented text</p></div>'
+        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        # rem maps to em for LaTeX (no root font context)
+        assert r"\begin{adjustwidth}{1.5em}{}" in latex
+        assert "Indented text" in latex
+
+    @requires_pandoc
+    def test_margin_left_px_units(self) -> None:
+        """margin-left with px units converts to pt (1px = 0.75pt)."""
+        html = '<div style="margin-left: 40px"><p>Indented text</p></div>'
+        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        # 40px * 0.75 = 30pt (Lua outputs 30.0 for float)
+        assert r"\begin{adjustwidth}{30.0pt}{}" in latex
+        assert "Indented text" in latex
+
 
 class TestOrderedListStart:
     """Ordered list start attribute → \\setcounter{enumi}{N-1}."""

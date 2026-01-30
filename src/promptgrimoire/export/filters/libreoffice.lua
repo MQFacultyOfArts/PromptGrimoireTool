@@ -6,19 +6,45 @@
 --   - text-transform: uppercase → \MakeUppercase
 
 -- Parse CSS margin-left value, return value and unit or nil
--- Supports both inches (in) and centimeters (cm)
+-- Supports inches (in), centimeters (cm), em, rem, and pixels (px)
+-- Unit conversion:
+--   em -> em (native LaTeX)
+--   rem -> em (1:1, no root context in LaTeX)
+--   px -> pt (1px = 0.75pt)
 local function parse_margin_left(style)
   if not style then return nil, nil end
-  -- Try inches first
+
+  -- Try inches
   local value = style:match('margin%-left:%s*([%d%.]+)in')
   if value then
     return tonumber(value), 'in'
   end
+
   -- Try centimeters
   value = style:match('margin%-left:%s*([%d%.]+)cm')
   if value then
     return tonumber(value), 'cm'
   end
+
+  -- Try em (native LaTeX unit)
+  value = style:match('margin%-left:%s*([%d%.]+)em')
+  if value then
+    return tonumber(value), 'em'
+  end
+
+  -- Try rem (convert to em, 1:1)
+  value = style:match('margin%-left:%s*([%d%.]+)rem')
+  if value then
+    return tonumber(value), 'em'  -- rem -> em for LaTeX
+  end
+
+  -- Try px (convert to pt, 1px = 0.75pt)
+  value = style:match('margin%-left:%s*([%d%.]+)px')
+  if value then
+    local pt_value = tonumber(value) * 0.75
+    return pt_value, 'pt'
+  end
+
   return nil, nil
 end
 

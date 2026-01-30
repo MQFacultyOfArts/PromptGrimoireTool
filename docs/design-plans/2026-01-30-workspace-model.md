@@ -6,6 +6,10 @@ Foundation data model for annotation workspaces. A Workspace is the unit of coll
 
 ## Definition of Done
 
+**Acceptance Criterion (concrete):**
+
+> Using the new `/annotation` route: upload 183.rtf, annotate it, click export PDF, and get a PDF with all annotations included. All existing E2E tests pass with the new workspace-based interface.
+
 **Deliverables:**
 
 1. **Workspace entity** with Alembic migration

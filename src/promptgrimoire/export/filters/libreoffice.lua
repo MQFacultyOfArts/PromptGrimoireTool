@@ -5,38 +5,44 @@
 --   - margin-left → adjustwidth environment
 --   - text-transform: uppercase → \MakeUppercase
 
--- Parse CSS margin-left value, return value and unit or nil
+-- Parse CSS margin value for a given property, return value and unit or nil
 -- Supports: in, cm, em, rem, px
 -- rem converts to em (1:1), px converts to pt (x0.75)
-local function parse_margin_left(style)
+local function parse_margin(style, property)
   if not style then return nil, nil end
 
+  -- Build pattern: property:%s*value+unit
   -- Try inches
-  local value = style:match('margin%-left:%s*([%d%.]+)in')
+  local pattern = property .. ':%s*([%d%.]+)in'
+  local value = style:match(pattern)
   if value then
     return tonumber(value), 'in'
   end
 
   -- Try centimeters
-  value = style:match('margin%-left:%s*([%d%.]+)cm')
+  pattern = property .. ':%s*([%d%.]+)cm'
+  value = style:match(pattern)
   if value then
     return tonumber(value), 'cm'
   end
 
   -- Try em (LaTeX native)
-  value = style:match('margin%-left:%s*([%d%.]+)em')
+  pattern = property .. ':%s*([%d%.]+)em'
+  value = style:match(pattern)
   if value then
     return tonumber(value), 'em'
   end
 
   -- Try rem (convert to em, 1:1 ratio)
-  value = style:match('margin%-left:%s*([%d%.]+)rem')
+  pattern = property .. ':%s*([%d%.]+)rem'
+  value = style:match(pattern)
   if value then
     return tonumber(value), 'em'  -- rem -> em
   end
 
   -- Try px (convert to pt, x0.75)
-  value = style:match('margin%-left:%s*([%d%.]+)px')
+  pattern = property .. ':%s*([%d%.]+)px'
+  value = style:match(pattern)
   if value then
     local pt_value = tonumber(value) * 0.75
     -- Clean up decimal: use integer if whole number
@@ -48,6 +54,11 @@ local function parse_margin_left(style)
   end
 
   return nil, nil
+end
+
+-- Backward-compatible wrapper for margin-left
+local function parse_margin_left(style)
+  return parse_margin(style, 'margin%-left')
 end
 
 -- Escape special LaTeX characters in text
@@ -157,6 +168,8 @@ function Table(tbl)
 end
 
 -- Handle Div elements with margin-left style
+-- Note: margin-top/margin-bottom support disabled pending investigation
+-- of spacing regression in enumerated lists
 function Div(elem)
   if FORMAT ~= 'latex' then return elem end
 

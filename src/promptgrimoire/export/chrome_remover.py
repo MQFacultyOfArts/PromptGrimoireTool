@@ -24,6 +24,9 @@ _CHROME_CLASS_PATTERNS = [
     "share-button",
     "logo",
     "brand",
+    "closing",  # AustLII footer
+    "side-element",  # AustLII sidebar elements
+    "year-options",  # AustLII year filter dropdown
 ]
 
 # ID patterns that indicate navigation/header chrome (case-insensitive prefix match)
@@ -32,8 +35,11 @@ _CHROME_ID_PATTERNS = [
     "page-header",
     "page-search",
     "page-logo",
+    "page-side",  # AustLII sidebar (Print, Download, Cited By, etc.)
+    "page-tertiary",  # AustLII footer navigation
     "panels",
     "panel-",  # panel-type, panel-jurisdiction, panel-year, etc.
+    "ribbon",  # AustLII breadcrumb navigation
 ]
 
 # Maximum dimension (px) for images to be considered icons and removed

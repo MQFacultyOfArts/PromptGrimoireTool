@@ -177,6 +177,70 @@ class TestOrderedListStart:
         assert "First" in result
 
 
+class TestListValueNormalization:
+    """Convert <li value="N"> to <ol start="N"> for Pandoc compatibility."""
+
+    def test_li_value_converted_to_ol_start(self) -> None:
+        """First li value becomes ol start attribute."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="5">Para 5</li><li value="6">Para 6</li></ol>'
+        result = normalize_list_values(html)
+
+        assert 'start="5"' in result
+        assert "Para 5" in result
+
+    def test_li_value_one_no_start(self) -> None:
+        """li value=1 doesn't need start (it's the default)."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="1">Para 1</li></ol>'
+        result = normalize_list_values(html)
+
+        # start=1 is default, shouldn't be added
+        assert 'start="1"' not in result
+        assert "Para 1" in result
+
+    def test_multiple_ols_each_get_start(self) -> None:
+        """Multiple OLs each get start from their first li."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = """
+        <ol><li value="1">Para 1</li><li value="2">Para 2</li></ol>
+        <ol><li value="3">Para 3</li></ol>
+        <ol><li value="4">Para 4</li><li value="5">Para 5</li></ol>
+        """
+        result = normalize_list_values(html)
+
+        # First ol: start=1 not needed
+        # Second ol: start=3
+        # Third ol: start=4
+        assert 'start="3"' in result
+        assert 'start="4"' in result
+
+    def test_li_without_value_unchanged(self) -> None:
+        """OL without li value attributes is unchanged."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = "<ol><li>Item</li></ol>"
+        result = normalize_list_values(html)
+
+        assert "start=" not in result
+        assert "Item" in result
+
+    @requires_pandoc
+    def test_normalized_list_produces_correct_latex(self) -> None:
+        """Full pipeline: li value → ol start → setcounter."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="5">Para 5</li></ol>'
+        normalized = normalize_list_values(html)
+        result = convert_html_to_latex(normalized, filter_path=LEGAL_FILTER)
+
+        assert "\\setcounter{enumi}{4}" in result
+        assert "Para 5" in result
+
+
 class TestUnitConversion:
     """CSS unit conversion: em, rem, px → LaTeX equivalents."""
 
@@ -492,3 +556,53 @@ class TestUIChromeRemoval:
 
         assert "icon.png" not in result
         assert "Content here" in result
+
+
+class TestChromeRemovalInFullPipeline:
+    """Verify chrome_remover + convert_html_to_latex produce clean output."""
+
+    @requires_pandoc
+    def test_austlii_ribbon_removed_in_full_pipeline(self) -> None:
+        """AustLII ribbon navigation is removed when full pipeline is used."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <div id="ribbon">Type | Jurisdiction | Database</div>
+        <div id="page-content">
+            <h1>Lawlis v R [2025] NSWCCA 183</h1>
+            <p>This is the actual judgment content.</p>
+        </div>
+        """
+        # Full pipeline: chrome removal then LaTeX conversion
+        cleaned_html = remove_ui_chrome(html)
+        result = convert_html_to_latex(cleaned_html, filter_path=LIBREOFFICE_FILTER)
+
+        # Ribbon should be removed
+        assert "ribbon" not in result.lower()
+        assert "Type" not in result or "Jurisdiction" not in result
+        # Content should be preserved
+        assert "Lawlis" in result
+        assert "judgment content" in result
+
+    @requires_pandoc
+    def test_page_header_removed_in_full_pipeline(self) -> None:
+        """AustLII page-header is removed when full pipeline is used."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <header id="page-header">
+            <img src="logo.svg" alt="AustLII">
+            <h1>Supreme Court of NSW</h1>
+        </header>
+        <div id="page-content">
+            <p>Judgment text here.</p>
+        </div>
+        """
+        # Full pipeline: chrome removal then LaTeX conversion
+        cleaned_html = remove_ui_chrome(html)
+        result = convert_html_to_latex(cleaned_html, filter_path=LIBREOFFICE_FILTER)
+
+        # Header chrome should be removed (logo definitely gone)
+        assert "logo.svg" not in result
+        # Content should be preserved
+        assert "Judgment text" in result

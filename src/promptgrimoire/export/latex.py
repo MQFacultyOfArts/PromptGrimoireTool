@@ -38,6 +38,7 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+from promptgrimoire.export.list_normalizer import normalize_list_values
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +494,7 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{calc}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{changepage}
 \usepackage{luacolor}  % Required by lua-ul for coloured highlights
 \usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
@@ -1027,6 +1028,9 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     Raises:
         subprocess.CalledProcessError: If Pandoc fails.
     """
+    # Preprocess HTML: convert <li value="N"> to <ol start="N"> for Pandoc
+    html = normalize_list_values(html)
+
     # Preprocess HTML to wrap styled <p> tags for Pandoc attribute preservation
     normalised_html = normalise_styled_paragraphs(html)
 

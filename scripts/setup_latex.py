@@ -24,7 +24,7 @@ REQUIRED_PACKAGES = [
     "luacolor",  # Color support for LuaLaTeX
     "todonotes",  # Margin notes (used in tests)
     "geometry",  # Page layout
-    "marginnote",  # Margin annotations
+    "marginalia",  # Auto-stacking margin notes (LuaLaTeX)
     "latexmk",  # Build automation
     "xcolor",  # Color support
     "soul",  # Underlining/highlighting (fallback)

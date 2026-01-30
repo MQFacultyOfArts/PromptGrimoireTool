@@ -34,6 +34,7 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **PostgreSQL** - persistence
 - **pycrdt** - CRDT for real-time collaboration
 - **Stytch** - auth (magic links, passkeys, RBAC)
+- **Lark** - parser generator for LaTeX marker tokenization
 
 ## Development Workflow
 
@@ -153,7 +154,7 @@ This installs TinyTeX to `~/.TinyTeX` and the required packages:
 - `luacolor` - color support
 - `todonotes` - margin notes
 - `geometry` - page layout
-- `marginnote` - margin annotations
+- `marginalia` - auto-stacking margin notes (LuaLaTeX)
 - `latexmk` - build automation
 
 ### Configuration
@@ -166,18 +167,31 @@ The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave e
 - `scripts/setup_latex.py` - installs TinyTeX and packages
 - Does NOT fall back to system PATH - TinyTeX only for consistency
 
+### LaTeX Marker Pipeline
+
+The annotation export uses a Lark-based lexer pipeline (Issue #85) to handle arbitrarily nested and overlapping highlights:
+
+1. **Marker insertion** - `_insert_markers_into_html()` inserts `HLSTART{n}ENDHL`, `HLEND{n}ENDHL`, and `ANNMARKER{n}ENDMARKER` at word positions
+2. **Pandoc conversion** - HTML to LaTeX (markers survive as plain text)
+3. **Lexer tokenization** - `tokenize_markers()` uses Lark grammar to extract marker tokens
+4. **Region building** - `build_regions()` tracks active highlight state to create regions with constant highlight sets
+5. **LaTeX generation** - `generate_highlighted_latex()` wraps each region in nested `\highLight` and `\underLine` commands
+
+Key types in `latex.py`:
+- `MarkerToken` - Token from lexer (TEXT, HLSTART, HLEND, ANNMARKER)
+- `Region` - Text span with frozenset of active highlight indices
+
 ## Database
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-### Tables (6 SQLModel classes)
+### Tables (5 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
-- **Class** - Student enrollment containers
-- **Conversation** - Imported conversations for annotation
-- **Highlight** - Annotated passages in case documents
-- **HighlightComment** - Comment threads on highlights
-- **AnnotationDocumentState** - Persisted CRDT state
+- **Course** - Course/unit of study with weeks and enrolled members
+- **CourseEnrollment** - Maps users to courses with course-level roles
+- **Week** - Week within a course with visibility controls
+- **AnnotationDocumentState** - Persisted CRDT state for annotation documents
 
 ### Database Rules
 

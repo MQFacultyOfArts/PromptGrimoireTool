@@ -1,28 +1,23 @@
-"""Unit tests for LaTeX export with annotations.
+"""Unit tests for LaTeX export pure functions.
 
-Tests verify:
-1. String transformations (timestamp formatting, colour definitions, marker logic)
-2. Final compilation produces valid PDF (source of truth)
+Tests string manipulation, formatting, and colour generation functions.
+These are pure functions with no external dependencies (except LaTeX compilation).
 
-The compilation test saves output to output/test_output/latex_validation/
-for visual inspection.
+Extracted from tests/unit/test_latex_export.py during Phase 5 reorganization.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from promptgrimoire.export.latex import (
     ANNOTATION_PREAMBLE_BASE,
     _escape_latex,
     _format_annot,
     _format_timestamp,
-    _insert_markers_into_html,
-    _replace_markers_with_annots,
     generate_tag_colour_definitions,
 )
+from tests.conftest import requires_latexmk
 
 
 class TestFormatTimestamp:
@@ -52,7 +47,6 @@ class TestGenerateTagColourDefinitions:
         """Single tag should produce one definecolor."""
         result = generate_tag_colour_definitions({"jurisdiction": "#1f77b4"})
         assert r"\definecolor{tag-jurisdiction}{HTML}{1f77b4}" in result
-        # Collect for preamble (will be used in compilation test)
 
     def test_multiple_tags(self) -> None:
         """Multiple tags should produce multiple definecolors."""
@@ -76,6 +70,22 @@ class TestGenerateTagColourDefinitions:
         assert "{AABBCC}" in result
         assert "##" not in result
 
+    def test_generates_dark_colour_variants(self) -> None:
+        """Dark colour variants are generated for underlines."""
+        tag_colours = {"alpha": "#1f77b4"}
+        result = generate_tag_colour_definitions(tag_colours)
+
+        assert "tag-alpha-dark" in result
+        # Dark is 70% of base mixed with black
+        assert r"\colorlet{tag-alpha-dark}{tag-alpha!70!black}" in result
+
+    def test_generates_many_dark_colour(self) -> None:
+        """many-dark colour (#333333) is always generated."""
+        tag_colours = {"alpha": "#1f77b4"}
+        result = generate_tag_colour_definitions(tag_colours)
+
+        assert r"\definecolor{many-dark}{HTML}{333333}" in result
+
 
 class TestFormatAnnot:
     """Tests for _format_annot function."""
@@ -93,7 +103,6 @@ class TestFormatAnnot:
         assert r"\annot{tag-jurisdiction}" in result
         assert "Jurisdiction" in result  # Tag display name
         assert "Alice" in result
-        # Collected in compilation test via _build_annot_test_content()
 
     def test_with_paragraph_reference(self) -> None:
         """Annotation with para ref should include it."""
@@ -147,129 +156,9 @@ class TestFormatAnnot:
         assert r"\&" in result
 
 
-class TestInsertMarkersIntoHtml:
-    """Tests for _insert_markers_into_html function."""
-
-    def test_empty_highlights(self) -> None:
-        """Empty highlights should return unchanged HTML."""
-        html = "<p>Hello world</p>"
-        result, markers = _insert_markers_into_html(html, [])
-        assert result == html
-        assert markers == []
-
-    def test_single_highlight(self) -> None:
-        """Single highlight should insert marker at word position."""
-        html = "<p>Hello world test</p>"
-        highlights = [{"start_word": 1, "tag": "test"}]
-        result, markers = _insert_markers_into_html(html, highlights)
-        assert "ANNMARKER0ENDMARKER" in result
-        assert "world" in result
-        assert len(markers) == 1
-
-    def test_multiple_highlights(self) -> None:
-        """Multiple highlights should insert multiple markers."""
-        html = "<p>One two three four five</p>"
-        highlights = [
-            {"start_word": 1, "tag": "a"},
-            {"start_word": 3, "tag": "b"},
-        ]
-        result, markers = _insert_markers_into_html(html, highlights)
-        assert "ANNMARKER0ENDMARKER" in result
-        assert "ANNMARKER1ENDMARKER" in result
-        assert len(markers) == 2
-
-    def test_preserves_html_tags(self) -> None:
-        """HTML tags should be preserved."""
-        html = "<p><strong>Bold</strong> text</p>"
-        highlights = [{"start_word": 0, "tag": "test"}]
-        result, _ = _insert_markers_into_html(html, highlights)
-        assert "<strong>" in result
-        assert "</strong>" in result
-
-
-class TestReplaceMarkersWithAnnots:
-    """Tests for _replace_markers_with_annots function."""
-
-    def test_replaces_marker(self) -> None:
-        """Marker should be replaced with annot command."""
-        latex = "Some ANNMARKER0ENDMARKER text here"
-        highlights = [
-            {
-                "start_word": 0,
-                "end_word": 1,
-                "tag": "jurisdiction",
-                "author": "Alice",
-                "text": "test",
-                "comments": [],
-            }
-        ]
-        result = _replace_markers_with_annots(latex, highlights)
-        assert "ANNMARKER" not in result
-        assert r"\annot{tag-jurisdiction}" in result
-
-    def test_with_word_to_legal_para(self) -> None:
-        """Should include paragraph reference when mapping provided."""
-        latex = "Some ANNMARKER0ENDMARKER text"
-        highlights = [
-            {
-                "start_word": 5,
-                "end_word": 8,
-                "tag": "reasons",
-                "author": "Bob",
-                "text": "test",
-                "comments": [],
-            }
-        ]
-        word_to_para = {5: 10, 6: 10, 7: 10}
-        result = _replace_markers_with_annots(latex, highlights, word_to_para)
-        assert "[10]" in result
-
-    def test_multiple_markers(self) -> None:
-        """Multiple markers should all be replaced."""
-        latex = "ANNMARKER0ENDMARKER and ANNMARKER1ENDMARKER"
-        highlights = [
-            {
-                "start_word": 0,
-                "end_word": 1,
-                "tag": "a",
-                "author": "X",
-                "text": "t",
-                "comments": [],
-            },
-            {
-                "start_word": 2,
-                "end_word": 3,
-                "tag": "b",
-                "author": "Y",
-                "text": "u",
-                "comments": [],
-            },
-        ]
-        result = _replace_markers_with_annots(latex, highlights)
-        assert "ANNMARKER" not in result
-        assert r"\annot{tag-a}" in result
-        assert r"\annot{tag-b}" in result
-
-
 # =============================================================================
 # Compilation Validation Test
 # =============================================================================
-
-
-def _has_latexmk() -> bool:
-    """Check if latexmk is available via TinyTeX."""
-    from promptgrimoire.export.pdf import get_latexmk_path
-
-    try:
-        get_latexmk_path()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-requires_latexmk = pytest.mark.skipif(
-    not _has_latexmk(), reason="latexmk not installed"
-)
 
 
 # Output directory for visual inspection

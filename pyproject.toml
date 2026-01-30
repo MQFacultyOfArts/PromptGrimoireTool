@@ -36,6 +36,7 @@ dependencies = [
     "selectolax>=0.4.6",
     "html5lib>=1.1",
     "pylatexenc>=2.10",
+    "lark>=1.1.0",
 ]
 
 [project.optional-dependencies]

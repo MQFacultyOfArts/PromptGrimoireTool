@@ -14,6 +14,7 @@ import pytest
 from promptgrimoire.export.latex import convert_html_to_latex
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
 from promptgrimoire.export.pdf_export import export_annotation_pdf
+from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,21 +25,7 @@ def _has_pandoc() -> bool:
     return shutil.which("pandoc") is not None
 
 
-def _has_latexmk() -> bool:
-    """Check if latexmk is available via TinyTeX."""
-    from promptgrimoire.export.pdf import get_latexmk_path
-
-    try:
-        get_latexmk_path()
-        return True
-    except FileNotFoundError:
-        return False
-
-
 requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not installed")
-requires_latexmk = pytest.mark.skipif(
-    not _has_latexmk(), reason="latexmk not installed"
-)
 
 
 @requires_pandoc
@@ -139,7 +126,7 @@ Test.
 @requires_pandoc
 @requires_latexmk
 class TestMarginnoteExportPipeline:
-    """Tests for the new marginnote+soul export pipeline."""
+    """Tests for the marginalia+lua-ul export pipeline."""
 
     @pytest.mark.asyncio
     async def test_export_annotation_pdf_basic(self, tmp_path: Path) -> None:

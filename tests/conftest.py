@@ -17,6 +17,7 @@ import pytest
 from dotenv import load_dotenv
 
 from promptgrimoire.db import run_alembic_upgrade
+from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
 
@@ -24,6 +25,25 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
+
+
+# =============================================================================
+# LaTeX/PDF Testing Utilities
+# =============================================================================
+
+
+def _has_latexmk() -> bool:
+    """Check if latexmk is available via TinyTeX."""
+    try:
+        get_latexmk_path()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+requires_latexmk = pytest.mark.skipif(
+    not _has_latexmk(), reason="latexmk not installed"
+)
 
 
 # =============================================================================
@@ -120,10 +140,11 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
                 tag_colours=TAG_COLOURS,
                 general_notes=notes_content,
                 output_dir=output_dir,
+                filename=test_name,
             )
         )
 
-        tex_path = output_dir / "annotated_document.tex"
+        tex_path = output_dir / f"{test_name}.tex"
 
         return PdfExportResult(
             pdf_path=pdf_path,

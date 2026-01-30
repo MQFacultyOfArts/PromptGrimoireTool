@@ -28,8 +28,6 @@ from promptgrimoire.db.courses import (
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.models import (
     AnnotationDocumentState,
-    Class,
-    Conversation,
     Course,
     CourseEnrollment,
     CourseRole,
@@ -53,8 +51,6 @@ from promptgrimoire.db.users import (
 
 __all__ = [
     "AnnotationDocumentState",
-    "Class",
-    "Conversation",
     "Course",
     "CourseEnrollment",
     "CourseRole",

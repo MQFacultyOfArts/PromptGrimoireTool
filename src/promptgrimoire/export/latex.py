@@ -13,14 +13,21 @@ Pipeline:
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+from lark import Lark
 from pylatexenc.latexwalker import (
     LatexEnvironmentNode,
     LatexGroupNode,
@@ -31,6 +38,433 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class MarkerTokenType(Enum):
+    """Token types for marker lexer."""
+
+    TEXT = "TEXT"
+    HLSTART = "HLSTART"
+    HLEND = "HLEND"
+    ANNMARKER = "ANNMARKER"
+
+
+@dataclass(frozen=True, slots=True)
+class MarkerToken:
+    """A token from the marker lexer.
+
+    Attributes:
+        type: The token type (TEXT, HLSTART, HLEND, ANNMARKER)
+        value: The raw string value matched
+        index: For marker tokens, the highlight index (e.g., 1 from HLSTART{1}ENDHL).
+               None for TEXT tokens.
+        start_pos: Start byte position in input
+        end_pos: End byte position in input
+    """
+
+    type: MarkerTokenType
+    value: str
+    index: int | None
+    start_pos: int
+    end_pos: int
+
+
+@dataclass(frozen=True, slots=True)
+class Region:
+    """A contiguous span of text with a constant set of active highlights.
+
+    Attributes:
+        text: The text content of this region
+        active: Frozenset of highlight indices currently active in this region
+        annots: List of annotation marker indices that appeared in this region
+    """
+
+    text: str
+    active: frozenset[int]
+    annots: list[int]
+
+
+def build_regions(tokens: list[MarkerToken]) -> list[Region]:
+    """Convert a token stream into regions with active highlight tracking.
+
+    Implements a linear state machine that tracks which highlights are
+    currently active as we scan through the tokens. Each time the active
+    set changes (at HLSTART or HLEND), a new region boundary is created.
+
+    Args:
+        tokens: List of MarkerToken from tokenize_markers()
+
+    Returns:
+        List of Region objects, each with constant active highlight set
+
+    Example:
+        >>> tokens = tokenize_markers("a HLSTART{1}ENDHL b HLEND{1}ENDHL c")
+        >>> regions = build_regions(tokens)
+        >>> [(r.text, r.active) for r in regions]
+        [('a ', frozenset()), ('b ', frozenset({1})), ('c', frozenset())]
+    """
+    if not tokens:
+        return []
+
+    regions: list[Region] = []
+    active: set[int] = set()
+    current_text = ""
+
+    def flush_region() -> None:
+        """Emit current region if there's accumulated text."""
+        nonlocal current_text
+        if current_text:
+            regions.append(
+                Region(
+                    text=current_text,
+                    active=frozenset(active),
+                    annots=[],  # Annotations added by ANNMARKER after flush
+                )
+            )
+            current_text = ""
+
+    for token in tokens:
+        if token.type == MarkerTokenType.TEXT:
+            current_text += token.value
+
+        elif token.type == MarkerTokenType.HLSTART:
+            flush_region()
+            if token.index is not None:
+                active.add(token.index)
+
+        elif token.type == MarkerTokenType.HLEND:
+            flush_region()
+            if token.index is not None:
+                active.discard(token.index)
+
+        elif token.type == MarkerTokenType.ANNMARKER and token.index is not None:
+            # Attach annotation to the PREVIOUS region (highlight just ended).
+            # ANNMARKER appears after HLEND, so belongs to the flushed region.
+            # If no region exists yet but we have text, flush it first.
+            if not regions and current_text:
+                flush_region()
+            if regions:
+                regions[-1].annots.append(token.index)
+
+    # Flush any remaining text
+    flush_region()
+
+    return regions
+
+
+def generate_underline_wrapper(
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> Callable[[str], str]:
+    """Create a function that wraps text in underline commands.
+
+    Based on overlap count:
+    - 0 highlights: identity function (no underlines)
+    - 1 highlight: single 1pt underline in tag's dark colour
+    - 2 highlights: stacked 2pt + 1pt underlines (outer is lower index)
+    - 3+ highlights: single 4pt underline in many-dark colour
+
+    Args:
+        active: Frozenset of highlight indices currently active
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        Function that takes text and returns text wrapped in underlines
+    """
+    if not active:
+        return lambda text: text
+
+    count = len(active)
+
+    if count >= 3:
+        # Many overlapping: single thick line
+        def wrap_many(text: str) -> str:
+            return rf"\underLine[color=many-dark, height=4pt, bottom=-5pt]{{{text}}}"
+
+        return wrap_many
+
+    # Sort indices for deterministic ordering (lower index = outer)
+    sorted_indices = sorted(active)
+
+    def get_dark_colour(idx: int) -> str:
+        tag = highlights.get(idx, {}).get("tag", "unknown")
+        safe_tag = tag.replace("_", "-")
+        return f"tag-{safe_tag}-dark"
+
+    if count == 1:
+        colour = get_dark_colour(sorted_indices[0])
+
+        def wrap_single(text: str) -> str:
+            return rf"\underLine[color={colour}, height=1pt, bottom=-3pt]{{{text}}}"
+
+        return wrap_single
+
+    # count == 2: stacked underlines
+    outer_colour = get_dark_colour(sorted_indices[0])
+    inner_colour = get_dark_colour(sorted_indices[1])
+
+    def wrap_double(text: str) -> str:
+        inner = rf"\underLine[color={inner_colour}, height=1pt, bottom=-3pt]{{{text}}}"
+        return rf"\underLine[color={outer_colour}, height=2pt, bottom=-3pt]{{{inner}}}"
+
+    return wrap_double
+
+
+def generate_highlight_wrapper(
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> Callable[[str], str]:
+    """Create a function that wraps text in highLight commands.
+
+    Each active highlight adds a nested \\highLight[tag-X-light]{...} wrapper.
+    Lower indices are outer (sorted for deterministic output).
+
+    Args:
+        active: Frozenset of highlight indices currently active
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        Function that takes text and returns text wrapped in highlights
+    """
+    if not active:
+        return lambda text: text
+
+    # Sort indices for deterministic ordering (lower index = outer)
+    sorted_indices = sorted(active)
+
+    def get_light_colour(idx: int) -> str:
+        tag = highlights.get(idx, {}).get("tag", "unknown")
+        safe_tag = tag.replace("_", "-")
+        return f"tag-{safe_tag}-light"
+
+    def wrap(text: str) -> str:
+        result = text
+        # Wrap from innermost (highest index) to outermost (lowest index)
+        for idx in reversed(sorted_indices):
+            colour = get_light_colour(idx)
+            result = rf"\highLight[{colour}]{{{result}}}"
+        return result
+
+    return wrap
+
+
+def _wrap_content_with_nested_highlights(
+    content: str,
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> str:
+    """Wrap content in nested highlights, splitting at environment boundaries.
+
+    Similar to _wrap_content_with_highlight but handles multiple nested
+    highlight layers and underlines.
+
+    Args:
+        content: Text content that may contain environment boundaries
+        active: Frozenset of active highlight indices
+        highlights: Mapping from highlight index to highlight dict
+
+    Returns:
+        LaTeX with properly split and wrapped highlight commands
+    """
+    underline_wrap = generate_underline_wrapper(active, highlights)
+    highlight_wrap = generate_highlight_wrapper(active, highlights)
+
+    # Inline delimiters that require splitting
+    inline_delimiters = [r"\par", r"\\", r"\tabularnewline", "&"]
+
+    # Find all split points from inline delimiters
+    split_points: list[tuple[int, int, str]] = []
+
+    for delim in inline_delimiters:
+        start = 0
+        while True:
+            pos = content.find(delim, start)
+            if pos == -1:
+                break
+            split_points.append((pos, pos + len(delim), delim))
+            start = pos + 1
+
+    # Also split on environment boundaries (\begin{...} and \end{...})
+    # Use regex instead of pylatexenc to catch partial environments
+    # (e.g., \end{enumerate} without matching \begin in this content)
+    env_pattern = re.compile(r"(\\(?:begin|end)\{[^}]+\}(?:\{[^}]*\})*)")
+    for match in env_pattern.finditer(content):
+        split_points.append((match.start(), match.end(), match.group(0)))
+
+    # Sort by position
+    split_points.sort(key=lambda x: x[0])
+
+    if not split_points:
+        # No splits needed
+        return highlight_wrap(underline_wrap(content))
+
+    # Build result by iterating through segments
+    result_parts: list[str] = []
+    pos = 0
+
+    for start, end, boundary_text in split_points:
+        if start > pos:
+            # Text before this boundary
+            segment = content[pos:start]
+            if segment.strip():
+                result_parts.append(highlight_wrap(underline_wrap(segment)))
+            else:
+                result_parts.append(segment)  # Preserve whitespace-only
+
+        # The boundary itself (not wrapped in highlight)
+        result_parts.append(boundary_text)
+        pos = end
+
+    # Text after last boundary
+    if pos < len(content):
+        segment = content[pos:]
+        if segment.strip():
+            result_parts.append(highlight_wrap(underline_wrap(segment)))
+        else:
+            result_parts.append(segment)
+
+    return "".join(result_parts)
+
+
+def generate_highlighted_latex(
+    regions: list[Region],
+    highlights: dict[int, dict[str, Any]],
+    env_boundaries: list[tuple[int, int, str]],  # noqa: ARG001 - kept for API
+) -> str:
+    """Generate LaTeX with highlight and underline commands from regions.
+
+    For each region:
+    1. If active highlights: wrap in nested \\highLight commands
+    2. If active highlights: wrap in \\underLine commands (based on overlap count)
+    3. Split at environment boundaries using _wrap_content_with_nested_highlights
+    4. Emit \\annot commands for any annotation markers in the region
+
+    Args:
+        regions: List of Region objects from build_regions()
+        highlights: Mapping from highlight index to highlight dict
+        env_boundaries: Environment boundaries from _extract_env_boundaries()
+                       (not currently used - boundaries are detected per-region)
+
+    Returns:
+        Complete LaTeX string with all highlight/underline/annot commands
+    """
+    if not regions:
+        return ""
+
+    result_parts: list[str] = []
+
+    for region in regions:
+        if not region.active:
+            # No highlights - pass through unchanged
+            result_parts.append(region.text)
+        else:
+            # Get wrappers for this region's active set
+            underline_wrap = generate_underline_wrapper(region.active, highlights)
+            highlight_wrap = generate_highlight_wrapper(region.active, highlights)
+
+            # Check for inline delimiters or env boundaries that require splitting
+            inline_delimiters = [r"\par", r"\\", r"\tabularnewline", "&"]
+            has_inline = any(delim in region.text for delim in inline_delimiters)
+            has_env = r"\begin{" in region.text or r"\end{" in region.text
+
+            if has_inline or has_env:
+                # Has boundaries - use splitting logic
+                wrapped = _wrap_content_with_nested_highlights(
+                    region.text, region.active, highlights
+                )
+            else:
+                # No boundaries - simple wrap
+                wrapped = highlight_wrap(underline_wrap(region.text))
+
+            result_parts.append(wrapped)
+
+        # Emit annotation commands for this region
+        for annot_idx in region.annots:
+            if annot_idx in highlights:
+                hl = highlights[annot_idx]
+                para_ref = hl.get("para_ref", "")
+                annot_latex = _format_annot(hl, para_ref)
+                result_parts.append(annot_latex)
+
+    return "".join(result_parts)
+
+
+# Lark grammar for marker tokenization
+# Literals have higher priority than regex, so markers match first
+# TEXT catches everything else with negative lookahead
+#
+# Note: The marker format is HLSTART0ENDHL (no braces around index),
+# matching the production templates _HLSTART_TEMPLATE, _HLEND_TEMPLATE, etc.
+_MARKER_GRAMMAR = (
+    'HLSTART: "HLSTART" /[0-9]+/ "ENDHL"\n'
+    'HLEND: "HLEND" /[0-9]+/ "ENDHL"\n'
+    'ANNMARKER: "ANNMARKER" /[0-9]+/ "ENDMARKER"\n'
+    r"TEXT: /(?:(?!"
+    r"HLSTART[0-9]+ENDHL|"
+    r"HLEND[0-9]+ENDHL|"
+    r"ANNMARKER[0-9]+ENDMARKER"
+    r").)+/s"
+)
+
+# Compile once at module load
+_marker_lexer = Lark(_MARKER_GRAMMAR, parser=None, lexer="basic")
+
+# Regex to extract index from marker value
+# Matches HLSTART0ENDHL, HLEND0ENDHL, ANNMARKER0ENDMARKER formats
+_INDEX_EXTRACT_PATTERN = re.compile(r"(\d+)")
+
+
+def tokenize_markers(latex: str) -> list[MarkerToken]:
+    """Tokenize LaTeX text containing highlight markers.
+
+    Converts a string containing HLSTARTnENDHL, HLENDnENDHL, and
+    ANNMARKERnENDMARKER markers into a list of MarkerToken objects.
+    All text between markers becomes TEXT tokens.
+
+    Args:
+        latex: LaTeX string potentially containing markers
+
+    Returns:
+        List of MarkerToken objects preserving order and positions
+
+    Example:
+        >>> tokens = tokenize_markers("Hello HLSTART{1}ENDHL world")
+        >>> [(t.type.value, t.value) for t in tokens]
+        [('TEXT', 'Hello '), ('HLSTART', 'HLSTART{1}ENDHL'), ('TEXT', ' world')]
+    """
+    if not latex:
+        return []
+
+    tokens: list[MarkerToken] = []
+
+    for lark_token in _marker_lexer.lex(latex):
+        token_type = MarkerTokenType[lark_token.type]
+
+        # Extract index for marker tokens
+        index: int | None = None
+        if token_type != MarkerTokenType.TEXT:
+            match = _INDEX_EXTRACT_PATTERN.search(lark_token.value)
+            if match:
+                index = int(match.group(1))
+
+        # Lark lexer always provides start_pos and end_pos for tokens
+        start_pos = lark_token.start_pos if lark_token.start_pos is not None else 0
+        end_pos = lark_token.end_pos if lark_token.end_pos is not None else 0
+
+        tokens.append(
+            MarkerToken(
+                type=token_type,
+                value=lark_token.value,
+                index=index,
+                start_pos=start_pos,
+                end_pos=end_pos,
+            )
+        )
+
+    return tokens
+
 
 # Unique marker format that survives Pandoc conversion
 # Format: ANNMARKER{index}ENDMARKER for annotation insertion point
@@ -45,15 +479,16 @@ _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 # Pattern for words - matches _WordSpanProcessor._WORD_PATTERN
 _WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
 
-# Base LaTeX preamble for LuaLaTeX with marginnote+lua-ul annotation approach
+# Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
 # Note: The \annot command takes 2 parameters: colour name and margin content.
 # It places a superscript number at the insertion point with a coloured margin note.
 # Highlighting uses lua-ul's \highLight for robust cross-line-break backgrounds.
+# marginalia package auto-stacks overlapping margin notes (requires 2+ lualatex runs).
 ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{fontspec}
 \setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
 \usepackage{microtype}         % Better typography (kerning, protrusion)
-\usepackage{marginnote}
+\usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
 \usepackage{longtable}
 \usepackage{booktabs}
 \usepackage{array}
@@ -64,14 +499,21 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
 
+% Pandoc compatibility
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{-\maxdimen}  % no section numbering
+
 % Annotation counter and macro
 % Usage: \annot{colour-name}{margin content}
 % Uses footnotesize for compact margin notes
+% marginalia auto-stacks overlapping notes with ysep spacing
 \newcounter{annotnum}
 \newcommand{\annot}[2]{%
   \stepcounter{annotnum}%
   \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
-  \marginnote{%
+  \marginalia[ysep=3pt]{%
     \fcolorbox{#1}{#1!20}{%
       \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
     }%
@@ -83,25 +525,35 @@ ANNOTATION_PREAMBLE_BASE = r"""
 def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     """Generate LaTeX \\definecolor commands from tag→colour mapping.
 
-    Generates both full-strength and light (30%) versions of each colour.
-    The light versions are used for text highlighting backgrounds.
+    Generates full-strength, light (30%), and dark (70% black mix) versions
+    of each colour. The light versions are used for text highlighting backgrounds,
+    and dark versions are used for underlines.
 
     Args:
         tag_colours: Dict of tag_name → hex colour (e.g., {"jurisdiction": "#1f77b4"})
 
     Returns:
-        LaTeX \\definecolor commands for each tag (full and light variants).
+        LaTeX \\definecolor commands for each tag (full, light, and dark variants),
+        plus the many-dark colour for 3+ overlapping highlights.
     """
-    lines = []
+    definitions: list[str] = []
     for tag, colour in tag_colours.items():
         hex_code = colour.lstrip("#")
         safe_name = tag.replace("_", "-")  # LaTeX-safe name
         # Full colour for borders and text
-        lines.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
+        definitions.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
         # Light colour (30% strength) for highlight backgrounds
         # Using xcolor's mixing: 30% of tag colour + 70% white
-        lines.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
-    return "\n".join(lines)
+        definitions.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
+        # Dark variant for underlines (70% base, 30% black)
+        definitions.append(
+            f"\\colorlet{{tag-{safe_name}-dark}}{{tag-{safe_name}!70!black}}"
+        )
+
+    # many-dark colour for 3+ overlapping highlights
+    definitions.append(r"\definecolor{many-dark}{HTML}{333333}")
+
+    return "\n".join(definitions)
 
 
 def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
@@ -302,8 +754,8 @@ def _insert_markers_into_html(
                 # Add the word
                 text_result.append(match.group(0))
 
-                # Insert END markers after this word (HLEND then ANNMARKER)
-                # ANNMARKER AFTER HLEND so \annot{} (with \par) is outside \highLight{}
+                # Insert HLEND then ANNMARKER after this word
+                # (ANNMARKER after HLEND so annotation appears after highlight ends)
                 if word_idx in end_markers:
                     for marker_idx in end_markers[word_idx]:
                         text_result.append(_HLEND_TEMPLATE.format(marker_idx))
@@ -455,21 +907,21 @@ def _replace_markers_with_annots(
 ) -> str:
     """Replace markers in LaTeX with \\annot and \\highLight commands.
 
-    Uses lua-ul's \\highLight[color]{text} for highlighting.
-    The marker structure is: HLSTART{n}ANNMARKER{n}...text...HLEND{n}
-
-    Processing order:
-    1. Replace ANNMARKER{n} with \\annot commands
-    2. Wrap HLSTART{n}...HLEND{n} spans with \\highLight[color]{...}
+    Handles arbitrarily interleaved highlights by:
+    1. Tokenizing markers with lark lexer
+    2. Building regions with active highlight sets
+    3. Generating nested LaTeX for each region using generate_highlighted_latex()
 
     Args:
-        latex: LaTeX content with markers.
-        marker_highlights: List of highlights in marker order.
+        latex: LaTeX content with HLSTART{n}ENDHL, HLEND{n}ENDHL, ANNMARKER{n}ENDMARKER
+        marker_highlights: List of highlights in marker order (index = position).
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
 
     Returns:
-        LaTeX with markers replaced by commands.
+        LaTeX with \\highLight and \\underLine commands.
     """
+    if not latex:
+        return latex
 
     def build_para_ref(highlight: dict) -> str:
         """Build paragraph reference string for a highlight."""
@@ -492,54 +944,26 @@ def _replace_markers_with_annots(
         # Use en-dash for ranges
         return f"[{start_para}]–[{end_para}]"  # noqa: RUF001
 
-    def annot_replacer(match: re.Match[str]) -> str:
-        idx = int(match.group(1))
-        if idx < len(marker_highlights):
-            highlight = marker_highlights[idx]
-            para_ref = build_para_ref(highlight)
-            return _format_annot(highlight, para_ref)
-        return ""
+    # Step 1: Tokenize markers using lark lexer
+    tokens = tokenize_markers(latex)
 
-    # Step 1: Replace ANNMARKER{n} with \annot commands
-    result = _MARKER_PATTERN.sub(annot_replacer, latex)
+    # Step 2: Build regions with active highlight tracking
+    regions = build_regions(tokens)
 
-    # Step 2: Extract environment boundaries for splitting highlights
-    # This must happen AFTER annot replacement so positions are correct
-    env_boundaries = _extract_env_boundaries(result)
+    # Step 3: Convert list to dict and ensure para_refs exist
+    # marker_highlights is indexed by position (list), convert to dict[int, dict]
+    highlights: dict[int, dict[str, Any]] = {}
+    for idx, hl in enumerate(marker_highlights):
+        hl_copy = dict(hl)
+        # Use stored para_ref if present, otherwise calculate (fallback for old data)
+        if not hl_copy.get("para_ref"):
+            hl_copy["para_ref"] = build_para_ref(hl)
+        highlights[idx] = hl_copy
 
-    # Step 3: Wrap HLSTART{n}...HLEND{n} with \highLight[color]{...}
-    # Pattern captures: HLSTART{index}...content...HLEND{index}
-    # Using non-greedy match and backreference to match paired markers
-    def highlight_wrapper(match: re.Match[str]) -> str:
-        idx = int(match.group(1))
-        content = match.group(2)
-        if idx >= len(marker_highlights):
-            return content
-
-        highlight = marker_highlights[idx]
-        tag = highlight.get("tag", "jurisdiction")
-        colour_name = f"tag-{tag.replace('_', '-')}-light"
-
-        # Calculate absolute position of content in the string
-        marker_prefix = f"HLSTART{idx}ENDHL"
-        marker_suffix = f"HLEND{idx}ENDHL"
-        content_start = match.start() + len(marker_prefix)
-        content_end = match.end() - len(marker_suffix)
-
-        # Find environment boundaries within this content span
-        boundaries_in_content = [
-            (abs_start - content_start, abs_end - content_start, text)
-            for abs_start, abs_end, text in env_boundaries
-            if content_start < abs_start < content_end
-        ]
-
-        return _wrap_content_with_highlight(content, colour_name, boundaries_in_content)
-
-    # Match HLSTART{n}...HLEND{n} with same index (backreference)
-    highlight_pattern = re.compile(r"HLSTART(\d+)ENDHL(.*?)HLEND\1ENDHL", re.DOTALL)
-    result = highlight_pattern.sub(highlight_wrapper, result)
-
-    return result
+    # Step 4: Generate LaTeX using the region-based generator
+    # env_boundaries parameter kept for API compatibility but not used
+    # (inline delimiters are detected per-region in generate_highlighted_latex)
+    return generate_highlighted_latex(regions, highlights, [])
 
 
 def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
@@ -604,6 +1028,11 @@ def convert_html_with_annotations(
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
     """
+    logger.debug(
+        "[LATEX] convert_html_with_annotations: count=%d, ids=%s",
+        len(highlights),
+        [h.get("id", "")[:8] for h in highlights],
+    )
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
 

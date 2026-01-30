@@ -175,3 +175,320 @@ class TestOrderedListStart:
 
         assert "\\setcounter" not in result
         assert "First" in result
+
+
+class TestUnitConversion:
+    """CSS unit conversion: em, rem, px → LaTeX equivalents."""
+
+    @requires_pandoc
+    def test_margin_left_em_units(self) -> None:
+        """margin-left with em units passes through to LaTeX."""
+        html = """
+        <div style="margin-left: 2em">
+            <p>Em-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        assert "\\begin{adjustwidth}{2em}{}" in result
+        assert "Em-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_rem_units(self) -> None:
+        """margin-left with rem units converts to em (1:1 ratio)."""
+        html = """
+        <div style="margin-left: 1.5rem">
+            <p>Rem-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # rem converts to em at 1:1 ratio
+        assert "\\begin{adjustwidth}{1.5em}{}" in result
+        assert "Rem-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_px_units(self) -> None:
+        """margin-left with px units converts to pt (x0.75)."""
+        html = """
+        <div style="margin-left: 40px">
+            <p>Pixel-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # 40px * 0.75 = 30pt
+        assert "\\begin{adjustwidth}{30pt}{}" in result
+        assert "Pixel-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_px_decimal_result(self) -> None:
+        """px conversion produces clean decimal when needed."""
+        html = """
+        <div style="margin-left: 20px">
+            <p>Small indent</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # 20px * 0.75 = 15pt
+        assert "\\begin{adjustwidth}{15pt}{}" in result
+
+
+class TestSpeakerDetection:
+    """Platform detection and speaker label injection."""
+
+    def test_detect_claude_platform(self) -> None:
+        """Claude platform detected by font-user-message class."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = '<div class="font-user-message">Hello</div>'
+        assert detect_platform(html) == "claude"
+
+    def test_detect_openai_platform(self) -> None:
+        """OpenAI platform detected by agent-turn class."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = '<div class="agent-turn">Response</div>'
+        assert detect_platform(html) == "openai"
+
+    def test_detect_gemini_platform(self) -> None:
+        """Gemini platform detected by chat-turn-container class."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = '<div class="chat-turn-container user">Query</div>'
+        assert detect_platform(html) == "gemini"
+
+    def test_detect_scienceos_platform(self) -> None:
+        """ScienceOS platform detected by tabler-icon-robot-face class."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = '<i class="tabler-icon tabler-icon-robot-face"></i>'
+        assert detect_platform(html) == "scienceos"
+
+    def test_detect_unknown_platform(self) -> None:
+        """Unknown platform when no patterns match."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = "<p>Just some text</p>"
+        assert detect_platform(html) is None
+
+    def test_inject_labels_claude(self) -> None:
+        """Claude turns get User:/Assistant: labels injected."""
+        from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
+
+        html = """
+        <div class="font-user-message">Hello Claude</div>
+        <div class="font-claude-response">Hello! How can I help?</div>
+        """
+        result = inject_speaker_labels(html)
+
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+        assert "Hello Claude" in result
+        assert "Hello! How can I help?" in result
+
+    def test_inject_labels_gemini(self) -> None:
+        """Gemini turns get User:/Assistant: labels injected."""
+        from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
+
+        html = """
+        <div class="chat-turn-container user">What is CRDT?</div>
+        <div class="chat-turn-container model">CRDT stands for...</div>
+        """
+        result = inject_speaker_labels(html)
+
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+
+
+class TestSpeakerDetectionWithFixtures:
+    """Test speaker detection against real fixture files."""
+
+    def _load_fixture(self, name: str) -> str:
+        fixture_path = Path(__file__).parents[2] / "fixtures" / "conversations" / name
+        return fixture_path.read_text()
+
+    def test_detect_claude_fixture(self) -> None:
+        """Claude fixture detected as Claude platform."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = self._load_fixture("claude_cooking.html")
+        assert detect_platform(html) == "claude"
+
+    def test_detect_openai_fixture(self) -> None:
+        """OpenAI fixture detected as OpenAI platform."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = self._load_fixture("openai_chat.html")
+        assert detect_platform(html) == "openai"
+
+    def test_detect_gemini_fixture(self) -> None:
+        """Gemini fixture detected as Gemini platform."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = self._load_fixture("gemini_crdt_discussion.html")
+        assert detect_platform(html) == "gemini"
+
+    def test_detect_scienceos_fixture(self) -> None:
+        """ScienceOS fixture detected as ScienceOS platform."""
+        from promptgrimoire.export.speaker_preprocessor import detect_platform
+
+        html = self._load_fixture("scienceos_locus.html")
+        assert detect_platform(html) == "scienceos"
+
+    def test_inject_labels_claude_fixture(self) -> None:
+        """Claude fixture gets labels injected."""
+        from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
+
+        html = self._load_fixture("claude_cooking.html")
+        result = inject_speaker_labels(html)
+
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+
+    def test_inject_labels_gemini_fixture(self) -> None:
+        """Gemini fixture gets labels injected."""
+        from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
+
+        html = self._load_fixture("gemini_crdt_discussion.html")
+        result = inject_speaker_labels(html)
+
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+
+
+class TestUIChromeRemoval:
+    """UI chrome removal: strip avatars, icons, buttons from export."""
+
+    def test_remove_avatar_images(self) -> None:
+        """Images with avatar-related classes are removed."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img class="avatar" src="user.png" alt="User">
+        <p>Hello world</p>
+        <img class="profile-pic" src="profile.jpg">
+        """
+        result = remove_ui_chrome(html)
+
+        assert "avatar" not in result
+        assert "profile-pic" not in result
+        assert "Hello world" in result
+
+    def test_remove_icon_elements(self) -> None:
+        """Icon elements (tabler-icon, etc.) are removed."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <i class="tabler-icon tabler-icon-robot-face"></i>
+        <span>Content here</span>
+        <svg class="icon-copy"></svg>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "tabler-icon" not in result
+        assert "icon-copy" not in result
+        assert "Content here" in result
+
+    def test_remove_action_buttons(self) -> None:
+        """Action buttons (copy, share, etc.) are removed."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <button class="copy-button">Copy</button>
+        <p>Important text</p>
+        <button class="share-button">Share</button>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "copy-button" not in result
+        assert "share-button" not in result
+        assert "Important text" in result
+
+    def test_remove_small_images(self) -> None:
+        """Small images (< 32px) are removed as likely icons."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img src="icon.png" width="16" height="16">
+        <p>Real content</p>
+        <img src="photo.jpg" width="400" height="300">
+        """
+        result = remove_ui_chrome(html)
+
+        # Small icon removed
+        assert 'width="16"' not in result
+        # Large image preserved
+        assert 'width="400"' in result
+        assert "Real content" in result
+
+    def test_remove_display_none_elements(self) -> None:
+        """Elements with display:none are removed."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <div style="display: none">Hidden content</div>
+        <p>Visible content</p>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "Hidden content" not in result
+        assert "Visible content" in result
+
+    def test_preserve_content_images(self) -> None:
+        """Content images without chrome patterns are preserved."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img src="diagram.png" alt="Architecture diagram" width="800">
+        <p>Description of the diagram</p>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "diagram.png" in result
+        assert "Architecture diagram" in result
+
+    def test_remove_remote_url_images(self) -> None:
+        """Images with remote URLs are removed (can't be included in LaTeX)."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img src="https://example.com/image.png" alt="Remote image">
+        <p>Content here</p>
+        <img src="local.png" alt="Local image">
+        """
+        result = remove_ui_chrome(html)
+
+        assert "https://example.com" not in result
+        assert "Remote image" not in result
+        assert "Content here" in result
+        assert "local.png" in result
+
+    def test_remove_svg_images(self) -> None:
+        """SVG images are removed (need special LaTeX handling)."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img src="logo.svg" alt="Logo">
+        <svg><circle cx="50" cy="50" r="40"/></svg>
+        <p>Content here</p>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "logo.svg" not in result
+        assert "<svg" not in result
+        assert "Content here" in result
+
+    def test_remove_small_images_from_inline_style(self) -> None:
+        """Small images detected from inline style dimensions."""
+        from promptgrimoire.export.chrome_remover import remove_ui_chrome
+
+        html = """
+        <img src="icon.png" style="width: 16px; height: 16px;">
+        <p>Content here</p>
+        """
+        result = remove_ui_chrome(html)
+
+        assert "icon.png" not in result
+        assert "Content here" in result

@@ -246,3 +246,49 @@ Use `scripts/test_pdf_export.py` to generate PDFs. Human review for:
 - Automated compilation tests for all 11 fixtures
 - Manual visual review
 - Sign-off and close #76
+
+## Implementation Status (2026-01-31)
+
+### Completed
+- **Phase 1**: Unit handling (em/rem/px) in `libreoffice.lua` ✓
+- **Phase 2**: Speaker preprocessor (`speaker_preprocessor.py`) ✓
+- **Phase 3**: Chrome remover (`chrome_remover.py`) with ID-based removal ✓
+- **Phase 4 (partial)**: All 11 fixtures compile to PDF without LaTeX errors ✓
+
+### Packages Added to TinyTeX
+- `luabidi` - Bidirectional text for LuaLaTeX (fixes `\begin{LTR}` environments)
+- `fancyvrb` - Verbatim blocks
+
+### Pandoc Changes
+- Added `--no-highlight` to avoid undefined syntax highlighting macros
+
+### LaTeX Post-processing
+- `_fix_invalid_newlines()` removes `\newline{}` in invalid table contexts
+
+### UAT FAILED (2026-01-31)
+
+PDFs compile but output quality is poor. **Visual review criteria NOT met:**
+
+**austlii.html:**
+- Link menus at top still present (chrome removal incomplete)
+- Decision column incorrectly placed (should be col 2, not col 1)
+- Tables structurally wrong
+- Grounds of appeal para 4 has huge whitespace
+- Paragraph numbering resets
+- Indents not correct
+- Regression vs RTF-based approach (183.rtf worked better)
+
+**claude_cooking.html:**
+- Paragraph indents don't work
+- General formatting issues
+
+**claude_maths.html:**
+- Missing math content (possibly due to `--no-highlight` or other Pandoc options)
+
+### Next Steps
+1. Compare against 183.rtf approach - understand what worked there
+2. Fix table structure handling (Pandoc mangling tables)
+3. More aggressive chrome removal for austlii navigation
+4. Preserve paragraph numbering/indentation from source
+5. Investigate math content loss
+6. Consider whether HTML→LaTeX pipeline is fundamentally limited vs RTF→LaTeX

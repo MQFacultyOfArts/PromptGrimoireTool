@@ -201,3 +201,123 @@ class TestOrderedListStart:
 
         assert "\\setcounter" not in result
         assert "First" in result
+
+
+class TestPlatformDetection:
+    """Tests for conversation platform detection."""
+
+    def test_detect_claude_platform(self) -> None:
+        """Detect Claude from font-user-message class."""
+        html = '<div class="font-user-message">Hello</div>'
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.CLAUDE
+
+    def test_detect_gemini_platform(self) -> None:
+        """Detect Gemini from ng-version attribute."""
+        html = (
+            '<app-root ng-version="0.0.0">'
+            '<div class="user-query-container">Hi</div>'
+            "</app-root>"
+        )
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.GEMINI
+
+    def test_detect_openai_platform(self) -> None:
+        """Detect OpenAI from agent-turn class."""
+        html = '<div class="agent-turn"><p>Response</p></div>'
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.OPENAI
+
+    def test_detect_scienceos_platform(self) -> None:
+        """Detect ScienceOS from tabler-icon classes."""
+        html = '<div><i class="tabler-icon-robot"></i>Bot response</div>'
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.SCIENCEOS
+
+    def test_detect_austlii_platform(self) -> None:
+        """Detect AustLII from the-document class."""
+        html = '<div class="the-document"><p>Legal text</p></div>'
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.AUSTLII
+
+    def test_detect_unknown_platform(self) -> None:
+        """Unknown platform for unrecognized HTML."""
+        html = "<html><body><p>Generic content</p></body></html>"
+        from promptgrimoire.export.speaker_preprocessor import Platform, detect_platform
+
+        assert detect_platform(html) == Platform.UNKNOWN
+
+    def test_inject_claude_labels(self) -> None:
+        """Claude conversations get User/Assistant labels."""
+        html = """
+        <div>
+            <div class="font-user-message">Hello Claude</div>
+            <div class="font-claude-response">Hello human</div>
+        </div>
+        """
+        from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
+
+        result = preprocess_speakers(html)
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+        assert "Hello Claude" in result
+        assert "Hello human" in result
+
+    def test_inject_gemini_labels(self) -> None:
+        """Gemini conversations get User/Assistant labels."""
+        html = """
+        <div>
+            <div class="user-query-container">What is Python?</div>
+            <div class="model-response-container">Python is a language.</div>
+        </div>
+        """
+        from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
+
+        result = preprocess_speakers(html)
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+        assert "What is Python?" in result
+        assert "Python is a language." in result
+
+    def test_inject_openai_labels(self) -> None:
+        """OpenAI conversations get User/Assistant labels."""
+        html = """
+        <div>
+            <div class="items-end">What is 2+2?</div>
+            <div class="agent-turn">The answer is 4.</div>
+        </div>
+        """
+        from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
+
+        result = preprocess_speakers(html)
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+
+    def test_inject_scienceos_labels(self) -> None:
+        """ScienceOS conversations get User/Assistant labels."""
+        html = """
+        <div>
+            <div><i class="tabler-icon-medal"></i>User question here</div>
+            <div><i class="tabler-icon-robot"></i>Bot response here</div>
+        </div>
+        """
+        from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
+
+        result = preprocess_speakers(html)
+        assert "<strong>User:</strong>" in result
+        assert "<strong>Assistant:</strong>" in result
+
+    def test_austlii_no_injection(self) -> None:
+        """AustLII legal documents don't get speaker labels."""
+        html = '<div class="the-document"><p>Legal text here</p></div>'
+        from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
+
+        result = preprocess_speakers(html)
+        assert "<strong>User:</strong>" not in result
+        assert "<strong>Assistant:</strong>" not in result
+        assert "Legal text here" in result

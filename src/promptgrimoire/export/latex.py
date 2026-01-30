@@ -38,6 +38,7 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+from promptgrimoire.export.speaker_preprocessor import preprocess_speakers
 
 logger = logging.getLogger(__name__)
 
@@ -1035,6 +1036,9 @@ def convert_html_with_annotations(
     )
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
+
+    # Inject speaker labels for conversation exports
+    html = preprocess_speakers(html)
 
     # Insert markers
     marked_html, marker_highlights = _insert_markers_into_html(html, highlights)

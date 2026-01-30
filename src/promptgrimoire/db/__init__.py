@@ -33,6 +33,8 @@ from promptgrimoire.db.models import (
     CourseRole,
     User,
     Week,
+    Workspace,
+    WorkspaceDocument,
 )
 from promptgrimoire.db.users import (
     create_user,
@@ -48,6 +50,17 @@ from promptgrimoire.db.users import (
     update_last_login,
     upsert_user_on_login,
 )
+from promptgrimoire.db.workspace_documents import (
+    add_document,
+    list_documents,
+    reorder_documents,
+)
+from promptgrimoire.db.workspaces import (
+    create_workspace,
+    delete_workspace,
+    get_workspace,
+    save_workspace_crdt_state,
+)
 
 __all__ = [
     "AnnotationDocumentState",
@@ -57,10 +70,15 @@ __all__ = [
     "DuplicateEnrollmentError",
     "User",
     "Week",
+    "Workspace",
+    "WorkspaceDocument",
+    "add_document",
     "archive_course",
     "close_db",
     "create_course",
     "create_user",
+    "create_workspace",
+    "delete_workspace",
     "enroll_user",
     "find_or_create_user",
     "get_course_by_id",
@@ -72,16 +90,20 @@ __all__ = [
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",
+    "get_workspace",
     "init_db",
     "is_db_configured",
     "link_stytch_member",
     "list_all_users",
     "list_course_enrollments",
     "list_courses",
+    "list_documents",
     "list_user_enrollments",
     "list_users",
+    "reorder_documents",
     "run_alembic_upgrade",
     "save_state",
+    "save_workspace_crdt_state",
     "set_admin",
     "unenroll_user",
     "update_display_name",

@@ -37,6 +37,13 @@ Check these are enabled in `~/.claude/settings.json` under `enabledPlugins`:
 | `code-simplifier@claude-plugins-official` | `true` | Code cleanup |
 | `frontend-design@claude-plugins-official` | `true` | UI generation |
 
+### Optional (enabled)
+
+| Plugin | Enabled | Notes |
+|--------|---------|-------|
+| `pyright-lsp@claude-plugins-official` | `true` | Python LSP - requires `uvx pyright` (see below) |
+| `security-guidance@claude-plugins-official` | `true` | Security tips |
+
 ### Disabled (by choice)
 
 | Plugin | Enabled | Reason |
@@ -45,8 +52,16 @@ Check these are enabled in `~/.claude/settings.json` under `enabledPlugins`:
 | `agent-sdk-dev@claude-plugins-official` | `false` | Not building SDK agents |
 | `greptile@claude-plugins-official` | `false` | Not using Greptile |
 | `linear@claude-plugins-official` | `false` | Not using Linear |
-| `pyright-lsp@claude-plugins-official` | `true` | Optional - LSP support |
-| `security-guidance@claude-plugins-official` | `true` | Optional - security tips |
+
+## External Dependencies
+
+Some plugins require external tools. Use `uv`/`uvx` for Python tools.
+
+| Tool | Required By | Install | Verify |
+|------|-------------|---------|--------|
+| pyright | pyright-lsp | `uvx pyright` (on-demand) | `uvx pyright --version` |
+| gh | commit-commands, PR workflow | System package manager | `gh --version` |
+| jq | Verification scripts | System package manager | `jq --version` |
 
 ## Global Settings
 

@@ -10,6 +10,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import Column, DateTime, ForeignKey, UniqueConstraint, Uuid
 from sqlmodel import Field, SQLModel
 
@@ -180,6 +181,62 @@ class Week(SQLModel, table=True):
     visible_from: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class Workspace(SQLModel, table=True):
+    """Container for documents and CRDT state. Unit of collaboration.
+
+    Permissions are handled via ACL (Seam D). created_by is for audit trail only.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        created_by: User who created this workspace (audit, not ownership).
+        crdt_state: Serialized pycrdt state bytes for all annotations.
+        created_at: Timestamp when workspace was created.
+        updated_at: Timestamp when workspace was last modified.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    created_by: UUID = Field(
+        sa_column=Column(Uuid(), ForeignKey("user.id"), nullable=False)
+    )
+    crdt_state: bytes | None = Field(
+        default=None, sa_column=Column(sa.LargeBinary(), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class WorkspaceDocument(SQLModel, table=True):
+    """A document within a workspace (source text, draft, AI conversation, etc.).
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        workspace_id: Foreign key to Workspace (CASCADE DELETE).
+        type: Domain-defined type string ("source", "draft", "ai_conversation").
+        content: HTML with word-level spans for annotation.
+        raw_content: Original pasted/uploaded text.
+        order_index: Display order within workspace.
+        title: Optional document title.
+        created_at: Timestamp when document was added.
+    """
+
+    __tablename__ = "workspace_document"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    type: str = Field(max_length=50)
+    content: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    raw_content: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    order_index: int = Field(default=0)
+    title: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

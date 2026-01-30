@@ -58,7 +58,6 @@ This creates a complete learning cycle: **Predict → Decide → Verify → Revi
 
 ### Additional Dependencies
 
-- **striprtf** or similar - RTF text extraction for source documents
 - **WeasyPrint** or **ReportLab** - PDF generation for exports
 - **xeCJK LaTeX package** - CJK font support for PDF export
 
@@ -115,7 +114,7 @@ Reuses PromptGrimoire's Stytch RBAC configuration:
 ### Instructor (Vanessa) - Process Grading
 
 **As an instructor**, I want to:
-1. Upload source texts (RTF, HTML, or plain text) to weekly assignments
+1. Provide source texts to students (preloaded into tool or distributed via iLearn)
 2. Optionally provide suggested tags to help students get started
 3. View any student's complete annotation workspace (all tabs)
 4. See all documents in their Tab 1 (source, AI conversations, all drafts)
@@ -299,9 +298,10 @@ Students can navigate freely between tabs at any time (no validation gates).
 - Order preserved: source text first, then conversations, then drafts by timestamp
 
 **Document Upload/Import:**
-- **Instructor**: Upload source text (RTF, HTML, or plain text)
+- **Instructor**: Provide source text (preloaded or distributed via iLearn as DOCX)
   - System parses into word-level spans for annotation
   - Optionally provide suggested starter tags for this assignment
+- **Students**: Paste translations from DOCX (copy-paste from Word into Tab 3)
 - **Students**: "Add AI Conversation" button
   - Opens dialog to paste conversation text
   - System creates new document in Tab 1 as continuous text (no turn parsing)
@@ -521,6 +521,11 @@ Inherited from existing PromptGrimoire structure:
 
 ### Phase 2 (Post-MVP)
 
+#### PDF Text Extraction
+- Automated text extraction from PDF source documents
+- MVP workaround: students manually copy-paste from PDF
+- Nice-to-have for streamlined workflow
+
 #### Load Previous Draft to Tab 3
 - Button on draft documents in Tab 1: "Load to Tab 3"
 - Copies draft content back to Tab 3 translation editor
@@ -569,7 +574,7 @@ Inherited from existing PromptGrimoire structure:
 1. **Create Course** → Set name "TRAN1000", semester "2025-S1"
 2. **Configure Weeks** → Add weekly modules (Week 1 through Week 13)
 3. **Create Translation Assignment** (Week N):
-   - Upload source text (RTF or plain text)
+   - Provide source text (preload or distribute DOCX via iLearn)
    - Set title (e.g., "Business Email EN→JA")
    - Write instructions (HTML editor)
    - Optionally provide suggested starter tags
@@ -703,9 +708,12 @@ Inherited from existing PromptGrimoire structure:
 
 ## Technical Considerations
 
-### RTF/Text Processing
-- Reuse existing `parse_rtf()` from case brief tool
-- Support plain text and HTML upload for source texts
+### Text Processing
+- **Primary workflow**: Students copy-paste from DOCX (Word) into the tool
+  - Clipboard paste preserves plain text; formatting stripped
+  - No DOCX file upload or parsing required
+- **PDF text extraction**: Out of scope for MVP; students manually copy-paste from PDF
+  - Phase 2 consideration: automated PDF text extraction
 - Word-level span wrapping for annotation layer
   - Each word wrapped in `<span class="w" data-w="N">word</span>`
   - Preserves whitespace and HTML entities
@@ -743,8 +751,8 @@ Inherited from existing PromptGrimoire structure:
   - WYSIWYG editor output sanitized before storage (XSS prevention)
   - Allowed tags: `<p>, <strong>, <em>, <ul>, <ol>, <li>, <br>`
   - Strip `<script>, <iframe>, <object>` tags
-- **Upload size limits**:
-  - Source document: 5MB max (reasonable for RTF/text files)
+- **Paste size limits**:
+  - Source/translation paste: 50,000 characters max (prevent DoS)
   - AI conversation paste: 50,000 characters max (prevent DoS)
 
 ### Tab 3 Persistence Architecture
@@ -893,6 +901,7 @@ Inherited from existing PromptGrimoire structure:
 ### Pre-Launch (Jan 2025)
 - Development (Brian)
 - Testing with Big List of Naughty Strings (multi-language validation)
+- **Test fixtures**: Sample DOCX source-target texts from Vanessa (French, Korean, Spanish, Japanese, Chinese)
 - Internal testing (Brian + Vanessa)
 
 ### Week 1 (Feb 17, 2025) - Soft Launch
@@ -918,6 +927,7 @@ Inherited from existing PromptGrimoire structure:
 - Retrospective: What worked, what needs improvement
 
 ### Phase 2 (Semester 2 2025) - Enhancements
+- PDF text extraction (automated import from PDF source documents)
 - Anonymous peer sharing
 - Comprehensive process export for Vanessa
 - Load previous draft to Tab 3
@@ -944,13 +954,14 @@ Inherited from existing PromptGrimoire structure:
 8. **Real-time collaboration**: MVP for all tabs (inherited from case brief tool CRDT architecture)
 9. **Version control**: Simple snapshot model (MVP), branching in Phase 2
 10. **Document order**: Source first, then conversations, then drafts by timestamp (fixed, not user-reorderable)
+11. **Source document format**: DOCX-centric workflow - students copy-paste from Word (not HTML). HTML only valid for AI conversation paste from chatbots. PDF text extraction is Phase 2.
 
 ## Appendix: Comparison to Case Brief Tool
 
 | Aspect | Case Brief Tool | Translation Annotation Tool |
 |--------|-----------------|----------------------------|
 | Domain | Legal education | Translation pedagogy |
-| Core content | Court judgment RTFs | Source texts + AI conversations + drafts |
+| Core content | Court judgment RTFs | Source texts (DOCX copy-paste) + AI conversations + drafts |
 | Annotation target | Case text (word-level) | Source, conversations, drafts (all word-level) |
 | Structured output | 10 brief tags + freeform brief | Custom tags + translation drafts + decision logs |
 | Collaboration | CRDT all screens (MVP) | CRDT all screens (MVP) |

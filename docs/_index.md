@@ -109,3 +109,4 @@ library references during development.
 ## Project Documents
 
 - [Case Brief Tool PRD](case-brief-tool-prd.md) - Product requirements for legal education case briefing tool
+- [Testing Guidelines](testing.md) - TDD workflow, E2E patterns, database test isolation

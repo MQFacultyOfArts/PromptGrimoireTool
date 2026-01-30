@@ -36,7 +36,10 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
     """Select a range of words by dragging from start to end.
 
     Uses mouse drag for selection to handle overlapping highlights correctly.
-    Per CLAUDE.md: no JS injection - uses click outside content to clear selection.
+    Includes workaround for NiceGUI 3.6 + Playwright issue where selections
+    on highlighted text become "sticky" and won't clear with clicks outside
+    the document. Clicking on a non-highlighted word inside the document
+    container reliably clears the selection.
     """
     word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
     word_end = page.locator(f'.doc-container [data-w="{end_word}"]')
@@ -54,21 +57,36 @@ def _select_words(page: Page, start_word: int, end_word: int) -> None:
         msg = f"Could not get bounding box for words {start_word}-{end_word}"
         raise AssertionError(msg)
 
-    # Clear any existing selection by clicking outside the document content.
-    # This is needed because browsers interpret mousedown on highlighted text as
-    # "drag existing selection" rather than starting a new selection.
-    # The tag toolbar is a safe neutral area to click.
-    tag_toolbar = page.locator(".tag-toolbar-compact")
-    if tag_toolbar.count() > 0:
-        tag_toolbar.first.click()
+    # Clear any existing selection by clicking on a non-highlighted word.
+    # NiceGUI 3.6 + Playwright has an issue where selections on highlighted
+    # text become "sticky" - clicking outside the document doesn't clear them.
+    # Clicking on non-highlighted text inside the document reliably clears it.
+    # Use word 0 (document header) which is never highlighted in these tests.
+    clear_target = page.locator('.doc-container [data-w="0"]')
+    if clear_target.count() > 0:
+        clear_target.scroll_into_view_if_needed()
+        clear_target.click()
         page.wait_for_timeout(50)
 
+    # Re-scroll to target and get fresh bounding boxes
+    word_start.scroll_into_view_if_needed()
+    page.wait_for_timeout(50)
+
+    start_box = word_start.bounding_box()
+    end_box = word_end.bounding_box()
+
+    if start_box is None or end_box is None:
+        msg = f"Could not get fresh bounding box for words {start_word}-{end_word}"
+        raise AssertionError(msg)
+
     # Drag from start word to end word to create selection
-    page.mouse.move(start_box["x"] + 2, start_box["y"] + start_box["height"] / 2)
+    start_x = start_box["x"] + 2
+    start_y = start_box["y"] + start_box["height"] / 2
+    end_x = end_box["x"] + end_box["width"] - 2
+    end_y = end_box["y"] + end_box["height"] / 2
+    page.mouse.move(start_x, start_y)
     page.mouse.down()
-    page.mouse.move(
-        end_box["x"] + end_box["width"] - 2, end_box["y"] + end_box["height"] / 2
-    )
+    page.mouse.move(end_x, end_y)
     page.mouse.up()
     page.wait_for_timeout(200)  # Let selection event fire
 

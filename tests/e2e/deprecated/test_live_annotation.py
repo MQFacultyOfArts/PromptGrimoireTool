@@ -16,7 +16,14 @@ import re
 from typing import TYPE_CHECKING
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    FloatRect,
+    Locator,
+    Page,
+    expect,
+)
 
 from tests.e2e.helpers import click_tag
 
@@ -110,6 +117,7 @@ def clean_page(
     fresh_page.goto(live_annotation_url)
     doc_container = fresh_page.locator(".doc-container")
     expect(doc_container).to_be_visible(timeout=15000)
+
     yield fresh_page
 
 
@@ -543,6 +551,17 @@ def _select_words_drag(page: Page, start_word: int, end_word: int) -> None:
     Unlike click+shift-click, this approach clears existing selection first
     and uses drag to avoid browser 'drag existing selection' behavior.
     """
+    _do_drag_selection(page, start_word, end_word)
+
+
+def _do_drag_selection(page: Page, start_word: int, end_word: int) -> None:
+    """Execute the drag selection.
+
+    Includes workaround for NiceGUI 3.6 + Playwright issue where selections
+    on highlighted text become "sticky" and won't clear with normal clicks
+    outside the document. Clicking on a non-highlighted word inside the
+    document container reliably clears the selection.
+    """
     word_start = page.locator(f'.doc-container [data-w="{start_word}"]')
     word_end = page.locator(f'.doc-container [data-w="{end_word}"]')
 
@@ -559,20 +578,43 @@ def _select_words_drag(page: Page, start_word: int, end_word: int) -> None:
         msg = f"Could not get bounding box for words {start_word}-{end_word}"
         raise AssertionError(msg)
 
-    # Clear any existing selection by clicking outside document content
-    tag_toolbar = page.locator(".tag-toolbar-compact")
-    if tag_toolbar.count() > 0:
-        tag_toolbar.first.click()
+    # Clear any existing selection by clicking on a non-highlighted word.
+    # NiceGUI 3.6 + Playwright has an issue where selections on highlighted
+    # text become "sticky" - clicking outside the document doesn't clear them.
+    # Clicking on non-highlighted text inside the document reliably clears it.
+    # Use word 0 (document header) which is never highlighted in these tests.
+    clear_target = page.locator('.doc-container [data-w="0"]')
+    if clear_target.count() > 0:
+        clear_target.scroll_into_view_if_needed()
+        clear_target.click()
         page.wait_for_timeout(50)
 
-    # Drag from start word to end word
-    page.mouse.move(start_box["x"] + 2, start_box["y"] + start_box["height"] / 2)
+    # Re-scroll to target and get fresh bounding boxes
+    word_start.scroll_into_view_if_needed()
+    page.wait_for_timeout(50)
+
+    start_box = word_start.bounding_box()
+    end_box = word_end.bounding_box()
+
+    if start_box is None or end_box is None:
+        msg = f"Could not get fresh bounding box for words {start_word}-{end_word}"
+        raise AssertionError(msg)
+
+    _execute_drag(page, start_box, end_box)
+
+
+def _execute_drag(page: Page, start_box: FloatRect, end_box: FloatRect) -> None:
+    """Execute the mouse drag operation."""
+    start_x = start_box["x"] + 2
+    start_y = start_box["y"] + start_box["height"] / 2
+    end_x = end_box["x"] + end_box["width"] - 2
+    end_y = end_box["y"] + end_box["height"] / 2
+
+    page.mouse.move(start_x, start_y)
     page.mouse.down()
-    page.mouse.move(
-        end_box["x"] + end_box["width"] - 2, end_box["y"] + end_box["height"] / 2
-    )
+    page.mouse.move(end_x, end_y)
     page.mouse.up()
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(200)  # Let selection event fire
 
 
 def _create_highlight_drag(
@@ -626,6 +668,7 @@ class TestOverlappingHighlights:
 
         # Create second highlight on the same words with different tag
         _create_highlight_drag(page, 200, 210, tag_index=1)
+
         expect(ann_cards).to_have_count(initial_count + 2, timeout=5000)
 
     def test_can_select_ending_on_highlighted_word(self, clean_page: Page) -> None:

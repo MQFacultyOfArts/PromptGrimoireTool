@@ -28,6 +28,8 @@ REQUIRED_PACKAGES = [
     "latexmk",  # Build automation
     "xcolor",  # Color support
     "soul",  # Underlining/highlighting (fallback)
+    "luabidi",  # Bidirectional text for LuaLaTeX (for dir="ltr" HTML elements)
+    "fancyvrb",  # Verbatim/code blocks from Pandoc syntax highlighting
 ]
 
 

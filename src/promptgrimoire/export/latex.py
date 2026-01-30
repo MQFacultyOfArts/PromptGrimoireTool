@@ -497,6 +497,8 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{changepage}
 \usepackage{luacolor}  % Required by lua-ul for coloured highlights
 \usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
+\usepackage{luabidi}   % Bidirectional text support for LuaLaTeX
+\usepackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
 
 % Pandoc compatibility
@@ -966,6 +968,48 @@ def _replace_markers_with_annots(
     return generate_highlighted_latex(regions, highlights, [])
 
 
+def _fix_invalid_newlines(latex: str) -> str:
+    """Remove \\newline{} commands in invalid table contexts.
+
+    Pandoc converts <br> tags to \\newline{}, but this is invalid in LaTeX when:
+    - At the start of a table row (no paragraph to end)
+    - Right before a column separator (&)
+    - Consecutive \\newline{} with no content between
+
+    Args:
+        latex: Raw LaTeX content from Pandoc.
+
+    Returns:
+        LaTeX with invalid \\newline{} removed.
+    """
+    # Remove consecutive \newline{} first - leave none (they're all invalid here)
+    latex = re.sub(r"(\\newline\{\}\s*){2,}", "", latex)
+
+    # Remove \newline{} at start of longtable (after column spec, possibly on next line)
+    # Pattern: \begin{longtable}{...}\n\newline{}
+    latex = re.sub(
+        r"(\\begin\{longtable\}\{[^}]+\})\s*\\newline\{\}",
+        r"\1\n",
+        latex,
+    )
+
+    # Remove \newline{} right before & (column separator)
+    latex = re.sub(r"\\newline\{\}\s*&", " &", latex)
+
+    # Remove \newline{} right after \\ (row end)
+    latex = re.sub(r"\\\\\s*\\newline\{\}", r"\\\\", latex)
+
+    # Remove standalone \newline{} at the very start of table content
+    # (after longtable row ends with \\)
+    latex = re.sub(r"(\\\\\s*\n)\s*\\newline\{\}", r"\1", latex)
+
+    # Remove \newline{} that appears alone on a line at table start
+    # (line starting with \newline{} followed by optional whitespace and &)
+    latex = re.sub(r"^\s*\\newline\{\}\s*$", "", latex, flags=re.MULTILINE)
+
+    return latex
+
+
 def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     """Convert HTML to LaTeX using Pandoc with optional Lua filter.
 
@@ -994,12 +1038,22 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
 
     try:
         # Use +native_divs to preserve div attributes in Pandoc AST
-        cmd = ["pandoc", "-f", "html+native_divs", "-t", "latex", str(html_path)]
+        # Use --no-highlight to avoid undefined syntax highlighting macros (\VERB, etc.)
+        cmd = [
+            "pandoc",
+            "-f",
+            "html+native_divs",
+            "-t",
+            "latex",
+            "--no-highlight",
+            str(html_path),
+        ]
         if filter_path is not None:
             cmd.extend(["--lua-filter", str(filter_path)])
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout
+        # Post-process to fix invalid \newline{} in table contexts
+        return _fix_invalid_newlines(result.stdout)
     finally:
         html_path.unlink(missing_ok=True)
 

@@ -48,9 +48,31 @@ class _ClientState:
         self.callback = callback
         self.color = color
         self.name = name
-        self.cursor: int | None = None
+        self.cursor_word: int | None = None
         self.selection_start: int | None = None
         self.selection_end: int | None = None
+
+    def set_cursor(self, word_index: int | None) -> None:
+        """Update cursor position."""
+        self.cursor_word = word_index
+
+    def set_selection(self, start: int | None, end: int | None) -> None:
+        """Update selection range."""
+        self.selection_start = start
+        self.selection_end = end
+
+    def to_cursor_dict(self) -> dict[str, Any]:
+        """Get cursor as dict for CSS generation."""
+        return {"word": self.cursor_word, "name": self.name, "color": self.color}
+
+    def to_selection_dict(self) -> dict[str, Any]:
+        """Get selection as dict for CSS generation."""
+        return {
+            "start_word": self.selection_start,
+            "end_word": self.selection_end,
+            "name": self.name,
+            "color": self.color,
+        }
 
 
 # Track connected clients per workspace for broadcasting
@@ -137,6 +159,8 @@ class PageState:
     user_color: str = "#666"  # Client color for cursor display
     # UI elements set during page build
     highlight_style: ui.element | None = None
+    cursor_style: ui.element | None = None  # CSS for remote cursors
+    selection_style: ui.element | None = None  # CSS for remote selections
     highlight_menu: ui.element | None = None
     save_status: ui.label | None = None
     crdt_doc: AnnotationDocument | None = None
@@ -145,6 +169,8 @@ class PageState:
     annotation_cards: dict[str, ui.card] | None = None
     refresh_annotations: Any | None = None  # Callable to refresh cards
     broadcast_update: Any | None = None  # Callable to broadcast to other clients
+    broadcast_cursor: Any | None = None  # Callable to broadcast cursor position
+    broadcast_selection: Any | None = None  # Callable to broadcast selection
     # Document content for text extraction
     document_words: list[str] | None = None  # Words by index
     # Guard against duplicate highlight creation
@@ -290,6 +316,75 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
             )
 
     return "\n".join(css_rules)
+
+
+def _build_remote_cursor_css(
+    cursors: dict[str, dict[str, Any]], exclude_client_id: str
+) -> str:
+    """Build CSS rules for remote users' cursors."""
+    rules = []
+    for cid, cursor in cursors.items():
+        if cid == exclude_client_id:
+            continue
+        word = cursor.get("word")
+        color = cursor.get("color", "#2196f3")
+        name = cursor.get("name", "User")
+        if word is None:
+            continue
+        # Cursor indicator using box-shadow (no layout shift)
+        rules.append(
+            f'[data-word-index="{word}"] {{ '
+            f"position: relative; "
+            f"box-shadow: inset 2px 0 0 0 {color}; }}"
+        )
+        # Floating name label
+        rules.append(
+            f'[data-word-index="{word}"]::before {{ '
+            f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
+            f"font-size: 0.6rem; background: {color}; color: white; "
+            f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
+            f"z-index: 20; pointer-events: none; }}"
+        )
+    return "\n".join(rules)
+
+
+def _build_remote_selection_css(
+    selections: dict[str, dict[str, Any]], exclude_client_id: str
+) -> str:
+    """Build CSS rules for remote users' selections."""
+    rules = []
+    for cid, sel in selections.items():
+        if cid == exclude_client_id:
+            continue
+        start = sel.get("start_word")
+        end = sel.get("end_word")
+        color = sel.get("color", "#ffeb3b")
+        name = sel.get("name", "User")
+        if start is None or end is None:
+            continue
+        if start > end:
+            start, end = end, start
+        # Selection highlight for all words in range
+        selectors = [f'[data-word-index="{i}"]' for i in range(start, end + 1)]
+        if selectors:
+            selector_str = ", ".join(selectors)
+            rules.append(
+                f"{selector_str} {{ background-color: {color}30 !important; "
+                f"box-shadow: 0.3em 0 0 {color}30; }}"
+            )
+            rules.append(
+                f'[data-word-index="{end}"] {{ box-shadow: none !important; }}'
+            )
+            # Name label on first word
+            rules.append(f'[data-word-index="{start}"] {{ position: relative; }}')
+            rules.append(
+                f'[data-word-index="{start}"]::before {{ '
+                f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
+                f"font-size: 0.65rem; background: {color}; color: white; "
+                f"padding: 1px 4px; border-radius: 2px; white-space: nowrap; "
+                f"z-index: 10; pointer-events: none; }}"
+            )
+    return "\n".join(rules)
 
 
 def _setup_page_styles() -> None:
@@ -732,6 +827,9 @@ def _setup_selection_handlers(state: PageState) -> None:
         state.selection_end = e.args.get("end")
         if state.highlight_menu:
             state.highlight_menu.set_visibility(True)
+        # Broadcast selection to other clients
+        if state.broadcast_selection:
+            await state.broadcast_selection(state.selection_start, state.selection_end)
 
     async def on_selection_cleared(_e: Any) -> None:
         """Handle selection cleared event."""
@@ -739,9 +837,19 @@ def _setup_selection_handlers(state: PageState) -> None:
         state.selection_end = None
         if state.highlight_menu:
             state.highlight_menu.set_visibility(False)
+        # Clear selection broadcast
+        if state.broadcast_selection:
+            await state.broadcast_selection(None, None)
+
+    async def on_cursor_move(e: Any) -> None:
+        """Handle cursor position change from JavaScript."""
+        word_index = e.args.get("word")
+        if state.broadcast_cursor:
+            await state.broadcast_cursor(word_index)
 
     ui.on("selection_made", on_selection)
     ui.on("selection_cleared", on_selection_cleared)
+    ui.on("cursor_move", on_cursor_move)
 
     # Keyboard shortcut handler (1-0 keys map to tags)
     async def on_keydown(e: Any) -> None:
@@ -828,6 +936,26 @@ def _setup_selection_handlers(state: PageState) -> None:
                 emitEvent('keydown', { key: e.key });
             }
         });
+
+        // Track cursor position over word spans for remote cursor display
+        let lastCursorWord = null;
+        const docC = document.getElementById('doc-container');
+        if (docC) {
+            docC.addEventListener('mouseover', function(e) {
+                const word = e.target.closest('[data-word-index]');
+                const wordIdx = word ? parseInt(word.dataset.wordIndex) : null;
+                if (wordIdx !== lastCursorWord) {
+                    lastCursorWord = wordIdx;
+                    emitEvent('cursor_move', { word: wordIdx });
+                }
+            });
+            docC.addEventListener('mouseleave', function() {
+                if (lastCursorWord !== null) {
+                    lastCursorWord = null;
+                    emitEvent('cursor_move', { word: null });
+                }
+            });
+        }
     }, 100);
     """
     ui.run_javascript(js_code)
@@ -854,6 +982,12 @@ async def _render_document_with_highlights(
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
+
+    # Dynamic style elements for remote cursors and selections
+    state.cursor_style = ui.element("style")
+    state.cursor_style._props["innerHTML"] = ""
+    state.selection_style = ui.element("style")
+    state.selection_style._props["innerHTML"] = ""
 
     # Tag toolbar handler
     async def handle_tag_click(tag: BriefTag) -> None:
@@ -1006,6 +1140,48 @@ async def _render_document_with_highlights(
     ui.run_javascript(scroll_sync_js)
 
 
+def _get_user_color(user_name: str) -> str:
+    """Generate a consistent color for a user based on their name."""
+    # Simple hash-based color generation for consistency
+    hash_val = sum(ord(c) for c in user_name)
+    colors = [
+        "#e91e63",  # pink
+        "#9c27b0",  # purple
+        "#673ab7",  # deep purple
+        "#3f51b5",  # indigo
+        "#2196f3",  # blue
+        "#009688",  # teal
+        "#4caf50",  # green
+        "#ff9800",  # orange
+        "#795548",  # brown
+    ]
+    return colors[hash_val % len(colors)]
+
+
+def _update_cursor_css(state: PageState) -> None:
+    """Update cursor CSS for remote users."""
+    if state.cursor_style is None:
+        return
+    workspace_key = str(state.workspace_id)
+    clients = _connected_clients.get(workspace_key, {})
+    cursors = {cid: cs.to_cursor_dict() for cid, cs in clients.items()}
+    css = _build_remote_cursor_css(cursors, state.client_id)
+    state.cursor_style._props["innerHTML"] = css
+    state.cursor_style.update()
+
+
+def _update_selection_css(state: PageState) -> None:
+    """Update selection CSS for remote users."""
+    if state.selection_style is None:
+        return
+    workspace_key = str(state.workspace_id)
+    clients = _connected_clients.get(workspace_key, {})
+    selections = {cid: cs.to_selection_dict() for cid, cs in clients.items()}
+    css = _build_remote_selection_css(selections, state.client_id)
+    state.selection_style._props["innerHTML"] = css
+    state.selection_style.update()
+
+
 def _setup_client_sync(
     workspace_id: UUID,
     client: Client,
@@ -1018,8 +1194,9 @@ def _setup_client_sync(
     client_id = str(uuid4())
     workspace_key = str(workspace_id)
     state.client_id = client_id
+    state.user_color = _get_user_color(state.user_name)
 
-    # Create broadcast function
+    # Create broadcast function for annotation updates
     async def broadcast_update() -> None:
         for cid, cstate in _connected_clients.get(workspace_key, {}).items():
             if cid != client_id and cstate.callback:
@@ -1028,9 +1205,37 @@ def _setup_client_sync(
 
     state.broadcast_update = broadcast_update
 
+    # Create broadcast function for cursor updates
+    async def broadcast_cursor(word_index: int | None) -> None:
+        clients = _connected_clients.get(workspace_key, {})
+        if client_id in clients:
+            clients[client_id].set_cursor(word_index)
+        # Notify other clients to refresh cursor CSS
+        for cid, cstate in clients.items():
+            if cid != client_id and cstate.callback:
+                with contextlib.suppress(Exception):
+                    await cstate.callback()
+
+    state.broadcast_cursor = broadcast_cursor
+
+    # Create broadcast function for selection updates
+    async def broadcast_selection(start: int | None, end: int | None) -> None:
+        clients = _connected_clients.get(workspace_key, {})
+        if client_id in clients:
+            clients[client_id].set_selection(start, end)
+        # Notify other clients to refresh selection CSS
+        for cid, cstate in clients.items():
+            if cid != client_id and cstate.callback:
+                with contextlib.suppress(Exception):
+                    await cstate.callback()
+
+    state.broadcast_selection = broadcast_selection
+
     # Callback for receiving updates from other clients
     async def handle_update_from_other() -> None:
         _update_highlight_css(state)
+        _update_cursor_css(state)
+        _update_selection_css(state)
         if state.refresh_annotations:
             state.refresh_annotations()
 
@@ -1039,7 +1244,7 @@ def _setup_client_sync(
         _connected_clients[workspace_key] = {}
     _connected_clients[workspace_key][client_id] = _ClientState(
         callback=handle_update_from_other,
-        color="#666",
+        color=state.user_color,
         name=state.user_name,
     )
 
@@ -1047,6 +1252,11 @@ def _setup_client_sync(
     async def on_disconnect() -> None:
         if workspace_key in _connected_clients:
             _connected_clients[workspace_key].pop(client_id, None)
+            # Broadcast to update cursors/selections (remove this client's)
+            for _cid, cstate in _connected_clients.get(workspace_key, {}).items():
+                if cstate.callback:
+                    with contextlib.suppress(Exception):
+                        await cstate.callback()
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 

@@ -43,7 +43,7 @@ Integration tests in `tests/integration/test_chatbot_fixtures.py`:
 
 ## Next Steps
 
-1. **Manual Visual Review** - Run `scripts/test_pdf_export.py` to generate PDFs from all fixtures, visually confirm:
+1. **Manual Visual Review** - Run `pytest tests/integration/test_chatbot_fixtures.py::TestChatbotFixturesToPdf` to generate PDFs to `output/test_output/chatbot_*/`, visually confirm:
    - Speaker distinction visible
    - Content images present
    - No obvious layout breakage

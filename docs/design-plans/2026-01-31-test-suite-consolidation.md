@@ -96,6 +96,14 @@ This design follows these patterns and extends them with:
 
 **Divergence:** Demo tests used global CRDT reset (`reset_crdt_state` fixture). New tests use UUID-based workspace isolation only - no global state manipulation.
 
+**Subtest discipline:** Each subtest MUST have assertions verifying its preconditions and outcomes. Sequential subtests verify prior state before acting:
+```python
+with subtests.test(msg="2/3 change tag"):
+    expect(ann_card).to_be_visible()  # Verify highlight exists
+    # ... change tag ...
+    expect(word).to_have_css(...)     # Verify outcome
+```
+
 ## Implementation Phases
 
 <!-- START_PHASE_1 -->

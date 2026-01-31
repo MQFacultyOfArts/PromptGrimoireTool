@@ -282,37 +282,29 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
 
         overlap_count = len(colors)
-        # Use text-decoration for seamless underlines across words
+        # Use box-shadow for underline - extends into padding for contiguous line
+        # Format: inset 0 -Npx 0 0 color (bottom border effect)
         if overlap_count == 1:
-            # Single highlight: 2px underline
+            # Single highlight: 1px underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: {first_color}; "
-                f"text-decoration-thickness: 2px; "
-                f"text-underline-offset: 2px; }}"
+                f"box-shadow: inset 0 -1px 0 0 {first_color}; }}"
             )
         elif overlap_count == 2:
-            # Two highlights: thicker underline showing overlap
+            # Two highlights: 2px underline
             c1 = colors[0]
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: {c1}; "
-                f"text-decoration-thickness: 4px; "
-                f"text-underline-offset: 2px; }}"
+                f"box-shadow: inset 0 -2px 0 0 {c1}; }}"
             )
         else:
-            # 3+ highlights: thick dark underline
+            # 3+ highlights: 3px dark underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: #333; "
-                f"text-decoration-thickness: 6px; "
-                f"text-underline-offset: 2px; }}"
+                f"box-shadow: inset 0 -3px 0 0 #333; }}"
             )
 
     return "\n".join(css_rules)

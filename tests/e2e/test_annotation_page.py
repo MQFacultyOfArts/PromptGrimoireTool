@@ -20,6 +20,35 @@ pytestmark_db = pytest.mark.skipif(
 )
 
 
+def _select_words(page: Page, start_word: int, end_word: int) -> None:
+    """Select a range of words by clicking start and shift-clicking end.
+
+    This is the reliable method for text selection in Playwright tests.
+    Uses click + shift+click which works consistently across browsers.
+    """
+    word_start = page.locator(f"[data-word-index='{start_word}']")
+    word_end = page.locator(f"[data-word-index='{end_word}']")
+
+    word_start.scroll_into_view_if_needed()
+    expect(word_start).to_be_visible(timeout=5000)
+
+    word_start.click()
+    word_end.click(modifiers=["Shift"])
+
+
+def _create_highlight(page: Page, start_word: int, end_word: int) -> None:
+    """Select words and click the first tag button to create a highlight.
+
+    Args:
+        page: Playwright page.
+        start_word: Index of first word to select.
+        end_word: Index of last word to select.
+    """
+    _select_words(page, start_word, end_word)
+    tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+    tag_button.click()
+
+
 class TestAnnotationPageBasic:
     """Basic page load tests."""
 
@@ -143,20 +172,11 @@ class TestHighlightCreation:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # Select words by clicking and dragging
-        first_word = page.locator("[data-word-index='0']")
-        third_word = page.locator("[data-word-index='2']")
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        first_word.scroll_into_view_if_needed()
-        first_box = first_word.bounding_box()
-        third_box = third_word.bounding_box()
-
-        # Drag select
-        assert first_box is not None and third_box is not None
-        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(third_box["x"] + third_box["width"] - 5, third_box["y"] + 5)
-        page.mouse.up()
+        # Select words using click + shift+click
+        _select_words(page, 0, 2)
 
         # Should show highlight menu/card
         highlight_menu = page.locator("[data-testid='highlight-menu']")
@@ -180,24 +200,12 @@ class TestHighlightCreation:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # Select and highlight
-        first_word = page.locator("[data-word-index='0']")
-        second_word = page.locator("[data-word-index='1']")
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        first_word.scroll_into_view_if_needed()
-        first_box = first_word.bounding_box()
-        second_box = second_word.bounding_box()
+        # Select and highlight using click + shift+click
+        _select_words(page, 0, 1)
 
-        assert first_box is not None and second_box is not None
-        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(second_box["x"] + second_box["width"] - 5, second_box["y"] + 5)
-        page.mouse.up()
-
-        # Wait for highlight menu and click the highlight button
-        page.locator("[data-testid='highlight-menu']").wait_for(
-            state="visible", timeout=5000
-        )
         # Click a tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
         page.get_by_role(
             "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
@@ -228,23 +236,12 @@ class TestHighlightCreation:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # Create highlight
-        first_word = page.locator("[data-word-index='0']")
-        second_word = page.locator("[data-word-index='1']")
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        first_word.scroll_into_view_if_needed()
-        first_box = first_word.bounding_box()
-        second_box = second_word.bounding_box()
+        # Select and create highlight using click + shift+click
+        _select_words(page, 0, 1)
 
-        assert first_box is not None and second_box is not None
-        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(second_box["x"] + second_box["width"] - 5, second_box["y"] + 5)
-        page.mouse.up()
-
-        page.locator("[data-testid='highlight-menu']").wait_for(
-            state="visible", timeout=5000
-        )
         # Click a tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
         page.get_by_role(
             "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
@@ -320,23 +317,11 @@ class TestFullAnnotationWorkflow:
         # Wait for word spans to appear
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
+
         # 4. Select text and create a highlight on "tort law" (word indices 6-7)
-        word_tort = page.locator("[data-word-index='6']")
-        word_law = page.locator("[data-word-index='7']")
-
-        word_tort.scroll_into_view_if_needed()
-        tort_box = word_tort.bounding_box()
-        law_box = word_law.bounding_box()
-
-        assert tort_box is not None and law_box is not None
-        page.mouse.move(tort_box["x"] + 5, tort_box["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(law_box["x"] + law_box["width"] - 5, law_box["y"] + 5)
-        page.mouse.up()
-
-        # Wait for highlight menu
-        highlight_menu = page.locator("[data-testid='highlight-menu']")
-        expect(highlight_menu).to_be_visible(timeout=5000)
+        _select_words(page, 6, 7)
 
         # Create highlight with tag (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
         page.get_by_role(
@@ -344,6 +329,7 @@ class TestFullAnnotationWorkflow:
         ).click()
 
         # Verify highlight is applied with jurisdiction color (blue)
+        word_tort = page.locator("[data-word-index='6']")
         expect(word_tort).to_have_css(
             "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
         )
@@ -387,34 +373,25 @@ class TestFullAnnotationWorkflow:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        def create_highlight(start_idx: int, end_idx: int) -> None:
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
+
+        def create_highlight_local(start_idx: int, end_idx: int) -> None:
             """Helper to create a highlight between word indices."""
-            highlight_menu = page.locator("[data-testid='highlight-menu']")
+            # Clear any existing selection first
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(100)
 
-            # Ensure menu is hidden before we start a new selection
-            highlight_menu.wait_for(state="hidden", timeout=5000)
+            # Select using click + shift+click
+            _select_words(page, start_idx, end_idx)
 
-            start_word = page.locator(f"[data-word-index='{start_idx}']")
-            end_word = page.locator(f"[data-word-index='{end_idx}']")
-
-            start_word.scroll_into_view_if_needed()
-            start_box = start_word.bounding_box()
-            end_box = end_word.bounding_box()
-
-            assert start_box is not None and end_box is not None
-            page.mouse.move(start_box["x"] + 5, start_box["y"] + 5)
-            page.mouse.down()
-            page.mouse.move(end_box["x"] + end_box["width"] - 5, end_box["y"] + 5)
-            page.mouse.up()
-
-            # Wait for menu to appear
-            highlight_menu.wait_for(state="visible", timeout=5000)
             # Click tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
             page.get_by_role(
                 "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
             ).click()
 
             # Verify highlight was applied with jurisdiction color (blue)
+            start_word = page.locator(f"[data-word-index='{start_idx}']")
             expect(start_word).to_have_css(
                 "background-color",
                 re.compile(r"rgba\(31,\s*119,\s*180"),
@@ -422,9 +399,9 @@ class TestFullAnnotationWorkflow:
             )
 
         # Create three highlights
-        create_highlight(0, 1)  # "First highlight"
-        create_highlight(3, 4)  # "Second highlight"
-        create_highlight(6, 7)  # "Third highlight"
+        create_highlight_local(0, 1)  # "First highlight"
+        create_highlight_local(3, 4)  # "Second highlight"
+        create_highlight_local(6, 7)  # "Third highlight"
 
         # Wait for "Saved" indicator (observable state)
         saved_indicator = page.locator("[data-testid='save-status']")
@@ -490,19 +467,11 @@ class TestTagSelection:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # Select "legal issue"
-        word_legal = page.locator("[data-word-index='3']")
-        word_issue = page.locator("[data-word-index='4']")
-        word_legal.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        legal_box = word_legal.bounding_box()
-        issue_box = word_issue.bounding_box()
-
-        assert legal_box is not None and issue_box is not None
-        page.mouse.move(legal_box["x"] + 5, legal_box["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(issue_box["x"] + issue_box["width"] - 5, issue_box["y"] + 5)
-        page.mouse.up()
+        # Select "legal issue" using click + shift+click
+        _select_words(page, 3, 4)
 
         # Click a tag button from the toolbar (any tag will do)
         tag_toolbar = page.locator("[data-testid='tag-toolbar']")
@@ -511,6 +480,7 @@ class TestTagSelection:
         tag_button.click()
 
         # Highlight should have a background color (not necessarily yellow now)
+        word_legal = page.locator("[data-word-index='3']")
         expect(word_legal).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
@@ -525,6 +495,7 @@ class TestAnnotationCards:
     ) -> None:
         """Creating a highlight adds an annotation card."""
         page = authenticated_page
+
         # Setup workspace with document
         page.goto(f"{app_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
@@ -537,19 +508,11 @@ class TestAnnotationCards:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
-        # Create highlight with tag
-        word0 = page.locator("[data-word-index='0']")
-        word1 = page.locator("[data-word-index='1']")
-        word0.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        box0 = word0.bounding_box()
-        box1 = word1.bounding_box()
-
-        assert box0 is not None and box1 is not None
-        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
-        page.mouse.up()
+        # Create highlight using click + shift+click
+        _select_words(page, 0, 1)
 
         # Click any tag button
         tag_button = page.locator("[data-testid='tag-toolbar'] button").first
@@ -576,22 +539,11 @@ class TestAnnotationCards:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
-        # Select and highlight "Important legal"
-        word0 = page.locator("[data-word-index='0']")
-        word1 = page.locator("[data-word-index='1']")
-        word0.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        box0 = word0.bounding_box()
-        box1 = word1.bounding_box()
-
-        assert box0 is not None and box1 is not None
-        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
-        page.mouse.up()
-
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
-        tag_button.click()
+        # Select and highlight "Important legal" (words 0-1)
+        _create_highlight(page, 0, 1)
 
         # Card should contain the highlighted text
         ann_card = page.locator("[data-testid='annotation-card']")
@@ -614,22 +566,11 @@ class TestAnnotationCards:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
-        # Create highlight
-        word0 = page.locator("[data-word-index='0']")
-        word1 = page.locator("[data-word-index='1']")
-        word0.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        box0 = word0.bounding_box()
-        box1 = word1.bounding_box()
-
-        assert box0 is not None and box1 is not None
-        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
-        page.mouse.up()
-
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
-        tag_button.click()
+        # Create highlight (words 0-1)
+        _create_highlight(page, 0, 1)
 
         # Find comment input in card
         ann_card = page.locator("[data-testid='annotation-card']")
@@ -664,22 +605,11 @@ class TestAnnotationCards:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
-        # Create highlight and add comment
-        word0 = page.locator("[data-word-index='0']")
-        word1 = page.locator("[data-word-index='1']")
-        word0.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        box0 = word0.bounding_box()
-        box1 = word1.bounding_box()
-
-        assert box0 is not None and box1 is not None
-        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
-        page.mouse.up()
-
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
-        tag_button.click()
+        # Create highlight and add comment (words 0-1)
+        _create_highlight(page, 0, 1)
 
         ann_card = page.locator("[data-testid='annotation-card']")
         comment_input = ann_card.locator("input[type='text'], textarea").first
@@ -721,22 +651,11 @@ class TestPdfExport:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
-        # Create at least one highlight
-        word0 = page.locator("[data-word-index='0']")
-        word1 = page.locator("[data-word-index='1']")
-        word0.scroll_into_view_if_needed()
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
 
-        box0 = word0.bounding_box()
-        box1 = word1.bounding_box()
-
-        assert box0 is not None and box1 is not None
-        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
-        page.mouse.down()
-        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
-        page.mouse.up()
-
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
-        tag_button.click()
+        # Create at least one highlight using click + shift+click
+        _create_highlight(page, 0, 1)
 
         # Export button should be visible
         export_button = page.get_by_role(
@@ -787,22 +706,19 @@ class TestDefinitionOfDone:
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
         page.wait_for_selector("[data-word-index]")
 
+        # Wait for JavaScript to set up (100ms timeout in JS)
+        page.wait_for_timeout(200)
+
         # 4. Create tagged highlights
         def create_tagged_highlight(
             start_idx: int, end_idx: int, tag_text: str
         ) -> None:
-            start_word = page.locator(f"[data-word-index='{start_idx}']")
-            end_word = page.locator(f"[data-word-index='{end_idx}']")
+            # Clear any existing selection first
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(100)
 
-            start_word.scroll_into_view_if_needed()
-            start_box = start_word.bounding_box()
-            end_box = end_word.bounding_box()
-
-            assert start_box is not None and end_box is not None
-            page.mouse.move(start_box["x"] + 5, start_box["y"] + 5)
-            page.mouse.down()
-            page.mouse.move(end_box["x"] + end_box["width"] - 5, end_box["y"] + 5)
-            page.mouse.up()
+            # Select using click + shift+click
+            _select_words(page, start_idx, end_idx)
 
             # Click specific tag button
             tag_button = page.locator(

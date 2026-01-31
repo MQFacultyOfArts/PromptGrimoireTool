@@ -39,6 +39,60 @@ logger = logging.getLogger(__name__)
 # Global registry for workspace annotation documents
 _workspace_registry = AnnotationDocumentRegistry()
 
+# CSS styles matching live_annotation_demo.py for consistent UX
+_PAGE_CSS = """
+    /* Document container */
+    .doc-container {
+        font-family: "Times New Roman", Times, serif;
+        font-size: 12pt;
+        line-height: 1.6;
+        padding: 1rem;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+    }
+
+    /* Compact tag toolbar in header */
+    .tag-toolbar-compact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        justify-content: center;
+    }
+
+    /* Compact buttons */
+    .compact-btn {
+        padding: 2px 8px !important;
+        min-height: 24px !important;
+        font-size: 11px !important;
+    }
+
+    /* Annotation sidebar - relative container for positioned cards */
+    .annotations-sidebar {
+        position: relative !important;
+        min-height: 100%;
+    }
+
+    /* Annotation cards - absolutely positioned within sidebar */
+    .ann-card-positioned {
+        left: 0;
+        right: 0;
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: top 0.15s ease-out, box-shadow 0.2s;
+    }
+    .ann-card-positioned:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    /* Word spans for selection */
+    .word {
+        cursor: text;
+    }
+"""
+
 
 @dataclass
 class PageState:
@@ -155,34 +209,49 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     return "\n".join(css_rules)
 
 
+def _setup_page_styles() -> None:
+    """Add CSS and register custom tag colors."""
+    ui.add_css(_PAGE_CSS)
+
+    # Register custom colors for tag buttons (matching live_annotation_demo.py)
+    custom_tag_colors = {
+        tag.value.replace("_", "-"): color for tag, color in TAG_COLORS.items()
+    }
+    ui.colors(**custom_tag_colors)
+
+
 def _build_tag_toolbar(
     on_tag_click: Any,  # Callable[[BriefTag], Awaitable[None]]
 ) -> None:
-    """Build compact tag selection toolbar.
+    """Build fixed tag toolbar.
 
-    Ported from live_annotation_demo.py.
+    Ported from live_annotation_demo.py - uses fixed position for floating toolbar.
+    Uses a div with fixed positioning instead of ui.header() to allow nesting.
     """
-    # Reverse lookup: BriefTag -> shortcut key
-    shortcut_for_tag = {v: k for k, v in TAG_SHORTCUTS.items()}
-
-    with ui.row().classes("gap-1 flex-wrap mb-4").props('data-testid="tag-toolbar"'):
-        for tag in BriefTag:
-            color = TAG_COLORS.get(tag, "#888888")
-            shortcut = shortcut_for_tag.get(tag, "")
-            # Format: "[1] Jurisdiction" or just "Tag Name" if no shortcut
-            label = tag.value.replace("_", " ").title()
-            if shortcut:
-                label = f"[{shortcut}] {label}"
+    with (
+        ui.element("div")
+        .classes("bg-gray-100 py-2 px-4")
+        .style(
+            "position: fixed; top: 0; left: 0; right: 0; z-index: 100; "
+            "box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+        ),
+        ui.row()
+        .classes("tag-toolbar-compact w-full")
+        .props('data-testid="tag-toolbar"'),
+    ):
+        for i, tag in enumerate(BriefTag):
+            shortcut = list(TAG_SHORTCUTS.keys())[i] if i < len(TAG_SHORTCUTS) else ""
+            tag_name = tag.value.replace("_", " ").title()
+            label = f"[{shortcut}] {tag_name}"
 
             # Create handler with tag bound
-            async def make_handler(t: BriefTag = tag) -> None:
+            async def apply_tag(t: BriefTag = tag) -> None:
                 await on_tag_click(t)
 
-            ui.button(
-                label,
-                on_click=make_handler,
-            ).classes("text-xs px-2 py-1").style(
-                f"background-color: {color}; color: white;"
+            # Use registered color name (tag.value with underscores replaced by dashes)
+            color_name = tag.value.replace("_", "-")
+            ui.button(label, on_click=apply_tag, color=color_name).classes(
+                "text-xs compact-btn"
             )
 
 
@@ -221,6 +290,10 @@ def _build_annotation_card(
     if len(highlight.get("text", "")) > 80:
         text += "..."
 
+    # Get word positions for scroll-sync positioning
+    start_word = highlight.get("start_word", 0)
+    end_word = highlight.get("end_word", start_word)
+
     # Get tag color
     try:
         tag = BriefTag(tag_str)
@@ -230,11 +303,15 @@ def _build_annotation_card(
         color = "#666"
         tag_name = tag_str.replace("_", " ").title()
 
+    # Use ann-card-positioned for scroll-sync positioning (like live_annotation_demo)
     card = (
         ui.card()
-        .classes("w-full mb-2")
+        .classes("ann-card-positioned")
         .style(f"border-left: 4px solid {color};")
-        .props(f'data-testid="annotation-card" data-highlight-id="{highlight_id}"')
+        .props(
+            f'data-testid="annotation-card" data-highlight-id="{highlight_id}" '
+            f'data-start-word="{start_word}" data-end-word="{end_word}"'
+        )
     )
 
     with card:
@@ -296,6 +373,11 @@ def _build_annotation_card(
 
 def _refresh_annotation_cards(state: PageState) -> None:
     """Refresh all annotation cards from CRDT state."""
+    logger.debug(
+        "[CARDS] _refresh called: container=%s, crdt_doc=%s",
+        state.annotations_container is not None,
+        state.crdt_doc is not None,
+    )
     if state.annotations_container is None or state.crdt_doc is None:
         return
 
@@ -311,10 +393,15 @@ def _refresh_annotation_cards(state: PageState) -> None:
     else:
         highlights = state.crdt_doc.get_all_highlights()
 
+    logger.debug(
+        "[CARDS] Found %d highlights for doc_id=%s", len(highlights), state.document_id
+    )
+
     # Create cards for each highlight
     with state.annotations_container:
         for hl in highlights:
             hl_id = hl.get("id", "")
+            logger.debug("[CARDS] Creating card for highlight %s", hl_id[:8])
             card = _build_annotation_card(state, hl)
             state.annotation_cards[hl_id] = card
 
@@ -326,7 +413,14 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         state: Page state with selection and CRDT document.
         tag: Optional BriefTag for the highlight. Defaults to "highlight".
     """
+    logger.debug(
+        "[HIGHLIGHT] called: start=%s, end=%s, tag=%s",
+        state.selection_start,
+        state.selection_end,
+        tag,
+    )
     if state.selection_start is None or state.selection_end is None:
+        logger.debug("[HIGHLIGHT] No selection - returning early")
         ui.notify("No selection", type="warning")
         return
 
@@ -421,58 +515,68 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.on("selection_made", on_selection)
     ui.on("selection_cleared", on_selection_cleared)
 
-    # JavaScript to detect text selection on mouseup
+    # JavaScript to detect text selection via selectionchange and mouseup
+    # Wrapped in setTimeout to ensure DOM is ready and emitEvent is available
     js_code = """
-    document.addEventListener('mouseup', function(event) {
-        // Small delay to let selection complete
-        setTimeout(function() {
+    setTimeout(function() {
+        function processSelection() {
             const selection = window.getSelection();
-            if (selection.rangeCount > 0 && !selection.isCollapsed) {
-                const range = selection.getRangeAt(0);
+            if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+                return;
+            }
 
-                // Find word spans in the selection
-                let startEl = range.startContainer;
-                if (startEl.nodeType === Node.TEXT_NODE) {
-                    startEl = startEl.parentElement;
-                }
-                startEl = startEl.closest('[data-word-index]');
+            const range = selection.getRangeAt(0);
 
-                let endEl = range.endContainer;
-                if (endEl.nodeType === Node.TEXT_NODE) {
-                    endEl = endEl.parentElement;
-                }
-                endEl = endEl.closest('[data-word-index]');
+            // Find all word spans that intersect with the selection
+            // This is more robust than checking start/end containers
+            const allWordSpans = document.querySelectorAll('[data-word-index]');
+            let minWord = Infinity;
+            let maxWord = -Infinity;
 
-                if (startEl && endEl) {
-                    const start = parseInt(startEl.dataset.wordIndex);
-                    const end = parseInt(endEl.dataset.wordIndex);
-                    emitEvent('selection_made', {
-                        start: Math.min(start, end),
-                        end: Math.max(start, end)
-                    });
+            for (const span of allWordSpans) {
+                if (range.intersectsNode(span)) {
+                    const wordIdx = parseInt(span.dataset.wordIndex);
+                    minWord = Math.min(minWord, wordIdx);
+                    maxWord = Math.max(maxWord, wordIdx);
                 }
             }
-        }, 10);
-    });
 
-    // Clear selection on click (but not drag)
-    let mouseDownPos = null;
-    document.addEventListener('mousedown', function(e) {
-        mouseDownPos = {x: e.clientX, y: e.clientY};
-    });
-    document.addEventListener('click', function(e) {
-        if (mouseDownPos) {
-            const dx = Math.abs(e.clientX - mouseDownPos.x);
-            const dy = Math.abs(e.clientY - mouseDownPos.y);
-            // Only clear if it's a click, not a drag
-            if (dx < 5 && dy < 5) {
-                const selection = window.getSelection();
-                if (selection.isCollapsed) {
-                    emitEvent('selection_cleared', {});
-                }
+            if (minWord !== Infinity && maxWord !== -Infinity) {
+                emitEvent('selection_made', {
+                    start: minWord,
+                    end: maxWord
+                });
             }
         }
-    });
+
+        // Listen for selectionchange (handles click+shift+click)
+        document.addEventListener('selectionchange', function() {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed) {
+                processSelection();
+            }
+        });
+
+        // Also listen for mouseup (handles drag selection)
+        document.addEventListener('mouseup', function() {
+            setTimeout(processSelection, 10);
+        });
+
+        // Clear selection on click (but not on toolbar)
+        document.addEventListener('click', function(e) {
+            // Don't clear selection when clicking toolbar buttons
+            if (e.target.closest('[data-testid="tag-toolbar"]')) {
+                return;
+            }
+            // Small delay to check if selection was cleared by this click
+            setTimeout(function() {
+                const selection = window.getSelection();
+                if (!selection || selection.isCollapsed) {
+                    emitEvent('selection_cleared', {});
+                }
+            }, 50);
+        });
+    }, 100);
     """
     ui.run_javascript(js_code)
 
@@ -518,19 +622,33 @@ async def _render_document_with_highlights(
 
         ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
 
-    # Two-column layout: document on left, annotations on right
-    with ui.row().classes("w-full gap-4 mt-4"):
-        # Document content (2/3 width)
-        with (
-            ui.element("div").classes("w-2/3"),
-            ui.element("div").classes("document-content border p-4 rounded bg-white"),
-        ):
-            ui.html(doc.content, sanitize=False).classes("prose selection:bg-blue-200")
+    # Two-column layout: document (70%) + sidebar (30%)
+    # Takes up 80-90% of screen width for comfortable reading
+    # Add padding-top to account for fixed toolbar (approx 50px height)
+    layout_wrapper = ui.element("div").style(
+        "position: relative; display: flex; gap: 1.5rem; "
+        "width: 90%; max-width: 1600px; margin: 0 auto; padding-top: 60px;"
+    )
+    with layout_wrapper:
+        # Document content - proper readable width (~65% of layout)
+        # Needs ID for scroll-sync JavaScript positioning
+        doc_container = (
+            ui.element("div")
+            .classes("doc-container")
+            .style("flex: 2; min-width: 600px; max-width: 900px;")
+            .props('id="doc-container"')
+        )
+        with doc_container:
+            ui.html(doc.content, sanitize=False)
 
-        # Annotations sidebar (1/3 width)
-        with ui.element("div").classes("w-1/3"):
-            ui.label("Annotations").classes("text-lg font-semibold mb-2")
-            state.annotations_container = ui.element("div").classes("space-y-2")
+        # Annotations sidebar (~35% of layout)
+        # Needs ID for scroll-sync JavaScript positioning
+        state.annotations_container = (
+            ui.element("div")
+            .classes("annotations-sidebar")
+            .style("flex: 1; min-width: 300px; max-width: 450px;")
+            .props('id="annotations-container"')
+        )
 
     # Set up refresh function
     def refresh_annotations() -> None:
@@ -543,6 +661,69 @@ async def _render_document_with_highlights(
 
     # Set up selection detection
     _setup_selection_handlers(state)
+
+    # Set up scroll-synced card positioning (adapted from live-annotation.js)
+    # fmt: off
+    scroll_sync_js = (
+        "(function() {\n"
+        "  const docC = document.getElementById('doc-container');\n"
+        "  const annC = document.getElementById('annotations-container');\n"
+        "  if (!docC || !annC) return;\n"
+        "  const MIN_GAP = 8;\n"
+        "  function positionCards() {\n"
+        "    const cards = Array.from(annC.querySelectorAll('[data-start-word]'));\n"
+        "    if (cards.length === 0) return;\n"
+        "    const docRect = docC.getBoundingClientRect();\n"
+        "    const annRect = annC.getBoundingClientRect();\n"
+        "    const containerOffset = annRect.top - docRect.top;\n"
+        "    const cardInfos = cards.map(card => {\n"
+        "      const sw = parseInt(card.dataset.startWord);\n"
+        "      const ws = docC.querySelector('[data-word-index=\"'+sw+'\"]');\n"
+        "      if (!ws) return null;\n"
+        "      const wr = ws.getBoundingClientRect();\n"
+        "      return { card, startWord: sw, height: card.offsetHeight,\n"
+        "               targetY: (wr.top-docRect.top)-containerOffset };\n"
+        "    }).filter(Boolean);\n"
+        "    cardInfos.sort((a, b) => a.startWord - b.startWord);\n"
+        "    const headerHeight = 60;\n"
+        "    const viewportTop = headerHeight;\n"
+        "    const viewportBottom = window.innerHeight;\n"
+        "    let minY = 0;\n"
+        "    for (const info of cardInfos) {\n"
+        "      const sw = info.startWord;\n"
+        "      const ew = parseInt(info.card.dataset.endWord) || sw;\n"
+        "      var qs='[data-word-index=\"'+sw+'\"]';\n"
+        "      const startWS = docC.querySelector(qs);\n"
+        "      var qe='[data-word-index=\"'+(ew-1)+'\"]';\n"
+        "      const endWS = docC.querySelector(qe)||startWS;\n"
+        "      if (!startWS || !endWS) continue;\n"
+        "      const sr = startWS.getBoundingClientRect();\n"
+        "      const er = endWS.getBoundingClientRect();\n"
+        "      const inView = er.bottom > viewportTop && sr.top < viewportBottom;\n"
+        "      info.card.style.position = 'absolute';\n"
+        "      if (!inView) { info.card.style.display = 'none'; continue; }\n"
+        "      info.card.style.display = '';\n"
+        "      const y = Math.max(info.targetY, minY);\n"
+        "      info.card.style.top = y + 'px';\n"
+        "      minY = y + info.height + MIN_GAP;\n"
+        "    }\n"
+        "  }\n"
+        "  let ticking = false;\n"
+        "  function onScroll() {\n"
+        "    if (!ticking) {\n"
+        "      requestAnimationFrame(() => { positionCards(); ticking = false; });\n"
+        "      ticking = true;\n"
+        "    }\n"
+        "  }\n"
+        "  window.addEventListener('scroll', onScroll, { passive: true });\n"
+        "  requestAnimationFrame(positionCards);\n"
+        "  var rePos = () => requestAnimationFrame(positionCards);\n"
+        "  const obs = new MutationObserver(rePos);\n"
+        "  obs.observe(annC, { childList: true, subtree: true });\n"
+        "})();"
+    )
+    # fmt: on
+    ui.run_javascript(scroll_sync_js)
 
 
 async def _render_workspace_view(workspace_id: UUID) -> None:
@@ -672,6 +853,9 @@ async def annotation_page(client: Client) -> None:
     Query params:
         workspace_id: UUID of existing workspace to load
     """
+    # Set up CSS and colors (matching live_annotation_demo.py)
+    _setup_page_styles()
+
     # Get workspace_id from query params if present
     workspace_id_str = client.request.query_params.get("workspace_id")
     workspace_id: UUID | None = None
@@ -682,7 +866,7 @@ async def annotation_page(client: Client) -> None:
         except ValueError:
             ui.notify("Invalid workspace ID", type="negative")
 
-    with ui.column().classes("w-full max-w-4xl mx-auto p-4"):
+    with ui.column().classes("w-full p-4"):
         ui.label("Annotation Workspace").classes("text-2xl font-bold mb-4")
 
         if workspace_id:

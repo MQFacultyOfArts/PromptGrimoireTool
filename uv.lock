@@ -1065,7 +1065,9 @@ dev = [
     { name = "pylatexenc" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-depper" },
     { name = "pytest-playwright" },
+    { name = "pytest-subtests" },
     { name = "ruff" },
 ]
 
@@ -1107,7 +1109,9 @@ dev = [
     { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest-depper", specifier = ">=0.2.0" },
     { name = "pytest-playwright", specifier = ">=0.7.2" },
+    { name = "pytest-subtests", specifier = ">=0.15.0" },
     { name = "ruff", specifier = ">=0.14.11" },
 ]
 
@@ -1387,6 +1391,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-depper"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1f/06/f8c67301d2f6d4d630a7a4474c303e5ab904460faef32347ae1468eb5c0c/pytest_depper-0.2.0.tar.gz", hash = "sha256:165d8c54fa9713cd0151d0c070c115a2e78a63266d78e6f63bc8cf28d73158f0", size = 22356, upload-time = "2025-10-23T07:26:14.996Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/d2/c8d08e7adc022a23f32a8215b523f900e1eac2b73e1abdca5dbd336a0509/pytest_depper-0.2.0-py3-none-any.whl", hash = "sha256:aff659dc73e8ec1fb56723ccef40c1586f2a47fb729db2bf885654d87c3930b9", size = 18548, upload-time = "2025-10-23T07:26:13.799Z" },
+]
+
+[[package]]
 name = "pytest-playwright"
 version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1399,6 +1415,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e8/6b/913e36aa421b35689ec95ed953ff7e8df3f2ee1c7b8ab2a3f1fd39d95faf/pytest_playwright-0.7.2.tar.gz", hash = "sha256:247b61123b28c7e8febb993a187a07e54f14a9aa04edc166f7a976d88f04c770", size = 16928, upload-time = "2025-11-24T03:43:22.53Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/61/4d333d8354ea2bea2c2f01bad0a4aa3c1262de20e1241f78e73360e9b620/pytest_playwright-0.7.2-py3-none-any.whl", hash = "sha256:8084e015b2b3ecff483c2160f1c8219b38b66c0d4578b23c0f700d1b0240ea38", size = 16881, upload-time = "2025-11-24T03:43:24.423Z" },
+]
+
+[[package]]
+name = "pytest-subtests"
+version = "0.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/d9/20097971a8d315e011e055d512fa120fd6be3bdb8f4b3aa3e3c6bf77bebc/pytest_subtests-0.15.0.tar.gz", hash = "sha256:cb495bde05551b784b8f0b8adfaa27edb4131469a27c339b80fd8d6ba33f887c", size = 18525, upload-time = "2025-10-20T16:26:18.358Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/64/bba465299b37448b4c1b84c7a04178399ac22d47b3dc5db1874fe55a2bd3/pytest_subtests-0.15.0-py3-none-any.whl", hash = "sha256:da2d0ce348e1f8d831d5a40d81e3aeac439fec50bd5251cbb7791402696a9493", size = 9185, upload-time = "2025-10-20T16:26:17.239Z" },
 ]
 
 [[package]]

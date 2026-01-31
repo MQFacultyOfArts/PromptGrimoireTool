@@ -100,9 +100,14 @@ Exit code: {exit_code}
 
 
 def test_debug() -> None:
-    """Run pytest with debug flags, capturing output to a log file.
+    """Run pytest on tests affected by recent changes, stopping on first failure.
+
+    Uses pytest-depper for smart test selection based on code dependencies.
+    Only tests that depend on changed files (vs main branch) will run.
 
     Flags applied:
+        --depper: Enable smart test selection based on changed files
+        --depper-run-all-on-error: Fall back to all tests if analysis fails
         -n auto: Parallel execution with auto-detected workers
         --dist=loadfile: Keep tests from same file on same worker
         -x: Stop on first failure
@@ -113,9 +118,11 @@ def test_debug() -> None:
     Output saved to: test-failures.log
     """
     _run_pytest(
-        title="Test Debug Run",
+        title="Test Debug Run (changed files only)",
         log_path=Path("test-failures.log"),
         default_args=[
+            "--depper",
+            "--depper-run-all-on-error",
             "-n",
             "auto",
             "--dist=loadfile",
@@ -128,7 +135,13 @@ def test_debug() -> None:
 
 
 def test_all() -> None:
-    """Run full test suite with parallel execution and timing.
+    """Run the complete test suite, exercising all tests regardless of changes.
+
+    Unlike test-debug (which uses pytest-depper to run only affected tests),
+    this command runs every test in the project. Use this for:
+    - Pre-commit verification
+    - CI/CD pipelines
+    - Ensuring full coverage before releases
 
     Flags applied:
         -n auto: Parallel execution with auto-detected workers
@@ -139,7 +152,7 @@ def test_all() -> None:
     Output saved to: test-all.log
     """
     _run_pytest(
-        title="Full Test Suite",
+        title="Full Test Suite (all tests)",
         log_path=Path("test-all.log"),
         default_args=["-n", "auto", "--dist=loadfile", "--durations=10", "-v"],
     )

@@ -120,3 +120,147 @@ class TestWorkspaceAndDocumentCreation:
         # Content should still be there with word spans
         authenticated_page.wait_for_selector("[data-word-index]", timeout=10000)
         expect(authenticated_page.locator("text=document")).to_be_visible()
+
+
+class TestHighlightCreation:
+    """Tests for creating highlights on documents (requires authentication)."""
+
+    @pytestmark_db
+    def test_select_text_shows_highlight_menu(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Selecting text shows highlight creation menu."""
+        page = authenticated_page
+        # Setup workspace with document
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Select some words here to highlight them")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Select words by clicking and dragging
+        first_word = page.locator("[data-word-index='0']")
+        third_word = page.locator("[data-word-index='2']")
+
+        first_word.scroll_into_view_if_needed()
+        first_box = first_word.bounding_box()
+        third_box = third_word.bounding_box()
+
+        # Drag select
+        assert first_box is not None and third_box is not None
+        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(third_box["x"] + third_box["width"] - 5, third_box["y"] + 5)
+        page.mouse.up()
+
+        # Should show highlight menu/card
+        highlight_menu = page.locator("[data-testid='highlight-menu']")
+        expect(highlight_menu).to_be_visible(timeout=5000)
+
+    @pytestmark_db
+    def test_create_highlight_applies_styling(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Creating a highlight applies visual styling."""
+        page = authenticated_page
+        # Setup
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Highlight this text please")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Select and highlight
+        first_word = page.locator("[data-word-index='0']")
+        second_word = page.locator("[data-word-index='1']")
+
+        first_word.scroll_into_view_if_needed()
+        first_box = first_word.bounding_box()
+        second_box = second_word.bounding_box()
+
+        assert first_box is not None and second_box is not None
+        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(second_box["x"] + second_box["width"] - 5, second_box["y"] + 5)
+        page.mouse.up()
+
+        # Wait for highlight menu and click the highlight button
+        page.locator("[data-testid='highlight-menu']").wait_for(
+            state="visible", timeout=5000
+        )
+        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+
+        # Words should have highlight styling (background color via CSS)
+        # Check for yellow background (rgba(255, 235, 59, 0.5))
+        first_word = page.locator("[data-word-index='0']")
+        expect(first_word).to_have_css(
+            "background-color", re.compile(r"rgba\(255,\s*235,\s*59")
+        )
+
+    @pytestmark_db
+    def test_highlight_persists_after_reload(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Highlights survive page reload via CRDT persistence."""
+        page = authenticated_page
+        # Setup
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+        workspace_url = page.url
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Test highlight persistence")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Create highlight
+        first_word = page.locator("[data-word-index='0']")
+        second_word = page.locator("[data-word-index='1']")
+
+        first_word.scroll_into_view_if_needed()
+        first_box = first_word.bounding_box()
+        second_box = second_word.bounding_box()
+
+        assert first_box is not None and second_box is not None
+        page.mouse.move(first_box["x"] + 5, first_box["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(second_box["x"] + second_box["width"] - 5, second_box["y"] + 5)
+        page.mouse.up()
+
+        page.locator("[data-testid='highlight-menu']").wait_for(
+            state="visible", timeout=5000
+        )
+        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+
+        # Wait for highlight to be applied (check for background color)
+        first_word = page.locator("[data-word-index='0']")
+        expect(first_word).to_have_css(
+            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+        )
+
+        # Wait for "Saved" indicator (observable state, not arbitrary timeout)
+        saved_indicator = page.locator("[data-testid='save-status']")
+        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+        # Reload
+        page.goto(workspace_url)
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Highlight should still be there (check for background color)
+        first_word = page.locator("[data-word-index='0']")
+        expect(first_word).to_have_css(
+            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+        )

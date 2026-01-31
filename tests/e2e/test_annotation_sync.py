@@ -21,6 +21,7 @@ import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import create_highlight, select_words
+from tests.e2e.conftest import _authenticate_page
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(
@@ -281,6 +282,10 @@ class TestSyncEdgeCases:
         # Open third context
         context3 = browser.new_context()
         page3 = context3.new_page()
+
+        # Authenticate page3 before accessing the workspace
+        _authenticate_page(page3, app_server)
+
         url = f"{app_server}/annotation?workspace_id={workspace_id}"
         page3.goto(url)
         page3.wait_for_selector("[data-word-index]", timeout=10000)

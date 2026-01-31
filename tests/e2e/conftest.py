@@ -166,7 +166,8 @@ def two_annotation_contexts(
     page2.goto(url)
     page2.wait_for_selector("[data-word-index]", timeout=10000)
 
-    yield page1, page2, workspace_id
-
-    context1.close()
-    context2.close()
+    try:
+        yield page1, page2, workspace_id
+    finally:
+        context1.close()
+        context2.close()

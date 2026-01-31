@@ -7,9 +7,12 @@ Handles the hybrid model where users may exist before their first login.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from sqlmodel import select
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import User
@@ -239,6 +242,7 @@ async def upsert_user_on_login(
     email: str,
     stytch_member_id: str,
     display_name: str | None = None,
+    is_admin: bool | None = None,
 ) -> User:
     """Find or create user on login, update stytch_id and last_login.
 
@@ -248,6 +252,7 @@ async def upsert_user_on_login(
         email: User's email from Stytch auth.
         stytch_member_id: Stytch member_id from auth.
         display_name: Optional name from Stytch (falls back to email prefix).
+        is_admin: If True, grant admin rights. If None, preserve existing value.
 
     Returns:
         The User record (created or updated).
@@ -267,6 +272,9 @@ async def upsert_user_on_login(
             if display_name and user.display_name == email.split("@")[0]:
                 # Update name if it was just the email prefix
                 user.display_name = display_name
+            # Update admin status if explicitly provided
+            if is_admin is not None:
+                user.is_admin = is_admin
             session.add(user)
         else:
             # Create new user
@@ -275,6 +283,7 @@ async def upsert_user_on_login(
                 display_name=name,
                 stytch_member_id=stytch_member_id,
                 last_login=datetime.now(UTC),
+                is_admin=is_admin or False,
             )
             session.add(user)
 

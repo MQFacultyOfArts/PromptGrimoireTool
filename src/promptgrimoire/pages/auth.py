@@ -77,6 +77,7 @@ async def _upsert_local_user(
     email: str,
     stytch_member_id: str,
     display_name: str | None = None,
+    roles: list[str] | None = None,
 ) -> tuple[UUID | None, bool]:
     """Upsert user in local database if configured.
 
@@ -84,6 +85,7 @@ async def _upsert_local_user(
         email: User's email from Stytch auth.
         stytch_member_id: Stytch member_id from auth.
         display_name: Optional name from Stytch.
+        roles: List of Stytch roles (checks for "stytch_admin").
 
     Returns:
         Tuple of (user_id, is_admin) or (None, False) if DB not configured.
@@ -92,12 +94,18 @@ async def _upsert_local_user(
         logger.debug("DATABASE_URL not configured, skipping user upsert")
         return None, False
 
+    # Check if user has admin role from Stytch
+    is_admin = "stytch_admin" in (roles or [])
+
     try:
         await init_db()
         user = await upsert_user_on_login(
             email=email,
             stytch_member_id=stytch_member_id,
             display_name=display_name,
+            is_admin=is_admin
+            if is_admin
+            else None,  # Only set if admin, preserve otherwise
         )
         logger.info(
             "User upserted: id=%s, email=%s, is_admin=%s",
@@ -368,6 +376,7 @@ async def magic_link_callback() -> None:
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
+            roles=result.roles,
         )
 
         _set_session_user(
@@ -419,6 +428,7 @@ async def sso_callback() -> None:
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
+            roles=result.roles,
         )
 
         _set_session_user(
@@ -470,6 +480,7 @@ async def oauth_callback() -> None:
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
+            roles=result.roles,
         )
 
         _set_session_user(

@@ -22,8 +22,11 @@ from promptgrimoire.auth.models import (
 # Predefined test values for consistent behavior in tests
 # These are kept for backwards compatibility with existing tests
 MOCK_VALID_EMAILS = frozenset(
-    {"test@example.com", "student@uni.edu", "instructor@uni.edu"}
+    {"test@example.com", "student@uni.edu", "instructor@uni.edu", "admin@example.com"}
 )
+
+# Admin emails get admin roles
+MOCK_ADMIN_EMAILS = frozenset({"admin@example.com"})
 MOCK_VALID_MAGIC_TOKEN = "mock-valid-token"
 MOCK_VALID_SSO_TOKEN = "mock-valid-sso-token"
 MOCK_VALID_OAUTH_TOKEN = "mock-valid-oauth-token"
@@ -129,6 +132,11 @@ class MockAuthClient:
         if email:
             session_token = _email_to_session_token(email)
             self._active_sessions[session_token] = email
+            roles = (
+                ["stytch_member", "stytch_admin"]
+                if email in MOCK_ADMIN_EMAILS
+                else ["stytch_member"]
+            )
             return AuthResult(
                 success=True,
                 session_token=session_token,
@@ -137,7 +145,7 @@ class MockAuthClient:
                 organization_id=MOCK_ORG_ID,
                 email=email,
                 name=email.split("@")[0].replace(".", " ").title(),
-                roles=["stytch_member"],
+                roles=roles,
             )
 
         return AuthResult(
@@ -182,13 +190,18 @@ class MockAuthClient:
         # Check active sessions first (from authenticate_magic_link)
         if session_token in self._active_sessions:
             email = self._active_sessions[session_token]
+            roles = (
+                ["stytch_member", "stytch_admin"]
+                if email in MOCK_ADMIN_EMAILS
+                else ["stytch_member"]
+            )
             return SessionResult(
                 valid=True,
                 member_id=_email_to_member_id(email),
                 organization_id=MOCK_ORG_ID,
                 email=email,
                 name=email.split("@")[0].replace(".", " ").title(),
-                roles=["stytch_member"],
+                roles=roles,
             )
 
         # Legacy support for hardcoded token

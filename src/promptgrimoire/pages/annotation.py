@@ -87,9 +87,15 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Word spans for selection */
+    /* Word spans for selection - smooth highlighting between words */
     .word {
         cursor: text;
+        /* Extend background to cover inter-word gaps */
+        padding: 0 0.15em;
+        margin: 0 -0.15em;
+        /* Ensure highlights blend smoothly */
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
     }
 """
 
@@ -270,6 +276,83 @@ def _update_highlight_css(state: PageState) -> None:
     state.highlight_style.update()
 
 
+async def _delete_highlight(
+    state: PageState,
+    highlight_id: str,
+    card: ui.card,
+) -> None:
+    """Delete a highlight and its card."""
+    if state.crdt_doc:
+        state.crdt_doc.remove_highlight(highlight_id)
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
+        await pm.force_persist_workspace(state.workspace_id)
+        if state.save_status:
+            state.save_status.text = "Saved"
+    card.delete()
+    if state.annotation_cards and highlight_id in state.annotation_cards:
+        del state.annotation_cards[highlight_id]
+    _update_highlight_css(state)
+
+
+def _build_comments_section(
+    state: PageState,
+    highlight_id: str,
+    comments: list[dict[str, Any]],
+) -> None:
+    """Build comments display and input for an annotation card.
+
+    Args:
+        state: Page state with CRDT and persistence info.
+        highlight_id: ID of the highlight to add comments to.
+        comments: Existing comments list from highlight.
+    """
+    # Display existing comments
+    if comments:
+        ui.separator()
+        for comment in comments:
+            c_author = comment.get("author", "Unknown")
+            c_text = comment.get("text", "")
+            with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
+                ui.label(c_author).classes("text-xs font-bold")
+                ui.label(c_text).classes("text-sm")
+
+    # Comment input
+    comment_input = (
+        ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
+    )
+
+    async def add_comment(
+        hid: str = highlight_id,
+        inp: ui.input = comment_input,
+    ) -> None:
+        if inp.value and inp.value.strip() and state.crdt_doc:
+            state.crdt_doc.add_comment(hid, state.user_name, inp.value.strip())
+            inp.value = ""
+
+            # Persist
+            pm = get_persistence_manager()
+            pm.mark_dirty_workspace(
+                state.workspace_id,
+                state.crdt_doc.doc_id,
+                last_editor=state.user_name,
+            )
+            await pm.force_persist_workspace(state.workspace_id)
+
+            if state.save_status:
+                state.save_status.text = "Saved"
+
+            # Refresh cards to show new comment
+            if state.refresh_annotations:
+                state.refresh_annotations()
+
+    ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+
+
 def _build_annotation_card(
     state: PageState,
     highlight: dict[str, Any],
@@ -294,6 +377,9 @@ def _build_annotation_card(
     start_word = highlight.get("start_word", 0)
     end_word = highlight.get("end_word", start_word)
 
+    # Get para_ref if stored
+    para_ref = highlight.get("para_ref", "")
+
     # Get tag color
     try:
         tag = BriefTag(tag_str)
@@ -315,58 +401,53 @@ def _build_annotation_card(
     )
 
     with card:
-        # Header with tag name
+        # Header with tag name and action buttons
         with ui.row().classes("w-full justify-between items-center"):
             ui.label(tag_name).classes("text-sm font-bold").style(f"color: {color};")
 
-        # Author
-        ui.label(f"by {author}").classes("text-xs text-gray-500")
+            with ui.row().classes("gap-1"):
+                # Go-to-highlight button - scrolls to highlight and flashes it
+                async def goto_highlight(sw: int = start_word) -> None:
+                    # fmt: off
+                    js = (
+                        f"(function(){{"
+                        f"const w=document.querySelector('[data-word-index=\"{sw}\"]');"
+                        f"if(w){{"
+                        f"w.scrollIntoView({{behavior:'smooth',block:'center'}});"
+                        f"w.style.transition='background-color 0.2s';"
+                        f"const orig=w.style.backgroundColor;"
+                        f"w.style.backgroundColor='#FFD700';"
+                        f"setTimeout(()=>{{w.style.backgroundColor=orig;}},800);"
+                        f"}}"
+                        f"}})()"
+                    )
+                    # fmt: on
+                    await ui.run_javascript(js)
+
+                ui.button(icon="my_location", on_click=goto_highlight).props(
+                    "flat dense size=xs"
+                ).tooltip("Go to highlight")
+
+                # Delete button - uses extracted _delete_highlight function
+                async def do_delete(hid: str = highlight_id, c: ui.card = card) -> None:
+                    await _delete_highlight(state, hid, c)
+
+                ui.button(icon="close", on_click=do_delete).props(
+                    "flat dense size=xs"
+                ).tooltip("Delete highlight")
+
+        # Author and para_ref on same line
+        with ui.row().classes("gap-2 items-center"):
+            ui.label(f"by {author}").classes("text-xs text-gray-500")
+            if para_ref:
+                ui.label(para_ref).classes("text-xs font-mono text-gray-400")
 
         # Highlighted text preview
         if text:
             ui.label(f'"{text}"').classes("text-sm italic mt-1")
 
-        # Comments section
-        comments = highlight.get("comments", [])
-        if comments:
-            ui.separator()
-            for comment in comments:
-                c_author = comment.get("author", "Unknown")
-                c_text = comment.get("text", "")
-                with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
-                    ui.label(c_author).classes("text-xs font-bold")
-                    ui.label(c_text).classes("text-sm")
-
-        # Comment input
-        comment_input = (
-            ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
-        )
-
-        async def add_comment(
-            hid: str = highlight_id,
-            inp: ui.input = comment_input,
-        ) -> None:
-            if inp.value and inp.value.strip() and state.crdt_doc:
-                state.crdt_doc.add_comment(hid, state.user_name, inp.value.strip())
-                inp.value = ""
-
-                # Persist
-                pm = get_persistence_manager()
-                pm.mark_dirty_workspace(
-                    state.workspace_id,
-                    state.crdt_doc.doc_id,
-                    last_editor=state.user_name,
-                )
-                await pm.force_persist_workspace(state.workspace_id)
-
-                if state.save_status:
-                    state.save_status.text = "Saved"
-
-                # Refresh cards to show new comment
-                if state.refresh_annotations:
-                    state.refresh_annotations()
-
-        ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+        # Comments section (extracted to reduce statement count)
+        _build_comments_section(state, highlight_id, highlight.get("comments", []))
 
     return card
 
@@ -515,6 +596,16 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.on("selection_made", on_selection)
     ui.on("selection_cleared", on_selection_cleared)
 
+    # Keyboard shortcut handler (1-0 keys map to tags)
+    async def on_keydown(e: Any) -> None:
+        """Handle keyboard shortcut for tag selection."""
+        key = e.args.get("key")
+        if key and key in TAG_SHORTCUTS:
+            tag = TAG_SHORTCUTS[key]
+            await _add_highlight(state, tag)
+
+    ui.on("keydown", on_keydown)
+
     # JavaScript to detect text selection via selectionchange and mouseup
     # Wrapped in setTimeout to ensure DOM is ready and emitEvent is available
     js_code = """
@@ -575,6 +666,13 @@ def _setup_selection_handlers(state: PageState) -> None:
                     emitEvent('selection_cleared', {});
                 }
             }, 50);
+        });
+
+        // Keyboard shortcuts (1-0 keys for tags)
+        document.addEventListener('keydown', function(e) {
+            if (['1','2','3','4','5','6','7','8','9','0'].includes(e.key)) {
+                emitEvent('keydown', { key: e.key });
+            }
         });
     }, 100);
     """

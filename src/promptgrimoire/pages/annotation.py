@@ -212,7 +212,10 @@ async def _add_highlight(state: PageState) -> None:
     # Update CSS to show new highlight
     _update_highlight_css(state)
 
-    # Clear selection and hide menu
+    # Clear browser selection first to prevent re-triggering on next mouseup
+    await ui.run_javascript("window.getSelection().removeAllRanges();")
+
+    # Clear selection state and hide menu
     state.selection_start = None
     state.selection_end = None
     if state.highlight_menu:

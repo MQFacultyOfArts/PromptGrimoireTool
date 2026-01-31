@@ -264,3 +264,173 @@ class TestHighlightCreation:
         expect(first_word).to_have_css(
             "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
         )
+
+
+class TestFullAnnotationWorkflow:
+    """Complete workflow E2E tests matching UAT statement (requires authentication).
+
+    UAT: The `/annotation` route allows a user to create a workspace, paste text
+    content that becomes a WorkspaceDocument, annotate that document with
+    highlights, and have those annotations persist across page reloads.
+    """
+
+    @pytestmark_db
+    def test_complete_annotation_workflow(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """UAT: User creates workspace, pastes content, creates highlight, persists.
+
+        Steps:
+        1. Navigate to /annotation
+        2. Create a new workspace
+        3. Paste text content
+        4. Select text and create a highlight
+        5. Reload the page (with workspace ID in URL)
+        6. Assert: highlight is still visible
+        """
+        page = authenticated_page
+
+        # 1. Navigate to /annotation
+        page.goto(f"{app_server}/annotation")
+        expect(page.locator("body")).to_be_visible()
+
+        # 2. Create a new workspace
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+        workspace_url = page.url
+
+        # 3. Paste text content
+        test_content = (
+            "This is a legal document about tort law. The defendant was negligent."
+        )
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        expect(content_input).to_be_visible()
+        content_input.fill(test_content)
+
+        # Submit content
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+
+        # Wait for word spans to appear
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # 4. Select text and create a highlight on "tort law" (word indices 6-7)
+        word_tort = page.locator("[data-word-index='6']")
+        word_law = page.locator("[data-word-index='7']")
+
+        word_tort.scroll_into_view_if_needed()
+        tort_box = word_tort.bounding_box()
+        law_box = word_law.bounding_box()
+
+        assert tort_box is not None and law_box is not None
+        page.mouse.move(tort_box["x"] + 5, tort_box["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(law_box["x"] + law_box["width"] - 5, law_box["y"] + 5)
+        page.mouse.up()
+
+        # Wait for highlight menu
+        highlight_menu = page.locator("[data-testid='highlight-menu']")
+        expect(highlight_menu).to_be_visible(timeout=5000)
+
+        # Create highlight
+        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+
+        # Verify highlight is applied (check for background color)
+        expect(word_tort).to_have_css(
+            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+        )
+
+        # 5. Wait for "Saved" indicator (observable state, not arbitrary timeout)
+        saved_indicator = page.locator("[data-testid='save-status']")
+        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+        # 6. Reload the page
+        page.goto(workspace_url)
+
+        # Wait for page to fully load
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # 7. Assert: highlight is still visible
+        word_tort_after_reload = page.locator("[data-word-index='6']")
+        expect(word_tort_after_reload).to_have_css(
+            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+        )
+
+    @pytestmark_db
+    def test_multiple_highlights_persist(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Multiple highlights on same document all persist after reload."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+        workspace_url = page.url
+
+        # Add content with distinct words for multiple highlights
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill(
+            "First highlight here. Second highlight there. Third highlight everywhere."
+        )
+        # Words: First=0 highlight=1 here.=2 Second=3 highlight=4 there.=5
+        #        Third=6 highlight=7 everywhere.=8
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        def create_highlight(start_idx: int, end_idx: int) -> None:
+            """Helper to create a highlight between word indices."""
+            highlight_menu = page.locator("[data-testid='highlight-menu']")
+
+            # Ensure menu is hidden before we start a new selection
+            highlight_menu.wait_for(state="hidden", timeout=5000)
+
+            start_word = page.locator(f"[data-word-index='{start_idx}']")
+            end_word = page.locator(f"[data-word-index='{end_idx}']")
+
+            start_word.scroll_into_view_if_needed()
+            start_box = start_word.bounding_box()
+            end_box = end_word.bounding_box()
+
+            assert start_box is not None and end_box is not None
+            page.mouse.move(start_box["x"] + 5, start_box["y"] + 5)
+            page.mouse.down()
+            page.mouse.move(end_box["x"] + end_box["width"] - 5, end_box["y"] + 5)
+            page.mouse.up()
+
+            # Wait for menu to appear
+            highlight_menu.wait_for(state="visible", timeout=5000)
+            page.get_by_role(
+                "button", name=re.compile("highlight", re.IGNORECASE)
+            ).click()
+
+            # Verify highlight was applied by checking background color
+            expect(start_word).to_have_css(
+                "background-color",
+                re.compile(r"rgba\(255,\s*235,\s*59"),
+                timeout=5000,
+            )
+
+        # Create three highlights
+        create_highlight(0, 1)  # "First highlight"
+        create_highlight(3, 4)  # "Second highlight"
+        create_highlight(6, 7)  # "Third highlight"
+
+        # Wait for "Saved" indicator (observable state)
+        saved_indicator = page.locator("[data-testid='save-status']")
+        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+        # Reload
+        page.goto(workspace_url)
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # All three highlights should be visible (check words 0,1,3,4,6,7)
+        for idx in [0, 1, 3, 4, 6, 7]:
+            word = page.locator(f"[data-word-index='{idx}']")
+            expect(word).to_have_css(
+                "background-color",
+                re.compile(r"rgba\(255,\s*235,\s*59"),
+                timeout=5000,
+            )

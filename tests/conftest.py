@@ -128,8 +128,12 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
         else:
             notes_content = general_notes
 
-        # Create output directory
+        # Create output directory (purge first for clean state)
         output_dir = PDF_TEST_OUTPUT_DIR / test_name
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Run the async export in a new event loop

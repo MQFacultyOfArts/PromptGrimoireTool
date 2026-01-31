@@ -341,16 +341,18 @@ class TestSpeakerDetection:
         """Claude turns get User:/Assistant: labels injected."""
         from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
 
+        # Use realistic Claude HTML patterns
         html = """
-        <div class="font-user-message">Hello Claude</div>
-        <div class="font-claude-response">Hello! How can I help?</div>
+        <div class="font-user-message" data-testid="user-message">Hello</div>
+        <div class="font-claude-response relative leading-[1.65rem]">Hi!</div>
         """
         result = inject_speaker_labels(html)
 
-        assert "<strong>User:</strong>" in result
-        assert "<strong>Assistant:</strong>" in result
-        assert "Hello Claude" in result
-        assert "Hello! How can I help?" in result
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+        assert "Hello" in result
+        assert "Hi!" in result
 
     def test_inject_labels_gemini(self) -> None:
         """Gemini turns get User:/Assistant: labels injected."""
@@ -362,8 +364,9 @@ class TestSpeakerDetection:
         """
         result = inject_speaker_labels(html)
 
-        assert "<strong>User:</strong>" in result
-        assert "<strong>Assistant:</strong>" in result
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
 
 
 class TestSpeakerDetectionWithFixtures:
@@ -408,8 +411,9 @@ class TestSpeakerDetectionWithFixtures:
         html = self._load_fixture("claude_cooking.html")
         result = inject_speaker_labels(html)
 
-        assert "<strong>User:</strong>" in result
-        assert "<strong>Assistant:</strong>" in result
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
 
     def test_inject_labels_gemini_fixture(self) -> None:
         """Gemini fixture gets labels injected."""
@@ -418,8 +422,9 @@ class TestSpeakerDetectionWithFixtures:
         html = self._load_fixture("gemini_crdt_discussion.html")
         result = inject_speaker_labels(html)
 
-        assert "<strong>User:</strong>" in result
-        assert "<strong>Assistant:</strong>" in result
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
 
 
 class TestUIChromeRemoval:

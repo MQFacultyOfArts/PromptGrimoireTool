@@ -220,3 +220,174 @@ class TestWorkspaceLoading:
         pm = get_persistence_manager()
         # Doc should be registered
         assert pm._doc_registry.get(doc.doc_id) is doc
+
+
+class TestWorkspaceCRDTRoundTrip:
+    """Full round-trip tests for workspace CRDT persistence."""
+
+    @pytest.mark.asyncio
+    async def test_full_workflow_create_annotate_persist_load(self) -> None:
+        """Complete workflow: create workspace, annotate, persist, reload."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.crdt.persistence import get_persistence_manager
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        # 1. Create workspace
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
+        workspace = await create_workspace(created_by=user.id)
+        workspace_doc_id = str(uuid4())  # Simulated WorkspaceDocument ID
+
+        # 2. Get document for workspace
+        registry = AnnotationDocumentRegistry()
+        doc = await registry.get_or_create_for_workspace(workspace.id)
+
+        # 3. Add annotations
+        hl1 = doc.add_highlight(
+            start_word=0,
+            end_word=10,
+            tag="issue",
+            text="The main legal issue here",
+            author="Test Author",
+            para_ref="[1]",
+            document_id=workspace_doc_id,
+        )
+        hl2 = doc.add_highlight(
+            start_word=20,
+            end_word=30,
+            tag="citation",
+            text="Smith v Jones [2024]",
+            author="Test Author",
+            para_ref="[2]",
+            document_id=workspace_doc_id,
+        )
+        doc.add_comment(hl1, author="Reviewer", text="Good catch!")
+
+        # 4. Persist via workspace-aware method
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(workspace.id, doc.doc_id, last_editor="Test Author")
+        await pm.force_persist_workspace(workspace.id)
+
+        # 5. Clear registry to force reload
+        registry.clear_all()
+
+        # 6. Reload from database
+        reloaded_doc = await registry.get_or_create_for_workspace(workspace.id)
+
+        # 7. Verify all data survived
+        highlights = reloaded_doc.get_all_highlights()
+        assert len(highlights) == 2
+
+        # Check highlight details
+        hl1_loaded = reloaded_doc.get_highlight(hl1)
+        assert hl1_loaded is not None
+        assert hl1_loaded["tag"] == "issue"
+        assert hl1_loaded["document_id"] == workspace_doc_id
+        assert len(hl1_loaded.get("comments", [])) == 1
+        assert hl1_loaded["comments"][0]["text"] == "Good catch!"
+
+        hl2_loaded = reloaded_doc.get_highlight(hl2)
+        assert hl2_loaded is not None
+        assert hl2_loaded["tag"] == "citation"
+        assert hl2_loaded["document_id"] == workspace_doc_id
+
+    @pytest.mark.asyncio
+    async def test_filter_highlights_by_document_after_reload(self) -> None:
+        """Can filter reloaded highlights by document_id."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.crdt.persistence import get_persistence_manager
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        user = await create_user(
+            email=f"test-{uuid4().hex[:8]}@example.com",
+            display_name="Test User",
+        )
+        workspace = await create_workspace(created_by=user.id)
+
+        doc_a_id = str(uuid4())
+        doc_b_id = str(uuid4())
+
+        # Create highlights for two different documents
+        registry = AnnotationDocumentRegistry()
+        doc = await registry.get_or_create_for_workspace(workspace.id)
+
+        doc.add_highlight(
+            start_word=0,
+            end_word=5,
+            tag="issue",
+            text="Doc A hl 1",
+            author="Author",
+            document_id=doc_a_id,
+        )
+        doc.add_highlight(
+            start_word=10,
+            end_word=15,
+            tag="citation",
+            text="Doc B hl 1",
+            author="Author",
+            document_id=doc_b_id,
+        )
+        doc.add_highlight(
+            start_word=20,
+            end_word=25,
+            tag="issue",
+            text="Doc A hl 2",
+            author="Author",
+            document_id=doc_a_id,
+        )
+
+        # Persist and reload
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(workspace.id, doc.doc_id, last_editor="Author")
+        await pm.force_persist_workspace(workspace.id)
+        registry.clear_all()
+        reloaded = await registry.get_or_create_for_workspace(workspace.id)
+
+        # Filter by document
+        doc_a_highlights = reloaded.get_highlights_for_document(doc_a_id)
+        doc_b_highlights = reloaded.get_highlights_for_document(doc_b_id)
+
+        assert len(doc_a_highlights) == 2
+        assert len(doc_b_highlights) == 1
+        assert all(h["document_id"] == doc_a_id for h in doc_a_highlights)
+        assert all(h["document_id"] == doc_b_id for h in doc_b_highlights)
+
+
+class TestBackwardCompatibility:
+    """Tests that old case_id-based system still works."""
+
+    @pytest.mark.asyncio
+    async def test_old_persistence_still_works(self) -> None:
+        """Old mark_dirty(case_id) -> save_state() path unchanged."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.crdt.persistence import get_persistence_manager
+        from promptgrimoire.db.annotation_state import get_state_by_case_id
+
+        case_id = f"compat-test-{uuid4().hex[:8]}"
+
+        # Use old API
+        registry = AnnotationDocumentRegistry()
+        doc = await registry.get_or_create_with_persistence(case_id)
+
+        doc.add_highlight(
+            start_word=0,
+            end_word=5,
+            tag="test",
+            text="Old style",
+            author="Author",
+            # No document_id - old style
+        )
+
+        pm = get_persistence_manager()
+        pm.mark_dirty(case_id, "Author")
+        await pm.force_persist(case_id)
+
+        # Verify saved to AnnotationDocumentState
+        state = await get_state_by_case_id(case_id)
+        assert state is not None
+        assert state.crdt_state is not None
+        assert len(state.crdt_state) > 0

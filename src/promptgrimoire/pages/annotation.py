@@ -407,18 +407,30 @@ def _build_annotation_card(
 
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it
-                async def goto_highlight(sw: int = start_word) -> None:
+                async def goto_highlight(
+                    sw: int = start_word, ew: int = end_word
+                ) -> None:
                     # fmt: off
+                    # Flash ALL words in the highlight range, not just start
                     js = (
                         f"(function(){{"
-                        f"const w=document.querySelector('[data-word-index=\"{sw}\"]');"
-                        f"if(w){{"
-                        f"w.scrollIntoView({{behavior:'smooth',block:'center'}});"
-                        f"w.style.transition='background-color 0.2s';"
-                        f"const orig=w.style.backgroundColor;"
-                        f"w.style.backgroundColor='#FFD700';"
-                        f"setTimeout(()=>{{w.style.backgroundColor=orig;}},800);"
+                        f"const sw={sw},ew={ew};"
+                        f"const words=[];"
+                        f"for(let i=sw;i<ew;i++){{"
+                        f"const w=document.querySelector("
+                        f"'[data-word-index=\"'+i+'\"]');"
+                        f"if(w)words.push(w);"
                         f"}}"
+                        f"if(words.length===0)return;"
+                        f"words[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
+                        f"const origColors=words.map(w=>w.style.backgroundColor);"
+                        f"words.forEach(w=>{{"
+                        f"w.style.transition='background-color 0.2s';"
+                        f"w.style.backgroundColor='#FFD700';"
+                        f"}});"
+                        f"setTimeout(()=>{{"
+                        f"words.forEach((w,i)=>{{w.style.backgroundColor=origColors[i];}});"
+                        f"}},800);"
                         f"}})()"
                     )
                     # fmt: on
@@ -669,7 +681,14 @@ def _setup_selection_handlers(state: PageState) -> None:
         });
 
         // Keyboard shortcuts (1-0 keys for tags)
+        // Debounce to prevent duplicate events
+        let lastKeyTime = 0;
         document.addEventListener('keydown', function(e) {
+            // Ignore held keys and rapid repeats
+            if (e.repeat) return;
+            const now = Date.now();
+            if (now - lastKeyTime < 300) return;
+            lastKeyTime = now;
             if (['1','2','3','4','5','6','7','8','9','0'].includes(e.key)) {
                 emitEvent('keydown', { key: e.key });
             }

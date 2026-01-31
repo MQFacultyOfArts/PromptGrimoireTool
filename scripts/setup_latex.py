@@ -30,6 +30,9 @@ REQUIRED_PACKAGES = [
     "soul",  # Underlining/highlighting (fallback)
     "luabidi",  # Bidirectional text for LuaLaTeX (for dir="ltr" HTML elements)
     "fancyvrb",  # Verbatim/code blocks from Pandoc syntax highlighting
+    "mdframed",  # Framed environments for speaker turns with left border
+    "zref",  # Reference system (mdframed dependency)
+    "needspace",  # Space checking (mdframed dependency)
 ]
 
 

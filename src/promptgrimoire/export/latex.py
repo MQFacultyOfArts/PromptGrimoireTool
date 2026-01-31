@@ -501,6 +501,39 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{luabidi}   % Bidirectional text support for LuaLaTeX
 \usepackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage[framemethod=tikz]{mdframed}  % For speaker turn borders
+
+% Paragraph formatting for chatbot exports (no indent, paragraph spacing)
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5\baselineskip}
+
+% Speaker turn environments with left border
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=usercolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{userturn}
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=assistantcolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{assistantturn}
 
 % Pandoc compatibility
 \providecommand{\tightlist}{%
@@ -569,7 +602,16 @@ def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
         Complete LaTeX preamble string.
     """
     colour_defs = generate_tag_colour_definitions(tag_colours)
-    return f"\\usepackage{{xcolor}}\n{colour_defs}\n{ANNOTATION_PREAMBLE_BASE}"
+    # Speaker colours for chatbot turn distinction
+    speaker_colours = r"""
+% Speaker colours for chatbot turn markers
+\definecolor{usercolor}{HTML}{4A90D9}
+\definecolor{assistantcolor}{HTML}{7B68EE}
+"""
+    return (
+        f"\\usepackage{{xcolor}}\n{colour_defs}\n"
+        f"{speaker_colours}\n{ANNOTATION_PREAMBLE_BASE}"
+    )
 
 
 def _escape_latex(text: str) -> str:

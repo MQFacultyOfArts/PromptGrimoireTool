@@ -189,36 +189,74 @@ def _process_text_to_word_spans(text: str) -> str:
     return "\n".join(html_parts)
 
 
+def _get_tag_color(tag_str: str) -> str:
+    """Get hex color for a tag string."""
+    try:
+        tag = BriefTag(tag_str)
+        return TAG_COLORS.get(tag, "#FFEB3B")
+    except ValueError:
+        return "#FFEB3B"
+
+
 def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     """Generate CSS rules for highlighting words with tag-specific colors.
+
+    Uses stacked underlines to show overlapping highlights (matching latex.py):
+    - 1 highlight: background + 1pt underline
+    - 2 highlights: blended background + 2pt outer + 1pt inner underlines
+    - 3+ highlights: blended background + 4pt thick underline
 
     Args:
         highlights: List of highlight dicts with start_word, end_word, tag.
 
     Returns:
-        CSS string with background-color rules for highlighted words.
+        CSS string with background-color and underline rules.
     """
-    css_rules: list[str] = []
+    # Build word -> list of (highlight_index, tag_color) mapping
+    word_highlights: dict[int, list[str]] = {}
     for hl in highlights:
         start = int(hl.get("start_word", 0))
         end = int(hl.get("end_word", 0))
-        tag_str = hl.get("tag", "highlight")
-
-        # Get color for tag - try BriefTag first, fall back to yellow
-        try:
-            tag = BriefTag(tag_str)
-            hex_color = TAG_COLORS.get(tag, "#FFEB3B")
-        except ValueError:
-            hex_color = "#FFEB3B"  # Default yellow for non-BriefTag tags
-
-        # Convert hex to rgba with 40% opacity
-        r = int(hex_color[1:3], 16)
-        g = int(hex_color[3:5], 16)
-        b = int(hex_color[5:7], 16)
-        rgba = f"rgba({r}, {g}, {b}, 0.4)"
-
+        hex_color = _get_tag_color(hl.get("tag", "highlight"))
         for i in range(start, end):
-            css_rules.append(f'[data-word-index="{i}"] {{ background-color: {rgba}; }}')
+            if i not in word_highlights:
+                word_highlights[i] = []
+            word_highlights[i].append(hex_color)
+
+    css_rules: list[str] = []
+    for word_idx, colors in word_highlights.items():
+        # Background: use first highlight's color with transparency
+        first_color = colors[0]
+        r, g, b = (
+            int(first_color[1:3], 16),
+            int(first_color[3:5], 16),
+            int(first_color[5:7], 16),
+        )
+        bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
+
+        overlap_count = len(colors)
+        if overlap_count == 1:
+            # Single highlight: background + 1pt underline
+            underline = f"inset 0 -2px 0 0 {first_color}"
+            css_rules.append(
+                f'[data-word-index="{word_idx}"] {{ '
+                f"background-color: {bg_rgba}; box-shadow: {underline}; }}"
+            )
+        elif overlap_count == 2:
+            # Two highlights: stacked underlines (2pt outer + 1pt inner)
+            c1, c2 = colors[0], colors[1]
+            underlines = f"inset 0 -2px 0 0 {c1}, inset 0 -4px 0 0 {c2}"
+            css_rules.append(
+                f'[data-word-index="{word_idx}"] {{ '
+                f"background-color: {bg_rgba}; box-shadow: {underlines}; }}"
+            )
+        else:
+            # 3+ highlights: thick 4pt underline in dark color
+            underline = "inset 0 -4px 0 0 #333"
+            css_rules.append(
+                f'[data-word-index="{word_idx}"] {{ '
+                f"background-color: {bg_rgba}; box-shadow: {underline}; }}"
+            )
 
     return "\n".join(css_rules)
 
@@ -317,26 +355,29 @@ def _build_expandable_text(full_text: str) -> None:
     if is_long:
         truncated_text = full_text[:80] + "..."
         with ui.element("div").classes("mt-1"):
-            truncated_label = ui.label(f'"{truncated_text}"').classes(
-                "text-sm italic cursor-pointer"
-            )
-            full_label = ui.label(f'"{full_text}"').classes(
-                "text-sm italic cursor-pointer"
-            )
-            full_label.set_visibility(False)
+            # Truncated view with expand icon
+            with ui.row().classes("items-start gap-1 cursor-pointer") as truncated_row:
+                ui.icon("expand_more", size="xs").classes("text-gray-400")
+                ui.label(f'"{truncated_text}"').classes("text-sm italic")
+
+            # Full view with collapse icon
+            with ui.row().classes("items-start gap-1 cursor-pointer") as full_row:
+                ui.icon("expand_less", size="xs").classes("text-gray-400")
+                ui.label(f'"{full_text}"').classes("text-sm italic")
+            full_row.set_visibility(False)
 
             def toggle_expand(
-                tl: ui.label = truncated_label, fl: ui.label = full_label
+                tr: ui.row = truncated_row, fr: ui.row = full_row
             ) -> None:
-                if tl.visible:
-                    tl.set_visibility(False)
-                    fl.set_visibility(True)
+                if tr.visible:
+                    tr.set_visibility(False)
+                    fr.set_visibility(True)
                 else:
-                    tl.set_visibility(True)
-                    fl.set_visibility(False)
+                    tr.set_visibility(True)
+                    fr.set_visibility(False)
 
-            truncated_label.on("click", toggle_expand)
-            full_label.on("click", toggle_expand)
+            truncated_row.on("click", toggle_expand)
+            full_row.on("click", toggle_expand)
     else:
         ui.label(f'"{full_text}"').classes("text-sm italic mt-1")
 

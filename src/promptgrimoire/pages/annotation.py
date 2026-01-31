@@ -120,6 +120,8 @@ class PageState:
     refresh_annotations: Any | None = None  # Callable to refresh cards
     # Document content for text extraction
     document_words: list[str] | None = None  # Words by index
+    # Guard against duplicate highlight creation
+    processing_highlight: bool = False
 
 
 def _get_current_username() -> str:
@@ -506,6 +508,12 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         state: Page state with selection and CRDT document.
         tag: Optional BriefTag for the highlight. Defaults to "highlight".
     """
+    # Guard against duplicate calls (e.g., rapid keyboard events)
+    if state.processing_highlight:
+        logger.debug("[HIGHLIGHT] Already processing - ignoring duplicate")
+        return
+    state.processing_highlight = True
+
     logger.debug(
         "[HIGHLIGHT] called: start=%s, end=%s, tag=%s",
         state.selection_start,
@@ -514,14 +522,17 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     )
     if state.selection_start is None or state.selection_end is None:
         logger.debug("[HIGHLIGHT] No selection - returning early")
+        state.processing_highlight = False
         ui.notify("No selection", type="warning")
         return
 
     if state.document_id is None:
+        state.processing_highlight = False
         ui.notify("No document", type="warning")
         return
 
     if state.crdt_doc is None:
+        state.processing_highlight = False
         ui.notify("CRDT not initialized", type="warning")
         return
 
@@ -580,6 +591,9 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     state.selection_end = None
     if state.highlight_menu:
         state.highlight_menu.set_visibility(False)
+
+    # Release processing lock
+    state.processing_highlight = False
 
 
 def _setup_selection_handlers(state: PageState) -> None:

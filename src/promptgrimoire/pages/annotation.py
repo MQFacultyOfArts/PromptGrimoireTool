@@ -235,27 +235,37 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
 
         overlap_count = len(colors)
+        # Use text-decoration for seamless underlines across words
         if overlap_count == 1:
-            # Single highlight: background + 1pt underline
-            underline = f"inset 0 -2px 0 0 {first_color}"
+            # Single highlight: 2px underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
-                f"background-color: {bg_rgba}; box-shadow: {underline}; }}"
+                f"background-color: {bg_rgba}; "
+                f"text-decoration: underline; "
+                f"text-decoration-color: {first_color}; "
+                f"text-decoration-thickness: 2px; "
+                f"text-underline-offset: 2px; }}"
             )
         elif overlap_count == 2:
-            # Two highlights: stacked underlines (2pt outer + 1pt inner)
-            c1, c2 = colors[0], colors[1]
-            underlines = f"inset 0 -2px 0 0 {c1}, inset 0 -4px 0 0 {c2}"
+            # Two highlights: thicker underline showing overlap
+            c1 = colors[0]
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
-                f"background-color: {bg_rgba}; box-shadow: {underlines}; }}"
+                f"background-color: {bg_rgba}; "
+                f"text-decoration: underline; "
+                f"text-decoration-color: {c1}; "
+                f"text-decoration-thickness: 4px; "
+                f"text-underline-offset: 2px; }}"
             )
         else:
-            # 3+ highlights: thick 4pt underline in dark color
-            underline = "inset 0 -4px 0 0 #333"
+            # 3+ highlights: thick dark underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
-                f"background-color: {bg_rgba}; box-shadow: {underline}; }}"
+                f"background-color: {bg_rgba}; "
+                f"text-decoration: underline; "
+                f"text-decoration-color: #333; "
+                f"text-decoration-thickness: 6px; "
+                f"text-underline-offset: 2px; }}"
             )
 
     return "\n".join(css_rules)

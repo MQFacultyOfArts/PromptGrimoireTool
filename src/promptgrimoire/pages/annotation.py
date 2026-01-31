@@ -11,6 +11,7 @@ Route: /annotation
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import html
 import logging
@@ -78,6 +79,9 @@ class _ClientState:
 # Track connected clients per workspace for broadcasting
 # workspace_id -> {client_id -> _ClientState}
 _connected_clients: dict[str, dict[str, _ClientState]] = {}
+
+# Background tasks set - prevents garbage collection of fire-and-forget tasks
+_background_tasks: set[asyncio.Task[None]] = set()
 
 # CSS styles matching live_annotation_demo.py for consistent UX
 _PAGE_CSS = """
@@ -157,6 +161,7 @@ class PageState:
     selection_style: ui.element | None = None  # CSS for remote selections
     highlight_menu: ui.element | None = None
     save_status: ui.label | None = None
+    user_count_badge: ui.label | None = None  # Shows connected user count
     crdt_doc: AnnotationDocument | None = None
     # Annotation cards
     annotations_container: ui.element | None = None
@@ -1194,6 +1199,26 @@ def _update_selection_css(state: PageState) -> None:
     state.selection_style.update()
 
 
+def _update_user_count(state: PageState) -> None:
+    """Update user count badge."""
+    if state.user_count_badge is None:
+        return
+    workspace_key = str(state.workspace_id)
+    count = len(_connected_clients.get(workspace_key, {}))
+    label = "1 user" if count == 1 else f"{count} users"
+    state.user_count_badge.set_text(label)
+
+
+def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
+    """Fire-and-forget notification to other clients in workspace."""
+    for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+        if cid != exclude_client_id and cstate.callback:
+            with contextlib.suppress(Exception):
+                task = asyncio.create_task(cstate.callback())
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
+
+
 def _setup_client_sync(
     workspace_id: UUID,
     client: Client,
@@ -1248,6 +1273,7 @@ def _setup_client_sync(
         _update_highlight_css(state)
         _update_cursor_css(state)
         _update_selection_css(state)
+        _update_user_count(state)
         if state.refresh_annotations:
             state.refresh_annotations()
 
@@ -1259,6 +1285,10 @@ def _setup_client_sync(
         color=state.user_color,
         name=state.user_name,
     )
+
+    # Update own user count and notify others
+    _update_user_count(state)
+    _notify_other_clients(workspace_key, client_id)
 
     # Disconnect handler
     async def on_disconnect() -> None:
@@ -1302,6 +1332,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             ui.label("")
             .classes("text-sm text-gray-500")
             .props('data-testid="save-status"')
+        )
+
+        # User count badge
+        state.user_count_badge = (
+            ui.label("1 user")
+            .classes("text-sm text-blue-600 bg-blue-100 px-2 py-0.5 rounded")
+            .props('data-testid="user-count"')
         )
 
         # Export PDF button (handler defined after state is populated)

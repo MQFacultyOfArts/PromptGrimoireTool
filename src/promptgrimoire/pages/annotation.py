@@ -27,6 +27,7 @@ from promptgrimoire.crdt.annotation_doc import (
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.workspace_documents import add_document, list_documents
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
+from promptgrimoire.export.pdf_export import export_annotation_pdf
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.registry import page_route
 
@@ -561,10 +562,56 @@ async def _render_workspace_view(workspace_id: UUID) -> None:
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
 
-    # Save status indicator (for E2E test observability)
-    state.save_status = (
-        ui.label("").classes("text-sm text-gray-500").props('data-testid="save-status"')
-    )
+    # Header row with save status and export button
+    with ui.row().classes("gap-4 items-center"):
+        # Save status indicator (for E2E test observability)
+        state.save_status = (
+            ui.label("")
+            .classes("text-sm text-gray-500")
+            .props('data-testid="save-status"')
+        )
+
+        # Export PDF button (handler defined after state is populated)
+        async def handle_export_pdf() -> None:
+            if state.crdt_doc is None or state.document_id is None:
+                ui.notify("No document to export", type="warning")
+                return
+
+            ui.notify("Generating PDF...", type="info")
+            try:
+                # Get tag colours as dict[str, str]
+                tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
+
+                # Get highlights for this document
+                highlights = state.crdt_doc.get_highlights_for_document(
+                    str(state.document_id)
+                )
+
+                # Get document content (use raw_content if available)
+                raw_content = ""
+                if state.document_words:
+                    raw_content = " ".join(state.document_words)
+
+                # Generate PDF
+                pdf_path = await export_annotation_pdf(
+                    html_content=raw_content,
+                    highlights=highlights,
+                    tag_colours=tag_colours,
+                    general_notes="",
+                    word_to_legal_para=None,
+                    filename=f"workspace_{workspace_id}",
+                )
+
+                # Trigger download
+                ui.download(pdf_path)
+                ui.notify("PDF generated!", type="positive")
+            except Exception:
+                logger.exception("Failed to export PDF")
+                ui.notify("Failed to generate PDF", type="negative")
+
+        ui.button(
+            "Export PDF", icon="picture_as_pdf", on_click=handle_export_pdf
+        ).props("color=primary")
 
     # Load CRDT document for this workspace
     crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)

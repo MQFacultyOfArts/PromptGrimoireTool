@@ -699,3 +699,47 @@ class TestAnnotationCards:
         # Comment should still be there
         ann_card = page.locator("[data-testid='annotation-card']")
         expect(ann_card).to_contain_text("Persistent comment")
+
+
+class TestPdfExport:
+    """Tests for PDF export from workspace (Task 8)."""
+
+    @pytestmark_db
+    def test_export_pdf_button_visible(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Export PDF button appears when document has highlights."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="))
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Content for PDF export")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]")
+
+        # Create at least one highlight
+        word0 = page.locator("[data-word-index='0']")
+        word1 = page.locator("[data-word-index='1']")
+        word0.scroll_into_view_if_needed()
+
+        box0 = word0.bounding_box()
+        box1 = word1.bounding_box()
+
+        assert box0 is not None and box1 is not None
+        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
+        page.mouse.up()
+
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.click()
+
+        # Export button should be visible
+        export_button = page.get_by_role(
+            "button", name=re.compile("export|pdf", re.IGNORECASE)
+        )
+        expect(export_button).to_be_visible()

@@ -89,7 +89,7 @@ def _run_async_in_thread(coro):
         return future.result()
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def db_test_user() -> dict:
     """Create a test user in the database for workspace creation tests.
 

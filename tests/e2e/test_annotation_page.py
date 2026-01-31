@@ -40,19 +40,19 @@ class TestAnnotationPageBasic:
         )
         expect(create_button).to_be_visible()
 
-    def test_page_shows_workspace_label_with_id(
+    def test_page_shows_not_found_for_invalid_workspace(
         self, fresh_page: Page, app_server: str
     ) -> None:
-        """Page shows workspace ID when provided in URL."""
+        """Page shows not found message for non-existent workspace."""
         test_uuid = "12345678-1234-1234-1234-123456789abc"
         fresh_page.goto(f"{app_server}/annotation?workspace_id={test_uuid}")
 
-        # Should show the workspace ID
-        expect(fresh_page.locator(f"text={test_uuid}")).to_be_visible()
+        # Should show not found message (workspace doesn't exist in DB)
+        expect(fresh_page.locator("text=not found")).to_be_visible()
 
 
-class TestWorkspaceCreation:
-    """Tests for workspace creation flow (requires authentication and database)."""
+class TestWorkspaceAndDocumentCreation:
+    """Tests for workspace and document creation (requires auth + database)."""
 
     @pytestmark_db
     def test_create_workspace_redirects_and_displays(
@@ -77,3 +77,46 @@ class TestWorkspaceCreation:
 
         # Verify the workspace ID is shown on page (proves it loaded from DB)
         expect(authenticated_page.locator(f"text={workspace_id_str}")).to_be_visible()
+
+    @pytestmark_db
+    def test_paste_content_creates_document_and_persists(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Pasting content creates a WorkspaceDocument with word spans that persists."""
+        # Create workspace first
+        authenticated_page.goto(f"{app_server}/annotation")
+        authenticated_page.get_by_role(
+            "button", name=re.compile("create", re.IGNORECASE)
+        ).click()
+        authenticated_page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+
+        # Save the URL for reload test
+        workspace_url = authenticated_page.url
+
+        # Find textarea/input for content
+        content_input = authenticated_page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        expect(content_input).to_be_visible()
+
+        # Paste content
+        test_content = "This is my test document content for annotation."
+        content_input.fill(test_content)
+
+        # Submit
+        authenticated_page.get_by_role(
+            "button", name=re.compile("add|submit", re.IGNORECASE)
+        ).click()
+
+        # Content should appear with word spans
+        authenticated_page.wait_for_selector("[data-word-index]", timeout=10000)
+        word_spans = authenticated_page.locator("[data-word-index]")
+        expect(word_spans.first).to_be_visible()
+        assert word_spans.count() >= 8  # At least the words in test_content
+
+        # Reload page to verify persistence
+        authenticated_page.goto(workspace_url)
+
+        # Content should still be there with word spans
+        authenticated_page.wait_for_selector("[data-word-index]", timeout=10000)
+        expect(authenticated_page.locator("text=document")).to_be_visible()

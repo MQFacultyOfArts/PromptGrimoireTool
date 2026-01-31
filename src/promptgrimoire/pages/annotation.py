@@ -11,13 +11,15 @@ Route: /annotation
 
 from __future__ import annotations
 
+import html
 import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from nicegui import app, ui
 
-from promptgrimoire.db.workspaces import create_workspace
+from promptgrimoire.db.workspace_documents import add_document, list_documents
+from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -60,6 +62,88 @@ async def _create_workspace_and_redirect() -> None:
         ui.notify("Failed to create workspace", type="negative")
 
 
+def _process_text_to_word_spans(text: str) -> str:
+    """Convert plain text to HTML with word-level spans.
+
+    Each word gets a span with data-word-index attribute for annotation targeting.
+    """
+    lines = text.split("\n")
+    html_parts = []
+    word_index = 0
+
+    for line_num, line in enumerate(lines):
+        if line.strip():
+            words = line.split()
+            line_spans = []
+            for word in words:
+                escaped = html.escape(word)
+                span = (
+                    f'<span class="word" data-word-index="{word_index}">'
+                    f"{escaped}</span>"
+                )
+                line_spans.append(span)
+                word_index += 1
+            html_parts.append(f'<p data-para="{line_num}">{" ".join(line_spans)}</p>')
+        else:
+            html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
+
+    return "\n".join(html_parts)
+
+
+async def _render_workspace_view(workspace_id: UUID) -> None:
+    """Render the workspace content view with documents or add content form."""
+    workspace = await get_workspace(workspace_id)
+
+    if workspace is None:
+        ui.label("Workspace not found").classes("text-red-500")
+        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
+        return
+
+    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
+
+    # Load existing documents
+    documents = await list_documents(workspace_id)
+
+    if documents:
+        # Render existing documents
+        for doc in documents:
+            with ui.element("div").classes(
+                "document-content border p-4 rounded bg-white mt-4"
+            ):
+                ui.html(doc.content, sanitize=False).classes("prose")
+    else:
+        # Show add content form
+        ui.label("Add content to annotate:").classes("mt-4 font-semibold")
+
+        content_input = ui.textarea(
+            placeholder="Paste or type your content here..."
+        ).classes("w-full min-h-32")
+
+        async def handle_add_document() -> None:
+            if not content_input.value or not content_input.value.strip():
+                ui.notify("Please enter some content", type="warning")
+                return
+
+            try:
+                html_content = _process_text_to_word_spans(content_input.value.strip())
+                await add_document(
+                    workspace_id=workspace_id,
+                    type="source",
+                    content=html_content,
+                    raw_content=content_input.value.strip(),
+                    title=None,
+                )
+                # Reload page to show document
+                ui.navigate.to(f"/annotation?workspace_id={workspace_id}")
+            except Exception:
+                logger.exception("Failed to add document")
+                ui.notify("Failed to add document", type="negative")
+
+        ui.button("Add Document", on_click=handle_add_document).classes(
+            "bg-green-500 text-white mt-2"
+        )
+
+
 @page_route(
     "/annotation",
     title="Annotation Workspace",
@@ -88,9 +172,7 @@ async def annotation_page(client: Client) -> None:
         ui.label("Annotation Workspace").classes("text-2xl font-bold mb-4")
 
         if workspace_id:
-            # Show workspace view (to be implemented in Task 3+)
-            ui.label(f"Workspace: {workspace_id}").classes("text-gray-600")
-            ui.label("Workspace content will appear here...")
+            await _render_workspace_view(workspace_id)
         else:
             # Show create workspace form
             ui.label("No workspace selected. Create a new one:").classes("mb-2")

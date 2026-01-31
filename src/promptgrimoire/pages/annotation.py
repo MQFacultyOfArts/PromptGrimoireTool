@@ -11,12 +11,13 @@ Route: /annotation
 
 from __future__ import annotations
 
+import contextlib
 import html
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from nicegui import app, ui
 
@@ -38,6 +39,23 @@ logger = logging.getLogger(__name__)
 
 # Global registry for workspace annotation documents
 _workspace_registry = AnnotationDocumentRegistry()
+
+
+class _ClientState:
+    """State for a connected client."""
+
+    def __init__(self, callback: Any, color: str, name: str) -> None:
+        self.callback = callback
+        self.color = color
+        self.name = name
+        self.cursor: int | None = None
+        self.selection_start: int | None = None
+        self.selection_end: int | None = None
+
+
+# Track connected clients per workspace for broadcasting
+# workspace_id -> {client_id -> _ClientState}
+_connected_clients: dict[str, dict[str, _ClientState]] = {}
 
 # CSS styles matching live_annotation_demo.py for consistent UX
 _PAGE_CSS = """
@@ -111,10 +129,12 @@ class PageState:
     """Per-page state for annotation workspace."""
 
     workspace_id: UUID
+    client_id: str = ""  # Unique ID for this client connection
     document_id: UUID | None = None
     selection_start: int | None = None
     selection_end: int | None = None
     user_name: str = "Anonymous"
+    user_color: str = "#666"  # Client color for cursor display
     # UI elements set during page build
     highlight_style: ui.element | None = None
     highlight_menu: ui.element | None = None
@@ -124,6 +144,7 @@ class PageState:
     annotations_container: ui.element | None = None
     annotation_cards: dict[str, ui.card] | None = None
     refresh_annotations: Any | None = None  # Callable to refresh cards
+    broadcast_update: Any | None = None  # Callable to broadcast to other clients
     # Document content for text extraction
     document_words: list[str] | None = None  # Words by index
     # Guard against duplicate highlight creation
@@ -353,6 +374,9 @@ async def _delete_highlight(
     if state.annotation_cards and highlight_id in state.annotation_cards:
         del state.annotation_cards[highlight_id]
     _update_highlight_css(state)
+    # Broadcast to other clients
+    if state.broadcast_update:
+        await state.broadcast_update()
 
 
 def _build_expandable_text(full_text: str) -> None:
@@ -442,6 +466,10 @@ def _build_comments_section(
             # Refresh cards to show new comment
             if state.refresh_annotations:
                 state.refresh_annotations()
+
+            # Broadcast to other clients
+            if state.broadcast_update:
+                await state.broadcast_update()
 
     ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
 
@@ -671,6 +699,10 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     # Refresh annotation cards to show new highlight
     if state.refresh_annotations:
         state.refresh_annotations()
+
+    # Broadcast to other clients
+    if state.broadcast_update:
+        await state.broadcast_update()
 
     # Clear browser selection first to prevent re-triggering on next mouseup
     await ui.run_javascript("window.getSelection().removeAllRanges();")
@@ -974,7 +1006,54 @@ async def _render_document_with_highlights(
     ui.run_javascript(scroll_sync_js)
 
 
-async def _render_workspace_view(workspace_id: UUID) -> None:
+def _setup_client_sync(
+    workspace_id: UUID,
+    client: Client,
+    state: PageState,
+) -> None:
+    """Set up client synchronization for real-time updates.
+
+    Registers the client, creates broadcast function, and sets up disconnect handler.
+    """
+    client_id = str(uuid4())
+    workspace_key = str(workspace_id)
+    state.client_id = client_id
+
+    # Create broadcast function
+    async def broadcast_update() -> None:
+        for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+            if cid != client_id and cstate.callback:
+                with contextlib.suppress(Exception):
+                    await cstate.callback()
+
+    state.broadcast_update = broadcast_update
+
+    # Callback for receiving updates from other clients
+    async def handle_update_from_other() -> None:
+        _update_highlight_css(state)
+        if state.refresh_annotations:
+            state.refresh_annotations()
+
+    # Register this client
+    if workspace_key not in _connected_clients:
+        _connected_clients[workspace_key] = {}
+    _connected_clients[workspace_key][client_id] = _ClientState(
+        callback=handle_update_from_other,
+        color="#666",
+        name=state.user_name,
+    )
+
+    # Disconnect handler
+    async def on_disconnect() -> None:
+        if workspace_key in _connected_clients:
+            _connected_clients[workspace_key].pop(client_id, None)
+        pm = get_persistence_manager()
+        await pm.force_persist_workspace(workspace_id)
+
+    client.on_disconnect(on_disconnect)
+
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
 
@@ -988,6 +1067,9 @@ async def _render_workspace_view(workspace_id: UUID) -> None:
         workspace_id=workspace_id,
         user_name=_get_current_username(),
     )
+
+    # Set up client synchronization
+    _setup_client_sync(workspace_id, client, state)
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
 
@@ -1118,7 +1200,7 @@ async def annotation_page(client: Client) -> None:
         ui.label("Annotation Workspace").classes("text-2xl font-bold mb-4")
 
         if workspace_id:
-            await _render_workspace_view(workspace_id)
+            await _render_workspace_view(workspace_id, client)
         else:
             # Show create workspace form
             ui.label("No workspace selected. Create a new one:").classes("mb-2")

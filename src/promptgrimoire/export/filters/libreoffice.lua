@@ -3,7 +3,10 @@
 --   - Table column widths from HTML width attributes → X\textwidth
 --   - LineBreak in table cells → \newline
 --   - margin-left → adjustwidth environment
---   - text-transform: uppercase → \MakeUppercase
+--   - Speaker turns → mdframed environments with left border
+
+-- Global state for speaker turn tracking
+local current_speaker = nil  -- 'user' or 'assistant' or nil
 
 -- Parse CSS margin value for a given property, return value and unit or nil
 -- Supports: in, cm, em, rem, px
@@ -148,8 +151,12 @@ function Table(tbl)
         for _, cell in ipairs(row.cells) do
           -- Convert cell content to LaTeX
           local cell_latex = blocks_to_latex(cell.contents)
-          -- Replace \hfill\break with \newline for line breaks
+          -- Replace line breaks with \newline (handles both LibreOffice and web HTML)
+          -- \hfill\break comes from LibreOffice, \\ + newline comes from <br/> tags
+          -- \n\n (paragraph break) comes from multiple block elements (e.g., <div>s)
           cell_latex = cell_latex:gsub('\\hfill\\break', '\\newline{}')
+          cell_latex = cell_latex:gsub('\\\\\n', '\\newline{}')
+          cell_latex = cell_latex:gsub('\n\n', '\\newline{}')
           table.insert(cells_latex, cell_latex)
         end
         table.insert(rows_latex, table.concat(cells_latex, ' & ') .. ' \\\\')
@@ -167,11 +174,61 @@ function Table(tbl)
   return pandoc.RawBlock('latex', latex)
 end
 
--- Handle Div elements with margin-left style
+-- Handle Div elements: speaker turns, margin-left style
 -- Note: margin-top/margin-bottom support disabled pending investigation
 -- of spacing regression in enumerated lists
 function Div(elem)
   if FORMAT ~= 'latex' then return elem end
+
+  -- Handle thinking section markers (Claude's extended thinking summary)
+  -- Note: Pandoc strips 'data-' prefix, so data-thinking becomes just 'thinking'
+  local thinking = elem.attr.attributes['thinking']
+  if thinking then
+    -- Wrap thinking content in footnotesize and gray color
+    local open = pandoc.RawBlock('latex', '\\begingroup\\footnotesize\\color{gray}')
+    local close = pandoc.RawBlock('latex', '\\endgroup')
+
+    local result = {open}
+    for _, block in ipairs(elem.content) do
+      table.insert(result, block)
+    end
+    table.insert(result, close)
+    return result
+  end
+
+  -- Handle speaker turn markers (inserted by speaker_preprocessor.py)
+  -- Note: Pandoc strips 'data-' prefix, so data-speaker becomes just 'speaker'
+  local speaker = elem.attr.attributes['speaker']
+  if speaker then
+    local result = {}
+
+    -- Close previous speaker turn environment if open
+    if current_speaker then
+      local prev_env = current_speaker == 'user' and 'userturn' or 'assistantturn'
+      table.insert(result, pandoc.RawBlock('latex', '\\end{' .. prev_env .. '}'))
+    end
+
+    -- Emit speaker label
+    local label = speaker == 'user' and 'User:' or 'Assistant:'
+    local color = speaker == 'user' and 'usercolor' or 'assistantcolor'
+
+    -- Add spacing and label before the environment
+    table.insert(result, pandoc.RawBlock('latex', string.format([[
+
+\vspace{0.8\baselineskip}
+\noindent{\footnotesize\textcolor{%s}{\textbf{%s}}}
+\vspace{0.3\baselineskip}
+]], color, label)))
+
+    -- Open new speaker turn environment
+    local new_env = speaker == 'user' and 'userturn' or 'assistantturn'
+    table.insert(result, pandoc.RawBlock('latex', '\\begin{' .. new_env .. '}'))
+
+    -- Update state
+    current_speaker = speaker
+
+    return result
+  end
 
   local style = elem.attr.attributes['style']
   if not style then return elem end
@@ -231,6 +288,20 @@ function Para(elem)
   end
 
   return pandoc.Para(new_content)
+end
+
+-- Document-level filter to close final speaker turn environment
+function Pandoc(doc)
+  if FORMAT ~= 'latex' then return doc end
+
+  -- If there's an open speaker turn, close it
+  if current_speaker then
+    local env = current_speaker == 'user' and 'userturn' or 'assistantturn'
+    table.insert(doc.blocks, pandoc.RawBlock('latex', '\\end{' .. env .. '}'))
+    current_speaker = nil  -- Reset state
+  end
+
+  return doc
 end
 
 -- Don't convert LineBreak globally - let Para handle it

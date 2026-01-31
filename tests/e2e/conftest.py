@@ -6,14 +6,20 @@ Skip with: pytest -m "not e2e"
 Provides standardized fixtures for test isolation:
 - fresh_page: Fresh browser context + page per test
 - authenticated_page: fresh_page pre-authenticated via mock auth
+- two_annotation_contexts: Two separate browser contexts viewing same workspace
 
 Workspace isolation: Each test creates its own workspace via the UI.
 No database user creation needed - mock auth handles authentication,
 and workspace UUIDs provide test-to-test isolation.
+
+Traceability:
+- Epic: #92 (Annotation Workspace Platform)
+- Issue: #93 (Seam A: Workspace Model)
 """
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -23,6 +29,14 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Browser, Page
+
+
+def _extract_workspace_id_from_url(url: str) -> str:
+    """Extract workspace_id from URL query parameter."""
+    match = re.search(r"workspace_id=([^&]+)", url)
+    if not match:
+        raise ValueError(f"No workspace_id found in URL: {url}")
+    return match.group(1)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -98,3 +112,61 @@ def authenticated_page(browser: Browser, app_server: str) -> Generator[Page]:
     # Clean teardown
     page.close()
     context.close()
+
+
+def _authenticate_page(page: Page, app_server: str) -> None:
+    """Authenticate a page via mock auth.
+
+    Uses mock auth tokens (AUTH_MOCK=true) to authenticate.
+    """
+    unique_id = uuid4().hex[:8]
+    email = f"e2e-test-{unique_id}@test.example.edu.au"
+    page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
+    page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+
+@pytest.fixture
+def two_annotation_contexts(
+    browser: Browser, app_server: str
+) -> Generator[tuple[Page, Page, str]]:
+    """Two separate browser contexts viewing same workspace.
+
+    Uses separate contexts (not tabs in one context) to simulate
+    genuinely independent clients - different cookie jars, no shared
+    browser process state, realistic multi-user scenario.
+
+    Creates the workspace via the UI (page1 creates it, then shares URL with
+    page2) to avoid async/event loop issues with programmatic workspace creation.
+
+    Yields:
+        tuple: (page1, page2, workspace_id)
+    """
+    from tests.e2e.annotation_helpers import setup_workspace_with_content
+
+    content = "Sync test word1 word2 word3 word4 word5"
+
+    # TWO contexts = two independent "browsers"
+    context1 = browser.new_context()
+    context2 = browser.new_context()
+    page1 = context1.new_page()
+    page2 = context2.new_page()
+
+    # Authenticate both pages first
+    _authenticate_page(page1, app_server)
+    _authenticate_page(page2, app_server)
+
+    # Page1 creates the workspace via UI
+    setup_workspace_with_content(page1, app_server, content)
+
+    # Extract workspace_id from page1's URL
+    workspace_id = _extract_workspace_id_from_url(page1.url)
+
+    # Page2 joins the same workspace
+    url = f"{app_server}/annotation?workspace_id={workspace_id}"
+    page2.goto(url)
+    page2.wait_for_selector("[data-word-index]", timeout=10000)
+
+    yield page1, page2, workspace_id
+
+    context1.close()
+    context2.close()

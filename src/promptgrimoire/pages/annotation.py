@@ -293,10 +293,7 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         # Only add if next word is also highlighted (check word_highlights)
         if (word_idx + 1) in word_highlights:
             css_rules.append(
-                f'[data-word-index="{word_idx}"]::after {{ '
-                f"content: ' '; "
-                f"background-color: {bg_rgba}; "
-                f"text-decoration: none; }}"
+                f"[data-word-index=\"{word_idx}\"]::after {{ content: ' '; }}"
             )
 
     return "\n".join(css_rules)

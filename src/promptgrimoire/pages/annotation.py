@@ -276,32 +276,29 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
 
         overlap_count = len(colors)
-        # Use text-decoration for underline - proper CSS for text underlines
-        if overlap_count == 1:
+        underline_color = first_color if overlap_count < 3 else "#333"
+        thickness = f"{min(overlap_count, 3)}px"
+
+        # Main word styling
+        css_rules.append(
+            f'[data-word-index="{word_idx}"] {{ '
+            f"background-color: {bg_rgba}; "
+            f"text-decoration: underline; "
+            f"text-decoration-color: {underline_color}; "
+            f"text-decoration-thickness: {thickness}; "
+            f"text-underline-offset: 2px; }}"
+        )
+
+        # ::after pseudo-element to extend background/underline through space
+        # Only add if next word is also highlighted (check word_highlights)
+        if (word_idx + 1) in word_highlights:
             css_rules.append(
-                f'[data-word-index="{word_idx}"] {{ '
+                f'[data-word-index="{word_idx}"]::after {{ '
+                f"content: ' '; "
                 f"background-color: {bg_rgba}; "
                 f"text-decoration: underline; "
-                f"text-decoration-color: {first_color}; "
-                f"text-decoration-thickness: 1px; "
-                f"text-underline-offset: 2px; }}"
-            )
-        elif overlap_count == 2:
-            css_rules.append(
-                f'[data-word-index="{word_idx}"] {{ '
-                f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: {colors[0]}; "
-                f"text-decoration-thickness: 2px; "
-                f"text-underline-offset: 2px; }}"
-            )
-        else:
-            css_rules.append(
-                f'[data-word-index="{word_idx}"] {{ '
-                f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: #333; "
-                f"text-decoration-thickness: 3px; "
+                f"text-decoration-color: {underline_color}; "
+                f"text-decoration-thickness: {thickness}; "
                 f"text-underline-offset: 2px; }}"
             )
 

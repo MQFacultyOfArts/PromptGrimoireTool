@@ -30,6 +30,7 @@ _CHROME_CLASS_PATTERNS = [
     "closing",  # AustLII footer
     "side-element",  # AustLII sidebar elements
     "year-options",  # AustLII year filter dropdown
+    "text-xs",  # Small metadata text (timestamps, etc.)
 ]
 
 # ID patterns that indicate navigation/header chrome (case-insensitive prefix match)

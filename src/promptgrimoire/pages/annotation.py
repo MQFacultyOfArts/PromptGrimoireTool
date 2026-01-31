@@ -289,14 +289,14 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
             f"text-underline-offset: 2px; }}"
         )
 
-        # ::after pseudo-element to extend background/underline through space
+        # ::after pseudo-element to extend background through space
         # Only add if next word is also highlighted (check word_highlights)
         if (word_idx + 1) in word_highlights:
             css_rules.append(
                 f'[data-word-index="{word_idx}"]::after {{ '
                 f"content: ' '; "
-                f"background-color: inherit; "
-                f"text-decoration: inherit; }}"
+                f"background-color: {bg_rgba}; "
+                f"text-decoration: none; }}"
             )
 
     return "\n".join(css_rules)

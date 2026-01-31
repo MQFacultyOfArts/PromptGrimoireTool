@@ -185,13 +185,26 @@ Key types in `latex.py`:
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-### Tables (5 SQLModel classes)
+### Tables (7 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
 - **Course** - Course/unit of study with weeks and enrolled members
 - **CourseEnrollment** - Maps users to courses with course-level roles
 - **Week** - Week within a course with visibility controls
 - **AnnotationDocumentState** - Persisted CRDT state for annotation documents
+- **Workspace** - Container for documents and CRDT state (unit of collaboration)
+- **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation)
+
+### Workspace Architecture
+
+Workspaces are isolated silos identified by UUID. Key design decisions:
+
+- **No `created_by` FK** - Audit (who created) is separate from access control (who can use)
+- **Future: ACL for access control** - Seam D will add workspace-user permissions
+- **Future: Audit log for history** - Separate table for who-did-what tracking
+- **`create_workspace()` takes no parameters** - Just creates an empty workspace with UUID
+
+This separation prevents conflating audit concerns with authorization logic.
 
 ### Database Rules
 
@@ -204,6 +217,7 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 
 | Page | Route | DB Required |
 |------|-------|-------------|
+| annotation | `/annotation` | **Yes** |
 | case_tool | `/case-tool` | **Yes** |
 | live_annotation_demo | `/demo/live-annotation` | Optional |
 | roleplay | `/roleplay` | No |
@@ -224,6 +238,21 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 1. **Use `TEST_DATABASE_URL`** - Tests set `DATABASE_URL` from `TEST_DATABASE_URL` for isolation
 2. **Schema is set up ONCE per test session** - `db_schema_guard` runs migrations before any tests
 3. **Each test owns its data** - Create with UUIDs, don't rely on cleanup between tests
+
+### Workspace Test Pattern
+
+Workspaces require only UUID isolation, not user creation:
+
+```python
+# Good - workspace tests don't need users
+workspace = await create_workspace()
+doc = await add_document(workspace.id, type="source", content="...", raw_content="...")
+
+# Bad - don't create users just for workspace ownership
+user = await create_user(...)  # Not needed for workspace tests
+```
+
+This simplifies tests and reflects the design: workspaces are silos, access control comes later via ACL.
 
 ## Authentication
 

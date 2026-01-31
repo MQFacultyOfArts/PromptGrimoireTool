@@ -49,6 +49,32 @@ def _create_highlight(page: Page, start_word: int, end_word: int) -> None:
     tag_button.click()
 
 
+def _setup_workspace_with_content(page: Page, app_server: str, content: str) -> None:
+    """Navigate to annotation page, create workspace, and add document content.
+
+    This is the common 5-step setup pattern shared by all annotation tests:
+    1. Navigate to /annotation
+    2. Click create workspace
+    3. Wait for workspace URL
+    4. Fill content
+    5. Submit and wait for word spans
+
+    Args:
+        page: Playwright page.
+        app_server: Base URL of the app server.
+        content: Text content to add as document.
+    """
+    page.goto(f"{app_server}/annotation")
+    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.wait_for_url(re.compile(r"workspace_id="))
+
+    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
+    content_input.fill(content)
+    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+    page.wait_for_selector("[data-word-index]")
+    page.wait_for_timeout(200)
+
+
 class TestAnnotationPageBasic:
     """Basic page load tests."""
 
@@ -765,243 +791,94 @@ class TestDefinitionOfDone:
         )
 
 
-class TestDeleteHighlight:
-    """Tests for deleting highlights."""
+class TestHighlightMutations:
+    """Consolidated tests for highlight mutation operations (delete, change tag).
+
+    Uses subtests to share expensive workspace+document+highlight setup across
+    related assertions. Each subtest verifies a different mutation operation.
+    """
 
     @pytestmark_db
-    def test_delete_highlight_removes_card_and_styling(
-        self, authenticated_page: Page, app_server: str
+    def test_highlight_mutations(
+        self, subtests, authenticated_page: Page, app_server: str
     ) -> None:
-        """Deleting a highlight removes the card and styling."""
+        """Test delete and tag change mutations with shared setup."""
         page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
 
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill("Delete this highlight test")
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Create highlight
+        # Shared setup: workspace + document + highlight
+        _setup_workspace_with_content(page, app_server, "Mutation test words here")
         _create_highlight(page, 0, 1)
 
-        # Verify card exists
         ann_card = page.locator("[data-testid='annotation-card']")
         expect(ann_card).to_be_visible()
 
-        # Click delete button (close icon)
-        delete_btn = ann_card.locator("button").filter(
-            has=page.locator("[class*='close']")
-        )
-        if delete_btn.count() == 0:
-            # Try finding by tooltip or icon name
-            delete_btn = (
-                ann_card.get_by_role("button")
-                .filter(
-                    has=page.locator("i, svg, span").filter(
-                        has_text=re.compile("close|delete", re.IGNORECASE)
-                    )
-                )
-                .first
+        word = page.locator("[data-word-index='0']")
+
+        # --- Subtest: change tag via dropdown ---
+        with subtests.test(msg="change_tag_updates_color"):
+            # Find the dropdown in the card
+            tag_select = ann_card.locator("select, [role='combobox'], .q-select").first
+            tag_select.click()
+
+            # Select "Legal Issues" (red - #d62728 = rgb(214, 39, 40))
+            page.get_by_role(
+                "option", name=re.compile("legal.?issues", re.IGNORECASE)
+            ).click()
+            page.wait_for_timeout(500)
+
+            # Verify color changed to legal issues red
+            expect(word).to_have_css(
+                "background-color", re.compile(r"rgba\(214,\s*39,\s*40"), timeout=5000
             )
-        delete_btn.click()
 
-        # Card should be gone
-        expect(ann_card).not_to_be_visible(timeout=5000)
+        # --- Subtest: delete highlight removes card and styling ---
+        with subtests.test(msg="delete_removes_card_and_styling"):
+            # Click delete button (close icon)
+            delete_btn = ann_card.locator("button").filter(
+                has=page.locator("[class*='close']")
+            )
+            if delete_btn.count() == 0:
+                delete_btn = (
+                    ann_card.get_by_role("button")
+                    .filter(
+                        has=page.locator("i, svg, span").filter(
+                            has_text=re.compile("close|delete", re.IGNORECASE)
+                        )
+                    )
+                    .first
+                )
+            delete_btn.click()
 
-        # Styling should be removed
-        word = page.locator("[data-word-index='0']")
-        expect(word).not_to_have_css(
-            "background-color", re.compile(r"rgba\((?!0,\s*0,\s*0,\s*0)"), timeout=5000
-        )
+            # Card should be gone
+            expect(ann_card).not_to_be_visible(timeout=5000)
 
-
-class TestChangeTagDropdown:
-    """Tests for changing tag via dropdown."""
-
-    @pytestmark_db
-    def test_change_tag_updates_highlight_color(
-        self, authenticated_page: Page, app_server: str
-    ) -> None:
-        """Changing tag via dropdown updates highlight color."""
-        page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
-
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill("Change tag test content")
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Create highlight with Jurisdiction tag (blue)
-        _select_words(page, 0, 1)
-        page.get_by_role(
-            "button", name=re.compile("jurisdiction", re.IGNORECASE)
-        ).click()
-
-        # Verify initial color (blue - jurisdiction)
-        word = page.locator("[data-word-index='0']")
-        expect(word).to_have_css(
-            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
-        )
-
-        # Find the dropdown in the card and change to a different tag
-        ann_card = page.locator("[data-testid='annotation-card']")
-        expect(ann_card).to_be_visible()
-
-        # Click on dropdown/select in card
-        tag_select = ann_card.locator("select, [role='combobox'], .q-select").first
-        tag_select.click()
-
-        # Select "Legal Issues" (different color)
-        page.get_by_role(
-            "option", name=re.compile("legal.?issues", re.IGNORECASE)
-        ).click()
-
-        # Wait for update
-        page.wait_for_timeout(500)
-
-        # Color should change to legal issues color (red - #d62728 = rgb(214, 39, 40))
-        expect(word).to_have_css(
-            "background-color", re.compile(r"rgba\(214,\s*39,\s*40"), timeout=5000
-        )
+            # Styling should be removed
+            expect(word).not_to_have_css(
+                "background-color",
+                re.compile(r"rgba\((?!0,\s*0,\s*0,\s*0)"),
+                timeout=5000,
+            )
 
 
-class TestKeyboardShortcuts:
-    """Tests for keyboard shortcuts (1-0 keys)."""
+class TestHighlightInteractions:
+    """Consolidated tests for highlight interaction features (goto, hover).
+
+    Uses subtests to share expensive workspace+document+highlight setup across
+    related assertions. Each subtest verifies a different interaction feature.
+    """
 
     @pytestmark_db
-    def test_number_key_creates_highlight_with_tag(
-        self, authenticated_page: Page, app_server: str
+    def test_highlight_interactions(
+        self, subtests, authenticated_page: Page, app_server: str
     ) -> None:
-        """Pressing number key after selection creates tagged highlight."""
+        """Test goto and hover interactions with shared setup."""
         page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
 
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill("Keyboard shortcut test words")
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Select words
-        _select_words(page, 0, 1)
-
-        # Wait for selection to register
-        page.wait_for_timeout(300)
-
-        # Press "1" key (should be Jurisdiction - blue)
-        page.keyboard.press("1")
-
-        # Wait for highlight to be created
-        page.wait_for_timeout(500)
-
-        # Highlight should be created with jurisdiction color
-        word = page.locator("[data-word-index='0']")
-        expect(word).to_have_css(
-            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
-        )
-
-        # Card should appear
-        ann_card = page.locator("[data-testid='annotation-card']")
-        expect(ann_card).to_be_visible()
-
-
-class TestOverlappingHighlights:
-    """Tests for overlapping highlights."""
-
-    @pytestmark_db
-    def test_overlapping_highlights_show_combined_styling(
-        self, authenticated_page: Page, app_server: str
-    ) -> None:
-        """Overlapping highlights show combined styling (thicker underline)."""
-        page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
-
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill("word1 word2 word3 word4 word5")
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Create first highlight (words 1-3)
-        _select_words(page, 1, 3)
-        page.get_by_role(
-            "button", name=re.compile("jurisdiction", re.IGNORECASE)
-        ).click()
-
-        # Wait for first highlight to be created and saved
-        saved_indicator = page.locator("[data-testid='save-status']")
-        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
-
-        # Create second overlapping highlight (words 2-4)
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(200)
-        _select_words(page, 2, 4)
-        page.get_by_role(
-            "button", name=re.compile("legal.?issue", re.IGNORECASE)
-        ).click()
-
-        # Wait for second highlight to be saved
-        page.wait_for_timeout(500)
-        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
-
-        # Middle words (2, 3) should have overlap styling
-        # Just verify they have background color (overlap logic is CSS)
-        word2 = page.locator("[data-word-index='2']")
-        word3 = page.locator("[data-word-index='3']")
-        expect(word2).to_have_css(
-            "background-color", re.compile(r"rgba\("), timeout=5000
-        )
-        expect(word3).to_have_css(
-            "background-color", re.compile(r"rgba\("), timeout=5000
-        )
-
-        # Should have two annotation cards
-        cards = page.locator("[data-testid='annotation-card']")
-        assert cards.count() == 2
-
-
-class TestGoToHighlight:
-    """Tests for go-to-highlight button."""
-
-    @pytestmark_db
-    def test_goto_button_scrolls_to_highlight(
-        self, authenticated_page: Page, app_server: str
-    ) -> None:
-        """Go-to-highlight button scrolls document to show highlighted words."""
-        page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
-
-        # Create long content so we need to scroll
+        # Need long content for scroll testing
         long_content = " ".join([f"word{i}" for i in range(100)])
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill(long_content)
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
+        _setup_workspace_with_content(page, app_server, long_content)
 
-        # Scroll to end and create highlight there
+        # Scroll to end and create highlight there (for scroll testing)
         word_90 = page.locator("[data-word-index='90']")
         word_90.scroll_into_view_if_needed()
         _select_words(page, 90, 92)
@@ -1010,107 +887,143 @@ class TestGoToHighlight:
         ).click()
         page.wait_for_timeout(300)
 
-        # Scroll back to top
-        page.locator("[data-word-index='0']").scroll_into_view_if_needed()
-        page.wait_for_timeout(200)
-
-        # Click go-to button on card (icon has text content "my_location")
-        ann_card = page.locator("[data-testid='annotation-card']")
-        goto_btn = ann_card.locator("button").filter(has_text="my_location").first
-        goto_btn.click()
-
-        # Wait for scroll animation
-        page.wait_for_timeout(500)
-
-        # Word 90 should now be visible
-        expect(word_90).to_be_in_viewport()
-
-
-class TestCardHoverEffect:
-    """Tests for card hover → word highlight effect."""
-
-    @pytestmark_db
-    def test_hovering_card_highlights_words(
-        self, authenticated_page: Page, app_server: str
-    ) -> None:
-        """Hovering over annotation card highlights corresponding words."""
-        page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
-
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill("Hover test content here")
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Create highlight
-        _create_highlight(page, 0, 1)
-
-        # Get card
         ann_card = page.locator("[data-testid='annotation-card']")
         expect(ann_card).to_be_visible()
 
-        # Hover over card
-        ann_card.hover()
-        page.wait_for_timeout(100)
+        # --- Subtest: goto button scrolls to highlight ---
+        with subtests.test(msg="goto_scrolls_to_highlight"):
+            # Scroll back to top first
+            page.locator("[data-word-index='0']").scroll_into_view_if_needed()
+            page.wait_for_timeout(200)
 
-        # Words should have hover highlight class
-        word = page.locator("[data-word-index='0']")
-        expect(word).to_have_class(re.compile("card-hover-highlight"), timeout=2000)
+            # Click go-to button (icon has text "my_location")
+            goto_btn = ann_card.locator("button").filter(has_text="my_location").first
+            goto_btn.click()
+            page.wait_for_timeout(500)
+
+            # Word 90 should now be visible
+            expect(word_90).to_be_in_viewport()
+
+        # --- Subtest: hovering card highlights words ---
+        with subtests.test(msg="hover_highlights_words"):
+            # Ensure card is visible (may need to scroll)
+            ann_card.scroll_into_view_if_needed()
+
+            # Hover over card
+            ann_card.hover()
+            page.wait_for_timeout(100)
+
+            # Words should have hover highlight class
+            expect(word_90).to_have_class(
+                re.compile("card-hover-highlight"), timeout=2000
+            )
 
 
-class TestSpecialContent:
-    """Tests for special content handling."""
+class TestEdgeCasesConsolidated:
+    """Consolidated tests for edge cases (overlapping, special content, keyboard).
 
-    @pytestmark_db
-    def test_special_characters_in_content(
-        self, authenticated_page: Page, app_server: str
-    ) -> None:
-        """Content with special characters renders and highlights correctly."""
-        page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
-
-        # Content with special chars
-        special_content = "Test <script> & \"quotes\" 'apostrophe' $100 @email"
-        content_input = page.get_by_placeholder(
-            re.compile("paste|content", re.IGNORECASE)
-        )
-        content_input.fill(special_content)
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
-        page.wait_for_timeout(200)
-
-        # Should have word spans (special chars escaped)
-        word_spans = page.locator("[data-word-index]")
-        assert word_spans.count() >= 5
-
-        # Can create highlight
-        _create_highlight(page, 0, 2)
-
-        # Card should appear
-        ann_card = page.locator("[data-testid='annotation-card']")
-        expect(ann_card).to_be_visible()
+    Uses subtests to share browser context across related edge case assertions.
+    Each subtest creates its own workspace since content requirements differ.
+    """
 
     @pytestmark_db
-    def test_empty_content_shows_error(
-        self, authenticated_page: Page, app_server: str
+    def test_edge_cases(
+        self, subtests, authenticated_page: Page, app_server: str
     ) -> None:
-        """Submitting empty content shows validation error."""
+        """Test various edge cases with shared browser context."""
         page = authenticated_page
-        page.goto(f"{app_server}/annotation")
-        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-        page.wait_for_url(re.compile(r"workspace_id="))
 
-        # Try to submit without content
-        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        # --- Subtest: keyboard shortcut creates highlight ---
+        with subtests.test(msg="keyboard_shortcut_creates_highlight"):
+            _setup_workspace_with_content(page, app_server, "Keyboard shortcut test")
 
-        # Should show error/warning notification
-        # NiceGUI uses Quasar notifications
-        notification = page.locator(".q-notification, [role='alert']")
-        expect(notification).to_be_visible(timeout=3000)
+            # Select words
+            _select_words(page, 0, 1)
+            page.wait_for_timeout(300)
+
+            # Press "1" key (Jurisdiction - blue)
+            page.keyboard.press("1")
+            page.wait_for_timeout(500)
+
+            # Verify highlight created with jurisdiction color
+            word = page.locator("[data-word-index='0']")
+            expect(word).to_have_css(
+                "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
+            )
+
+            # Card should appear
+            ann_card = page.locator("[data-testid='annotation-card']")
+            expect(ann_card).to_be_visible()
+
+        # --- Subtest: overlapping highlights show combined styling ---
+        with subtests.test(msg="overlapping_highlights_combined_styling"):
+            # Navigate to fresh workspace for this test
+            page.goto(f"{app_server}/annotation")
+            _setup_workspace_with_content(
+                page, app_server, "word1 word2 word3 word4 word5"
+            )
+
+            # Create first highlight (words 1-3)
+            _select_words(page, 1, 3)
+            page.get_by_role(
+                "button", name=re.compile("jurisdiction", re.IGNORECASE)
+            ).click()
+
+            # Wait for save
+            saved_indicator = page.locator("[data-testid='save-status']")
+            expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+            # Create second overlapping highlight (words 2-4)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+            _select_words(page, 2, 4)
+            page.get_by_role(
+                "button", name=re.compile("legal.?issue", re.IGNORECASE)
+            ).click()
+
+            page.wait_for_timeout(500)
+            expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+            # Middle words should have background color (overlap styling)
+            word2 = page.locator("[data-word-index='2']")
+            word3 = page.locator("[data-word-index='3']")
+            expect(word2).to_have_css(
+                "background-color", re.compile(r"rgba\("), timeout=5000
+            )
+            expect(word3).to_have_css(
+                "background-color", re.compile(r"rgba\("), timeout=5000
+            )
+
+            # Should have two annotation cards
+            cards = page.locator("[data-testid='annotation-card']")
+            assert cards.count() == 2
+
+        # --- Subtest: special characters handled correctly ---
+        with subtests.test(msg="special_characters_handled"):
+            page.goto(f"{app_server}/annotation")
+            special_content = "Test <script> & \"quotes\" 'apostrophe' $100 @email"
+            _setup_workspace_with_content(page, app_server, special_content)
+
+            # Should have word spans (special chars escaped)
+            word_spans = page.locator("[data-word-index]")
+            assert word_spans.count() >= 5
+
+            # Can create highlight
+            _create_highlight(page, 0, 2)
+            ann_card = page.locator("[data-testid='annotation-card']")
+            expect(ann_card).to_be_visible()
+
+        # --- Subtest: empty content shows validation error ---
+        with subtests.test(msg="empty_content_shows_error"):
+            page.goto(f"{app_server}/annotation")
+            page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+            page.wait_for_url(re.compile(r"workspace_id="))
+
+            # Try to submit without content
+            page.get_by_role(
+                "button", name=re.compile("add|submit", re.IGNORECASE)
+            ).click()
+
+            # Should show error notification
+            notification = page.locator(".q-notification, [role='alert']")
+            expect(notification).to_be_visible(timeout=3000)

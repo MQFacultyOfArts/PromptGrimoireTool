@@ -17,6 +17,7 @@ from pycrdt import Awareness, Doc, Map, Text, TransactionEvent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -528,6 +529,47 @@ class AnnotationDocumentRegistry:
                 logger.info("Loaded document %s from database", doc_id)
         except Exception:
             logger.exception("Failed to load document %s from database", doc_id)
+
+        self._documents[doc_id] = doc
+
+        # Register with persistence manager
+        get_persistence_manager().register_document(doc)
+
+        return doc
+
+    async def get_or_create_for_workspace(
+        self, workspace_id: UUID
+    ) -> AnnotationDocument:
+        """Get existing document for workspace, load from DB, or create new.
+
+        This is the workspace-aware alternative to get_or_create_with_persistence().
+        Loads CRDT state from Workspace.crdt_state instead of AnnotationDocumentState.
+
+        Args:
+            workspace_id: The workspace UUID.
+
+        Returns:
+            The AnnotationDocument instance, restored from DB if available.
+        """
+        # Use workspace_id as doc_id key for caching
+        doc_id = f"ws-{workspace_id}"
+
+        if doc_id in self._documents:
+            return self._documents[doc_id]
+
+        # Try to load from Workspace
+        from promptgrimoire.crdt.persistence import get_persistence_manager
+        from promptgrimoire.db.workspaces import get_workspace
+
+        doc = AnnotationDocument(doc_id)
+
+        try:
+            workspace = await get_workspace(workspace_id)
+            if workspace and workspace.crdt_state:
+                doc.apply_update(workspace.crdt_state)
+                logger.info("Loaded workspace %s from database", workspace_id)
+        except Exception:
+            logger.exception("Failed to load workspace %s from database", workspace_id)
 
         self._documents[doc_id] = doc
 

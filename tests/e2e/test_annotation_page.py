@@ -833,6 +833,9 @@ class TestHighlightMutations:
 
         # --- Subtest: delete highlight removes card and styling ---
         with subtests.test(msg="delete_removes_card_and_styling"):
+            # Precondition: verify card exists before attempting delete
+            expect(ann_card).to_be_visible()
+
             # Click delete button (close icon)
             delete_btn = ann_card.locator("button").filter(
                 has=page.locator("[class*='close']")
@@ -957,8 +960,7 @@ class TestEdgeCasesConsolidated:
 
         # --- Subtest: overlapping highlights show combined styling ---
         with subtests.test(msg="overlapping_highlights_combined_styling"):
-            # Navigate to fresh workspace for this test
-            page.goto(f"{app_server}/annotation")
+            # Setup workspace with content for overlapping test
             _setup_workspace_with_content(
                 page, app_server, "word1 word2 word3 word4 word5"
             )
@@ -1000,7 +1002,6 @@ class TestEdgeCasesConsolidated:
 
         # --- Subtest: special characters handled correctly ---
         with subtests.test(msg="special_characters_handled"):
-            page.goto(f"{app_server}/annotation")
             special_content = "Test <script> & \"quotes\" 'apostrophe' $100 @email"
             _setup_workspace_with_content(page, app_server, special_content)
 

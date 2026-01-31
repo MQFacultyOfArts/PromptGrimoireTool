@@ -267,6 +267,10 @@ Phases 1-4 are additive. Only Phase 5 removes the old system. If issues arise, w
 - `updated_at` indexed for "recently modified" queries
 - `workspace_id` indexed on WorkspaceDocument for fast listing
 
+### Related Design: Test Suite Consolidation
+
+See [2026-01-31-test-suite-consolidation.md](./2026-01-31-test-suite-consolidation.md) for the companion design that migrates all E2E tests from `/demo/*` routes to `/annotation`, implements `pytest-subtests` for efficient test structure, and removes demo page dependencies. This work is part of the same branch (93-workspace-model) and should be executed in parallel with Phase 5 (Teardown).
+
 ---
 
 ## Scenario Reference

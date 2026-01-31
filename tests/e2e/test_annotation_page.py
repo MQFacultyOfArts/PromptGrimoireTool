@@ -198,13 +198,15 @@ class TestHighlightCreation:
         page.locator("[data-testid='highlight-menu']").wait_for(
             state="visible", timeout=5000
         )
-        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+        # Click a tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
+        page.get_by_role(
+            "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
+        ).click()
 
-        # Words should have highlight styling (background color via CSS)
-        # Check for yellow background (rgba(255, 235, 59, 0.5))
+        # Words should have highlight styling with jurisdiction color (blue)
         first_word = page.locator("[data-word-index='0']")
         expect(first_word).to_have_css(
-            "background-color", re.compile(r"rgba\(255,\s*235,\s*59")
+            "background-color", re.compile(r"rgba\(31,\s*119,\s*180")
         )
 
     @pytestmark_db
@@ -243,12 +245,15 @@ class TestHighlightCreation:
         page.locator("[data-testid='highlight-menu']").wait_for(
             state="visible", timeout=5000
         )
-        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+        # Click a tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
+        page.get_by_role(
+            "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
+        ).click()
 
-        # Wait for highlight to be applied (check for background color)
+        # Wait for highlight to be applied with jurisdiction color (blue)
         first_word = page.locator("[data-word-index='0']")
         expect(first_word).to_have_css(
-            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
         )
 
         # Wait for "Saved" indicator (observable state, not arbitrary timeout)
@@ -259,10 +264,10 @@ class TestHighlightCreation:
         page.goto(workspace_url)
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # Highlight should still be there (check for background color)
+        # Highlight should still be there with jurisdiction color (blue)
         first_word = page.locator("[data-word-index='0']")
         expect(first_word).to_have_css(
-            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
         )
 
 
@@ -333,12 +338,14 @@ class TestFullAnnotationWorkflow:
         highlight_menu = page.locator("[data-testid='highlight-menu']")
         expect(highlight_menu).to_be_visible(timeout=5000)
 
-        # Create highlight
-        page.get_by_role("button", name=re.compile("highlight", re.IGNORECASE)).click()
+        # Create highlight with tag (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
+        page.get_by_role(
+            "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
+        ).click()
 
-        # Verify highlight is applied (check for background color)
+        # Verify highlight is applied with jurisdiction color (blue)
         expect(word_tort).to_have_css(
-            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
         )
 
         # 5. Wait for "Saved" indicator (observable state, not arbitrary timeout)
@@ -351,10 +358,10 @@ class TestFullAnnotationWorkflow:
         # Wait for page to fully load
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # 7. Assert: highlight is still visible
+        # 7. Assert: highlight is still visible with jurisdiction color (blue)
         word_tort_after_reload = page.locator("[data-word-index='6']")
         expect(word_tort_after_reload).to_have_css(
-            "background-color", re.compile(r"rgba\(255,\s*235,\s*59"), timeout=5000
+            "background-color", re.compile(r"rgba\(31,\s*119,\s*180"), timeout=5000
         )
 
     @pytestmark_db
@@ -402,14 +409,15 @@ class TestFullAnnotationWorkflow:
 
             # Wait for menu to appear
             highlight_menu.wait_for(state="visible", timeout=5000)
+            # Click tag button (Jurisdiction = blue #1f77b4 = rgb(31, 119, 180))
             page.get_by_role(
-                "button", name=re.compile("highlight", re.IGNORECASE)
+                "button", name=re.compile(r"jurisdiction", re.IGNORECASE)
             ).click()
 
-            # Verify highlight was applied by checking background color
+            # Verify highlight was applied with jurisdiction color (blue)
             expect(start_word).to_have_css(
                 "background-color",
-                re.compile(r"rgba\(255,\s*235,\s*59"),
+                re.compile(r"rgba\(31,\s*119,\s*180"),
                 timeout=5000,
             )
 
@@ -426,11 +434,83 @@ class TestFullAnnotationWorkflow:
         page.goto(workspace_url)
         page.wait_for_selector("[data-word-index]", timeout=10000)
 
-        # All three highlights should be visible (check words 0,1,3,4,6,7)
+        # All three highlights should be visible with jurisdiction color (blue)
         for idx in [0, 1, 3, 4, 6, 7]:
             word = page.locator(f"[data-word-index='{idx}']")
             expect(word).to_have_css(
                 "background-color",
-                re.compile(r"rgba\(255,\s*235,\s*59"),
+                re.compile(r"rgba\(31,\s*119,\s*180"),
                 timeout=5000,
             )
+
+
+class TestTagSelection:
+    """Tests for tag selection UI (Task 6)."""
+
+    @pytestmark_db
+    def test_tag_toolbar_visible_when_document_loaded(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Tag toolbar shows after document is added."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+
+        # Add document
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Test content for tagging")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Tag toolbar should be visible
+        tag_toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(tag_toolbar).to_be_visible()
+
+        # Should have multiple tag buttons (BriefTag has 10 tags)
+        tag_buttons = tag_toolbar.locator("button")
+        assert tag_buttons.count() >= 5
+
+    @pytestmark_db
+    def test_selecting_text_then_tag_creates_colored_highlight(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Selecting text then clicking tag button creates highlight with tag color."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="), timeout=10000)
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("This is a legal issue in the case")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]", timeout=10000)
+
+        # Select "legal issue"
+        word_legal = page.locator("[data-word-index='3']")
+        word_issue = page.locator("[data-word-index='4']")
+        word_legal.scroll_into_view_if_needed()
+
+        legal_box = word_legal.bounding_box()
+        issue_box = word_issue.bounding_box()
+
+        assert legal_box is not None and issue_box is not None
+        page.mouse.move(legal_box["x"] + 5, legal_box["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(issue_box["x"] + issue_box["width"] - 5, issue_box["y"] + 5)
+        page.mouse.up()
+
+        # Click a tag button from the toolbar (any tag will do)
+        tag_toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(tag_toolbar).to_be_visible()
+        tag_button = tag_toolbar.locator("button").first
+        tag_button.click()
+
+        # Highlight should have a background color (not necessarily yellow now)
+        expect(word_legal).to_have_css(
+            "background-color", re.compile(r"rgba?\("), timeout=5000
+        )

@@ -27,6 +27,7 @@ from promptgrimoire.crdt.annotation_doc import (
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.workspace_documents import add_document, list_documents
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
+from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -114,10 +115,10 @@ def _process_text_to_word_spans(text: str) -> str:
 
 
 def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
-    """Generate CSS rules for highlighting words.
+    """Generate CSS rules for highlighting words with tag-specific colors.
 
     Args:
-        highlights: List of highlight dicts with start_word, end_word.
+        highlights: List of highlight dicts with start_word, end_word, tag.
 
     Returns:
         CSS string with background-color rules for highlighted words.
@@ -126,14 +127,56 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     for hl in highlights:
         start = int(hl.get("start_word", 0))
         end = int(hl.get("end_word", 0))
-        # Use yellow highlight color (rgba(255, 235, 59, 0.5))
+        tag_str = hl.get("tag", "highlight")
+
+        # Get color for tag - try BriefTag first, fall back to yellow
+        try:
+            tag = BriefTag(tag_str)
+            hex_color = TAG_COLORS.get(tag, "#FFEB3B")
+        except ValueError:
+            hex_color = "#FFEB3B"  # Default yellow for non-BriefTag tags
+
+        # Convert hex to rgba with 40% opacity
+        r = int(hex_color[1:3], 16)
+        g = int(hex_color[3:5], 16)
+        b = int(hex_color[5:7], 16)
+        rgba = f"rgba({r}, {g}, {b}, 0.4)"
+
         for i in range(start, end):
-            css_rules.append(
-                f'[data-word-index="{i}"] {{ '
-                f"background-color: rgba(255, 235, 59, 0.5); "
-                f"}}"
-            )
+            css_rules.append(f'[data-word-index="{i}"] {{ background-color: {rgba}; }}')
+
     return "\n".join(css_rules)
+
+
+def _build_tag_toolbar(
+    on_tag_click: Any,  # Callable[[BriefTag], Awaitable[None]]
+) -> None:
+    """Build compact tag selection toolbar.
+
+    Ported from live_annotation_demo.py.
+    """
+    # Reverse lookup: BriefTag -> shortcut key
+    shortcut_for_tag = {v: k for k, v in TAG_SHORTCUTS.items()}
+
+    with ui.row().classes("gap-1 flex-wrap mb-4").props('data-testid="tag-toolbar"'):
+        for tag in BriefTag:
+            color = TAG_COLORS.get(tag, "#888888")
+            shortcut = shortcut_for_tag.get(tag, "")
+            # Format: "[1] Jurisdiction" or just "Tag Name" if no shortcut
+            label = tag.value.replace("_", " ").title()
+            if shortcut:
+                label = f"[{shortcut}] {label}"
+
+            # Create handler with tag bound
+            async def make_handler(t: BriefTag = tag) -> None:
+                await on_tag_click(t)
+
+            ui.button(
+                label,
+                on_click=make_handler,
+            ).classes("text-xs px-2 py-1").style(
+                f"background-color: {color}; color: white;"
+            )
 
 
 def _update_highlight_css(state: PageState) -> None:
@@ -151,8 +194,13 @@ def _update_highlight_css(state: PageState) -> None:
     state.highlight_style.update()
 
 
-async def _add_highlight(state: PageState) -> None:
-    """Add a highlight from current selection to CRDT."""
+async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
+    """Add a highlight from current selection to CRDT.
+
+    Args:
+        state: Page state with selection and CRDT document.
+        tag: Optional BriefTag for the highlight. Defaults to "highlight".
+    """
     if state.selection_start is None or state.selection_end is None:
         ui.notify("No selection", type="warning")
         return
@@ -173,10 +221,13 @@ async def _add_highlight(state: PageState) -> None:
     start = min(state.selection_start, state.selection_end)
     end = max(state.selection_start, state.selection_end) + 1
 
+    # Use tag value if provided, otherwise default to "highlight"
+    tag_value = tag.value if tag else "highlight"
+
     state.crdt_doc.add_highlight(
         start_word=start,
         end_word=end,
-        tag="highlight",
+        tag=tag_value,
         text="",  # Could extract from DOM if needed
         author=state.user_name,
         document_id=str(state.document_id),
@@ -308,23 +359,24 @@ async def _render_document_with_highlights(
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
 
-    # Highlight creation menu (hidden by default)
+    # Tag toolbar handler
+    async def handle_tag_click(tag: BriefTag) -> None:
+        await _add_highlight(state, tag)
+
+    # Tag toolbar - always visible above document
+    _build_tag_toolbar(handle_tag_click)
+
+    # Highlight creation menu (hidden popup for quick highlight without tag selection)
     with (
         ui.card()
-        .classes("fixed z-50 shadow-lg")
+        .classes("fixed z-50 shadow-lg p-2")
         .style("top: 50%; left: 50%; transform: translate(-50%, -50%);")
         .props('data-testid="highlight-menu"') as highlight_menu
     ):
         highlight_menu.set_visibility(False)
         state.highlight_menu = highlight_menu
 
-        async def handle_highlight_click() -> None:
-            await _add_highlight(state)
-
-        ui.button(
-            "Highlight",
-            on_click=handle_highlight_click,
-        ).classes("bg-yellow-400 text-black")
+        ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
 
     # Document content container
     with ui.element("div").classes("document-content border p-4 rounded bg-white mt-4"):

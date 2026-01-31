@@ -20,6 +20,13 @@ from playwright.sync_api import Browser, BrowserContext, Locator, Page, expect
 
 from tests.e2e.helpers import click_tag
 
+# Skip all tests in this module - coverage migrated to new test files
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: coverage migrated to test_annotation_*.py files. "
+    "Paragraph tests blocked on Issue #99 (Seam G). "
+    "See coverage-mapping.md for details."
+)
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 

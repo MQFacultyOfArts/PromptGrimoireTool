@@ -21,6 +21,13 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Browser, BrowserContext
 
+# Skip all tests in this module - coverage migrated to annotation_sync
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: coverage migrated to test_annotation_sync.py. "
+    "Raw text CRDT tests not applicable to highlight CRDT. "
+    "See coverage-mapping.md for details."
+)
+
 # Shared email for collaboration tests - all tabs share this user
 COLLAB_EMAIL = "sync-collab-test@test.example.edu.au"
 

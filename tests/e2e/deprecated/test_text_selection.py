@@ -11,7 +11,15 @@ Uses Playwright to simulate user text selection in the browser.
 All tests use fresh_page fixture for proper isolation.
 """
 
+import pytest
 from playwright.sync_api import Page, expect
+
+# Skip all tests in this module - demo-specific tests not applicable
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: demo-specific tests not applicable to /annotation route. "
+    "Text selection patterns differ (click+shift vs drag). "
+    "See coverage-mapping.md for details."
+)
 
 
 def _login_as_test_user(page: Page, app_server: str, test_name: str) -> None:

@@ -12,6 +12,13 @@ import pytest
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
+# Skip all tests in this module - coverage in test_auth_pages.py
+pytestmark = pytest.mark.skip(
+    reason="Deprecated: auth/isolation coverage exists in test_auth_pages.py. "
+    "Demo-specific document isolation tests not applicable. "
+    "See coverage-mapping.md for details."
+)
+
 
 class TestLiveAnnotationUserIsolation:
     """Tests for per-user isolation in live annotation demo."""

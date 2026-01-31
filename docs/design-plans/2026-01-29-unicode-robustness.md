@@ -2,9 +2,9 @@
 
 ## Summary
 
-This design adds robust unicode handling to PromptGrimoire's PDF export system. Currently, LaTeX export only handles ASCII special characters—documents containing CJK text (Chinese, Japanese, Korean) or emoji fail to compile or render incorrectly. This work implements a detect-and-wrap approach: text is scanned for unicode ranges (CJK ideographs, emoji), then wrapped in appropriate LaTeX commands before compilation. A new `escape_unicode_latex()` function extends the existing ASCII escape logic, preserving compatibility while adding unicode support.
+This design adds robust unicode handling to PromptGrimoire's text handling pipeline—from PostgreSQL storage through pycrdt CRDTs to browser rendering and PDF export. Currently, LaTeX export only handles ASCII special characters; documents containing CJK text (Chinese, Japanese, Korean) or emoji fail to compile or render incorrectly. The primary approach is detect-and-wrap: text is scanned for unicode ranges, then wrapped in LaTeX commands with explicit font switches. This is more reliable than fontspec fallback chains, which have proven tedious to configure across environments.
 
-The implementation includes a comprehensive test corpus (Big List of Naughty Strings, curated CJK samples, emoji edge cases) with pytest markers to separate fast smoke tests from slow full-corpus validation. Round-trip tests verify that unicode text survives storage in PostgreSQL, transmission through pycrdt CRDTs, and rendering via LaTeX/LuaLaTeX. TinyTeX package management is extended to install required LaTeX packages (luatexja, emoji, Noto fonts) for unicode rendering.
+The implementation includes a comprehensive test corpus: Big List of Naughty Strings (BLNS) parsed by category for targeted testing, plus CJK conversation fixtures for full pipeline integration tests. Pytest markers separate fast smoke tests from slow full-corpus validation (`pytest -m blns`). Round-trip tests verify unicode survives each pipeline stage; injection tests verify BLNS doesn't break security boundaries. A visual validation demo route (`/demo/blns-validation`) enables manual comparison of browser and PDF rendering.
 
 ## Definition of Done
 
@@ -15,6 +15,7 @@ The implementation includes a comprehensive test corpus (Big List of Naughty Str
 - [ ] LaTeX export renders CJK text correctly (Japanese, Chinese, Korean)
 - [ ] LaTeX export renders emoji correctly (including ZWJ sequences)
 - [ ] All text storage/retrieval paths pass unicode round-trip tests
+- [ ] `/demo/blns-validation` route provides visual inspection of BLNS/CJK rendering
 
 ## Glossary
 
@@ -35,23 +36,22 @@ The implementation includes a comprehensive test corpus (Big List of Naughty Str
 
 ## Architecture
 
-**Primary approach:** Fontspec fallback chain. Configure LuaLaTeX with a font fallback sequence (TeX Gyre → Noto CJK → Noto Color Emoji) so the compiler handles unicode natively without detection logic.
+**Primary approach:** Detect-and-wrap. Text is scanned for unicode ranges (CJK ideographs, emoji), then wrapped in appropriate LaTeX commands with explicit font switches. This approach is more reliable than fontspec fallback chains, which have proven tedious to configure correctly across environments.
 
-**Fallback approach:** If fontspec fallback proves inadequate (emoji naming, specific font requirements), fall back to detect-and-wrap where text is scanned for CJK/emoji ranges and wrapped in appropriate LaTeX commands.
-
-Phase 1 investigates which approach is viable before committing to implementation.
+Phase 1 briefly investigates whether fontspec-only could work, but the expectation is detect-and-wrap will be needed.
 
 **Components:**
 
 1. **Unicode LaTeX Handler** (`src/promptgrimoire/export/unicode_latex.py`)
-   - If fontspec fallback works: minimal changes, font configuration only
-   - If detect-and-wrap needed: range detection, command wrapping
+   - Range detection for CJK and emoji codepoints
+   - Explicit font-switch wrapping for non-ASCII text
+   - Entry point: `escape_unicode_latex()` replacing `_escape_latex()`
 
-2. **Test Fixtures** (`tests/fixtures/unicode/`)
-   - BLNS corpus (`blns.json`) — full corpus for opt-in runs
-   - BLNS injection subset (`blns_injection.json`) — ~50 curated strings targeting LaTeX/SQL/XSS injection, runs always
-   - Curated CJK samples (`cjk_samples.json`)
-   - Emoji edge cases (`emoji_samples.json`)
+2. **Test Fixtures** (`tests/fixtures/`)
+   - BLNS corpus (`blns.txt`, `blns.json`) — full corpus for opt-in runs; txt parsed at collection time for category-based parameterisation
+   - BLNS injection subset (curated from categories) — ~50 strings targeting LaTeX/SQL/XSS injection, runs always
+   - CJK conversation fixtures (`conversations/translation_*.html`, `conversations/chinese_wikipedia.html`) — full pipeline integration tests
+   - Curated unicode samples extracted from CJK fixtures for unit tests
 
 3. **Test Infrastructure** (`tests/unit/test_unicode_handling.py`)
    - Parameterized tests with pytest markers
@@ -83,10 +83,10 @@ Test runner scripts follow existing pattern in `scripts/test_debug.py`.
 
 **Components:**
 - **Fontspec investigation** — Test if TeX Gyre Termes + Noto CJK + Noto Color Emoji fallback chain works in LuaLaTeX
-- `tests/fixtures/unicode/blns.json` — Big List of Naughty Strings corpus
-- `tests/fixtures/unicode/blns_injection.json` — Curated ~50 strings targeting injection (LaTeX command injection, SQL, XSS)
-- `tests/fixtures/unicode/cjk_samples.json` — Curated CJK strings (Japanese, Chinese simplified/traditional, Korean)
-- `tests/fixtures/unicode/emoji_samples.json` — Emoji edge cases (skin tones, ZWJ sequences, flags)
+- `tests/fixtures/blns.txt` — Big List of Naughty Strings corpus with category comments (parsed at collection time)
+- `tests/fixtures/blns.json` — BLNS as flat JSON array (alternative format)
+- `tests/conftest.py` — BLNS parser: extracts categories from `#\t` headers, provides `BLNS_BY_CATEGORY` dict
+- `tests/conftest.py` — Injection subset: curated ~50 strings from injection-related categories
 - `pyproject.toml` — Add `blns` and `slow` pytest markers, configure default exclusion
 - `scripts/test_all_fixtures.py` — Script to run full corpus
 
@@ -186,6 +186,7 @@ Test runner scripts follow existing pattern in `scripts/test_debug.py`.
   - `test_crdt_roundtrip` — pycrdt Text preservation
   - `test_latex_escape_no_crash` — escape function doesn't raise
   - `test_latex_compiles` — generated LaTeX compiles (marked `slow`)
+  - `test_pdf_no_tofu` — extract text from PDF via pdftotext, verify content survived rendering
   - `test_latex_no_command_injection` — BLNS injection subset doesn't execute LaTeX commands
   - `test_html_no_xss` — BLNS injection subset doesn't break HTML rendering
   - `test_sql_no_injection` — BLNS injection subset stored safely via SQLModel
@@ -197,14 +198,41 @@ Test runner scripts follow existing pattern in `scripts/test_debug.py`.
 - BLNS injection subset passes all injection tests (runs always)
 - Full BLNS corpus passes round-trip tests (via `pytest -m blns`)
 - LaTeX compilation tests pass for representative samples
+- PDF tofu detection catches missing glyphs (pdftotext extraction)
 <!-- END_PHASE_6 -->
+
+<!-- START_PHASE_7 -->
+### Phase 7: Visual Validation Demo Route
+
+**Goal:** Manual inspection of BLNS/CJK rendering in browser and PDF
+
+**Components:**
+- `src/promptgrimoire/pages/blns_validation.py` — Demo page at `/demo/blns-validation`
+  - Displays BLNS strings by category
+  - Displays CJK sample content
+  - Export to PDF button
+
+**Dependencies:** Phase 6 (round-trip tests passing)
+
+**Done when:**
+- `/demo/blns-validation` route accessible (requires `ENABLE_DEMO_PAGES`)
+- Can view content in browser and export to PDF for visual comparison
+<!-- END_PHASE_7 -->
 
 ## Additional Considerations
 
-**Architecture decision in Phase 1:** If fontspec fallback chain works cleanly, Phases 2-3 simplify significantly (font config only, no detection logic). If emoji proves problematic (likely), detect-and-wrap may be needed for emoji only while CJK uses native fallback.
+**Architecture decision in Phase 1:** Detect-and-wrap is the expected approach based on prior experience with fontspec complexity. Phase 1 briefly investigates fontspec-only but will likely confirm detect-and-wrap is needed for reliable cross-environment rendering.
 
 **Memory usage:** First compilation with Noto CJK fonts can use ~6GB RAM for font cache generation. Document this in setup instructions. CI runners may need larger instances or pre-cached fonts.
 
 **Test performance:** BLNS has ~500 strings. LaTeX compilation is slow (~2-5s per document). Full corpus runs are for pre-release confidence, not every commit. Injection subset (~50 strings) runs always.
 
 **Font availability:** Design assumes Noto fonts available. If not installed, LaTeX compilation will fail with clear error. Setup script handles installation.
+
+**Missing TinyTeX packages:** LaTeX tests should skip with clear message if required packages not installed, rather than failing with cryptic LaTeX errors. Use pytest fixture that checks package availability.
+
+**CJK fixture dual purpose:** The HTML conversation fixtures (`translation_japanese_sample.html`, etc.) serve two purposes: (1) full workspace→document→PDF pipeline integration tests, and (2) text extraction for unicode sample corpus in unit tests.
+
+**BLNS category parsing:** The `blns.txt` file uses `#\t` prefixes for category headers. Parser distinguishes headers from explanatory comments by checking for title-case text after blank lines and filtering out lines containing "which" (explanations).
+
+**Tofu detection:** PDF export tests verify content survived rendering by extracting text via `pdftotext` and comparing to input. Missing glyphs (rendered as `.notdef` or tofu boxes) typically disappear or become replacement characters in extraction, making this a low-cost detection method.

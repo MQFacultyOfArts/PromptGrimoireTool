@@ -36,6 +36,7 @@
 4. **Gradual migration** - This page exists alongside `/demo/live-annotation` (Phase 4 verifies both work)
 5. **Client-side selection detection** - Note: Detecting browser text selection inherently requires JavaScript. The implementation uses `ui.run_javascript()` for this unavoidable browser API access. E2E TESTS correctly use Playwright's native mouse events to simulate user selection - they never inject JS.
 6. **Observable persistence state** - Tests wait for a visible "Saved" indicator rather than arbitrary timeouts
+7. **Authentication required** - The `/annotation` route requires authentication. `Workspace.created_by` has a FK constraint to `user.id`, so workspaces must be created by real users. Get user ID from session via `app.storage.user.get("auth_user", {}).get("user_id")`. E2E tests must authenticate first (see `db_test_user` fixture).
 
 ---
 
@@ -193,13 +194,14 @@ pytestmark_db = pytest.mark.skipif(
 
 
 class TestWorkspaceCreation:
-    """Tests for workspace creation flow."""
+    """Tests for workspace creation flow (requires authentication)."""
 
     @pytestmark_db
     def test_create_workspace_redirects_with_id(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Creating workspace redirects to URL with workspace_id."""
+        page = authenticated_page
         page.goto(f"{live_server}/annotation")
 
         # Click create button
@@ -216,12 +218,13 @@ class TestWorkspaceCreation:
 
     @pytestmark_db
     def test_workspace_persists_in_database(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Created workspace exists in database."""
         import asyncio
         from promptgrimoire.db.workspaces import get_workspace
 
+        page = authenticated_page
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
         page.wait_for_url(re.compile(r"workspace_id="))
@@ -237,7 +240,7 @@ class TestWorkspaceCreation:
         assert workspace is not None
 ```
 
-**Step 2: Add fixture for test user**
+**Step 2: Add fixture for test user (with authentication)**
 
 Add to `tests/e2e/conftest.py`:
 
@@ -265,7 +268,28 @@ async def db_test_user():
         display_name="E2E Test User",
     )
     return {"id": user.id, "email": user.email}
+
+
+@pytest.fixture
+def authenticated_page(page: Page, live_server: str, db_test_user: dict):
+    """Authenticate a test user in the browser session.
+
+    Uses mock auth tokens for E2E testing. See Key Design Decision #7.
+    The mock auth client accepts tokens in format: mock-token-{email}
+    """
+    email = db_test_user["email"]
+
+    # Authenticate via mock magic link token
+    # The mock client accepts mock-token-{email} format
+    page.goto(f"{live_server}/auth/callback?token=mock-token-{email}")
+
+    # Wait for redirect after successful auth
+    page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=5000)
+
+    return page
 ```
+
+**Important:** Tests in Tasks 2-5 should use `authenticated_page` instead of just `page` to ensure the user is logged in before accessing `/annotation`.
 
 **Step 3: Run test to verify it fails**
 
@@ -303,15 +327,24 @@ logger = logging.getLogger(__name__)
 
 
 async def _create_workspace_and_redirect() -> None:
-    """Create a new workspace and redirect to it."""
+    """Create a new workspace and redirect to it.
+
+    Requires authenticated user (see Key Design Decision #7).
+    """
     from promptgrimoire.db.workspaces import create_workspace
 
-    # For now, use a placeholder user ID
-    # TODO: Get actual user from session once auth is integrated
-    placeholder_user_id = uuid4()
+    # Get user ID from session (requires authentication)
+    auth_user = app.storage.user.get("auth_user", {})
+    user_id_str = auth_user.get("user_id")
+
+    if not user_id_str:
+        ui.notify("Please log in to create a workspace", type="warning")
+        ui.navigate.to("/login")
+        return
 
     try:
-        workspace = await create_workspace(created_by=placeholder_user_id)
+        user_id = UUID(user_id_str)
+        workspace = await create_workspace(created_by=user_id)
         ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
     except Exception as e:
         logger.exception("Failed to create workspace")
@@ -403,13 +436,14 @@ Add to `tests/e2e/test_annotation_page.py`:
 
 ```python
 class TestDocumentCreation:
-    """Tests for adding documents to workspace."""
+    """Tests for adding documents to workspace (requires authentication)."""
 
     @pytestmark_db
     def test_paste_content_creates_document(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Pasting content creates a WorkspaceDocument."""
+        page = authenticated_page
         # Create workspace first
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
@@ -432,9 +466,10 @@ class TestDocumentCreation:
 
     @pytestmark_db
     def test_document_has_word_spans(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Document content is wrapped in word-level spans."""
+        page = authenticated_page
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
         page.wait_for_url(re.compile(r"workspace_id="))
@@ -454,9 +489,10 @@ class TestDocumentCreation:
 
     @pytestmark_db
     def test_document_persists_after_reload(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Document content survives page reload."""
+        page = authenticated_page
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
         page.wait_for_url(re.compile(r"workspace_id="))
@@ -625,13 +661,14 @@ Add to `tests/e2e/test_annotation_page.py`:
 
 ```python
 class TestHighlightCreation:
-    """Tests for creating highlights on documents."""
+    """Tests for creating highlights on documents (requires authentication)."""
 
     @pytestmark_db
     def test_select_text_shows_highlight_menu(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Selecting text shows highlight creation menu."""
+        page = authenticated_page
         # Setup workspace with document
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
@@ -662,9 +699,10 @@ class TestHighlightCreation:
 
     @pytestmark_db
     def test_create_highlight_applies_styling(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Creating a highlight applies visual styling."""
+        page = authenticated_page
         # Setup
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
@@ -696,9 +734,10 @@ class TestHighlightCreation:
 
     @pytestmark_db
     def test_highlight_persists_after_reload(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Highlights survive page reload via CRDT persistence."""
+        page = authenticated_page
         # Setup
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
@@ -829,13 +868,24 @@ def _build_highlight_css(highlights: list[dict]) -> str:
 
 
 async def _create_workspace_and_redirect() -> None:
-    """Create a new workspace and redirect to it."""
+    """Create a new workspace and redirect to it.
+
+    Requires authenticated user (see Key Design Decision #7).
+    """
     from promptgrimoire.db.workspaces import create_workspace
 
-    placeholder_user_id = uuid4()  # TODO: Get from session
+    # Get user ID from session (requires authentication)
+    auth_user = app.storage.user.get("auth_user", {})
+    user_id_str = auth_user.get("user_id")
+
+    if not user_id_str:
+        ui.notify("Please log in to create a workspace", type="warning")
+        ui.navigate.to("/login")
+        return
 
     try:
-        workspace = await create_workspace(created_by=placeholder_user_id)
+        user_id = UUID(user_id_str)
+        workspace = await create_workspace(created_by=user_id)
         ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
     except Exception as e:
         logger.exception("Failed to create workspace")
@@ -1070,16 +1120,17 @@ Add to `tests/e2e/test_annotation_page.py`:
 
 ```python
 class TestFullAnnotationWorkflow:
-    """Complete workflow E2E tests matching UAT statement."""
+    """Complete workflow E2E tests matching UAT statement (requires authentication)."""
 
     @pytestmark_db
     def test_complete_annotation_workflow(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """
         UAT: User creates workspace, pastes content, creates highlight,
         and highlight persists after reload.
         """
+        page = authenticated_page
         # 1. Navigate to /annotation
         page.goto(f"{live_server}/annotation")
         expect(page.locator("body")).to_be_visible()
@@ -1141,9 +1192,10 @@ class TestFullAnnotationWorkflow:
 
     @pytestmark_db
     def test_multiple_highlights_persist(
-        self, page: Page, live_server: str, db_test_user: dict
+        self, authenticated_page: Page, live_server: str, db_test_user: dict
     ) -> None:
         """Multiple highlights on same document all persist."""
+        page = authenticated_page
         page.goto(f"{live_server}/annotation")
         page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
         page.wait_for_url(re.compile(r"workspace_id="))

@@ -53,6 +53,12 @@ class PageState:
     highlight_menu: ui.element | None = None
     save_status: ui.label | None = None
     crdt_doc: AnnotationDocument | None = None
+    # Annotation cards
+    annotations_container: ui.element | None = None
+    annotation_cards: dict[str, ui.card] | None = None
+    refresh_annotations: Any | None = None  # Callable to refresh cards
+    # Document content for text extraction
+    document_words: list[str] | None = None  # Words by index
 
 
 def _get_current_username() -> str:
@@ -194,6 +200,124 @@ def _update_highlight_css(state: PageState) -> None:
     state.highlight_style.update()
 
 
+def _build_annotation_card(
+    state: PageState,
+    highlight: dict[str, Any],
+) -> ui.card:
+    """Build an annotation card for a highlight.
+
+    Args:
+        state: Page state with CRDT and containers.
+        highlight: Highlight dict from CRDT.
+
+    Returns:
+        The created card element.
+    """
+    highlight_id = highlight.get("id", "")
+    tag_str = highlight.get("tag", "highlight")
+    author = highlight.get("author", "Unknown")
+    text = highlight.get("text", "")[:80]
+    if len(highlight.get("text", "")) > 80:
+        text += "..."
+
+    # Get tag color
+    try:
+        tag = BriefTag(tag_str)
+        color = TAG_COLORS.get(tag, "#666")
+        tag_name = tag.value.replace("_", " ").title()
+    except ValueError:
+        color = "#666"
+        tag_name = tag_str.replace("_", " ").title()
+
+    card = (
+        ui.card()
+        .classes("w-full mb-2")
+        .style(f"border-left: 4px solid {color};")
+        .props(f'data-testid="annotation-card" data-highlight-id="{highlight_id}"')
+    )
+
+    with card:
+        # Header with tag name
+        with ui.row().classes("w-full justify-between items-center"):
+            ui.label(tag_name).classes("text-sm font-bold").style(f"color: {color};")
+
+        # Author
+        ui.label(f"by {author}").classes("text-xs text-gray-500")
+
+        # Highlighted text preview
+        if text:
+            ui.label(f'"{text}"').classes("text-sm italic mt-1")
+
+        # Comments section
+        comments = highlight.get("comments", [])
+        if comments:
+            ui.separator()
+            for comment in comments:
+                c_author = comment.get("author", "Unknown")
+                c_text = comment.get("text", "")
+                with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
+                    ui.label(c_author).classes("text-xs font-bold")
+                    ui.label(c_text).classes("text-sm")
+
+        # Comment input
+        comment_input = (
+            ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
+        )
+
+        async def add_comment(
+            hid: str = highlight_id,
+            inp: ui.input = comment_input,
+        ) -> None:
+            if inp.value and inp.value.strip() and state.crdt_doc:
+                state.crdt_doc.add_comment(hid, state.user_name, inp.value.strip())
+                inp.value = ""
+
+                # Persist
+                pm = get_persistence_manager()
+                pm.mark_dirty_workspace(
+                    state.workspace_id,
+                    state.crdt_doc.doc_id,
+                    last_editor=state.user_name,
+                )
+                await pm.force_persist_workspace(state.workspace_id)
+
+                if state.save_status:
+                    state.save_status.text = "Saved"
+
+                # Refresh cards to show new comment
+                if state.refresh_annotations:
+                    state.refresh_annotations()
+
+        ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+
+    return card
+
+
+def _refresh_annotation_cards(state: PageState) -> None:
+    """Refresh all annotation cards from CRDT state."""
+    if state.annotations_container is None or state.crdt_doc is None:
+        return
+
+    if state.annotation_cards is None:
+        state.annotation_cards = {}
+
+    # Clear existing cards
+    state.annotations_container.clear()
+
+    # Get highlights for this document
+    if state.document_id is not None:
+        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+    else:
+        highlights = state.crdt_doc.get_all_highlights()
+
+    # Create cards for each highlight
+    with state.annotations_container:
+        for hl in highlights:
+            hl_id = hl.get("id", "")
+            card = _build_annotation_card(state, hl)
+            state.annotation_cards[hl_id] = card
+
+
 async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     """Add a highlight from current selection to CRDT.
 
@@ -224,11 +348,17 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     # Use tag value if provided, otherwise default to "highlight"
     tag_value = tag.value if tag else "highlight"
 
+    # Extract highlighted text from document words
+    highlighted_text = ""
+    if state.document_words:
+        words_slice = state.document_words[start:end]
+        highlighted_text = " ".join(words_slice)
+
     state.crdt_doc.add_highlight(
         start_word=start,
         end_word=end,
         tag=tag_value,
-        text="",  # Could extract from DOM if needed
+        text=highlighted_text,
         author=state.user_name,
         document_id=str(state.document_id),
     )
@@ -249,6 +379,10 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
 
     # Update CSS to show new highlight
     _update_highlight_css(state)
+
+    # Refresh annotation cards to show new highlight
+    if state.refresh_annotations:
+        state.refresh_annotations()
 
     # Clear browser selection first to prevent re-triggering on next mouseup
     await ui.run_javascript("window.getSelection().removeAllRanges();")
@@ -350,6 +484,11 @@ async def _render_document_with_highlights(
     """Render a document with highlight support."""
     state.document_id = doc.id
     state.crdt_doc = crdt_doc
+    state.annotation_cards = {}
+
+    # Extract words from raw_content for text extraction when highlighting
+    if hasattr(doc, "raw_content") and doc.raw_content:
+        state.document_words = doc.raw_content.split()
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -378,9 +517,28 @@ async def _render_document_with_highlights(
 
         ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
 
-    # Document content container
-    with ui.element("div").classes("document-content border p-4 rounded bg-white mt-4"):
-        ui.html(doc.content, sanitize=False).classes("prose selection:bg-blue-200")
+    # Two-column layout: document on left, annotations on right
+    with ui.row().classes("w-full gap-4 mt-4"):
+        # Document content (2/3 width)
+        with (
+            ui.element("div").classes("w-2/3"),
+            ui.element("div").classes("document-content border p-4 rounded bg-white"),
+        ):
+            ui.html(doc.content, sanitize=False).classes("prose selection:bg-blue-200")
+
+        # Annotations sidebar (1/3 width)
+        with ui.element("div").classes("w-1/3"):
+            ui.label("Annotations").classes("text-lg font-semibold mb-2")
+            state.annotations_container = ui.element("div").classes("space-y-2")
+
+    # Set up refresh function
+    def refresh_annotations() -> None:
+        _refresh_annotation_cards(state)
+
+    state.refresh_annotations = refresh_annotations
+
+    # Load existing annotations
+    _refresh_annotation_cards(state)
 
     # Set up selection detection
     _setup_selection_handlers(state)

@@ -514,3 +514,188 @@ class TestTagSelection:
         expect(word_legal).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
+
+
+class TestAnnotationCards:
+    """Tests for annotation card sidebar (Task 7)."""
+
+    @pytestmark_db
+    def test_creating_highlight_shows_annotation_card(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Creating a highlight adds an annotation card."""
+        page = authenticated_page
+        # Setup workspace with document
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="))
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("The defendant was negligent in their duty")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]")
+
+        # Create highlight with tag
+        word0 = page.locator("[data-word-index='0']")
+        word1 = page.locator("[data-word-index='1']")
+        word0.scroll_into_view_if_needed()
+
+        box0 = word0.bounding_box()
+        box1 = word1.bounding_box()
+
+        assert box0 is not None and box1 is not None
+        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
+        page.mouse.up()
+
+        # Click any tag button
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.click()
+
+        # Annotation card should appear
+        ann_card = page.locator("[data-testid='annotation-card']")
+        expect(ann_card).to_be_visible(timeout=5000)
+
+    @pytestmark_db
+    def test_annotation_card_shows_highlighted_text(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Annotation card shows preview of highlighted text."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="))
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Important legal text here")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]")
+
+        # Select and highlight "Important legal"
+        word0 = page.locator("[data-word-index='0']")
+        word1 = page.locator("[data-word-index='1']")
+        word0.scroll_into_view_if_needed()
+
+        box0 = word0.bounding_box()
+        box1 = word1.bounding_box()
+
+        assert box0 is not None and box1 is not None
+        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
+        page.mouse.up()
+
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.click()
+
+        # Card should contain the highlighted text
+        ann_card = page.locator("[data-testid='annotation-card']")
+        expect(ann_card).to_contain_text("Important")
+
+    @pytestmark_db
+    def test_can_add_comment_to_highlight(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Can add a comment to a highlight via annotation card."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="))
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Text to comment on")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]")
+
+        # Create highlight
+        word0 = page.locator("[data-word-index='0']")
+        word1 = page.locator("[data-word-index='1']")
+        word0.scroll_into_view_if_needed()
+
+        box0 = word0.bounding_box()
+        box1 = word1.bounding_box()
+
+        assert box0 is not None and box1 is not None
+        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
+        page.mouse.up()
+
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.click()
+
+        # Find comment input in card
+        ann_card = page.locator("[data-testid='annotation-card']")
+        expect(ann_card).to_be_visible()
+
+        comment_input = ann_card.locator("input[type='text'], textarea").first
+        comment_input.fill("This is my comment")
+
+        # Submit comment
+        ann_card.get_by_role(
+            "button", name=re.compile("post|add|submit", re.IGNORECASE)
+        ).click()
+
+        # Comment should appear in card
+        expect(ann_card).to_contain_text("This is my comment")
+
+    @pytestmark_db
+    def test_comment_persists_after_reload(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """Comments persist after page reload."""
+        page = authenticated_page
+        page.goto(f"{app_server}/annotation")
+        page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+        page.wait_for_url(re.compile(r"workspace_id="))
+        workspace_url = page.url
+
+        content_input = page.get_by_placeholder(
+            re.compile("paste|content", re.IGNORECASE)
+        )
+        content_input.fill("Persistent comment test")
+        page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+        page.wait_for_selector("[data-word-index]")
+
+        # Create highlight and add comment
+        word0 = page.locator("[data-word-index='0']")
+        word1 = page.locator("[data-word-index='1']")
+        word0.scroll_into_view_if_needed()
+
+        box0 = word0.bounding_box()
+        box1 = word1.bounding_box()
+
+        assert box0 is not None and box1 is not None
+        page.mouse.move(box0["x"] + 5, box0["y"] + 5)
+        page.mouse.down()
+        page.mouse.move(box1["x"] + box1["width"] - 5, box1["y"] + 5)
+        page.mouse.up()
+
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.click()
+
+        ann_card = page.locator("[data-testid='annotation-card']")
+        comment_input = ann_card.locator("input[type='text'], textarea").first
+        comment_input.fill("Persistent comment")
+        ann_card.get_by_role(
+            "button", name=re.compile("post|add|submit", re.IGNORECASE)
+        ).click()
+
+        # Wait for save
+        saved_indicator = page.locator("[data-testid='save-status']")
+        expect(saved_indicator).to_contain_text("Saved", timeout=10000)
+
+        # Reload
+        page.goto(workspace_url)
+        page.wait_for_selector("[data-word-index]")
+
+        # Comment should still be there
+        ann_card = page.locator("[data-testid='annotation-card']")
+        expect(ann_card).to_contain_text("Persistent comment")

@@ -127,15 +127,9 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Word spans for selection - smooth highlighting between words */
+    /* Word spans for selection */
     .word {
         cursor: text;
-        /* Extend background to cover inter-word gaps */
-        padding: 0 0.15em;
-        margin: 0 -0.15em;
-        /* Ensure highlights blend smoothly */
-        box-decoration-break: clone;
-        -webkit-box-decoration-break: clone;
     }
 
     /* Hover highlight effect when card is hovered */
@@ -282,29 +276,33 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
 
         overlap_count = len(colors)
-        # Use box-shadow for underline - extends into padding for contiguous line
-        # Format: inset 0 -Npx 0 0 color (bottom border effect)
+        # Use text-decoration for underline - proper CSS for text underlines
         if overlap_count == 1:
-            # Single highlight: 1px underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"box-shadow: inset 0 -1px 0 0 {first_color}; }}"
+                f"text-decoration: underline; "
+                f"text-decoration-color: {first_color}; "
+                f"text-decoration-thickness: 1px; "
+                f"text-underline-offset: 2px; }}"
             )
         elif overlap_count == 2:
-            # Two highlights: 2px underline
-            c1 = colors[0]
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"box-shadow: inset 0 -2px 0 0 {c1}; }}"
+                f"text-decoration: underline; "
+                f"text-decoration-color: {colors[0]}; "
+                f"text-decoration-thickness: 2px; "
+                f"text-underline-offset: 2px; }}"
             )
         else:
-            # 3+ highlights: 3px dark underline
             css_rules.append(
                 f'[data-word-index="{word_idx}"] {{ '
                 f"background-color: {bg_rgba}; "
-                f"box-shadow: inset 0 -3px 0 0 #333; }}"
+                f"text-decoration: underline; "
+                f"text-decoration-color: #333; "
+                f"text-decoration-thickness: 3px; "
+                f"text-underline-offset: 2px; }}"
             )
 
     return "\n".join(css_rules)

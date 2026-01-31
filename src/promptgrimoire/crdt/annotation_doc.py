@@ -216,6 +216,7 @@ class AnnotationDocument:
         author: str,
         para_ref: str = "",
         origin_client_id: str | None = None,
+        document_id: str | None = None,
     ) -> str:
         """Add a new highlight to the document.
 
@@ -227,6 +228,7 @@ class AnnotationDocument:
             author: Display name of the author.
             para_ref: Paragraph reference string (e.g., "[3]", "[3]-[4]").
             origin_client_id: Client making the change (for echo prevention).
+            document_id: Optional workspace document UUID for multi-document workspaces.
 
         Returns:
             The generated highlight ID.
@@ -238,6 +240,7 @@ class AnnotationDocument:
             # Create highlight with embedded comments Array
             highlight_data = {
                 "id": highlight_id,
+                "document_id": document_id,  # Can be None for backward compat
                 "start_word": start_word,
                 "end_word": end_word,
                 "tag": tag,

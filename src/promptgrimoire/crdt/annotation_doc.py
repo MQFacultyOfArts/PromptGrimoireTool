@@ -296,6 +296,20 @@ class AnnotationDocument:
         highlights = list(self.highlights.values())
         return sorted(highlights, key=lambda h: h.get("start_word", 0))
 
+    def get_highlights_for_document(self, document_id: str) -> list[dict[str, Any]]:
+        """Get all highlights for a specific document.
+
+        Args:
+            document_id: The document UUID to filter by.
+
+        Returns:
+            List of highlight data dicts for that document, sorted by start_word.
+        """
+        highlights = [
+            h for h in self.highlights.values() if h.get("document_id") == document_id
+        ]
+        return sorted(highlights, key=lambda h: h.get("start_word", 0))
+
     # --- Comment operations ---
 
     def add_comment(

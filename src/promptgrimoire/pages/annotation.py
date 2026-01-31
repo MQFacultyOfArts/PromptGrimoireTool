@@ -15,14 +15,49 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from nicegui import ui
+from nicegui import app, ui
 
+from promptgrimoire.db.workspaces import create_workspace
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui import Client
 
 logger = logging.getLogger(__name__)
+
+
+def _get_current_user_id() -> UUID | None:
+    """Get the current authenticated user's ID from session."""
+    auth_user = app.storage.user.get("auth_user")
+    if not auth_user:
+        return None
+    user_id_str = auth_user.get("user_id")
+    if not user_id_str:
+        return None
+    try:
+        return UUID(user_id_str)
+    except ValueError:
+        return None
+
+
+async def _create_workspace_and_redirect() -> None:
+    """Create a new workspace and redirect to it.
+
+    Requires authenticated user with user_id in session.
+    """
+    user_id = _get_current_user_id()
+    if not user_id:
+        ui.notify("Please log in to create a workspace", type="warning")
+        ui.navigate.to("/login")
+        return
+
+    try:
+        workspace = await create_workspace(created_by=user_id)
+        logger.info("Created workspace %s for user %s", workspace.id, user_id)
+        ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
+    except Exception:
+        logger.exception("Failed to create workspace")
+        ui.notify("Failed to create workspace", type="negative")
 
 
 @page_route(
@@ -61,5 +96,5 @@ async def annotation_page(client: Client) -> None:
             ui.label("No workspace selected. Create a new one:").classes("mb-2")
             ui.button(
                 "Create Workspace",
-                on_click=lambda: ui.notify("TODO: implement in Task 2"),
+                on_click=_create_workspace_and_redirect,
             ).classes("bg-blue-500 text-white")

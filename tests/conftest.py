@@ -158,7 +158,7 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
 TEST_STORAGE_SECRET = "test-secret-for-e2e"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def db_schema_guard() -> Generator[None]:
     """Set up database schema once at session start.
 
@@ -169,6 +169,9 @@ def db_schema_guard() -> Generator[None]:
     The database engine is initialized lazily on first use within each
     test's event loop context. Tests use UUID-based isolation so they
     don't interfere with each other.
+
+    Note: Not autouse - only tests that need the DB should depend on this
+    (typically via their db_engine fixture).
     """
     test_url = os.environ.get("TEST_DATABASE_URL")
     if not test_url:

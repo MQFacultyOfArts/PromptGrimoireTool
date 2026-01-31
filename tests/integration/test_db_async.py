@@ -33,10 +33,10 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-async def db_engine() -> AsyncIterator[None]:
+async def db_engine(db_schema_guard: None) -> AsyncIterator[None]:  # noqa: ARG001
     """Initialize database engine for each test.
 
-    Schema already exists from Alembic migrations (db_schema_guard in conftest).
+    Depends on db_schema_guard to ensure Alembic migrations have run.
     This fixture only manages the engine connection.
     """
     await init_db()

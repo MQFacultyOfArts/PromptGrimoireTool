@@ -189,20 +189,17 @@ class Week(SQLModel, table=True):
 class Workspace(SQLModel, table=True):
     """Container for documents and CRDT state. Unit of collaboration.
 
-    Permissions are handled via ACL (Seam D). created_by is for audit trail only.
+    Workspaces are isolated silos - each workspace's documents and CRDT state
+    are independent. Access control is handled via ACL (Seam D, future).
 
     Attributes:
         id: Primary key UUID, auto-generated.
-        created_by: User who created this workspace (audit, not ownership).
         crdt_state: Serialized pycrdt state bytes for all annotations.
         created_at: Timestamp when workspace was created.
         updated_at: Timestamp when workspace was last modified.
     """
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_by: UUID = Field(
-        sa_column=Column(Uuid(), ForeignKey("user.id"), nullable=False)
-    )
     crdt_state: bytes | None = Field(
         default=None, sa_column=Column(sa.LargeBinary(), nullable=True)
     )

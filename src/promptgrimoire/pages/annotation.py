@@ -15,6 +15,7 @@ import html
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from nicegui import app, ui
@@ -53,20 +54,6 @@ class PageState:
     crdt_doc: AnnotationDocument | None = None
 
 
-def _get_current_user_id() -> UUID | None:
-    """Get the current authenticated user's ID from session."""
-    auth_user = app.storage.user.get("auth_user")
-    if not auth_user:
-        return None
-    user_id_str = auth_user.get("user_id")
-    if not user_id_str:
-        return None
-    try:
-        return UUID(user_id_str)
-    except ValueError:
-        return None
-
-
 def _get_current_username() -> str:
     """Get the display name for the current user."""
     auth_user = app.storage.user.get("auth_user")
@@ -81,18 +68,18 @@ def _get_current_username() -> str:
 async def _create_workspace_and_redirect() -> None:
     """Create a new workspace and redirect to it.
 
-    Requires authenticated user with user_id in session.
+    Requires authenticated user (auth check only, no user ID stored on workspace).
     """
-    user_id = _get_current_user_id()
-    if not user_id:
+    auth_user = app.storage.user.get("auth_user")
+    if not auth_user:
         ui.notify("Please log in to create a workspace", type="warning")
         ui.navigate.to("/login")
         return
 
     try:
-        workspace = await create_workspace(created_by=user_id)
-        logger.info("Created workspace %s for user %s", workspace.id, user_id)
-        ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
+        workspace = await create_workspace()
+        logger.info("Created workspace %s", workspace.id)
+        ui.navigate.to(f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}")
     except Exception:
         logger.exception("Failed to create workspace")
         ui.notify("Failed to create workspace", type="negative")
@@ -402,7 +389,9 @@ async def _render_workspace_view(workspace_id: UUID) -> None:
                     title=None,
                 )
                 # Reload page to show document
-                ui.navigate.to(f"/annotation?workspace_id={workspace_id}")
+                ui.navigate.to(
+                    f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+                )
             except Exception:
                 logger.exception("Failed to add document")
                 ui.notify("Failed to add document", type="negative")

@@ -15,17 +15,14 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-async def create_workspace(created_by: UUID) -> Workspace:
+async def create_workspace() -> Workspace:
     """Create a new workspace.
-
-    Args:
-        created_by: UUID of the user creating this workspace.
 
     Returns:
         The created Workspace with generated ID.
     """
     async with get_session() as session:
-        workspace = Workspace(created_by=created_by)
+        workspace = Workspace()
         session.add(workspace)
         await session.flush()
         await session.refresh(workspace)

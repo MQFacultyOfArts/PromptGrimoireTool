@@ -131,8 +131,8 @@ _PAGE_CSS = """
     .word {
         cursor: text;
         /* Extend background to cover inter-word gaps */
-        padding: 0 0.3em;
-        margin: 0 -0.3em;
+        padding: 0 0.15em;
+        margin: 0 -0.15em;
         /* Ensure highlights blend smoothly */
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;

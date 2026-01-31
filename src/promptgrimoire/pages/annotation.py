@@ -127,9 +127,15 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Word spans for selection */
+    /* Word spans for selection - smooth highlighting between words */
     .word {
         cursor: text;
+        /* Extend background to cover inter-word gaps */
+        padding: 0 0.15em;
+        margin: 0 -0.15em;
+        /* Ensure highlights blend smoothly */
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
     }
 
     /* Hover highlight effect when card is hovered */
@@ -215,18 +221,15 @@ def _process_text_to_word_spans(text: str) -> str:
         if line.strip():
             words = line.split()
             line_spans = []
-            for i, word in enumerate(words):
+            for word in words:
                 escaped = html.escape(word)
-                # Include trailing space inside span (except last word)
-                # so underlines extend through the space
-                suffix = " " if i < len(words) - 1 else ""
                 span = (
                     f'<span class="word" data-word-index="{word_index}">'
-                    f"{escaped}{suffix}</span>"
+                    f"{escaped}</span>"
                 )
                 line_spans.append(span)
                 word_index += 1
-            html_parts.append(f'<p data-para="{line_num}">{"".join(line_spans)}</p>')
+            html_parts.append(f'<p data-para="{line_num}">{" ".join(line_spans)}</p>')
         else:
             html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
 

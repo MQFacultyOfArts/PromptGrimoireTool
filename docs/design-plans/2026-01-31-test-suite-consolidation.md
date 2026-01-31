@@ -51,19 +51,33 @@ tests/e2e/deprecated/            # Moved before deletion
 └── test_user_isolation.py
 ```
 
-**Key fixture:**
+**Key fixture (separate browser contexts for true isolation):**
 
 ```python
 @pytest.fixture
-def two_annotation_tabs(browser, app_server, request):
-    """Two authenticated browser tabs viewing same workspace."""
+def two_annotation_contexts(browser, app_server, request):
+    """Two separate browser contexts viewing same workspace.
+
+    Uses separate contexts (not tabs in one context) to simulate
+    genuinely independent clients - different cookie jars, no shared
+    browser process state, realistic multi-user scenario.
+    """
     workspace_id = create_test_workspace()
-    context = browser.new_context()
-    tab1 = context.new_page()
-    tab2 = context.new_page()
-    # Auth both tabs, navigate to same workspace
-    yield tab1, tab2, workspace_id
-    context.close()
+
+    # TWO contexts = two independent "browsers"
+    context1 = browser.new_context()
+    context2 = browser.new_context()
+    page1 = context1.new_page()
+    page2 = context2.new_page()
+
+    # Auth and navigate each independently
+    _auth_and_goto_workspace(page1, app_server, workspace_id, "user1@test.edu.au")
+    _auth_and_goto_workspace(page2, app_server, workspace_id, "user2@test.edu.au")
+
+    yield page1, page2, workspace_id
+
+    context1.close()
+    context2.close()
 ```
 
 ## Existing Patterns
@@ -77,7 +91,7 @@ Investigation found existing test patterns in `test_annotation_page.py`:
 
 This design follows these patterns and extends them with:
 - `pytest-subtests` for multiple assertions sharing setup
-- Class-scoped fixtures for two-tab scenarios
+- Separate browser contexts for multi-user sync tests (not shared context)
 - Shared workspace fixtures for collaboration tests
 
 **Divergence:** Demo tests used global CRDT reset (`reset_crdt_state` fixture). New tests use UUID-based workspace isolation only - no global state manipulation.
@@ -85,17 +99,28 @@ This design follows these patterns and extends them with:
 ## Implementation Phases
 
 <!-- START_PHASE_1 -->
-### Phase 1: Add pytest-subtests and pytest-depper
+### Phase 1: Add pytest-subtests and validate pytest-depper
 
-**Goal:** Install dependencies and verify they work
+**Goal:** Install dependencies and verify pytest-depper correctly identifies affected tests
 
 **Components:**
-- `pyproject.toml` - add pytest-subtests, pytest-depper to dev dependencies
-- Verify both plugins load correctly
+- `pyproject.toml` - add pytest-subtests, pytest-depper to dev dependencies (already done)
+- Validate pytest-depper dependency tracking works for this codebase
+
+**Validation step for pytest-depper:**
+1. Make a trivial change to `src/promptgrimoire/pages/annotation.py` (add/remove blank line)
+2. Run `pytest-depper --debug`
+3. Verify it selects `tests/e2e/test_annotation_page.py` (and related tests)
+4. If it doesn't detect the dependency, document the gap and either:
+   - Configure explicit test-to-module mappings, OR
+   - Fall back to running all E2E tests in CI (depper for unit/integration only)
 
 **Dependencies:** None
 
-**Done when:** `uv run pytest --co` shows plugins loaded, existing tests still pass
+**Done when:**
+- `uv run pytest --co` shows plugins loaded
+- pytest-depper validation documented (works or known limitations)
+- Existing tests still pass
 <!-- END_PHASE_1 -->
 
 <!-- START_PHASE_2 -->
@@ -115,12 +140,12 @@ This design follows these patterns and extends them with:
 <!-- START_PHASE_3 -->
 ### Phase 3: Create test_annotation_sync.py
 
-**Goal:** Real-time sync tests between browser tabs on `/annotation`
+**Goal:** Real-time sync tests between independent browser contexts on `/annotation`
 
 **Components:**
 - `tests/e2e/test_annotation_sync.py` - NEW file
-- `tests/e2e/conftest.py` - add `two_annotation_tabs` fixture
-- Tests for: highlight appears in other tab, delete syncs, comment syncs, cursor/selection presence
+- `tests/e2e/conftest.py` - add `two_annotation_contexts` fixture (separate contexts, not shared)
+- Tests for: highlight appears in other context, delete syncs, comment syncs, cursor/selection presence
 
 **Dependencies:** Phase 2
 

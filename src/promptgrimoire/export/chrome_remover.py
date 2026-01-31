@@ -12,6 +12,9 @@ import re
 
 from bs4 import BeautifulSoup, Tag
 
+# Pattern for thinking time indicators (e.g., "18s", "21s")
+_THINKING_TIME_PATTERN = re.compile(r"^\d+s$")
+
 # Class patterns that indicate UI chrome (case-insensitive substring match)
 _CHROME_CLASS_PATTERNS = [
     "avatar",
@@ -135,6 +138,15 @@ def _is_hidden(element: Tag) -> bool:
     return "display: none" in style_str or "display:none" in style_str
 
 
+def _is_thinking_time(element: Tag) -> bool:
+    """Check if element is a thinking time indicator (e.g., "18s")."""
+    if element.name not in ("span", "p"):
+        return False
+
+    text = element.get_text(strip=True)
+    return bool(_THINKING_TIME_PATTERN.match(text))
+
+
 def _should_remove(element: Tag) -> bool:
     """Determine if an element should be removed as UI chrome."""
     # Check for various chrome patterns
@@ -145,6 +157,7 @@ def _should_remove(element: Tag) -> bool:
         or _is_remote_image(element)
         or _is_svg_image(element)
         or _is_hidden(element)
+        or _is_thinking_time(element)
     ):
         return True
 
@@ -157,6 +170,25 @@ def _should_remove(element: Tag) -> bool:
     return False
 
 
+def _is_empty_container(element: Tag) -> bool:
+    """Check if element is an empty container (no text content).
+
+    Preserves elements with data-* attributes used for styling/markers.
+    """
+    # Only check div and span containers
+    if element.name not in ("div", "span"):
+        return False
+
+    # Preserve elements with data attributes (used for speaker/thinking markers)
+    attrs = element.attrs or {}
+    if any(k.startswith("data-") for k in attrs):
+        return False
+
+    # Get text content (strip whitespace)
+    text = element.get_text(strip=True)
+    return not text
+
+
 def remove_ui_chrome(html: str) -> str:
     """Remove UI chrome elements from HTML.
 
@@ -166,6 +198,7 @@ def remove_ui_chrome(html: str) -> str:
     - Action buttons (copy-button, share-button)
     - Small images (< 32px in either dimension)
     - Hidden elements (display: none)
+    - Empty containers left after removal
 
     Args:
         html: Raw HTML content.
@@ -185,5 +218,14 @@ def remove_ui_chrome(html: str) -> str:
 
     for element in elements_to_remove:
         element.decompose()
+
+    # Second pass: remove empty containers left behind
+    # Repeat until no more empty containers found (handles nested empties)
+    while True:
+        empty_elements = [el for el in soup.find_all(True) if _is_empty_container(el)]
+        if not empty_elements:
+            break
+        for element in empty_elements:
+            element.decompose()
 
     return str(soup)

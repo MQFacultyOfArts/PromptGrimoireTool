@@ -97,6 +97,12 @@ _PAGE_CSS = """
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;
     }
+
+    /* Hover highlight effect when card is hovered */
+    .word.card-hover-highlight {
+        outline: 2px solid #FFD700 !important;
+        outline-offset: 1px;
+    }
 """
 
 
@@ -301,6 +307,40 @@ async def _delete_highlight(
     _update_highlight_css(state)
 
 
+def _build_expandable_text(full_text: str) -> None:
+    """Build expandable text preview for annotation card.
+
+    Args:
+        full_text: The full highlighted text.
+    """
+    is_long = len(full_text) > 80
+    if is_long:
+        truncated_text = full_text[:80] + "..."
+        with ui.element("div").classes("mt-1"):
+            truncated_label = ui.label(f'"{truncated_text}"').classes(
+                "text-sm italic cursor-pointer"
+            )
+            full_label = ui.label(f'"{full_text}"').classes(
+                "text-sm italic cursor-pointer"
+            )
+            full_label.set_visibility(False)
+
+            def toggle_expand(
+                tl: ui.label = truncated_label, fl: ui.label = full_label
+            ) -> None:
+                if tl.visible:
+                    tl.set_visibility(False)
+                    fl.set_visibility(True)
+                else:
+                    tl.set_visibility(True)
+                    fl.set_visibility(False)
+
+            truncated_label.on("click", toggle_expand)
+            full_label.on("click", toggle_expand)
+    else:
+        ui.label(f'"{full_text}"').classes("text-sm italic mt-1")
+
+
 def _build_comments_section(
     state: PageState,
     highlight_id: str,
@@ -371,9 +411,7 @@ def _build_annotation_card(
     highlight_id = highlight.get("id", "")
     tag_str = highlight.get("tag", "highlight")
     author = highlight.get("author", "Unknown")
-    text = highlight.get("text", "")[:80]
-    if len(highlight.get("text", "")) > 80:
-        text += "..."
+    full_text = highlight.get("text", "")
 
     # Get word positions for scroll-sync positioning
     start_word = highlight.get("start_word", 0)
@@ -456,9 +494,9 @@ def _build_annotation_card(
             if para_ref:
                 ui.label(para_ref).classes("text-xs font-mono text-gray-400")
 
-        # Highlighted text preview
-        if text:
-            ui.label(f'"{text}"').classes("text-sm italic mt-1")
+        # Highlighted text preview - expandable if long
+        if full_text:
+            _build_expandable_text(full_text)
 
         # Comments section (extracted to reduce statement count)
         _build_comments_section(state, highlight_id, highlight.get("comments", []))
@@ -851,6 +889,34 @@ async def _render_document_with_highlights(
         "  var rePos = () => requestAnimationFrame(positionCards);\n"
         "  const obs = new MutationObserver(rePos);\n"
         "  obs.observe(annC, { childList: true, subtree: true });\n"
+        "  // Card hover -> highlight corresponding words\n"
+        "  let hoveredCard = null;\n"
+        "  function clearHover() {\n"
+        "    if (!hoveredCard) return;\n"
+        "    const sw = parseInt(hoveredCard.dataset.startWord);\n"
+        "    const ew = parseInt(hoveredCard.dataset.endWord) || sw;\n"
+        "    for (let i = sw; i < ew; i++) {\n"
+        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
+        "      if (w) w.classList.remove('card-hover-highlight');\n"
+        "    }\n"
+        "    hoveredCard = null;\n"
+        "  }\n"
+        "  annC.addEventListener('mouseover', function(e) {\n"
+        "    const card = e.target.closest('[data-start-word]');\n"
+        "    if (card === hoveredCard) return;\n"
+        "    clearHover();\n"
+        "    if (!card) return;\n"
+        "    hoveredCard = card;\n"
+        "    const sw = parseInt(card.dataset.startWord);\n"
+        "    const ew = parseInt(card.dataset.endWord) || sw;\n"
+        "    for (let i = sw; i < ew; i++) {\n"
+        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
+        "      if (w) w.classList.add('card-hover-highlight');\n"
+        "    }\n"
+        "  });\n"
+        "  annC.addEventListener('mouseleave', function() {\n"
+        "    clearHover();\n"
+        "  });\n"
         "})();"
     )
     # fmt: on

@@ -190,27 +190,44 @@ class TestConcurrentCollaboration:
         # User 1 creates highlight
         create_highlight(page1, 0, 1)
 
+        # Wait for card to appear and get the highlight ID for stable querying
+        ann_card_p1 = page1.locator("[data-testid='annotation-card']")
+        expect(ann_card_p1).to_be_visible(timeout=10000)
+
         # Wait for card to sync to user 2
         ann_card_p2 = page2.locator("[data-testid='annotation-card']")
         expect(ann_card_p2).to_be_visible(timeout=10000)
 
         # User 1 adds comment
-        ann_card_p1 = page1.locator("[data-testid='annotation-card']")
         comment_input_p1 = ann_card_p1.locator("input[placeholder*='comment']")
         expect(comment_input_p1).to_be_visible()
         comment_input_p1.fill("Comment from user 1")
         post_btn_p1 = ann_card_p1.locator("button", has_text="Post")
         post_btn_p1.click()
 
-        # Wait for comment to sync
+        # Wait for comment to appear in user 1's own view first (confirms post worked)
+        expect(ann_card_p1).to_contain_text("Comment from user 1", timeout=10000)
+
+        # Wait for comment to sync to user 2
         expect(ann_card_p2).to_contain_text("Comment from user 1", timeout=10000)
 
-        # User 2 adds comment
-        comment_input_p2 = ann_card_p2.locator("input[placeholder*='comment']")
+        # User 2 adds reply - re-query to get fresh element
+        comment_input_p2 = page2.locator(
+            "[data-testid='annotation-card'] input[placeholder*='comment']"
+        )
         expect(comment_input_p2).to_be_visible()
         comment_input_p2.fill("Reply from user 2")
-        post_btn_p2 = ann_card_p2.locator("button", has_text="Post")
+        post_btn_p2 = page2.locator(
+            "[data-testid='annotation-card'] button", has_text="Post"
+        )
         post_btn_p2.click()
 
+        # Wait for user 2's comment to appear in their own view first
+        expect(page2.locator("[data-testid='annotation-card']")).to_contain_text(
+            "Reply from user 2", timeout=10000
+        )
+
         # Both comments should be visible in user 1's view
-        expect(ann_card_p1).to_contain_text("Reply from user 2", timeout=10000)
+        expect(page1.locator("[data-testid='annotation-card']")).to_contain_text(
+            "Reply from user 2", timeout=10000
+        )

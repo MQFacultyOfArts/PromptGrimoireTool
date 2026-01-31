@@ -1,6 +1,9 @@
 """Tests for workspace-aware CRDT persistence.
 
 These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL.
+
+Workspace isolation: Each test creates its own workspace via UUID.
+No user creation needed - workspaces are standalone silos.
 """
 
 from __future__ import annotations
@@ -27,15 +30,10 @@ class TestWorkspacePersistence:
         """mark_dirty_workspace schedules save to Workspace."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace, get_workspace
 
         # Setup
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         # Create document and register
         doc = AnnotationDocument(f"ws-{workspace.id}")
@@ -68,14 +66,9 @@ class TestWorkspacePersistence:
         """Persisted workspace CRDT state preserves all highlights."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace, get_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         # Create document with highlights
         doc = AnnotationDocument(f"ws-{workspace.id}")
@@ -125,18 +118,13 @@ class TestWorkspaceLoading:
             AnnotationDocument,
             AnnotationDocumentRegistry,
         )
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             save_workspace_crdt_state,
         )
 
         # Setup: create workspace with persisted CRDT state
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         # Create and save initial state
         initial_doc = AnnotationDocument("initial")
@@ -166,14 +154,9 @@ class TestWorkspaceLoading:
     async def test_get_or_create_for_workspace_creates_empty_if_no_state(self) -> None:
         """Creates empty document if workspace has no CRDT state."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         registry = AnnotationDocumentRegistry()
         doc = await registry.get_or_create_for_workspace(workspace.id)
@@ -185,14 +168,9 @@ class TestWorkspaceLoading:
     async def test_get_or_create_for_workspace_caches_document(self) -> None:
         """Second call returns cached document."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         registry = AnnotationDocumentRegistry()
         doc1 = await registry.get_or_create_for_workspace(workspace.id)
@@ -205,14 +183,9 @@ class TestWorkspaceLoading:
         """Loaded document is registered with PersistenceManager."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         registry = AnnotationDocumentRegistry()
         doc = await registry.get_or_create_for_workspace(workspace.id)
@@ -230,15 +203,10 @@ class TestWorkspaceCRDTRoundTrip:
         """Complete workflow: create workspace, annotate, persist, reload."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
         # 1. Create workspace
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
         workspace_doc_id = str(uuid4())  # Simulated WorkspaceDocument ID
 
         # 2. Get document for workspace
@@ -299,14 +267,9 @@ class TestWorkspaceCRDTRoundTrip:
         """Can filter reloaded highlights by document_id."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
         from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         doc_a_id = str(uuid4())
         doc_b_id = str(uuid4())

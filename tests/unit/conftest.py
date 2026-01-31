@@ -28,15 +28,10 @@ def make_user():
 @pytest.fixture
 def make_workspace():
     """Factory for Workspace instances (not persisted)."""
-    from uuid import uuid4
-
     from promptgrimoire.db.models import Workspace
 
-    def _make(created_by: UUID | None = None, **kwargs):
-        return Workspace(
-            created_by=created_by or uuid4(),
-            **kwargs,
-        )
+    def _make(**kwargs):
+        return Workspace(**kwargs)
 
     return _make
 

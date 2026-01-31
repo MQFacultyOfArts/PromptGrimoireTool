@@ -1,6 +1,9 @@
 """Tests for workspace CRUD operations.
 
 These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL.
+
+Workspace isolation: Each test creates its own workspace via UUID.
+No user creation needed - workspaces are standalone silos.
 """
 
 from __future__ import annotations
@@ -23,36 +26,24 @@ class TestCreateWorkspace:
     """Tests for create_workspace."""
 
     @pytest.mark.asyncio
-    async def test_creates_workspace_with_user_reference(self) -> None:
-        """Workspace is created with created_by user."""
-        from promptgrimoire.db.users import create_user
+    async def test_creates_workspace(self) -> None:
+        """Workspace is created with auto-generated UUID."""
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         assert workspace.id is not None
-        assert workspace.created_by == user.id
         assert workspace.crdt_state is None
         assert workspace.created_at is not None
+        assert workspace.updated_at is not None
 
     @pytest.mark.asyncio
     async def test_creates_workspace_with_unique_id(self) -> None:
         """Each workspace gets a unique UUID."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-
-        ws1 = await create_workspace(created_by=user.id)
-        ws2 = await create_workspace(created_by=user.id)
+        ws1 = await create_workspace()
+        ws2 = await create_workspace()
 
         assert ws1.id != ws2.id
 
@@ -63,14 +54,9 @@ class TestGetWorkspace:
     @pytest.mark.asyncio
     async def test_returns_workspace_by_id(self) -> None:
         """Returns workspace when found."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import create_workspace, get_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         found = await get_workspace(workspace.id)
 
@@ -93,18 +79,13 @@ class TestDeleteWorkspace:
     @pytest.mark.asyncio
     async def test_deletes_workspace(self) -> None:
         """Workspace is deleted."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             delete_workspace,
             get_workspace,
         )
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         await delete_workspace(workspace.id)
 
@@ -126,15 +107,10 @@ class TestAddDocument:
     @pytest.mark.asyncio
     async def test_adds_document_to_workspace(self) -> None:
         """Document is created in workspace."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import add_document
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         doc = await add_document(
             workspace_id=workspace.id,
@@ -155,15 +131,10 @@ class TestAddDocument:
     @pytest.mark.asyncio
     async def test_auto_increments_order_index(self) -> None:
         """Documents get sequential order_index."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import add_document
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         doc1 = await add_document(
             workspace_id=workspace.id,
@@ -188,15 +159,10 @@ class TestListDocuments:
     @pytest.mark.asyncio
     async def test_returns_documents_ordered_by_order_index(self) -> None:
         """Documents returned in order_index order."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import add_document, list_documents
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         await add_document(
             workspace_id=workspace.id,
@@ -220,15 +186,10 @@ class TestListDocuments:
     @pytest.mark.asyncio
     async def test_returns_empty_list_for_empty_workspace(self) -> None:
         """Returns empty list when workspace has no documents."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import list_documents
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         docs = await list_documents(workspace.id)
 
@@ -241,7 +202,6 @@ class TestReorderDocuments:
     @pytest.mark.asyncio
     async def test_reorders_documents(self) -> None:
         """Documents are reordered to match provided order."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import (
             add_document,
             list_documents,
@@ -249,11 +209,7 @@ class TestReorderDocuments:
         )
         from promptgrimoire.db.workspaces import create_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
 
         doc1 = await add_document(
             workspace_id=workspace.id,
@@ -282,15 +238,10 @@ class TestCascadeDelete:
     @pytest.mark.asyncio
     async def test_deleting_workspace_deletes_documents(self) -> None:
         """Documents are deleted when workspace is deleted."""
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import add_document, list_documents
         from promptgrimoire.db.workspaces import create_workspace, delete_workspace
 
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
         workspace_id = workspace.id
 
         await add_document(
@@ -319,7 +270,6 @@ class TestTableclothPull:
         """AnnotationDocument data works identically after transfer to Workspace."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.db.annotation_state import save_state
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             get_workspace,
@@ -364,11 +314,7 @@ class TestTableclothPull:
         )
 
         # 3. Create NEW system workspace and store the SAME bytes
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
         await save_workspace_crdt_state(workspace.id, old_crdt_bytes)
 
         # 4. Load from NEW system
@@ -411,7 +357,6 @@ class TestTableclothPull:
     async def test_bytes_are_identical_roundtrip(self) -> None:
         """CRDT state bytes are byte-identical after roundtrip through Workspace."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             get_workspace,
@@ -430,11 +375,7 @@ class TestTableclothPull:
         original_bytes = doc.get_full_state()
 
         # Store in Workspace
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
         await save_workspace_crdt_state(workspace.id, original_bytes)
 
         # Retrieve
@@ -452,7 +393,6 @@ class TestTableclothPull:
     async def test_large_crdt_state_no_truncation(self) -> None:
         """Large CRDT state with many highlights is stored without truncation."""
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             get_workspace,
@@ -475,11 +415,7 @@ class TestTableclothPull:
         original_highlight_count = len(doc.get_all_highlights())
 
         # Store in Workspace
-        user = await create_user(
-            email=f"test-{uuid4().hex[:8]}@example.com",
-            display_name="Test User",
-        )
-        workspace = await create_workspace(created_by=user.id)
+        workspace = await create_workspace()
         await save_workspace_crdt_state(workspace.id, original_bytes)
 
         # Retrieve and verify no truncation

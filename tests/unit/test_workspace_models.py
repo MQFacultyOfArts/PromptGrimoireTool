@@ -14,14 +14,6 @@ class TestWorkspaceModel:
         assert workspace.id is not None
         assert isinstance(workspace.id, UUID)
 
-    def test_workspace_requires_created_by(self, make_workspace) -> None:
-        """Workspace must have created_by user reference."""
-        from uuid import uuid4
-
-        user_id = uuid4()
-        workspace = make_workspace(created_by=user_id)
-        assert workspace.created_by == user_id
-
     def test_workspace_crdt_state_is_optional(self, make_workspace) -> None:
         """crdt_state can be None for new workspaces."""
         workspace = make_workspace()

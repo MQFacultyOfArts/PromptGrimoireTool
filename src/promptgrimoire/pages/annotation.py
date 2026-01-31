@@ -295,11 +295,8 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
             css_rules.append(
                 f'[data-word-index="{word_idx}"]::after {{ '
                 f"content: ' '; "
-                f"background-color: {bg_rgba}; "
-                f"text-decoration: underline; "
-                f"text-decoration-color: {underline_color}; "
-                f"text-decoration-thickness: {thickness}; "
-                f"text-underline-offset: 2px; }}"
+                f"background-color: inherit; "
+                f"text-decoration: inherit; }}"
             )
 
     return "\n".join(css_rules)

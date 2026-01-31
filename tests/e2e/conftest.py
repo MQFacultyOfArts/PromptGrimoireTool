@@ -7,6 +7,7 @@ Provides standardized fixtures for test isolation:
 - fresh_page: Fresh browser context + page per test
 - authenticated_page: fresh_page pre-authenticated via mock auth
 - two_annotation_contexts: Two separate browser contexts viewing same workspace
+- two_authenticated_contexts: Two contexts with distinct user identities
 
 Workspace isolation: Each test creates its own workspace via the UI.
 No database user creation needed - mock auth handles authentication,
@@ -168,6 +169,60 @@ def two_annotation_contexts(
 
     try:
         yield page1, page2, workspace_id
+    finally:
+        context1.close()
+        context2.close()
+
+
+@pytest.fixture
+def two_authenticated_contexts(
+    browser: Browser, app_server: str
+) -> Generator[tuple[Page, Page, str, str, str]]:
+    """Two separate browser contexts with distinct authenticated users.
+
+    Unlike two_annotation_contexts which uses anonymous contexts,
+    this fixture creates contexts with different authenticated identities
+    to test user-specific features like attribution and presence.
+
+    Returns user emails so tests can verify user-specific attribution.
+
+    Yields:
+        tuple: (page1, page2, workspace_id, user1_email, user2_email)
+    """
+    from tests.e2e.annotation_helpers import setup_workspace_with_content
+
+    content = "Collaboration test word1 word2 word3 word4 word5"
+
+    # Generate unique emails for test isolation
+    user1_email = f"collab_user1_{uuid4().hex[:8]}@test.edu.au"
+    user2_email = f"collab_user2_{uuid4().hex[:8]}@test.edu.au"
+
+    # TWO contexts = two independent "browsers"
+    context1 = browser.new_context()
+    context2 = browser.new_context()
+    page1 = context1.new_page()
+    page2 = context2.new_page()
+
+    # Authenticate each with distinct mock token
+    page1.goto(f"{app_server}/auth/callback?token=mock-token-{user1_email}")
+    page1.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+    page2.goto(f"{app_server}/auth/callback?token=mock-token-{user2_email}")
+    page2.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+    # Page1 creates the workspace via UI
+    setup_workspace_with_content(page1, app_server, content)
+
+    # Extract workspace_id from page1's URL
+    workspace_id = _extract_workspace_id_from_url(page1.url)
+
+    # Page2 joins the same workspace
+    url = f"{app_server}/annotation?workspace_id={workspace_id}"
+    page2.goto(url)
+    page2.wait_for_selector("[data-word-index]", timeout=10000)
+
+    try:
+        yield page1, page2, workspace_id, user1_email, user2_email
     finally:
         context1.close()
         context2.close()

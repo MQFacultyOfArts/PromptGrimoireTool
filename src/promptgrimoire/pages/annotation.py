@@ -579,10 +579,8 @@ def _build_annotation_card(
     try:
         tag = BriefTag(tag_str)
         color = TAG_COLORS.get(tag, "#666")
-        tag_name = tag.value.replace("_", " ").title()
     except ValueError:
         color = "#666"
-        tag_name = tag_str.replace("_", " ").title()
 
     # Use ann-card-positioned for scroll-sync positioning (like live_annotation_demo)
     card = (
@@ -596,9 +594,42 @@ def _build_annotation_card(
     )
 
     with card:
-        # Header with tag name and action buttons
+        # Header with tag dropdown and action buttons
         with ui.row().classes("w-full justify-between items-center"):
-            ui.label(tag_name).classes("text-sm font-bold").style(f"color: {color};")
+            # Tag dropdown for changing tag type
+            tag_options = {t.value: t.value.replace("_", " ").title() for t in BriefTag}
+
+            async def on_tag_change(
+                e: Any,
+                hid: str = highlight_id,
+                crd: ui.card = card,
+            ) -> None:
+                new_tag = e.value
+                if state.crdt_doc and new_tag != tag_str:
+                    state.crdt_doc.update_highlight_tag(hid, new_tag)
+                    pm = get_persistence_manager()
+                    pm.mark_dirty_workspace(
+                        state.workspace_id,
+                        state.crdt_doc.doc_id,
+                        last_editor=state.user_name,
+                    )
+                    await pm.force_persist_workspace(state.workspace_id)
+                    if state.save_status:
+                        state.save_status.text = "Saved"
+                    _update_highlight_css(state)
+                    # Update card border color
+                    new_color = TAG_COLORS.get(BriefTag(new_tag), "#666")
+                    crd.style(f"border-left: 4px solid {new_color};")
+                    if state.broadcast_update:
+                        await state.broadcast_update()
+
+            ui.select(
+                tag_options,
+                value=tag_str,
+                on_change=on_tag_change,
+            ).props("dense borderless").classes("text-sm font-bold").style(
+                f"color: {color}; min-width: 120px;"
+            )
 
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it

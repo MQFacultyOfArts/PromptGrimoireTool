@@ -277,6 +277,30 @@ class AnnotationDocument:
         finally:
             _origin_var.reset(token)
 
+    def update_highlight_tag(
+        self, highlight_id: str, new_tag: str, origin_client_id: str | None = None
+    ) -> bool:
+        """Update a highlight's tag.
+
+        Args:
+            highlight_id: ID of the highlight to update.
+            new_tag: New tag value.
+            origin_client_id: Client making the change (for echo prevention).
+
+        Returns:
+            True if highlight was found and updated.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            if highlight_id in self.highlights:
+                hl_data = dict(self.highlights[highlight_id])
+                hl_data["tag"] = new_tag
+                self.highlights[highlight_id] = hl_data
+                return True
+            return False
+        finally:
+            _origin_var.reset(token)
+
     def get_highlight(self, highlight_id: str) -> dict[str, Any] | None:
         """Get a highlight by ID.
 

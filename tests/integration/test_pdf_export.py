@@ -7,6 +7,7 @@ Tests are skipped if dependencies are not available.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path as RealPath
 from typing import TYPE_CHECKING
 
 import pytest
@@ -18,6 +19,9 @@ from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+# Fixture paths for i18n tests
+FIXTURES_DIR = RealPath(__file__).parent.parent / "fixtures" / "conversations"
 
 
 def _has_pandoc() -> bool:
@@ -216,3 +220,79 @@ class TestMarginnoteExportPipeline:
         tex_content = tex_path.read_text()
         assert "Bob" in tex_content
         assert "Good catch" in tex_content
+
+
+@requires_pandoc
+@requires_latexmk
+class TestI18nPdfExport:
+    """Integration tests for multilingual PDF export (Issue #101)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "fixture_name",
+        [
+            "chinese_wikipedia",
+            "translation_japanese_sample",
+            "translation_korean_sample",
+            "translation_spanish_sample",
+        ],
+    )
+    async def test_export_i18n_fixture(self, tmp_path: Path, fixture_name: str) -> None:
+        """Export multilingual fixture to PDF without errors."""
+        fixture_path = FIXTURES_DIR / f"{fixture_name}.html"
+        if not fixture_path.exists():
+            pytest.skip(f"Fixture {fixture_name}.html not found")
+
+        html_content = fixture_path.read_text(encoding="utf-8")
+        # Strip HTML tags for raw content simulation
+        import re
+
+        text_content = re.sub(r"<[^>]+>", " ", html_content)
+        text_content = re.sub(r"\s+", " ", text_content).strip()
+
+        # Use first 2000 chars to keep test fast
+        text_content = text_content[:2000]
+
+        pdf_path = await export_annotation_pdf(
+            html_content=text_content,
+            highlights=[],
+            tag_colours={},
+            output_dir=tmp_path,
+            filename=fixture_name,
+        )
+
+        assert pdf_path.exists(), f"PDF not created for {fixture_name}"
+        assert pdf_path.stat().st_size > 0, f"PDF is empty for {fixture_name}"
+        # Verify PDF header
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", f"Invalid PDF header for {fixture_name}"
+
+    @pytest.mark.asyncio
+    async def test_export_cjk_with_highlight(self, tmp_path: Path) -> None:
+        """Export CJK content with highlight annotation."""
+        html = "这是中文测试文本。日本語のテスト。한국어 테스트."
+        highlights = [
+            {
+                "id": "h1",
+                "start_word": 0,
+                "end_word": 1,
+                "tag": "jurisdiction",
+                "text": "这是中文",
+                "author": "Tester",
+                "created_at": "2026-01-26T14:30:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+            filename="cjk_highlight_test",
+        )
+
+        assert pdf_path.exists()
+        assert pdf_path.stat().st_size > 0

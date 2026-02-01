@@ -39,3 +39,4 @@ output/
 
 # Git worktrees (parallel development)
 .worktrees/
+.playwright-mcp/

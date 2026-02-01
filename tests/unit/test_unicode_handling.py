@@ -228,6 +228,13 @@ class TestEscapeUnicodeLaTeX:
         # All C1 control chars stripped, text preserved
         assert result == "BeforeAfter"
 
+    def test_del_char_stripped(self) -> None:
+        """DEL character (0x7F) is stripped."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Before\x7fAfter")
+        assert result == "BeforeAfter"
+
 
 class TestUnicodePreamble:
     """Test LaTeX preamble for unicode support."""

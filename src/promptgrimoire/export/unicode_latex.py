@@ -106,6 +106,7 @@ def _strip_control_chars(text: str) -> str:
 
     Removes:
     - C0 controls: 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F (preserves tab, newline, CR)
+    - DEL: 0x7F
     - C1 controls: 0x80-0x9F (often misinterpreted as extended ASCII)
 
     These appear in BLNS test corpus and cause LaTeX compilation failures.
@@ -115,6 +116,9 @@ def _strip_control_chars(text: str) -> str:
         cp = ord(c)
         # Skip C0 controls except whitespace (tab, newline, CR)
         if cp < 0x20 and c not in "\t\n\r":
+            continue
+        # Skip DEL (0x7F)
+        if cp == 0x7F:
             continue
         # Skip C1 controls (0x80-0x9F)
         if 0x80 <= cp <= 0x9F:

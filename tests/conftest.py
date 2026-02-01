@@ -21,6 +21,73 @@ from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
 
+# =============================================================================
+# BLNS Corpus Parsing
+# =============================================================================
+
+type BLNSCorpus = dict[str, list[str]]
+
+
+def _parse_blns_by_category(blns_path: Path) -> BLNSCorpus:
+    """Parse blns.txt into {category: [strings]}.
+
+    Category headers are lines starting with '#\t' followed by title-case text
+    after a blank line. Explanatory comments (containing 'which') are skipped.
+    """
+    categories: BLNSCorpus = {}
+    current_category = "Uncategorized"
+    prev_blank = True
+
+    for line in blns_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+
+        # Track blank lines
+        if not stripped:
+            prev_blank = True
+            continue
+
+        # Check for category header: #\t followed by title-case, after blank
+        if line.startswith("#\t") and prev_blank:
+            header_text = line[2:].strip()
+            # Category names are Title Case, not explanations
+            if (
+                header_text
+                and header_text[0].isupper()
+                and "which" not in header_text.lower()
+            ):
+                current_category = header_text
+                categories.setdefault(current_category, [])
+        elif not line.startswith("#"):
+            # Non-comment line is a test string
+            categories.setdefault(current_category, []).append(line)
+
+        prev_blank = False
+
+    return categories
+
+
+# Load BLNS corpus at module level (once per test session)
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
+BLNS_BY_CATEGORY: BLNSCorpus = _parse_blns_by_category(_FIXTURES_DIR / "blns.txt")
+
+# Injection-related categories for always-run subset
+INJECTION_CATEGORIES = [
+    "Script Injection",
+    "SQL Injection",
+    "Server Code Injection",
+    "Command Injection (Unix)",
+    "Command Injection (Windows)",
+    "Command Injection (Ruby)",
+    "XXE Injection (XML)",
+    "Unwanted Interpolation",
+    "File Inclusion",
+    "jinja2 injection",
+]
+
+BLNS_INJECTION_SUBSET: list[str] = [
+    s for cat in INJECTION_CATEGORIES for s in BLNS_BY_CATEGORY.get(cat, [])
+]
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 

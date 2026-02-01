@@ -30,8 +30,7 @@ REQUIRED_PACKAGES = [
     "soul",  # Underlining/highlighting (fallback)
     # Unicode support (Issue #101)
     "emoji",  # Emoji rendering in LuaLaTeX
-    "luatexja",  # CJK support for LuaLaTeX
-    "notocjksc",  # Noto CJK Simplified Chinese fonts
+    "luatexja",  # CJK support for LuaLaTeX (uses system fonts via fontspec)
 ]
 
 

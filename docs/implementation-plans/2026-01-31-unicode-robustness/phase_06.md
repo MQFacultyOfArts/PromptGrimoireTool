@@ -320,7 +320,7 @@ class TestDBUnicodeRoundtrip:
     async def test_unicode_in_user_display_name(self, text: str) -> None:
         """Unicode text stored in User.display_name is preserved."""
         from promptgrimoire.db.models import User
-        from promptgrimoire.db.session import get_session
+        from promptgrimoire.db import get_session
 
         unique_email = f"test-unicode-{uuid4()}@example.com"
 
@@ -341,7 +341,7 @@ class TestDBUnicodeRoundtrip:
     async def test_sql_injection_strings_safe(self, text: str) -> None:
         """BLNS SQL injection strings stored safely via SQLModel."""
         from promptgrimoire.db.models import User
-        from promptgrimoire.db.session import get_session
+        from promptgrimoire.db import get_session
 
         unique_email = f"test-injection-{uuid4()}@example.com"
 

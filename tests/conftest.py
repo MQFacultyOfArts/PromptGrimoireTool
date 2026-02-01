@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
+import emoji as emoji_lib
 import pytest
 from dotenv import load_dotenv
 
@@ -87,6 +88,64 @@ INJECTION_CATEGORIES = [
 BLNS_INJECTION_SUBSET: list[str] = [
     s for cat in INJECTION_CATEGORIES for s in BLNS_BY_CATEGORY.get(cat, [])
 ]
+
+# =============================================================================
+# Unicode Test Fixtures (derived from BLNS corpus)
+# =============================================================================
+
+
+def _is_cjk_codepoint(cp: int) -> bool:
+    """Check if codepoint is in a CJK range."""
+    return (
+        # CJK Unified Ideographs
+        (0x4E00 <= cp <= 0x9FFF)
+        # Hiragana
+        or (0x3040 <= cp <= 0x309F)
+        # Katakana
+        or (0x30A0 <= cp <= 0x30FF)
+        # Hangul Syllables
+        or (0xAC00 <= cp <= 0xD7AF)
+        # CJK Unified Ideographs Extension A
+        or (0x3400 <= cp <= 0x4DBF)
+    )
+
+
+def _extract_cjk_chars_from_blns() -> list[str]:
+    """Extract individual CJK characters from BLNS Two-Byte Characters category.
+
+    Returns unique CJK characters for parameterized testing.
+    """
+    cjk_chars: set[str] = set()
+    for s in BLNS_BY_CATEGORY.get("Two-Byte Characters", []):
+        for char in s:
+            if _is_cjk_codepoint(ord(char)):
+                cjk_chars.add(char)
+    return sorted(cjk_chars)
+
+
+def _extract_emoji_from_blns() -> list[str]:
+    """Extract individual emoji from BLNS Emoji category.
+
+    Returns unique emoji strings (including ZWJ sequences) for parameterized testing.
+    """
+    emoji_set: set[str] = set()
+    for s in BLNS_BY_CATEGORY.get("Emoji", []):
+        # Use emoji library to find all emoji in the string
+        for match in emoji_lib.emoji_list(s):
+            emoji_set.add(match["emoji"])
+    return sorted(emoji_set)
+
+
+# Extracted test data from BLNS corpus
+CJK_TEST_CHARS: list[str] = _extract_cjk_chars_from_blns()
+EMOJI_TEST_STRINGS: list[str] = _extract_emoji_from_blns()
+
+# ASCII strings for negative testing (from BLNS Reserved Strings)
+ASCII_TEST_STRINGS: list[str] = [
+    s
+    for s in BLNS_BY_CATEGORY.get("Reserved Strings", [])
+    if s.isascii() and len(s) > 0
+][:10]  # Take first 10
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator

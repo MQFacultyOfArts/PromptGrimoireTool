@@ -1,11 +1,12 @@
 """HTML normaliser for Pandoc preprocessing.
 
-Wraps styled <p> tags in <div> wrappers so Pandoc preserves the style attributes.
-Pandoc's HTML reader converts <p> to Para and discards style attributes, but
-preserves attributes on <div> elements when using +native_divs.
+Provides HTML sanitization and normalization for the PDF export pipeline:
+- strip_scripts_and_styles: Remove <script>, <style>, and noscript content
+- normalise_styled_paragraphs: Wrap styled <p> tags for Pandoc attribute preservation
+- fix_midword_font_splits: Fix LibreOffice RTF mid-word font tag splits
 
-Also fixes mid-word font tag splits from LibreOffice RTF export, e.g.:
-  "(S</font><font><i>entencing" -> "(<i>Sentencing"
+These functions handle browser copy-paste content which may contain JavaScript,
+CSS, and other non-content elements that shouldn't appear in PDFs.
 """
 
 from __future__ import annotations
@@ -14,6 +15,82 @@ import re
 
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
+
+
+def strip_scripts_and_styles(html_content: str) -> str:
+    """Remove script, style, and noscript elements from HTML.
+
+    When users copy-paste from browsers, the HTML may include:
+    - <script> tags with JavaScript code
+    - <style> tags with CSS
+    - <noscript> fallback content
+    - Inline event handlers (onclick, etc.)
+
+    This function removes these non-content elements before PDF export.
+
+    Args:
+        html_content: HTML string, potentially from browser copy-paste.
+
+    Returns:
+        HTML with script/style elements and their content removed.
+    """
+    if not html_content or not html_content.strip():
+        return html_content
+
+    try:
+        # Parse HTML - lxml handles malformed HTML gracefully
+        tree = lxml_html.fromstring(html_content)
+    except Exception:
+        # If parsing fails completely, try regex fallback
+        return _strip_scripts_regex_fallback(html_content)
+
+    # Remove script, style, noscript elements and their content
+    for tag in ("script", "style", "noscript"):
+        for element in tree.xpath(f"//{tag}"):
+            parent = element.getparent()
+            if parent is not None:
+                # Preserve tail text (text after the element)
+                if element.tail:
+                    prev = element.getprevious()
+                    if prev is not None:
+                        prev.tail = (prev.tail or "") + element.tail
+                    else:
+                        parent.text = (parent.text or "") + element.tail
+                parent.remove(element)
+
+    # Remove inline event handlers (onclick, onload, etc.)
+    for element in tree.iter():
+        if hasattr(element, "attrib"):
+            attrs_to_remove = [
+                attr for attr in element.attrib if attr.lower().startswith("on")
+            ]
+            for attr in attrs_to_remove:
+                del element.attrib[attr]
+
+    return lxml_html.tostring(tree, encoding="unicode")
+
+
+def _strip_scripts_regex_fallback(html_content: str) -> str:
+    """Regex fallback for stripping scripts when lxml parsing fails.
+
+    Less robust than DOM-based stripping but handles severely malformed HTML.
+    """
+    # Remove script tags and content
+    html_content = re.sub(
+        r"<script[^>]*>.*?</script>", "", html_content, flags=re.DOTALL | re.IGNORECASE
+    )
+    # Remove style tags and content
+    html_content = re.sub(
+        r"<style[^>]*>.*?</style>", "", html_content, flags=re.DOTALL | re.IGNORECASE
+    )
+    # Remove noscript tags and content
+    html_content = re.sub(
+        r"<noscript[^>]*>.*?</noscript>",
+        "",
+        html_content,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return html_content
 
 
 def _wrap_styled_paragraph(p: HtmlElement) -> HtmlElement:

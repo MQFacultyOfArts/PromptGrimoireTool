@@ -37,6 +37,7 @@ from pylatexenc.latexwalker import (
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
+    strip_scripts_and_styles,
 )
 from promptgrimoire.export.unicode_latex import (
     UNICODE_PREAMBLE,
@@ -1042,6 +1043,9 @@ def convert_html_with_annotations(
         len(highlights),
         [h.get("id", "")[:8] for h in highlights],
     )
+    # Strip script/style tags from browser copy-paste content
+    html = strip_scripts_and_styles(html)
+
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
 

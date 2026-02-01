@@ -1,0 +1,82 @@
+# Serena Project Configuration for PromptGrimoireTool
+# See: https://oraios.github.io/serena/02-usage/050_configuration.html
+
+# Project identifier for activation via activate_project tool
+project_name: "PromptGrimoireTool"
+
+# Languages for which language servers are started
+# For JavaScript, use typescript. For C, use cpp.
+# First language is the default fallback.
+# Full list: https://github.com/oraios/serena/blob/main/src/solidlsp/ls_config.py
+languages:
+  - python
+  - typescript
+
+# File encoding (UTF-8 for this project)
+encoding: "utf-8"
+
+# Respect .gitignore patterns
+ignore_all_files_in_gitignore: true
+
+# Additional paths to ignore (gitignore syntax)
+ignored_paths:
+  - ".worktrees/**"  # Git worktrees are separate projects; don't index them from main
+
+# Read-only mode disabled - editing is allowed
+read_only: false
+
+# Tools Configuration
+# Full list: uv run scripts/print_tool_overview.py (in serena repo)
+# Recommended: don't exclude tools unless you have specific reasons
+excluded_tools: []
+included_optional_tools: []
+fixed_tools: []
+
+# Mode Configuration
+# Available modes: editing, interactive, planning, one-shot, onboarding, no-onboarding, no-memories
+#
+# base_modes: Always active (cannot be overridden by CLI)
+# default_modes: Active by default (can be overridden by CLI --mode)
+#
+# Serena defaults to [interactive, editing] which suits this project.
+# We explicitly set them here to ensure consistent startup behavior.
+
+base_modes:
+  - editing       # Always allow editing - this is a development project
+
+default_modes:
+  - interactive   # Conversational back-and-forth by default
+
+# Initial prompt passed to LLM when project is activated
+# This supplements CLAUDE.md - keep it brief and focused on Serena-specific behaviour
+initial_prompt: |
+  This is PromptGrimoireTool, a NiceGUI + Python web application.
+
+  Key points:
+  - Use symbolic tools (find_symbol, get_symbols_overview) before reading full files
+  - Prefer replace_symbol_body and insert_after_symbol for code changes
+  - TDD is mandatory - write tests first
+  - Run `uv run test-debug` to verify changes (stops at first failure)
+
+  Read CLAUDE.md for full project conventions.
+
+# =============================================================================
+# WORKTREE USAGE NOTES
+# =============================================================================
+# When using git worktrees (recommended for parallel feature development):
+#
+# 1. Create worktree: git worktree add .worktrees/feature-name main
+#
+# 2. Copy Serena cache to avoid re-indexing:
+#    cp -r .serena/cache .worktrees/feature-name/.serena/cache
+#
+# 3. Register worktree as separate project in serena_config.yml or via:
+#    Ask Serena to "activate project at .worktrees/feature-name"
+#
+# 4. Each worktree has its own .serena/memories - they don't share state
+#
+# Benefits of worktrees:
+# - Isolated changes without switching branches
+# - Parallel work on multiple features
+# - Keep main branch clean while experimenting
+# =============================================================================

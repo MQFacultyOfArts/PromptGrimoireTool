@@ -14,6 +14,16 @@ UNICODE_PREAMBLE = r"""
 \usepackage[match]{luatexja-fontspec}
 \usepackage{emoji}
 
+% Define font fallback chain BEFORE loading fonts
+% Order: Gentium (extended Latin, Greek, Cyrillic), Hebrew, Arabic
+\directlua{
+  luaotfload.add_fallback("mainfallback", {
+    "Gentium:mode=node;",
+    "Noto Serif Hebrew:mode=node;script=hebr;",
+    "Noto Naskh Arabic:mode=node;script=arab;",
+  })
+}
+
 % CJK font setup - Noto fonts for broad unicode coverage
 \newjfontfamily\notocjk{Noto Sans CJK SC}
 
@@ -22,6 +32,9 @@ UNICODE_PREAMBLE = r"""
 
 % Emoji font setup
 \setemojifont{Noto Color Emoji}
+
+% Main font: TeX Gyre Termes with fallback chain
+\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]
 
 % Fallback for emoji not in LaTeX emoji package
 % Can't use Noto Color Emoji directly (CBDT format not supported by LuaLaTeX)

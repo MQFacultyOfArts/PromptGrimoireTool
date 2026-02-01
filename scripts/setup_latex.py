@@ -32,6 +32,7 @@ REQUIRED_PACKAGES = [
     "emoji",  # Emoji rendering in LuaLaTeX
     "luatexja",  # CJK support for LuaLaTeX
     "haranoaji",  # Default Japanese fonts for luatexja-fontspec
+    "gentium-sil",  # Wide Unicode coverage fallback font
 ]
 
 

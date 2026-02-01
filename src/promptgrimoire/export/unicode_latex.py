@@ -203,6 +203,7 @@ def _is_latex_safe_char(c: str) -> bool:
     - C1 controls (0x80-0x9F)
     - Surrogates (0xD800-0xDFFF) - invalid in UTF-8 anyway
     - Noncharacters (0xFFFE, 0xFFFF, and last 2 codepoints of each plane)
+    - Line/paragraph separators (U+2028, U+2029) - break LaTeX parsing
 
     Returns True if the character can be safely included in LaTeX source.
     """
@@ -217,19 +218,50 @@ def _is_latex_safe_char(c: str) -> bool:
     is_c1 = 0x80 <= cp <= 0x9F
     is_surrogate = 0xD800 <= cp <= 0xDFFF
     is_nonchar = (cp & 0xFFFF) >= 0xFFFE
+    # Line/paragraph separators break LaTeX
+    is_line_sep = cp in (0x2028, 0x2029)
 
-    return not (is_del or is_c1 or is_surrogate or is_nonchar)
+    return not (is_del or is_c1 or is_surrogate or is_nonchar or is_line_sep)
+
+
+# Unicode spaces to normalize to ASCII space
+_UNICODE_SPACES = frozenset(
+    [
+        "\u1680",  # Ogham Space Mark
+        "\u2000",  # En Quad
+        "\u2001",  # Em Quad
+        "\u2002",  # En Space
+        "\u2003",  # Em Space
+        "\u2004",  # Three-Per-Em Space
+        "\u2005",  # Four-Per-Em Space
+        "\u2006",  # Six-Per-Em Space
+        "\u2007",  # Figure Space
+        "\u2008",  # Punctuation Space
+        "\u2009",  # Thin Space
+        "\u200a",  # Hair Space
+        "\u202f",  # Narrow No-Break Space
+        "\u205f",  # Medium Mathematical Space
+        "\u3000",  # Ideographic Space
+    ]
+)
 
 
 def _strip_control_chars(text: str) -> str:
-    """Strip characters that are invalid in LaTeX.
+    """Strip/normalize characters that are problematic for LaTeX.
 
-    Removes control characters and other problematic Unicode that cause
-    'Text line contains an invalid character' LaTeX errors.
+    - Removes control characters that cause 'invalid character' errors
+    - Normalizes exotic Unicode spaces to ASCII space
 
     See _is_latex_safe_char() for the complete list of filtered characters.
     """
-    return "".join(c for c in text if _is_latex_safe_char(c))
+    result = []
+    for c in text:
+        if c in _UNICODE_SPACES:
+            result.append(" ")  # Normalize to ASCII space
+        elif _is_latex_safe_char(c):
+            result.append(c)
+        # else: drop the character
+    return "".join(result)
 
 
 def _escape_ascii_special(text: str) -> str:

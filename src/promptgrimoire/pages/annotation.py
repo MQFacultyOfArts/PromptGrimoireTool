@@ -1404,10 +1404,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         _update_user_count(state)
 
         # Export PDF button
+        async def on_export_click() -> None:
+            await _handle_pdf_export(state, workspace_id)
+
         ui.button(
             "Export PDF",
             icon="picture_as_pdf",
-            on_click=lambda: _handle_pdf_export(state, workspace_id),
+            on_click=on_export_click,
         ).props("color=primary")
 
     # Load CRDT document for this workspace

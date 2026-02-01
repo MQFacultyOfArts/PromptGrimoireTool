@@ -3,6 +3,22 @@
 
 Installs TinyTeX and required LaTeX packages for the annotation PDF export feature.
 Run with: uv run python scripts/setup_latex.py
+
+System font requirements (install via OS package manager):
+- Noto Serif CJK SC (and other CJK variants)
+- Noto Serif (Hebrew, Devanagari, Bengali, Tamil, Thai, Georgian, Armenian, etc.)
+- Noto Sans Symbols, Noto Sans Symbols2, Noto Sans Math
+- Noto Color Emoji
+
+Ubuntu/Debian:
+    sudo apt install fonts-noto fonts-noto-cjk fonts-noto-cjk-extra \\
+        fonts-noto-color-emoji
+
+Fedora:
+    sudo dnf install google-noto-fonts-all google-noto-emoji-fonts
+
+Arch:
+    sudo pacman -S noto-fonts noto-fonts-cjk noto-fonts-emoji noto-fonts-extra
 """
 
 from __future__ import annotations
@@ -17,7 +33,7 @@ TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
 TLMGR = TINYTEX_BIN / "tlmgr"
 LATEXMK = TINYTEX_BIN / "latexmk"
 
-# Packages required for PDF export
+# Packages required for PDF export (from TeX Live)
 REQUIRED_PACKAGES = [
     "lua-ul",  # Highlighting with LuaLaTeX
     "fontspec",  # System font support
@@ -32,7 +48,28 @@ REQUIRED_PACKAGES = [
     "emoji",  # Emoji rendering in LuaLaTeX
     "luatexja",  # CJK support for LuaLaTeX
     "haranoaji",  # Default Japanese fonts for luatexja-fontspec
-    "gentium-sil",  # Wide Unicode coverage fallback font
+]
+
+# Required system fonts (installed via OS, not TinyTeX)
+# These are accessed via fontspec/luatexja-fontspec
+REQUIRED_SYSTEM_FONTS = [
+    # Main font (TNR equivalent)
+    "TeX Gyre Termes",
+    # CJK fonts (at least one variant needed)
+    "Noto Serif CJK SC",
+    "Noto Sans CJK SC",
+    # Script-specific fonts for fallback chain
+    "Noto Serif",
+    "Noto Serif Hebrew",
+    "Noto Naskh Arabic",
+    "Noto Serif Devanagari",
+    "Noto Serif Bengali",
+    "Noto Serif Tamil",
+    "Noto Serif Thai",
+    # Symbols and emoji
+    "Noto Sans Symbols",
+    "Noto Sans Symbols2",
+    "Noto Color Emoji",
 ]
 
 
@@ -100,11 +137,58 @@ def verify_installation() -> bool:
     return True
 
 
+def check_system_fonts() -> list[str]:
+    """Check for required system fonts using fc-list.
+
+    Returns list of missing font families.
+    """
+    print("Checking system fonts...")
+
+    # Get list of installed fonts
+    result = subprocess.run(
+        ["fc-list", ":", "family"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        print("  Warning: fc-list not available, skipping font check")
+        return []
+
+    installed = set(result.stdout.replace("\n", ",").split(","))
+    installed = {f.strip() for f in installed if f.strip()}
+
+    missing = []
+    for font in REQUIRED_SYSTEM_FONTS:
+        # Check if font family is installed (partial match for variants)
+        if not any(font in f for f in installed):
+            missing.append(font)
+        else:
+            print(f"  ✓ {font}")
+
+    return missing
+
+
 def main() -> int:
     """Main entry point."""
     print("TinyTeX Setup for PromptGrimoire PDF Export")
     print("=" * 50)
 
+    # Check system fonts first
+    print()
+    missing_fonts = check_system_fonts()
+    if missing_fonts:
+        print()
+        print("WARNING: Missing system fonts for full Unicode support:")
+        for font in missing_fonts:
+            print(f"  - {font}")
+        print()
+        print("Install with your package manager. See docstring for commands.")
+        print()
+
+    # Install TinyTeX
+    print()
     if is_tinytex_installed():
         print(f"TinyTeX already installed at {TINYTEX_DIR}")
     else:
@@ -123,6 +207,9 @@ def main() -> int:
     print("Setup complete!")
     print(f"latexmk path: {LATEXMK}")
     print()
+    if missing_fonts:
+        print("WARNING: Some system fonts are missing - see above for details.")
+        print()
     print("Note: First compilation with CJK fonts may use ~6GB RAM")
     print("for font cache generation. Subsequent compilations are faster.")
     return 0

@@ -101,6 +101,15 @@ _LATEX_SPECIAL_CHARS = [
 ]
 
 
+def _strip_control_chars(text: str) -> str:
+    """Strip ASCII control characters that are invalid in LaTeX.
+
+    Removes characters 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F.
+    Preserves tab (0x09), newline (0x0A), carriage return (0x0D).
+    """
+    return "".join(c for c in text if ord(c) >= 0x20 or c in "\t\n\r")
+
+
 def _escape_ascii_special(text: str) -> str:
     """Escape ASCII special characters for LaTeX."""
     for char, replacement in _LATEX_SPECIAL_CHARS:
@@ -111,6 +120,7 @@ def _escape_ascii_special(text: str) -> str:
 def escape_unicode_latex(text: str) -> str:
     """Escape text for LaTeX with unicode handling.
 
+    - ASCII control characters (0x00-0x1F except whitespace) are stripped
     - ASCII special characters (& % $ # _ { } ~ ^) are escaped
     - CJK text is wrapped in \\cjktext{} command
     - Emoji are wrapped in \\emoji{} command with name format
@@ -123,6 +133,9 @@ def escape_unicode_latex(text: str) -> str:
     """
     if not text:
         return text
+
+    # Strip control characters that are invalid in LaTeX
+    text = _strip_control_chars(text)
 
     # First, identify emoji spans (must do before any modifications)
     emoji_spans = get_emoji_spans(text)

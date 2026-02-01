@@ -69,3 +69,86 @@ def get_emoji_spans(text: str) -> list[tuple[int, int, str]]:
     """
     matches = emoji_lib.emoji_list(text)
     return [(m["match_start"], m["match_end"], m["emoji"]) for m in matches]
+
+
+# ASCII special characters for LaTeX escaping
+_LATEX_SPECIAL_CHARS = [
+    ("\\", r"\textbackslash{}"),
+    ("&", r"\&"),
+    ("%", r"\%"),
+    ("$", r"\$"),
+    ("#", r"\#"),
+    ("_", r"\_"),
+    ("{", r"\{"),
+    ("}", r"\}"),
+    ("~", r"\textasciitilde{}"),
+    ("^", r"\textasciicircum{}"),
+]
+
+
+def _escape_ascii_special(text: str) -> str:
+    """Escape ASCII special characters for LaTeX."""
+    for char, replacement in _LATEX_SPECIAL_CHARS:
+        text = text.replace(char, replacement)
+    return text
+
+
+def escape_unicode_latex(text: str) -> str:
+    """Escape text for LaTeX with unicode handling.
+
+    - ASCII special characters (& % $ # _ { } ~ ^) are escaped
+    - CJK text is wrapped in \\cjktext{} command
+    - Emoji are wrapped in \\emoji{} command with name format
+
+    Args:
+        text: Input text potentially containing unicode.
+
+    Returns:
+        LaTeX-safe string with appropriate wrapping.
+    """
+    if not text:
+        return text
+
+    # First, identify emoji spans (must do before any modifications)
+    emoji_spans = get_emoji_spans(text)
+
+    # Build result by processing character by character
+    result: list[str] = []
+    i = 0
+    cjk_buffer: list[str] = []
+
+    def flush_cjk() -> None:
+        """Flush accumulated CJK characters as wrapped command."""
+        if cjk_buffer:
+            escaped = _escape_ascii_special("".join(cjk_buffer))
+            result.append(f"\\cjktext{{{escaped}}}")
+            cjk_buffer.clear()
+
+    while i < len(text):
+        # Check if we're at an emoji span
+        emoji_match = None
+        for start, end, emoji_char in emoji_spans:
+            if i == start:
+                emoji_match = (end, emoji_char)
+                break
+
+        if emoji_match:
+            flush_cjk()
+            end, emoji_char = emoji_match
+            # Convert emoji to name using emoji library
+            emoji_name = emoji_lib.demojize(emoji_char, delimiters=("", ""))
+            # Remove colons if present and convert to LaTeX emoji format
+            emoji_name = emoji_name.strip(":").replace("_", "-")
+            result.append(f"\\emoji{{{emoji_name}}}")
+            i = end
+        elif is_cjk(text[i]):
+            cjk_buffer.append(text[i])
+            i += 1
+        else:
+            flush_cjk()
+            # Escape ASCII special chars
+            result.append(_escape_ascii_special(text[i]))
+            i += 1
+
+    flush_cjk()
+    return "".join(result)

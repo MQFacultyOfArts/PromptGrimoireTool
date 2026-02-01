@@ -129,3 +129,61 @@ class TestGetEmojiSpans:
         assert len(spans) == expected_count, (
             f"Expected {expected_count} emoji in {blns_emoji_line!r}, got {len(spans)}"
         )
+
+
+class TestEscapeUnicodeLaTeX:
+    """Test unicode-aware LaTeX escaping."""
+
+    def test_ascii_special_chars_escaped(self) -> None:
+        """ASCII special characters are escaped."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        assert escape_unicode_latex("a & b") == r"a \& b"
+        assert escape_unicode_latex("100%") == r"100\%"
+        assert escape_unicode_latex("$10") == r"\$10"
+
+    def test_cjk_wrapped_in_font_command(self) -> None:
+        """CJK text is wrapped in \\cjktext{} command."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Hello 世界")
+        assert "\\cjktext{世界}" in result
+        assert "Hello " in result
+
+    def test_multiple_cjk_runs_wrapped_separately(self) -> None:
+        """Multiple CJK runs are wrapped separately."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("A 世界 B 中文 C")
+        assert result.count("\\cjktext{") == 2
+
+    def test_mixed_cjk_scripts(self) -> None:
+        """Different CJK scripts (Chinese, Japanese, Korean) wrapped."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("日本語 한글 中文")
+        # All should be wrapped (language-agnostic for now)
+        assert "\\cjktext{" in result
+
+    def test_emoji_wrapped_in_emoji_command(self) -> None:
+        """Emoji is wrapped in \\emoji{} command."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Test 🎉!")
+        # Emoji library converts to name format
+        assert "\\emoji{" in result
+
+    def test_pure_ascii_unchanged(self) -> None:
+        """Pure ASCII without special chars passes through."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        assert escape_unicode_latex("Hello world") == "Hello world"
+
+    def test_mixed_cjk_emoji_ascii(self) -> None:
+        """Mixed content handles all types correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Hello 世界 🎉!")
+        assert "\\cjktext{世界}" in result
+        assert "\\emoji{" in result
+        assert "Hello " in result

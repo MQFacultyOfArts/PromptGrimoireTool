@@ -38,7 +38,11 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
-from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE, escape_unicode_latex
+from promptgrimoire.export.unicode_latex import (
+    UNICODE_PREAMBLE,
+    _strip_control_chars,
+    escape_unicode_latex,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1040,6 +1044,10 @@ def convert_html_with_annotations(
     )
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
+
+    # Strip ASCII control characters that are invalid in LaTeX
+    # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)
+    html = _strip_control_chars(html)
 
     # Insert markers
     marked_html, marker_highlights = _insert_markers_into_html(html, highlights)

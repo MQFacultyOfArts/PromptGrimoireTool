@@ -38,7 +38,7 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
-from promptgrimoire.export.unicode_latex import escape_unicode_latex
+from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE, escape_unicode_latex
 
 logger = logging.getLogger(__name__)
 
@@ -567,7 +567,10 @@ def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
         Complete LaTeX preamble string.
     """
     colour_defs = generate_tag_colour_definitions(tag_colours)
-    return f"\\usepackage{{xcolor}}\n{colour_defs}\n{ANNOTATION_PREAMBLE_BASE}"
+    return (
+        f"\\usepackage{{xcolor}}\n{colour_defs}\n"
+        f"{UNICODE_PREAMBLE}\n{ANNOTATION_PREAMBLE_BASE}"
+    )
 
 
 def _escape_latex(text: str) -> str:

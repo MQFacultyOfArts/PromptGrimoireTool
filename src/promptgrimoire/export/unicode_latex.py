@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import emoji as emoji_lib
+
 
 def is_cjk(char: str) -> bool:
     """Check if a single character is CJK (Chinese, Japanese, Korean).
@@ -36,3 +38,20 @@ def is_cjk(char: str) -> bool:
         # CJK Unified Ideographs Extension A
         or (0x3400 <= cp <= 0x4DBF)
     )
+
+
+def is_emoji(text: str) -> bool:
+    """Check if text is a single emoji (including ZWJ sequences).
+
+    Uses the emoji library to correctly handle:
+    - Single codepoint emoji
+    - Emoji with skin tone modifiers
+    - ZWJ sequences (family, profession emoji)
+
+    Args:
+        text: Text to check.
+
+    Returns:
+        True if text is exactly one RGI emoji, False otherwise.
+    """
+    return emoji_lib.is_emoji(text)

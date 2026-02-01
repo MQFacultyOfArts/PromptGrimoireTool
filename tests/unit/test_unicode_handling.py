@@ -42,3 +42,35 @@ class TestIsCJK:
 
         assert not is_cjk("世界")  # Two CJK chars
         assert not is_cjk("AB")  # Two ASCII chars
+
+
+class TestIsEmoji:
+    """Test emoji detection using BLNS-derived fixtures."""
+
+    @pytest.mark.parametrize("emoji", EMOJI_TEST_STRINGS)
+    def test_detects_emoji_from_blns(self, emoji: str) -> None:
+        """Detects emoji extracted from BLNS Emoji category."""
+        from promptgrimoire.export.unicode_latex import is_emoji
+
+        assert is_emoji(emoji), f"Failed to detect emoji: {emoji!r}"
+
+    @pytest.mark.parametrize("text", ASCII_TEST_STRINGS)
+    def test_ascii_not_emoji(self, text: str) -> None:
+        """ASCII strings from BLNS are not emoji."""
+        from promptgrimoire.export.unicode_latex import is_emoji
+
+        assert not is_emoji(text), f"ASCII detected as emoji: {text!r}"
+
+    @pytest.mark.parametrize("char", CJK_TEST_CHARS[:10])
+    def test_cjk_not_emoji(self, char: str) -> None:
+        """CJK characters from BLNS are not emoji."""
+        from promptgrimoire.export.unicode_latex import is_emoji
+
+        assert not is_emoji(char), f"CJK detected as emoji: {char!r}"
+
+    def test_multiple_separate_emoji_not_single(self) -> None:
+        """Multiple separate emoji is not a single emoji."""
+        from promptgrimoire.export.unicode_latex import is_emoji
+
+        assert not is_emoji("🎉🎊")  # Two separate emoji
+        assert not is_emoji("😀😃")  # Two separate emoji

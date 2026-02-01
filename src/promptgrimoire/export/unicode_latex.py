@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import functools
+import re
+import subprocess
+from pathlib import Path
+
 import emoji as emoji_lib
 
 UNICODE_PREAMBLE = r"""
@@ -17,7 +22,76 @@ UNICODE_PREAMBLE = r"""
 
 % Emoji font setup
 \setemojifont{Noto Color Emoji}
+
+% Fallback for emoji not in LaTeX emoji package
+\newfontfamily\emojifallback{Noto Color Emoji}
+\newcommand{\emojifallbackchar}[1]{{\emojifallback #1}}
 """
+
+
+@functools.cache
+def _load_latex_emoji_names() -> frozenset[str]:
+    """Load valid emoji names from LaTeX emoji package.
+
+    Parses emoji-table.def to extract all valid emoji names and aliases.
+    Returns empty set if the file cannot be found or parsed.
+    """
+    try:
+        result = subprocess.run(
+            ["kpsewhich", "emoji-table.def"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        table_path = result.stdout.strip()
+        if not table_path:
+            return frozenset()
+
+        # Parse emoji definitions: \__emoji_def:nnnnn {unicode} {name} {aliases} ...
+        # Field 2 = primary name, Field 3 = comma-separated aliases
+        pattern = re.compile(
+            r"\\__emoji_def:nnnnn\s*\{[^}]*\}\s*\{([^}]*)\}\s*\{([^}]*)\}"
+        )
+
+        names: set[str] = set()
+        with Path(table_path).open(encoding="utf-8") as f:
+            for line in f:
+                match = pattern.search(line)
+                if match:
+                    primary = match.group(1).strip()
+                    aliases = match.group(2).strip()
+                    if primary:
+                        names.add(primary)
+                    for alias in aliases.split(","):
+                        stripped = alias.strip()
+                        if stripped:
+                            names.add(stripped)
+
+        return frozenset(names)
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
+        return frozenset()
+    except OSError:
+        return frozenset()
+
+
+def _format_emoji_for_latex(emoji_char: str, emoji_name: str) -> str:
+    """Format emoji for LaTeX, with fallback for unknown names.
+
+    If the emoji name is valid in LaTeX emoji package, uses \\emoji{name}.
+    Otherwise falls back to raw emoji with font wrapper.
+    """
+    valid_names = _load_latex_emoji_names()
+
+    if emoji_name in valid_names:
+        return f"\\emoji{{{emoji_name}}}"
+
+    # Fallback: render raw emoji with emoji font
+    return f"\\emojifallbackchar{{{emoji_char}}}"
 
 
 def is_cjk(char: str) -> bool:
@@ -196,7 +270,7 @@ def escape_unicode_latex(text: str) -> str:
             emoji_name = emoji_lib.demojize(emoji_char, delimiters=("", ""))
             # Remove colons if present and convert to LaTeX emoji format
             emoji_name = emoji_name.strip(":").replace("_", "-").lower()
-            result.append(f"\\emoji{{{emoji_name}}}")
+            result.append(_format_emoji_for_latex(emoji_char, emoji_name))
             i = end
         elif is_cjk(text[i]):
             cjk_buffer.append(text[i])

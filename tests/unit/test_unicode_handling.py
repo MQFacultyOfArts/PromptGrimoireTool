@@ -236,6 +236,46 @@ class TestEscapeUnicodeLaTeX:
         assert result == "BeforeAfter"
 
 
+class TestEmojiValidation:
+    """Test emoji name validation and fallback."""
+
+    def test_valid_emoji_uses_emoji_command(self) -> None:
+        """Valid LaTeX emoji names use \\emoji{} command."""
+        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
+
+        # "grinning-face" is a standard emoji name
+        result = _format_emoji_for_latex("😀", "grinning-face")
+        assert result == "\\emoji{grinning-face}"
+
+    def test_invalid_emoji_uses_fallback(self) -> None:
+        """Invalid emoji names fall back to raw emoji with font wrapper."""
+        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
+
+        # "united-states" is NOT valid - LaTeX expects "flag-united-states" or "us"
+        result = _format_emoji_for_latex("🇺🇸", "united-states")
+        assert result == "\\emojifallbackchar{🇺🇸}"
+
+    def test_flag_aliases_work(self) -> None:
+        """Country aliases like 'us', 'gb' work as valid names."""
+        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
+
+        # "us" is a valid alias for flag-united-states
+        result = _format_emoji_for_latex("🇺🇸", "us")
+        assert result == "\\emoji{us}"
+
+    def test_load_emoji_names_returns_frozenset(self) -> None:
+        """_load_latex_emoji_names returns a frozenset."""
+        from promptgrimoire.export.unicode_latex import _load_latex_emoji_names
+
+        names = _load_latex_emoji_names()
+        assert isinstance(names, frozenset)
+        # Should have many emoji names if emoji package is installed
+        if names:  # Only check if kpsewhich found the file
+            assert len(names) > 100
+            assert "grinning-face" in names
+            assert "us" in names  # alias
+
+
 class TestUnicodePreamble:
     """Test LaTeX preamble for unicode support."""
 

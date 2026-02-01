@@ -453,6 +453,15 @@ wheels = [
 ]
 
 [[package]]
+name = "emoji"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/78/0d2db9382c92a163d7095fc08efff7800880f830a152cfced40161e7638d/emoji-2.15.0.tar.gz", hash = "sha256:eae4ab7d86456a70a00a985125a03263a5eac54cd55e51d7e184b1ed3b6757e4", size = 615483, upload-time = "2025-09-21T12:13:02.755Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/5e/4b5aaaabddfacfe36ba7768817bd1f71a7a810a43705e531f3ae4c690767/emoji-2.15.0-py3-none-any.whl", hash = "sha256:205296793d66a89d88af4688fa57fd6496732eb48917a87175a023c8138995eb", size = 608433, upload-time = "2025-09-21T12:13:01.197Z" },
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1031,6 +1040,7 @@ dependencies = [
     { name = "ast-grep-cli" },
     { name = "asyncpg" },
     { name = "bs4" },
+    { name = "emoji" },
     { name = "html5lib" },
     { name = "lark" },
     { name = "lorem-text" },
@@ -1079,6 +1089,7 @@ requires-dist = [
     { name = "ast-grep-cli", specifier = ">=0.40.5" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "bs4", specifier = ">=0.0.2" },
+    { name = "emoji", specifier = ">=2.0.0" },
     { name = "html5lib", specifier = ">=1.1" },
     { name = "lark", specifier = ">=1.1.0" },
     { name = "lorem-text", specifier = ">=3.0" },

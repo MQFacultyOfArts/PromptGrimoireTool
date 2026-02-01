@@ -321,3 +321,37 @@ Final text with comments.{annot_multi_comment}
         print(f"\n\nPDF saved for visual inspection: {pdf_path.absolute()}")
         print(f"TeX source: {tex_path.absolute()}")
         print(f"Log file: {log_path.absolute()}")
+
+
+class TestUnicodeAnnotationEscaping:
+    """Test unicode handling in annotation formatting."""
+
+    def test_cjk_author_name_escaped(self) -> None:
+        """CJK characters in author name are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("田中太郎")
+        assert "\\cjktext{田中太郎}" in result
+
+    def test_cjk_comment_text_escaped(self) -> None:
+        """CJK characters in comment text are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("これは日本語のコメントです")
+        assert "\\cjktext{" in result
+
+    def test_emoji_in_comment_escaped(self) -> None:
+        """Emoji in comment text are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Great work! 🎉")
+        assert "\\emoji{" in result
+
+    def test_mixed_ascii_cjk_special_chars(self) -> None:
+        """Mixed content with special chars handles all correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("User & 田中 100%")
+        assert "\\&" in result  # Special char escaped
+        assert "\\cjktext{田中}" in result  # CJK wrapped
+        assert "\\%" in result  # Special char escaped

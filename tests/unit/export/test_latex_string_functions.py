@@ -355,3 +355,53 @@ class TestUnicodeAnnotationEscaping:
         assert "\\&" in result  # Special char escaped
         assert "\\cjktext{田中}" in result  # CJK wrapped
         assert "\\%" in result  # Special char escaped
+
+    def test_format_annot_cjk_author(self) -> None:
+        """CJK in author name is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "田中太郎",
+            "text": "some text",
+            "comments": [],
+        }
+        result = _format_annot(highlight)
+        assert r"\cjktext{田中太郎}" in result
+
+    def test_format_annot_cjk_comment_author(self) -> None:
+        """CJK in comment author is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "Alice",
+            "text": "some text",
+            "comments": [
+                {"author": "山田花子", "text": "Comment text"},
+            ],
+        }
+        result = _format_annot(highlight)
+        assert r"\cjktext{山田花子}" in result
+
+    def test_format_annot_emoji_in_comment(self) -> None:
+        """Emoji in comment text is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "Alice",
+            "text": "some text",
+            "comments": [
+                {"author": "Bob", "text": "Great work! 🎉"},
+            ],
+        }
+        result = _format_annot(highlight)
+        assert r"\emoji{" in result
+
+    def test_format_annot_mixed_unicode_and_special_chars(self) -> None:
+        """Mixed unicode and special chars in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "User & 田中",
+            "text": "some text",
+            "comments": [],
+        }
+        result = _format_annot(highlight)
+        # Should have both escaped special char and wrapped CJK
+        assert r"\&" in result
+        assert r"\cjktext{田中}" in result

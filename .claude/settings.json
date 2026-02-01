@@ -1,5 +1,40 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena",
+      "Bash(uv run *)",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git remote *)",
+      "Bash(git -C * status *)",
+      "Bash(git -C * log *)",
+      "Bash(git -C * diff *)",
+      "Bash(git -C * show *)",
+      "Bash(git -C * branch *)",
+      "Bash(git -C * rev-parse *)",
+      "Bash(git -C * ls-files *)",
+      "Bash(git -C * remote *)"
+    ],
+    "deny": [
+      "Bash(python3 *)"
+    ]
+  },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'SERENA_INIT_REQUIRED: Call mcp__plugin_serena_serena__activate_project with project path: '\"$CLAUDE_PROJECT_DIR\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",

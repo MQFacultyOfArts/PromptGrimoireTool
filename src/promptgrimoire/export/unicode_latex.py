@@ -24,8 +24,9 @@ UNICODE_PREAMBLE = r"""
 \setemojifont{Noto Color Emoji}
 
 % Fallback for emoji not in LaTeX emoji package
-\newfontfamily\emojifallback{Noto Color Emoji}
-\newcommand{\emojifallbackchar}[1]{{\emojifallback #1}}
+% Can't use Noto Color Emoji directly (CBDT format not supported by LuaLaTeX)
+% Just show placeholder text for unknown emoji
+\newcommand{\emojifallbackchar}[1]{[#1]}
 
 % Stub for \includegraphics - Pandoc converts <img> tags to this
 % Make it a no-op to handle BLNS XSS test strings like <img src=x>
@@ -84,19 +85,19 @@ def _load_latex_emoji_names() -> frozenset[str]:
         return frozenset()
 
 
-def _format_emoji_for_latex(emoji_char: str, emoji_name: str) -> str:
+def _format_emoji_for_latex(emoji_name: str) -> str:
     """Format emoji for LaTeX, with fallback for unknown names.
 
     If the emoji name is valid in LaTeX emoji package, uses \\emoji{name}.
-    Otherwise falls back to raw emoji with font wrapper.
+    Otherwise shows placeholder with emoji name (raw emoji can't be rendered).
     """
     valid_names = _load_latex_emoji_names()
 
     if emoji_name in valid_names:
         return f"\\emoji{{{emoji_name}}}"
 
-    # Fallback: render raw emoji with emoji font
-    return f"\\emojifallbackchar{{{emoji_char}}}"
+    # Fallback: show name as placeholder (raw emoji can't render in PDF)
+    return f"\\emojifallbackchar{{{emoji_name}}}"
 
 
 def is_cjk(char: str) -> bool:
@@ -275,7 +276,7 @@ def escape_unicode_latex(text: str) -> str:
             emoji_name = emoji_lib.demojize(emoji_char, delimiters=("", ""))
             # Remove colons if present and convert to LaTeX emoji format
             emoji_name = emoji_name.strip(":").replace("_", "-").lower()
-            result.append(_format_emoji_for_latex(emoji_char, emoji_name))
+            result.append(_format_emoji_for_latex(emoji_name))
             i = end
         elif is_cjk(text[i]):
             cjk_buffer.append(text[i])

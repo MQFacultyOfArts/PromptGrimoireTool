@@ -244,23 +244,23 @@ class TestEmojiValidation:
         from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
 
         # "grinning-face" is a standard emoji name
-        result = _format_emoji_for_latex("😀", "grinning-face")
+        result = _format_emoji_for_latex("grinning-face")
         assert result == "\\emoji{grinning-face}"
 
     def test_invalid_emoji_uses_fallback(self) -> None:
-        """Invalid emoji names fall back to raw emoji with font wrapper."""
+        """Invalid emoji names fall back to placeholder with name."""
         from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
 
         # "united-states" is NOT valid - LaTeX expects "flag-united-states" or "us"
-        result = _format_emoji_for_latex("🇺🇸", "united-states")
-        assert result == "\\emojifallbackchar{🇺🇸}"
+        result = _format_emoji_for_latex("united-states")
+        assert result == "\\emojifallbackchar{united-states}"
 
     def test_flag_aliases_work(self) -> None:
         """Country aliases like 'us', 'gb' work as valid names."""
         from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
 
         # "us" is a valid alias for flag-united-states
-        result = _format_emoji_for_latex("🇺🇸", "us")
+        result = _format_emoji_for_latex("us")
         assert result == "\\emoji{us}"
 
     def test_load_emoji_names_returns_frozenset(self) -> None:

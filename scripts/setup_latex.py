@@ -28,6 +28,10 @@ REQUIRED_PACKAGES = [
     "latexmk",  # Build automation
     "xcolor",  # Color support
     "soul",  # Underlining/highlighting (fallback)
+    # Unicode support (Issue #101)
+    "emoji",  # Emoji rendering in LuaLaTeX
+    "luatexja",  # CJK support for LuaLaTeX
+    "notocjksc",  # Noto CJK Simplified Chinese fonts
 ]
 
 
@@ -117,6 +121,9 @@ def main() -> int:
     print()
     print("Setup complete!")
     print(f"latexmk path: {LATEXMK}")
+    print()
+    print("Note: First compilation with CJK fonts may use ~6GB RAM")
+    print("for font cache generation. Subsequent compilations are faster.")
     return 0
 
 

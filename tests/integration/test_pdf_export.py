@@ -21,8 +21,8 @@ from tests.conftest import PDF_TEST_OUTPUT_DIR, requires_latexmk
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Fixture paths for i18n tests
-FIXTURES_DIR = RealPath(__file__).parent.parent / "fixtures" / "conversations"
+# Fixture paths for i18n tests - use clean fixtures (article content only)
+FIXTURES_DIR = RealPath(__file__).parent.parent / "fixtures" / "conversations" / "clean"
 
 
 def _has_pandoc() -> bool:
@@ -242,7 +242,7 @@ class TestI18nPdfExport:
     # Expected characters per fixture (for content verification)
     # Must match actual content in first 2000 chars of fixture
     _EXPECTED_CHARS: ClassVar[dict[str, list[str]]] = {
-        "chinese_wikipedia": ["维基百科", "自由的百科全书"],
+        "chinese_wikipedia": ["维基百科", "示例内容"],  # from clean fixture
         "translation_japanese_sample": ["家庭法令", "離婚判決謄本", "オーストラリア"],
         "translation_korean_sample": [
             "법은",
@@ -302,20 +302,15 @@ class TestI18nPdfExport:
         if not fixture_path.exists():
             pytest.skip(f"Fixture {fixture_name}.html not found")
 
+        # Pass raw HTML to export - production pipeline handles script stripping
         html_content = fixture_path.read_text(encoding="utf-8")
-        # Strip HTML tags for raw content simulation
-        text_content = re.sub(r"<[^>]+>", " ", html_content)
-        text_content = re.sub(r"\s+", " ", text_content).strip()
-
-        # Use first 2000 chars to keep test fast
-        text_content = text_content[:2000]
 
         # Use persistent output directory for inspection
         output_dir = self._OUTPUT_DIR / fixture_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
         pdf_path = await export_annotation_pdf(
-            html_content=text_content,
+            html_content=html_content,
             highlights=[],
             tag_colours={},
             output_dir=output_dir,

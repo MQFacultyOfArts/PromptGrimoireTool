@@ -311,12 +311,6 @@ def text_selection_url(app_server: str) -> str:
 
 
 @pytest.fixture
-def live_annotation_url(app_server: str) -> str:
-    """URL for the live annotation demo page."""
-    return f"{app_server}/demo/live-annotation"
-
-
-@pytest.fixture
 def reset_crdt_state(app_server: str) -> Generator[None]:
     """Reset CRDT state before each test.
 

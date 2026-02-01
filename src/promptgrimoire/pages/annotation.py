@@ -83,7 +83,7 @@ _connected_clients: dict[str, dict[str, _ClientState]] = {}
 # Background tasks set - prevents garbage collection of fire-and-forget tasks
 _background_tasks: set[asyncio.Task[None]] = set()
 
-# CSS styles matching live_annotation_demo.py for consistent UX
+# CSS styles for annotation interface
 _PAGE_CSS = """
     /* Document container */
     .doc-container {
@@ -377,7 +377,7 @@ def _setup_page_styles() -> None:
     """Add CSS and register custom tag colors."""
     ui.add_css(_PAGE_CSS)
 
-    # Register custom colors for tag buttons (matching live_annotation_demo.py)
+    # Register custom colors for tag buttons
     custom_tag_colors = {
         tag.value.replace("_", "-"): color for tag, color in TAG_COLORS.items()
     }
@@ -389,8 +389,7 @@ def _build_tag_toolbar(
 ) -> None:
     """Build fixed tag toolbar.
 
-    Ported from live_annotation_demo.py - uses fixed position for floating toolbar.
-    Uses a div with fixed positioning instead of ui.header() to allow nesting.
+    Uses a div with fixed positioning for floating toolbar behavior.
     """
     with (
         ui.element("div")
@@ -587,7 +586,7 @@ def _build_annotation_card(
     except ValueError:
         color = "#666"
 
-    # Use ann-card-positioned for scroll-sync positioning (like live_annotation_demo)
+    # Use ann-card-positioned for scroll-sync positioning
     card = (
         ui.card()
         .classes("ann-card-positioned")
@@ -1065,7 +1064,7 @@ async def _render_document_with_highlights(
     # Set up selection detection
     _setup_selection_handlers(state)
 
-    # Set up scroll-synced card positioning (adapted from live-annotation.js)
+    # Set up scroll-synced card positioning
     # fmt: off
     scroll_sync_js = (
         "(function() {\n"
@@ -1456,7 +1455,7 @@ async def annotation_page(client: Client) -> None:
     Query params:
         workspace_id: UUID of existing workspace to load
     """
-    # Set up CSS and colors (matching live_annotation_demo.py)
+    # Set up CSS and colors
     _setup_page_styles()
 
     # Get workspace_id from query params if present

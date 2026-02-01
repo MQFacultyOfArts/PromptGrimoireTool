@@ -262,3 +262,69 @@ class TestUnicodePreamble:
         from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
 
         assert "Noto" in UNICODE_PREAMBLE
+
+
+def _generate_blns_test_cases() -> list[tuple[str, str]]:
+    """Generate (category, line) tuples for parameterized BLNS testing."""
+    from tests.conftest import BLNS_BY_CATEGORY
+
+    cases = []
+    for category, lines in BLNS_BY_CATEGORY.items():
+        for i, line in enumerate(lines):
+            # Create a unique test ID: "category[index]"
+            test_id = f"{category}[{i}]"
+            cases.append((test_id, line))
+    return cases
+
+
+class TestBLNSCorpusEscaping:
+    """Parameterized tests for BLNS corpus - each line tested individually.
+
+    When a test fails, the test ID shows exactly which category and line
+    caused the failure (e.g., "C0 Controls[2]").
+    """
+
+    @pytest.mark.parametrize(
+        ("test_id", "blns_line"),
+        _generate_blns_test_cases(),
+        ids=lambda x: x if isinstance(x, str) and "[" in x else None,
+    )
+    def test_escape_handles_blns_line(self, test_id: str, blns_line: str) -> None:
+        """escape_unicode_latex handles this BLNS line without error."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        # Should not raise
+        result = escape_unicode_latex(blns_line)
+
+        # Result should be a string
+        assert isinstance(result, str), f"Expected str for {test_id}"
+
+        # Result should not contain any control characters
+        for c in result:
+            cp = ord(c)
+            # Allow only printable ASCII, tab, newline, CR, or high Unicode
+            if cp < 0x20:
+                assert c in "\t\n\r", f"Control U+{cp:04X} in {test_id}"
+            assert cp != 0x7F, f"DEL in {test_id}"
+            assert not (0x80 <= cp <= 0x9F), f"C1 U+{cp:04X} in {test_id}"
+
+    @pytest.mark.parametrize(
+        ("test_id", "blns_line"),
+        _generate_blns_test_cases(),
+        ids=lambda x: x if isinstance(x, str) and "[" in x else None,
+    )
+    def test_strip_handles_blns_line(self, test_id: str, blns_line: str) -> None:
+        """_strip_control_chars handles this BLNS line without error."""
+        from promptgrimoire.export.unicode_latex import _strip_control_chars
+
+        # Should not raise
+        result = _strip_control_chars(blns_line)
+
+        # Result should be a string with no control chars
+        assert isinstance(result, str)
+        for c in result:
+            cp = ord(c)
+            if cp < 0x20:
+                assert c in "\t\n\r", f"Control char U+{cp:04X} in result for {test_id}"
+            assert cp != 0x7F, f"DEL in result for {test_id}"
+            assert not (0x80 <= cp <= 0x9F), f"C1 control U+{cp:04X} for {test_id}"

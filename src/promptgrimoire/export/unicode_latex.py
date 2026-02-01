@@ -101,30 +101,42 @@ _LATEX_SPECIAL_CHARS = [
 ]
 
 
-def _strip_control_chars(text: str) -> str:
-    """Strip control characters that are invalid in LaTeX.
+def _is_latex_safe_char(c: str) -> bool:
+    """Check if a character is safe for LaTeX input.
 
-    Removes:
-    - C0 controls: 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F (preserves tab, newline, CR)
-    - DEL: 0x7F
-    - C1 controls: 0x80-0x9F (often misinterpreted as extended ASCII)
+    LaTeX cannot handle certain Unicode categories:
+    - C0 controls (0x00-0x1F) except tab, newline, CR
+    - DEL (0x7F)
+    - C1 controls (0x80-0x9F)
+    - Surrogates (0xD800-0xDFFF) - invalid in UTF-8 anyway
+    - Noncharacters (0xFFFE, 0xFFFF, and last 2 codepoints of each plane)
 
-    These appear in BLNS test corpus and cause LaTeX compilation failures.
+    Returns True if the character can be safely included in LaTeX source.
     """
-    result = []
-    for c in text:
-        cp = ord(c)
-        # Skip C0 controls except whitespace (tab, newline, CR)
-        if cp < 0x20 and c not in "\t\n\r":
-            continue
-        # Skip DEL (0x7F)
-        if cp == 0x7F:
-            continue
-        # Skip C1 controls (0x80-0x9F)
-        if 0x80 <= cp <= 0x9F:
-            continue
-        result.append(c)
-    return "".join(result)
+    cp = ord(c)
+
+    # C0 controls - allow only tab, newline, CR
+    if cp < 0x20:
+        return c in "\t\n\r"
+
+    # DEL, C1 controls, surrogates, or noncharacters
+    is_del = cp == 0x7F
+    is_c1 = 0x80 <= cp <= 0x9F
+    is_surrogate = 0xD800 <= cp <= 0xDFFF
+    is_nonchar = (cp & 0xFFFF) >= 0xFFFE
+
+    return not (is_del or is_c1 or is_surrogate or is_nonchar)
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip characters that are invalid in LaTeX.
+
+    Removes control characters and other problematic Unicode that cause
+    'Text line contains an invalid character' LaTeX errors.
+
+    See _is_latex_safe_char() for the complete list of filtered characters.
+    """
+    return "".join(c for c in text if _is_latex_safe_char(c))
 
 
 def _escape_ascii_special(text: str) -> str:

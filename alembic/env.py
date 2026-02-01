@@ -25,11 +25,12 @@ if TYPE_CHECKING:
 
 # Import all models to register them with SQLModel.metadata
 from promptgrimoire.db.models import (  # noqa: E402, F401
-    AnnotationDocumentState,
     Course,
     CourseEnrollment,
     User,
     Week,
+    Workspace,
+    WorkspaceDocument,
 )
 
 # this is the Alembic Config object, which provides

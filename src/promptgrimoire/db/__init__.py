@@ -5,7 +5,6 @@ Provides async SQLModel operations with PostgreSQL.
 
 from __future__ import annotations
 
-from promptgrimoire.db.annotation_state import get_state_by_case_id, save_state
 from promptgrimoire.db.bootstrap import (
     get_expected_tables,
     is_db_configured,
@@ -27,7 +26,6 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.models import (
-    AnnotationDocumentState,
     Course,
     CourseEnrollment,
     CourseRole,
@@ -63,7 +61,6 @@ from promptgrimoire.db.workspaces import (
 )
 
 __all__ = [
-    "AnnotationDocumentState",
     "Course",
     "CourseEnrollment",
     "CourseRole",
@@ -86,7 +83,6 @@ __all__ = [
     "get_enrollment",
     "get_expected_tables",
     "get_session",
-    "get_state_by_case_id",
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",
@@ -102,7 +98,6 @@ __all__ = [
     "list_users",
     "reorder_documents",
     "run_alembic_upgrade",
-    "save_state",
     "save_workspace_crdt_state",
     "set_admin",
     "unenroll_user",

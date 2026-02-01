@@ -488,6 +488,7 @@ _WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
 ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{fontspec}
 \setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
+\usepackage{amsmath}           % Math extensions (\text{} in math mode)
 \usepackage{microtype}         % Better typography (kerning, protrusion)
 \usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
 \usepackage{longtable}

@@ -190,6 +190,19 @@ def _is_empty_container(element: Tag) -> bool:
     return not text
 
 
+def _sanitize_katex(soup: BeautifulSoup) -> None:
+    """Remove KaTeX visual rendering, keep only MathML.
+
+    KaTeX generates two representations:
+    - katex-mathml: MathML (semantic, Pandoc can convert)
+    - katex-html: Visual spans (causes garbage in LaTeX)
+
+    We remove katex-html to let Pandoc convert only the MathML.
+    """
+    for katex_html in soup.find_all(class_="katex-html"):
+        katex_html.decompose()
+
+
 def remove_ui_chrome(html: str) -> str:
     """Remove UI chrome elements from HTML.
 
@@ -200,6 +213,7 @@ def remove_ui_chrome(html: str) -> str:
     - Small images (< 32px in either dimension)
     - Hidden elements (display: none)
     - Empty containers left after removal
+    - KaTeX visual rendering (keeps MathML for Pandoc)
 
     Args:
         html: Raw HTML content.
@@ -208,6 +222,9 @@ def remove_ui_chrome(html: str) -> str:
         HTML with UI chrome elements removed.
     """
     soup = BeautifulSoup(html, "html.parser")
+
+    # Sanitize KaTeX: remove visual HTML, keep MathML
+    _sanitize_katex(soup)
 
     # Find and remove chrome elements
     # We need to collect them first, then remove (can't modify during iteration)

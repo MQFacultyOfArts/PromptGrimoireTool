@@ -1,7 +1,7 @@
 """Speaker detection and label injection for chatbot HTML exports.
 
-Detects the source platform (Claude, OpenAI, Gemini, ScienceOS) from HTML
-structure and injects User:/Assistant: labels at turn boundaries.
+Detects the source platform (Claude, OpenAI, Gemini, AI Studio, ScienceOS) from
+HTML structure and injects User:/Assistant: labels at turn boundaries.
 
 Also detects Claude's "Thought process" summaries and marks them for
 special styling (smaller font).
@@ -15,13 +15,16 @@ import re
 from typing import Literal
 
 # Platform type
-Platform = Literal["claude", "openai", "gemini", "scienceos"]
+Platform = Literal["claude", "openai", "gemini", "aistudio", "scienceos"]
 
 # Detection patterns for each platform
 _PLATFORM_PATTERNS: dict[Platform, re.Pattern[str]] = {
     "claude": re.compile(r'class="[^"]*font-user-message[^"]*"', re.IGNORECASE),
     "openai": re.compile(r'class="[^"]*agent-turn[^"]*"', re.IGNORECASE),
-    "gemini": re.compile(r'class="[^"]*chat-turn-container[^"]*"', re.IGNORECASE),
+    # Gemini web uses custom elements: <user-query> and <model-response>
+    "gemini": re.compile(r"<user-query\b", re.IGNORECASE),
+    # Google AI Studio uses <ms-chat-turn> with data-turn-role attributes
+    "aistudio": re.compile(r"<ms-chat-turn\b", re.IGNORECASE),
     "scienceos": re.compile(r'class="[^"]*tabler-icon-robot-face[^"]*"', re.IGNORECASE),
 }
 
@@ -46,14 +49,14 @@ _TURN_PATTERNS: dict[Platform, dict[str, re.Pattern[str]]] = {
         ),
     },
     "gemini": {
-        "user": re.compile(
-            r'(<[^>]*class="[^"]*chat-turn-container[^"]*\buser\b[^"]*"[^>]*>)',
-            re.IGNORECASE,
-        ),
-        "assistant": re.compile(
-            r'(<[^>]*class="[^"]*chat-turn-container[^"]*\bmodel\b[^"]*"[^>]*>)',
-            re.IGNORECASE,
-        ),
+        # Gemini web uses custom elements: <user-query> and <model-response>
+        "user": re.compile(r"(<user-query\b[^>]*>)", re.IGNORECASE),
+        "assistant": re.compile(r"(<model-response\b[^>]*>)", re.IGNORECASE),
+    },
+    "aistudio": {
+        # Google AI Studio uses data-turn-role attribute
+        "user": re.compile(r'(<[^>]*data-turn-role="User"[^>]*>)', re.IGNORECASE),
+        "assistant": re.compile(r'(<[^>]*data-turn-role="Model"[^>]*>)', re.IGNORECASE),
     },
     "scienceos": {
         # ScienceOS uses tabler icons: medal for user, robot-face for assistant

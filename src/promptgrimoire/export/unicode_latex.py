@@ -195,7 +195,7 @@ def escape_unicode_latex(text: str) -> str:
             # Convert emoji to name using emoji library
             emoji_name = emoji_lib.demojize(emoji_char, delimiters=("", ""))
             # Remove colons if present and convert to LaTeX emoji format
-            emoji_name = emoji_name.strip(":").replace("_", "-")
+            emoji_name = emoji_name.strip(":").replace("_", "-").lower()
             result.append(f"\\emoji{{{emoji_name}}}")
             i = end
         elif is_cjk(text[i]):

@@ -38,6 +38,7 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+from promptgrimoire.export.unicode_latex import escape_unicode_latex
 
 logger = logging.getLogger(__name__)
 
@@ -639,17 +640,17 @@ def _format_annot(
 
     # Line 1: **Tag** [para]
     if para_ref:
-        margin_parts = [f"\\textbf{{{_escape_latex(tag_display)}}} {para_ref}"]
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}} {para_ref}"]
     else:
-        margin_parts = [f"\\textbf{{{_escape_latex(tag_display)}}}"]
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}}"]
 
     # Line 2: name, date (tiny)
     if timestamp:
         margin_parts.append(
-            f"\\par{{\\scriptsize {_escape_latex(author)}, {timestamp}}}"
+            f"\\par{{\\scriptsize {escape_unicode_latex(author)}, {timestamp}}}"
         )
     else:
-        margin_parts.append(f"\\par{{\\scriptsize {_escape_latex(author)}}}")
+        margin_parts.append(f"\\par{{\\scriptsize {escape_unicode_latex(author)}}}")
 
     # Add separator and comments if present
     if comments:
@@ -659,15 +660,16 @@ def _format_annot(
             c_text = comment.get("text", "")
             c_timestamp = _format_timestamp(comment.get("created_at", ""))
             # Comment: name, date: text (all small)
+            c_author_esc = escape_unicode_latex(c_author)
+            c_text_esc = escape_unicode_latex(c_text)
             if c_timestamp:
                 margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{_escape_latex(c_author)}}}, "
-                    f"{c_timestamp}:}} {_escape_latex(c_text)}"
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}}}, "
+                    f"{c_timestamp}:}} {c_text_esc}"
                 )
             else:
                 margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{_escape_latex(c_author)}:}}}} "
-                    f"{_escape_latex(c_text)}"
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}:}}}} {c_text_esc}"
                 )
 
     margin_content = "".join(margin_parts)

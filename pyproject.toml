@@ -54,6 +54,7 @@ dev = [
 promptgrimoire = "promptgrimoire:main"
 test-debug = "promptgrimoire.cli:test_debug"
 test-all = "promptgrimoire.cli:test_all"
+test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 set-admin = "promptgrimoire.cli:set_admin"
 show-export-log = "promptgrimoire.cli:show_export_log"
 

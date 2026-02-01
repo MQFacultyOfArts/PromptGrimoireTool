@@ -158,6 +158,26 @@ def test_all() -> None:
     )
 
 
+def test_all_fixtures() -> None:
+    """Run full test corpus including BLNS and slow tests.
+
+    Runs pytest without marker filtering, enabling all tests
+    including those marked with @pytest.mark.blns and @pytest.mark.slow.
+
+    Flags applied:
+        -m "": Empty marker filter = run all tests
+        -v: Verbose output
+        --tb=short: Shorter tracebacks
+
+    Output saved to: test-all-fixtures.log
+    """
+    _run_pytest(
+        title="Full Fixture Corpus (including BLNS/slow)",
+        log_path=Path("test-all-fixtures.log"),
+        default_args=["-m", "", "-v", "--tb=short"],
+    )
+
+
 def set_admin() -> None:
     """Set a user as admin by email.
 

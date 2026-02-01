@@ -9,6 +9,7 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 
 from __future__ import annotations
 
+import html
 import re
 import shutil
 import tempfile
@@ -42,23 +43,52 @@ _GENERAL_NOTES_TEMPLATE = r"""
 """
 
 
-def _html_to_latex_notes(html: str) -> str:
+def _plain_text_to_html(text: str | None) -> str:
+    """Convert plain text to HTML with paragraph structure.
+
+    Preserves line breaks as <p> tags for proper Pandoc conversion.
+    Plain text newlines are collapsed by Pandoc when passed as HTML,
+    so we need to wrap lines in paragraph tags.
+
+    Args:
+        text: Plain text content, possibly with newlines.
+
+    Returns:
+        HTML with each line wrapped in <p> tags.
+    """
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    html_parts = []
+
+    for line in lines:
+        if line.strip():
+            html_parts.append(f"<p>{html.escape(line)}</p>")
+        else:
+            # Empty line - preserve as empty paragraph for spacing
+            html_parts.append("<p></p>")
+
+    return "\n".join(html_parts)
+
+
+def _html_to_latex_notes(html_content: str) -> str:
     """Convert HTML notes content to LaTeX.
 
     Simple conversion for WYSIWYG editor output.
     Handles basic formatting tags.
 
     Args:
-        html: HTML content from the notes editor.
+        html_content: HTML content from the notes editor.
 
     Returns:
         LaTeX-formatted content.
     """
-    if not html or not html.strip():
+    if not html_content or not html_content.strip():
         return ""
 
     # Strip outer tags and convert basic formatting
-    content = html
+    content = html_content
 
     # Convert common HTML to LaTeX
     replacements = [
@@ -162,7 +192,8 @@ async def export_annotation_pdf(
     4. PDF compilation via latexmk
 
     Args:
-        html_content: Raw HTML content (not word-span processed).
+        html_content: Content to export. Can be plain text or HTML.
+            Plain text (no HTML tags) is auto-converted to HTML paragraphs.
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
         general_notes: HTML content from general notes editor.
@@ -177,6 +208,11 @@ async def export_annotation_pdf(
     Raises:
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
+    # Detect plain text (no HTML block tags) and convert to HTML paragraphs.
+    # Plain text newlines are collapsed by Pandoc, so we wrap in <p> tags.
+    if html_content and not re.search(r"<(?:p|div|table|ul|ol|h[1-6])\b", html_content):
+        html_content = _plain_text_to_html(html_content)
+
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
     latex_body = convert_html_with_annotations(

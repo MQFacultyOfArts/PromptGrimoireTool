@@ -205,7 +205,7 @@ class TestEscapeUnicodeLaTeX:
         assert escape_unicode_latex("a\nb") == "a\nb"
         assert escape_unicode_latex("a\r\nb") == "a\r\nb"
 
-    def test_blns_control_chars_handled(self) -> None:
+    def test_blns_c0_control_chars_handled(self) -> None:
         """BLNS non-whitespace C0 controls string is handled safely."""
         from promptgrimoire.export.unicode_latex import escape_unicode_latex
 
@@ -216,6 +216,16 @@ class TestEscapeUnicodeLaTeX:
         )
         result = escape_unicode_latex(f"Before{blns_c0_controls}After")
         # All control chars stripped, text preserved
+        assert result == "BeforeAfter"
+
+    def test_blns_c1_control_chars_handled(self) -> None:
+        """BLNS non-whitespace C1 controls (U+0080-U+009F) are stripped."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        # C1 controls: 0x80-0x9F (often misinterpreted as Windows-1252)
+        c1_controls = "".join(chr(c) for c in range(0x80, 0xA0))
+        result = escape_unicode_latex(f"Before{c1_controls}After")
+        # All C1 control chars stripped, text preserved
         assert result == "BeforeAfter"
 
 

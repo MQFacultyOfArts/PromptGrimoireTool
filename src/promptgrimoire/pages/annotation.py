@@ -1388,9 +1388,9 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 # Trigger download
                 ui.download(pdf_path)
                 ui.notify("PDF generated!", type="positive")
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to export PDF")
-                ui.notify("Failed to generate PDF", type="negative")
+                ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
 
         ui.button(
             "Export PDF", icon="picture_as_pdf", on_click=handle_export_pdf

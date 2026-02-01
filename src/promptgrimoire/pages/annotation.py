@@ -1205,6 +1205,12 @@ def _update_user_count(state: PageState) -> None:
         return
     workspace_key = str(state.workspace_id)
     count = len(_connected_clients.get(workspace_key, {}))
+    logger.debug(
+        "USER_COUNT: ws=%s count=%d keys=%s",
+        workspace_key,
+        count,
+        list(_connected_clients.keys()),
+    )
     label = "1 user" if count == 1 else f"{count} users"
     state.user_count_badge.set_text(label)
 
@@ -1285,6 +1291,12 @@ def _setup_client_sync(
         color=state.user_color,
         name=state.user_name,
     )
+    logger.info(
+        "CLIENT_REGISTERED: ws=%s client=%s total=%d",
+        workspace_key,
+        client_id[:8],
+        len(_connected_clients[workspace_key]),
+    )
 
     # Update own user count and notify others
     _update_user_count(state)
@@ -1340,6 +1352,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             .classes("text-sm text-blue-600 bg-blue-100 px-2 py-0.5 rounded")
             .props('data-testid="user-count"')
         )
+        # Update with actual count now that badge exists
+        _update_user_count(state)
 
         # Export PDF button (handler defined after state is populated)
         async def handle_export_pdf() -> None:

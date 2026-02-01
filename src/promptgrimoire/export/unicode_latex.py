@@ -14,24 +14,54 @@ UNICODE_PREAMBLE = r"""
 \usepackage[match]{luatexja-fontspec}
 \usepackage{emoji}
 
-% Define font fallback chain BEFORE loading fonts
-% Order: Gentium (extended Latin, Greek, Cyrillic), Hebrew, Arabic
+% Define comprehensive font fallback chain BEFORE loading fonts
+% Fonts are tried in order until one has the glyph
+% Using Noto Serif variants for consistency with TeX Gyre Termes (TNR)
 \directlua{
   luaotfload.add_fallback("mainfallback", {
-    "Gentium:mode=node;",
+    % Extended Latin, Greek, Cyrillic
+    "Noto Serif:mode=node;",
+    % Hebrew script (U+0590-U+05FF)
     "Noto Serif Hebrew:mode=node;script=hebr;",
+    % Arabic script (U+0600-U+06FF, U+0750-U+077F, etc.)
     "Noto Naskh Arabic:mode=node;script=arab;",
+    % Indic scripts - Devanagari (Hindi, Sanskrit, Marathi)
+    "Noto Serif Devanagari:mode=node;script=deva;",
+    % Bengali, Assamese
+    "Noto Serif Bengali:mode=node;script=beng;",
+    % Tamil
+    "Noto Serif Tamil:mode=node;script=taml;",
+    % Thai
+    "Noto Serif Thai:mode=node;script=thai;",
+    % Georgian
+    "Noto Serif Georgian:mode=node;script=geor;",
+    % Armenian
+    "Noto Serif Armenian:mode=node;script=armn;",
+    % Ethiopic
+    "Noto Serif Ethiopic:mode=node;script=ethi;",
+    % Khmer (Cambodian)
+    "Noto Serif Khmer:mode=node;script=khmr;",
+    % Lao
+    "Noto Serif Lao:mode=node;script=lao;",
+    % Myanmar (Burmese)
+    "Noto Serif Myanmar:mode=node;script=mymr;",
+    % Sinhala (Sri Lankan)
+    "Noto Serif Sinhala:mode=node;script=sinh;",
+    % Symbols and math (last resort for missing glyphs)
+    "Noto Sans Symbols:mode=node;",
+    "Noto Sans Symbols2:mode=node;",
+    "Noto Sans Math:mode=node;",
   })
 }
 
-% CJK font setup - Noto Sans CJK for broad unicode coverage
+% CJK font setup - Noto Serif CJK for serif consistency with TNR
 % Set as default Japanese fonts so [match] option uses them for all CJK
-% This handles Chinese (Simplified/Traditional), Japanese, and Korean
-\setmainjfont{Noto Sans CJK SC}
+% SC variant has broadest coverage (Simplified Chinese + JP/KR compatibility)
+\setmainjfont{Noto Serif CJK SC}
 \setsansjfont{Noto Sans CJK SC}
 
 % Also define as command for explicit wrapping if needed
-\newjfontfamily\notocjk{Noto Sans CJK SC}
+\newjfontfamily\notocjk{Noto Serif CJK SC}
 
 % Command for wrapping CJK text (used by escape_unicode_latex)
 \newcommand{\cjktext}[1]{{\notocjk #1}}
@@ -39,7 +69,7 @@ UNICODE_PREAMBLE = r"""
 % Emoji font setup
 \setemojifont{Noto Color Emoji}
 
-% Main font: TeX Gyre Termes with fallback chain
+% Main font: TeX Gyre Termes (TNR equivalent) with fallback chain
 \setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]
 
 % Fallback for emoji not in LaTeX emoji package

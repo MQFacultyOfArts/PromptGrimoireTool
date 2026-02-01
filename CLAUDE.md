@@ -185,13 +185,12 @@ Key types in `latex.py`:
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-### Tables (7 SQLModel classes)
+### Tables (6 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
 - **Course** - Course/unit of study with weeks and enrolled members
 - **CourseEnrollment** - Maps users to courses with course-level roles
 - **Week** - Week within a course with visibility controls
-- **AnnotationDocumentState** - Persisted CRDT state for annotation documents
 - **Workspace** - Container for documents and CRDT state (unit of collaboration)
 - **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation)
 
@@ -219,7 +218,6 @@ This separation prevents conflating audit concerns with authorization logic.
 |------|-------|-------------|
 | annotation | `/annotation` | **Yes** |
 | case_tool | `/case-tool` | **Yes** |
-| live_annotation_demo | `/demo/live-annotation` | Optional |
 | roleplay | `/roleplay` | No |
 | logs | `/logs` | No |
 | auth | `/login`, `/logout` | Optional |

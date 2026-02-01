@@ -108,11 +108,6 @@ ignore = [
     "PLR0915",  # Page function needs many statements for UI setup
     "SIM117",   # Nested with is cleaner for NiceGUI UI composition
 ]
-"src/promptgrimoire/pages/live_annotation_demo.py" = [
-    "PLR0915",  # Page function needs many statements for UI setup
-    "SIM117",   # Nested with is cleaner for NiceGUI UI composition
-    "PLC0415",  # Late imports to avoid circular dependencies
-]
 "src/promptgrimoire/pages/courses.py" = [
     "PLR0915",  # Page function needs many statements for UI setup
     "SIM117",   # Nested with is cleaner for NiceGUI UI composition

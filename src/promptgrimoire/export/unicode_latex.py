@@ -29,11 +29,8 @@ UNICODE_PREAMBLE = r"""
 
 % Stub for \includegraphics - Pandoc converts <img> tags to this
 % Make it a no-op to handle BLNS XSS test strings like <img src=x>
-\usepackage{graphicx}
-\let\realincludegraphics\includegraphics
-\renewcommand{\includegraphics}[2][]{%
-  \IfFileExists{#2}{\realincludegraphics[#1]{#2}}{[image: #2]}%
-}
+% We don't actually want to include external images from user content
+\newcommand{\includegraphics}[2][]{[image: #2]}
 """
 
 

@@ -26,6 +26,14 @@ UNICODE_PREAMBLE = r"""
 % Fallback for emoji not in LaTeX emoji package
 \newfontfamily\emojifallback{Noto Color Emoji}
 \newcommand{\emojifallbackchar}[1]{{\emojifallback #1}}
+
+% Stub for \includegraphics - Pandoc converts <img> tags to this
+% Make it a no-op to handle BLNS XSS test strings like <img src=x>
+\usepackage{graphicx}
+\let\realincludegraphics\includegraphics
+\renewcommand{\includegraphics}[2][]{%
+  \IfFileExists{#2}{\realincludegraphics[#1]{#2}}{[image: #2]}%
+}
 """
 
 

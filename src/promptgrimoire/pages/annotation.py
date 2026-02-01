@@ -1316,6 +1316,55 @@ def _setup_client_sync(
     client.on_disconnect(on_disconnect)
 
 
+async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
+    """Handle PDF export with loading modal."""
+    if state.crdt_doc is None or state.document_id is None:
+        ui.notify("No document to export", type="warning")
+        return
+
+    # Show modal while rendering
+    with ui.dialog() as export_dialog, ui.card().classes("items-center p-8"):
+        ui.spinner("dots", size="xl")
+        ui.label("Generating PDF...").classes("text-lg mt-4")
+        ui.label("This may take a moment for complex documents.").classes(
+            "text-sm text-gray-500"
+        )
+
+    export_dialog.open()
+
+    try:
+        # Get tag colours as dict[str, str]
+        tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
+
+        # Get highlights for this document
+        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+
+        # Get document content (use raw_content if available)
+        raw_content = ""
+        if state.document_words:
+            raw_content = " ".join(state.document_words)
+
+        # Generate PDF
+        pdf_path = await export_annotation_pdf(
+            html_content=raw_content,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            general_notes="",
+            word_to_legal_para=None,
+            filename=f"workspace_{workspace_id}",
+        )
+
+        export_dialog.close()
+
+        # Trigger download
+        ui.download(pdf_path)
+        ui.notify("PDF exported successfully!", type="positive")
+    except Exception as e:
+        export_dialog.close()
+        logger.exception("Failed to export PDF")
+        ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -1354,46 +1403,11 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         # Update with actual count now that badge exists
         _update_user_count(state)
 
-        # Export PDF button (handler defined after state is populated)
-        async def handle_export_pdf() -> None:
-            if state.crdt_doc is None or state.document_id is None:
-                ui.notify("No document to export", type="warning")
-                return
-
-            ui.notify("Generating PDF...", type="info")
-            try:
-                # Get tag colours as dict[str, str]
-                tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
-
-                # Get highlights for this document
-                highlights = state.crdt_doc.get_highlights_for_document(
-                    str(state.document_id)
-                )
-
-                # Get document content (use raw_content if available)
-                raw_content = ""
-                if state.document_words:
-                    raw_content = " ".join(state.document_words)
-
-                # Generate PDF
-                pdf_path = await export_annotation_pdf(
-                    html_content=raw_content,
-                    highlights=highlights,
-                    tag_colours=tag_colours,
-                    general_notes="",
-                    word_to_legal_para=None,
-                    filename=f"workspace_{workspace_id}",
-                )
-
-                # Trigger download
-                ui.download(pdf_path)
-                ui.notify("PDF generated!", type="positive")
-            except Exception as e:
-                logger.exception("Failed to export PDF")
-                ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
-
+        # Export PDF button
         ui.button(
-            "Export PDF", icon="picture_as_pdf", on_click=handle_export_pdf
+            "Export PDF",
+            icon="picture_as_pdf",
+            on_click=lambda: _handle_pdf_export(state, workspace_id),
         ).props("color=primary")
 
     # Load CRDT document for this workspace

@@ -71,10 +71,6 @@ class AnnotationDocument:
         self._next_color_index = 0
         self._broadcast_callback: Callable[[bytes, str | None], None] | None = None
 
-        # Persistence tracking
-        self._persistence_enabled = False
-        self._last_editor: str | None = None
-
         # Set up observer to broadcast changes
         self.doc.observe(self._on_update)
 
@@ -187,24 +183,11 @@ class AnnotationDocument:
         """
         self._broadcast_callback = callback
 
-    def enable_persistence(self) -> None:
-        """Enable database persistence for this document.
-
-        When enabled, changes will be debounced and saved to the database.
-        """
-        self._persistence_enabled = True
-
     def _on_update(self, event: TransactionEvent) -> None:
         """Handle document updates and broadcast to clients."""
         if self._broadcast_callback is not None:
             origin = _origin_var.get()
             self._broadcast_callback(event.update, origin)
-
-        # Trigger persistence if enabled
-        if self._persistence_enabled:
-            from promptgrimoire.crdt.persistence import get_persistence_manager
-
-            get_persistence_manager().mark_dirty(self.doc_id, self._last_editor)
 
     # --- Highlight operations ---
 
@@ -235,7 +218,6 @@ class AnnotationDocument:
             The generated highlight ID.
         """
         highlight_id = str(uuid4())
-        self._last_editor = author
         token = _origin_var.set(origin_client_id)
         try:
             # Create highlight with embedded comments Array
@@ -360,7 +342,6 @@ class AnnotationDocument:
             return None
 
         comment_id = str(uuid4())
-        self._last_editor = author
         token = _origin_var.set(origin_client_id)
         try:
             comment = {
@@ -525,49 +506,12 @@ class AnnotationDocumentRegistry:
             self._documents[doc_id] = AnnotationDocument(doc_id)
         return self._documents[doc_id]
 
-    async def get_or_create_with_persistence(self, doc_id: str) -> AnnotationDocument:
-        """Get existing document, load from DB, or create new.
-
-        This is the preferred method when database is available.
-        Falls back to empty document if no persisted state exists.
-
-        Args:
-            doc_id: Document identifier.
-
-        Returns:
-            The AnnotationDocument instance, restored from DB if available.
-        """
-        if doc_id in self._documents:
-            return self._documents[doc_id]
-
-        # Try to load from database
-        from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.annotation_state import get_state_by_case_id
-
-        doc = AnnotationDocument(doc_id)
-
-        try:
-            state = await get_state_by_case_id(doc_id)
-            if state and state.crdt_state:
-                doc.apply_update(state.crdt_state)
-                logger.info("Loaded document %s from database", doc_id)
-        except Exception:
-            logger.exception("Failed to load document %s from database", doc_id)
-
-        self._documents[doc_id] = doc
-
-        # Register with persistence manager
-        get_persistence_manager().register_document(doc)
-
-        return doc
-
     async def get_or_create_for_workspace(
         self, workspace_id: UUID
     ) -> AnnotationDocument:
         """Get existing document for workspace, load from DB, or create new.
 
-        This is the workspace-aware alternative to get_or_create_with_persistence().
-        Loads CRDT state from Workspace.crdt_state instead of AnnotationDocumentState.
+        Loads CRDT state from Workspace.crdt_state.
 
         Args:
             workspace_id: The workspace UUID.

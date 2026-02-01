@@ -318,39 +318,3 @@ class TestWorkspaceCRDTRoundTrip:
         assert len(doc_b_highlights) == 1
         assert all(h["document_id"] == doc_a_id for h in doc_a_highlights)
         assert all(h["document_id"] == doc_b_id for h in doc_b_highlights)
-
-
-class TestBackwardCompatibility:
-    """Tests that old case_id-based system still works."""
-
-    @pytest.mark.asyncio
-    async def test_old_persistence_still_works(self) -> None:
-        """Old mark_dirty(case_id) -> save_state() path unchanged."""
-        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.crdt.persistence import get_persistence_manager
-        from promptgrimoire.db.annotation_state import get_state_by_case_id
-
-        case_id = f"compat-test-{uuid4().hex[:8]}"
-
-        # Use old API
-        registry = AnnotationDocumentRegistry()
-        doc = await registry.get_or_create_with_persistence(case_id)
-
-        doc.add_highlight(
-            start_word=0,
-            end_word=5,
-            tag="test",
-            text="Old style",
-            author="Author",
-            # No document_id - old style
-        )
-
-        pm = get_persistence_manager()
-        pm.mark_dirty(case_id, "Author")
-        await pm.force_persist(case_id)
-
-        # Verify saved to AnnotationDocumentState
-        state = await get_state_by_case_id(case_id)
-        assert state is not None
-        assert state.crdt_state is not None
-        assert len(state.crdt_state) > 0

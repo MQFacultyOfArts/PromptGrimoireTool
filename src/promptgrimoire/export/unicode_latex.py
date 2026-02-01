@@ -24,7 +24,13 @@ UNICODE_PREAMBLE = r"""
   })
 }
 
-% CJK font setup - Noto fonts for broad unicode coverage
+% CJK font setup - Noto Sans CJK for broad unicode coverage
+% Set as default Japanese fonts so [match] option uses them for all CJK
+% This handles Chinese (Simplified/Traditional), Japanese, and Korean
+\setmainjfont{Noto Sans CJK SC}
+\setsansjfont{Noto Sans CJK SC}
+
+% Also define as command for explicit wrapping if needed
 \newjfontfamily\notocjk{Noto Sans CJK SC}
 
 % Command for wrapping CJK text (used by escape_unicode_latex)

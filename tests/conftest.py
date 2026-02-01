@@ -47,6 +47,43 @@ requires_latexmk = pytest.mark.skipif(
 
 
 # =============================================================================
+# Fixture File Loading (supports .html and .html.gz)
+# =============================================================================
+
+CONVERSATIONS_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "conversations"
+
+
+def load_conversation_fixture(name: str) -> str:
+    """Load a conversation fixture, supporting both .html and .html.gz.
+
+    Args:
+        name: Fixture name with or without extension (e.g., "claude_cooking" or
+              "claude_cooking.html")
+
+    Returns:
+        HTML content as string.
+    """
+    import gzip
+
+    # Normalize: strip extension if provided
+    base_name = name.removesuffix(".html.gz").removesuffix(".html")
+
+    # Try gzipped first (preferred for storage)
+    gz_path = CONVERSATIONS_FIXTURES_DIR / f"{base_name}.html.gz"
+    if gz_path.exists():
+        with gzip.open(gz_path, "rt", encoding="utf-8") as f:
+            return f.read()
+
+    # Fall back to plain HTML
+    html_path = CONVERSATIONS_FIXTURES_DIR / f"{base_name}.html"
+    if html_path.exists():
+        return html_path.read_text()
+
+    msg = f"Fixture not found: {base_name} (tried .html.gz and .html)"
+    raise FileNotFoundError(msg)
+
+
+# =============================================================================
 # PDF Export Test Fixtures
 # =============================================================================
 

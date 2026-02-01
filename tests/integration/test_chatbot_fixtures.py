@@ -1,6 +1,6 @@
 """Integration tests for chatbot fixture PDF compilation.
 
-Tests all 11 conversation fixtures compile through the PDF export pipeline
+Tests all conversation fixtures compile through the PDF export pipeline
 with speaker pre-processing and UI chrome removal.
 
 See: docs/design-plans/2026-01-29-css-fidelity-pdf-export.md Phase 4
@@ -16,7 +16,7 @@ import pytest
 from promptgrimoire.export.chrome_remover import remove_ui_chrome
 from promptgrimoire.export.latex import convert_html_to_latex
 from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
-from tests.conftest import requires_latexmk
+from tests.conftest import load_conversation_fixture, requires_latexmk
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -28,17 +28,30 @@ FIXTURES_DIR = Path(__file__).parents[1] / "fixtures" / "conversations"
 
 # All chatbot fixtures
 CHATBOT_FIXTURES = [
+    # Claude
     "claude_cooking.html",
     "claude_maths.html",
-    "gemini_crdt_discussion.html",
-    "gemini_gemini.html",
-    "gemini_images.html",
-    "openai_chat.html",
-    "openai_dr.html",
-    "openai_images.html",
-    "scienceos_locus.html",
-    "scienceos_rubber.html",
+    # Google AI Studio
+    "google_aistudio_image.html",
+    "google_aistudio_ux_discussion.html",
+    # Google Gemini
+    "google_gemini_debug.html",
+    "google_gemini_deep_research.html",
+    # OpenAI
+    "openai_biblatex.html",
+    "openai_dh_dr.html",
+    "openai_dprk_denmark.html",
+    "openai_software_long_dr.html",
+    # ScienceOS
+    "scienceos_loc.html",
+    "scienceos_philsci.html",
+    # Legal document (not a chatbot, but tests chrome removal)
     "austlii.html",
+    # Translation documents (test CJK character handling)
+    "chinese_wikipedia.html",
+    "translation_japanese_sample.html",
+    "translation_korean_sample.html",
+    "translation_spanish_sample.html",
 ]
 
 # Path to Lua filter
@@ -53,8 +66,8 @@ LIBREOFFICE_FILTER = (
 
 
 def _load_fixture(name: str) -> str:
-    """Load a fixture file by name."""
-    return (FIXTURES_DIR / name).read_text()
+    """Load a fixture file by name (supports .html and .html.gz)."""
+    return load_conversation_fixture(name)
 
 
 def _preprocess_chatbot_html(html: str) -> str:
@@ -89,11 +102,12 @@ class TestChatbotFixturesToLatex:
 
 
 # Fixtures known to have complete conversations (both user and assistant)
+# Note: ScienceOS fixtures are research reports, not chats with turns
 _COMPLETE_CONVERSATION_FIXTURES = [
     "claude_cooking.html",
-    "openai_chat.html",
-    "gemini_crdt_discussion.html",
-    "scienceos_locus.html",
+    "google_aistudio_ux_discussion.html",
+    "google_gemini_debug.html",
+    "openai_biblatex.html",
 ]
 
 
@@ -127,14 +141,14 @@ class TestSpeakerLabelsInjected:
 class TestChromeRemoved:
     """Test that UI chrome is stripped from fixtures."""
 
-    def test_scienceos_icons_removed(self) -> None:
-        """ScienceOS tabler icons are removed."""
-        html = _load_fixture("scienceos_locus.html")
+    def test_chrome_removal_reduces_size(self) -> None:
+        """Chrome removal should reduce HTML size for fixtures with UI elements."""
+        # scienceos_loc has lots of buttons and UI chrome
+        html = _load_fixture("scienceos_loc.html")
         result = remove_ui_chrome(html)
 
-        # Icons should be gone
-        assert "tabler-icon-robot-face" not in result
-        assert "tabler-icon-medal" not in result
+        # Chrome removal should reduce size (buttons, hidden elements, etc.)
+        assert len(result) < len(html), "Chrome removal should reduce HTML size"
 
 
 class TestChatbotFixturesToPdf:

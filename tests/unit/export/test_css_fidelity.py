@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from promptgrimoire.export.latex import convert_html_to_latex
+from tests.conftest import load_conversation_fixture
 
 # Filter paths
 FILTERS_DIR = (
@@ -317,10 +318,10 @@ class TestSpeakerDetection:
         assert detect_platform(html) == "openai"
 
     def test_detect_gemini_platform(self) -> None:
-        """Gemini platform detected by chat-turn-container class."""
+        """Gemini platform detected by user-query element."""
         from promptgrimoire.export.speaker_preprocessor import detect_platform
 
-        html = '<div class="chat-turn-container user">Query</div>'
+        html = "<user-query>What is CRDT?</user-query>"
         assert detect_platform(html) == "gemini"
 
     def test_detect_scienceos_platform(self) -> None:
@@ -359,8 +360,8 @@ class TestSpeakerDetection:
         from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
 
         html = """
-        <div class="chat-turn-container user">What is CRDT?</div>
-        <div class="chat-turn-container model">CRDT stands for...</div>
+        <user-query>What is CRDT?</user-query>
+        <model-response>CRDT stands for...</model-response>
         """
         result = inject_speaker_labels(html)
 
@@ -373,8 +374,7 @@ class TestSpeakerDetectionWithFixtures:
     """Test speaker detection against real fixture files."""
 
     def _load_fixture(self, name: str) -> str:
-        fixture_path = Path(__file__).parents[2] / "fixtures" / "conversations" / name
-        return fixture_path.read_text()
+        return load_conversation_fixture(name)
 
     def test_detect_claude_fixture(self) -> None:
         """Claude fixture detected as Claude platform."""
@@ -387,22 +387,22 @@ class TestSpeakerDetectionWithFixtures:
         """OpenAI fixture detected as OpenAI platform."""
         from promptgrimoire.export.speaker_preprocessor import detect_platform
 
-        html = self._load_fixture("openai_chat.html")
+        html = self._load_fixture("openai_biblatex.html")
         assert detect_platform(html) == "openai"
 
     def test_detect_gemini_fixture(self) -> None:
         """Gemini fixture detected as Gemini platform."""
         from promptgrimoire.export.speaker_preprocessor import detect_platform
 
-        html = self._load_fixture("gemini_crdt_discussion.html")
+        html = self._load_fixture("google_gemini_debug.html")
         assert detect_platform(html) == "gemini"
 
-    def test_detect_scienceos_fixture(self) -> None:
-        """ScienceOS fixture detected as ScienceOS platform."""
+    def test_detect_aistudio_fixture(self) -> None:
+        """AI Studio fixture detected as AI Studio platform."""
         from promptgrimoire.export.speaker_preprocessor import detect_platform
 
-        html = self._load_fixture("scienceos_locus.html")
-        assert detect_platform(html) == "scienceos"
+        html = self._load_fixture("google_aistudio_ux_discussion.html")
+        assert detect_platform(html) == "aistudio"
 
     def test_inject_labels_claude_fixture(self) -> None:
         """Claude fixture gets labels injected."""
@@ -419,7 +419,7 @@ class TestSpeakerDetectionWithFixtures:
         """Gemini fixture gets labels injected."""
         from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
 
-        html = self._load_fixture("gemini_crdt_discussion.html")
+        html = self._load_fixture("google_gemini_debug.html")
         result = inject_speaker_labels(html)
 
         # Check data attributes are injected (Lua filter converts to LaTeX labels)

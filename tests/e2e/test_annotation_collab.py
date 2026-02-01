@@ -107,12 +107,8 @@ class TestMultiUserHighlights:
 
 
 class TestUserCountBadge:
-    """Tests for user count badge showing connected clients.
+    """Tests for user count badge showing connected clients."""
 
-    These tests verify the user count badge feature (Issue #11).
-    """
-
-    @pytest.mark.skip(reason="Requires user count badge feature - Issue #11")
     @pytestmark_db
     def test_user_count_shows_two_when_both_connected(
         self, two_authenticated_contexts: tuple
@@ -121,13 +117,15 @@ class TestUserCountBadge:
         page1, page2, _workspace_id, _user1, _user2 = two_authenticated_contexts
 
         # Both should see user count of 2
+        # WebSocket broadcasts need time to propagate - check both with adequate timeout
         badge_p1 = page1.locator("[data-testid='user-count']")
         badge_p2 = page2.locator("[data-testid='user-count']")
 
-        expect(badge_p1).to_contain_text("2", timeout=5000)
-        expect(badge_p2).to_contain_text("2", timeout=5000)
+        # Wait for page1 to see both users (page2's join has been broadcast)
+        expect(badge_p1).to_contain_text("2", timeout=10000)
+        # page2 should also see 2 (its own connection + page1)
+        expect(badge_p2).to_contain_text("2", timeout=10000)
 
-    @pytest.mark.skip(reason="Requires user count badge feature - Issue #11")
     @pytestmark_db
     def test_user_count_updates_when_user_leaves(
         self, two_authenticated_contexts: tuple

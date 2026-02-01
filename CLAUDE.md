@@ -91,8 +91,11 @@ Commits will be rejected if checks fail.
 # Install dependencies
 uv sync
 
-# Run tests
-uv run pytest
+# Run tests (smart selection based on changes - fast)
+uv run test-debug
+
+# Run all tests (full suite)
+uv run test-all
 
 # Run linting
 uv run ruff check .

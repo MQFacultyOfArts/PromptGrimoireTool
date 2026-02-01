@@ -1326,13 +1326,15 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         ui.notify("No document to export", type="warning")
         return
 
-    # Show notification with spinner while rendering
+    # Show notification with spinner IMMEDIATELY
     notification = ui.notification(
         message="Generating PDF...",
         spinner=True,
         timeout=None,
         type="ongoing",
     )
+    # Force UI update before starting async work
+    await asyncio.sleep(0)
 
     try:
         # Get tag colours as dict[str, str]

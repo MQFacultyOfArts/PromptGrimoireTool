@@ -3,9 +3,15 @@
 Uses parameterized fixtures derived from BLNS corpus for comprehensive coverage.
 """
 
+import emoji as emoji_lib
 import pytest
 
-from tests.conftest import ASCII_TEST_STRINGS, CJK_TEST_CHARS, EMOJI_TEST_STRINGS
+from tests.conftest import (
+    ASCII_TEST_STRINGS,
+    BLNS_BY_CATEGORY,
+    CJK_TEST_CHARS,
+    EMOJI_TEST_STRINGS,
+)
 
 
 class TestIsCJK:
@@ -74,3 +80,52 @@ class TestIsEmoji:
 
         assert not is_emoji("🎉🎊")  # Two separate emoji
         assert not is_emoji("😀😃")  # Two separate emoji
+
+
+class TestGetEmojiSpans:
+    """Test emoji span extraction for wrapping."""
+
+    def test_no_emoji(self) -> None:
+        """Returns empty list for text without emoji."""
+        from promptgrimoire.export.unicode_latex import get_emoji_spans
+
+        assert get_emoji_spans("Hello world") == []
+
+    @pytest.mark.parametrize("emoji", EMOJI_TEST_STRINGS[:10])
+    def test_single_emoji_in_text(self, emoji: str) -> None:
+        """Returns span for single emoji embedded in text."""
+        from promptgrimoire.export.unicode_latex import get_emoji_spans
+
+        text = f"Hello {emoji}!"
+        spans = get_emoji_spans(text)
+        assert len(spans) == 1
+        start, end, found_emoji = spans[0]
+        assert found_emoji == emoji
+        assert text[start:end] == emoji
+
+    def test_multiple_emoji(self) -> None:
+        """Returns spans for multiple emoji."""
+        from promptgrimoire.export.unicode_latex import get_emoji_spans
+
+        spans = get_emoji_spans("A 🎉 B 🎊 C")
+        assert len(spans) == 2
+        assert spans[0][2] == "🎉"
+        assert spans[1][2] == "🎊"
+
+    @pytest.mark.parametrize(
+        "blns_emoji_line",
+        [
+            s
+            for s in BLNS_BY_CATEGORY.get("Emoji", [])
+            if len(emoji_lib.emoji_list(s)) > 1
+        ][:3],
+    )
+    def test_blns_emoji_lines_extract_all(self, blns_emoji_line: str) -> None:
+        """BLNS emoji lines with multiple emoji extract all of them."""
+        from promptgrimoire.export.unicode_latex import get_emoji_spans
+
+        expected_count = len(emoji_lib.emoji_list(blns_emoji_line))
+        spans = get_emoji_spans(blns_emoji_line)
+        assert len(spans) == expected_count, (
+            f"Expected {expected_count} emoji in {blns_emoji_line!r}, got {len(spans)}"
+        )

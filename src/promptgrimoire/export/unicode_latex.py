@@ -55,3 +55,17 @@ def is_emoji(text: str) -> bool:
         True if text is exactly one RGI emoji, False otherwise.
     """
     return emoji_lib.is_emoji(text)
+
+
+def get_emoji_spans(text: str) -> list[tuple[int, int, str]]:
+    """Get positions of all emoji in text.
+
+    Args:
+        text: Text to scan for emoji.
+
+    Returns:
+        List of (start, end, emoji) tuples for each emoji found.
+        Positions are character indices (not byte offsets).
+    """
+    matches = emoji_lib.emoji_list(text)
+    return [(m["match_start"], m["match_end"], m["emoji"]) for m in matches]

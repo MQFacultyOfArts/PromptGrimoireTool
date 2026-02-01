@@ -4,6 +4,21 @@ from __future__ import annotations
 
 import emoji as emoji_lib
 
+UNICODE_PREAMBLE = r"""
+% Unicode support for CJK and Emoji (added by unicode_latex.py)
+\usepackage[match]{luatexja-fontspec}
+\usepackage{emoji}
+
+% CJK font setup - Noto fonts for broad unicode coverage
+\newjfontfamily\notocjk{Noto Sans CJK SC}
+
+% Command for wrapping CJK text (used by escape_unicode_latex)
+\newcommand{\cjktext}[1]{{\notocjk #1}}
+
+% Emoji font setup
+\setemojifont{Noto Color Emoji}
+"""
+
 
 def is_cjk(char: str) -> bool:
     """Check if a single character is CJK (Chinese, Japanese, Korean).

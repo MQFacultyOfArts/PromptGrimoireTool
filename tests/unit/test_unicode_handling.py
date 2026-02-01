@@ -187,3 +187,31 @@ class TestEscapeUnicodeLaTeX:
         assert "\\cjktext{世界}" in result
         assert "\\emoji{" in result
         assert "Hello " in result
+
+
+class TestUnicodePreamble:
+    """Test LaTeX preamble for unicode support."""
+
+    def test_preamble_includes_luatexja(self) -> None:
+        """Preamble includes luatexja-fontspec."""
+        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+
+        assert "luatexja-fontspec" in UNICODE_PREAMBLE
+
+    def test_preamble_includes_emoji_package(self) -> None:
+        """Preamble includes emoji package."""
+        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+
+        assert "\\usepackage{emoji}" in UNICODE_PREAMBLE
+
+    def test_preamble_defines_cjktext_command(self) -> None:
+        """Preamble defines \\cjktext command."""
+        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+
+        assert "\\newcommand{\\cjktext}" in UNICODE_PREAMBLE
+
+    def test_preamble_sets_cjk_font(self) -> None:
+        """Preamble sets CJK font (Noto)."""
+        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+
+        assert "Noto" in UNICODE_PREAMBLE

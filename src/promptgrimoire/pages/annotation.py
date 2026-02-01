@@ -1317,20 +1317,18 @@ def _setup_client_sync(
 
 
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
-    """Handle PDF export with loading modal."""
+    """Handle PDF export with loading notification."""
     if state.crdt_doc is None or state.document_id is None:
         ui.notify("No document to export", type="warning")
         return
 
-    # Show modal while rendering
-    with ui.dialog() as export_dialog, ui.card().classes("items-center p-8"):
-        ui.spinner("dots", size="xl")
-        ui.label("Generating PDF...").classes("text-lg mt-4")
-        ui.label("This may take a moment for complex documents.").classes(
-            "text-sm text-gray-500"
-        )
-
-    export_dialog.open()
+    # Show notification with spinner while rendering
+    notification = ui.notification(
+        message="Generating PDF...",
+        spinner=True,
+        timeout=None,
+        type="ongoing",
+    )
 
     try:
         # Get tag colours as dict[str, str]
@@ -1354,13 +1352,13 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             filename=f"workspace_{workspace_id}",
         )
 
-        export_dialog.close()
+        notification.dismiss()
 
         # Trigger download
         ui.download(pdf_path)
         ui.notify("PDF exported successfully!", type="positive")
     except Exception as e:
-        export_dialog.close()
+        notification.dismiss()
         logger.exception("Failed to export PDF")
         ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
 

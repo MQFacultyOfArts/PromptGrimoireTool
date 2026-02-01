@@ -27,7 +27,11 @@ from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocumentRegistry,
 )
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.db.workspace_documents import add_document, list_documents
+from promptgrimoire.db.workspace_documents import (
+    add_document,
+    get_document,
+    list_documents,
+)
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
@@ -1337,10 +1341,9 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
-        # Get document content (use raw_content if available)
-        raw_content = ""
-        if state.document_words:
-            raw_content = " ".join(state.document_words)
+        # Get document's original raw_content (preserves newlines)
+        doc = await get_document(state.document_id)
+        raw_content = doc.raw_content if doc else ""
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(

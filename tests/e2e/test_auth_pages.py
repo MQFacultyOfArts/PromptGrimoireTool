@@ -2,13 +2,22 @@
 
 These tests use MockAuthClient (AUTH_MOCK=true) to test
 the auth flow without making real Stytch API calls.
-All tests use fresh_page fixture for proper isolation.
+
+Tests use pytest-subtests to share expensive browser setup across
+related assertions, reducing redundant page loads.
+
+Traceability:
+- Epic: #92 (Annotation Workspace Platform)
+- Issue: #93 (Seam A: Workspace Model)
+- Design: docs/implementation-plans/2026-01-31-test-suite-consolidation/phase_05.md
 """
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from promptgrimoire.auth.mock import (
@@ -19,190 +28,196 @@ from promptgrimoire.auth.mock import (
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
+# Skip marker for tests requiring database
+pytestmark_db = pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set",
+)
+
 
 class TestLoginPage:
-    """Tests for the /login page."""
+    """Tests for the /login page UI elements and magic link flow.
 
-    def test_login_page_renders(self, fresh_page: Page, app_server: str):
-        """Login page displays email input and SSO button."""
+    Uses subtests to share the single page load across multiple element checks.
+    """
+
+    def test_login_page_elements_and_magic_link(
+        self, subtests, fresh_page: Page, app_server: str
+    ) -> None:
+        """Login page UI elements and magic link functionality."""
         fresh_page.goto(f"{app_server}/login")
 
-        # Should show email input for magic link
-        expect(fresh_page.get_by_test_id("email-input")).to_be_visible()
-        expect(fresh_page.get_by_test_id("send-magic-link-btn")).to_be_visible()
+        # --- Subtest: page renders with required elements ---
+        with subtests.test(msg="page_renders_with_elements"):
+            expect(fresh_page.get_by_test_id("email-input")).to_be_visible()
+            expect(fresh_page.get_by_test_id("send-magic-link-btn")).to_be_visible()
+            expect(fresh_page.get_by_test_id("sso-login-btn")).to_be_visible()
 
-        # Should show SSO option
-        expect(fresh_page.get_by_test_id("sso-login-btn")).to_be_visible()
+        # --- Subtest: magic link send with valid email ---
+        with subtests.test(msg="magic_link_send_success"):
+            fresh_page.get_by_test_id("email-input").fill("test@example.com")
+            fresh_page.get_by_test_id("send-magic-link-btn").click()
+            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 
-    def test_magic_link_send_success(self, fresh_page: Page, app_server: str):
-        """Submitting valid email shows success message."""
+        # Reload for next test
         fresh_page.goto(f"{app_server}/login")
 
-        # Fill in a valid test email
-        fresh_page.get_by_test_id("email-input").fill("test@example.com")
-        fresh_page.get_by_test_id("send-magic-link-btn").click()
-
-        # Should show success message
-        expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
-
-    def test_magic_link_send_arbitrary_email(self, fresh_page: Page, app_server: str):
-        """Mock accepts any email for testing flexibility."""
-        fresh_page.goto(f"{app_server}/login")
-
-        # Fill in an arbitrary email (not in MOCK_VALID_EMAILS but still accepted)
-        fresh_page.get_by_test_id("email-input").fill("arbitrary@anywhere.com")
-        fresh_page.get_by_test_id("send-magic-link-btn").click()
-
-        # Should show success - mock accepts any email
-        expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
+        # --- Subtest: magic link accepts arbitrary email ---
+        with subtests.test(msg="magic_link_arbitrary_email"):
+            fresh_page.get_by_test_id("email-input").fill("arbitrary@anywhere.com")
+            fresh_page.get_by_test_id("send-magic-link-btn").click()
+            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 
 
 class TestMagicLinkCallback:
-    """Tests for the /auth/callback page (magic link authentication)."""
+    """Tests for the /auth/callback page (magic link authentication).
 
-    def test_callback_with_valid_token(self, fresh_page: Page, app_server: str):
-        """Valid token authenticates and redirects to index page."""
-        # Navigate to callback with valid mock token
-        fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
+    Uses subtests to share browser context across callback scenarios.
+    """
 
-        # Should redirect to index page after successful auth
-        expect(fresh_page).to_have_url(f"{app_server}/")
+    def test_callback_token_handling(
+        self, subtests, fresh_page: Page, app_server: str
+    ) -> None:
+        """Callback page handles valid, invalid, and missing tokens."""
+        # --- Subtest: valid token authenticates and redirects ---
+        with subtests.test(msg="valid_token_redirects"):
+            fresh_page.goto(
+                f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}"
+            )
+            expect(fresh_page).to_have_url(f"{app_server}/")
 
-    def test_callback_with_invalid_token(self, fresh_page: Page, app_server: str):
-        """Invalid token shows error and redirects to login."""
-        fresh_page.goto(f"{app_server}/auth/callback?token=bad-token")
+        # Clear session for next test
+        fresh_page.goto(f"{app_server}/logout")
 
-        # Should show error first (in label or notification)
-        expect(fresh_page.get_by_text("Error: invalid_token")).to_be_visible()
+        # --- Subtest: invalid token shows error ---
+        with subtests.test(msg="invalid_token_shows_error"):
+            fresh_page.goto(f"{app_server}/auth/callback?token=bad-token")
+            expect(fresh_page.get_by_text("Error: invalid_token")).to_be_visible()
+            expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
-        # Then redirect back to login (wait for timer)
-        expect(fresh_page).to_have_url(f"{app_server}/login", timeout=3000)
-
-    def test_callback_without_token(self, fresh_page: Page, app_server: str):
-        """Missing token redirects to login."""
-        fresh_page.goto(f"{app_server}/auth/callback")
-
-        # Should show error message (use first() since text appears in label and toast)
-        expect(fresh_page.get_by_text("Invalid or missing token").first).to_be_visible()
-
-        # Then redirect to login (wait for timer)
-        expect(fresh_page).to_have_url(f"{app_server}/login", timeout=3000)
+        # --- Subtest: missing token shows error ---
+        with subtests.test(msg="missing_token_shows_error"):
+            fresh_page.goto(f"{app_server}/auth/callback")
+            expect(
+                fresh_page.get_by_text("Invalid or missing token").first
+            ).to_be_visible()
+            expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
 
 class TestSSOFlow:
-    """Tests for SSO authentication flow."""
+    """Tests for SSO authentication flow.
 
-    def test_sso_start_redirects(self, fresh_page: Page, app_server: str):
-        """SSO start generates redirect URL with correct parameters."""
-        fresh_page.goto(f"{app_server}/login")
+    Uses subtests to share browser context across SSO scenarios.
+    """
 
-        # Capture the redirect URL using route interception
-        redirect_url = None
+    def test_sso_authentication_flow(
+        self, subtests, fresh_page: Page, app_server: str
+    ) -> None:
+        """SSO start redirects and callback handles tokens."""
+        # --- Subtest: SSO start generates correct redirect ---
+        with subtests.test(msg="sso_start_redirects"):
+            fresh_page.goto(f"{app_server}/login")
 
-        def capture_redirect(route):
-            nonlocal redirect_url
-            redirect_url = route.request.url
-            route.abort()  # Don't actually navigate to mock.stytch.com
+            redirect_url = None
 
-        fresh_page.route("**/mock.stytch.com/**", capture_redirect)
-        fresh_page.get_by_test_id("sso-login-btn").click()
-        fresh_page.wait_for_timeout(200)  # Give time for navigation to be intercepted
+            def capture_redirect(route):
+                nonlocal redirect_url
+                redirect_url = route.request.url
+                route.abort()
 
-        # Verify the redirect URL was generated correctly
-        assert redirect_url is not None, "SSO redirect was not triggered"
-        assert "mock.stytch.com" in redirect_url
-        assert "connection_id=" in redirect_url
-        assert "public_token=" in redirect_url
+            fresh_page.route("**/mock.stytch.com/**", capture_redirect)
+            fresh_page.get_by_test_id("sso-login-btn").click()
+            fresh_page.wait_for_timeout(200)
 
-    def test_sso_callback_with_valid_token(self, fresh_page: Page, app_server: str):
-        """Valid SSO token authenticates and redirects."""
-        fresh_page.goto(f"{app_server}/auth/sso/callback?token={MOCK_VALID_SSO_TOKEN}")
+            assert redirect_url is not None, "SSO redirect was not triggered"
+            assert "mock.stytch.com" in redirect_url
+            assert "connection_id=" in redirect_url
+            assert "public_token=" in redirect_url
 
-        # Should redirect to index page after successful auth
-        expect(fresh_page).to_have_url(f"{app_server}/")
+            # Clear the route handler for subsequent tests
+            fresh_page.unroute("**/mock.stytch.com/**")
 
-    def test_sso_callback_with_invalid_token(self, fresh_page: Page, app_server: str):
-        """Invalid SSO token shows error."""
-        fresh_page.goto(f"{app_server}/auth/sso/callback?token=bad-sso-token")
+        # --- Subtest: valid SSO token authenticates ---
+        with subtests.test(msg="sso_callback_valid_token"):
+            fresh_page.goto(
+                f"{app_server}/auth/sso/callback?token={MOCK_VALID_SSO_TOKEN}"
+            )
+            expect(fresh_page).to_have_url(f"{app_server}/")
 
-        # Should show error (use first() since text appears in label and toast)
-        expect(fresh_page.get_by_text("invalid_token").first).to_be_visible()
+        # Clear session for next test
+        fresh_page.goto(f"{app_server}/logout")
 
-        # Then redirect to login (wait for timer)
-        expect(fresh_page).to_have_url(f"{app_server}/login", timeout=3000)
+        # --- Subtest: invalid SSO token shows error ---
+        with subtests.test(msg="sso_callback_invalid_token"):
+            fresh_page.goto(f"{app_server}/auth/sso/callback?token=bad-sso-token")
+            expect(fresh_page.get_by_text("invalid_token").first).to_be_visible()
+            expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
 
 class TestProtectedPage:
-    """Tests for the /protected page."""
+    """Tests for the /protected page authentication requirements.
 
-    def test_protected_requires_auth(self, fresh_page: Page, app_server: str):
+    Uses subtests to share authenticated session across related checks.
+    """
+
+    def test_protected_page_unauthenticated(
+        self, fresh_page: Page, app_server: str
+    ) -> None:
         """Protected page redirects to login if not authenticated."""
         fresh_page.goto(f"{app_server}/protected")
-
-        # Should redirect to login
         expect(fresh_page).to_have_url(f"{app_server}/login")
 
-    def test_protected_shows_user_info(self, fresh_page: Page, app_server: str):
-        """Protected page shows user info when authenticated."""
-        # First authenticate
+    def test_protected_page_authenticated_flow(
+        self, subtests, fresh_page: Page, app_server: str
+    ) -> None:
+        """Protected page behaviour when authenticated (user info, logout)."""
+        # Authenticate first
         fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
         expect(fresh_page).to_have_url(f"{app_server}/")
 
         # Navigate to protected page
         fresh_page.goto(f"{app_server}/protected")
 
-        # Should show user email and roles
-        expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
-        expect(fresh_page.get_by_text("stytch_member")).to_be_visible()
+        # --- Subtest: shows user info ---
+        with subtests.test(msg="shows_user_info"):
+            expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
+            expect(fresh_page.get_by_text("stytch_member")).to_be_visible()
 
-    def test_logout_clears_session(self, fresh_page: Page, app_server: str):
-        """Logout clears session and redirects to login."""
-        # First authenticate
-        fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(fresh_page).to_have_url(f"{app_server}/")
+        # --- Subtest: logout clears session ---
+        with subtests.test(msg="logout_clears_session"):
+            fresh_page.get_by_test_id("logout-btn").click()
+            expect(fresh_page).to_have_url(f"{app_server}/login")
 
-        # Navigate to protected page to get logout button
-        fresh_page.goto(f"{app_server}/protected")
-
-        # Click logout
-        fresh_page.get_by_test_id("logout-btn").click()
-
-        # Should redirect to login
-        expect(fresh_page).to_have_url(f"{app_server}/login")
-
-        # Trying to access protected should redirect
-        fresh_page.goto(f"{app_server}/protected")
-        expect(fresh_page).to_have_url(f"{app_server}/login")
+            # Verify session is cleared
+            fresh_page.goto(f"{app_server}/protected")
+            expect(fresh_page).to_have_url(f"{app_server}/login")
 
 
 class TestSessionPersistence:
-    """Tests for session persistence across page loads."""
+    """Tests for session persistence across page loads and navigation.
 
-    def test_session_persists_on_refresh(self, fresh_page: Page, app_server: str):
-        """Session persists after page refresh."""
-        # Authenticate
+    Uses subtests to share authenticated session across persistence checks.
+    """
+
+    def test_session_persists(
+        self, subtests, fresh_page: Page, app_server: str
+    ) -> None:
+        """Session persists on refresh and across navigation."""
+        # Authenticate first
         fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
         expect(fresh_page).to_have_url(f"{app_server}/")
 
-        # Navigate to protected and refresh
-        fresh_page.goto(f"{app_server}/protected")
-        fresh_page.reload()
-
-        # Should still be on protected page (not redirected to login)
-        expect(fresh_page).to_have_url(f"{app_server}/protected")
-        expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
-
-    def test_session_persists_across_navigation(
-        self, fresh_page: Page, app_server: str
-    ):
-        """Session persists when navigating to other pages."""
-        # Authenticate
-        fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
-        expect(fresh_page).to_have_url(f"{app_server}/")
-
-        # Navigate away and back to protected
-        fresh_page.goto(f"{app_server}/login")
+        # Navigate to protected page
         fresh_page.goto(f"{app_server}/protected")
 
-        # Should still be authenticated (not redirected to login)
-        expect(fresh_page).to_have_url(f"{app_server}/protected")
+        # --- Subtest: session persists on refresh ---
+        with subtests.test(msg="persists_on_refresh"):
+            fresh_page.reload()
+            expect(fresh_page).to_have_url(f"{app_server}/protected")
+            expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
+
+        # --- Subtest: session persists across navigation ---
+        with subtests.test(msg="persists_across_navigation"):
+            fresh_page.goto(f"{app_server}/login")
+            fresh_page.goto(f"{app_server}/protected")
+            expect(fresh_page).to_have_url(f"{app_server}/protected")

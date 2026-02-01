@@ -30,7 +30,8 @@ REQUIRED_PACKAGES = [
     "soul",  # Underlining/highlighting (fallback)
     # Unicode support (Issue #101)
     "emoji",  # Emoji rendering in LuaLaTeX
-    "luatexja",  # CJK support for LuaLaTeX (uses system fonts via fontspec)
+    "luatexja",  # CJK support for LuaLaTeX
+    "haranoaji",  # Default Japanese fonts for luatexja-fontspec
 ]
 
 

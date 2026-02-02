@@ -4,6 +4,9 @@ Tests the complete flow: HTML -> markers -> pandoc -> process -> compile.
 
 Includes Issue #85 regression test to ensure literal markers never appear
 in final LaTeX output.
+
+To skip these tests (e.g., in CI without LaTeX):
+    pytest -m "not latex"
 """
 
 from __future__ import annotations

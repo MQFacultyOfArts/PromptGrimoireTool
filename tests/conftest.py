@@ -167,9 +167,34 @@ def _has_latexmk() -> bool:
         return False
 
 
-requires_latexmk = pytest.mark.skipif(
-    not _has_latexmk(), reason="latexmk not installed"
-)
+# Decorator that FAILS (not skips) when latexmk is missing
+# Use pytest -m "not latex" to exclude these tests
+def requires_latexmk(func_or_class):
+    """Decorator that fails tests if latexmk is not installed.
+
+    Unlike skipif, this makes missing dependencies visible as failures.
+    To exclude LaTeX tests entirely: pytest -m "not latex"
+    """
+    import functools
+
+    if isinstance(func_or_class, type):
+        # Class decorator
+        for name, method in list(vars(func_or_class).items()):
+            if name.startswith("test_") and callable(method):
+                setattr(func_or_class, name, requires_latexmk(method))
+        return pytest.mark.latex(func_or_class)
+    else:
+        # Function decorator
+        @functools.wraps(func_or_class)
+        def wrapper(*args, **kwargs):
+            if not _has_latexmk():
+                pytest.fail(
+                    "latexmk not installed. Run: uv run python scripts/setup_latex.py\n"
+                    "To skip LaTeX tests: pytest -m 'not latex'"
+                )
+            return func_or_class(*args, **kwargs)
+
+        return pytest.mark.latex(wrapper)
 
 
 # =============================================================================

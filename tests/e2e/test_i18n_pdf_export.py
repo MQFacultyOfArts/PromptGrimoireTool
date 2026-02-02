@@ -5,6 +5,9 @@ new documents and exported to PDF through the full UI workflow.
 
 Output saved to: output/test_output/e2e_i18n_exports/
 
+To skip these tests (e.g., in CI without LaTeX):
+    pytest -m "not latex"
+
 Traceability:
 - Issue: #101 (CJK/BLNS support)
 - Fixtures: tests/fixtures/conversations/ (Vanessa's translations)
@@ -35,22 +38,40 @@ pytestmark_db = pytest.mark.skipif(
     reason="TEST_DATABASE_URL not set",
 )
 
-# Skip marker for tests requiring latexmk
-pytestmark_latexmk = pytest.mark.skipif(
-    not Path.home().joinpath(".TinyTeX/bin/x86_64-linux/latexmk").exists()
-    and not bool(os.environ.get("LATEXMK_PATH")),
-    reason="TinyTeX/latexmk not installed",
-)
+
+# Helper to check latexmk availability
+def _has_latexmk() -> bool:
+    """Check if latexmk is available."""
+    tinytex_path = Path.home() / ".TinyTeX/bin"
+    if tinytex_path.exists():
+        for arch_dir in tinytex_path.iterdir():
+            if (arch_dir / "latexmk").exists():
+                return True
+    return bool(os.environ.get("LATEXMK_PATH"))
 
 
+@pytest.mark.latex
+@pytest.mark.e2e
 class TestI18nPdfExportE2E:
     """E2E tests for multilingual PDF export through UI.
 
     These tests paste fixture content into documents via the UI,
     then export to PDF and verify the results.
 
+    These tests FAIL (not skip) when LaTeX dependencies are missing.
+    To exclude: pytest -m "not latex"
+
     Output saved to: output/test_output/e2e_i18n_exports/
     """
+
+    @pytest.fixture(autouse=True)
+    def _check_latexmk(self) -> None:
+        """Fail if latexmk is not installed."""
+        if not _has_latexmk():
+            pytest.fail(
+                "latexmk not installed. Run: uv run python scripts/setup_latex.py\n"
+                "To skip LaTeX tests: pytest -m 'not latex'"
+            )
 
     # Expected characters per fixture (for TEX content verification)
     _EXPECTED_CHARS: ClassVar[dict[str, list[str]]] = {
@@ -113,7 +134,6 @@ class TestI18nPdfExportE2E:
         return header == b"%PDF"
 
     @pytestmark_db
-    @pytestmark_latexmk
     @pytest.mark.parametrize(
         "fixture_name",
         [
@@ -185,7 +205,6 @@ class TestI18nPdfExportE2E:
         # Full TEX verification is in tests/integration/test_pdf_export.py
 
     @pytestmark_db
-    @pytestmark_latexmk
     def test_paste_and_export_cjk_mixed(
         self, authenticated_page: Page, app_server: str
     ) -> None:

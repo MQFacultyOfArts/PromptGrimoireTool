@@ -1,7 +1,9 @@
 """Integration tests for PDF export pipeline.
 
 These tests require external dependencies (Pandoc, TinyTeX/latexmk).
-Tests are skipped if dependencies are not available.
+
+To skip these tests (e.g., in CI without LaTeX):
+    pytest -m "not latex"
 """
 
 from __future__ import annotations

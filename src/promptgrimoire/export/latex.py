@@ -1053,12 +1053,15 @@ def convert_html_with_annotations(
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
 
-    # Strip ASCII control characters that are invalid in LaTeX
-    # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)
-    html = _strip_control_chars(html)
-
-    # Insert markers
+    # IMPORTANT: Insert markers BEFORE stripping control chars!
+    # The UI counts words including control char "words" (e.g., BLNS has standalone
+    # 0x01-0x1F chars). If we strip first, word indices become misaligned.
+    # Markers are ASCII (HLSTARTnENDHL) so they survive the strip.
     marked_html, marker_highlights = _insert_markers_into_html(html, highlights)
+
+    # Strip control characters that are invalid in LaTeX AFTER markers are placed
+    # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)
+    marked_html = _strip_control_chars(marked_html)
 
     # Convert to LaTeX
     latex = convert_html_to_latex(marked_html, filter_path=filter_path)

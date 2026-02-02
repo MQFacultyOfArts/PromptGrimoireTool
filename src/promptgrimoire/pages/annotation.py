@@ -1347,6 +1347,14 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         doc = await get_document(state.document_id)
         raw_content = doc.raw_content if doc else ""
 
+        # DEBUG: Log raw_content to see if newlines are present
+        logger.info(
+            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
+            len(raw_content),
+            raw_content.count("\n"),
+            raw_content[:200],
+        )
+
         # Generate PDF
         pdf_path = await export_annotation_pdf(
             html_content=raw_content,
@@ -1406,15 +1414,22 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         # Update with actual count now that badge exists
         _update_user_count(state)
 
-        # Export PDF button
-        async def on_export_click() -> None:
-            await _handle_pdf_export(state, workspace_id)
-
-        ui.button(
+        # Export PDF button with loading state
+        export_btn = ui.button(
             "Export PDF",
             icon="picture_as_pdf",
-            on_click=on_export_click,
         ).props("color=primary")
+
+        async def on_export_click() -> None:
+            export_btn.disable()
+            export_btn.props("loading")
+            try:
+                await _handle_pdf_export(state, workspace_id)
+            finally:
+                export_btn.props(remove="loading")
+                export_btn.enable()
+
+        export_btn.on_click(on_export_click)
 
     # Load CRDT document for this workspace
     crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)

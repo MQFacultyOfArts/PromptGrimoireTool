@@ -10,6 +10,7 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 from __future__ import annotations
 
 import html
+import logging
 import re
 import shutil
 import tempfile
@@ -21,6 +22,8 @@ from promptgrimoire.export.latex import (
     convert_html_with_annotations,
 )
 from promptgrimoire.export.pdf import compile_latex
+
+logger = logging.getLogger(__name__)
 
 # LaTeX document template
 _DOCUMENT_TEMPLATE = r"""
@@ -208,10 +211,26 @@ async def export_annotation_pdf(
     Raises:
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
-    # Detect plain text (no HTML block tags) and convert to HTML paragraphs.
+    # Detect if content is ALREADY structured HTML (starts with HTML tags).
     # Plain text newlines are collapsed by Pandoc, so we wrap in <p> tags.
-    if html_content and not re.search(r"<(?:p|div|table|ul|ol|h[1-6])\b", html_content):
+    # We check the START of content - not anywhere - because content like BLNS
+    # contains HTML strings (XSS payloads) that shouldn't trigger HTML detection.
+    is_structured_html = html_content and re.match(
+        r"\s*<(?:!DOCTYPE|html|body|p|div|table|ul|ol|h[1-6])\b",
+        html_content,
+        re.IGNORECASE,
+    )
+    logger.info(
+        "[PDF DEBUG] is_structured_html=%s, will call _plain_text_to_html=%s",
+        bool(is_structured_html),
+        not is_structured_html,
+    )
+    if not is_structured_html:
         html_content = _plain_text_to_html(html_content)
+        logger.info(
+            "[PDF DEBUG] after _plain_text_to_html, <p> count=%d",
+            html_content.count("<p>"),
+        )
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling

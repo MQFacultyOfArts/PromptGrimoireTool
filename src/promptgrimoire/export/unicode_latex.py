@@ -47,6 +47,10 @@ UNICODE_PREAMBLE = r"""
     "Noto Serif Myanmar:mode=node;script=mymr;",
     % Sinhala (Sri Lankan)
     "Noto Serif Sinhala:mode=node;script=sinh;",
+    % Historic/rare scripts (for BLNS coverage)
+    "Noto Sans Deseret:mode=node;",  % U+10400-U+1044F (19th c. Utah)
+    "Noto Sans Osage:mode=node;",    % U+104B0-U+104FF
+    "Noto Sans Shavian:mode=node;",  % U+10450-U+1047F
     % Symbols and math (last resort for missing glyphs)
     "Noto Sans Symbols:mode=node;",
     "Noto Sans Symbols2:mode=node;",

@@ -27,6 +27,10 @@ REQUIRED_SYSTEM_FONTS = [
     "Noto Serif Bengali",
     "Noto Serif Tamil",
     "Noto Serif Thai",
+    # Historic/rare scripts (for BLNS coverage)
+    "Noto Sans Deseret",
+    "Noto Sans Osage",
+    "Noto Sans Shavian",
     # Symbols and emoji
     "Noto Sans Symbols",
     "Noto Sans Symbols2",

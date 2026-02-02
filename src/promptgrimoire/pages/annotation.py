@@ -211,34 +211,6 @@ async def _create_workspace_and_redirect() -> None:
         ui.notify("Failed to create workspace", type="negative")
 
 
-def _process_text_to_word_spans(text: str) -> str:
-    """Convert plain text to HTML with word-level spans.
-
-    Each word gets a span with data-word-index attribute for annotation targeting.
-    """
-    lines = text.split("\n")
-    html_parts = []
-    word_index = 0
-
-    for line_num, line in enumerate(lines):
-        if line.strip():
-            words = line.split()
-            line_spans = []
-            for word in words:
-                escaped = html.escape(word)
-                span = (
-                    f'<span class="word" data-word-index="{word_index}">'
-                    f"{escaped}</span>"
-                )
-                line_spans.append(span)
-                word_index += 1
-            html_parts.append(f'<p data-para="{line_num}">{" ".join(line_spans)}</p>')
-        else:
-            html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
-
-    return "\n".join(html_parts)
-
-
 def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
     """Convert plain text to HTML with character-level spans.
 

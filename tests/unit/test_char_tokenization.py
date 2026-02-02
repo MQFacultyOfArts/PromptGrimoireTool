@@ -1,6 +1,9 @@
 """Unit tests for character-based tokenization."""
 
+import pytest
+
 from promptgrimoire.pages.annotation import _process_text_to_char_spans
+from tests.conftest import CJK_TEST_CHARS
 
 
 class TestProcessTextToCharSpans:
@@ -83,3 +86,48 @@ class TestProcessTextToCharSpans:
         result, _chars = _process_text_to_char_spans("a")
         assert 'class="char"' in result
         assert 'class="word"' not in result
+
+
+class TestCharTokenizationBLNS:
+    """Tests using BLNS corpus for edge cases."""
+
+    @pytest.mark.parametrize("char", CJK_TEST_CHARS[:20])  # Sample of CJK chars
+    def test_cjk_char_from_blns(self, char: str) -> None:
+        """Each CJK character from BLNS is tokenized individually."""
+        result, chars = _process_text_to_char_spans(char)
+        assert len(chars) == 1
+        assert chars[0] == char
+        assert 'data-char-index="0"' in result
+
+    def test_rtl_arabic_tokenizes(self) -> None:
+        """Arabic RTL text tokenizes character by character."""
+        arabic = "مرحبا"
+        _result, chars = _process_text_to_char_spans(arabic)
+        assert len(chars) == 5
+        assert all(c in chars for c in arabic)
+
+    def test_rtl_hebrew_tokenizes(self) -> None:
+        """Hebrew RTL text tokenizes character by character."""
+        hebrew = "שלום"
+        _result, chars = _process_text_to_char_spans(hebrew)
+        assert len(chars) == 4
+
+    def test_emoji_split_by_codepoint(self) -> None:
+        """Emoji are split by Unicode code point (acceptable for MVP)."""
+        _result, chars = _process_text_to_char_spans("\U0001f600")
+        assert len(chars) == 1
+
+    def test_ideographic_space_indexed(self) -> None:
+        """Ideographic space (U+3000) is indexed."""
+        _result, chars = _process_text_to_char_spans("a\u3000b")
+        assert chars == ["a", "\u3000", "b"]
+
+    def test_zero_width_joiner_indexed(self) -> None:
+        """Zero-width joiner (U+200D) is indexed as a character."""
+        _result, chars = _process_text_to_char_spans("a\u200db")
+        assert chars == ["a", "\u200d", "b"]
+
+    def test_control_chars_indexed(self) -> None:
+        """Control characters are indexed but may render invisibly."""
+        _result, chars = _process_text_to_char_spans("a\tb")
+        assert chars == ["a", "\t", "b"]

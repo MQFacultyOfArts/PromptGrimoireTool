@@ -12,6 +12,33 @@ UNICODE_PACKAGES = ["emoji", "luatexja"]
 # Replacement character indicates missing glyph (tofu)
 REPLACEMENT_CHAR = "\ufffd"
 
+# Required system fonts for full Unicode support (from scripts/setup_latex.py)
+REQUIRED_SYSTEM_FONTS = [
+    # Main font (TNR equivalent)
+    "TeX Gyre Termes",
+    # CJK fonts (at least one variant needed)
+    "Noto Serif CJK SC",
+    "Noto Sans CJK SC",
+    # Script-specific fonts for fallback chain
+    "Noto Serif",
+    "Noto Serif Hebrew",
+    "Noto Naskh Arabic",
+    "Noto Serif Devanagari",
+    "Noto Serif Bengali",
+    "Noto Serif Tamil",
+    "Noto Serif Thai",
+    # Symbols and emoji
+    "Noto Sans Symbols",
+    "Noto Sans Symbols2",
+    "Noto Color Emoji",
+]
+
+
+def get_fc_list_path() -> Path | None:
+    """Get path to fc-list if installed."""
+    path = shutil.which("fc-list")
+    return Path(path) if path else None
+
 
 def get_pdftotext_path() -> Path | None:
     """Get path to pdftotext if installed."""
@@ -44,15 +71,24 @@ def get_lualatex_path() -> Path | None:
     return None
 
 
-@pytest.mark.slow
+@pytest.mark.latex
 class TestLaTeXPackages:
-    """Test LaTeX package availability."""
+    """Test LaTeX package availability.
+
+    These tests verify the LaTeX environment is correctly configured.
+    They FAIL (not skip) when dependencies are missing - this is intentional.
+
+    To exclude these tests (e.g., in CI without LaTeX):
+        pytest -m "not latex"
+    """
 
     def test_unicode_packages_installed(self) -> None:
         """Verify CJK and emoji packages are installed in TinyTeX."""
         tlmgr = get_tlmgr_path()
-        if tlmgr is None:
-            pytest.skip("TinyTeX not installed")
+        assert tlmgr is not None, (
+            "TinyTeX not installed. Run: uv run python scripts/setup_latex.py\n"
+            "To skip LaTeX tests: pytest -m 'not latex'"
+        )
 
         result = subprocess.run(
             [str(tlmgr), "list", "--only-installed"],
@@ -73,12 +109,19 @@ class TestLaTeXPackages:
         from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
 
         lualatex = get_lualatex_path()
-        if lualatex is None:
-            pytest.skip("TinyTeX not installed")
+        assert lualatex is not None, (
+            "TinyTeX not installed. Run: uv run python scripts/setup_latex.py\n"
+            "To skip LaTeX tests: pytest -m 'not latex'"
+        )
 
         pdftotext = get_pdftotext_path()
-        if pdftotext is None:
-            pytest.skip("pdftotext not installed")
+        assert pdftotext is not None, (
+            "pdftotext not installed. Install poppler-utils:\n"
+            "  Ubuntu/Debian: sudo apt install poppler-utils\n"
+            "  Fedora: sudo dnf install poppler-utils\n"
+            "  Arch: sudo pacman -S poppler\n"
+            "To skip LaTeX tests: pytest -m 'not latex'"
+        )
 
         # Test content - CJK text that must render correctly
         cjk_text = "日本語"
@@ -129,4 +172,42 @@ Hello World. CJK: \cjktext{{{cjk_text}}} Emoji: \emoji{{party-popper}}
         assert cjk_text in extracted, (
             f"CJK text '{cjk_text}' not found in extracted PDF text. "
             f"Extracted: {extracted[:500]}"
+        )
+
+    def test_system_fonts_installed(self) -> None:
+        """Verify required system fonts are installed for Unicode rendering."""
+        fc_list = get_fc_list_path()
+        assert fc_list is not None, (
+            "fc-list not installed (fontconfig). Install:\n"
+            "  Ubuntu/Debian: sudo apt install fontconfig\n"
+            "  Fedora: sudo dnf install fontconfig\n"
+            "  Arch: sudo pacman -S fontconfig\n"
+            "To skip LaTeX tests: pytest -m 'not latex'"
+        )
+
+        # Get list of installed font families
+        result = subprocess.run(
+            [str(fc_list), ":", "family"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        installed = set(result.stdout.replace("\n", ",").split(","))
+        installed = {f.strip() for f in installed if f.strip()}
+
+        missing = []
+        for font in REQUIRED_SYSTEM_FONTS:
+            # Check if font family is installed (partial match for variants)
+            if not any(font in f for f in installed):
+                missing.append(font)
+
+        assert not missing, (
+            f"Missing system fonts for Unicode support: {missing}\n"
+            "Install with:\n"
+            "  Ubuntu/Debian: sudo apt install fonts-noto fonts-noto-cjk "
+            "fonts-noto-cjk-extra fonts-noto-color-emoji tex-gyre\n"
+            "  Fedora: sudo dnf install google-noto-fonts-all "
+            "google-noto-emoji-fonts texlive-tex-gyre\n"
+            "  Arch: sudo pacman -S noto-fonts noto-fonts-cjk "
+            "noto-fonts-emoji noto-fonts-extra tex-gyre-fonts"
         )

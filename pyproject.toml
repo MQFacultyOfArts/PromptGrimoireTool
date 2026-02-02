@@ -147,6 +147,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
+    "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
 
 [tool.coverage.run]

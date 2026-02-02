@@ -135,13 +135,13 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Word spans for selection */
-    .word {
+    /* Character spans for selection */
+    .char {
         cursor: text;
     }
 
     /* Hover highlight effect when card is hovered */
-    .word.card-hover-highlight {
+    .char.card-hover-highlight {
         outline: 2px solid #FFD700 !important;
         outline-offset: 1px;
     }
@@ -175,7 +175,7 @@ class PageState:
     broadcast_cursor: Any | None = None  # Callable to broadcast cursor position
     broadcast_selection: Any | None = None  # Callable to broadcast selection
     # Document content for text extraction
-    document_words: list[str] | None = None  # Words by index
+    document_chars: list[str] | None = None  # Characters by index
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
 
@@ -329,9 +329,9 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         underline_color = first_color if overlap_count < 3 else "#333"
         thickness = f"{min(overlap_count, 3)}px"
 
-        # Main word styling
+        # Main character styling
         css_rules.append(
-            f'[data-word-index="{word_idx}"] {{ '
+            f'[data-char-index="{word_idx}"] {{ '
             f"background-color: {bg_rgba}; "
             f"text-decoration: underline; "
             f"text-decoration-color: {underline_color}; "
@@ -340,10 +340,10 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         )
 
         # ::after pseudo-element to extend background through space
-        # Only add if next word is also highlighted (check word_highlights)
+        # Only add if next character is also highlighted (check word_highlights)
         if (word_idx + 1) in word_highlights:
             css_rules.append(
-                f"[data-word-index=\"{word_idx}\"]::after {{ content: ' '; }}"
+                f"[data-char-index=\"{word_idx}\"]::after {{ content: ' '; }}"
             )
 
     return "\n".join(css_rules)
@@ -364,13 +364,13 @@ def _build_remote_cursor_css(
             continue
         # Cursor indicator using box-shadow (no layout shift)
         rules.append(
-            f'[data-word-index="{word}"] {{ '
+            f'[data-char-index="{word}"] {{ '
             f"position: relative; "
             f"box-shadow: inset 2px 0 0 0 {color}; }}"
         )
         # Floating name label
         rules.append(
-            f'[data-word-index="{word}"]::before {{ '
+            f'[data-char-index="{word}"]::before {{ '
             f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
             f"font-size: 0.6rem; background: {color}; color: white; "
             f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
@@ -395,8 +395,8 @@ def _build_remote_selection_css(
             continue
         if start > end:
             start, end = end, start
-        # Selection highlight for all words in range
-        selectors = [f'[data-word-index="{i}"]' for i in range(start, end + 1)]
+        # Selection highlight for all characters in range
+        selectors = [f'[data-char-index="{i}"]' for i in range(start, end + 1)]
         if selectors:
             selector_str = ", ".join(selectors)
             rules.append(
@@ -404,12 +404,12 @@ def _build_remote_selection_css(
                 f"box-shadow: 0.3em 0 0 {color}30; }}"
             )
             rules.append(
-                f'[data-word-index="{end}"] {{ box-shadow: none !important; }}'
+                f'[data-char-index="{end}"] {{ box-shadow: none !important; }}'
             )
-            # Name label on first word
-            rules.append(f'[data-word-index="{start}"] {{ position: relative; }}')
+            # Name label on first character
+            rules.append(f'[data-char-index="{start}"] {{ position: relative; }}')
             rules.append(
-                f'[data-word-index="{start}"]::before {{ '
+                f'[data-char-index="{start}"]::before {{ '
                 f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
                 f"font-size: 0.65rem; background: {color}; color: white; "
                 f"padding: 1px 4px; border-radius: 2px; white-space: nowrap; "
@@ -820,11 +820,11 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     # Use tag value if provided, otherwise default to "highlight"
     tag_value = tag.value if tag else "highlight"
 
-    # Extract highlighted text from document words
+    # Extract highlighted text from document characters
     highlighted_text = ""
-    if state.document_words:
-        words_slice = state.document_words[start:end]
-        highlighted_text = " ".join(words_slice)
+    if state.document_chars:
+        chars_slice = state.document_chars[start:end]
+        highlighted_text = "".join(chars_slice)
 
     state.crdt_doc.add_highlight(
         start_word=start,
@@ -1032,9 +1032,9 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract words from raw_content for text extraction when highlighting
+    # Extract characters from raw_content for text extraction when highlighting
     if hasattr(doc, "raw_content") and doc.raw_content:
-        state.document_words = doc.raw_content.split()
+        _, state.document_chars = _process_text_to_char_spans(doc.raw_content)
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1496,7 +1496,9 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 return
 
             try:
-                html_content = _process_text_to_word_spans(content_input.value.strip())
+                html_content, _ = _process_text_to_char_spans(
+                    content_input.value.strip()
+                )
                 await add_document(
                     workspace_id=workspace_id,
                     type="source",

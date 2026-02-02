@@ -482,8 +482,10 @@ _HLEND_TEMPLATE = "HLEND{}ENDHL"
 _HLSTART_PATTERN = re.compile(r"HLSTART(\d+)ENDHL")
 _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 
-# Pattern for words - matches _WordSpanProcessor._WORD_PATTERN
-_WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
+# Pattern for words - matches str.split() behavior (non-whitespace sequences)
+# The UI tokenizes words with line.split() so we must use the same tokenization
+# to ensure highlight word indices match between UI and export.
+_WORD_PATTERN = re.compile(r"\S+")
 
 # Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
 # Note: The \annot command takes 2 parameters: colour name and margin content.
@@ -690,7 +692,9 @@ def _insert_markers_into_html(
 ) -> tuple[str, list[dict]]:
     """Insert annotation and highlight markers into HTML at correct word positions.
 
-    Uses the same word pattern as _WordSpanProcessor to ensure word indices match.
+    Uses str.split() tokenization (via \\S+ regex) to match the UI's word indexing.
+    The UI creates word indices with line.split(), so we must match that exactly.
+
     Inserts three types of markers:
     - HLSTART{n} at start_word (before the word)
     - HLEND{n} after end_word (after the last highlighted word)

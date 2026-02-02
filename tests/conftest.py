@@ -176,6 +176,7 @@ def requires_latexmk(func_or_class):
     To exclude LaTeX tests entirely: pytest -m "not latex"
     """
     import functools
+    import inspect
 
     if isinstance(func_or_class, type):
         # Class decorator
@@ -183,8 +184,20 @@ def requires_latexmk(func_or_class):
             if name.startswith("test_") and callable(method):
                 setattr(func_or_class, name, requires_latexmk(method))
         return pytest.mark.latex(func_or_class)
+    elif inspect.iscoroutinefunction(func_or_class):
+        # Async function decorator
+        @functools.wraps(func_or_class)
+        async def async_wrapper(*args, **kwargs):
+            if not _has_latexmk():
+                pytest.fail(
+                    "latexmk not installed. Run: uv run python scripts/setup_latex.py\n"
+                    "To skip LaTeX tests: pytest -m 'not latex'"
+                )
+            return await func_or_class(*args, **kwargs)
+
+        return pytest.mark.latex(async_wrapper)
     else:
-        # Function decorator
+        # Sync function decorator
         @functools.wraps(func_or_class)
         def wrapper(*args, **kwargs):
             if not _has_latexmk():

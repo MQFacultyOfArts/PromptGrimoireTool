@@ -1462,14 +1462,17 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 return
 
             try:
-                html_content, _ = _process_text_to_char_spans(
-                    content_input.value.strip()
+                # Sanitize: remove control chars (PostgreSQL rejects NULL, others
+                # cause rendering issues). Keep tab/newline/CR.
+                sanitized = "".join(
+                    c for c in content_input.value.strip() if c >= " " or c in "\t\n\r"
                 )
+                html_content, _ = _process_text_to_char_spans(sanitized)
                 await add_document(
                     workspace_id=workspace_id,
                     type="source",
                     content=html_content,
-                    raw_content=content_input.value.strip(),
+                    raw_content=sanitized,
                     title=None,
                 )
                 # Reload page to show document

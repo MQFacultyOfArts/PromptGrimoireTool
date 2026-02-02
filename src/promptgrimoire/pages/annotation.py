@@ -239,6 +239,47 @@ def _process_text_to_word_spans(text: str) -> str:
     return "\n".join(html_parts)
 
 
+def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
+    """Convert plain text to HTML with character-level spans.
+
+    Each character (including whitespace) gets a span with data-char-index
+    attribute for annotation targeting. Newlines create paragraph breaks
+    but do not get indices.
+
+    Args:
+        text: Plain text to process.
+
+    Returns:
+        Tuple of (html_string, char_list) where char_list contains
+        all indexed characters in order.
+    """
+    if not text:
+        return "", []
+
+    lines = text.split("\n")
+    html_parts: list[str] = []
+    chars: list[str] = []
+    char_index = 0
+
+    for line_num, line in enumerate(lines):
+        if line:  # Non-empty line
+            line_spans: list[str] = []
+            for char in line:
+                escaped = html.escape(char)
+                span = (
+                    f'<span class="char" data-char-index="{char_index}">'
+                    f"{escaped}</span>"
+                )
+                line_spans.append(span)
+                chars.append(char)
+                char_index += 1
+            html_parts.append(f'<p data-para="{line_num}">{"".join(line_spans)}</p>')
+        else:  # Empty line
+            html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
+
+    return "\n".join(html_parts), chars
+
+
 def _get_tag_color(tag_str: str) -> str:
     """Get hex color for a tag string."""
     try:

@@ -762,22 +762,19 @@ def _insert_markers_into_html(
             text_result: list[str] = []
 
             for char in text:
-                # Insert HLSTART markers before this character
-                if char_idx in start_markers:
-                    for marker_idx, _ in start_markers[char_idx]:
+                # Newlines aren't indexed by UI (become paragraph breaks)
+                if char != "\n":
+                    # Insert HLSTART markers before this character
+                    for marker_idx, _ in start_markers.get(char_idx, []):
                         text_result.append(_HLSTART_TEMPLATE.format(marker_idx))
-
-                # Add the character
-                text_result.append(char)
-
-                # Insert HLEND then ANNMARKER after this character
-                # (ANNMARKER after HLEND so annotation appears after highlight ends)
-                if char_idx in end_markers:
-                    for marker_idx in end_markers[char_idx]:
+                    text_result.append(char)
+                    # Insert HLEND then ANNMARKER after this character
+                    for marker_idx in end_markers.get(char_idx, []):
                         text_result.append(_HLEND_TEMPLATE.format(marker_idx))
                         text_result.append(_MARKER_TEMPLATE.format(marker_idx))
-
-                char_idx += 1
+                    char_idx += 1
+                else:
+                    text_result.append(char)
 
             result.append("".join(text_result))
             i = next_tag

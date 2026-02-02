@@ -482,10 +482,9 @@ _HLEND_TEMPLATE = "HLEND{}ENDHL"
 _HLSTART_PATTERN = re.compile(r"HLSTART(\d+)ENDHL")
 _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 
-# Pattern for words - matches str.split() behavior (non-whitespace sequences)
-# The UI tokenizes words with line.split() so we must use the same tokenization
-# to ensure highlight word indices match between UI and export.
-_WORD_PATTERN = re.compile(r"\S+")
+# Character-based tokenization.
+# The UI tokenizes by character (including whitespace), so export must match exactly.
+# Note: _WORD_PATTERN regex is no longer used - character iteration is inline.
 
 # Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
 # Note: The \annot command takes 2 parameters: colour name and margin content.
@@ -690,19 +689,20 @@ def _format_annot(
 def _insert_markers_into_html(
     html: str, highlights: list[dict]
 ) -> tuple[str, list[dict]]:
-    """Insert annotation and highlight markers into HTML at correct word positions.
+    """Insert annotation and highlight markers into HTML at correct character positions.
 
-    Uses str.split() tokenization (via \\S+ regex) to match the UI's word indexing.
-    The UI creates word indices with line.split(), so we must match that exactly.
+    Uses character-by-character iteration to match the UI's character indexing.
+    The UI creates character indices by iterating each character (including whitespace),
+    so we must match that exactly for highlights to align between UI and export.
 
     Inserts three types of markers:
-    - HLSTART{n} at start_word (before the word)
-    - HLEND{n} after end_word (after the last highlighted word)
+    - HLSTART{n} at start_char (before the character)
+    - HLEND{n} after end_char (after the last highlighted character)
     - ANNMARKER{n} after HLEND (so \\annot{} with \\par is outside \\highLight{})
 
     Args:
         html: Raw HTML content.
-        highlights: List of highlight dicts with start_word and end_word.
+        highlights: List of highlight dicts with start_char and end_char.
 
     Returns:
         Tuple of (html with markers, list of highlights in marker order).
@@ -710,31 +710,37 @@ def _insert_markers_into_html(
     if not highlights:
         return html, []
 
-    # Sort by start_word, then by tag
+    # Sort by start_char, then by tag
+    # Support both old field names (start_word) and new (start_char) for migration
     sorted_highlights = sorted(
-        highlights, key=lambda h: (h.get("start_word", 0), h.get("tag", ""))
+        highlights,
+        key=lambda h: (
+            h.get("start_char", h.get("start_word", 0)),
+            h.get("tag", ""),
+        ),
     )
 
     # Build lookups for marker positions
-    # start_markers: word_index -> list of (marker_index, highlight)
-    # end_markers: word_index -> list of marker_index for HLEND
+    # start_markers: char_index -> list of (marker_index, highlight)
+    # end_markers: char_index -> list of marker_index for HLEND
     start_markers: dict[int, list[tuple[int, dict]]] = defaultdict(list)
     end_markers: dict[int, list[int]] = defaultdict(list)
     marker_to_highlight: list[dict] = []
 
     for h in sorted_highlights:
-        start = int(h.get("start_word", 0))
-        end = int(h.get("end_word", start + 1))
-        last_word = end - 1 if end > start else start
+        # Support both old field names (start_word) and new (start_char) for migration
+        start = int(h.get("start_char", h.get("start_word", 0)))
+        end = int(h.get("end_char", h.get("end_word", start + 1)))
+        last_char = end - 1 if end > start else start
 
         marker_idx = len(marker_to_highlight)
         marker_to_highlight.append(h)
         start_markers[start].append((marker_idx, h))
-        end_markers[last_word].append(marker_idx)
+        end_markers[last_char].append(marker_idx)
 
-    # Process HTML, inserting markers at word positions
+    # Process HTML, inserting markers at character positions
     result: list[str] = []
-    word_idx = 0
+    char_idx = 0
     i = 0
 
     while i < len(html):
@@ -747,39 +753,32 @@ def _insert_markers_into_html(
             result.append(html[i : tag_end + 1])
             i = tag_end + 1
         else:
-            # Text content - check for words
+            # Text content - iterate characters
             next_tag = html.find("<", i)
             if next_tag == -1:
                 next_tag = len(html)
 
             text = html[i:next_tag]
             text_result: list[str] = []
-            text_pos = 0
 
-            for match in _WORD_PATTERN.finditer(text):
-                # Add text before this word
-                text_result.append(text[text_pos : match.start()])
-
-                # Insert HLSTART markers before this word
-                if word_idx in start_markers:
-                    for marker_idx, _ in start_markers[word_idx]:
+            for char in text:
+                # Insert HLSTART markers before this character
+                if char_idx in start_markers:
+                    for marker_idx, _ in start_markers[char_idx]:
                         text_result.append(_HLSTART_TEMPLATE.format(marker_idx))
 
-                # Add the word
-                text_result.append(match.group(0))
+                # Add the character
+                text_result.append(char)
 
-                # Insert HLEND then ANNMARKER after this word
+                # Insert HLEND then ANNMARKER after this character
                 # (ANNMARKER after HLEND so annotation appears after highlight ends)
-                if word_idx in end_markers:
-                    for marker_idx in end_markers[word_idx]:
+                if char_idx in end_markers:
+                    for marker_idx in end_markers[char_idx]:
                         text_result.append(_HLEND_TEMPLATE.format(marker_idx))
                         text_result.append(_MARKER_TEMPLATE.format(marker_idx))
 
-                text_pos = match.end()
-                word_idx += 1
+                char_idx += 1
 
-            # Add remaining text
-            text_result.append(text[text_pos:])
             result.append("".join(text_result))
             i = next_tag
 
@@ -942,12 +941,14 @@ def _replace_markers_with_annots(
         if word_to_legal_para is None:
             return ""
 
-        start_word = int(highlight.get("start_word", 0))
-        end_word = int(highlight.get("end_word", start_word))
-        last_word = end_word - 1 if end_word > start_word else start_word
+        # Support both old field names (start_word) and new (start_char) for migration
+        # Note: word_to_legal_para mapping still uses character indices
+        start_char = int(highlight.get("start_char", highlight.get("start_word", 0)))
+        end_char = int(highlight.get("end_char", highlight.get("end_word", start_char)))
+        last_char = end_char - 1 if end_char > start_char else start_char
 
-        start_para = word_to_legal_para.get(start_word)
-        end_para = word_to_legal_para.get(last_word)
+        start_para = word_to_legal_para.get(start_char)
+        end_para = word_to_legal_para.get(last_char)
 
         if start_para is None and end_para is None:
             return ""
@@ -1034,7 +1035,7 @@ def convert_html_with_annotations(
 
     Args:
         html: Raw HTML content (not word-span processed).
-        highlights: List of highlight dicts with start_word, end_word, tag, author.
+        highlights: List of highlight dicts with start_char, end_char, tag, author.
         tag_colours: Mapping of tag names to hex colours.
         filter_path: Optional Lua filter for legal document fixes.
         word_to_legal_para: Optional mapping of word index to legal paragraph number.

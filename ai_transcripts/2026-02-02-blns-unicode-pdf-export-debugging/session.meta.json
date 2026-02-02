@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0",
+  "session": {
+    "id": "ffc93f57-cbec-4226-ba46-303172c33946",
+    "started_at": "2026-02-01T23:25:35.418Z",
+    "ended_at": "2026-02-02T06:18:12.131Z",
+    "duration_minutes": 412
+  },
+  "project": {
+    "name": "PromptGrimoire",
+    "directory": "/home/brian/people/Brian/PromptGrimoire"
+  },
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-opus-4-5-20251101",
+    "access_method": "claude-code-cli"
+  },
+  "statistics": {
+    "turns": 317,
+    "human_messages": 317,
+    "assistant_messages": 641,
+    "thinking_blocks": 240,
+    "tool_calls": {
+      "total": 260,
+      "by_type": {
+        "mcp__plugin_serena_serena__activate_project": 1,
+        "mcp__plugin_serena_serena__check_onboarding_performed": 1,
+        "mcp__plugin_serena_serena__search_for_pattern": 3,
+        "mcp__plugin_serena_serena__find_file": 3,
+        "mcp__plugin_serena_serena__read_file": 23,
+        "Grep": 48,
+        "Bash": 108,
+        "mcp__plugin_serena_serena__find_symbol": 5,
+        "mcp__plugin_serena_serena__think_about_task_adherence": 1,
+        "mcp__plugin_serena_serena__replace_content": 25,
+        "Skill": 4,
+        "mcp__plugin_serena_serena__read_memory": 1,
+        "Read": 25,
+        "Edit": 10,
+        "Glob": 2
+      }
+    },
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cache_read": 0
+    },
+    "estimated_cost_usd": 0.0
+  },
+  "artifacts": {
+    "created": [],
+    "modified": [
+      {
+        "path": ".worktrees/101-cjk-blns/scripts/setup_latex.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/src/promptgrimoire/export/latex.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/src/promptgrimoire/export/unicode_latex.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/tests/conftest.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/tests/unit/test_latex_packages.py",
+        "type": "code"
+      }
+    ],
+    "referenced": [
+      {
+        "path": "/home/brian/.claude/projects/-home-brian-people-Brian-PromptGrimoire--worktrees-101-cjk-blns/ffc93f57-cbec-4226-ba46-303172c33946.jsonl",
+        "type": "data"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/src/promptgrimoire/crdt/annotation_doc.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/src/promptgrimoire/pages/annotation.py",
+        "type": "code"
+      },
+      {
+        "path": ".worktrees/101-cjk-blns/tests/integration/test_pdf_export.py",
+        "type": "code"
+      },
+      {
+        "path": "/tmp/promptgrimoire_export_r_a7fro4/workspace_66849cc8-83fb-4ec7-9d1d-1d437cad4201.tex",
+        "type": "document"
+      }
+    ]
+  },
+  "relationships": {
+    "continues": null,
+    "references": [
+      "66849cc8-83fb-4ec7-9d1d-1d437cad4201",
+      "ffc93f57-cbec-4226-ba46-303172c33946"
+    ],
+    "isPartOf": [
+      "PromptGrimoire"
+    ]
+  },
+  "auto_generated": {
+    "title": "BLNS Unicode PDF Export Debugging",
+    "purpose": "",
+    "tags": []
+  },
+  "three_ps": {
+    "prompt_summary": "",
+    "process_summary": "",
+    "provenance_summary": ""
+  },
+  "plan_files": [
+    "splendid-orbiting-gosling.md",
+    "composed-weaving-lightning.md",
+    "scalable-bubbling-alpaca.md",
+    "partitioned-petting-wand.md",
+    "tingly-sleeping-lecun.md",
+    "polymorphic-mapping-ullman.md",
+    "async-seeking-torvalds.md",
+    "breezy-squishing-sphinx.md",
+    "cryptic-watching-mitten.md",
+    "linear-floating-pearl.md",
+    "purring-humming-plum.md",
+    "resilient-wobbling-sedgewick.md",
+    "rippling-meandering-barto.md",
+    "tidy-sparking-moon.md",
+    "modular-beaming-shore.md",
+    "staged-chasing-cook.md",
+    "peaceful-sniffing-plum.md",
+    "concurrent-gliding-crystal.md",
+    "vivid-questing-wilkinson.md",
+    "tranquil-purring-shore.md",
+    "misty-wibbling-bear.md",
+    "wobbly-cuddling-quill.md",
+    "dynamic-stirring-bunny.md",
+    "swirling-waddling-ocean.md",
+    "nested-yawning-cocoa.md",
+    "twinkling-wandering-lobster.md",
+    "glimmering-purring-hoare.md",
+    "imperative-dreaming-lovelace.md",
+    "structured-jumping-cherny.md",
+    "declarative-noodling-thacker.md",
+    "precious-nibbling-summit.md",
+    "swift-exploring-marshmallow.md",
+    "misty-kindling-snail.md",
+    "harmonic-nibbling-squid.md",
+    "hazy-zooming-eich.md",
+    "crystalline-greeting-dolphin.md",
+    "shiny-bouncing-hamster.md",
+    "polymorphic-hugging-boot.md",
+    "agile-chasing-flurry.md",
+    "iterative-baking-crane.md",
+    "harmonic-swimming-dahl.md",
+    "magical-roaming-scroll.md",
+    "parallel-dazzling-lynx.md",
+    "declarative-wandering-kitten.md",
+    "snoopy-seeking-storm.md",
+    "stateless-tinkering-sedgewick.md",
+    "wiggly-yawning-penguin.md",
+    "spicy-conjuring-panda.md",
+    "compiled-swinging-beaver.md",
+    "mossy-snuggling-frost.md",
+    "merry-napping-tulip.md",
+    "piped-popping-sketch.md",
+    "vast-marinating-whale.md",
+    "dynamic-dazzling-fern.md",
+    "sharded-splashing-newell.md",
+    "cosmic-gathering-candle.md",
+    "stateless-dancing-plum.md",
+    "shimmying-foraging-hoare.md",
+    "goofy-jingling-gosling.md",
+    "sequential-sniffing-newell.md",
+    "robust-discovering-russell.md",
+    "reflective-painting-fox.md",
+    "functional-crafting-ladybug.md",
+    "iterative-cooking-lollipop.md",
+    "sprightly-doodling-widget.md"
+  ],
+  "archive": {
+    "archived_at": "2026-02-02T17:18:15.435099",
+    "directory_name": "2026-02-02-blns-unicode-pdf-export-debugging",
+    "jsonl_path": "raw-transcript.jsonl",
+    "jsonl_sha256": "8d9985199e3f3188829b98814d2326c2e6cffd0fd7cb7c5c8e76072212ff087e",
+    "jsonl_bytes": 4190152,
+    "needs_review": true
+  },
+  "_relationship_hints": {
+    "continues_hint": null,
+    "references_hints": [
+      "66849cc8-83fb-4ec7-9d1d-1d437cad4201",
+      "ffc93f57-cbec-4226-ba46-303172c33946"
+    ],
+    "detection_notes": [
+      "Found session ID reference: 66849cc8-83fb-4ec7-9d1d-1d437cad4201",
+      "Found session ID reference: ffc93f57-cbec-4226-ba46-303172c33946",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'",
+      "Found continuation language matching: 'continu(?:e|ing|ed)\\s+from'",
+      "Found continuation language matching: 'previous\\s+session'"
+    ]
+  }
+}

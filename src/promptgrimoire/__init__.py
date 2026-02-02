@@ -72,7 +72,7 @@ def main() -> None:
         @app.on_shutdown
         async def shutdown() -> None:
             # Persist all dirty CRDT documents before closing DB
-            await get_persistence_manager().persist_all_dirty()
+            await get_persistence_manager().persist_all_dirty_workspaces()
             await close_db()
 
     port = int(os.environ.get("PROMPTGRIMOIRE_PORT", "8080"))

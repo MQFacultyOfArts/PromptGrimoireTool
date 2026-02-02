@@ -25,7 +25,8 @@ _PLATFORM_PATTERNS: dict[Platform, re.Pattern[str]] = {
     "gemini": re.compile(r"<user-query\b", re.IGNORECASE),
     # Google AI Studio uses <ms-chat-turn> with data-turn-role attributes
     "aistudio": re.compile(r"<ms-chat-turn\b", re.IGNORECASE),
-    "scienceos": re.compile(r'class="[^"]*tabler-icon-robot-face[^"]*"', re.IGNORECASE),
+    # ScienceOS uses Mantine CSS classes: _prompt_ for user, _markdown_ for response
+    "scienceos": re.compile(r'class="[^"]*_prompt_[^"]*"', re.IGNORECASE),
 }
 
 # Turn boundary patterns for label injection
@@ -42,10 +43,12 @@ _TURN_PATTERNS: dict[Platform, dict[str, re.Pattern[str]]] = {
         ),
     },
     "openai": {
-        # OpenAI: user turns have items-end, assistant turns have agent-turn
-        "user": re.compile(r'(<[^>]*class="[^"]*items-end[^"]*"[^>]*>)', re.IGNORECASE),
+        # OpenAI: user/assistant turns have data-message-author-role attribute
+        "user": re.compile(
+            r'(<[^>]*data-message-author-role="user"[^>]*>)', re.IGNORECASE
+        ),
         "assistant": re.compile(
-            r'(<[^>]*class="[^"]*agent-turn[^"]*"[^>]*>)', re.IGNORECASE
+            r'(<[^>]*data-message-author-role="assistant"[^>]*>)', re.IGNORECASE
         ),
     },
     "gemini": {
@@ -59,12 +62,10 @@ _TURN_PATTERNS: dict[Platform, dict[str, re.Pattern[str]]] = {
         "assistant": re.compile(r'(<[^>]*data-turn-role="Model"[^>]*>)', re.IGNORECASE),
     },
     "scienceos": {
-        # ScienceOS uses tabler icons: medal for user, robot-face for assistant
-        "user": re.compile(
-            r'(<[^>]*class="[^"]*tabler-icon-medal[^"]*"[^>]*>)', re.IGNORECASE
-        ),
+        # ScienceOS uses Mantine CSS classes with hash suffixes
+        "user": re.compile(r'(<[^>]*class="[^"]*_prompt_[^"]*"[^>]*>)', re.IGNORECASE),
         "assistant": re.compile(
-            r'(<[^>]*class="[^"]*tabler-icon-robot-face[^"]*"[^>]*>)', re.IGNORECASE
+            r'(<[^>]*class="[^"]*_markdown_[^"]*"[^>]*>)', re.IGNORECASE
         ),
     },
 }

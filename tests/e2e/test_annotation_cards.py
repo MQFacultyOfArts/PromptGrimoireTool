@@ -31,7 +31,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     create_highlight,
-    select_words,
+    select_chars,
     setup_workspace_with_content,
 )
 
@@ -122,7 +122,7 @@ class TestAnnotationCards:
 
         # Reload
         page.goto(workspace_url)
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Comment should still be there
         ann_card = page.locator("[data-testid='annotation-card']")
@@ -161,10 +161,10 @@ class TestTagSelection:
 
         # --- Subtest: selecting text then tag creates colored highlight ---
         with subtests.test(msg="tag_creates_colored_highlight"):
-            select_words(page, 1, 2)
+            select_chars(page, 1, 2)
             tag_toolbar.locator("button").first.click()
 
-            word = page.locator("[data-word-index='1']")
+            word = page.locator("[data-char-index='1']")
             expect(word).to_have_css(
                 "background-color", re.compile(r"rgba?\("), timeout=5000
             )

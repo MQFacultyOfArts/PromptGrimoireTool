@@ -165,7 +165,7 @@ def two_annotation_contexts(
     # Page2 joins the same workspace
     url = f"{app_server}/annotation?workspace_id={workspace_id}"
     page2.goto(url)
-    page2.wait_for_selector("[data-word-index]", timeout=10000)
+    page2.wait_for_selector("[data-char-index]", timeout=10000)
 
     try:
         yield page1, page2, workspace_id
@@ -219,7 +219,7 @@ def two_authenticated_contexts(
     # Page2 joins the same workspace
     url = f"{app_server}/annotation?workspace_id={workspace_id}"
     page2.goto(url)
-    page2.wait_for_selector("[data-word-index]", timeout=10000)
+    page2.wait_for_selector("[data-char-index]", timeout=10000)
 
     try:
         yield page1, page2, workspace_id, user1_email, user2_email

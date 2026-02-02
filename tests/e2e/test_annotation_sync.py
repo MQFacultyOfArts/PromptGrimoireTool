@@ -22,7 +22,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import create_highlight, select_words
+from tests.e2e.annotation_helpers import create_highlight, select_chars
 from tests.e2e.conftest import _authenticate_page
 
 # Skip marker for tests requiring database
@@ -50,12 +50,12 @@ class TestHighlightSync:
         with subtests.test(msg="context1_to_context2"):
             create_highlight(page1, 0, 1)
 
-            word_p1 = page1.locator("[data-word-index='0']")
+            word_p1 = page1.locator("[data-char-index='0']")
             expect(word_p1).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=5000
             )
 
-            word_p2 = page2.locator("[data-word-index='0']")
+            word_p2 = page2.locator("[data-char-index='0']")
             expect(word_p2).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=10000
             )
@@ -64,12 +64,12 @@ class TestHighlightSync:
         with subtests.test(msg="context2_to_context1"):
             create_highlight(page2, 2, 3)
 
-            word_p2 = page2.locator("[data-word-index='2']")
+            word_p2 = page2.locator("[data-char-index='2']")
             expect(word_p2).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=5000
             )
 
-            word_p1 = page1.locator("[data-word-index='2']")
+            word_p1 = page1.locator("[data-char-index='2']")
             expect(word_p1).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=10000
             )
@@ -84,7 +84,7 @@ class TestHighlightSync:
 
         create_highlight(page1, 0, 1)
 
-        word_p2 = page2.locator("[data-word-index='0']")
+        word_p2 = page2.locator("[data-char-index='0']")
         expect(word_p2).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -156,7 +156,7 @@ class TestTagChangeSync:
 
         create_highlight(page1, 0, 1)
 
-        word_p2 = page2.locator("[data-word-index='0']")
+        word_p2 = page2.locator("[data-char-index='0']")
         expect(word_p2).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -186,8 +186,8 @@ class TestConcurrentOperations:
         """Highlights created simultaneously in both contexts both appear."""
         page1, page2, _workspace_id = two_annotation_contexts
 
-        select_words(page1, 0, 1)
-        select_words(page2, 3, 4)
+        select_chars(page1, 0, 1)
+        select_chars(page2, 3, 4)
 
         tag_btn_p1 = page1.locator("[data-testid='tag-toolbar'] button").first
         tag_btn_p2 = page2.locator("[data-testid='tag-toolbar'] button").first
@@ -198,8 +198,8 @@ class TestConcurrentOperations:
 
         # Both contexts should have both highlights
         for page in [page1, page2]:
-            word0 = page.locator("[data-word-index='0']")
-            word3 = page.locator("[data-word-index='3']")
+            word0 = page.locator("[data-char-index='0']")
+            word3 = page.locator("[data-char-index='3']")
             expect(word0).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=10000
             )
@@ -229,7 +229,7 @@ class TestSyncEdgeCases:
 
         create_highlight(page1, 0, 1)
 
-        word_p2 = page2.locator("[data-word-index='0']")
+        word_p2 = page2.locator("[data-char-index='0']")
         expect(word_p2).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -237,9 +237,9 @@ class TestSyncEdgeCases:
         # --- Subtest: refresh preserves highlights ---
         with subtests.test(msg="refresh_preserves"):
             page2.reload()
-            page2.wait_for_selector("[data-word-index]", timeout=10000)
+            page2.wait_for_selector("[data-char-index]", timeout=10000)
 
-            word_p2_after = page2.locator("[data-word-index='0']")
+            word_p2_after = page2.locator("[data-char-index='0']")
             expect(word_p2_after).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=10000
             )
@@ -257,10 +257,10 @@ class TestSyncEdgeCases:
 
             url = f"{app_server}/annotation?workspace_id={workspace_id}"
             page3.goto(url)
-            page3.wait_for_selector("[data-word-index]", timeout=10000)
+            page3.wait_for_selector("[data-char-index]", timeout=10000)
 
             try:
-                word_p3 = page3.locator("[data-word-index='0']")
+                word_p3 = page3.locator("[data-char-index='0']")
                 expect(word_p3).to_have_css(
                     "background-color", re.compile(r"rgba\("), timeout=10000
                 )

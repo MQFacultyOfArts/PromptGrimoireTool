@@ -174,7 +174,7 @@ class TestI18nPdfExportE2E:
         )
         content_input.fill(content)
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
         page.wait_for_timeout(300)  # Let UI settle
 
         # 4. Create output directory
@@ -228,7 +228,7 @@ class TestI18nPdfExportE2E:
         )
         content_input.fill(content)
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
         page.wait_for_timeout(300)
 
         # Create output directory

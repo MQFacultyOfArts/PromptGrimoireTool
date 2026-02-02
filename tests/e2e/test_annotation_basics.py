@@ -137,13 +137,13 @@ class TestWorkspaceAndDocumentCreation:
             ).click()
 
             # Content should appear with word spans
-            page.wait_for_selector("[data-word-index]", timeout=10000)
-            word_spans = page.locator("[data-word-index]")
+            page.wait_for_selector("[data-char-index]", timeout=10000)
+            word_spans = page.locator("[data-char-index]")
             expect(word_spans.first).to_be_visible()
             assert word_spans.count() >= 8  # At least the words in test_content
 
         # --- Subtest: document persists after reload ---
         with subtests.test(msg="document_persists_after_reload"):
             page.goto(workspace_url)
-            page.wait_for_selector("[data-word-index]", timeout=10000)
+            page.wait_for_selector("[data-char-index]", timeout=10000)
             expect(page.locator("text=document")).to_be_visible()

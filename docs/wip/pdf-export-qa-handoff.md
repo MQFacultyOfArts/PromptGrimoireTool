@@ -42,12 +42,17 @@ Each script handles:
 4. Turn markers for speaker injection
 5. Special blocks (thinking summaries, etc.)
 
-### Design Questions to Resolve
+### Design Questions - RESOLVED
 
-1. Where does shared logic live? (base class, utils module?)
-2. How is dispatch handled? (registry pattern, factory?)
-3. What's the interface each platform script must implement?
-4. How to test in isolation?
+Design complete: `docs/design-plans/2026-02-02-platform-handler-refactor.md`
+
+Key decisions:
+1. **Shared logic**: `platforms/base.py` for utilities, Protocol in `__init__.py`
+2. **Dispatch**: Registry + autodiscovery via `pkgutil.iter_modules()`
+3. **Interface**: `PlatformHandler` Protocol with `matches()`, `preprocess()`, `get_turn_markers()`
+4. **Testing**: Each platform has isolated unit tests; registry tests cover autodiscovery
+5. **HTML parsing**: selectolax (lexbor) replaces BeautifulSoup (5-30x faster)
+6. **User override**: `platform_hint` parameter for manual platform selection
 
 ## Other Issues Found (Not Yet Fixed)
 
@@ -68,15 +73,11 @@ Each script handles:
 ```
 I'm continuing work on the css-fidelity-pdf-export branch for PDF visual QA.
 
-Previous session fixed:
-- ScienceOS platform detection
-- Empty speaker blocks in OpenAI (pattern was too broad)
+Design complete: docs/design-plans/2026-02-02-platform-handler-refactor.md
 
-Current task: Refactor speaker_preprocessor.py into platform-specific sub-scripts.
+Next step: Execute the implementation plan (5 phases).
 
-The goal is to reduce cognitive load by having one file per platform that handles all that platform's quirks (detection, chrome removal, native label stripping, turn markers, special blocks).
-
-Please read docs/wip/pdf-export-qa-handoff.md for full context, then use the brainstorming skill to design this refactor.
+Please read the design plan, then use the starting-an-implementation-plan skill to begin implementation.
 ```
 
 ## Git Status

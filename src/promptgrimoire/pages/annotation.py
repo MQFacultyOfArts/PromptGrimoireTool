@@ -683,28 +683,28 @@ def _build_annotation_card(
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it
                 async def goto_highlight(
-                    sw: int = start_word, ew: int = end_word
+                    sc: int = start_word, ec: int = end_word
                 ) -> None:
                     # fmt: off
-                    # Flash ALL words in the highlight range, not just start
+                    # Flash ALL chars in the highlight range, not just start
                     js = (
                         f"(function(){{"
-                        f"const sw={sw},ew={ew};"
-                        f"const words=[];"
-                        f"for(let i=sw;i<ew;i++){{"
-                        f"const w=document.querySelector("
-                        f"'[data-word-index=\"'+i+'\"]');"
-                        f"if(w)words.push(w);"
+                        f"const sc={sc},ec={ec};"
+                        f"const chars=[];"
+                        f"for(let i=sc;i<ec;i++){{"
+                        f"const c=document.querySelector("
+                        f"'[data-char-index=\"'+i+'\"]');"
+                        f"if(c)chars.push(c);"
                         f"}}"
-                        f"if(words.length===0)return;"
-                        f"words[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-                        f"const origColors=words.map(w=>w.style.backgroundColor);"
-                        f"words.forEach(w=>{{"
-                        f"w.style.transition='background-color 0.2s';"
-                        f"w.style.backgroundColor='#FFD700';"
+                        f"if(chars.length===0)return;"
+                        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
+                        f"const origColors=chars.map(c=>c.style.backgroundColor);"
+                        f"chars.forEach(c=>{{"
+                        f"c.style.transition='background-color 0.2s';"
+                        f"c.style.backgroundColor='#FFD700';"
                         f"}});"
                         f"setTimeout(()=>{{"
-                        f"words.forEach((w,i)=>{{w.style.backgroundColor=origColors[i];}});"
+                        f"chars.forEach((c,i)=>{{c.style.backgroundColor=origColors[i];}});"
                         f"}},800);"
                         f"}})()"
                     )
@@ -904,9 +904,9 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     async def on_cursor_move(e: Any) -> None:
         """Handle cursor position change from JavaScript."""
-        word_index = e.args.get("word")
+        char_index = e.args.get("char")
         if state.broadcast_cursor:
-            await state.broadcast_cursor(word_index)
+            await state.broadcast_cursor(char_index)
 
     ui.on("selection_made", on_selection)
     ui.on("selection_cleared", on_selection_cleared)
@@ -934,24 +934,24 @@ def _setup_selection_handlers(state: PageState) -> None:
 
             const range = selection.getRangeAt(0);
 
-            // Find all word spans that intersect with the selection
+            // Find all char spans that intersect with the selection
             // This is more robust than checking start/end containers
-            const allWordSpans = document.querySelectorAll('[data-word-index]');
-            let minWord = Infinity;
-            let maxWord = -Infinity;
+            const allCharSpans = document.querySelectorAll('[data-char-index]');
+            let minChar = Infinity;
+            let maxChar = -Infinity;
 
-            for (const span of allWordSpans) {
+            for (const span of allCharSpans) {
                 if (range.intersectsNode(span)) {
-                    const wordIdx = parseInt(span.dataset.wordIndex);
-                    minWord = Math.min(minWord, wordIdx);
-                    maxWord = Math.max(maxWord, wordIdx);
+                    const charIdx = parseInt(span.dataset.charIndex);
+                    minChar = Math.min(minChar, charIdx);
+                    maxChar = Math.max(maxChar, charIdx);
                 }
             }
 
-            if (minWord !== Infinity && maxWord !== -Infinity) {
+            if (minChar !== Infinity && maxChar !== -Infinity) {
                 emitEvent('selection_made', {
-                    start: minWord,
-                    end: maxWord
+                    start: minChar,
+                    end: maxChar
                 });
             }
         }
@@ -998,22 +998,22 @@ def _setup_selection_handlers(state: PageState) -> None:
             }
         });
 
-        // Track cursor position over word spans for remote cursor display
-        let lastCursorWord = null;
+        // Track cursor position over char spans for remote cursor display
+        let lastCursorChar = null;
         const docC = document.getElementById('doc-container');
         if (docC) {
             docC.addEventListener('mouseover', function(e) {
-                const word = e.target.closest('[data-word-index]');
-                const wordIdx = word ? parseInt(word.dataset.wordIndex) : null;
-                if (wordIdx !== lastCursorWord) {
-                    lastCursorWord = wordIdx;
-                    emitEvent('cursor_move', { word: wordIdx });
+                const charEl = e.target.closest('[data-char-index]');
+                const charIdx = charEl ? parseInt(charEl.dataset.charIndex) : null;
+                if (charIdx !== lastCursorChar) {
+                    lastCursorChar = charIdx;
+                    emitEvent('cursor_move', { char: charIdx });
                 }
             });
             docC.addEventListener('mouseleave', function() {
-                if (lastCursorWord !== null) {
-                    lastCursorWord = null;
-                    emitEvent('cursor_move', { word: null });
+                if (lastCursorChar !== null) {
+                    lastCursorChar = null;
+                    emitEvent('cursor_move', { char: null });
                 }
             });
         }
@@ -1124,28 +1124,28 @@ async def _render_document_with_highlights(
         "    const annRect = annC.getBoundingClientRect();\n"
         "    const containerOffset = annRect.top - docRect.top;\n"
         "    const cardInfos = cards.map(card => {\n"
-        "      const sw = parseInt(card.dataset.startWord);\n"
-        "      const ws = docC.querySelector('[data-word-index=\"'+sw+'\"]');\n"
-        "      if (!ws) return null;\n"
-        "      const wr = ws.getBoundingClientRect();\n"
-        "      return { card, startWord: sw, height: card.offsetHeight,\n"
-        "               targetY: (wr.top-docRect.top)-containerOffset };\n"
+        "      const sc = parseInt(card.dataset.startWord);\n"
+        "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
+        "      if (!cs) return null;\n"
+        "      const cr = cs.getBoundingClientRect();\n"
+        "      return { card, startChar: sc, height: card.offsetHeight,\n"
+        "               targetY: (cr.top-docRect.top)-containerOffset };\n"
         "    }).filter(Boolean);\n"
-        "    cardInfos.sort((a, b) => a.startWord - b.startWord);\n"
+        "    cardInfos.sort((a, b) => a.startChar - b.startChar);\n"
         "    const headerHeight = 60;\n"
         "    const viewportTop = headerHeight;\n"
         "    const viewportBottom = window.innerHeight;\n"
         "    let minY = 0;\n"
         "    for (const info of cardInfos) {\n"
-        "      const sw = info.startWord;\n"
-        "      const ew = parseInt(info.card.dataset.endWord) || sw;\n"
-        "      var qs='[data-word-index=\"'+sw+'\"]';\n"
-        "      const startWS = docC.querySelector(qs);\n"
-        "      var qe='[data-word-index=\"'+(ew-1)+'\"]';\n"
-        "      const endWS = docC.querySelector(qe)||startWS;\n"
-        "      if (!startWS || !endWS) continue;\n"
-        "      const sr = startWS.getBoundingClientRect();\n"
-        "      const er = endWS.getBoundingClientRect();\n"
+        "      const sc = info.startChar;\n"
+        "      const ec = parseInt(info.card.dataset.endWord) || sc;\n"
+        "      var qs='[data-char-index=\"'+sc+'\"]';\n"
+        "      const startCS = docC.querySelector(qs);\n"
+        "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
+        "      const endCS = docC.querySelector(qe)||startCS;\n"
+        "      if (!startCS || !endCS) continue;\n"
+        "      const sr = startCS.getBoundingClientRect();\n"
+        "      const er = endCS.getBoundingClientRect();\n"
         "      const inView = er.bottom > viewportTop && sr.top < viewportBottom;\n"
         "      info.card.style.position = 'absolute';\n"
         "      if (!inView) { info.card.style.display = 'none'; continue; }\n"
@@ -1167,15 +1167,15 @@ async def _render_document_with_highlights(
         "  var rePos = () => requestAnimationFrame(positionCards);\n"
         "  const obs = new MutationObserver(rePos);\n"
         "  obs.observe(annC, { childList: true, subtree: true });\n"
-        "  // Card hover -> highlight corresponding words\n"
+        "  // Card hover -> highlight corresponding chars\n"
         "  let hoveredCard = null;\n"
         "  function clearHover() {\n"
         "    if (!hoveredCard) return;\n"
-        "    const sw = parseInt(hoveredCard.dataset.startWord);\n"
-        "    const ew = parseInt(hoveredCard.dataset.endWord) || sw;\n"
-        "    for (let i = sw; i < ew; i++) {\n"
-        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
-        "      if (w) w.classList.remove('card-hover-highlight');\n"
+        "    const sc = parseInt(hoveredCard.dataset.startWord);\n"
+        "    const ec = parseInt(hoveredCard.dataset.endWord) || sc;\n"
+        "    for (let i = sc; i < ec; i++) {\n"
+        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
+        "      if (c) c.classList.remove('card-hover-highlight');\n"
         "    }\n"
         "    hoveredCard = null;\n"
         "  }\n"
@@ -1185,11 +1185,11 @@ async def _render_document_with_highlights(
         "    clearHover();\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sw = parseInt(card.dataset.startWord);\n"
-        "    const ew = parseInt(card.dataset.endWord) || sw;\n"
-        "    for (let i = sw; i < ew; i++) {\n"
-        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
-        "      if (w) w.classList.add('card-hover-highlight');\n"
+        "    const sc = parseInt(card.dataset.startWord);\n"
+        "    const ec = parseInt(card.dataset.endWord) || sc;\n"
+        "    for (let i = sc; i < ec; i++) {\n"
+        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
+        "      if (c) c.classList.add('card-hover-highlight');\n"
         "    }\n"
         "  });\n"
         "  annC.addEventListener('mouseleave', function() {\n"

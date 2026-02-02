@@ -24,47 +24,47 @@ window.LiveAnnotation = (function() {
         const container = document.getElementById('doc-container');
         if (!container) return;
 
-        // Helper to find word span from a node (handles text nodes and elements)
-        function findWordSpan(node) {
+        // Helper to find char span from a node (handles text nodes and elements)
+        function findCharSpan(node) {
             if (!node) return null;
             const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
             if (!el) return null;
-            return el.closest('[data-w]') || el.querySelector('[data-w]');
+            return el.closest('[data-char-index]') || el.querySelector('[data-char-index]');
         }
 
-        // Find all word spans that intersect with a range
+        // Find all char spans that intersect with a range
         // Uses range.intersectsNode() which is more robust than selection.containsNode()
         // when selecting text that starts/ends on already-highlighted spans
-        function getWordRangeFromSelection(selection) {
+        function getCharRangeFromSelection(selection) {
             if (!selection.rangeCount) return null;
 
             const range = selection.getRangeAt(0);
-            const allWordSpans = container.querySelectorAll('[data-w]');
-            let minWord = Infinity;
-            let maxWord = -Infinity;
+            const allCharSpans = container.querySelectorAll('[data-char-index]');
+            let minChar = Infinity;
+            let maxChar = -Infinity;
 
-            for (const span of allWordSpans) {
+            for (const span of allCharSpans) {
                 // intersectsNode is more reliable than containsNode for styled elements
                 if (range.intersectsNode(span)) {
-                    const wordIdx = parseInt(span.dataset.w);
-                    minWord = Math.min(minWord, wordIdx);
-                    maxWord = Math.max(maxWord, wordIdx);
+                    const charIdx = parseInt(span.dataset.charIndex);
+                    minChar = Math.min(minChar, charIdx);
+                    maxChar = Math.max(maxChar, charIdx);
                 }
             }
 
-            if (minWord === Infinity || maxWord === -Infinity) {
+            if (minChar === Infinity || maxChar === -Infinity) {
                 // Fallback: use anchor/focus nodes directly
-                const anchorSpan = findWordSpan(selection.anchorNode);
-                const focusSpan = findWordSpan(selection.focusNode);
+                const anchorSpan = findCharSpan(selection.anchorNode);
+                const focusSpan = findCharSpan(selection.focusNode);
                 if (anchorSpan && focusSpan) {
-                    const start = parseInt(anchorSpan.dataset.w);
-                    const end = parseInt(focusSpan.dataset.w);
+                    const start = parseInt(anchorSpan.dataset.charIndex);
+                    const end = parseInt(focusSpan.dataset.charIndex);
                     return { start: Math.min(start, end), end: Math.max(start, end) };
                 }
                 return null;
             }
 
-            return { start: minWord, end: maxWord };
+            return { start: minChar, end: maxChar };
         }
 
         // Shared function to process current selection
@@ -84,14 +84,14 @@ window.LiveAnnotation = (function() {
                 return;
             }
 
-            const wordRange = getWordRangeFromSelection(selection);
-            if (wordRange) {
+            const charRange = getCharRangeFromSelection(selection);
+            if (charRange) {
                 const range = selection.getRangeAt(0);
                 const rect = range.getBoundingClientRect();
 
-                _emitEvent('words_selected', {
-                    start: wordRange.start,
-                    end: wordRange.end,
+                _emitEvent('chars_selected', {
+                    start: charRange.start,
+                    end: charRange.end,
                     clientX: rect.left + rect.width / 2,
                     clientY: rect.bottom
                 });
@@ -108,16 +108,16 @@ window.LiveAnnotation = (function() {
             setTimeout(() => processSelection('mouseup'), 10);
         });
 
-        let lastCursorWord = null;
+        let lastCursorChar = null;
         container.addEventListener('mousemove', (e) => {
             if (!_emitEvent) return;
 
-            const span = e.target.closest('[data-w]');
+            const span = e.target.closest('[data-char-index]');
             if (span) {
-                const wordIndex = parseInt(span.dataset.w);
-                if (wordIndex !== lastCursorWord) {
-                    lastCursorWord = wordIndex;
-                    _emitEvent('cursor_moved', { word: wordIndex });
+                const charIndex = parseInt(span.dataset.charIndex);
+                if (charIndex !== lastCursorChar) {
+                    lastCursorChar = charIndex;
+                    _emitEvent('cursor_moved', { char: charIndex });
                 }
             }
         });
@@ -161,26 +161,26 @@ window.LiveAnnotation = (function() {
 
             // Build card info
             const cardInfos = cards.map(card => {
-                const startWord = parseInt(card.dataset.startWord);
-                const wordSpan = docContainer.querySelector(`[data-w="${startWord}"]`);
-                if (!wordSpan) return null;
+                const startChar = parseInt(card.dataset.startWord);
+                const charSpan = docContainer.querySelector(`[data-char-index="${startChar}"]`);
+                if (!charSpan) return null;
 
-                const wordRect = wordSpan.getBoundingClientRect();
+                const charRect = charSpan.getBoundingClientRect();
 
-                // Target Y: word position relative to doc container, adjusted for annotation container offset
-                // This gives us where the word is relative to the annotation container's coordinate system
-                const targetY = (wordRect.top - docRect.top) - containerOffset;
+                // Target Y: char position relative to doc container, adjusted for annotation container offset
+                // This gives us where the char is relative to the annotation container's coordinate system
+                const targetY = (charRect.top - docRect.top) - containerOffset;
 
                 return {
                     card,
-                    startWord,
+                    startChar,
                     targetY,
                     height: card.offsetHeight
                 };
             }).filter(Boolean);
 
             // Sort by document order
-            cardInfos.sort((a, b) => a.startWord - b.startWord);
+            cardInfos.sort((a, b) => a.startChar - b.startChar);
 
             // Viewport bounds for visibility check (account for sticky header)
             const header = document.querySelector('header, .q-header, [class*="nicegui-header"]');
@@ -194,21 +194,21 @@ window.LiveAnnotation = (function() {
             for (const info of cardInfos) {
                 // Check if any part of the highlight is in the viewport
                 // Visible when: highlight bottom is below viewport top AND highlight top is above viewport bottom
-                const startWordSpan = docContainer.querySelector(`[data-w="${info.startWord}"]`);
-                const endWord = parseInt(info.card.dataset.endWord) || info.startWord;
-                const endWordSpan = docContainer.querySelector(`[data-w="${endWord - 1}"]`) || startWordSpan;
+                const startCharSpan = docContainer.querySelector(`[data-char-index="${info.startChar}"]`);
+                const endChar = parseInt(info.card.dataset.endWord) || info.startChar;
+                const endCharSpan = docContainer.querySelector(`[data-char-index="${endChar - 1}"]`) || startCharSpan;
 
-                const startRect = startWordSpan.getBoundingClientRect();
-                const endRect = endWordSpan.getBoundingClientRect();
+                const startRect = startCharSpan.getBoundingClientRect();
+                const endRect = endCharSpan.getBoundingClientRect();
 
                 // Highlight is visible if its bottom is below viewport top AND its top is above viewport bottom
-                const wordInViewport = endRect.bottom > viewportTop && startRect.top < viewportBottom;
+                const charInViewport = endRect.bottom > viewportTop && startRect.top < viewportBottom;
 
                 // Force absolute positioning via JS (CSS !important can't beat Quasar)
                 info.card.style.position = 'absolute';
 
-                if (!wordInViewport) {
-                    // Hide cards whose words are off-screen
+                if (!charInViewport) {
+                    // Hide cards whose chars are off-screen
                     info.card.style.display = 'none';
                     continue;
                 }

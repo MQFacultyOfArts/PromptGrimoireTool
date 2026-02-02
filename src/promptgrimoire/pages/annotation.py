@@ -142,8 +142,7 @@ _PAGE_CSS = """
 
     /* Hover highlight effect when card is hovered */
     .char.card-hover-highlight {
-        outline: 2px solid #FFD700 !important;
-        outline-offset: 1px;
+        box-shadow: inset 0 2px 0 #FFD700, inset 0 -2px 0 #FFD700 !important;
     }
 """
 

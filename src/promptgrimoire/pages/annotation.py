@@ -290,7 +290,7 @@ def _get_tag_color(tag_str: str) -> str:
 
 
 def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
-    """Generate CSS rules for highlighting words with tag-specific colors.
+    """Generate CSS rules for highlighting characters with tag-specific colors.
 
     Uses stacked underlines to show overlapping highlights (matching latex.py):
     - 1 highlight: background + 1pt underline
@@ -303,19 +303,19 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     Returns:
         CSS string with background-color and underline rules.
     """
-    # Build word -> list of (highlight_index, tag_color) mapping
-    word_highlights: dict[int, list[str]] = {}
+    # Build char -> list of (highlight_index, tag_color) mapping
+    char_highlights: dict[int, list[str]] = {}
     for hl in highlights:
         start = int(hl.get("start_word", 0))
         end = int(hl.get("end_word", 0))
         hex_color = _get_tag_color(hl.get("tag", "highlight"))
         for i in range(start, end):
-            if i not in word_highlights:
-                word_highlights[i] = []
-            word_highlights[i].append(hex_color)
+            if i not in char_highlights:
+                char_highlights[i] = []
+            char_highlights[i].append(hex_color)
 
     css_rules: list[str] = []
-    for word_idx, colors in word_highlights.items():
+    for char_idx, colors in char_highlights.items():
         # Background: use first highlight's color with transparency
         first_color = colors[0]
         r, g, b = (
@@ -331,7 +331,7 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
 
         # Main character styling
         css_rules.append(
-            f'[data-char-index="{word_idx}"] {{ '
+            f'[data-char-index="{char_idx}"] {{ '
             f"background-color: {bg_rgba}; "
             f"text-decoration: underline; "
             f"text-decoration-color: {underline_color}; "
@@ -340,10 +340,10 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         )
 
         # ::after pseudo-element to extend background through space
-        # Only add if next character is also highlighted (check word_highlights)
-        if (word_idx + 1) in word_highlights:
+        # Only add if next character is also highlighted (check char_highlights)
+        if (char_idx + 1) in char_highlights:
             css_rules.append(
-                f"[data-char-index=\"{word_idx}\"]::after {{ content: ' '; }}"
+                f"[data-char-index=\"{char_idx}\"]::after {{ content: ' '; }}"
             )
 
     return "\n".join(css_rules)

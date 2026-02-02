@@ -310,13 +310,8 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
             f"text-decoration-thickness: {thickness}; "
             f"text-underline-offset: 2px; }}"
         )
-
-        # ::after pseudo-element to extend background through space
-        # Only add if next character is also highlighted (check char_highlights)
-        if (char_idx + 1) in char_highlights:
-            css_rules.append(
-                f"[data-char-index=\"{char_idx}\"]::after {{ content: ' '; }}"
-            )
+        # Note: No ::after pseudo-element needed for character-based tokenization.
+        # Spaces are now individual character spans that get their own highlighting.
 
     return "\n".join(css_rules)
 

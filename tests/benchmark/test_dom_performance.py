@@ -183,17 +183,19 @@ class TestFixtureBenchmarks:
     @pytest.mark.e2e
     def test_blns_corpus(
         self,
-        fresh_page: Page,
+        authenticated_page: Page,
         app_server: str,
         benchmark_results: list[dict],
     ) -> None:
         """Benchmark BLNS corpus (stress test for unicode)."""
         content = load_blns()
 
-        render_time = setup_workspace_with_content(fresh_page, app_server, content)
-        metrics = get_dom_metrics(fresh_page)
-        selection_latency = measure_selection_latency(fresh_page)
-        scroll_time = measure_scroll_performance(fresh_page)
+        render_time = setup_workspace_with_content(
+            authenticated_page, app_server, content
+        )
+        metrics = get_dom_metrics(authenticated_page)
+        selection_latency = measure_selection_latency(authenticated_page)
+        scroll_time = measure_scroll_performance(authenticated_page)
 
         result = {
             "name": "BLNS corpus",
@@ -211,17 +213,19 @@ class TestFixtureBenchmarks:
     @pytest.mark.e2e
     def test_austlii_183(
         self,
-        fresh_page: Page,
+        authenticated_page: Page,
         app_server: str,
         benchmark_results: list[dict],
     ) -> None:
         """Benchmark AustLII legal document (hard spaces, formal text)."""
         content = load_austlii()
 
-        render_time = setup_workspace_with_content(fresh_page, app_server, content)
-        metrics = get_dom_metrics(fresh_page)
-        selection_latency = measure_selection_latency(fresh_page)
-        scroll_time = measure_scroll_performance(fresh_page)
+        render_time = setup_workspace_with_content(
+            authenticated_page, app_server, content
+        )
+        metrics = get_dom_metrics(authenticated_page)
+        selection_latency = measure_selection_latency(authenticated_page)
+        scroll_time = measure_scroll_performance(authenticated_page)
 
         result = {
             "name": "183-austlii (legal)",
@@ -244,7 +248,7 @@ class TestFixtureBenchmarks:
     )
     def test_conversation(
         self,
-        fresh_page: Page,
+        authenticated_page: Page,
         app_server: str,
         filename: str,
         content: str,
@@ -254,10 +258,12 @@ class TestFixtureBenchmarks:
         if not content.strip():
             pytest.skip(f"Empty content for {filename}")
 
-        render_time = setup_workspace_with_content(fresh_page, app_server, content)
-        metrics = get_dom_metrics(fresh_page)
-        selection_latency = measure_selection_latency(fresh_page)
-        scroll_time = measure_scroll_performance(fresh_page)
+        render_time = setup_workspace_with_content(
+            authenticated_page, app_server, content
+        )
+        metrics = get_dom_metrics(authenticated_page)
+        selection_latency = measure_selection_latency(authenticated_page)
+        scroll_time = measure_scroll_performance(authenticated_page)
 
         result = {
             "name": f"conv: {filename}",

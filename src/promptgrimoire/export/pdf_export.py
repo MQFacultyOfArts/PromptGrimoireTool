@@ -53,6 +53,11 @@ def _plain_text_to_html(text: str | None) -> str:
     Plain text newlines are collapsed by Pandoc when passed as HTML,
     so we need to wrap lines in paragraph tags.
 
+    IMPORTANT: Must match UI's _process_text_to_char_spans() behavior exactly
+    for character indexing alignment (Issue #111). Both use `if line:` to detect
+    empty lines, NOT `if line.strip():`. Whitespace-only lines (including '\r'
+    from CRLF) must be preserved so PDF marker indices match UI indices.
+
     Args:
         text: Plain text content, possibly with newlines.
 
@@ -66,10 +71,12 @@ def _plain_text_to_html(text: str | None) -> str:
     html_parts = []
 
     for line in lines:
-        if line.strip():
+        if line:
+            # Non-empty line (including whitespace-only like '\r' from CRLF)
+            # Must preserve whitespace content for character index alignment
             html_parts.append(f"<p>{html.escape(line)}</p>")
         else:
-            # Empty line - preserve as empty paragraph for spacing
+            # Truly empty line - preserve as empty paragraph for spacing
             html_parts.append("<p></p>")
 
     return "\n".join(html_parts)

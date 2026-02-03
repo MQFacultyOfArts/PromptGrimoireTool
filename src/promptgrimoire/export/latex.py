@@ -32,8 +32,11 @@ from lark import Lark
 from pylatexenc.latexwalker import (
     LatexEnvironmentNode,
     LatexGroupNode,
+    LatexMacroNode,
     LatexWalker,
+    get_default_latex_context_db,
 )
+from pylatexenc.macrospec import MacroSpec
 
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
@@ -1107,6 +1110,79 @@ def _fix_invalid_newlines(latex: str) -> str:
     return latex
 
 
+def _strip_texorpdfstring(latex: str) -> str:
+    r"""Strip \texorpdfstring{latex}{pdf} keeping only the LaTeX argument.
+
+    Pandoc generates \texorpdfstring for section headings to provide PDF bookmark
+    alternatives. However, luatexja's CJK font context conflicts with hyperref's
+    bookmark processing, causing "Missing font identifier" errors.
+
+    Since we disable PDF bookmarks (bookmarks=false), we strip \texorpdfstring
+    entirely and keep only the first argument (the LaTeX-formatted text).
+
+    Uses pylatexenc for robust parsing with nested braces.
+
+    Args:
+        latex: LaTeX content potentially containing \texorpdfstring commands.
+
+    Returns:
+        LaTeX with \texorpdfstring replaced by its first argument.
+    """
+    # Build a latex context that knows about \texorpdfstring{arg1}{arg2}
+    latex_context = get_default_latex_context_db()
+    latex_context = latex_context.filter_context(keep_categories=["latex-base"])
+    latex_context.add_context_category(
+        "pandoc-hyperref",
+        macros=[MacroSpec("texorpdfstring", "{{")],  # Two mandatory args
+    )
+
+    try:
+        walker = LatexWalker(latex, latex_context=latex_context, tolerant_parsing=True)
+        nodelist, _, _ = walker.get_latex_nodes(pos=0)
+    except Exception:
+        # If parsing fails, return unchanged
+        return latex
+
+    # Collect positions to replace: (start, end, replacement_text)
+    replacements: list[tuple[int, int, str]] = []
+
+    def collect_texorpdfstring(nodes: list) -> None:
+        for node in nodes:
+            if (
+                isinstance(node, LatexMacroNode)
+                and node.macroname == "texorpdfstring"
+                and node.nodeargd
+                and node.nodeargd.argnlist
+            ):
+                # Get first argument content
+                first_arg = node.nodeargd.argnlist[0]
+                if first_arg is not None:
+                    # Extract the content of first arg (without braces)
+                    arg_content = latex[
+                        first_arg.pos + 1 : first_arg.pos + first_arg.len - 1
+                    ]
+                    replacements.append((node.pos, node.pos + node.len, arg_content))
+            # Recurse into children
+            if (
+                isinstance(node, (LatexEnvironmentNode, LatexGroupNode))
+                and node.nodelist
+            ):
+                collect_texorpdfstring(node.nodelist)
+            elif isinstance(node, LatexMacroNode) and node.nodeargd:
+                for arg in node.nodeargd.argnlist or []:
+                    if arg is not None and hasattr(arg, "nodelist") and arg.nodelist:
+                        collect_texorpdfstring(arg.nodelist)
+
+    collect_texorpdfstring(nodelist)
+
+    # Apply replacements in reverse order to preserve positions
+    result = latex
+    for start, end, replacement in sorted(replacements, reverse=True):
+        result = result[:start] + replacement + result[end:]
+
+    return result
+
+
 def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     """Convert HTML to LaTeX using Pandoc with optional Lua filter.
 
@@ -1152,8 +1228,11 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
             cmd.extend(["--lua-filter", str(filter_path)])
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        # Post-process to fix invalid \newline{} in table contexts
-        return _fix_invalid_newlines(result.stdout)
+        # Post-process Pandoc output
+        latex = result.stdout
+        latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
+        latex = _strip_texorpdfstring(latex)  # Strip for luatexja compatibility
+        return latex
     finally:
         html_path.unlink(missing_ok=True)
 

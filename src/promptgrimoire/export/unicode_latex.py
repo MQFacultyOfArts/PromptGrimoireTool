@@ -11,7 +11,8 @@ import emoji as emoji_lib
 
 UNICODE_PREAMBLE = r"""
 % Unicode support for CJK and Emoji (added by unicode_latex.py)
-\usepackage[match]{luatexja-fontspec}
+% Note: [match] option removed - caused font identifier errors in sectioning
+\usepackage{luatexja-fontspec}
 \usepackage{emoji}
 
 % Define comprehensive font fallback chain BEFORE loading fonts
@@ -61,8 +62,19 @@ UNICODE_PREAMBLE = r"""
 % CJK font setup - Noto Serif CJK for serif consistency with TNR
 % Set as default Japanese fonts so [match] option uses them for all CJK
 % SC variant has broadest coverage (Simplified Chinese + JP/KR compatibility)
-\setmainjfont{Noto Serif CJK SC}
-\setsansjfont{Noto Sans CJK SC}
+% Must specify all font faces explicitly for luatexja compatibility
+\setmainjfont{Noto Serif CJK SC}[
+  UprightFont = *,
+  BoldFont = * Bold,
+  ItalicFont = *,        % CJK has no italic - use upright
+  BoldItalicFont = * Bold,
+]
+\setsansjfont{Noto Sans CJK SC}[
+  UprightFont = *,
+  BoldFont = * Bold,
+  ItalicFont = *,        % CJK has no italic - use upright
+  BoldItalicFont = * Bold,
+]
 
 % Also define as command for explicit wrapping if needed
 \newjfontfamily\notocjk{Noto Serif CJK SC}

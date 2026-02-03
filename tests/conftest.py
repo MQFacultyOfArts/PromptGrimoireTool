@@ -47,6 +47,43 @@ requires_latexmk = pytest.mark.skipif(
 
 
 # =============================================================================
+# Fixture File Loading (supports .html and .html.gz)
+# =============================================================================
+
+CONVERSATIONS_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "conversations"
+
+
+def load_conversation_fixture(name: str) -> str:
+    """Load a conversation fixture, supporting both .html and .html.gz.
+
+    Args:
+        name: Fixture name with or without extension (e.g., "claude_cooking" or
+              "claude_cooking.html")
+
+    Returns:
+        HTML content as string.
+    """
+    import gzip
+
+    # Normalize: strip extension if provided
+    base_name = name.removesuffix(".html.gz").removesuffix(".html")
+
+    # Try gzipped first (preferred for storage)
+    gz_path = CONVERSATIONS_FIXTURES_DIR / f"{base_name}.html.gz"
+    if gz_path.exists():
+        with gzip.open(gz_path, "rt", encoding="utf-8") as f:
+            return f.read()
+
+    # Fall back to plain HTML
+    html_path = CONVERSATIONS_FIXTURES_DIR / f"{base_name}.html"
+    if html_path.exists():
+        return html_path.read_text()
+
+    msg = f"Fixture not found: {base_name} (tried .html.gz and .html)"
+    raise FileNotFoundError(msg)
+
+
+# =============================================================================
 # PDF Export Test Fixtures
 # =============================================================================
 
@@ -128,8 +165,12 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
         else:
             notes_content = general_notes
 
-        # Create output directory
+        # Create output directory (purge first for clean state)
         output_dir = PDF_TEST_OUTPUT_DIR / test_name
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Run the async export in a new event loop
@@ -158,7 +199,7 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
 TEST_STORAGE_SECRET = "test-secret-for-e2e"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def db_schema_guard() -> Generator[None]:
     """Set up database schema once at session start.
 
@@ -169,6 +210,9 @@ def db_schema_guard() -> Generator[None]:
     The database engine is initialized lazily on first use within each
     test's event loop context. Tests use UUID-based isolation so they
     don't interfere with each other.
+
+    Note: Not autouse - only tests that need the DB should depend on this
+    (typically via their db_engine fixture).
     """
     test_url = os.environ.get("TEST_DATABASE_URL")
     if not test_url:

@@ -232,10 +232,12 @@ class TestWorkspacePersistence:
         # First edit
         pm.mark_dirty_workspace(workspace_id, doc_id)
         first_task = pm._workspace_pending_saves.get(workspace_id)
+        assert first_task is not None
 
         # Second edit - should cancel first
         pm.mark_dirty_workspace(workspace_id, doc_id)
         second_task = pm._workspace_pending_saves.get(workspace_id)
+        assert second_task is not None
 
         # Tasks should be different
         assert first_task is not second_task

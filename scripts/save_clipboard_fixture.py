@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Save clipboard content as a test fixture.
+"""Save clipboard content as a test fixture (gzipped).
 
 Usage:
     # Copy HTML from browser, then:
-    uv run python scripts/save_clipboard_fixture.py claude
+    uv run python scripts/save_clipboard_fixture.py claude_maths
     uv run python scripts/save_clipboard_fixture.py chatgpt --lipsum
-    uv run python scripts/save_clipboard_fixture.py gemini
-    uv run python scripts/save_clipboard_fixture.py copilot
 
+Options:
     --lipsum: Replace text content with lorem ipsum (preserves HTML structure)
 
-Saves to: tests/fixtures/conversations/{name}.html
+Saves to: tests/fixtures/conversations/{name}.html.gz
 """
 
 from __future__ import annotations
 
+import gzip
 import random
 import re
 import subprocess
@@ -166,9 +166,11 @@ def main() -> None:
         content = lipsum_html(content)
         print("Applied lorem ipsum replacement")
 
-    output_path = FIXTURES_DIR / f"{name}.html"
-    output_path.write_text(content, encoding="utf-8")
-    print(f"Saved {len(content)} bytes to {output_path}")
+    output_path = FIXTURES_DIR / f"{name}.html.gz"
+    with gzip.open(output_path, "wt", encoding="utf-8") as f:
+        f.write(content)
+    compressed_size = output_path.stat().st_size
+    print(f"Saved {len(content)} bytes -> {compressed_size} bytes ({output_path})")
 
 
 if __name__ == "__main__":

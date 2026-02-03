@@ -20,6 +20,7 @@ from promptgrimoire.export.latex import (
     convert_html_with_annotations,
 )
 from promptgrimoire.export.pdf import compile_latex
+from promptgrimoire.export.platforms import preprocess_for_export
 
 # LaTeX document template
 _DOCUMENT_TEMPLATE = r"""
@@ -177,10 +178,13 @@ async def export_annotation_pdf(
     Raises:
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
+    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
+    processed_html = preprocess_for_export(html_content)
+
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
     latex_body = convert_html_with_annotations(
-        html=html_content,
+        html=processed_html,
         highlights=highlights,
         tag_colours=tag_colours,
         filter_path=_LIBREOFFICE_FILTER,

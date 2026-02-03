@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from promptgrimoire.export.latex import convert_html_to_latex
+from tests.conftest import load_conversation_fixture
 
 # Filter paths
 FILTERS_DIR = (
@@ -175,3 +176,275 @@ class TestOrderedListStart:
 
         assert "\\setcounter" not in result
         assert "First" in result
+
+
+class TestListValueNormalization:
+    """Convert <li value="N"> to <ol start="N"> for Pandoc compatibility."""
+
+    def test_li_value_converted_to_ol_start(self) -> None:
+        """First li value becomes ol start attribute."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="5">Para 5</li><li value="6">Para 6</li></ol>'
+        result = normalize_list_values(html)
+
+        assert 'start="5"' in result
+        assert "Para 5" in result
+
+    def test_li_value_one_no_start(self) -> None:
+        """li value=1 doesn't need start (it's the default)."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="1">Para 1</li></ol>'
+        result = normalize_list_values(html)
+
+        # start=1 is default, shouldn't be added
+        assert 'start="1"' not in result
+        assert "Para 1" in result
+
+    def test_multiple_ols_each_get_start(self) -> None:
+        """Multiple OLs each get start from their first li."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = """
+        <ol><li value="1">Para 1</li><li value="2">Para 2</li></ol>
+        <ol><li value="3">Para 3</li></ol>
+        <ol><li value="4">Para 4</li><li value="5">Para 5</li></ol>
+        """
+        result = normalize_list_values(html)
+
+        # First ol: start=1 not needed
+        # Second ol: start=3
+        # Third ol: start=4
+        assert 'start="3"' in result
+        assert 'start="4"' in result
+
+    def test_li_without_value_unchanged(self) -> None:
+        """OL without li value attributes is unchanged."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = "<ol><li>Item</li></ol>"
+        result = normalize_list_values(html)
+
+        assert "start=" not in result
+        assert "Item" in result
+
+    @requires_pandoc
+    def test_normalized_list_produces_correct_latex(self) -> None:
+        """Full pipeline: li value → ol start → setcounter."""
+        from promptgrimoire.export.list_normalizer import normalize_list_values
+
+        html = '<ol><li value="5">Para 5</li></ol>'
+        normalized = normalize_list_values(html)
+        result = convert_html_to_latex(normalized, filter_path=LEGAL_FILTER)
+
+        assert "\\setcounter{enumi}{4}" in result
+        assert "Para 5" in result
+
+
+class TestUnitConversion:
+    """CSS unit conversion: em, rem, px → LaTeX equivalents."""
+
+    @requires_pandoc
+    def test_margin_left_em_units(self) -> None:
+        """margin-left with em units passes through to LaTeX."""
+        html = """
+        <div style="margin-left: 2em">
+            <p>Em-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        assert "\\begin{adjustwidth}{2em}{}" in result
+        assert "Em-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_rem_units(self) -> None:
+        """margin-left with rem units converts to em (1:1 ratio)."""
+        html = """
+        <div style="margin-left: 1.5rem">
+            <p>Rem-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # rem converts to em at 1:1 ratio
+        assert "\\begin{adjustwidth}{1.5em}{}" in result
+        assert "Rem-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_px_units(self) -> None:
+        """margin-left with px units converts to pt (x0.75)."""
+        html = """
+        <div style="margin-left: 40px">
+            <p>Pixel-indented paragraph</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # 40px * 0.75 = 30pt
+        assert "\\begin{adjustwidth}{30pt}{}" in result
+        assert "Pixel-indented paragraph" in result
+
+    @requires_pandoc
+    def test_margin_left_px_decimal_result(self) -> None:
+        """px conversion produces clean decimal when needed."""
+        html = """
+        <div style="margin-left: 20px">
+            <p>Small indent</p>
+        </div>
+        """
+        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+
+        # 20px * 0.75 = 15pt
+        assert "\\begin{adjustwidth}{15pt}{}" in result
+
+
+class TestSpeakerDetection:
+    """Platform detection and speaker label injection."""
+
+    def test_detect_claude_platform(self) -> None:
+        """Claude platform detected by font-user-message class."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = '<div class="font-user-message">Hello</div>'
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "claude"
+
+    def test_detect_openai_platform(self) -> None:
+        """OpenAI platform detected by agent-turn class."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = '<div class="agent-turn">Response</div>'
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "openai"
+
+    def test_detect_gemini_platform(self) -> None:
+        """Gemini platform detected by user-query element."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = "<user-query>What is CRDT?</user-query>"
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "gemini"
+
+    def test_detect_scienceos_platform(self) -> None:
+        """ScienceOS platform detected by tabler-icon-robot-face class."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = '<i class="tabler-icon tabler-icon-robot-face"></i>'
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "scienceos"
+
+    def test_detect_unknown_platform(self) -> None:
+        """Unknown platform when no patterns match."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = "<p>Just some text</p>"
+        assert get_handler(html) is None
+
+    def test_inject_labels_claude(self) -> None:
+        """Claude turns get User:/Assistant: labels injected."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        # Use realistic Claude HTML patterns
+        html = """
+        <div class="font-user-message" data-testid="user-message">Hello</div>
+        <div class="font-claude-response relative leading-[1.65rem]">Hi!</div>
+        """
+        result = preprocess_for_export(html)
+
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+        assert "Hello" in result
+        assert "Hi!" in result
+
+    def test_inject_labels_gemini(self) -> None:
+        """Gemini turns get User:/Assistant: labels injected."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = """
+        <user-query>What is CRDT?</user-query>
+        <model-response>CRDT stands for...</model-response>
+        """
+        result = preprocess_for_export(html)
+
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+
+
+class TestSpeakerDetectionWithFixtures:
+    """Test speaker detection against real fixture files."""
+
+    def _load_fixture(self, name: str) -> str:
+        return load_conversation_fixture(name)
+
+    def test_detect_claude_fixture(self) -> None:
+        """Claude fixture detected as Claude platform."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = self._load_fixture("claude_cooking.html")
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "claude"
+
+    def test_detect_openai_fixture(self) -> None:
+        """OpenAI fixture detected as OpenAI platform."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = self._load_fixture("openai_biblatex.html")
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "openai"
+
+    def test_detect_gemini_fixture(self) -> None:
+        """Gemini fixture detected as Gemini platform."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = self._load_fixture("google_gemini_debug.html")
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "gemini"
+
+    def test_detect_aistudio_fixture(self) -> None:
+        """AI Studio fixture detected as AI Studio platform."""
+        from promptgrimoire.export.platforms import get_handler
+
+        html = self._load_fixture("google_aistudio_ux_discussion.html")
+        handler = get_handler(html)
+        assert handler is not None
+        assert handler.name == "aistudio"
+
+    def test_inject_labels_claude_fixture(self) -> None:
+        """Claude fixture gets labels injected."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = self._load_fixture("claude_cooking.html")
+        result = preprocess_for_export(html)
+
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+
+    def test_inject_labels_gemini_fixture(self) -> None:
+        """Gemini fixture gets labels injected."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = self._load_fixture("google_gemini_debug.html")
+        result = preprocess_for_export(html)
+
+        # Check data attributes are injected (Lua filter converts to LaTeX labels)
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+
+
+# Note: TestUIChromeRemoval and TestChromeRemovalInFullPipeline classes removed.
+# Chrome removal functionality is now tested in:
+# - tests/unit/export/platforms/test_base.py (common chrome removal)
+# - tests/unit/export/platforms/test_pipeline.py (integration tests)
+# - Individual platform handler tests

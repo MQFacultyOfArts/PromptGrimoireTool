@@ -38,6 +38,7 @@ from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
 )
+from promptgrimoire.export.list_normalizer import normalize_list_values
 
 logger = logging.getLogger(__name__)
 
@@ -487,17 +488,53 @@ _WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
 ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage{fontspec}
 \setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
+\usepackage{amsmath}           % Math extensions (\text{} in math mode)
 \usepackage{microtype}         % Better typography (kerning, protrusion)
 \usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
 \usepackage{longtable}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{calc}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{changepage}
 \usepackage{luacolor}  % Required by lua-ul for coloured highlights
 \usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
+\usepackage{luabidi}   % Bidirectional text support for LuaLaTeX
+\usepackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage[framemethod=tikz]{mdframed}  % For speaker turn borders
+
+% Paragraph formatting for chatbot exports (no indent, paragraph spacing)
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5\baselineskip}
+
+% Speaker turn environments with left border
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=usercolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{userturn}
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=assistantcolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{assistantturn}
 
 % Pandoc compatibility
 \providecommand{\tightlist}{%
@@ -566,7 +603,16 @@ def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
         Complete LaTeX preamble string.
     """
     colour_defs = generate_tag_colour_definitions(tag_colours)
-    return f"\\usepackage{{xcolor}}\n{colour_defs}\n{ANNOTATION_PREAMBLE_BASE}"
+    # Speaker colours for chatbot turn distinction
+    speaker_colours = r"""
+% Speaker colours for chatbot turn markers
+\definecolor{usercolor}{HTML}{4A90D9}
+\definecolor{assistantcolor}{HTML}{7B68EE}
+"""
+    return (
+        f"\\usepackage{{xcolor}}\n{colour_defs}\n"
+        f"{speaker_colours}\n{ANNOTATION_PREAMBLE_BASE}"
+    )
 
 
 def _escape_latex(text: str) -> str:
@@ -966,6 +1012,48 @@ def _replace_markers_with_annots(
     return generate_highlighted_latex(regions, highlights, [])
 
 
+def _fix_invalid_newlines(latex: str) -> str:
+    """Remove \\newline{} commands in invalid table contexts.
+
+    Pandoc converts <br> tags to \\newline{}, but this is invalid in LaTeX when:
+    - At the start of a table row (no paragraph to end)
+    - Right before a column separator (&)
+    - Consecutive \\newline{} with no content between
+
+    Args:
+        latex: Raw LaTeX content from Pandoc.
+
+    Returns:
+        LaTeX with invalid \\newline{} removed.
+    """
+    # Remove consecutive \newline{} first - leave none (they're all invalid here)
+    latex = re.sub(r"(\\newline\{\}\s*){2,}", "", latex)
+
+    # Remove \newline{} at start of longtable (after column spec, possibly on next line)
+    # Pattern: \begin{longtable}{...}\n\newline{}
+    latex = re.sub(
+        r"(\\begin\{longtable\}\{[^}]+\})\s*\\newline\{\}",
+        r"\1\n",
+        latex,
+    )
+
+    # Remove \newline{} right before & (column separator)
+    latex = re.sub(r"\\newline\{\}\s*&", " &", latex)
+
+    # Remove \newline{} right after \\ (row end)
+    latex = re.sub(r"\\\\\s*\\newline\{\}", r"\\\\", latex)
+
+    # Remove standalone \newline{} at the very start of table content
+    # (after longtable row ends with \\)
+    latex = re.sub(r"(\\\\\s*\n)\s*\\newline\{\}", r"\1", latex)
+
+    # Remove \newline{} that appears alone on a line at table start
+    # (line starting with \newline{} followed by optional whitespace and &)
+    latex = re.sub(r"^\s*\\newline\{\}\s*$", "", latex, flags=re.MULTILINE)
+
+    return latex
+
+
 def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     """Convert HTML to LaTeX using Pandoc with optional Lua filter.
 
@@ -983,6 +1071,9 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     Raises:
         subprocess.CalledProcessError: If Pandoc fails.
     """
+    # Preprocess HTML: convert <li value="N"> to <ol start="N"> for Pandoc
+    html = normalize_list_values(html)
+
     # Preprocess HTML to wrap styled <p> tags for Pandoc attribute preservation
     normalised_html = normalise_styled_paragraphs(html)
 
@@ -994,12 +1085,22 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
 
     try:
         # Use +native_divs to preserve div attributes in Pandoc AST
-        cmd = ["pandoc", "-f", "html+native_divs", "-t", "latex", str(html_path)]
+        # Use --no-highlight to avoid undefined syntax highlighting macros (\VERB, etc.)
+        cmd = [
+            "pandoc",
+            "-f",
+            "html+native_divs",
+            "-t",
+            "latex",
+            "--no-highlight",
+            str(html_path),
+        ]
         if filter_path is not None:
             cmd.extend(["--lua-filter", str(filter_path)])
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout
+        # Post-process to fix invalid \newline{} in table contexts
+        return _fix_invalid_newlines(result.stdout)
     finally:
         html_path.unlink(missing_ok=True)
 

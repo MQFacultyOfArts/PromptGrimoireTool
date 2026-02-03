@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+import re
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -116,6 +117,10 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     """
     from selectolax.lexbor import LexborHTMLParser  # noqa: PLC0415
 
+    from promptgrimoire.export.platforms.base import (  # noqa: PLC0415
+        remove_common_chrome,
+    )
+
     if platform_hint:
         handler = _handlers.get(platform_hint)
         if handler is None:
@@ -127,14 +132,43 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     else:
         handler = get_handler(html)
 
-    if handler is None:
-        logger.debug("No platform handler matched, returning HTML unchanged")
-        return html
-
     tree = LexborHTMLParser(html)
-    handler.preprocess(tree)
-    # Label injection will be added in Phase 4
-    return tree.html or html
+
+    # Platform-specific preprocessing (if handler found)
+    if handler:
+        handler.preprocess(tree)
+
+    # Common chrome removal (always applied)
+    remove_common_chrome(tree)
+
+    # Get processed HTML
+    result = tree.html or html
+
+    # Inject speaker labels (if handler found)
+    if handler:
+        markers = handler.get_turn_markers()
+
+        # Inject user labels
+        user_pattern = markers.get("user")
+        if user_pattern:
+            result = re.sub(
+                user_pattern,
+                r'<div data-speaker="user" class="speaker-turn"></div>\1',
+                result,
+                flags=re.IGNORECASE,
+            )
+
+        # Inject assistant labels
+        assistant_pattern = markers.get("assistant")
+        if assistant_pattern:
+            result = re.sub(
+                assistant_pattern,
+                r'<div data-speaker="assistant" class="speaker-turn"></div>\1',
+                result,
+                flags=re.IGNORECASE,
+            )
+
+    return result
 
 
 # Run autodiscovery on module import

@@ -13,9 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from promptgrimoire.export.chrome_remover import remove_ui_chrome
 from promptgrimoire.export.latex import convert_html_to_latex
-from promptgrimoire.export.speaker_preprocessor import inject_speaker_labels
+from promptgrimoire.export.platforms import get_handler, preprocess_for_export
 from tests.conftest import load_conversation_fixture, requires_latexmk
 
 if TYPE_CHECKING:
@@ -71,15 +70,8 @@ def _load_fixture(name: str) -> str:
 
 
 def _preprocess_chatbot_html(html: str) -> str:
-    """Apply chatbot pre-processors in correct order.
-
-    Order matters:
-    1. inject_speaker_labels - uses platform markers for detection
-    2. remove_ui_chrome - removes markers after labels injected
-    """
-    html = inject_speaker_labels(html)
-    html = remove_ui_chrome(html)
-    return html
+    """Preprocess chatbot HTML for LaTeX conversion."""
+    return preprocess_for_export(html)
 
 
 class TestChatbotFixturesToLatex:
@@ -145,7 +137,7 @@ class TestChromeRemoved:
         """Chrome removal should reduce HTML size for fixtures with UI elements."""
         # scienceos_loc has lots of buttons and UI chrome
         html = _load_fixture("scienceos_loc.html")
-        result = remove_ui_chrome(html)
+        result = preprocess_for_export(html)
 
         # Chrome removal should reduce size (buttons, hidden elements, etc.)
         assert len(result) < len(html), "Chrome removal should reduce HTML size"
@@ -178,10 +170,9 @@ class TestChatbotFixturesToPdf:
         test_name = f"chatbot_{fixture_name.replace('.html', '')}"
 
         # Platform info for acceptance criteria
-        from promptgrimoire.export.speaker_preprocessor import detect_platform
-
         raw_html = _load_fixture(fixture_name)
-        platform = detect_platform(raw_html) or "unknown"
+        handler = get_handler(raw_html)
+        platform = handler.name if handler else "unknown"
 
         acceptance_criteria = f"""
 FIXTURE: {fixture_name}

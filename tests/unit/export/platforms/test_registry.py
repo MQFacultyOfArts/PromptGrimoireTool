@@ -109,14 +109,20 @@ class TestPreprocessForExport:
         assert "You said:" not in result
         assert "Hello!" in result
 
-    def test_returns_unchanged_for_unknown_platform(self) -> None:
-        """Entry point returns HTML unchanged for unknown platforms."""
+    def test_returns_content_unchanged_for_unknown_platform(self) -> None:
+        """Entry point preserves content for unknown platforms.
+
+        Note: selectolax normalizes HTML (adds html/head/body tags)
+        so we check content preservation, not exact equality.
+        """
         from promptgrimoire.export.platforms import preprocess_for_export
 
         html = '<div class="unknown-platform">Content</div>'
         result = preprocess_for_export(html)
 
-        assert result == html
+        # Content should be preserved
+        assert "Content" in result
+        assert "unknown-platform" in result
 
     def test_platform_hint_overrides_autodiscovery(self) -> None:
         """platform_hint parameter skips autodiscovery and uses specified handler."""

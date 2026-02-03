@@ -1,5 +1,36 @@
 # Unicode Robustness Design
 
+## Status: IN PROGRESS (Phase 6 blocked)
+
+**Last updated:** 2026-02-03
+**Branch:** `101-cjk-blns`
+**Issue:** #101
+
+### Phase Status
+- [x] Phase 1: Investigation and Test Infrastructure
+- [x] Phase 2: Unicode Detection Module (`unicode_latex.py`)
+- [x] Phase 3: LaTeX Wrapping Implementation (`escape_unicode_latex()`, `UNICODE_PREAMBLE`)
+- [x] Phase 4: TinyTeX Package Setup (`setup_latex.py` - emoji, luatexja, haranoaji)
+- [x] Phase 5: Integration with Existing Export
+- [ ] Phase 6: Round-Trip and Injection Tests - **PARTIALLY DONE**
+- [ ] Phase 7: Visual Validation Demo Route - **NOT STARTED**
+
+### Blockers
+1. **Issue #113**: LaTeX fails when highlights span HTML entity-like strings in BLNS
+2. **Deseret/historic scripts**: Fonts installed but still showing tofu in PDF (unresolved)
+
+### Major Pivot (2026-02-02)
+Character-based tokenization was designed and implemented mid-stream to fix CJK selection (word tokenization breaks CJK). See `2026-02-02-character-tokenization.md`.
+
+### Commits (selected)
+- d8ebd6f: Word tokenization fix (`\S+` regex)
+- 2e6da86: Control char strip timing (after marker insertion)
+- 58f05eb: Deseret/Osage/Shavian font fallbacks
+- f5fcf46: setup_latex.py font requirements
+- cc358b2 → 7bd5d94: Character-based tokenization implementation
+
+---
+
 ## Summary
 
 This design adds robust unicode handling to PromptGrimoire's text handling pipeline—from PostgreSQL storage through pycrdt CRDTs to browser rendering and PDF export. Currently, LaTeX export only handles ASCII special characters; documents containing CJK text (Chinese, Japanese, Korean) or emoji fail to compile or render incorrectly. The primary approach is detect-and-wrap: text is scanned for unicode ranges, then wrapped in LaTeX commands with explicit font switches. This is more reliable than fontspec fallback chains, which have proven tedious to configure across environments.

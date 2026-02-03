@@ -85,3 +85,76 @@ class TestInsertMarkersIntoHtml:
         assert "HLSTART0ENDHL" in result
         assert "HLEND0ENDHL" in result
         assert len(markers) == 1
+
+    def test_html_entity_escape_before_markers_causes_mismatch(self) -> None:
+        """Verify the OLD flow (escape before markers) causes index mismatch.
+
+        Issue #113: This test documents the bug where escaping BEFORE marker
+        insertion causes character index mismatch. This test should FAIL with
+        the old flow, demonstrating the problem.
+
+        The fix is to NOT escape before marker insertion - see
+        test_html_entity_escape_after_markers_works below.
+        """
+        import html as html_module
+
+        # Raw text with HTML entity-like string
+        raw_text = "jav&#x0A;ascript"
+
+        # OLD FLOW: Escape BEFORE marker insertion (WRONG!)
+        escaped_html = f"<p>{html_module.escape(raw_text)}</p>"
+        # This produces: <p>jav&amp;#x0A;ascript</p>
+
+        # UI creates highlight at raw text positions 4-8 (the "#x0A;" substring)
+        highlights = [{"start_char": 4, "end_char": 9, "tag": "test"}]
+
+        result, _ = _insert_markers_into_html(escaped_html, highlights)
+
+        # With the old flow, markers are at WRONG positions (around "amp;#")
+        # This assertion verifies the bug exists when using the old flow
+        assert "HLSTART0ENDHLamp;#" in result, (
+            f"Old flow should produce wrong markers around 'amp;#', got: {result}"
+        )
+
+    def test_html_entity_escape_after_markers_works(self) -> None:
+        """Verify the NEW flow (escape after markers) aligns indices correctly.
+
+        Issue #113 fix: By NOT escaping before marker insertion, character
+        indices match between UI and PDF export. Escaping happens AFTER
+        markers are in place, so markers end up at correct positions.
+        """
+        from promptgrimoire.export.latex import _escape_html_text_content
+        from promptgrimoire.export.pdf_export import _plain_text_to_html
+
+        # Raw text with HTML entity-like string
+        raw_text = "jav&#x0A;ascript"
+        # Characters: j=0, a=1, v=2, &=3, #=4, x=5, 0=6, A=7, ;=8, a=9, s=10...
+
+        # NEW FLOW: Wrap in <p> WITHOUT escaping (uses data-structural marker)
+        unescaped_html = _plain_text_to_html(raw_text, escape=False)
+
+        # UI creates highlight at raw text positions 4-8 (the "#x0A;" substring)
+        highlights = [{"start_char": 4, "end_char": 9, "tag": "test"}]
+
+        # Insert markers (now counting raw chars)
+        result, _ = _insert_markers_into_html(unescaped_html, highlights)
+
+        # Verify markers are at correct positions (around "#x0A;")
+        assert "HLSTART0ENDHL#" in result, (
+            f"Marker should start before '#', got: {result}"
+        )
+        assert ";HLEND0ENDHL" in result, f"Marker should end after ';', got: {result}"
+
+        # Now escape AFTER markers (this is what convert_html_with_annotations does)
+        escaped_result = _escape_html_text_content(result)
+
+        # Verify escaping works correctly:
+        # - The & before markers gets escaped to &amp;
+        # - Markers are preserved (they're ASCII, not affected by html.escape)
+        assert "&amp;HLSTART0ENDHL#" in escaped_result, (
+            f"& should be escaped to &amp; before marker, got: {escaped_result}"
+        )
+        # The highlighted content #x0A; should still be wrapped by markers
+        assert "HLSTART0ENDHL#x0A;HLEND0ENDHL" in escaped_result, (
+            f"'#x0A;' should be wrapped by markers, got: {escaped_result}"
+        )

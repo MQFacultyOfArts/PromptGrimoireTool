@@ -13,6 +13,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 import subprocess
@@ -46,6 +47,49 @@ from promptgrimoire.export.unicode_latex import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _escape_html_text_content(html_content: str) -> str:
+    """Escape HTML special chars in text content, preserving structural tags.
+
+    This function escapes &, <, >, quotes in text content but leaves the
+    structural <p> tags from _plain_text_to_html untouched.
+    Used after marker insertion to properly escape text for Pandoc without
+    affecting the markers (which are ASCII and don't need escaping).
+
+    Structural tags are identified by data-structural="1" attribute added
+    by _plain_text_to_html(escape=False). This prevents false matches where
+    user content contains "</p>" text.
+
+    Args:
+        html_content: HTML with markers already inserted.
+
+    Returns:
+        HTML with text content escaped, structural tags converted to plain <p>.
+    """
+    if not html_content:
+        return html_content
+
+    # Each line from _plain_text_to_html is: <p data-structural="1">content</p>
+    # We need to:
+    # 1. Match the opening tag with data-structural
+    # 2. Find the corresponding closing </p> (the LAST one, as content may have </p>)
+    # 3. Escape the content between them
+
+    # Pattern to match a complete paragraph
+    para_pattern = re.compile(r'<p data-structural="1">(.*?)</p>(?=\n|$)', re.DOTALL)
+
+    def escape_content(match: re.Match) -> str:
+        content = match.group(1)
+        return f"<p>{html.escape(content)}</p>"
+
+    # Replace each paragraph, escaping its content
+    result = para_pattern.sub(escape_content, html_content)
+
+    # Handle any remaining structural markers (shouldn't happen, but safety)
+    result = result.replace('<p data-structural="1">', "<p>")
+
+    return result
 
 
 class MarkerTokenType(Enum):
@@ -1022,6 +1066,7 @@ def convert_html_with_annotations(
     tag_colours: dict[str, str],  # noqa: ARG001 - colours used in preamble generation
     filter_path: Path | None = None,
     word_to_legal_para: dict[int, int | None] | None = None,
+    escape_text: bool = False,
 ) -> str:
     """Convert HTML to LaTeX with annotations inserted as marginnote+soul.
 
@@ -1036,6 +1081,10 @@ def convert_html_with_annotations(
         tag_colours: Mapping of tag names to hex colours.
         filter_path: Optional Lua filter for legal document fixes.
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
+        escape_text: If True, escape HTML special chars in text content AFTER
+            marker insertion. Use when input is plain text wrapped in tags
+            without escaping (Issue #113 fix). When True, skip HTML normalization
+            steps since input is plain text, not browser HTML.
 
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
@@ -1045,17 +1094,28 @@ def convert_html_with_annotations(
         len(highlights),
         [h.get("id", "")[:8] for h in highlights],
     )
-    # Strip script/style tags from browser copy-paste content
-    html = strip_scripts_and_styles(html)
 
-    # Fix mid-word font tag splits from LibreOffice RTF export
-    html = fix_midword_font_splits(html)
+    # HTML normalization is only for browser-copied HTML content
+    # Skip when processing plain text (escape_text=True)
+    if not escape_text:
+        # Strip script/style tags from browser copy-paste content
+        html = strip_scripts_and_styles(html)
+
+        # Fix mid-word font tag splits from LibreOffice RTF export
+        html = fix_midword_font_splits(html)
 
     # IMPORTANT: Insert markers BEFORE stripping control chars!
     # The UI counts words including control char "words" (e.g., BLNS has standalone
     # 0x01-0x1F chars). If we strip first, word indices become misaligned.
     # Markers are ASCII (HLSTARTnENDHL) so they survive the strip.
     marked_html, marker_highlights = _insert_markers_into_html(html, highlights)
+
+    # Escape text content AFTER markers are placed (Issue #113 fix).
+    # Markers are ASCII and won't be affected by html.escape().
+    # This ensures character indices match between UI (counts raw chars)
+    # and PDF export (also counts raw chars, not escaped chars).
+    if escape_text:
+        marked_html = _escape_html_text_content(marked_html)
 
     # Strip control characters that are invalid in LaTeX AFTER markers are placed
     # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)

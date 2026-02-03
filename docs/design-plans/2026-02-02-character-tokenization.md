@@ -1,5 +1,24 @@
 # Character-Based Tokenization Design
 
+## Status: IMPLEMENTED ✅
+
+**Last updated:** 2026-02-03
+**Branch:** `101-cjk-blns`
+**Commits:** cc358b2 → 7bd5d94
+
+### Phase Status
+- [x] Phase 1: Core Tokenization Function + Benchmarking (cc358b2, 24dcd9c, 71831f0)
+- [x] Phase 2: CSS Generator Updates (a3e2353, 4bc1122)
+- [x] Phase 3: JavaScript Selection Handling (5f54bd8)
+- [x] Phase 4: Export Marker Insertion (52ed59f, c8f8cfd, 7bd5d94)
+- [x] Phase 5: Test Suite Updates (1897eaf)
+- [ ] Phase 6: UAT Verification - **BLOCKED by Issue #113**
+
+### Known Issues (Post-Implementation)
+- **Issue #113**: LaTeX compilation fails when highlights span HTML entity-like strings (`&#x0A;`) in BLNS content. Marker insertion breaks multi-character sequences.
+
+---
+
 ## Summary
 
 This design replaces the current word-based tokenization in the annotation system with character-based tokenization. The existing implementation splits text on whitespace boundaries (`str.split()`), which fails for CJK languages (Chinese, Japanese, Korean) that don't use spaces between words and creates problems for selecting individual whitespace characters. The new approach iterates through every character in the text (including spaces, tabs, and non-breaking spaces), assigns each a sequential index, and wraps each in its own `<span>` element. This enables character-level selection for CJK text, preserves hard whitespace from legal documents, and properly handles RTL (right-to-left) text from the Big List of Naughty Strings test suite.

@@ -46,7 +46,7 @@ _GENERAL_NOTES_TEMPLATE = r"""
 """
 
 
-def _plain_text_to_html(text: str | None) -> str:
+def _plain_text_to_html(text: str | None, escape: bool = True) -> str:
     """Convert plain text to HTML with paragraph structure.
 
     Preserves line breaks as <p> tags for proper Pandoc conversion.
@@ -60,6 +60,10 @@ def _plain_text_to_html(text: str | None) -> str:
 
     Args:
         text: Plain text content, possibly with newlines.
+        escape: Whether to HTML-escape the content. Set to False when markers
+            have already been inserted and escaping will be done later.
+            When False, adds data-structural attribute to tags so they can
+            be distinguished from user content during escaping.
 
     Returns:
         HTML with each line wrapped in <p> tags.
@@ -70,14 +74,19 @@ def _plain_text_to_html(text: str | None) -> str:
     lines = text.split("\n")
     html_parts = []
 
+    # When not escaping, add a marker so we can identify structural tags later
+    p_open = "<p>" if escape else '<p data-structural="1">'
+    p_close = "</p>"
+
     for line in lines:
         if line:
             # Non-empty line (including whitespace-only like '\r' from CRLF)
             # Must preserve whitespace content for character index alignment
-            html_parts.append(f"<p>{html.escape(line)}</p>")
+            escaped_line = html.escape(line) if escape else line
+            html_parts.append(f"{p_open}{escaped_line}{p_close}")
         else:
             # Truly empty line - preserve as empty paragraph for spacing
-            html_parts.append("<p></p>")
+            html_parts.append(f"{p_open}{p_close}")
 
     return "\n".join(html_parts)
 
@@ -232,10 +241,16 @@ async def export_annotation_pdf(
         bool(is_structured_html),
         not is_structured_html,
     )
+
+    # For plain text: wrap in <p> WITHOUT escaping, then escape AFTER markers
+    # are inserted. This fixes Issue #113 where HTML escaping changed character
+    # counts and caused marker position misalignment.
+    escape_text_after_markers = False
     if not is_structured_html:
-        html_content = _plain_text_to_html(html_content)
+        html_content = _plain_text_to_html(html_content, escape=False)
+        escape_text_after_markers = True
         logger.info(
-            "[PDF DEBUG] after _plain_text_to_html, <p> count=%d",
+            "[PDF DEBUG] after _plain_text_to_html (no escape), <p> count=%d",
             html_content.count("<p>"),
         )
 
@@ -247,6 +262,7 @@ async def export_annotation_pdf(
         tag_colours=tag_colours,
         filter_path=_LIBREOFFICE_FILTER,
         word_to_legal_para=word_to_legal_para,
+        escape_text=escape_text_after_markers,
     )
 
     # Build preamble with tag colours

@@ -53,7 +53,21 @@ class ScienceOSHandler:
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for ScienceOS turn boundaries.
 
-        ScienceOS uses Mantine CSS classes with hash suffixes.
+        ScienceOS uses Mantine CSS classes with hash suffixes. The patterns
+        are based on the semantic purpose of each div rather than visual styling.
+
+        Design note on _markdown_ pattern:
+        The _markdown_ class is a Mantine semantic marker that wraps model
+        responses in ScienceOS. While "_markdown_" is a generic term, in the
+        context of ScienceOS exports it specifically identifies model response
+        blocks (not help text or markdown preview areas) because:
+        1. ScienceOS exports only include model response content, not UI chrome
+        2. The _prompt_ and _markdown_ classes are consistently paired for
+           user-assistant turn boundaries
+        3. Other markdown content (help text, etc.) does not appear in exports
+
+        If ScienceOS exports ever include markdown preview areas, this pattern
+        may need refinement with additional context selectors.
 
         Returns:
             Dict with 'user' and 'assistant' regex patterns.

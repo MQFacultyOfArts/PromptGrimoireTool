@@ -57,18 +57,22 @@ class ClaudeHandler:
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for Claude turn boundaries.
 
-        Claude uses data-testid for user messages and specific CSS classes
-        for assistant responses.
+        Claude uses data-testid for user messages and a flexible pattern for
+        assistant responses based on the font-claude-response class.
+
+        Design note on assistant pattern:
+        We use a flexible class pattern `class="[^"]*font-claude-response[^"]*"`
+        rather than the specific `leading-[1.65rem]` value. This is because:
+        1. The leading (line height) value may change across Claude UI updates
+        2. The font-claude-response class is Claude's stable semantic marker
+        3. A flexible pattern is more resilient to CSS refactoring
 
         Returns:
             Dict with 'user' and 'assistant' regex patterns.
         """
         return {
             "user": r'(<[^>]*data-testid="user-message"[^>]*>)',
-            "assistant": (
-                r'(<[^>]*class="font-claude-response relative '
-                r'leading-\[1\.65rem\][^"]*"[^>]*>)'
-            ),
+            "assistant": r'(<[^>]*class="[^"]*font-claude-response[^"]*"[^>]*>)',
         }
 
 

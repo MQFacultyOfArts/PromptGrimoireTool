@@ -36,6 +36,9 @@ output/
 # Editor backup files
 *~
 
+# LibreOffice lock files
+.~lock.*#
+
 # Git worktrees (parallel development)
 .worktrees/
 test-all-fixtures.log

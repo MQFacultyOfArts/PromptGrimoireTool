@@ -22,15 +22,15 @@ if TYPE_CHECKING:
 
 
 def select_chars(page: Page, start_char: int, end_char: int) -> None:
-    """Select a range of characters by clicking start and shift-clicking end.
+    """Select a range of characters by mouse drag.
 
-    This is the reliable method for text selection in Playwright tests.
-    Uses click + shift+click which works consistently across browsers.
+    Uses Playwright's native mouse API to drag-select text from start_char
+    to end_char (inclusive).
 
     Args:
         page: Playwright page.
         start_char: Index of first character to select.
-        end_char: Index of last character to select.
+        end_char: Index of last character to select (inclusive).
     """
     char_start = page.locator(f"[data-char-index='{start_char}']")
     char_end = page.locator(f"[data-char-index='{end_char}']")
@@ -38,8 +38,23 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     char_start.scroll_into_view_if_needed()
     expect(char_start).to_be_visible(timeout=5000)
 
-    char_start.click()
-    char_end.click(modifiers=["Shift"])
+    # Get bounding boxes for precise mouse positioning
+    start_box = char_start.bounding_box()
+    end_box = char_end.bounding_box()
+
+    if not start_box or not end_box:
+        raise ValueError("Could not get bounding boxes for char elements")
+
+    # Drag from left edge of start char to right edge of end char
+    start_x = start_box["x"] + 1
+    start_y = start_box["y"] + start_box["height"] / 2
+    end_x = end_box["x"] + end_box["width"] - 1
+    end_y = end_box["y"] + end_box["height"] / 2
+
+    page.mouse.move(start_x, start_y)
+    page.mouse.down()
+    page.mouse.move(end_x, end_y)
+    page.mouse.up()
 
 
 # Deprecated alias for backwards compatibility during migration

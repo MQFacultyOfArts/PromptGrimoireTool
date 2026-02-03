@@ -71,8 +71,8 @@ class TestAnnotationCards:
         # Setup workspace with document
         setup_workspace_with_content(page, app_server, "The defendant was negligent")
 
-        # Create highlight
-        create_highlight(page, 0, 1)
+        # Create highlight on "The" (chars 0-2: T=0, h=1, e=2)
+        create_highlight(page, 0, 2)
 
         ann_card = page.locator("[data-testid='annotation-card']")
 
@@ -108,8 +108,8 @@ class TestAnnotationCards:
         setup_workspace_with_content(page, app_server, "Persistent comment test")
         workspace_url = page.url
 
-        # Create highlight and add comment
-        create_highlight(page, 0, 1)
+        # Create highlight on "Persistent" (chars 0-9)
+        create_highlight(page, 0, 9)
 
         ann_card = page.locator("[data-testid='annotation-card']")
         comment_input = ann_card.locator("input[placeholder*='comment']")
@@ -161,10 +161,11 @@ class TestTagSelection:
 
         # --- Subtest: selecting text then tag creates colored highlight ---
         with subtests.test(msg="tag_creates_colored_highlight"):
-            select_chars(page, 1, 2)
+            # Select "legal" (chars 4-8 in "The legal issues in this case")
+            select_chars(page, 4, 8)
             tag_toolbar.locator("button").first.click()
 
-            word = page.locator("[data-char-index='1']")
+            word = page.locator("[data-char-index='4']")
             expect(word).to_have_css(
                 "background-color", re.compile(r"rgba?\("), timeout=5000
             )

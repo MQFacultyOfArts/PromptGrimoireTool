@@ -196,7 +196,7 @@ function Div(elem)
     return result
   end
 
-  -- Handle speaker turn markers (inserted by speaker_preprocessor.py)
+  -- Handle speaker turn markers (inserted by platforms.preprocess_for_export)
   -- Note: Pandoc strips 'data-' prefix, so data-speaker becomes just 'speaker'
   local speaker = elem.attr.attributes['speaker']
   if speaker then

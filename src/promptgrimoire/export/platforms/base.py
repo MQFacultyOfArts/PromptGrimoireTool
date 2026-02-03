@@ -69,9 +69,9 @@ def _remove_chrome_images(tree: LexborHTMLParser) -> None:
         except ValueError:
             pass
 
-        # Remove remote images
+        # Remove remote images (including blob: URLs which can't be resolved)
         src = attrs.get("src") or ""
-        if src.startswith(("http://", "https://")):
+        if src.startswith(("http://", "https://", "blob:")):
             img.decompose()
 
 

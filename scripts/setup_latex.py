@@ -7,19 +7,21 @@ Run with: uv run python scripts/setup_latex.py
 System font requirements (install via OS package manager):
 - Noto Serif CJK SC (and other CJK variants)
 - Noto Serif (Hebrew, Devanagari, Bengali, Tamil, Thai, Georgian, Armenian, etc.)
+- Noto Sans (Deseret, Osage, Shavian - for historic scripts in BLNS)
 - Noto Sans Symbols, Noto Sans Symbols2, Noto Sans Math
 - Noto Color Emoji
 
-Ubuntu/Debian:
-    sudo apt install fonts-noto fonts-noto-cjk fonts-noto-cjk-extra \\
-        fonts-noto-color-emoji tex-gyre
+Ubuntu/Debian (install ALL Noto fonts for complete Unicode coverage):
+    sudo apt install --install-recommends fonts-noto
 
 Fedora:
-    sudo dnf install google-noto-fonts-all google-noto-emoji-fonts texlive-tex-gyre
+    sudo dnf install google-noto-fonts-all google-noto-emoji-fonts
 
 Arch:
-    sudo pacman -S noto-fonts noto-fonts-cjk noto-fonts-emoji \\
-        noto-fonts-extra tex-gyre-fonts
+    sudo pacman -S noto-fonts noto-fonts-cjk noto-fonts-emoji noto-fonts-extra
+
+After installing fonts, refresh LuaLaTeX font cache:
+    ~/.TinyTeX/bin/x86_64-linux/luaotfload-tool --update
 """
 
 from __future__ import annotations
@@ -80,6 +82,10 @@ REQUIRED_SYSTEM_FONTS = [
     "Noto Serif Bengali",
     "Noto Serif Tamil",
     "Noto Serif Thai",
+    # Historic/rare scripts (for BLNS coverage)
+    "Noto Sans Deseret",
+    "Noto Sans Osage",
+    "Noto Sans Shavian",
     # Symbols and emoji
     "Noto Sans Symbols",
     "Noto Sans Symbols2",

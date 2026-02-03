@@ -21,36 +21,40 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
-def select_words(page: Page, start_word: int, end_word: int) -> None:
-    """Select a range of words by clicking start and shift-clicking end.
+def select_chars(page: Page, start_char: int, end_char: int) -> None:
+    """Select a range of characters by clicking start and shift-clicking end.
 
     This is the reliable method for text selection in Playwright tests.
     Uses click + shift+click which works consistently across browsers.
 
     Args:
         page: Playwright page.
-        start_word: Index of first word to select.
-        end_word: Index of last word to select.
+        start_char: Index of first character to select.
+        end_char: Index of last character to select.
     """
-    word_start = page.locator(f"[data-word-index='{start_word}']")
-    word_end = page.locator(f"[data-word-index='{end_word}']")
+    char_start = page.locator(f"[data-char-index='{start_char}']")
+    char_end = page.locator(f"[data-char-index='{end_char}']")
 
-    word_start.scroll_into_view_if_needed()
-    expect(word_start).to_be_visible(timeout=5000)
+    char_start.scroll_into_view_if_needed()
+    expect(char_start).to_be_visible(timeout=5000)
 
-    word_start.click()
-    word_end.click(modifiers=["Shift"])
+    char_start.click()
+    char_end.click(modifiers=["Shift"])
 
 
-def create_highlight(page: Page, start_word: int, end_word: int) -> None:
-    """Select words and click the first tag button to create a highlight.
+# Deprecated alias for backwards compatibility during migration
+select_words = select_chars
+
+
+def create_highlight(page: Page, start_char: int, end_char: int) -> None:
+    """Select characters and click the first tag button to create a highlight.
 
     Args:
         page: Playwright page.
-        start_word: Index of first word to select.
-        end_word: Index of last word to select.
+        start_char: Index of first character to select.
+        end_char: Index of last character to select.
     """
-    select_words(page, start_word, end_word)
+    select_chars(page, start_char, end_char)
     tag_button = page.locator("[data-testid='tag-toolbar'] button").first
     tag_button.click()
 
@@ -84,5 +88,5 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
     content_input.fill(content)
     page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-    page.wait_for_selector("[data-word-index]")
+    page.wait_for_selector("[data-char-index]")
     page.wait_for_timeout(200)

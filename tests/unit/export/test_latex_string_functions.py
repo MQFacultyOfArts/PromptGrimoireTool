@@ -321,3 +321,87 @@ Final text with comments.{annot_multi_comment}
         print(f"\n\nPDF saved for visual inspection: {pdf_path.absolute()}")
         print(f"TeX source: {tex_path.absolute()}")
         print(f"Log file: {log_path.absolute()}")
+
+
+class TestUnicodeAnnotationEscaping:
+    """Test unicode handling in annotation formatting."""
+
+    def test_cjk_author_name_escaped(self) -> None:
+        """CJK characters in author name are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("田中太郎")
+        assert "\\cjktext{田中太郎}" in result
+
+    def test_cjk_comment_text_escaped(self) -> None:
+        """CJK characters in comment text are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("これは日本語のコメントです")
+        assert "\\cjktext{" in result
+
+    def test_emoji_in_comment_escaped(self) -> None:
+        """Emoji in comment text are wrapped correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("Great work! 🎉")
+        assert "\\emoji{" in result
+
+    def test_mixed_ascii_cjk_special_chars(self) -> None:
+        """Mixed content with special chars handles all correctly."""
+        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+
+        result = escape_unicode_latex("User & 田中 100%")
+        assert "\\&" in result  # Special char escaped
+        assert "\\cjktext{田中}" in result  # CJK wrapped
+        assert "\\%" in result  # Special char escaped
+
+    def test_format_annot_cjk_author(self) -> None:
+        """CJK in author name is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "田中太郎",
+            "text": "some text",
+            "comments": [],
+        }
+        result = _format_annot(highlight)
+        assert r"\cjktext{田中太郎}" in result
+
+    def test_format_annot_cjk_comment_author(self) -> None:
+        """CJK in comment author is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "Alice",
+            "text": "some text",
+            "comments": [
+                {"author": "山田花子", "text": "Comment text"},
+            ],
+        }
+        result = _format_annot(highlight)
+        assert r"\cjktext{山田花子}" in result
+
+    def test_format_annot_emoji_in_comment(self) -> None:
+        """Emoji in comment text is wrapped in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "Alice",
+            "text": "some text",
+            "comments": [
+                {"author": "Bob", "text": "Great work! 🎉"},
+            ],
+        }
+        result = _format_annot(highlight)
+        assert r"\emoji{" in result
+
+    def test_format_annot_mixed_unicode_and_special_chars(self) -> None:
+        """Mixed unicode and special chars in _format_annot output."""
+        highlight = {
+            "tag": "tag",
+            "author": "User & 田中",
+            "text": "some text",
+            "comments": [],
+        }
+        result = _format_annot(highlight)
+        # Should have both escaped special char and wrapped CJK
+        assert r"\&" in result
+        assert r"\cjktext{田中}" in result

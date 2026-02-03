@@ -9,6 +9,8 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 
 from __future__ import annotations
 
+import html
+import logging
 import re
 import shutil
 import tempfile
@@ -21,6 +23,8 @@ from promptgrimoire.export.latex import (
 )
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
+
+logger = logging.getLogger(__name__)
 
 # LaTeX document template
 _DOCUMENT_TEMPLATE = r"""
@@ -43,23 +47,68 @@ _GENERAL_NOTES_TEMPLATE = r"""
 """
 
 
-def _html_to_latex_notes(html: str) -> str:
+def _plain_text_to_html(text: str | None, escape: bool = True) -> str:
+    """Convert plain text to HTML with paragraph structure.
+
+    Preserves line breaks as <p> tags for proper Pandoc conversion.
+    Plain text newlines are collapsed by Pandoc when passed as HTML,
+    so we need to wrap lines in paragraph tags.
+
+    IMPORTANT: Must match UI's _process_text_to_char_spans() behavior exactly
+    for character indexing alignment (Issue #111). Both use `if line:` to detect
+    empty lines, NOT `if line.strip():`. Whitespace-only lines (including '\r'
+    from CRLF) must be preserved so PDF marker indices match UI indices.
+
+    Args:
+        text: Plain text content, possibly with newlines.
+        escape: Whether to HTML-escape the content. Set to False when markers
+            have already been inserted and escaping will be done later.
+            When False, adds data-structural attribute to tags so they can
+            be distinguished from user content during escaping.
+
+    Returns:
+        HTML with each line wrapped in <p> tags.
+    """
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    html_parts = []
+
+    # When not escaping, add a marker so we can identify structural tags later
+    p_open = "<p>" if escape else '<p data-structural="1">'
+    p_close = "</p>"
+
+    for line in lines:
+        if line:
+            # Non-empty line (including whitespace-only like '\r' from CRLF)
+            # Must preserve whitespace content for character index alignment
+            escaped_line = html.escape(line) if escape else line
+            html_parts.append(f"{p_open}{escaped_line}{p_close}")
+        else:
+            # Truly empty line - preserve as empty paragraph for spacing
+            html_parts.append(f"{p_open}{p_close}")
+
+    return "\n".join(html_parts)
+
+
+def _html_to_latex_notes(html_content: str) -> str:
     """Convert HTML notes content to LaTeX.
 
     Simple conversion for WYSIWYG editor output.
     Handles basic formatting tags.
 
     Args:
-        html: HTML content from the notes editor.
+        html_content: HTML content from the notes editor.
 
     Returns:
         LaTeX-formatted content.
     """
-    if not html or not html.strip():
+    if not html_content or not html_content.strip():
         return ""
 
     # Strip outer tags and convert basic formatting
-    content = html
+    content = html_content
 
     # Convert common HTML to LaTeX
     replacements = [
@@ -163,7 +212,8 @@ async def export_annotation_pdf(
     4. PDF compilation via latexmk
 
     Args:
-        html_content: Raw HTML content (not word-span processed).
+        html_content: Content to export. Can be plain text or HTML.
+            Plain text (no HTML tags) is auto-converted to HTML paragraphs.
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
         general_notes: HTML content from general notes editor.
@@ -178,8 +228,26 @@ async def export_annotation_pdf(
     Raises:
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
-    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
-    processed_html = preprocess_for_export(html_content)
+    # Detect if content is ALREADY structured HTML (starts with HTML tags).
+    # Plain text newlines are collapsed by Pandoc, so we wrap in <p> tags.
+    # We check the START of content - not anywhere - because content like BLNS
+    # contains HTML strings (XSS payloads) that shouldn't trigger HTML detection.
+    is_structured_html = html_content and re.match(
+        r"\s*<(?:!DOCTYPE|html|body|p|div|table|ul|ol|h[1-6])\b",
+        html_content,
+        re.IGNORECASE,
+    )
+
+    # For plain text: wrap in <p> WITHOUT escaping, then escape AFTER markers
+    # are inserted. This fixes Issue #113 where HTML escaping changed character
+    # counts and caused marker position misalignment.
+    escape_text_after_markers = False
+    if is_structured_html:
+        # Preprocess HTML: detect platform, remove chrome, inject speaker labels
+        processed_html = preprocess_for_export(html_content)
+    else:
+        processed_html = _plain_text_to_html(html_content, escape=False)
+        escape_text_after_markers = True
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
@@ -189,6 +257,7 @@ async def export_annotation_pdf(
         tag_colours=tag_colours,
         filter_path=_LIBREOFFICE_FILTER,
         word_to_legal_para=word_to_legal_para,
+        escape_text=escape_text_after_markers,
     )
 
     # Build preamble with tag colours

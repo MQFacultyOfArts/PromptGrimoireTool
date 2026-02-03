@@ -13,6 +13,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 import subprocess
@@ -37,10 +38,59 @@ from pylatexenc.latexwalker import (
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
+    strip_scripts_and_styles,
 )
 from promptgrimoire.export.list_normalizer import normalize_list_values
+from promptgrimoire.export.unicode_latex import (
+    UNICODE_PREAMBLE,
+    _strip_control_chars,
+    escape_unicode_latex,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _escape_html_text_content(html_content: str) -> str:
+    """Escape HTML special chars in text content, preserving structural tags.
+
+    This function escapes &, <, >, quotes in text content but leaves the
+    structural <p> tags from _plain_text_to_html untouched.
+    Used after marker insertion to properly escape text for Pandoc without
+    affecting the markers (which are ASCII and don't need escaping).
+
+    Structural tags are identified by data-structural="1" attribute added
+    by _plain_text_to_html(escape=False). This prevents false matches where
+    user content contains "</p>" text.
+
+    Args:
+        html_content: HTML with markers already inserted.
+
+    Returns:
+        HTML with text content escaped, structural tags converted to plain <p>.
+    """
+    if not html_content:
+        return html_content
+
+    # Each line from _plain_text_to_html is: <p data-structural="1">content</p>
+    # We need to:
+    # 1. Match the opening tag with data-structural
+    # 2. Find the corresponding closing </p> (the LAST one, as content may have </p>)
+    # 3. Escape the content between them
+
+    # Pattern to match a complete paragraph
+    para_pattern = re.compile(r'<p data-structural="1">(.*?)</p>(?=\n|$)', re.DOTALL)
+
+    def escape_content(match: re.Match) -> str:
+        content = match.group(1)
+        return f"<p>{html.escape(content)}</p>"
+
+    # Replace each paragraph, escaping its content
+    result = para_pattern.sub(escape_content, html_content)
+
+    # Handle any remaining structural markers (shouldn't happen, but safety)
+    result = result.replace('<p data-structural="1">', "<p>")
+
+    return result
 
 
 class MarkerTokenType(Enum):
@@ -477,8 +527,9 @@ _HLEND_TEMPLATE = "HLEND{}ENDHL"
 _HLSTART_PATTERN = re.compile(r"HLSTART(\d+)ENDHL")
 _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 
-# Pattern for words - matches _WordSpanProcessor._WORD_PATTERN
-_WORD_PATTERN = re.compile(r'["\'\(\[]*[\w\'\-]+[.,;:!?"\'\)\]]*')
+# Character-based tokenization.
+# The UI tokenizes by character (including whitespace), so export must match exactly.
+# Note: _WORD_PATTERN regex is no longer used - character iteration is inline.
 
 # Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
 # Note: The \annot command takes 2 parameters: colour name and margin content.
@@ -611,7 +662,7 @@ def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
 """
     return (
         f"\\usepackage{{xcolor}}\n{colour_defs}\n"
-        f"{speaker_colours}\n{ANNOTATION_PREAMBLE_BASE}"
+        f"{speaker_colours}\n{UNICODE_PREAMBLE}\n{ANNOTATION_PREAMBLE_BASE}"
     )
 
 
@@ -685,17 +736,17 @@ def _format_annot(
 
     # Line 1: **Tag** [para]
     if para_ref:
-        margin_parts = [f"\\textbf{{{_escape_latex(tag_display)}}} {para_ref}"]
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}} {para_ref}"]
     else:
-        margin_parts = [f"\\textbf{{{_escape_latex(tag_display)}}}"]
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}}"]
 
     # Line 2: name, date (tiny)
     if timestamp:
         margin_parts.append(
-            f"\\par{{\\scriptsize {_escape_latex(author)}, {timestamp}}}"
+            f"\\par{{\\scriptsize {escape_unicode_latex(author)}, {timestamp}}}"
         )
     else:
-        margin_parts.append(f"\\par{{\\scriptsize {_escape_latex(author)}}}")
+        margin_parts.append(f"\\par{{\\scriptsize {escape_unicode_latex(author)}}}")
 
     # Add separator and comments if present
     if comments:
@@ -705,15 +756,16 @@ def _format_annot(
             c_text = comment.get("text", "")
             c_timestamp = _format_timestamp(comment.get("created_at", ""))
             # Comment: name, date: text (all small)
+            c_author_esc = escape_unicode_latex(c_author)
+            c_text_esc = escape_unicode_latex(c_text)
             if c_timestamp:
                 margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{_escape_latex(c_author)}}}, "
-                    f"{c_timestamp}:}} {_escape_latex(c_text)}"
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}}}, "
+                    f"{c_timestamp}:}} {c_text_esc}"
                 )
             else:
                 margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{_escape_latex(c_author)}:}}}} "
-                    f"{_escape_latex(c_text)}"
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}:}}}} {c_text_esc}"
                 )
 
     margin_content = "".join(margin_parts)
@@ -724,17 +776,20 @@ def _format_annot(
 def _insert_markers_into_html(
     html: str, highlights: list[dict]
 ) -> tuple[str, list[dict]]:
-    """Insert annotation and highlight markers into HTML at correct word positions.
+    """Insert annotation and highlight markers into HTML at correct character positions.
 
-    Uses the same word pattern as _WordSpanProcessor to ensure word indices match.
+    Uses character-by-character iteration to match the UI's character indexing.
+    The UI creates character indices by iterating each character (including whitespace),
+    so we must match that exactly for highlights to align between UI and export.
+
     Inserts three types of markers:
-    - HLSTART{n} at start_word (before the word)
-    - HLEND{n} after end_word (after the last highlighted word)
+    - HLSTART{n} at start_char (before the character)
+    - HLEND{n} after end_char (after the last highlighted character)
     - ANNMARKER{n} after HLEND (so \\annot{} with \\par is outside \\highLight{})
 
     Args:
         html: Raw HTML content.
-        highlights: List of highlight dicts with start_word and end_word.
+        highlights: List of highlight dicts with start_char and end_char.
 
     Returns:
         Tuple of (html with markers, list of highlights in marker order).
@@ -742,31 +797,37 @@ def _insert_markers_into_html(
     if not highlights:
         return html, []
 
-    # Sort by start_word, then by tag
+    # Sort by start_char, then by tag
+    # Support both old field names (start_word) and new (start_char) for migration
     sorted_highlights = sorted(
-        highlights, key=lambda h: (h.get("start_word", 0), h.get("tag", ""))
+        highlights,
+        key=lambda h: (
+            h.get("start_char", h.get("start_word", 0)),
+            h.get("tag", ""),
+        ),
     )
 
     # Build lookups for marker positions
-    # start_markers: word_index -> list of (marker_index, highlight)
-    # end_markers: word_index -> list of marker_index for HLEND
+    # start_markers: char_index -> list of (marker_index, highlight)
+    # end_markers: char_index -> list of marker_index for HLEND
     start_markers: dict[int, list[tuple[int, dict]]] = defaultdict(list)
     end_markers: dict[int, list[int]] = defaultdict(list)
     marker_to_highlight: list[dict] = []
 
     for h in sorted_highlights:
-        start = int(h.get("start_word", 0))
-        end = int(h.get("end_word", start + 1))
-        last_word = end - 1 if end > start else start
+        # Support both old field names (start_word) and new (start_char) for migration
+        start = int(h.get("start_char", h.get("start_word", 0)))
+        end = int(h.get("end_char", h.get("end_word", start + 1)))
+        last_char = end - 1 if end > start else start
 
         marker_idx = len(marker_to_highlight)
         marker_to_highlight.append(h)
         start_markers[start].append((marker_idx, h))
-        end_markers[last_word].append(marker_idx)
+        end_markers[last_char].append(marker_idx)
 
-    # Process HTML, inserting markers at word positions
+    # Process HTML, inserting markers at character positions
     result: list[str] = []
-    word_idx = 0
+    char_idx = 0
     i = 0
 
     while i < len(html):
@@ -779,39 +840,29 @@ def _insert_markers_into_html(
             result.append(html[i : tag_end + 1])
             i = tag_end + 1
         else:
-            # Text content - check for words
+            # Text content - iterate characters
             next_tag = html.find("<", i)
             if next_tag == -1:
                 next_tag = len(html)
 
             text = html[i:next_tag]
             text_result: list[str] = []
-            text_pos = 0
 
-            for match in _WORD_PATTERN.finditer(text):
-                # Add text before this word
-                text_result.append(text[text_pos : match.start()])
-
-                # Insert HLSTART markers before this word
-                if word_idx in start_markers:
-                    for marker_idx, _ in start_markers[word_idx]:
+            for char in text:
+                # Newlines aren't indexed by UI (become paragraph breaks)
+                if char != "\n":
+                    # Insert HLSTART markers before this character
+                    for marker_idx, _ in start_markers.get(char_idx, []):
                         text_result.append(_HLSTART_TEMPLATE.format(marker_idx))
-
-                # Add the word
-                text_result.append(match.group(0))
-
-                # Insert HLEND then ANNMARKER after this word
-                # (ANNMARKER after HLEND so annotation appears after highlight ends)
-                if word_idx in end_markers:
-                    for marker_idx in end_markers[word_idx]:
+                    text_result.append(char)
+                    # Insert HLEND then ANNMARKER after this character
+                    for marker_idx in end_markers.get(char_idx, []):
                         text_result.append(_HLEND_TEMPLATE.format(marker_idx))
                         text_result.append(_MARKER_TEMPLATE.format(marker_idx))
+                    char_idx += 1
+                else:
+                    text_result.append(char)
 
-                text_pos = match.end()
-                word_idx += 1
-
-            # Add remaining text
-            text_result.append(text[text_pos:])
             result.append("".join(text_result))
             i = next_tag
 
@@ -974,12 +1025,14 @@ def _replace_markers_with_annots(
         if word_to_legal_para is None:
             return ""
 
-        start_word = int(highlight.get("start_word", 0))
-        end_word = int(highlight.get("end_word", start_word))
-        last_word = end_word - 1 if end_word > start_word else start_word
+        # Support both old field names (start_word) and new (start_char) for migration
+        # Note: word_to_legal_para mapping still uses character indices
+        start_char = int(highlight.get("start_char", highlight.get("start_word", 0)))
+        end_char = int(highlight.get("end_char", highlight.get("end_word", start_char)))
+        last_char = end_char - 1 if end_char > start_char else start_char
 
-        start_para = word_to_legal_para.get(start_word)
-        end_para = word_to_legal_para.get(last_word)
+        start_para = word_to_legal_para.get(start_char)
+        end_para = word_to_legal_para.get(last_char)
 
         if start_para is None and end_para is None:
             return ""
@@ -1111,6 +1164,7 @@ def convert_html_with_annotations(
     tag_colours: dict[str, str],  # noqa: ARG001 - colours used in preamble generation
     filter_path: Path | None = None,
     word_to_legal_para: dict[int, int | None] | None = None,
+    escape_text: bool = False,
 ) -> str:
     """Convert HTML to LaTeX with annotations inserted as marginnote+soul.
 
@@ -1121,10 +1175,14 @@ def convert_html_with_annotations(
 
     Args:
         html: Raw HTML content (not word-span processed).
-        highlights: List of highlight dicts with start_word, end_word, tag, author.
+        highlights: List of highlight dicts with start_char, end_char, tag, author.
         tag_colours: Mapping of tag names to hex colours.
         filter_path: Optional Lua filter for legal document fixes.
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
+        escape_text: If True, escape HTML special chars in text content AFTER
+            marker insertion. Use when input is plain text wrapped in tags
+            without escaping (Issue #113 fix). When True, skip HTML normalization
+            steps since input is plain text, not browser HTML.
 
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
@@ -1134,11 +1192,32 @@ def convert_html_with_annotations(
         len(highlights),
         [h.get("id", "")[:8] for h in highlights],
     )
-    # Fix mid-word font tag splits from LibreOffice RTF export
-    html = fix_midword_font_splits(html)
 
-    # Insert markers
+    # HTML normalization is only for browser-copied HTML content
+    # Skip when processing plain text (escape_text=True)
+    if not escape_text:
+        # Strip script/style tags from browser copy-paste content
+        html = strip_scripts_and_styles(html)
+
+        # Fix mid-word font tag splits from LibreOffice RTF export
+        html = fix_midword_font_splits(html)
+
+    # IMPORTANT: Insert markers BEFORE stripping control chars!
+    # The UI counts words including control char "words" (e.g., BLNS has standalone
+    # 0x01-0x1F chars). If we strip first, word indices become misaligned.
+    # Markers are ASCII (HLSTARTnENDHL) so they survive the strip.
     marked_html, marker_highlights = _insert_markers_into_html(html, highlights)
+
+    # Escape text content AFTER markers are placed (Issue #113 fix).
+    # Markers are ASCII and won't be affected by html.escape().
+    # This ensures character indices match between UI (counts raw chars)
+    # and PDF export (also counts raw chars, not escaped chars).
+    if escape_text:
+        marked_html = _escape_html_text_content(marked_html)
+
+    # Strip control characters that are invalid in LaTeX AFTER markers are placed
+    # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)
+    marked_html = _strip_control_chars(marked_html)
 
     # Convert to LaTeX
     latex = convert_html_to_latex(marked_html, filter_path=filter_path)

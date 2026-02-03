@@ -21,7 +21,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import create_highlight, select_words
+from tests.e2e.annotation_helpers import create_highlight, select_chars
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(
@@ -44,7 +44,7 @@ class TestMultiUserHighlights:
         create_highlight(page1, 0, 1)
 
         # Wait for sync to user 2
-        word0_p2 = page2.locator("[data-word-index='0']")
+        word0_p2 = page2.locator("[data-char-index='0']")
         expect(word0_p2).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -53,7 +53,7 @@ class TestMultiUserHighlights:
         create_highlight(page2, 3, 4)
 
         # Wait for sync to user 1
-        word3_p1 = page1.locator("[data-word-index='3']")
+        word3_p1 = page1.locator("[data-char-index='3']")
         expect(word3_p1).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -75,7 +75,7 @@ class TestMultiUserHighlights:
         create_highlight(page1, 0, 1)
 
         # Wait for sync to user 2
-        word_p2 = page2.locator("[data-word-index='0']")
+        word_p2 = page2.locator("[data-char-index='0']")
         expect(word_p2).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=10000
         )
@@ -155,8 +155,8 @@ class TestConcurrentCollaboration:
         page1, page2, _workspace_id, _user1, _user2 = two_authenticated_contexts
 
         # Both users select different words simultaneously
-        select_words(page1, 0, 0)
-        select_words(page2, 4, 4)
+        select_chars(page1, 0, 0)
+        select_chars(page2, 4, 4)
 
         # Both click tag buttons
         tag_btn_p1 = page1.locator("[data-testid='tag-toolbar'] button").first
@@ -169,8 +169,8 @@ class TestConcurrentCollaboration:
 
         # Both words should be highlighted in both views
         for page in [page1, page2]:
-            word0 = page.locator("[data-word-index='0']")
-            word4 = page.locator("[data-word-index='4']")
+            word0 = page.locator("[data-char-index='0']")
+            word4 = page.locator("[data-char-index='4']")
             expect(word0).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=10000
             )

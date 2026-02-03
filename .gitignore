@@ -36,6 +36,11 @@ output/
 # Editor backup files
 *~
 
+# LibreOffice lock files
+.~lock.*#
+
 # Git worktrees (parallel development)
 .worktrees/
 .playwright-mcp/
+test-all-fixtures.log
+luatex.*/

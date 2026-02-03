@@ -101,11 +101,20 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     pdf_name = tex_path.stem + ".pdf"
     pdf_path = output_dir / pdf_name
 
-    # Check if PDF was actually created (latexmk may return non-zero for warnings)
+    log_file = output_dir / (tex_path.stem + ".log")
+
+    # Check if PDF was actually created
     if not pdf_path.exists():
-        log_file = output_dir / (tex_path.stem + ".log")
         raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {result.returncode})",
+            f"LaTeX compilation failed (exit {result.returncode}): PDF not created",
+            tex_path=tex_path,
+            log_path=log_file,
+        )
+
+    # Check for empty PDF (indicates compilation error even if file exists)
+    if pdf_path.stat().st_size == 0:
+        raise LaTeXCompilationError(
+            f"LaTeX compilation failed (exit {result.returncode}): PDF is empty",
             tex_path=tex_path,
             log_path=log_file,
         )

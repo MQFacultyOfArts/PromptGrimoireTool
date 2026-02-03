@@ -37,6 +37,7 @@ dependencies = [
     "html5lib>=1.1",
     "pylatexenc>=2.10",
     "lark>=1.1.0",
+    "emoji>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +55,7 @@ dev = [
 promptgrimoire = "promptgrimoire:main"
 test-debug = "promptgrimoire.cli:test_debug"
 test-all = "promptgrimoire.cli:test_all"
+test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 set-admin = "promptgrimoire.cli:set_admin"
 show-export-log = "promptgrimoire.cli:show_export_log"
 
@@ -140,10 +142,12 @@ docstring-code-format = true
 testpaths = ["tests/unit", "tests/integration", "tests/e2e"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-ra -q"
+addopts = "-ra -q -m 'not blns and not slow'"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
+    "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
+    "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
 
 [tool.coverage.run]

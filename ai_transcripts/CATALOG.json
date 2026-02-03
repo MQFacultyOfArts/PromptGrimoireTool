@@ -1,10 +1,20 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-01-15T13:22:38.067353",
+  "generated_at": "2026-02-02T17:18:15.435537",
   "archive_location": "/home/brian/people/Brian/PromptGrimoire/ai_transcripts",
-  "total_sessions": 2,
-  "needs_review_count": 2,
+  "total_sessions": 3,
+  "needs_review_count": 3,
   "sessions": [
+    {
+      "id": "ffc93f57-cbec-4226-ba46-303172c33946",
+      "directory": "2026-02-02-blns-unicode-pdf-export-debugging",
+      "title": "BLNS Unicode PDF Export Debugging",
+      "purpose": "",
+      "started_at": "2026-02-01T23:25:35.418Z",
+      "duration_minutes": 412,
+      "tags": [],
+      "needs_review": true
+    },
     {
       "id": "c6ee6a00-7b0f-4ea5-abbf-86617c7fd63a",
       "directory": "2026-01-15-spike-2-code-review-and-hardening",

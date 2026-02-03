@@ -62,6 +62,22 @@ async def add_document(
         return doc
 
 
+async def get_document(document_id: UUID) -> WorkspaceDocument | None:
+    """Get a document by ID.
+
+    Args:
+        document_id: The document UUID.
+
+    Returns:
+        The WorkspaceDocument or None if not found.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        return result.first()
+
+
 async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:
     """List all documents in a workspace, ordered by order_index.
 

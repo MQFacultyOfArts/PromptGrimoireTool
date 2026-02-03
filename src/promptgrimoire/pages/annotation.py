@@ -27,7 +27,11 @@ from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocumentRegistry,
 )
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.db.workspace_documents import add_document, list_documents
+from promptgrimoire.db.workspace_documents import (
+    add_document,
+    get_document,
+    list_documents,
+)
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
@@ -131,15 +135,14 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Word spans for selection */
-    .word {
+    /* Character spans for selection */
+    .char {
         cursor: text;
     }
 
     /* Hover highlight effect when card is hovered */
-    .word.card-hover-highlight {
-        outline: 2px solid #FFD700 !important;
-        outline-offset: 1px;
+    .char.card-hover-highlight {
+        box-shadow: inset 0 2px 0 #FFD700, inset 0 -2px 0 #FFD700 !important;
     }
 """
 
@@ -171,7 +174,7 @@ class PageState:
     broadcast_cursor: Any | None = None  # Callable to broadcast cursor position
     broadcast_selection: Any | None = None  # Callable to broadcast selection
     # Document content for text extraction
-    document_words: list[str] | None = None  # Words by index
+    document_chars: list[str] | None = None  # Characters by index
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
 
@@ -207,32 +210,45 @@ async def _create_workspace_and_redirect() -> None:
         ui.notify("Failed to create workspace", type="negative")
 
 
-def _process_text_to_word_spans(text: str) -> str:
-    """Convert plain text to HTML with word-level spans.
+def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
+    """Convert plain text to HTML with character-level spans.
 
-    Each word gets a span with data-word-index attribute for annotation targeting.
+    Each character (including whitespace) gets a span with data-char-index
+    attribute for annotation targeting. Newlines create paragraph breaks
+    but do not get indices.
+
+    Args:
+        text: Plain text to process.
+
+    Returns:
+        Tuple of (html_string, char_list) where char_list contains
+        all indexed characters in order.
     """
+    if not text:
+        return "", []
+
     lines = text.split("\n")
-    html_parts = []
-    word_index = 0
+    html_parts: list[str] = []
+    chars: list[str] = []
+    char_index = 0
 
     for line_num, line in enumerate(lines):
-        if line.strip():
-            words = line.split()
-            line_spans = []
-            for word in words:
-                escaped = html.escape(word)
+        if line:  # Non-empty line
+            line_spans: list[str] = []
+            for char in line:
+                escaped = html.escape(char)
                 span = (
-                    f'<span class="word" data-word-index="{word_index}">'
+                    f'<span class="char" data-char-index="{char_index}">'
                     f"{escaped}</span>"
                 )
                 line_spans.append(span)
-                word_index += 1
-            html_parts.append(f'<p data-para="{line_num}">{" ".join(line_spans)}</p>')
-        else:
+                chars.append(char)
+                char_index += 1
+            html_parts.append(f'<p data-para="{line_num}">{"".join(line_spans)}</p>')
+        else:  # Empty line
             html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
 
-    return "\n".join(html_parts)
+    return "\n".join(html_parts), chars
 
 
 def _get_tag_color(tag_str: str) -> str:
@@ -245,7 +261,7 @@ def _get_tag_color(tag_str: str) -> str:
 
 
 def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
-    """Generate CSS rules for highlighting words with tag-specific colors.
+    """Generate CSS rules for highlighting characters with tag-specific colors.
 
     Uses stacked underlines to show overlapping highlights (matching latex.py):
     - 1 highlight: background + 1pt underline
@@ -258,19 +274,19 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     Returns:
         CSS string with background-color and underline rules.
     """
-    # Build word -> list of (highlight_index, tag_color) mapping
-    word_highlights: dict[int, list[str]] = {}
+    # Build char -> list of (highlight_index, tag_color) mapping
+    char_highlights: dict[int, list[str]] = {}
     for hl in highlights:
         start = int(hl.get("start_word", 0))
         end = int(hl.get("end_word", 0))
         hex_color = _get_tag_color(hl.get("tag", "highlight"))
         for i in range(start, end):
-            if i not in word_highlights:
-                word_highlights[i] = []
-            word_highlights[i].append(hex_color)
+            if i not in char_highlights:
+                char_highlights[i] = []
+            char_highlights[i].append(hex_color)
 
     css_rules: list[str] = []
-    for word_idx, colors in word_highlights.items():
+    for char_idx, colors in char_highlights.items():
         # Background: use first highlight's color with transparency
         first_color = colors[0]
         r, g, b = (
@@ -284,22 +300,17 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
         underline_color = first_color if overlap_count < 3 else "#333"
         thickness = f"{min(overlap_count, 3)}px"
 
-        # Main word styling
+        # Main character styling
         css_rules.append(
-            f'[data-word-index="{word_idx}"] {{ '
+            f'[data-char-index="{char_idx}"] {{ '
             f"background-color: {bg_rgba}; "
             f"text-decoration: underline; "
             f"text-decoration-color: {underline_color}; "
             f"text-decoration-thickness: {thickness}; "
             f"text-underline-offset: 2px; }}"
         )
-
-        # ::after pseudo-element to extend background through space
-        # Only add if next word is also highlighted (check word_highlights)
-        if (word_idx + 1) in word_highlights:
-            css_rules.append(
-                f"[data-word-index=\"{word_idx}\"]::after {{ content: ' '; }}"
-            )
+        # Note: No ::after pseudo-element needed for character-based tokenization.
+        # Spaces are now individual character spans that get their own highlighting.
 
     return "\n".join(css_rules)
 
@@ -319,13 +330,13 @@ def _build_remote_cursor_css(
             continue
         # Cursor indicator using box-shadow (no layout shift)
         rules.append(
-            f'[data-word-index="{word}"] {{ '
+            f'[data-char-index="{word}"] {{ '
             f"position: relative; "
             f"box-shadow: inset 2px 0 0 0 {color}; }}"
         )
         # Floating name label
         rules.append(
-            f'[data-word-index="{word}"]::before {{ '
+            f'[data-char-index="{word}"]::before {{ '
             f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
             f"font-size: 0.6rem; background: {color}; color: white; "
             f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
@@ -350,8 +361,8 @@ def _build_remote_selection_css(
             continue
         if start > end:
             start, end = end, start
-        # Selection highlight for all words in range
-        selectors = [f'[data-word-index="{i}"]' for i in range(start, end + 1)]
+        # Selection highlight for all characters in range
+        selectors = [f'[data-char-index="{i}"]' for i in range(start, end + 1)]
         if selectors:
             selector_str = ", ".join(selectors)
             rules.append(
@@ -359,12 +370,12 @@ def _build_remote_selection_css(
                 f"box-shadow: 0.3em 0 0 {color}30; }}"
             )
             rules.append(
-                f'[data-word-index="{end}"] {{ box-shadow: none !important; }}'
+                f'[data-char-index="{end}"] {{ box-shadow: none !important; }}'
             )
-            # Name label on first word
-            rules.append(f'[data-word-index="{start}"] {{ position: relative; }}')
+            # Name label on first character
+            rules.append(f'[data-char-index="{start}"] {{ position: relative; }}')
             rules.append(
-                f'[data-word-index="{start}"]::before {{ '
+                f'[data-char-index="{start}"]::before {{ '
                 f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
                 f"font-size: 0.65rem; background: {color}; color: white; "
                 f"padding: 1px 4px; border-radius: 2px; white-space: nowrap; "
@@ -638,28 +649,28 @@ def _build_annotation_card(
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it
                 async def goto_highlight(
-                    sw: int = start_word, ew: int = end_word
+                    sc: int = start_word, ec: int = end_word
                 ) -> None:
                     # fmt: off
-                    # Flash ALL words in the highlight range, not just start
+                    # Flash ALL chars in the highlight range, not just start
                     js = (
                         f"(function(){{"
-                        f"const sw={sw},ew={ew};"
-                        f"const words=[];"
-                        f"for(let i=sw;i<ew;i++){{"
-                        f"const w=document.querySelector("
-                        f"'[data-word-index=\"'+i+'\"]');"
-                        f"if(w)words.push(w);"
+                        f"const sc={sc},ec={ec};"
+                        f"const chars=[];"
+                        f"for(let i=sc;i<ec;i++){{"
+                        f"const c=document.querySelector("
+                        f"'[data-char-index=\"'+i+'\"]');"
+                        f"if(c)chars.push(c);"
                         f"}}"
-                        f"if(words.length===0)return;"
-                        f"words[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-                        f"const origColors=words.map(w=>w.style.backgroundColor);"
-                        f"words.forEach(w=>{{"
-                        f"w.style.transition='background-color 0.2s';"
-                        f"w.style.backgroundColor='#FFD700';"
+                        f"if(chars.length===0)return;"
+                        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
+                        f"const origColors=chars.map(c=>c.style.backgroundColor);"
+                        f"chars.forEach(c=>{{"
+                        f"c.style.transition='background-color 0.2s';"
+                        f"c.style.backgroundColor='#FFD700';"
                         f"}});"
                         f"setTimeout(()=>{{"
-                        f"words.forEach((w,i)=>{{w.style.backgroundColor=origColors[i];}});"
+                        f"chars.forEach((c,i)=>{{c.style.backgroundColor=origColors[i];}});"
                         f"}},800);"
                         f"}})()"
                     )
@@ -775,11 +786,11 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     # Use tag value if provided, otherwise default to "highlight"
     tag_value = tag.value if tag else "highlight"
 
-    # Extract highlighted text from document words
+    # Extract highlighted text from document characters
     highlighted_text = ""
-    if state.document_words:
-        words_slice = state.document_words[start:end]
-        highlighted_text = " ".join(words_slice)
+    if state.document_chars:
+        chars_slice = state.document_chars[start:end]
+        highlighted_text = "".join(chars_slice)
 
     state.crdt_doc.add_highlight(
         start_word=start,
@@ -859,9 +870,9 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     async def on_cursor_move(e: Any) -> None:
         """Handle cursor position change from JavaScript."""
-        word_index = e.args.get("word")
+        char_index = e.args.get("char")
         if state.broadcast_cursor:
-            await state.broadcast_cursor(word_index)
+            await state.broadcast_cursor(char_index)
 
     ui.on("selection_made", on_selection)
     ui.on("selection_cleared", on_selection_cleared)
@@ -889,24 +900,24 @@ def _setup_selection_handlers(state: PageState) -> None:
 
             const range = selection.getRangeAt(0);
 
-            // Find all word spans that intersect with the selection
+            // Find all char spans that intersect with the selection
             // This is more robust than checking start/end containers
-            const allWordSpans = document.querySelectorAll('[data-word-index]');
-            let minWord = Infinity;
-            let maxWord = -Infinity;
+            const allCharSpans = document.querySelectorAll('[data-char-index]');
+            let minChar = Infinity;
+            let maxChar = -Infinity;
 
-            for (const span of allWordSpans) {
+            for (const span of allCharSpans) {
                 if (range.intersectsNode(span)) {
-                    const wordIdx = parseInt(span.dataset.wordIndex);
-                    minWord = Math.min(minWord, wordIdx);
-                    maxWord = Math.max(maxWord, wordIdx);
+                    const charIdx = parseInt(span.dataset.charIndex);
+                    minChar = Math.min(minChar, charIdx);
+                    maxChar = Math.max(maxChar, charIdx);
                 }
             }
 
-            if (minWord !== Infinity && maxWord !== -Infinity) {
+            if (minChar !== Infinity && maxChar !== -Infinity) {
                 emitEvent('selection_made', {
-                    start: minWord,
-                    end: maxWord
+                    start: minChar,
+                    end: maxChar
                 });
             }
         }
@@ -953,22 +964,22 @@ def _setup_selection_handlers(state: PageState) -> None:
             }
         });
 
-        // Track cursor position over word spans for remote cursor display
-        let lastCursorWord = null;
+        // Track cursor position over char spans for remote cursor display
+        let lastCursorChar = null;
         const docC = document.getElementById('doc-container');
         if (docC) {
             docC.addEventListener('mouseover', function(e) {
-                const word = e.target.closest('[data-word-index]');
-                const wordIdx = word ? parseInt(word.dataset.wordIndex) : null;
-                if (wordIdx !== lastCursorWord) {
-                    lastCursorWord = wordIdx;
-                    emitEvent('cursor_move', { word: wordIdx });
+                const charEl = e.target.closest('[data-char-index]');
+                const charIdx = charEl ? parseInt(charEl.dataset.charIndex) : null;
+                if (charIdx !== lastCursorChar) {
+                    lastCursorChar = charIdx;
+                    emitEvent('cursor_move', { char: charIdx });
                 }
             });
             docC.addEventListener('mouseleave', function() {
-                if (lastCursorWord !== null) {
-                    lastCursorWord = null;
-                    emitEvent('cursor_move', { word: null });
+                if (lastCursorChar !== null) {
+                    lastCursorChar = null;
+                    emitEvent('cursor_move', { char: null });
                 }
             });
         }
@@ -987,9 +998,9 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract words from raw_content for text extraction when highlighting
+    # Extract characters from raw_content for text extraction when highlighting
     if hasattr(doc, "raw_content") and doc.raw_content:
-        state.document_words = doc.raw_content.split()
+        _, state.document_chars = _process_text_to_char_spans(doc.raw_content)
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1079,28 +1090,28 @@ async def _render_document_with_highlights(
         "    const annRect = annC.getBoundingClientRect();\n"
         "    const containerOffset = annRect.top - docRect.top;\n"
         "    const cardInfos = cards.map(card => {\n"
-        "      const sw = parseInt(card.dataset.startWord);\n"
-        "      const ws = docC.querySelector('[data-word-index=\"'+sw+'\"]');\n"
-        "      if (!ws) return null;\n"
-        "      const wr = ws.getBoundingClientRect();\n"
-        "      return { card, startWord: sw, height: card.offsetHeight,\n"
-        "               targetY: (wr.top-docRect.top)-containerOffset };\n"
+        "      const sc = parseInt(card.dataset.startWord);\n"
+        "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
+        "      if (!cs) return null;\n"
+        "      const cr = cs.getBoundingClientRect();\n"
+        "      return { card, startChar: sc, height: card.offsetHeight,\n"
+        "               targetY: (cr.top-docRect.top)-containerOffset };\n"
         "    }).filter(Boolean);\n"
-        "    cardInfos.sort((a, b) => a.startWord - b.startWord);\n"
+        "    cardInfos.sort((a, b) => a.startChar - b.startChar);\n"
         "    const headerHeight = 60;\n"
         "    const viewportTop = headerHeight;\n"
         "    const viewportBottom = window.innerHeight;\n"
         "    let minY = 0;\n"
         "    for (const info of cardInfos) {\n"
-        "      const sw = info.startWord;\n"
-        "      const ew = parseInt(info.card.dataset.endWord) || sw;\n"
-        "      var qs='[data-word-index=\"'+sw+'\"]';\n"
-        "      const startWS = docC.querySelector(qs);\n"
-        "      var qe='[data-word-index=\"'+(ew-1)+'\"]';\n"
-        "      const endWS = docC.querySelector(qe)||startWS;\n"
-        "      if (!startWS || !endWS) continue;\n"
-        "      const sr = startWS.getBoundingClientRect();\n"
-        "      const er = endWS.getBoundingClientRect();\n"
+        "      const sc = info.startChar;\n"
+        "      const ec = parseInt(info.card.dataset.endWord) || sc;\n"
+        "      var qs='[data-char-index=\"'+sc+'\"]';\n"
+        "      const startCS = docC.querySelector(qs);\n"
+        "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
+        "      const endCS = docC.querySelector(qe)||startCS;\n"
+        "      if (!startCS || !endCS) continue;\n"
+        "      const sr = startCS.getBoundingClientRect();\n"
+        "      const er = endCS.getBoundingClientRect();\n"
         "      const inView = er.bottom > viewportTop && sr.top < viewportBottom;\n"
         "      info.card.style.position = 'absolute';\n"
         "      if (!inView) { info.card.style.display = 'none'; continue; }\n"
@@ -1122,15 +1133,15 @@ async def _render_document_with_highlights(
         "  var rePos = () => requestAnimationFrame(positionCards);\n"
         "  const obs = new MutationObserver(rePos);\n"
         "  obs.observe(annC, { childList: true, subtree: true });\n"
-        "  // Card hover -> highlight corresponding words\n"
+        "  // Card hover -> highlight corresponding chars\n"
         "  let hoveredCard = null;\n"
         "  function clearHover() {\n"
         "    if (!hoveredCard) return;\n"
-        "    const sw = parseInt(hoveredCard.dataset.startWord);\n"
-        "    const ew = parseInt(hoveredCard.dataset.endWord) || sw;\n"
-        "    for (let i = sw; i < ew; i++) {\n"
-        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
-        "      if (w) w.classList.remove('card-hover-highlight');\n"
+        "    const sc = parseInt(hoveredCard.dataset.startWord);\n"
+        "    const ec = parseInt(hoveredCard.dataset.endWord) || sc;\n"
+        "    for (let i = sc; i < ec; i++) {\n"
+        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
+        "      if (c) c.classList.remove('card-hover-highlight');\n"
         "    }\n"
         "    hoveredCard = null;\n"
         "  }\n"
@@ -1140,11 +1151,11 @@ async def _render_document_with_highlights(
         "    clearHover();\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sw = parseInt(card.dataset.startWord);\n"
-        "    const ew = parseInt(card.dataset.endWord) || sw;\n"
-        "    for (let i = sw; i < ew; i++) {\n"
-        "      const w = docC.querySelector('[data-word-index=\"'+i+'\"]');\n"
-        "      if (w) w.classList.add('card-hover-highlight');\n"
+        "    const sc = parseInt(card.dataset.startWord);\n"
+        "    const ec = parseInt(card.dataset.endWord) || sc;\n"
+        "    for (let i = sc; i < ec; i++) {\n"
+        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
+        "      if (c) c.classList.add('card-hover-highlight');\n"
         "    }\n"
         "  });\n"
         "  annC.addEventListener('mouseleave', function() {\n"
@@ -1316,6 +1327,62 @@ def _setup_client_sync(
     client.on_disconnect(on_disconnect)
 
 
+async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
+    """Handle PDF export with loading notification."""
+    if state.crdt_doc is None or state.document_id is None:
+        ui.notify("No document to export", type="warning")
+        return
+
+    # Show notification with spinner IMMEDIATELY
+    notification = ui.notification(
+        message="Generating PDF...",
+        spinner=True,
+        timeout=None,
+        type="ongoing",
+    )
+    # Force UI update before starting async work
+    await asyncio.sleep(0)
+
+    try:
+        # Get tag colours as dict[str, str]
+        tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
+
+        # Get highlights for this document
+        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+
+        # Get document's original raw_content (preserves newlines)
+        doc = await get_document(state.document_id)
+        raw_content = doc.raw_content if doc else ""
+
+        # DEBUG: Log raw_content to see if newlines are present
+        logger.info(
+            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
+            len(raw_content),
+            raw_content.count("\n"),
+            raw_content[:200],
+        )
+
+        # Generate PDF
+        pdf_path = await export_annotation_pdf(
+            html_content=raw_content,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            general_notes="",
+            word_to_legal_para=None,
+            filename=f"workspace_{workspace_id}",
+        )
+
+        notification.dismiss()
+
+        # Trigger download
+        ui.download(pdf_path)
+        ui.notify("PDF exported successfully!", type="positive")
+    except Exception as e:
+        notification.dismiss()
+        logger.exception("Failed to export PDF")
+        ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -1354,47 +1421,22 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         # Update with actual count now that badge exists
         _update_user_count(state)
 
-        # Export PDF button (handler defined after state is populated)
-        async def handle_export_pdf() -> None:
-            if state.crdt_doc is None or state.document_id is None:
-                ui.notify("No document to export", type="warning")
-                return
-
-            ui.notify("Generating PDF...", type="info")
-            try:
-                # Get tag colours as dict[str, str]
-                tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
-
-                # Get highlights for this document
-                highlights = state.crdt_doc.get_highlights_for_document(
-                    str(state.document_id)
-                )
-
-                # Get document content (use raw_content if available)
-                raw_content = ""
-                if state.document_words:
-                    raw_content = " ".join(state.document_words)
-
-                # Generate PDF
-                pdf_path = await export_annotation_pdf(
-                    html_content=raw_content,
-                    highlights=highlights,
-                    tag_colours=tag_colours,
-                    general_notes="",
-                    word_to_legal_para=None,
-                    filename=f"workspace_{workspace_id}",
-                )
-
-                # Trigger download
-                ui.download(pdf_path)
-                ui.notify("PDF generated!", type="positive")
-            except Exception:
-                logger.exception("Failed to export PDF")
-                ui.notify("Failed to generate PDF", type="negative")
-
-        ui.button(
-            "Export PDF", icon="picture_as_pdf", on_click=handle_export_pdf
+        # Export PDF button with loading state
+        export_btn = ui.button(
+            "Export PDF",
+            icon="picture_as_pdf",
         ).props("color=primary")
+
+        async def on_export_click() -> None:
+            export_btn.disable()
+            export_btn.props("loading")
+            try:
+                await _handle_pdf_export(state, workspace_id)
+            finally:
+                export_btn.props(remove="loading")
+                export_btn.enable()
+
+        export_btn.on_click(on_export_click)
 
     # Load CRDT document for this workspace
     crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
@@ -1420,12 +1462,17 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 return
 
             try:
-                html_content = _process_text_to_word_spans(content_input.value.strip())
+                # Sanitize: remove control chars (PostgreSQL rejects NULL, others
+                # cause rendering issues). Keep tab/newline/CR.
+                sanitized = "".join(
+                    c for c in content_input.value.strip() if c >= " " or c in "\t\n\r"
+                )
+                html_content, _ = _process_text_to_char_spans(sanitized)
                 await add_document(
                     workspace_id=workspace_id,
                     type="source",
                     content=html_content,
-                    raw_content=content_input.value.strip(),
+                    raw_content=sanitized,
                     title=None,
                 )
                 # Reload page to show document

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import create_highlight, select_words
+from tests.e2e.annotation_helpers import create_highlight, select_chars
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -77,7 +77,7 @@ class TestFullAnnotationWorkflow:
         )
         content_input.fill("Sample legal document for annotation workflow test")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         page.wait_for_timeout(200)
 
@@ -94,9 +94,9 @@ class TestFullAnnotationWorkflow:
 
         # 7. Reload and verify persistence
         page.goto(workspace_url)
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
-        word = page.locator("[data-word-index='0']")
+        word = page.locator("[data-char-index='0']")
         expect(word).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
@@ -123,7 +123,7 @@ class TestFullAnnotationWorkflow:
         )
         content_input.fill("First highlight here and second highlight there")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         page.wait_for_timeout(200)
 
@@ -148,11 +148,11 @@ class TestFullAnnotationWorkflow:
 
         # Reload and verify both persist
         page.goto(workspace_url)
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Both highlights should still be there
-        word0 = page.locator("[data-word-index='0']")
-        word4 = page.locator("[data-word-index='4']")
+        word0 = page.locator("[data-char-index='0']")
+        word4 = page.locator("[data-char-index='4']")
         expect(word0).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
@@ -191,7 +191,7 @@ class TestPdfExport:
         )
         content_input.fill("Content for PDF export")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Wait for JavaScript to set up (100ms timeout in JS)
         page.wait_for_timeout(200)
@@ -262,7 +262,7 @@ class TestDefinitionOfDone:
         )
         content_input.fill(legal_content)
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Wait for JavaScript to set up (100ms timeout in JS)
         page.wait_for_timeout(200)
@@ -276,7 +276,7 @@ class TestDefinitionOfDone:
             page.wait_for_timeout(100)
 
             # Select using click + shift+click
-            select_words(page, start_idx, end_idx)
+            select_chars(page, start_idx, end_idx)
 
             # Click specific tag button
             tag_button = page.locator(
@@ -319,7 +319,7 @@ class TestDefinitionOfDone:
 
         # Verify we have highlights (check computed background-color via CSS rules)
         # Highlights are applied via <style> element, not inline styles
-        highlighted_word = page.locator("[data-word-index='1']")
+        highlighted_word = page.locator("[data-char-index='1']")
         expect(highlighted_word).to_have_css(
             "background-color", re.compile(r"rgba\("), timeout=5000
         )

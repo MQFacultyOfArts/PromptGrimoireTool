@@ -37,7 +37,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     create_highlight,
-    select_words,
+    select_chars,
     setup_workspace_with_content,
 )
 
@@ -85,13 +85,13 @@ class TestHighlightCreation:
         )
         content_input.fill("Select some words here to highlight them")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Wait for JavaScript to set up
         page.wait_for_timeout(200)
 
         # Select words using click + shift+click
-        select_words(page, 0, 2)
+        select_chars(page, 0, 2)
 
         # Tag toolbar should be visible
         tag_toolbar = page.locator("[data-testid='tag-toolbar']")
@@ -117,7 +117,7 @@ class TestHighlightCreation:
         )
         content_input.fill("Highlight these words")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         page.wait_for_timeout(200)
 
@@ -125,7 +125,7 @@ class TestHighlightCreation:
         create_highlight(page, 0, 1)
 
         # First word should have background color
-        word = page.locator("[data-word-index='0']")
+        word = page.locator("[data-char-index='0']")
         expect(word).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
@@ -153,7 +153,7 @@ class TestHighlightCreation:
         )
         content_input.fill("Persistent highlight test")
         page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         page.wait_for_timeout(200)
 
@@ -166,10 +166,10 @@ class TestHighlightCreation:
 
         # Reload page
         page.goto(workspace_url)
-        page.wait_for_selector("[data-word-index]")
+        page.wait_for_selector("[data-char-index]")
 
         # Highlight should still be there
-        word = page.locator("[data-word-index='0']")
+        word = page.locator("[data-char-index='0']")
         expect(word).to_have_css(
             "background-color", re.compile(r"rgba?\("), timeout=5000
         )
@@ -208,7 +208,7 @@ class TestHighlightMutations:
         ann_card = page.locator("[data-testid='annotation-card']")
         expect(ann_card).to_be_visible()
 
-        word = page.locator("[data-word-index='0']")
+        word = page.locator("[data-char-index='0']")
 
         # --- Subtest: change tag via dropdown ---
         with subtests.test(msg="change_tag_updates_color"):
@@ -293,9 +293,9 @@ class TestHighlightInteractions:
         setup_workspace_with_content(page, app_server, long_content)
 
         # Scroll to end and create highlight there (for scroll testing)
-        word_90 = page.locator("[data-word-index='90']")
+        word_90 = page.locator("[data-char-index='90']")
         word_90.scroll_into_view_if_needed()
-        select_words(page, 90, 92)
+        select_chars(page, 90, 92)
         page.get_by_role(
             "button", name=re.compile("jurisdiction", re.IGNORECASE)
         ).click()
@@ -307,7 +307,7 @@ class TestHighlightInteractions:
         # --- Subtest: goto button scrolls to highlight ---
         with subtests.test(msg="goto_scrolls_to_highlight"):
             # Scroll back to top first
-            page.locator("[data-word-index='0']").scroll_into_view_if_needed()
+            page.locator("[data-char-index='0']").scroll_into_view_if_needed()
             page.wait_for_timeout(200)
 
             # Click go-to button (icon has text "my_location")
@@ -368,7 +368,7 @@ class TestEdgeCasesConsolidated:
             setup_workspace_with_content(page, app_server, "Keyboard shortcut test")
 
             # Select words
-            select_words(page, 0, 1)
+            select_chars(page, 0, 1)
             page.wait_for_timeout(300)
 
             # Press "1" key (Jurisdiction - blue)
@@ -376,7 +376,7 @@ class TestEdgeCasesConsolidated:
             page.wait_for_timeout(500)
 
             # Verify highlight created with jurisdiction color
-            word = page.locator("[data-word-index='0']")
+            word = page.locator("[data-char-index='0']")
             expect(word).to_have_css(
                 "background-color",
                 re.compile(r"rgba\(31,\s*119,\s*180"),
@@ -395,7 +395,7 @@ class TestEdgeCasesConsolidated:
             )
 
             # Create first highlight (words 1-3)
-            select_words(page, 1, 3)
+            select_chars(page, 1, 3)
             page.get_by_role(
                 "button", name=re.compile("jurisdiction", re.IGNORECASE)
             ).click()
@@ -407,7 +407,7 @@ class TestEdgeCasesConsolidated:
             # Create second overlapping highlight (words 2-4)
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)
-            select_words(page, 2, 4)
+            select_chars(page, 2, 4)
             page.get_by_role(
                 "button", name=re.compile("legal.?issue", re.IGNORECASE)
             ).click()
@@ -416,8 +416,8 @@ class TestEdgeCasesConsolidated:
             expect(saved_indicator).to_contain_text("Saved", timeout=10000)
 
             # Middle words should have background color (overlap styling)
-            word2 = page.locator("[data-word-index='2']")
-            word3 = page.locator("[data-word-index='3']")
+            word2 = page.locator("[data-char-index='2']")
+            word3 = page.locator("[data-char-index='3']")
             expect(word2).to_have_css(
                 "background-color", re.compile(r"rgba\("), timeout=5000
             )
@@ -435,7 +435,7 @@ class TestEdgeCasesConsolidated:
             setup_workspace_with_content(page, app_server, special_content)
 
             # Should have word spans (special chars escaped)
-            word_spans = page.locator("[data-word-index]")
+            word_spans = page.locator("[data-char-index]")
             assert word_spans.count() >= 5
 
             # Can create highlight

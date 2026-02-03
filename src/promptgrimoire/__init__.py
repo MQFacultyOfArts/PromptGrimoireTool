@@ -6,10 +6,36 @@ in educational contexts.
 
 import logging
 import os
+import subprocess
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 __version__ = "0.1.0"
+
+
+def get_git_commit() -> str:
+    """Get the short git commit hash, or 'unknown' if not in a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        return result.stdout.strip()
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
+        return "unknown"
+
+
+def get_version_string() -> str:
+    """Get version string with git commit for dev builds."""
+    commit = get_git_commit()
+    return f"{__version__}+{commit}"
 
 
 def _setup_logging() -> None:
@@ -78,7 +104,7 @@ def main() -> None:
     port = int(os.environ.get("PROMPTGRIMOIRE_PORT", "8080"))
     storage_secret = os.environ.get("STORAGE_SECRET", "dev-secret-change-me")
 
-    print(f"PromptGrimoire v{__version__}")
+    print(f"PromptGrimoire v{get_version_string()}")
     print(f"Starting application on http://0.0.0.0:{port}")
 
     ui.run(host="0.0.0.0", port=port, reload=True, storage_secret=storage_secret)

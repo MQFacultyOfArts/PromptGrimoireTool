@@ -251,7 +251,7 @@ async def export_annotation_pdf(
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
-    latex_body = convert_html_with_annotations(
+    latex_body = await convert_html_with_annotations(
         html=processed_html,
         highlights=highlights,
         tag_colours=tag_colours,

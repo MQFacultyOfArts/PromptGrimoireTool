@@ -11,23 +11,25 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from promptgrimoire.parsers.rtf import parse_rtf
+from promptgrimoire.models import ParsedRTF
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-    from promptgrimoire.models import ParsedRTF
     from tests.conftest import PdfExportResult
-
-# Run all RTF tests on same worker to share LibreOffice process
-pytestmark = pytest.mark.xdist_group("rtf_parser")
 
 
 @pytest.fixture(scope="module")
 def parsed_lawlis() -> ParsedRTF:
-    """Parse 183.rtf once for all tests in module."""
-    path = Path(__file__).parent.parent / "fixtures" / "183.rtf"
-    return parse_rtf(path)
+    """Load pre-converted HTML fixture (LibreOffice conversion done offline)."""
+    fixtures_dir = Path(__file__).parent.parent / "fixtures"
+    html_path = fixtures_dir / "183-libreoffice.html"
+    rtf_path = fixtures_dir / "183.rtf"
+    return ParsedRTF(
+        original_blob=rtf_path.read_bytes(),
+        html=html_path.read_text(encoding="utf-8"),
+        source_filename="183.rtf",
+    )
 
 
 class TestCrossEnvironmentHighlights:

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from promptgrimoire.export.pdf import compile_latex
+
 # Required packages for unicode support (fonts come from system via fontspec)
 UNICODE_PACKAGES = ["emoji", "luatexja"]
 
@@ -63,18 +65,6 @@ def get_tlmgr_path() -> Path | None:
     return None
 
 
-def get_lualatex_path() -> Path | None:
-    """Get path to lualatex if TinyTeX is installed."""
-    tinytex_bin = Path.home() / ".TinyTeX" / "bin"
-    if not tinytex_bin.exists():
-        return None
-    for arch_dir in tinytex_bin.iterdir():
-        lualatex = arch_dir / "lualatex"
-        if lualatex.exists():
-            return lualatex
-    return None
-
-
 @pytest.mark.latex
 class TestLaTeXPackages:
     """Test LaTeX package availability.
@@ -108,15 +98,10 @@ class TestLaTeXPackages:
                 "Run: uv run python scripts/setup_latex.py"
             )
 
-    def test_unicode_preamble_compiles_without_tofu(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_unicode_preamble_compiles_without_tofu(self, tmp_path: Path) -> None:
         """Verify UNICODE_PREAMBLE compiles and renders CJK without tofu."""
         from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
-
-        lualatex = get_lualatex_path()
-        assert lualatex is not None, (
-            "TinyTeX not installed. Run: uv run python scripts/setup_latex.py\n"
-            "To skip LaTeX tests: pytest -m 'not latex'"
-        )
 
         pdftotext = get_pdftotext_path()
         assert pdftotext is not None, (
@@ -140,22 +125,8 @@ Hello World. CJK: \cjktext{{{cjk_text}}} Emoji: \emoji{{party-popper}}
         tex_file = tmp_path / "test_unicode.tex"
         tex_file.write_text(tex_content, encoding="utf-8")
 
-        # Compile with LuaLaTeX (check=False because we verify via PDF existence)
-        compile_result = subprocess.run(
-            [str(lualatex), "-interaction=nonstopmode", str(tex_file)],
-            capture_output=True,
-            text=True,
-            cwd=tmp_path,
-            check=False,
-        )
-
-        pdf_file = tmp_path / "test_unicode.pdf"
-        assert pdf_file.exists(), (
-            f"LuaLaTeX compilation failed.\n"
-            f"Return code: {compile_result.returncode}\n"
-            f"Stdout: {compile_result.stdout[-2000:]}\n"
-            f"Stderr: {compile_result.stderr[-500:]}"
-        )
+        pdf_file = await compile_latex(tex_file, output_dir=tmp_path)
+        assert pdf_file.exists(), "LuaLaTeX compilation failed"
 
         # Extract text and check for tofu (missing glyphs)
         extract_result = subprocess.run(

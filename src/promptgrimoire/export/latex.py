@@ -1249,7 +1249,7 @@ async def convert_html_to_latex(html: str, filter_path: Path | None = None) -> s
         html_path.unlink(missing_ok=True)
 
 
-def convert_html_with_annotations(
+async def convert_html_with_annotations(
     html: str,
     highlights: list[dict],
     tag_colours: dict[str, str],  # noqa: ARG001 - colours used in preamble generation
@@ -1311,7 +1311,7 @@ def convert_html_with_annotations(
     marked_html = _strip_control_chars(marked_html)
 
     # Convert to LaTeX
-    latex = convert_html_to_latex(marked_html, filter_path=filter_path)
+    latex = await convert_html_to_latex(marked_html, filter_path=filter_path)
 
     # Replace markers with annots
     return _replace_markers_with_annots(latex, marker_highlights, word_to_legal_para)

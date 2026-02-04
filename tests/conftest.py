@@ -27,6 +27,58 @@ from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
 
+
+def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001
+    """Ensure clean database state before xdist workers spawn.
+
+    Runs once in the main process at pytest startup:
+    1. Run Alembic migrations to ensure schema is correct
+    2. Truncate all tables to remove leftover data from previous runs
+
+    This runs BEFORE xdist spawns workers, so no race conditions.
+    """
+    from sqlalchemy import create_engine, text
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return  # Skip if no database configured (non-DB tests)
+
+    # Run migrations to ensure schema is up to date
+    result = subprocess.run(
+        ["uv", "run", "alembic", "upgrade", "head"],
+        cwd="/home/brian/people/Brian/PromptGrimoire/.worktrees/database-test-nullpool",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.exit(f"Alembic migration failed: {result.stderr}", returncode=1)
+
+    # Convert async URL to sync for this one-time operation
+    # Use psycopg (v3) driver which is installed
+    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        # Get all table names from public schema (except alembic_version)
+        result = conn.execute(
+            text("""
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public'
+                AND tablename != 'alembic_version'
+            """)
+        )
+        tables = [row[0] for row in result.fetchall()]
+
+        if tables:
+            # Truncate all tables with CASCADE to handle foreign keys
+            # Quote table names to handle reserved keywords like "user"
+            quoted_tables = ", ".join(f'"{t}"' for t in tables)
+            conn.execute(text(f"TRUNCATE {quoted_tables} RESTART IDENTITY CASCADE"))
+
+    engine.dispose()
+
+
 # Canary UUID for database rebuild detection
 # If this row disappears during a test run, the database was rebuilt
 _DB_CANARY_ID = uuid4()
@@ -436,6 +488,25 @@ async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG00
 
     await engine.dispose()
     yield canary_email
+
+    # Cleanup: remove canary row after session ends
+    from sqlmodel import delete
+
+    cleanup_engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    cleanup_factory = async_sessionmaker(
+        cleanup_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with cleanup_factory() as session:
+        # ty doesn't understand SQLModel column comparison returns expression, not bool
+        await session.execute(delete(User).where(User.email == canary_email))  # type: ignore[arg-type]
+        await session.commit()
+
+    await cleanup_engine.dispose()
 
 
 @pytest_asyncio.fixture

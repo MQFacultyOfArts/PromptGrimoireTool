@@ -9,7 +9,9 @@ See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/76
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -29,6 +31,28 @@ def _has_pandoc() -> bool:
 
 
 requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not installed")
+
+
+class TestAsyncErrorHandling:
+    """Verify subprocess errors propagate correctly from async convert_html_to_latex."""
+
+    @pytest.mark.asyncio
+    async def test_pandoc_failure_raises_called_process_error(self) -> None:
+        """When Pandoc fails (non-zero exit), CalledProcessError raised with stderr."""
+        # Create a mock process that simulates Pandoc failure
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"", b"pandoc: Error parsing HTML input")
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(subprocess.CalledProcessError) as exc_info:
+                await convert_html_to_latex("<html><body>test</body></html>")
+
+            # Verify stderr is captured in the exception
+            assert "pandoc: Error parsing HTML input" in str(exc_info.value.output)
+            assert exc_info.value.returncode == 1
 
 
 class TestTableColumnWidths:

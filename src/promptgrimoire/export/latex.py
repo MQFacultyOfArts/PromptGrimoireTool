@@ -13,6 +13,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
@@ -1183,7 +1184,7 @@ def _strip_texorpdfstring(latex: str) -> str:
     return result
 
 
-def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
+async def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
     """Convert HTML to LaTeX using Pandoc with optional Lua filter.
 
     Preprocesses HTML to wrap styled <p> tags in <div> wrappers so Pandoc
@@ -1227,9 +1228,20 @@ def convert_html_to_latex(html: str, filter_path: Path | None = None) -> str:
         if filter_path is not None:
             cmd.extend(["--lua-filter", str(filter_path)])
 
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+        # returncode is guaranteed to be set after communicate() returns
+        assert proc.returncode is not None
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd, stderr_bytes.decode()
+            )
         # Post-process Pandoc output
-        latex = result.stdout
+        latex = stdout_bytes.decode()
         latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
         latex = _strip_texorpdfstring(latex)  # Strip for luatexja compatibility
         return latex

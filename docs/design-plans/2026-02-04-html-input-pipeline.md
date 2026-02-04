@@ -211,21 +211,28 @@ class ClientState:
 | Whitespace handling | Preserve as entities | Prevents HTML collapse of significant whitespace |
 | `<br>` tags | Treat as newline character (gets index) | Consistent with text semantics |
 
-## Spikes Required
+## Spike Results (2026-02-05)
 
-Three approaches for HTML input must be spiked to determine the best mechanism:
+Three approaches tested for HTML clipboard input:
 
-| # | Approach | What to Test | Pros | Cons |
-|---|----------|--------------|------|------|
-| **D** | `ui.editor` (Quasar QEditor) | Does paste preserve chatbot HTML structure? Does `.value` give clean HTML? | NiceGUI-native, no custom JS | WYSIWYG editor may be overkill |
-| **A** | `js_handler` on paste event | Cross-browser clipboard access? Edge cases? | Full control over clipboard data | Custom JS (5 lines) |
-| **B** | Contenteditable div | Browser normalisation issues? innerHTML reliability? | Native HTML paste | Browser quirks, cursor issues |
+| # | Approach | Result | Notes |
+|---|----------|--------|-------|
+| **D** | `ui.editor` (Quasar QEditor) | **SUCCESS** | 260KB HTML preserved from Claude.ai paste. Clean `.value` access. |
+| **A** | `js_handler` on paste event | FAIL | Paste handler did not trigger. Not debugged. |
+| **B** | Contenteditable div | SUCCESS | 259KB HTML preserved, but includes placeholder text in output. |
 
-**Spike D first** - if `ui.editor` preserves HTML on paste and gives us clean `.value`, no custom JS needed.
+**Winner: Spike D (`ui.editor`)**
 
-Additional spikes:
+Rationale:
+- HTML structure fully preserved on paste
+- `.value` returns clean HTML without extra content
+- NiceGUI-native component with proper form bindings
+- No custom JavaScript required
+- Editor chrome (toolbars) can be hidden if needed
+
+Remaining spikes (deferred to implementation):
 - **LibreOffice conversion**: Test RTF and DOCX conversion quality
-- **selectolax text node iteration**: Verify `include_text=True` behavior with complex nested HTML
+- **selectolax text node iteration**: Verify char span injection with complex nested HTML
 
 ## Implementation Components
 

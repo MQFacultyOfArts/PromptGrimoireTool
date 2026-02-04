@@ -39,7 +39,8 @@ requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not insta
 class TestHtmlToLatexIntegration:
     """Integration tests for HTML to LaTeX conversion."""
 
-    def test_legal_document_structure(self) -> None:
+    @pytest.mark.asyncio
+    async def test_legal_document_structure(self) -> None:
         """Convert legal document HTML with numbered paragraphs."""
         html = """
         <html>
@@ -66,7 +67,7 @@ class TestHtmlToLatexIntegration:
             / "legal.lua"
         )
 
-        result = convert_html_to_latex(html, filter_path=filter_path)
+        result = await convert_html_to_latex(html, filter_path=filter_path)
 
         assert "CASE NAME" in result
         assert r"\begin{enumerate}" in result

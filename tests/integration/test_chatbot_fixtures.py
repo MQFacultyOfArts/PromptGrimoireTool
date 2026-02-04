@@ -77,14 +77,15 @@ def _preprocess_chatbot_html(html: str) -> str:
 class TestChatbotFixturesToLatex:
     """Test that chatbot fixtures convert to LaTeX without errors."""
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("fixture_name", CHATBOT_FIXTURES)
-    def test_fixture_converts_to_latex(self, fixture_name: str) -> None:
+    async def test_fixture_converts_to_latex(self, fixture_name: str) -> None:
         """Each fixture converts to LaTeX without pandoc errors."""
         html = _load_fixture(fixture_name)
         html = _preprocess_chatbot_html(html)
 
         # Convert to LaTeX (should not raise)
-        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Basic sanity checks
         assert latex, f"No LaTeX output for {fixture_name}"
@@ -106,25 +107,27 @@ _COMPLETE_CONVERSATION_FIXTURES = [
 class TestSpeakerLabelsInjected:
     """Test that speaker labels appear in converted LaTeX for chatbot fixtures."""
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("fixture_name", _COMPLETE_CONVERSATION_FIXTURES)
-    def test_speaker_labels_in_latex(self, fixture_name: str) -> None:
+    async def test_speaker_labels_in_latex(self, fixture_name: str) -> None:
         """Chatbot fixtures with complete conversations have both labels."""
         html = _load_fixture(fixture_name)
         html = _preprocess_chatbot_html(html)
 
         # Convert to LaTeX
-        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Check labels appear (textbf is how strong renders)
         assert "User:" in latex, f"No User: label in {fixture_name}"
         assert "Assistant:" in latex, f"No Assistant: label in {fixture_name}"
 
-    def test_partial_conversation_has_user_label(self) -> None:
+    @pytest.mark.asyncio
+    async def test_partial_conversation_has_user_label(self) -> None:
         """claude_maths.html has only a user message (placeholder fixture)."""
         html = _load_fixture("claude_maths.html")
         html = _preprocess_chatbot_html(html)
 
-        latex = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Has user label but no assistant (fixture is incomplete)
         assert "User:" in latex

@@ -35,7 +35,8 @@ class TestTableColumnWidths:
     """Table column widths from HTML width attributes → proportional LaTeX widths."""
 
     @requires_pandoc
-    def test_table_with_width_attributes(self) -> None:
+    @pytest.mark.asyncio
+    async def test_table_with_width_attributes(self) -> None:
         """Cells with width="N" become proportional p{X\\textwidth} columns."""
         html = """
         <table>
@@ -45,7 +46,7 @@ class TestTableColumnWidths:
             </tr>
         </table>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Should use longtable with proportional widths
         assert "\\begin{longtable}" in result
@@ -55,7 +56,8 @@ class TestTableColumnWidths:
         assert result.count("p{") == 2
 
     @requires_pandoc
-    def test_table_without_widths_unchanged(self) -> None:
+    @pytest.mark.asyncio
+    async def test_table_without_widths_unchanged(self) -> None:
         """Tables without width attributes are handled by Pandoc defaults."""
         html = """
         <table>
@@ -65,7 +67,7 @@ class TestTableColumnWidths:
             </tr>
         </table>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Without widths, filter doesn't intervene - Pandoc handles it
         # Just verify it produces something reasonable
@@ -77,45 +79,49 @@ class TestMarginLeft:
     """margin-left CSS property → adjustwidth environment."""
 
     @requires_pandoc
-    def test_div_with_margin_left(self) -> None:
+    @pytest.mark.asyncio
+    async def test_div_with_margin_left(self) -> None:
         """Div with margin-left style becomes adjustwidth environment."""
         html = """
         <div style="margin-left: 0.5in">
             <p>Indented paragraph</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         assert "\\begin{adjustwidth}{0.5in}{}" in result
         assert "\\end{adjustwidth}" in result
         assert "Indented paragraph" in result
 
     @requires_pandoc
-    def test_margin_left_various_values(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_various_values(self) -> None:
         """Various margin-left values are preserved."""
         html = """
         <div style="margin-left: 1.25in">
             <p>More indented</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         assert "\\begin{adjustwidth}{1.25in}{}" in result
 
     @requires_pandoc
-    def test_margin_left_centimeters(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_centimeters(self) -> None:
         """LibreOffice outputs cm units which must be handled."""
         html = """
         <div style="margin-left: 2.38cm">
             <p>Indented quote from judgment</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         assert "\\begin{adjustwidth}{2.38cm}{}" in result
 
     @requires_pandoc
-    def test_paragraph_with_margin_left_wrapped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_paragraph_with_margin_left_wrapped(self) -> None:
         """Paragraphs with margin-left are wrapped in divs for Pandoc processing.
 
         The normalise_styled_paragraphs preprocessor wraps styled <p> tags
@@ -124,7 +130,7 @@ class TestMarginLeft:
         html = """
         <p style="margin-left: 0.75in">Styled paragraph</p>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # Preprocessor wraps in div, filter creates adjustwidth
         assert "\\begin{adjustwidth}{0.75in}{}" in result
@@ -135,7 +141,8 @@ class TestOrderedListStart:
     """Ordered list start attribute → \\setcounter{enumi}{N-1}."""
 
     @requires_pandoc
-    def test_ol_with_start_attribute(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ol_with_start_attribute(self) -> None:
         """Ordered list with start="N" injects setcounter before list."""
         html = """
         <ol start="5">
@@ -143,28 +150,30 @@ class TestOrderedListStart:
             <li>Item six</li>
         </ol>
         """
-        result = convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
 
         # start=5 means first displayed number is 5, so counter = 4
         assert "\\setcounter{enumi}{4}" in result
         assert "Item five" in result
 
     @requires_pandoc
-    def test_ol_start_one_no_setcounter(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ol_start_one_no_setcounter(self) -> None:
         """Ordered list with start=1 (or no start) doesn't need setcounter."""
         html = """
         <ol start="1">
             <li>Item one</li>
         </ol>
         """
-        result = convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
 
         # start=1 is default, no setcounter needed
         assert "\\setcounter" not in result
         assert "Item one" in result
 
     @requires_pandoc
-    def test_ol_without_start(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ol_without_start(self) -> None:
         """Ordered list without start attribute works normally."""
         html = """
         <ol>
@@ -172,7 +181,7 @@ class TestOrderedListStart:
             <li>Second</li>
         </ol>
         """
-        result = convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
 
         assert "\\setcounter" not in result
         assert "First" in result
@@ -230,13 +239,14 @@ class TestListValueNormalization:
         assert "Item" in result
 
     @requires_pandoc
-    def test_normalized_list_produces_correct_latex(self) -> None:
+    @pytest.mark.asyncio
+    async def test_normalized_list_produces_correct_latex(self) -> None:
         """Full pipeline: li value → ol start → setcounter."""
         from promptgrimoire.export.list_normalizer import normalize_list_values
 
         html = '<ol><li value="5">Para 5</li></ol>'
         normalized = normalize_list_values(html)
-        result = convert_html_to_latex(normalized, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(normalized, filter_path=LEGAL_FILTER)
 
         assert "\\setcounter{enumi}{4}" in result
         assert "Para 5" in result
@@ -246,55 +256,59 @@ class TestUnitConversion:
     """CSS unit conversion: em, rem, px → LaTeX equivalents."""
 
     @requires_pandoc
-    def test_margin_left_em_units(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_em_units(self) -> None:
         """margin-left with em units passes through to LaTeX."""
         html = """
         <div style="margin-left: 2em">
             <p>Em-indented paragraph</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         assert "\\begin{adjustwidth}{2em}{}" in result
         assert "Em-indented paragraph" in result
 
     @requires_pandoc
-    def test_margin_left_rem_units(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_rem_units(self) -> None:
         """margin-left with rem units converts to em (1:1 ratio)."""
         html = """
         <div style="margin-left: 1.5rem">
             <p>Rem-indented paragraph</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # rem converts to em at 1:1 ratio
         assert "\\begin{adjustwidth}{1.5em}{}" in result
         assert "Rem-indented paragraph" in result
 
     @requires_pandoc
-    def test_margin_left_px_units(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_px_units(self) -> None:
         """margin-left with px units converts to pt (x0.75)."""
         html = """
         <div style="margin-left: 40px">
             <p>Pixel-indented paragraph</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # 40px * 0.75 = 30pt
         assert "\\begin{adjustwidth}{30pt}{}" in result
         assert "Pixel-indented paragraph" in result
 
     @requires_pandoc
-    def test_margin_left_px_decimal_result(self) -> None:
+    @pytest.mark.asyncio
+    async def test_margin_left_px_decimal_result(self) -> None:
         """px conversion produces clean decimal when needed."""
         html = """
         <div style="margin-left: 20px">
             <p>Small indent</p>
         </div>
         """
-        result = convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
 
         # 20px * 0.75 = 15pt
         assert "\\begin{adjustwidth}{15pt}{}" in result

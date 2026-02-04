@@ -138,6 +138,7 @@ def test_replace_markers_preserves_latex_commands():
 # =============================================================================
 
 
+@pytest.mark.order("first")
 @requires_latexmk
 @pytest.mark.asyncio
 async def test_overlapping_highlights_compile_to_pdf(tmp_path: Path):

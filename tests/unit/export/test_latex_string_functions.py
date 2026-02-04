@@ -167,6 +167,7 @@ class TestFormatAnnot:
 _OUTPUT_DIR = Path("output/test_output/latex_validation")
 
 
+@pytest.mark.order("first")
 @requires_latexmk
 class TestCompilationValidation:
     """Validates that all string outputs actually compile with LuaLaTeX.

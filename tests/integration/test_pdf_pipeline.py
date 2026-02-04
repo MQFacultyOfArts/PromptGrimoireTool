@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from tests.conftest import PdfExportResult
 
 
+@pytest.mark.order("first")
 class TestPdfPipeline:
     """Integration tests for PDF export pipeline."""
 

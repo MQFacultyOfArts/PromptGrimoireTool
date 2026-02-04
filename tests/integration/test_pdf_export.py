@@ -74,6 +74,7 @@ class TestHtmlToLatexIntegration:
         assert "paragraph one" in result
 
 
+@pytest.mark.order("first")
 @requires_latexmk
 class TestPdfCompilation:
     """Integration tests for LaTeX to PDF compilation."""
@@ -134,6 +135,7 @@ Test.
         assert pdf_path.parent == subdir
 
 
+@pytest.mark.order("first")
 @requires_pandoc
 @requires_latexmk
 class TestMarginnoteExportPipeline:
@@ -229,6 +231,7 @@ class TestMarginnoteExportPipeline:
         assert "Good catch" in tex_content
 
 
+@pytest.mark.order("first")
 @requires_pandoc
 @requires_latexmk
 class TestI18nPdfExport:

@@ -146,6 +146,7 @@ class TestChromeRemoved:
         assert len(result) < len(html), "Chrome removal should reduce HTML size"
 
 
+@pytest.mark.order("first")
 class TestChatbotFixturesToPdf:
     """Generate PDFs from chatbot fixtures for visual review.
 

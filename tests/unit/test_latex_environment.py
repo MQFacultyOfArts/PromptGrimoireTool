@@ -26,6 +26,7 @@ requires_tinytex = pytest.mark.skipif(
 )
 
 
+@pytest.mark.order("first")
 class TestLaTeXEnvironment:
     """Verify LaTeX environment is correctly configured."""
 

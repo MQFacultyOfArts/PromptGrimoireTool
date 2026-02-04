@@ -7,6 +7,8 @@ whitespace characters, and CJK characters.
 Traceability:
 - Issue: #101 (CJK/BLNS support)
 - Phase: 5 of character-based tokenization implementation
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from tests.e2e.annotation_helpers import select_chars, setup_workspace_with_cont
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

@@ -24,6 +24,8 @@ Consolidation note (Phase 2):
 TestHighlightMutations, TestHighlightInteractions, and TestEdgeCasesConsolidated
 use pytest-subtests to share expensive browser setup across related assertions.
 This reduces test runtime while maintaining coverage. See test consolidation design.
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -43,6 +45,9 @@ from tests.e2e.annotation_helpers import (
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

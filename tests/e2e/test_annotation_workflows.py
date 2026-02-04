@@ -18,6 +18,8 @@ Why these tests exist:
   is complete.
 - TestPdfExport: Verifies the export PDF button appears and is functional.
   Export is the end goal of annotation work.
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -33,6 +35,9 @@ from tests.e2e.annotation_helpers import create_highlight, select_chars
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

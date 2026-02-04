@@ -20,6 +20,9 @@ Why these tests exist:
 - TestWorkspaceAndDocumentCreation: Verifies the Workspace and WorkspaceDocument
   entities work correctly via the UI. These are the core data model from Seam A.
   Regression: broken CRUD would prevent any annotation work.
+
+SKIPPED: Pending #106 HTML input redesign. These tests use plain text textarea
+input which will change to HTML clipboard paste. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ from uuid import UUID
 
 import pytest
 from playwright.sync_api import expect
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

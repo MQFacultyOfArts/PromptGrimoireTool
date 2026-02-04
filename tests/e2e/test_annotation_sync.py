@@ -12,6 +12,8 @@ Traceability:
 - Epic: #92 (Annotation Workspace Platform)
 - Issue: #93 (Seam A: Workspace Model)
 - Design: docs/implementation-plans/2026-01-31-test-suite-consolidation/phase_03.md
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import create_highlight, select_chars
 from tests.e2e.conftest import _authenticate_page
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

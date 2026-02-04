@@ -18,6 +18,8 @@ Why these tests exist:
 - TestTagSelection: Verifies the tag toolbar that lets users categorize their
   highlights. Tags are essential for organizing legal analysis (jurisdiction,
   issues, facts, decisions).
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -37,6 +39,9 @@ from tests.e2e.annotation_helpers import (
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

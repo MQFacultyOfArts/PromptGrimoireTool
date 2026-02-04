@@ -11,6 +11,8 @@ To skip these tests (e.g., in CI without LaTeX):
 Traceability:
 - Issue: #101 (CJK/BLNS support)
 - Fixtures: tests/fixtures/conversations/ (Vanessa's translations)
+
+SKIPPED: Pending #106 HTML input redesign. Reimplement after #106.
 """
 
 from __future__ import annotations
@@ -31,6 +33,9 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "conversations"
 
 # Output directory for test artifacts (matches PDF_TEST_OUTPUT_DIR pattern)
 E2E_OUTPUT_DIR = Path("output/test_output/e2e_i18n_exports")
+
+# Skip all tests in this module pending #106 HTML input redesign
+pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(

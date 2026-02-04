@@ -179,9 +179,11 @@ The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave e
 
 ### Architecture
 
-- `src/promptgrimoire/export/pdf.py` - `get_latexmk_path()` resolves latexmk location
+- `src/promptgrimoire/export/pdf.py` - `get_latexmk_path()` resolves latexmk location, `compile_latex()` compiles .tex to PDF (async)
 - `scripts/setup_latex.py` - installs TinyTeX and packages
 - Does NOT fall back to system PATH - TinyTeX only for consistency
+
+**Note:** `compile_latex()` is async and uses `asyncio.create_subprocess_exec()` for non-blocking compilation.
 
 ### LaTeX Marker Pipeline
 

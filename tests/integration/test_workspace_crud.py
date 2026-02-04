@@ -13,13 +13,10 @@ from uuid import uuid4
 
 import pytest
 
-pytestmark = [
-    pytest.mark.skipif(
-        not os.environ.get("TEST_DATABASE_URL"),
-        reason="TEST_DATABASE_URL not set - skipping database integration tests",
-    ),
-    pytest.mark.xdist_group("db_integration"),
-]
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+)
 
 
 class TestCreateWorkspace:

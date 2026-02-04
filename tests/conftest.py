@@ -2,25 +2,85 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import socket
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import emoji as emoji_lib
 import pytest
+import pytest_asyncio
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from promptgrimoire.db import run_alembic_upgrade
 from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
+
+
+def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001
+    """Ensure clean database state before xdist workers spawn.
+
+    Runs once in the main process at pytest startup:
+    1. Run Alembic migrations to ensure schema is correct
+    2. Truncate all tables to remove leftover data from previous runs
+
+    This runs BEFORE xdist spawns workers, so no race conditions.
+    """
+    from sqlalchemy import create_engine, text
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return  # Skip if no database configured (non-DB tests)
+
+    # Run migrations to ensure schema is up to date
+    result = subprocess.run(
+        ["uv", "run", "alembic", "upgrade", "head"],
+        cwd="/home/brian/people/Brian/PromptGrimoire/.worktrees/database-test-nullpool",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.exit(f"Alembic migration failed: {result.stderr}", returncode=1)
+
+    # Convert async URL to sync for this one-time operation
+    # Use psycopg (v3) driver which is installed
+    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        # Get all table names from public schema (except alembic_version)
+        result = conn.execute(
+            text("""
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public'
+                AND tablename != 'alembic_version'
+            """)
+        )
+        tables = [row[0] for row in result.fetchall()]
+
+        if tables:
+            # Truncate all tables with CASCADE to handle foreign keys
+            # Quote table names to handle reserved keywords like "user"
+            quoted_tables = ", ".join(f'"{t}"' for t in tables)
+            conn.execute(text(f"TRUNCATE {quoted_tables} RESTART IDENTITY CASCADE"))
+
+    engine.dispose()
+
+
+# Canary UUID for database rebuild detection
+# If this row disappears during a test run, the database was rebuilt
+_DB_CANARY_ID = uuid4()
 
 # =============================================================================
 # BLNS Corpus Parsing
@@ -148,7 +208,7 @@ ASCII_TEST_STRINGS: list[str] = [
 ][:10]  # Take first 10
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import AsyncIterator, Callable, Coroutine, Generator
 
     from playwright.sync_api import Browser, BrowserContext
 
@@ -279,7 +339,7 @@ class PdfExportResult:
 
 
 @pytest.fixture
-def pdf_exporter() -> Callable[..., PdfExportResult]:
+def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
     """Factory fixture for exporting PDFs using the production pipeline.
 
     Uses export_annotation_pdf which goes through the full workflow:
@@ -289,8 +349,9 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
     - LuaLaTeX compilation via latexmk
 
     Usage:
-        def test_something(pdf_exporter, parsed_rtf):
-            result = pdf_exporter(
+        @pytest.mark.asyncio
+        async def test_something(pdf_exporter, parsed_rtf):
+            result = await pdf_exporter(
                 html=parsed_rtf.html,
                 highlights=[...],
                 test_name="my_test",
@@ -299,7 +360,7 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
     """
     from promptgrimoire.export.pdf_export import export_annotation_pdf
 
-    def _export(
+    async def _export(
         html: str,
         highlights: list[dict[str, Any]],
         test_name: str,
@@ -337,16 +398,14 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Run the async export in a new event loop
-        pdf_path = asyncio.run(
-            export_annotation_pdf(
-                html_content=html,
-                highlights=highlights,
-                tag_colours=TAG_COLOURS,
-                general_notes=notes_content,
-                output_dir=output_dir,
-                filename=test_name,
-            )
+        # Await the async export directly
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=TAG_COLOURS,
+            general_notes=notes_content,
+            output_dir=output_dir,
+            filename=test_name,
         )
 
         tex_path = output_dir / f"{test_name}.tex"
@@ -396,6 +455,92 @@ def db_schema_guard() -> Generator[None]:
         pytest.fail(str(e))
 
     yield
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG001
+    """Insert canary row at session start. If DB rebuilds, canary disappears.
+
+    This fixture:
+    1. Creates a fresh NullPool engine
+    2. Inserts a User with known UUID and email
+    3. Returns the canary email for verification
+
+    The canary check in db_session verifies ~1ms PK lookup.
+    """
+    from promptgrimoire.db import User
+
+    canary_email = f"canary-{_DB_CANARY_ID}@test.local"
+
+    engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with factory() as session:
+        canary_user = User(email=canary_email, display_name="DB Canary")
+        session.add(canary_user)
+        await session.commit()
+
+    await engine.dispose()
+    yield canary_email
+
+    # Cleanup: remove canary row after session ends
+    from sqlmodel import delete
+
+    cleanup_engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    cleanup_factory = async_sessionmaker(
+        cleanup_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with cleanup_factory() as session:
+        # ty doesn't understand SQLModel column comparison returns expression, not bool
+        await session.execute(delete(User).where(User.email == canary_email))  # type: ignore[arg-type]
+        await session.commit()
+
+    await cleanup_engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(db_canary: str) -> AsyncIterator[AsyncSession]:
+    """Database session with NullPool - safe for xdist parallelism.
+
+    Each test gets a fresh TCP connection to PostgreSQL.
+    Connection closes when test ends. No pooling, no event loop binding.
+
+    Verifies canary row exists - fails fast if database was rebuilt.
+    Canary check uses email lookup (indexed column, ~1ms).
+    Note: Email lookup is safer than UUID because User.id is auto-generated.
+    """
+    from sqlmodel import select
+
+    from promptgrimoire.db import User
+
+    engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with factory() as session:
+        # Verify canary exists - fails if DB was rebuilt
+        result = await session.execute(select(User).where(User.email == db_canary))
+        canary = result.scalar_one_or_none()
+        if canary is None:
+            pytest.fail(
+                f"DATABASE WAS REBUILT - canary row missing (email: {db_canary})"
+            )
+
+        yield session
+
+    await engine.dispose()
 
 
 @pytest.fixture

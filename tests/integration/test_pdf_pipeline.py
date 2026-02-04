@@ -11,12 +11,14 @@ To skip these tests (e.g., in CI without LaTeX):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import pytest
 
 from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Coroutine
 
     from tests.conftest import PdfExportResult
 
@@ -25,8 +27,9 @@ class TestPdfPipeline:
     """Integration tests for PDF export pipeline."""
 
     @requires_latexmk
-    def test_issue_85_regression_no_literal_markers(
-        self, pdf_exporter: Callable[..., PdfExportResult]
+    @pytest.mark.asyncio
+    async def test_issue_85_regression_no_literal_markers(
+        self, pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]]
     ) -> None:
         """Regression test: markers are processed, not literal text.
 
@@ -77,7 +80,7 @@ WHAT TO CHECK:
 
 IF YOU SEE RAW MARKER TEXT: Issue #85 has regressed!
 """
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="issue_85_regression",
@@ -110,8 +113,9 @@ IF YOU SEE RAW MARKER TEXT: Issue #85 has regressed!
         assert result.pdf_path.exists(), "PDF was not generated"
 
     @requires_latexmk
-    def test_interleaved_highlights_compile(
-        self, pdf_exporter: Callable[..., PdfExportResult]
+    @pytest.mark.asyncio
+    async def test_interleaved_highlights_compile(
+        self, pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]]
     ) -> None:
         """Interleaved highlights should compile to PDF."""
         html = "<p>One two three four five six seven eight</p>"
@@ -150,7 +154,7 @@ WHAT TO CHECK:
 4. Underlines visible (stacked where overlapping)
 5. Document compiles without errors
 """
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="interleaved_compile",
@@ -160,8 +164,9 @@ WHAT TO CHECK:
         assert result.pdf_path.exists()
 
     @requires_latexmk
-    def test_three_overlapping_compile(
-        self, pdf_exporter: Callable[..., PdfExportResult]
+    @pytest.mark.asyncio
+    async def test_three_overlapping_compile(
+        self, pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]]
     ) -> None:
         """Three overlapping highlights should compile to PDF."""
         html = "<p>Word one word two word three word four</p>"
@@ -210,7 +215,7 @@ WHAT TO CHECK:
 5. "three" has ONE highlight (jurisdiction)
 6. Three overlapping = single thick "many-dark" underline (not stacked)
 """
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="three_overlapping",
@@ -220,8 +225,9 @@ WHAT TO CHECK:
         assert result.pdf_path.exists()
 
     @requires_latexmk
-    def test_overlapping_highlights_crossing_list_boundary(
-        self, pdf_exporter: Callable[..., PdfExportResult]
+    @pytest.mark.asyncio
+    async def test_overlapping_highlights_crossing_list_boundary(
+        self, pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]]
     ) -> None:
         """Compound case: overlapping highlights that cross environment boundary.
 
@@ -277,7 +283,7 @@ WHAT TO CHECK:
 4. List structure preserved (numbered items render correctly)
 5. No compilation errors or 'Lonely item' warnings
 """
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=html,
             highlights=highlights,
             test_name="overlapping_cross_boundary",

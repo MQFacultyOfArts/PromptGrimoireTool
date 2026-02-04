@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from promptgrimoire.export.latex import (
     ANNOTATION_PREAMBLE_BASE,
     _escape_latex,
@@ -175,7 +177,8 @@ class TestCompilationValidation:
     Output saved to: output/test_output/latex_validation/
     """
 
-    def test_all_outputs_compile_with_lualatex(self) -> None:
+    @pytest.mark.asyncio
+    async def test_all_outputs_compile_with_lualatex(self) -> None:
         """Compile a document containing all test outputs.
 
         EXPECTED PDF CONTENT (for visual inspection):
@@ -293,7 +296,7 @@ Final text with comments.{annot_multi_comment}
         tex_path.write_text(tex_content)
 
         # Compile - this is the real test
-        pdf_path = compile_latex(tex_path, output_dir=output_dir)
+        pdf_path = await compile_latex(tex_path, output_dir=output_dir)
 
         assert pdf_path.exists(), f"PDF not created at {pdf_path}"
         with pdf_path.open("rb") as f:

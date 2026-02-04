@@ -15,17 +15,22 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 async def reset_db_engine_per_test() -> AsyncGenerator[None]:
-    """Reset database engine after each async integration test.
+    """Dispose shared database engine after each test.
 
-    With function-scoped event loops, the async engine is bound to the
-    test's event loop. After the test finishes and its loop closes,
-    subsequent tests would fail trying to use the stale engine.
+    REQUIRED for service layer tests that use get_session() from the shared
+    engine module. The shared engine uses QueuePool, and pooled connections
+    bind to the event loop that created them.
 
-    This fixture ensures the engine is disposed after each test,
-    allowing the next test to lazily create a fresh engine in its
-    own event loop.
+    Without this fixture:
+    - Test A creates engine/connections bound to its event loop
+    - Test A finishes, its event loop closes
+    - Test B tries to reuse pooled connections → RuntimeError: Event loop is closed
 
-    Only runs cleanup if the engine was actually initialized during the test.
+    This fixture disposes the engine (closing all pooled connections) after
+    each test. The next test lazily creates a fresh engine in its own loop.
+
+    Note: Tests using the db_session fixture (NullPool) don't need this,
+    but it doesn't hurt them either. Service layer tests REQUIRE it.
     """
     yield
 

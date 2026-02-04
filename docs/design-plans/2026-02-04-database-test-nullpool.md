@@ -137,6 +137,23 @@ Investigation found current patterns in `tests/integration/`:
 
 ## Implementation Phases
 
+<!-- START_PHASE_0 -->
+### Phase 0: Clean Database State at Pytest Startup
+
+**Goal:** Ensure clean database state before xdist workers spawn.
+
+**Components:**
+- `tests/conftest.py` - Add `pytest_configure` hook that runs Alembic migrations and truncates all tables
+- Uses sync SQLAlchemy (simpler in hook context)
+- Runs ONCE in main process before workers start
+
+**Dependencies:** None
+
+**Done when:** `pytest_configure` hook exists, truncates tables at startup
+
+**NOTE (2026-02-04):** Added during implementation to address proleptic challenge feedback about implicit database state assumptions.
+<!-- END_PHASE_0 -->
+
 <!-- START_PHASE_1 -->
 ### Phase 1: Add NullPool Fixture
 
@@ -194,16 +211,18 @@ Investigation found current patterns in `tests/integration/`:
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->
-### Phase 5: Remove Legacy Fixtures
+### Phase 5: Document Fixture Responsibilities (REVISED)
 
-**Goal:** Clean up fixtures that are no longer needed.
+**Goal:** Document why `reset_db_engine_per_test` is still required.
 
 **Components:**
-- `tests/integration/conftest.py` - Remove `reset_db_engine_per_test` fixture
+- `tests/integration/conftest.py` - Update docstring to explain fixture's necessity
 
 **Dependencies:** Phase 4
 
-**Done when:** File contains only docstring, all integration tests still pass
+**Done when:** Docstring explains why fixture is required for service layer tests
+
+**REVISION NOTE (2026-02-04):** Original design said to remove this fixture. Spike testing proved it's REQUIRED for service layer tests. Without it, pooled connections from closed event loops cause `RuntimeError: Event loop is closed`. The fixture disposes the shared engine after each test, ensuring fresh connections.
 <!-- END_PHASE_5 -->
 
 <!-- START_PHASE_6 -->

@@ -7,10 +7,12 @@ which the previous regex-based implementation could not handle.
 
 from __future__ import annotations
 
-import subprocess
 from typing import TYPE_CHECKING
 
+import pytest
+
 from promptgrimoire.export.latex import _replace_markers_with_annots
+from promptgrimoire.export.pdf import compile_latex
 from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
@@ -137,7 +139,8 @@ def test_replace_markers_preserves_latex_commands():
 
 
 @requires_latexmk
-def test_overlapping_highlights_compile_to_pdf(tmp_path: Path):
+@pytest.mark.asyncio
+async def test_overlapping_highlights_compile_to_pdf(tmp_path: Path):
     """Generated LaTeX for overlapping highlights must compile without errors."""
     text = "The HLSTART0ENDHLquick HLSTART1ENDHLbrown HLEND0ENDHLfox HLEND1ENDHLjumps"
     marker_highlights = [
@@ -166,20 +169,5 @@ def test_overlapping_highlights_compile_to_pdf(tmp_path: Path):
     tex_file = tmp_path / "test.tex"
     tex_file.write_text(document)
 
-    # Get latexmk path
-    from promptgrimoire.export.pdf import get_latexmk_path
-
-    latexmk = get_latexmk_path()
-
-    result = subprocess.run(
-        [str(latexmk), "-lualatex", "-interaction=nonstopmode", str(tex_file)],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-
-    # Check compilation succeeded
-    assert result.returncode == 0, f"LaTeX compilation failed:\n{result.stderr}"
-    assert (tmp_path / "test.pdf").exists()
+    pdf_path = await compile_latex(tex_file, output_dir=tmp_path)
+    assert pdf_path.exists(), "LaTeX compilation failed"

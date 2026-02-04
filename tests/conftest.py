@@ -8,19 +8,28 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import emoji as emoji_lib
 import pytest
+import pytest_asyncio
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from promptgrimoire.db import run_alembic_upgrade
 from promptgrimoire.export.pdf import get_latexmk_path
 
 load_dotenv()
+
+# Canary UUID for database rebuild detection
+# If this row disappears during a test run, the database was rebuilt
+_DB_CANARY_ID = uuid4()
 
 # =============================================================================
 # BLNS Corpus Parsing
@@ -148,7 +157,7 @@ ASCII_TEST_STRINGS: list[str] = [
 ][:10]  # Take first 10
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import AsyncIterator, Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
 
@@ -396,6 +405,73 @@ def db_schema_guard() -> Generator[None]:
         pytest.fail(str(e))
 
     yield
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG001
+    """Insert canary row at session start. If DB rebuilds, canary disappears.
+
+    This fixture:
+    1. Creates a fresh NullPool engine
+    2. Inserts a User with known UUID and email
+    3. Returns the canary email for verification
+
+    The canary check in db_session verifies ~1ms PK lookup.
+    """
+    from promptgrimoire.db import User
+
+    canary_email = f"canary-{_DB_CANARY_ID}@test.local"
+
+    engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with factory() as session:
+        canary_user = User(email=canary_email, display_name="DB Canary")
+        session.add(canary_user)
+        await session.commit()
+
+    await engine.dispose()
+    yield canary_email
+
+
+@pytest_asyncio.fixture
+async def db_session(db_canary: str) -> AsyncIterator[AsyncSession]:
+    """Database session with NullPool - safe for xdist parallelism.
+
+    Each test gets a fresh TCP connection to PostgreSQL.
+    Connection closes when test ends. No pooling, no event loop binding.
+
+    Verifies canary row exists - fails fast if database was rebuilt.
+    Canary check uses email lookup (indexed column, ~1ms).
+    Note: Email lookup is safer than UUID because User.id is auto-generated.
+    """
+    from sqlmodel import select
+
+    from promptgrimoire.db import User
+
+    engine = create_async_engine(
+        os.environ["DATABASE_URL"],
+        poolclass=NullPool,
+        connect_args={"timeout": 10, "command_timeout": 30},
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with factory() as session:
+        # Verify canary exists - fails if DB was rebuilt
+        result = await session.execute(select(User).where(User.email == db_canary))
+        canary = result.scalar_one_or_none()
+        if canary is None:
+            pytest.fail(
+                f"DATABASE WAS REBUILT - canary row missing (email: {db_canary})"
+            )
+
+        yield session
+
+    await engine.dispose()
 
 
 @pytest.fixture

@@ -109,7 +109,7 @@ def test_debug() -> None:
         --depper: Enable smart test selection based on changed files
         --depper-run-all-on-error: Fall back to all tests if analysis fails
         -n auto: Parallel execution with auto-detected workers
-        --dist=loadfile: Keep tests from same file on same worker
+        --dist=worksteal: Workers steal tests from others for better load balancing
         -x: Stop on first failure
         --ff: Run failed tests first, then remaining tests
         --durations=10: Show 10 slowest tests
@@ -125,7 +125,7 @@ def test_debug() -> None:
             "--depper-run-all-on-error",
             "-n",
             "auto",
-            "--dist=loadfile",
+            "--dist=worksteal",
             "-x",
             "--ff",
             "--durations=10",
@@ -145,7 +145,7 @@ def test_all() -> None:
 
     Flags applied:
         -n auto: Parallel execution with auto-detected workers
-        --dist=loadfile: Keep tests from same file on same worker
+        --dist=worksteal: Workers steal tests from others for better load balancing
         --durations=10: Show 10 slowest tests
         -v: Verbose output
 
@@ -154,7 +154,7 @@ def test_all() -> None:
     _run_pytest(
         title="Full Test Suite (all tests)",
         log_path=Path("test-all.log"),
-        default_args=["-n", "auto", "--dist=loadfile", "--durations=10", "-v"],
+        default_args=["-n", "auto", "--dist=worksteal", "--durations=10", "-v"],
     )
 
 

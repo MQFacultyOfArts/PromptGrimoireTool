@@ -284,6 +284,6 @@ async def export_annotation_pdf(
     tex_path.write_text(document)
 
     # Compile to PDF
-    pdf_path = compile_latex(tex_path, output_dir)
+    pdf_path = await compile_latex(tex_path, output_dir)
 
     return pdf_path

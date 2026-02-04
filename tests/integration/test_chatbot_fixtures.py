@@ -9,7 +9,7 @@ See: docs/design-plans/2026-01-29-css-fidelity-pdf-export.md Phase 4
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -18,7 +18,7 @@ from promptgrimoire.export.platforms import get_handler, preprocess_for_export
 from tests.conftest import load_conversation_fixture, requires_latexmk
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Coroutine
 
     from tests.conftest import PdfExportResult
 
@@ -155,11 +155,12 @@ class TestChatbotFixturesToPdf:
     """
 
     @requires_latexmk
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("fixture_name", CHATBOT_FIXTURES)
-    def test_fixture_compiles_to_pdf(
+    async def test_fixture_compiles_to_pdf(
         self,
         fixture_name: str,
-        pdf_exporter: Callable[..., PdfExportResult],
+        pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]],
     ) -> None:
         """Each fixture compiles to PDF without LaTeX errors."""
         html = _load_fixture(fixture_name)
@@ -186,7 +187,7 @@ VISUAL CHECKS:
 5. Content images preserved (if any)
 """
 
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=html,
             highlights=[],  # No annotations for these tests
             test_name=test_name,

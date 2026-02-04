@@ -77,7 +77,8 @@ class TestHtmlToLatexIntegration:
 class TestPdfCompilation:
     """Integration tests for LaTeX to PDF compilation."""
 
-    def test_compile_simple_document(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_compile_simple_document(self, tmp_path: Path) -> None:
         """Compile a simple LaTeX document to PDF."""
         tex_content = r"""
 \documentclass{article}
@@ -88,7 +89,7 @@ Hello, world!
         tex_path = tmp_path / "test.tex"
         tex_path.write_text(tex_content)
 
-        pdf_path = compile_latex(tex_path, output_dir=tmp_path)
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
 
         assert pdf_path.exists()
         assert pdf_path.suffix == ".pdf"
@@ -97,7 +98,8 @@ Hello, world!
             header = f.read(4)
         assert header == b"%PDF"
 
-    def test_compile_failure_raises(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_compile_failure_raises(self, tmp_path: Path) -> None:
         """Compilation failure raises LaTeXCompilationError."""
         tex_content = r"""
 \documentclass{article}
@@ -109,9 +111,10 @@ This has an \undefined command.
         tex_path.write_text(tex_content)
 
         with pytest.raises(LaTeXCompilationError):
-            compile_latex(tex_path, output_dir=tmp_path)
+            await compile_latex(tex_path, output_dir=tmp_path)
 
-    def test_output_dir_defaults_to_tex_parent(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_output_dir_defaults_to_tex_parent(self, tmp_path: Path) -> None:
         """Output directory defaults to tex file's parent."""
         subdir = tmp_path / "subdir"
         subdir.mkdir()
@@ -125,7 +128,7 @@ Test.
         tex_path = subdir / "test.tex"
         tex_path.write_text(tex_content)
 
-        pdf_path = compile_latex(tex_path)
+        pdf_path = await compile_latex(tex_path)
 
         assert pdf_path.parent == subdir
 

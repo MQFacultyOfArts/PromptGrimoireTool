@@ -14,7 +14,7 @@ import pytest
 from promptgrimoire.parsers.rtf import parse_rtf
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Coroutine
 
     from promptgrimoire.models import ParsedRTF
     from tests.conftest import PdfExportResult
@@ -33,10 +33,11 @@ def parsed_lawlis() -> ParsedRTF:
 class TestCrossEnvironmentHighlights:
     """Tests verifying highlight behavior across list boundaries."""
 
-    def test_cross_env_highlight_compiles_to_pdf(
+    @pytest.mark.asyncio
+    async def test_cross_env_highlight_compiles_to_pdf(
         self,
         parsed_lawlis: ParsedRTF,
-        pdf_exporter: Callable[..., PdfExportResult],
+        pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]],
     ) -> None:
         """Verify cross-environment highlights compile to PDF successfully.
 
@@ -73,7 +74,7 @@ WHAT TO CHECK IN THE PDF:
 4. No overfull/underfull vbox warnings (check .log file)
 """
 
-        result = pdf_exporter(
+        result = await pdf_exporter(
             html=parsed_lawlis.html,
             highlights=highlights,
             test_name="cross_env_highlight",

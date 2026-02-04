@@ -5,8 +5,8 @@ Uses LuaLaTeX for better font support (fontspec) and highlighting (lua-ul).
 
 from __future__ import annotations
 
+import asyncio
 import os
-import subprocess
 from pathlib import Path
 
 
@@ -62,7 +62,7 @@ def get_latexmk_path() -> str:
     raise FileNotFoundError(msg)
 
 
-def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
+async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     """Compile LaTeX to PDF using latexmk with LuaLaTeX.
 
     Uses latexmk for automatic multi-pass compilation with LuaLaTeX engine.
@@ -95,7 +95,13 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         str(tex_path),
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, _ = await proc.communicate()
+    returncode = proc.returncode or 0
 
     # Return path to generated PDF
     pdf_name = tex_path.stem + ".pdf"
@@ -106,7 +112,7 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     # Check if PDF was actually created
     if not pdf_path.exists():
         raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {result.returncode}): PDF not created",
+            f"LaTeX compilation failed (exit {returncode}): PDF not created",
             tex_path=tex_path,
             log_path=log_file,
         )
@@ -114,7 +120,7 @@ def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     # Check for empty PDF (indicates compilation error even if file exists)
     if pdf_path.stat().st_size == 0:
         raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {result.returncode}): PDF is empty",
+            f"LaTeX compilation failed (exit {returncode}): PDF is empty",
             tex_path=tex_path,
             log_path=log_file,
         )

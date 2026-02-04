@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import socket
 import subprocess
@@ -209,7 +208,7 @@ ASCII_TEST_STRINGS: list[str] = [
 ][:10]  # Take first 10
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Generator
+    from collections.abc import AsyncIterator, Callable, Coroutine, Generator
 
     from playwright.sync_api import Browser, BrowserContext
 
@@ -340,7 +339,7 @@ class PdfExportResult:
 
 
 @pytest.fixture
-def pdf_exporter() -> Callable[..., PdfExportResult]:
+def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
     """Factory fixture for exporting PDFs using the production pipeline.
 
     Uses export_annotation_pdf which goes through the full workflow:
@@ -350,8 +349,9 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
     - LuaLaTeX compilation via latexmk
 
     Usage:
-        def test_something(pdf_exporter, parsed_rtf):
-            result = pdf_exporter(
+        @pytest.mark.asyncio
+        async def test_something(pdf_exporter, parsed_rtf):
+            result = await pdf_exporter(
                 html=parsed_rtf.html,
                 highlights=[...],
                 test_name="my_test",
@@ -360,7 +360,7 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
     """
     from promptgrimoire.export.pdf_export import export_annotation_pdf
 
-    def _export(
+    async def _export(
         html: str,
         highlights: list[dict[str, Any]],
         test_name: str,
@@ -398,16 +398,14 @@ def pdf_exporter() -> Callable[..., PdfExportResult]:
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Run the async export in a new event loop
-        pdf_path = asyncio.run(
-            export_annotation_pdf(
-                html_content=html,
-                highlights=highlights,
-                tag_colours=TAG_COLOURS,
-                general_notes=notes_content,
-                output_dir=output_dir,
-                filename=test_name,
-            )
+        # Await the async export directly
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=TAG_COLOURS,
+            general_notes=notes_content,
+            output_dir=output_dir,
+            filename=test_name,
         )
 
         tex_path = output_dir / f"{test_name}.tex"

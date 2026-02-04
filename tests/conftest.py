@@ -544,7 +544,7 @@ async def db_session(db_canary: str) -> AsyncIterator[AsyncSession]:
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_stytch_client():
     """Create a mocked Stytch B2BClient for unit tests.
 

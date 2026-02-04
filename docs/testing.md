@@ -1,5 +1,7 @@
 # Testing Guidelines
 
+*Last updated: 2026-02-04*
+
 ## TDD is Mandatory
 
 1. Write failing test first
@@ -29,11 +31,47 @@ Tests must simulate real user behavior through Playwright events, not bypass the
 - **Annotation cards are scroll-sensitive** - they won't display if their anchor element is not visible; always `scroll_into_view_if_needed()` before selecting text for annotation
 - **Sticky selections on highlighted text (NiceGUI 3.6+)** - selections made on already-highlighted text become "sticky" and won't clear with clicks outside the document container. Workaround: before each drag selection, click on a non-highlighted word *inside* the document (e.g., `[data-w="0"]` header word) to reliably clear existing selection
 
-## Database Test Isolation
+## Database Test Architecture
 
-1. **UUID-based isolation is MANDATORY** - All test data must use unique identifiers (uuid4) to prevent collisions
-2. **NEVER use `drop_all()` or `truncate`** - These break parallel test execution (pytest-xdist)
-3. **NEVER use `create_all()` in tests** - Schema comes from Alembic migrations run once at session start
+### Core Principles
+
+1. **NullPool for xdist safety** - Each test gets a fresh TCP connection, no pooling
+2. **UUID-based isolation** - All test data uses unique identifiers to prevent collisions
+3. **Canary-based rebuild detection** - A sentinel row detects unexpected database rebuilds
+4. **Schema from Alembic only** - Never use `create_all()` in tests
+
+### Key Fixtures
+
+```python
+# db_session - Primary fixture for database tests
+@pytest.mark.asyncio
+async def test_something(db_session: AsyncSession):
+    # Fresh connection per test, NullPool ensures no event loop issues
+    result = await db_session.execute(select(User))
+```
+
+The `db_session` fixture provides:
+- Fresh AsyncSession per test (no connection reuse)
+- NullPool to avoid event loop binding issues with xdist
+- Automatic canary verification (fails fast if DB was rebuilt mid-run)
+
+### pytest_configure Hook
+
+At pytest startup (before xdist workers spawn):
+1. Runs Alembic migrations to ensure schema is correct
+2. Truncates all tables to remove leftover data from previous runs
+
+This runs ONCE in the main process, eliminating race conditions.
+
+### Canary Mechanism
+
+A `db_canary` fixture inserts a known User row at session start. The `db_session` fixture verifies this row exists before yielding the session. If the canary is missing, the database was rebuilt mid-run and the test fails immediately with a clear error.
+
+## Database Test Rules
+
+1. **Use `db_session` fixture** - Don't create engines manually in tests
+2. **NEVER use `drop_all()` or `truncate`** - Let pytest_configure handle cleanup
+3. **NEVER use `create_all()` in tests** - Schema comes from Alembic
 4. **Tests must be parallel-safe** - Assume pytest-xdist; tests may run concurrently
 
 ## Test Database Configuration

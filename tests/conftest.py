@@ -43,9 +43,10 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001
         return  # Skip if no database configured (non-DB tests)
 
     # Run migrations to ensure schema is up to date
+    project_root = Path(__file__).parent.parent
     result = subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
-        cwd="/home/brian/people/Brian/PromptGrimoire/.worktrees/database-test-nullpool",
+        cwd=project_root,
         capture_output=True,
         text=True,
         check=False,

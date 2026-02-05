@@ -104,6 +104,16 @@ _PAGE_CSS = """
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* Plain text documents use monospace */
+    .doc-container.source-text {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+        font-size: 11pt;
+        white-space: pre-wrap;
     }
 
     /* Compact tag toolbar in header */
@@ -1059,9 +1069,13 @@ async def _render_document_with_highlights(
     with layout_wrapper:
         # Document content - proper readable width (~65% of layout)
         # Needs ID for scroll-sync JavaScript positioning
+        # Add source-text class for monospace rendering of plain text
+        container_classes = "doc-container"
+        if hasattr(doc, "source_type") and doc.source_type == "text":
+            container_classes += " source-text"
         doc_container = (
             ui.element("div")
-            .classes("doc-container")
+            .classes(container_classes)
             .style("flex: 2; min-width: 600px; max-width: 900px;")
             .props('id="doc-container"')
         )

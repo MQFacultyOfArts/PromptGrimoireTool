@@ -21,8 +21,8 @@ from promptgrimoire.export.platforms import preprocess_for_export
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")
 ContentType = Literal["html", "rtf", "docx", "pdf", "text"]
 
-# Tags whose content should not be wrapped in char spans
-_SKIP_CONTENT_TAGS = frozenset(("script", "style", "noscript", "template"))
+# Tags to strip entirely (security: NiceGUI rejects script tags)
+_STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 
 # Map of characters that need HTML entity escaping
 _CHAR_ESCAPE_MAP: dict[str, str] = {
@@ -180,11 +180,13 @@ def _get_tag_name(tag_content: str) -> str:
 
 
 def _process_skip_tag(html: str, tag_name: str, tag_end: int) -> int | None:
-    """Handle tags whose content should be skipped (script, style, etc.).
+    """Handle tags to strip entirely (script, style, etc.).
 
-    Returns new position after closing tag, or None if not a skip tag.
+    Security: NiceGUI rejects HTML with script tags. Strip them during processing.
+
+    Returns new position after closing tag, or None if not a strip tag.
     """
-    if tag_name not in _SKIP_CONTENT_TAGS:
+    if tag_name not in _STRIP_TAGS:
         return None
 
     close_tag = f"</{tag_name}>"
@@ -209,10 +211,10 @@ def _process_tag(
     full_tag = html[i : tag_end + 1]
     tag_name = _get_tag_name(tag_content)
 
-    # Check for skip tags (script, style, etc.)
+    # Strip script, style, etc. tags entirely (security: NiceGUI rejects script tags)
     skip_pos = _process_skip_tag(html, tag_name, tag_end)
     if skip_pos is not None:
-        result.append(html[i:skip_pos])
+        # Don't append - strip the tag entirely
         return skip_pos, char_index
 
     # Handle <br> as newline character

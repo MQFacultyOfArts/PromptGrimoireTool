@@ -1415,6 +1415,8 @@ def _detect_type_from_extension(filename: str) -> ContentType | None:
         "docx": "docx",
         "pdf": "pdf",
         "txt": "text",
+        "md": "text",
+        "markdown": "text",
     }
     return ext_to_type.get(ext)
 
@@ -1532,13 +1534,13 @@ def _render_add_content_form(workspace_id: UUID) -> None:
             logger.exception("Failed to process uploaded file")
             ui.notify(f"Failed to process file: {exc}", type="negative")
 
-    # File upload for HTML, RTF, DOCX, PDF, TXT files
+    # File upload for HTML, RTF, DOCX, PDF, TXT, Markdown files
     ui.upload(
         label="Or upload a file",
         on_upload=handle_file_upload,
         auto_upload=True,
         max_file_size=10 * 1024 * 1024,  # 10 MB limit
-    ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt"').classes("w-full")
+    ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
 
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:

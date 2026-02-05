@@ -48,18 +48,22 @@ class TestInjectCharSpans:
         # &amp; should be wrapped as one character
         assert "&amp;</span>" in result
 
-    def test_skips_script_content(self) -> None:
-        """Script tag content is not wrapped."""
+    def test_strips_script_tags(self) -> None:
+        """Script tags are stripped entirely (security: NiceGUI rejects them)."""
         result = inject_char_spans("<p>A</p><script>var x=1;</script><p>B</p>")
-        assert "<script>var x=1;</script>" in result
+        # Script tag should be removed entirely
+        assert "<script>" not in result
+        assert "var x=1" not in result
         # Only A and B should be indexed
         assert 'data-char-index="0">A</span>' in result
         assert 'data-char-index="1">B</span>' in result
 
-    def test_skips_style_content(self) -> None:
-        """Style tag content is not wrapped."""
+    def test_strips_style_tags(self) -> None:
+        """Style tags are stripped entirely (security: NiceGUI rejects them)."""
         result = inject_char_spans("<p>X</p><style>.cls{}</style>")
-        assert "<style>.cls{}</style>" in result
+        # Style tag should be removed entirely
+        assert "<style>" not in result
+        assert ".cls{}" not in result
 
     def test_attributes_preserved(self) -> None:
         """Element attributes are preserved."""

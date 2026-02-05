@@ -53,13 +53,13 @@ class _ClientState:
         self.callback = callback
         self.color = color
         self.name = name
-        self.cursor_word: int | None = None
+        self.cursor_char: int | None = None
         self.selection_start: int | None = None
         self.selection_end: int | None = None
 
-    def set_cursor(self, word_index: int | None) -> None:
+    def set_cursor(self, char_index: int | None) -> None:
         """Update cursor position."""
-        self.cursor_word = word_index
+        self.cursor_char = char_index
 
     def set_selection(self, start: int | None, end: int | None) -> None:
         """Update selection range."""
@@ -68,13 +68,13 @@ class _ClientState:
 
     def to_cursor_dict(self) -> dict[str, Any]:
         """Get cursor as dict for CSS generation."""
-        return {"word": self.cursor_word, "name": self.name, "color": self.color}
+        return {"char": self.cursor_char, "name": self.name, "color": self.color}
 
     def to_selection_dict(self) -> dict[str, Any]:
         """Get selection as dict for CSS generation."""
         return {
-            "start_word": self.selection_start,
-            "end_word": self.selection_end,
+            "start_char": self.selection_start,
+            "end_char": self.selection_end,
             "name": self.name,
             "color": self.color,
         }
@@ -277,8 +277,8 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     # Build char -> list of (highlight_index, tag_color) mapping
     char_highlights: dict[int, list[str]] = {}
     for hl in highlights:
-        start = int(hl.get("start_word", 0))
-        end = int(hl.get("end_word", 0))
+        start = int(hl.get("start_char", 0))
+        end = int(hl.get("end_char", 0))
         hex_color = _get_tag_color(hl.get("tag", "highlight"))
         for i in range(start, end):
             if i not in char_highlights:
@@ -323,20 +323,20 @@ def _build_remote_cursor_css(
     for cid, cursor in cursors.items():
         if cid == exclude_client_id:
             continue
-        word = cursor.get("word")
+        char_idx = cursor.get("char")
         color = cursor.get("color", "#2196f3")
         name = cursor.get("name", "User")
-        if word is None:
+        if char_idx is None:
             continue
         # Cursor indicator using box-shadow (no layout shift)
         rules.append(
-            f'[data-char-index="{word}"] {{ '
+            f'[data-char-index="{char_idx}"] {{ '
             f"position: relative; "
             f"box-shadow: inset 2px 0 0 0 {color}; }}"
         )
         # Floating name label
         rules.append(
-            f'[data-char-index="{word}"]::before {{ '
+            f'[data-char-index="{char_idx}"]::before {{ '
             f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
             f"font-size: 0.6rem; background: {color}; color: white; "
             f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
@@ -353,8 +353,8 @@ def _build_remote_selection_css(
     for cid, sel in selections.items():
         if cid == exclude_client_id:
             continue
-        start = sel.get("start_word")
-        end = sel.get("end_word")
+        start = sel.get("start_char")
+        end = sel.get("end_char")
         color = sel.get("color", "#ffeb3b")
         name = sel.get("name", "User")
         if start is None or end is None:
@@ -583,9 +583,9 @@ def _build_annotation_card(
     author = highlight.get("author", "Unknown")
     full_text = highlight.get("text", "")
 
-    # Get word positions for scroll-sync positioning
-    start_word = highlight.get("start_word", 0)
-    end_word = highlight.get("end_word", start_word)
+    # Get char positions for scroll-sync positioning
+    start_char = highlight.get("start_char", 0)
+    end_char = highlight.get("end_char", start_char)
 
     # Get para_ref if stored
     para_ref = highlight.get("para_ref", "")
@@ -604,7 +604,7 @@ def _build_annotation_card(
         .style(f"border-left: 4px solid {color};")
         .props(
             f'data-testid="annotation-card" data-highlight-id="{highlight_id}" '
-            f'data-start-word="{start_word}" data-end-word="{end_word}"'
+            f'data-start-char="{start_char}" data-end-char="{end_char}"'
         )
     )
 
@@ -649,7 +649,7 @@ def _build_annotation_card(
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it
                 async def goto_highlight(
-                    sc: int = start_word, ec: int = end_word
+                    sc: int = start_char, ec: int = end_char
                 ) -> None:
                     # fmt: off
                     # Flash ALL chars in the highlight range, not just start
@@ -779,7 +779,7 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     if state.save_status:
         state.save_status.text = "Saving..."
 
-    # Add highlight to CRDT (end_word is exclusive)
+    # Add highlight to CRDT (end_char is exclusive)
     start = min(state.selection_start, state.selection_end)
     end = max(state.selection_start, state.selection_end) + 1
 
@@ -793,8 +793,8 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         highlighted_text = "".join(chars_slice)
 
     state.crdt_doc.add_highlight(
-        start_word=start,
-        end_word=end,
+        start_char=start,
+        end_char=end,
         tag=tag_value,
         text=highlighted_text,
         author=state.user_name,
@@ -1088,13 +1088,13 @@ async def _render_document_with_highlights(
         "  if (!docC || !annC) return;\n"
         "  const MIN_GAP = 8;\n"
         "  function positionCards() {\n"
-        "    const cards = Array.from(annC.querySelectorAll('[data-start-word]'));\n"
+        "    const cards = Array.from(annC.querySelectorAll('[data-start-char]'));\n"
         "    if (cards.length === 0) return;\n"
         "    const docRect = docC.getBoundingClientRect();\n"
         "    const annRect = annC.getBoundingClientRect();\n"
         "    const containerOffset = annRect.top - docRect.top;\n"
         "    const cardInfos = cards.map(card => {\n"
-        "      const sc = parseInt(card.dataset.startWord);\n"
+        "      const sc = parseInt(card.dataset.startChar);\n"
         "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
         "      if (!cs) return null;\n"
         "      const cr = cs.getBoundingClientRect();\n"
@@ -1108,7 +1108,7 @@ async def _render_document_with_highlights(
         "    let minY = 0;\n"
         "    for (const info of cardInfos) {\n"
         "      const sc = info.startChar;\n"
-        "      const ec = parseInt(info.card.dataset.endWord) || sc;\n"
+        "      const ec = parseInt(info.card.dataset.endChar) || sc;\n"
         "      var qs='[data-char-index=\"'+sc+'\"]';\n"
         "      const startCS = docC.querySelector(qs);\n"
         "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
@@ -1141,8 +1141,8 @@ async def _render_document_with_highlights(
         "  let hoveredCard = null;\n"
         "  function clearHover() {\n"
         "    if (!hoveredCard) return;\n"
-        "    const sc = parseInt(hoveredCard.dataset.startWord);\n"
-        "    const ec = parseInt(hoveredCard.dataset.endWord) || sc;\n"
+        "    const sc = parseInt(hoveredCard.dataset.startChar);\n"
+        "    const ec = parseInt(hoveredCard.dataset.endChar) || sc;\n"
         "    for (let i = sc; i < ec; i++) {\n"
         "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
         "      if (c) c.classList.remove('card-hover-highlight');\n"
@@ -1150,13 +1150,13 @@ async def _render_document_with_highlights(
         "    hoveredCard = null;\n"
         "  }\n"
         "  annC.addEventListener('mouseover', function(e) {\n"
-        "    const card = e.target.closest('[data-start-word]');\n"
+        "    const card = e.target.closest('[data-start-char]');\n"
         "    if (card === hoveredCard) return;\n"
         "    clearHover();\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sc = parseInt(card.dataset.startWord);\n"
-        "    const ec = parseInt(card.dataset.endWord) || sc;\n"
+        "    const sc = parseInt(card.dataset.startChar);\n"
+        "    const ec = parseInt(card.dataset.endChar) || sc;\n"
         "    for (let i = sc; i < ec; i++) {\n"
         "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
         "      if (c) c.classList.add('card-hover-highlight');\n"

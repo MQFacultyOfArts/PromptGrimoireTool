@@ -271,8 +271,8 @@ class TestCRDTRoundTrip:
         # Create document with data
         doc = AnnotationDocument("byte-test")
         doc.add_highlight(
-            start_word=0,
-            end_word=10,
+            start_char=0,
+            end_char=10,
             tag="test",
             text="Test text",
             author="Author",
@@ -308,8 +308,8 @@ class TestCRDTRoundTrip:
         doc = AnnotationDocument("large-test")
         for i in range(100):
             doc.add_highlight(
-                start_word=i * 10,
-                end_word=i * 10 + 5,
+                start_char=i * 10,
+                end_char=i * 10 + 5,
                 tag="issue" if i % 2 == 0 else "citation",
                 text=f"Highlight number {i} with some longer text to increase size",
                 author=f"Author {i % 5}",

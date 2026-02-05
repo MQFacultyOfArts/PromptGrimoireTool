@@ -12,8 +12,8 @@ class TestHighlightDocumentId:
 
         doc = AnnotationDocument("test-doc")
         hl_id = doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Test text",
             author="Author",
@@ -30,8 +30,8 @@ class TestHighlightDocumentId:
 
         doc = AnnotationDocument("test-doc")
         hl_id = doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Test text",
             author="Author",
@@ -49,8 +49,8 @@ class TestHighlightDocumentId:
         # Create doc with document_id
         doc1 = AnnotationDocument("test-doc-1")
         hl_id = doc1.add_highlight(
-            start_word=10,
-            end_word=20,
+            start_char=10,
+            end_char=20,
             tag="citation",
             text="Citation text",
             author="Author",
@@ -73,16 +73,16 @@ class TestHighlightDocumentId:
 
         doc = AnnotationDocument("test-doc")
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Text 1",
             author="Author",
             document_id="doc-1",
         )
         doc.add_highlight(
-            start_word=10,
-            end_word=15,
+            start_char=10,
+            end_char=15,
             tag="citation",
             text="Text 2",
             author="Author",
@@ -91,7 +91,7 @@ class TestHighlightDocumentId:
 
         highlights = doc.get_all_highlights()
         assert len(highlights) == 2
-        # Sorted by start_word
+        # Sorted by start_char
         assert highlights[0]["document_id"] == "doc-1"
         assert highlights[1]["document_id"] == "doc-2"
 
@@ -107,24 +107,24 @@ class TestGetHighlightsForDocument:
 
         # Add highlights for different documents
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Doc A highlight 1",
             author="Author",
             document_id="doc-a",
         )
         doc.add_highlight(
-            start_word=10,
-            end_word=15,
+            start_char=10,
+            end_char=15,
             tag="citation",
             text="Doc B highlight",
             author="Author",
             document_id="doc-b",
         )
         doc.add_highlight(
-            start_word=20,
-            end_word=25,
+            start_char=20,
+            end_char=25,
             tag="issue",
             text="Doc A highlight 2",
             author="Author",
@@ -136,9 +136,9 @@ class TestGetHighlightsForDocument:
 
         assert len(doc_a_highlights) == 2
         assert all(h["document_id"] == "doc-a" for h in doc_a_highlights)
-        # Should be sorted by start_word
-        assert doc_a_highlights[0]["start_word"] == 0
-        assert doc_a_highlights[1]["start_word"] == 20
+        # Should be sorted by start_char
+        assert doc_a_highlights[0]["start_char"] == 0
+        assert doc_a_highlights[1]["start_char"] == 20
 
     def test_get_highlights_for_unknown_document_returns_empty(self) -> None:
         """Returns empty list for document with no highlights."""
@@ -146,8 +146,8 @@ class TestGetHighlightsForDocument:
 
         doc = AnnotationDocument("test-workspace")
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Some highlight",
             author="Author",
@@ -166,16 +166,16 @@ class TestGetHighlightsForDocument:
 
         # Highlight without document_id (old style)
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Old style",
             author="Author",
         )
         # Highlight with document_id
         doc.add_highlight(
-            start_word=10,
-            end_word=15,
+            start_char=10,
+            end_char=15,
             tag="citation",
             text="New style",
             author="Author",

@@ -193,8 +193,8 @@ class AnnotationDocument:
 
     def add_highlight(
         self,
-        start_word: int,
-        end_word: int,
+        start_char: int,
+        end_char: int,
         tag: str,
         text: str,
         author: str,
@@ -205,8 +205,8 @@ class AnnotationDocument:
         """Add a new highlight to the document.
 
         Args:
-            start_word: Starting word index (inclusive).
-            end_word: Ending word index (exclusive).
+            start_char: Starting character index (inclusive).
+            end_char: Ending character index (exclusive).
             tag: Tag type (e.g., 'jurisdiction', 'legal_issues').
             text: The highlighted text content.
             author: Display name of the author.
@@ -224,8 +224,8 @@ class AnnotationDocument:
             highlight_data = {
                 "id": highlight_id,
                 "document_id": document_id,  # Can be None for backward compat
-                "start_word": start_word,
-                "end_word": end_word,
+                "start_char": start_char,
+                "end_char": end_char,
                 "tag": tag,
                 "text": text,
                 "author": author,
@@ -298,10 +298,10 @@ class AnnotationDocument:
         """Get all highlights in the document.
 
         Returns:
-            List of highlight data dicts, sorted by start_word.
+            List of highlight data dicts, sorted by start_char.
         """
         highlights = list(self.highlights.values())
-        return sorted(highlights, key=lambda h: h.get("start_word", 0))
+        return sorted(highlights, key=lambda h: h.get("start_char", 0))
 
     def get_highlights_for_document(self, document_id: str) -> list[dict[str, Any]]:
         """Get all highlights for a specific document.
@@ -310,12 +310,12 @@ class AnnotationDocument:
             document_id: The document UUID to filter by.
 
         Returns:
-            List of highlight data dicts for that document, sorted by start_word.
+            List of highlight data dicts for that document, sorted by start_char.
         """
         highlights = [
             h for h in self.highlights.values() if h.get("document_id") == document_id
         ]
-        return sorted(highlights, key=lambda h: h.get("start_word", 0))
+        return sorted(highlights, key=lambda h: h.get("start_char", 0))
 
     # --- Comment operations ---
 
@@ -421,8 +421,8 @@ class AnnotationDocument:
     def update_selection(
         self,
         client_id: str,
-        start_word: int | None,
-        end_word: int | None,
+        start_char: int | None,
+        end_char: int | None,
         name: str,
         color: str,
     ) -> None:
@@ -430,14 +430,14 @@ class AnnotationDocument:
 
         Args:
             client_id: ID of the client.
-            start_word: Starting word index, or None to clear.
-            end_word: Ending word index, or None to clear.
+            start_char: Starting char index, or None to clear.
+            end_char: Ending char index, or None to clear.
             name: Client display name.
             color: Client color.
         """
         selection = None
-        if start_word is not None and end_word is not None:
-            selection = {"start_word": start_word, "end_word": end_word}
+        if start_char is not None and end_char is not None:
+            selection = {"start_char": start_char, "end_char": end_char}
 
         state = {
             "client_id": client_id,

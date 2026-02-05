@@ -1134,11 +1134,26 @@ async def _render_document_with_highlights(
             "  const container = document.getElementById('doc-container');\n"
             "  if (!container) return;\n"
             "  let charIndex = 0;\n"
+            "  // Block elements where whitespace-only text nodes should be skipped\n"
+            "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
+            "    'ul','ol','li','dl','dt','dd','div','section','article','aside',\n"
+            "    'header','footer','nav','main','figure','figcaption','blockquote']);\n"
             "  \n"
             "  function processNode(node) {\n"
             "    if (node.nodeType === Node.TEXT_NODE) {\n"
-            "      const text = node.textContent;\n"
+            "      let text = node.textContent;\n"
             "      if (!text) return;\n"
+            "      // Skip whitespace-only text nodes inside block containers\n"
+            "      // These are just formatting (indentation) between HTML tags\n"
+            "      const parent = node.parentNode;\n"
+            "      if (parent && blockTags.has(parent.tagName.toLowerCase())) {\n"
+            "        if (/^[\\s]*$/.test(text)) {\n"
+            "          node.remove();\n"
+            "          return;\n"
+            "        }\n"
+            "      }\n"
+            "      // Normalize whitespace: collapse runs to single space (like HTML)\n"
+            "      text = text.replace(/[\\s]+/g, ' ');\n"
             "      const frag = document.createDocumentFragment();\n"
             "      for (const char of text) {\n"
             "        const span = document.createElement('span');\n"
@@ -1561,19 +1576,162 @@ def _render_add_content_form(workspace_id: UUID) -> None:
         .props("toolbar=[]")
     )  # Hide toolbar for minimal UI
 
+    # Intercept paste, strip CSS client-side, store cleaned HTML.
+    # Browsers include computed CSS (2.7MB for 32KB text). Strip it here.
+    paste_var = f"_pastedHtml_{content_input.id}"
+    ui.add_body_html(f"""
+    <script>
+        window.{paste_var} = null;
+        document.addEventListener('DOMContentLoaded', function() {{
+            const sel = '[id="c{content_input.id}"] .q-editor__content';
+            const tryAttach = () => {{
+                const editorEl = document.querySelector(sel);
+                if (!editorEl) {{
+                    setTimeout(tryAttach, 50);
+                    return;
+                }}
+                console.log('[PASTE-INIT] Editor found, attaching handler');
+                editorEl.addEventListener('paste', function(e) {{
+                    const html = e.clipboardData.getData('text/html');
+                    const text = e.clipboardData.getData('text/plain');
+                    if (!html && !text) return;
+
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    let cleaned = text || '';
+                    const origSize = (html || text).length;
+
+                    if (html) {{
+                        // Parse HTML in hidden iframe
+                        const iframe = document.createElement('iframe');
+                        iframe.style.cssText = 'position:absolute;left:-9999px;';
+                        document.body.appendChild(iframe);
+
+                        iframe.contentDocument.open();
+                        iframe.contentDocument.write(html);
+                        iframe.contentDocument.close();
+
+                        // Properties to preserve from inline styles
+                        const keepStyleProps = ['margin-left', 'margin-right',
+                            'margin-top', 'margin-bottom', 'text-indent',
+                            'padding-left', 'padding-right'];
+
+                        // Strip style/script/img tags
+                        iframe.contentDocument.querySelectorAll('style, script, img')
+                            .forEach(el => el.remove());
+
+                        // Process all elements - preserve important inline styles
+                        iframe.contentDocument.querySelectorAll('*').forEach(el => {{
+                            const existingStyle = el.getAttribute('style') || '';
+                            const keptStyles = [];
+
+                            // Parse inline style for important properties
+                            for (const prop of keepStyleProps) {{
+                                const pat = prop + '\\\\s*:\\\\s*([^;]+)';
+                                const match = existingStyle.match(new RegExp(pat, 'i'));
+                                if (match) {{
+                                    keptStyles.push(prop + ':' + match[1].trim());
+                                }}
+                            }}
+
+                            // Apply preserved styles or remove style attr
+                            if (keptStyles.length > 0) {{
+                                el.setAttribute('style', keptStyles.join(';'));
+                            }} else {{
+                                el.removeAttribute('style');
+                            }}
+
+                            // Remove class attributes
+                            el.removeAttribute('class');
+
+                            // Remove data-* attrs except data-speaker
+                            const dataAttrs = [];
+                            for (const attr of el.attributes) {{
+                                if (attr.name.startsWith('data-') &&
+                                    attr.name !== 'data-speaker') {{
+                                    dataAttrs.push(attr.name);
+                                }}
+                            }}
+                            dataAttrs.forEach(n => el.removeAttribute(n));
+                        }});
+
+                        // Remove empty containers that only have <br> tags
+                        const removeEmpty = () => {{
+                            let removed = 0;
+                            iframe.contentDocument.querySelectorAll('p, div, span')
+                                .forEach(el => {{
+                                const text = el.textContent?.trim();
+                                const noBr = el.innerHTML.replace(/<br\\s*\\/?>/gi, '');
+                                const htmlNoBr = noBr.trim();
+                                if (!text && !htmlNoBr) {{
+                                    el.remove();
+                                    removed++;
+                                }}
+                            }});
+                            return removed;
+                        }};
+                        while (removeEmpty() > 0) {{}}
+
+                        // Clean up empty table elements
+                        const removeEmptyTable = () => {{
+                            let removed = 0;
+                            const doc = iframe.contentDocument;
+                            doc.querySelectorAll('td, tr, table, col').forEach(el => {{
+                                if (!el.textContent?.trim()) {{
+                                    el.remove();
+                                    removed++;
+                                }}
+                            }});
+                            return removed;
+                        }};
+                        while (removeEmptyTable() > 0) {{}}
+
+                        cleaned = iframe.contentDocument.body.innerHTML;
+                        document.body.removeChild(iframe);
+                        console.log('[PASTE] Cleaned:', cleaned.length, 'bytes');
+                    }}
+
+                    window.{paste_var} = cleaned;
+                    const newSize = cleaned.length;
+                    console.log('[PASTE] Stripped:', origSize, '->', newSize,
+                        '(' + Math.round(100 - newSize*100/origSize) + '% reduction)');
+
+                    // Show placeholder with size info
+                    const p = document.createElement('p');
+                    p.style.cssText = 'color:#666;font-style:italic;';
+                    p.textContent = '✓ Content pasted (' +
+                        Math.round(newSize/1024) + ' KB after cleanup). ' +
+                        'Click "Add Document" to process.';
+                    editorEl.replaceChildren(p);
+                }});
+            }};
+            tryAttach();
+        }});
+    </script>
+    """)
+
     async def handle_add_document() -> None:
         """Process input and add document to workspace."""
-        content = content_input.value
+        # Try to get pasted content from JS storage (bypasses websocket limit)
+        stored = await ui.run_javascript(f"window.{paste_var}")
+        content = stored if stored else content_input.value
+        from_paste = bool(stored)
+
         if not content or not content.strip():
             ui.notify("Please enter or paste some content", type="warning")
             return
 
-        detected_type = detect_content_type(content)
-        confirmed_type = await show_content_type_dialog(
-            detected_type=detected_type,
-            preview=content[:500],
+        # Skip dialog if HTML was captured from paste - we know it's HTML
+        confirmed_type: ContentType | None = (
+            "html"
+            if from_paste
+            else (
+                await show_content_type_dialog(
+                    detect_content_type(content), content[:500]
+                )
+            )
         )
-
         if confirmed_type is None:
             return  # User cancelled
 

@@ -448,15 +448,28 @@ def _strip_heavy_attributes(html: str) -> str:
     """Strip heavy attributes to reduce HTML size for websocket transmission.
 
     Removes:
-    - style attributes (inline styles can be huge)
+    - Most style properties (inline styles can be huge)
     - data-* attributes (except data-speaker which we use)
     - class attributes (keep semantic structure, lose styling)
+
+    Preserves:
+    - margin-left, margin-right, text-indent (structural indentation)
+    - padding-left, padding-right (structural spacing)
 
     This is aggressive but necessary for large pasted content where the
     HTML can be 10-50x larger than the text content.
     """
     if not html:
         return html
+
+    # Properties to preserve from inline styles
+    keep_props = {
+        "margin-left",
+        "margin-right",
+        "text-indent",
+        "padding-left",
+        "padding-right",
+    }
 
     tree = LexborHTMLParser(html)
 
@@ -466,16 +479,69 @@ def _strip_heavy_attributes(html: str) -> str:
         attrs_to_remove = []
 
         for attr_name in attrs:
-            # Remove style, class, and most data-* attributes (keep data-speaker)
-            is_style_or_class = attr_name in ("style", "class")
-            is_removable_data = (
-                attr_name.startswith("data-") and attr_name != "data-speaker"
-            )
-            if is_style_or_class or is_removable_data:
+            if attr_name == "style":
+                # Parse and filter style, keeping only structural properties
+                style_val = attrs.get("style") or ""
+                kept_styles: list[str] = []
+                for prop in keep_props:
+                    # Match property: value; pattern
+                    pattern = rf"{re.escape(prop)}\s*:\s*([^;]+)"
+                    match = re.search(pattern, style_val, re.IGNORECASE)
+                    if match:
+                        kept_styles.append(f"{prop}:{match.group(1).strip()}")
+                if kept_styles:
+                    node.attrs["style"] = ";".join(kept_styles)
+                else:
+                    attrs_to_remove.append("style")
+            elif attr_name == "class":
+                attrs_to_remove.append("class")
+            elif attr_name.startswith("data-") and attr_name != "data-speaker":
                 attrs_to_remove.append(attr_name)
 
         for attr_name in attrs_to_remove:
             del node.attrs[attr_name]
+
+    return tree.html or html
+
+
+def _remove_empty_elements(html: str) -> str:
+    """Remove empty paragraphs and divs that only contain whitespace or <br> tags.
+
+    These create excessive vertical whitespace in pasted content, especially
+    from office applications that use empty paragraphs for spacing.
+
+    Note: Preserves at least one content element to avoid returning empty body.
+    """
+    if not html:
+        return html
+
+    tree = LexborHTMLParser(html)
+
+    # Keep removing until no more empty elements found
+    changed = True
+    while changed:
+        changed = False
+        for node in tree.css("p, div, span"):
+            # Get text content (strips HTML)
+            text = (node.text() or "").strip()
+            if text:
+                continue  # Has real text, keep it
+
+            # Check if all children are just <br> tags
+            children = list(node.iter())
+            all_br = all(child.tag == "br" for child in children) if children else True
+
+            if all_br:
+                # Don't remove if it's the only content element in body
+                body = tree.css_first("body")
+                if body:
+                    content_els = [n for n in body.css("p, div, span") if n != node]
+                    if not content_els:
+                        continue  # Keep this one - it's the only content
+
+                # Only <br> tags or empty - remove this element
+                node.decompose()
+                changed = True
 
     return tree.html or html
 
@@ -550,7 +616,11 @@ async def process_input(
     # Step 3: Strip unnecessary attributes to reduce size
     # (pasted HTML often has huge inline styles, data attributes, etc.)
     stripped = _strip_heavy_attributes(preprocessed)
-    final_size = len(stripped)
+
+    # Step 4: Remove empty paragraphs/divs that only contain <br> tags
+    # (Office apps use these for spacing, creates excessive whitespace)
+    cleaned = _remove_empty_elements(stripped)
+    final_size = len(cleaned)
     logger.info(
         "[PIPELINE] Final output: size=%d bytes (%.1f KB), ratio=%.1fx from input",
         final_size,
@@ -560,4 +630,4 @@ async def process_input(
 
     # Return clean HTML - char spans are injected client-side to avoid
     # websocket message size limits (span injection multiplies size ~55x)
-    return stripped
+    return cleaned

@@ -144,8 +144,11 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     # Get processed HTML
     result = tree.html or html
 
-    # Inject speaker labels (if handler found)
-    if handler:
+    # Inject speaker labels (if handler found AND not already present).
+    # Client-side paste handler may have already injected labels —
+    # skip to avoid double-injection (P1 root cause).
+    already_has_labels = "data-speaker=" in result
+    if handler and not already_has_labels:
         markers = handler.get_turn_markers()
 
         # Inject user labels

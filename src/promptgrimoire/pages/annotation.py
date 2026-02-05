@@ -145,6 +145,89 @@ _PAGE_CSS = """
         margin: 0.5em 0;
     }
 
+    /* Normalize headings - prevent oversized inherited styles */
+    .doc-container h1 {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin: 1em 0 0.5em 0;
+    }
+    .doc-container h2 {
+        font-size: 1.3em;
+        font-weight: bold;
+        margin: 0.8em 0 0.4em 0;
+    }
+    .doc-container h3 {
+        font-size: 1.15em;
+        font-weight: bold;
+        margin: 0.6em 0 0.3em 0;
+    }
+    .doc-container h4,
+    .doc-container h5,
+    .doc-container h6 {
+        font-size: 1em;
+        font-weight: bold;
+        margin: 0.5em 0 0.25em 0;
+    }
+
+    /* Blockquotes */
+    .doc-container blockquote {
+        border-left: 3px solid #ccc;
+        padding-left: 1em;
+        margin: 1em 0 1em 0.5em;
+        color: #444;
+    }
+
+    /* Preformatted/code blocks */
+    .doc-container pre {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        padding: 0.8em;
+        overflow-x: auto;
+        white-space: pre;
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.9em;
+        line-height: 1.4 !important;
+    }
+    .doc-container code {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.9em;
+    }
+
+    /* Speaker turn markers for chatbot exports (data-speaker attribute) */
+    .doc-container [data-speaker] {
+        display: block;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    .doc-container [data-speaker="user"]::before {
+        content: "User:";
+        display: inline-block;
+        color: #1a5f7a;
+        background: #e3f2fd;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        margin-bottom: 0.3em;
+    }
+    .doc-container [data-speaker="assistant"]::before {
+        content: "Assistant:";
+        display: inline-block;
+        color: #2e7d32;
+        background: #e8f5e9;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        margin-bottom: 0.3em;
+    }
+
+    /* Thinking block indicators (Claude thinking) */
+    .doc-container [data-thinking] {
+        color: #888;
+        font-style: italic;
+        font-size: 0.9em;
+    }
+
     /* Character spans - inline to flow naturally */
     .doc-container .char {
         /* Keep characters flowing inline */
@@ -1579,9 +1662,11 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     # Intercept paste, strip CSS client-side, store cleaned HTML.
     # Browsers include computed CSS (2.7MB for 32KB text). Strip it here.
     paste_var = f"_pastedHtml_{content_input.id}"
+    platform_var = f"_platformHint_{content_input.id}"
     ui.add_body_html(f"""
     <script>
         window.{paste_var} = null;
+        window.{platform_var} = null;
         document.addEventListener('DOMContentLoaded', function() {{
             const sel = '[id="c{content_input.id}"] .q-editor__content';
             const tryAttach = () => {{
@@ -1592,7 +1677,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                 }}
                 console.log('[PASTE-INIT] Editor found, attaching handler');
                 editorEl.addEventListener('paste', function(e) {{
-                    const html = e.clipboardData.getData('text/html');
+                    let html = e.clipboardData.getData('text/html');
                     const text = e.clipboardData.getData('text/plain');
                     if (!html && !text) return;
 
@@ -1603,6 +1688,72 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                     const origSize = (html || text).length;
 
                     if (html) {{
+                        // Inject speaker labels into raw HTML
+                        // BEFORE stripping (attrs needed for
+                        // detection get stripped later)
+                        const mk = (role) =>
+                            '<div data-speaker="' +
+                            role + '"></div>';
+                        const sp = {{}};
+                        // Build attr/class regex helpers
+                        const ar = (a) =>
+                            '(<[^>]*' + a + '[^>]*>)';
+                        const cr = (c) =>
+                            '(<[^>]*class="[^"]*'
+                            + c + '[^"]*"[^>]*>)';
+                        if (/font-user-message/.test(html)) {{
+                            window.{platform_var} = 'claude';
+                            sp.u = new RegExp(
+                                ar('data-testid="user-message"'),
+                                'gi');
+                            // Match ONLY the primary response
+                            // container (class starts with
+                            // font-claude-response). Exclude:
+                            // - font-claude-response-body (per-para)
+                            // - secondary divs where font-claude-
+                            //   response appears mid-class (these
+                            //   are UI chrome, not content)
+                            sp.a = new RegExp(
+                                '(<[^>]*class="'
+                                + 'font-claude-response'
+                                + '(?!-)[^"]*"[^>]*>)', 'gi');
+                        }} else if (/conversation-turn/.test(html)) {{
+                            // OpenAI already has "You said:"/"ChatGPT said:"
+                            // labels in content — don't inject duplicates
+                            window.{platform_var} = 'openai';
+                        }} else if (/chat-turn-container/.test(html)) {{
+                            // AI Studio has "User"/"Model" text
+                            // labels in content — don't inject
+                            // duplicates (same as OpenAI)
+                            window.{platform_var} = 'aistudio';
+                        }} else if (/message-actions/.test(html)) {{
+                            window.{platform_var} = 'gemini';
+                            // Match only exact tags, not
+                            // user-query-content etc.
+                            // Negative lookahead (?!-) prevents
+                            // matching user-query-content.
+                            sp.u = new RegExp(
+                                '(<user-query(?!-)(?:\\\\s[^>]*)?>)',
+                                'gi');
+                            sp.a = new RegExp(
+                                '(<model-response(?!-)(?:\\\\s[^>]*)?>)',
+                                'gi');
+                        }} else if (/headroom/.test(html)) {{
+                            window.{platform_var} = 'scienceos';
+                            sp.u = new RegExp(
+                                cr('_prompt_'), 'gi');
+                            sp.a = new RegExp(
+                                cr('_markdown_'), 'gi');
+                        }}
+                        if (sp.u) {{
+                            html = html.replace(
+                                sp.u, mk('user') + '$1');
+                            html = html.replace(
+                                sp.a, mk('assistant') + '$1');
+                        }}
+                        console.log('[PASTE] Platform:',
+                            window.{platform_var});
+
                         // Parse HTML in hidden iframe
                         const iframe = document.createElement('iframe');
                         iframe.style.cssText = 'position:absolute;left:-9999px;';
@@ -1612,10 +1763,84 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                         iframe.contentDocument.write(html);
                         iframe.contentDocument.close();
 
+                        // P2: Collapse Claude thinking blocks
+                        // BEFORE stripping classes — we need them
+                        // to identify thinking containers.
+                        if (window.{platform_var} === 'claude') {{
+                            // Find the thinking toggle div by
+                            // its text content and class
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll('div').forEach(
+                                el => {{
+                                const cls = el.className || '';
+                                const txt = el.textContent.trim();
+                                // The toggle container has
+                                // "Thought process" as text.
+                                // It also contains time (18s)
+                                // and an SVG icon.
+                                if (/^Thought process/i.test(txt)
+                                    && txt.length < 200) {{
+                                    // Extract just "Thought process"
+                                    // and time if present
+                                    const timeM = txt.match(
+                                        /(\\d+s)/);
+                                    const label = 'Thought process'
+                                        + (timeM
+                                            ? ' ' + timeM[1] : '');
+                                    const p = iDoc.createElement(
+                                        'p');
+                                    // Use data-thinking attr to
+                                    // survive style stripping;
+                                    // CSS handles presentation
+                                    p.setAttribute(
+                                        'data-thinking', 'true');
+                                    p.textContent = '[' + label
+                                        + ']';
+                                    el.replaceWith(p);
+                                }}
+                            }});
+                            // Also remove thinking CONTENT divs
+                            // Claude wraps thinking text in divs
+                            // with class containing "grid-cols"
+                            // directly after the toggle
+                        }}
+
+                        // P4: Flatten KaTeX/MathML to plain text
+                        // BEFORE stripping classes — we need
+                        // .katex/.katex-display selectors.
+                        {{
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll(
+                                '.katex, .katex-display'
+                            ).forEach(el => {{
+                                const ann = el.querySelector(
+                                    'annotation[encoding='
+                                    + '"application/x-tex"]'
+                                );
+                                const txt = ann
+                                    ? ann.textContent
+                                    : el.textContent;
+                                const span =
+                                    iDoc.createElement('span');
+                                span.textContent = txt;
+                                el.replaceWith(span);
+                            }});
+                            // Also handle bare <math> elements
+                            iDoc.querySelectorAll('math')
+                                .forEach(el => {{
+                                const span =
+                                    iDoc.createElement('span');
+                                span.textContent = el.textContent;
+                                el.replaceWith(span);
+                            }});
+                        }}
+
                         // Properties to preserve from inline styles
                         const keepStyleProps = ['margin-left', 'margin-right',
                             'margin-top', 'margin-bottom', 'text-indent',
                             'padding-left', 'padding-right'];
+                        // Also handle margin/padding shorthand
+                        const shorthandProps = ['margin', 'padding'];
 
                         // Strip style/script/img tags
                         iframe.contentDocument.querySelectorAll('style, script, img')
@@ -1629,9 +1854,33 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             // Parse inline style for important properties
                             for (const prop of keepStyleProps) {{
                                 const pat = prop + '\\\\s*:\\\\s*([^;]+)';
-                                const match = existingStyle.match(new RegExp(pat, 'i'));
-                                if (match) {{
-                                    keptStyles.push(prop + ':' + match[1].trim());
+                                const m = existingStyle.match(
+                                    new RegExp(pat, 'i'));
+                                if (m) {{
+                                    keptStyles.push(
+                                        prop + ':' + m[1].trim());
+                                }}
+                            }}
+                            // Expand margin/padding shorthand
+                            for (const sh of shorthandProps) {{
+                                const pat = '(?:^|;)\\\\s*' + sh
+                                    + '\\\\s*:\\\\s*([^;]+)';
+                                const m = existingStyle.match(
+                                    new RegExp(pat, 'i'));
+                                if (m) {{
+                                    const vals = m[1].trim().split(
+                                        /\\s+/);
+                                    const t = vals[0] || '0';
+                                    const r = vals[1] || t;
+                                    const b = vals[2] || t;
+                                    const l = vals[3] || r;
+                                    // Only keep non-zero values
+                                    if (l !== '0' && l !== '0px')
+                                        keptStyles.push(
+                                            sh + '-left:' + l);
+                                    if (r !== '0' && r !== '0px')
+                                        keptStyles.push(
+                                            sh + '-right:' + r);
                                 }}
                             }}
 
@@ -1645,15 +1894,20 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             // Remove class attributes
                             el.removeAttribute('class');
 
-                            // Remove data-* attrs except data-speaker
+                            // Remove data-* attrs except
+                            // data-speaker and data-thinking
                             const dataAttrs = [];
+                            const keepData = new Set([
+                                'data-speaker',
+                                'data-thinking']);
                             for (const attr of el.attributes) {{
-                                if (attr.name.startsWith('data-') &&
-                                    attr.name !== 'data-speaker') {{
+                                if (attr.name.startsWith('data-')
+                                    && !keepData.has(attr.name)) {{
                                     dataAttrs.push(attr.name);
                                 }}
                             }}
-                            dataAttrs.forEach(n => el.removeAttribute(n));
+                            dataAttrs.forEach(
+                                n => el.removeAttribute(n));
                         }});
 
                         // Remove empty containers that only have <br> tags
@@ -1661,6 +1915,11 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             let removed = 0;
                             iframe.contentDocument.querySelectorAll('p, div, span')
                                 .forEach(el => {{
+                                // Preserve speaker marker divs
+                                // and thinking indicators
+                                if (el.hasAttribute('data-speaker')
+                                    || el.hasAttribute(
+                                        'data-thinking')) return;
                                 const text = el.textContent?.trim();
                                 const noBr = el.innerHTML.replace(/<br\\s*\\/?>/gi, '');
                                 const htmlNoBr = noBr.trim();
@@ -1686,6 +1945,122 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             return removed;
                         }};
                         while (removeEmptyTable() > 0) {{}}
+
+                        // Strip nav elements and empty list items
+                        const doc = iframe.contentDocument;
+                        doc.querySelectorAll('nav').forEach(
+                            el => el.remove());
+                        doc.querySelectorAll('li').forEach(el => {{
+                            if (!el.textContent?.trim())
+                                el.remove();
+                        }});
+
+                        // P5: Flatten <pre> blocks to preserve
+                        // whitespace. OpenAI wraps code in
+                        // <pre><div>...<div><code><span>...
+                        // After class stripping, the intermediate
+                        // divs and spans break formatting.
+                        // Fix: replace <pre> content with plain
+                        // text from the <code> element.
+                        doc.querySelectorAll('pre').forEach(
+                            pre => {{
+                            const code = pre.querySelector(
+                                'code');
+                            if (code) {{
+                                // Preserve the text content
+                                // (includes literal newlines)
+                                const txt = code.textContent;
+                                // Replace pre content with
+                                // just <code>text</code>
+                                const newCode =
+                                    doc.createElement('code');
+                                newCode.textContent = txt;
+                                pre.textContent = '';
+                                pre.appendChild(newCode);
+                            }} else {{
+                                // No <code> child — flatten
+                                // all children to text
+                                const txt = pre.textContent;
+                                pre.textContent = txt;
+                            }}
+                        }});
+
+                        // (P4 KaTeX flatten moved above,
+                        // before attribute stripping)
+
+                        // (P2 thinking collapse moved above,
+                        // before attribute stripping)
+
+                        // P1: Deduplicate speaker labels
+                        // Two rules:
+                        // (a) Same-role consecutive: always remove
+                        //     the earlier one (nesting artefact)
+                        // (b) Different-role consecutive with no
+                        //     real text between: remove earlier
+                        //     (null/empty round)
+                        const FOLLOWING = Node
+                            .DOCUMENT_POSITION_FOLLOWING;
+                        const PRECEDING = Node
+                            .DOCUMENT_POSITION_PRECEDING;
+                        const allSp = Array.from(
+                            doc.querySelectorAll('[data-speaker]'));
+                        const spSet = new Set(allSp);
+                        const toRemove = [];
+                        for (let i = 0; i < allSp.length - 1;
+                                i++) {{
+                            const cur = allSp[i];
+                            const nxt = allSp[i + 1];
+                            const curRole = cur.getAttribute(
+                                'data-speaker');
+                            const nxtRole = nxt.getAttribute(
+                                'data-speaker');
+                            // (a) Same role = always duplicate
+                            if (curRole === nxtRole) {{
+                                toRemove.push(cur);
+                                continue;
+                            }}
+                            // (b) Different role: check for text
+                            // between the two speaker divs.
+                            // Use compareDocumentPosition to
+                            // find text nodes between cur & nxt
+                            // (speaker divs are empty, so
+                            // contains() won't find children).
+                            const tw = doc.createTreeWalker(
+                                doc.body,
+                                NodeFilter.SHOW_TEXT,
+                                null);
+                            let hasContent = false;
+                            while (tw.nextNode()) {{
+                                const n = tw.currentNode;
+                                // Is n after cur?
+                                const afterCur = cur
+                                    .compareDocumentPosition(n)
+                                    & FOLLOWING;
+                                if (!afterCur) continue;
+                                // Is n before nxt?
+                                const beforeNxt = nxt
+                                    .compareDocumentPosition(n)
+                                    & PRECEDING;
+                                if (!beforeNxt) break;
+                                // Skip text inside other speakers
+                                let inSpeaker = false;
+                                for (const s of spSet) {{
+                                    if (s !== cur && s !== nxt
+                                        && s.contains(n)) {{
+                                        inSpeaker = true;
+                                        break;
+                                    }}
+                                }}
+                                if (inSpeaker) continue;
+                                const t = n.textContent.trim();
+                                if (t.length > 2) {{
+                                    hasContent = true;
+                                    break;
+                                }}
+                            }}
+                            if (!hasContent) toRemove.push(cur);
+                        }}
+                        toRemove.forEach(el => el.remove());
 
                         cleaned = iframe.contentDocument.body.innerHTML;
                         document.body.removeChild(iframe);
@@ -1715,6 +2090,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
         """Process input and add document to workspace."""
         # Try to get pasted content from JS storage (bypasses websocket limit)
         stored = await ui.run_javascript(f"window.{paste_var}")
+        platform_hint = await ui.run_javascript(f"window.{platform_var}")
         content = stored if stored else content_input.value
         from_paste = bool(stored)
 
@@ -1739,7 +2115,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
             processed_html = await process_input(
                 content=content,
                 source_type=confirmed_type,
-                platform_hint=None,
+                platform_hint=platform_hint,
             )
             await add_document(
                 workspace_id=workspace_id,

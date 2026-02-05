@@ -522,6 +522,10 @@ def _remove_empty_elements(html: str) -> str:
     while changed:
         changed = False
         for node in tree.css("p, div, span"):
+            # Preserve speaker marker divs (intentionally empty, styled via ::before)
+            if node.attributes.get("data-speaker"):
+                continue
+
             # Get text content (strips HTML)
             text = (node.text() or "").strip()
             if text:

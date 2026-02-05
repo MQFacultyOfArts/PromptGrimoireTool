@@ -10,12 +10,15 @@ HTML-based pipeline for character-level annotation support.
 from __future__ import annotations
 
 import html as html_module
+import logging
 import re
 from typing import Any, Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.export.platforms import preprocess_for_export
+
+logger = logging.getLogger(__name__)
 
 # Content types supported by the pipeline
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")
@@ -441,6 +444,42 @@ def _text_to_html(text: str) -> str:
     return "\n".join(html_parts) if html_parts else "<p></p>"
 
 
+def _strip_heavy_attributes(html: str) -> str:
+    """Strip heavy attributes to reduce HTML size for websocket transmission.
+
+    Removes:
+    - style attributes (inline styles can be huge)
+    - data-* attributes (except data-speaker which we use)
+    - class attributes (keep semantic structure, lose styling)
+
+    This is aggressive but necessary for large pasted content where the
+    HTML can be 10-50x larger than the text content.
+    """
+    if not html:
+        return html
+
+    tree = LexborHTMLParser(html)
+
+    # Process all elements
+    for node in tree.css("*"):
+        attrs = node.attributes
+        attrs_to_remove = []
+
+        for attr_name in attrs:
+            # Remove style, class, and most data-* attributes (keep data-speaker)
+            is_style_or_class = attr_name in ("style", "class")
+            is_removable_data = (
+                attr_name.startswith("data-") and attr_name != "data-speaker"
+            )
+            if is_style_or_class or is_removable_data:
+                attrs_to_remove.append(attr_name)
+
+        for attr_name in attrs_to_remove:
+            del node.attrs[attr_name]
+
+    return tree.html or html
+
+
 async def process_input(
     content: str | bytes,
     source_type: ContentType,
@@ -470,6 +509,14 @@ async def process_input(
     if isinstance(content, bytes):
         content = _decode_bytes(content)
 
+    input_size = len(content)
+    logger.info(
+        "[PIPELINE] Input: type=%s, size=%d bytes (%.1f KB)",
+        source_type,
+        input_size,
+        input_size / 1024,
+    )
+
     # Step 1: Convert to HTML based on source type
     if source_type == "text":
         # Wrap plain text in paragraph tags
@@ -482,9 +529,35 @@ async def process_input(
         msg = f"Conversion from {source_type} not yet implemented (Phase 7)"
         raise NotImplementedError(msg)
 
+    html_size = len(html)
+    logger.info(
+        "[PIPELINE] After conversion: size=%d bytes (%.1f KB), ratio=%.1fx",
+        html_size,
+        html_size / 1024,
+        html_size / max(input_size, 1),
+    )
+
     # Step 2: Preprocess (remove chrome, inject speaker labels)
     preprocessed = preprocess_for_export(html, platform_hint=platform_hint)
+    preproc_size = len(preprocessed)
+    logger.info(
+        "[PIPELINE] After preprocess: size=%d bytes (%.1f KB), ratio=%.1fx",
+        preproc_size,
+        preproc_size / 1024,
+        preproc_size / max(input_size, 1),
+    )
+
+    # Step 3: Strip unnecessary attributes to reduce size
+    # (pasted HTML often has huge inline styles, data attributes, etc.)
+    stripped = _strip_heavy_attributes(preprocessed)
+    final_size = len(stripped)
+    logger.info(
+        "[PIPELINE] Final output: size=%d bytes (%.1f KB), ratio=%.1fx from input",
+        final_size,
+        final_size / 1024,
+        final_size / max(input_size, 1),
+    )
 
     # Return clean HTML - char spans are injected client-side to avoid
     # websocket message size limits (span injection multiplies size ~55x)
-    return preprocessed
+    return stripped

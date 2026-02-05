@@ -10,6 +10,9 @@ ALLOWED_JS_FILES = {
     # HTML paste simulation requires JavaScript to write text/html MIME type.
     # Bounding box measurements for visual regression also require evaluate().
     "test_html_paste_whitespace.py",
+    # Fixture screenshot tests use clipboard paste simulation (same as above)
+    # and DOM introspection (data-speaker element counts, scroll positions).
+    "test_fixture_screenshots.py",
 }
 
 

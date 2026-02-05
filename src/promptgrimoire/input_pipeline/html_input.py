@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import html as html_module
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
@@ -24,9 +24,13 @@ ContentType = Literal["html", "rtf", "docx", "pdf", "text"]
 # Tags to strip entirely (security: NiceGUI rejects script tags)
 _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 
+# Self-closing (void) tags to strip (e.g., base64 images from clipboard paste)
+_STRIP_VOID_TAGS = frozenset(("img",))
+
 # Map of characters that need HTML entity escaping
+# Note: Spaces are NOT converted to &nbsp; - we use CSS white-space: pre-wrap
+# to preserve them. This allows proper word wrapping at word boundaries.
 _CHAR_ESCAPE_MAP: dict[str, str] = {
-    " ": "&nbsp;",  # Preserve spaces as non-breaking for selection
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
@@ -217,6 +221,11 @@ def _process_tag(
         # Don't append - strip the tag entirely
         return skip_pos, char_index
 
+    # Strip void/self-closing tags like img (removes base64 images from clipboard)
+    if tag_name in _STRIP_VOID_TAGS:
+        # Skip this tag entirely - no content to process
+        return tag_end + 1, char_index
+
     # Handle <br> as newline character
     if tag_name == "br":
         result.append(_make_char_span(char_index, "\n"))
@@ -291,15 +300,130 @@ def strip_char_spans(html_with_spans: str) -> str:
     return tree.html or html_with_spans
 
 
+def extract_chars_from_spans(html_with_spans: str) -> list[str]:
+    """Extract characters from char-span HTML, ordered by index.
+
+    Args:
+        html_with_spans: HTML with <span class="char" data-char-index="N"> wrappers.
+
+    Returns:
+        List of characters where index matches data-char-index.
+    """
+    tree = LexborHTMLParser(html_with_spans)
+    chars: dict[int, str] = {}
+
+    for span in tree.css("span.char[data-char-index]"):
+        index_attr = span.attributes.get("data-char-index")
+        if index_attr is not None:
+            try:
+                idx = int(index_attr)
+                # Get text content, decode HTML entities
+                text = span.text() or ""
+                # Handle &nbsp; which appears as \xa0
+                if text == "\xa0":
+                    text = " "
+                chars[idx] = text
+            except ValueError:
+                pass
+
+    if not chars:
+        return []
+
+    # Build ordered list
+    max_idx = max(chars.keys())
+    return [chars.get(i, "") for i in range(max_idx + 1)]
+
+
+def extract_text_from_html(html: str) -> list[str]:
+    """Extract text characters from clean HTML (no char spans).
+
+    Used for building document_chars list server-side when char spans
+    are injected client-side.
+
+    Args:
+        html: Clean HTML without char span wrappers.
+
+    Returns:
+        List of characters in document order.
+    """
+    if not html:
+        return []
+
+    tree = LexborHTMLParser(html)
+
+    # Get body or full content
+    body = tree.body
+    root = body if body else tree.root
+
+    if root is None:
+        return []
+
+    chars: list[str] = []
+
+    def walk_node(node: Any) -> None:
+        """Recursively walk nodes and extract text."""
+        # Skip script, style, etc.
+        if hasattr(node, "tag") and node.tag in _STRIP_TAGS:
+            return
+
+        # Handle <br> as newline
+        if hasattr(node, "tag") and node.tag == "br":
+            chars.append("\n")
+            return
+
+        # Get text content of this node (not children)
+        if hasattr(node, "text_content"):
+            text = node.text_content
+            if text:
+                for char in text:
+                    chars.append(char)
+
+        # Walk children
+        if hasattr(node, "iter"):
+            for child in node.iter():
+                if child != node:  # Don't re-process self
+                    walk_node(child)
+
+    # Use text() which extracts all text content
+    text = root.text() or ""
+    return list(text)
+
+
+def _strip_html_to_text(html_content: str) -> str:
+    """Strip HTML tags to get plain text content.
+
+    Used when QEditor provides HTML but user selected 'text' type.
+    Preserves text content, converts <br> to newlines, removes other tags.
+    """
+    if not html_content:
+        return ""
+
+    tree = LexborHTMLParser(html_content)
+
+    # Get text content - selectolax extracts text from all nodes
+    # Replace <br> and block elements with newlines first
+    for br in tree.css("br"):
+        br.replace_with("\n")
+    for block in tree.css("div, p"):
+        # Add newline after block elements
+        block.insert_after("\n")
+
+    return tree.text() or ""
+
+
 def _text_to_html(text: str) -> str:
     """Convert plain text to HTML paragraphs.
 
     Args:
-        text: Plain text content.
+        text: Plain text content (may contain HTML from QEditor that needs stripping).
 
     Returns:
         HTML with text wrapped in <p> tags, double newlines as paragraph breaks.
     """
+    # If text looks like HTML (from QEditor), strip tags first
+    if "<" in text and ">" in text:
+        text = _strip_html_to_text(text)
+
     # Escape HTML special characters
     escaped = html_module.escape(text)
 
@@ -361,5 +485,6 @@ async def process_input(
     # Step 2: Preprocess (remove chrome, inject speaker labels)
     preprocessed = preprocess_for_export(html, platform_hint=platform_hint)
 
-    # Step 3: Inject char spans
-    return inject_char_spans(preprocessed)
+    # Return clean HTML - char spans are injected client-side to avoid
+    # websocket message size limits (span injection multiplies size ~55x)
+    return preprocessed

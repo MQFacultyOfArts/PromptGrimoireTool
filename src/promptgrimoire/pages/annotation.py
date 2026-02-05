@@ -37,6 +37,7 @@ from promptgrimoire.export.pdf_export import export_annotation_pdf
 from promptgrimoire.input_pipeline.html_input import (
     ContentType,
     detect_content_type,
+    extract_text_from_html,
     process_input,
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
@@ -99,13 +100,59 @@ _PAGE_CSS = """
     .doc-container {
         font-family: "Times New Roman", Times, serif;
         font-size: 12pt;
-        line-height: 1.6;
+        line-height: 1.6 !important;
         padding: 1rem;
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
+        /* Allow horizontal scroll for wide content (tables) */
+        overflow-x: auto;
+    }
+
+    /* Tables: proper table layout, container handles overflow */
+    .doc-container table {
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    .doc-container td,
+    .doc-container th {
+        vertical-align: top;
+        padding: 4px 8px;
+        /* Allow text to wrap in cells */
         word-wrap: break-word;
         overflow-wrap: break-word;
+    }
+
+    /* Lists: ensure proper rendering */
+    .doc-container ol,
+    .doc-container ul {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    .doc-container ol {
+        list-style-type: decimal;
+    }
+    .doc-container ul {
+        list-style-type: disc;
+    }
+    .doc-container li {
+        margin: 0.25em 0;
+        display: list-item;
+    }
+
+    /* Paragraphs */
+    .doc-container p {
+        margin: 0.5em 0;
+    }
+
+    /* Character spans - inline to flow naturally */
+    .doc-container .char {
+        /* Keep characters flowing inline */
+        display: inline;
+        /* Preserve spaces (not using &nbsp;) while allowing word wrap */
+        white-space: pre-wrap;
+        /* Override any bad line-height from pasted content (e.g., 1.5px) */
+        line-height: 1.6 !important;
     }
 
     /* Plain text documents use monospace */
@@ -1018,13 +1065,10 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract characters from raw_content for text extraction when highlighting
-    # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
-    # proper plain-text extraction
-    if hasattr(doc, "raw_content") and doc.raw_content:
-        _, state.document_chars = _process_text_to_char_spans(
-            cast("str", doc.raw_content)
-        )
+    # Extract characters from clean HTML for text extraction when highlighting
+    # (char spans are injected client-side, not stored in DB)
+    if doc.content:
+        state.document_chars = extract_text_from_html(doc.content)
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1081,6 +1125,62 @@ async def _render_document_with_highlights(
         )
         with doc_container:
             ui.html(doc.content, sanitize=False)
+
+        # Inject char spans client-side (avoids websocket size limits)
+        # This wraps each text character in <span class="char" data-char-index="N">
+        # fmt: off
+        inject_spans_js = (
+            "(function() {\n"
+            "  const container = document.getElementById('doc-container');\n"
+            "  if (!container) return;\n"
+            "  let charIndex = 0;\n"
+            "  \n"
+            "  function processNode(node) {\n"
+            "    if (node.nodeType === Node.TEXT_NODE) {\n"
+            "      const text = node.textContent;\n"
+            "      if (!text) return;\n"
+            "      const frag = document.createDocumentFragment();\n"
+            "      for (const char of text) {\n"
+            "        const span = document.createElement('span');\n"
+            "        span.className = 'char';\n"
+            "        span.dataset.charIndex = charIndex++;\n"
+            "        span.textContent = char;\n"
+            "        frag.appendChild(span);\n"
+            "      }\n"
+            "      node.parentNode.replaceChild(frag, node);\n"
+            "    } else if (node.nodeType === Node.ELEMENT_NODE) {\n"
+            "      const tagName = node.tagName.toLowerCase();\n"
+            "      const skip = ['script','style','noscript','template'];\n"
+            "      if (skip.includes(tagName)) {\n"
+            "        return;\n"
+            "      }\n"
+            "      // Handle <br> as newline character\n"
+            "      if (tagName === 'br') {\n"
+            "        const span = document.createElement('span');\n"
+            "        span.className = 'char';\n"
+            "        span.dataset.charIndex = charIndex++;\n"
+            "        span.textContent = '\\n';\n"
+            "        node.parentNode.insertBefore(span, node);\n"
+            "        node.parentNode.removeChild(node);\n"
+            "        return;\n"
+            "      }\n"
+            "      // Process children (copy - modified during iteration)\n"
+            "      const children = Array.from(node.childNodes);\n"
+            "      for (const child of children) {\n"
+            "        processNode(child);\n"
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "  \n"
+            "  // Process the container's children\n"
+            "  const children = Array.from(container.childNodes);\n"
+            "  for (const child of children) {\n"
+            "    processNode(child);\n"
+            "  }\n"
+            "})();"
+        )
+        # fmt: on
+        ui.run_javascript(inject_spans_js)
 
         # Annotations sidebar (~35% of layout)
         # Needs ID for scroll-sync JavaScript positioning

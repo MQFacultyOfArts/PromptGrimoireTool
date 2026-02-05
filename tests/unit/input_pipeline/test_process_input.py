@@ -1,8 +1,13 @@
-"""Tests for process_input() orchestration."""
+"""Tests for process_input() orchestration.
+
+Note: process_input() returns clean HTML without char spans.
+Char spans are injected client-side (in JavaScript) to avoid websocket
+message size limits.
+"""
 
 import pytest
 
-from promptgrimoire.input_pipeline.html_input import process_input, strip_char_spans
+from promptgrimoire.input_pipeline.html_input import process_input
 
 
 class TestProcessInput:
@@ -19,13 +24,17 @@ class TestProcessInput:
         """Plain text is converted to HTML paragraphs."""
         result = await process_input("Hello world", source_type="text")
         assert "<p>" in result
-        assert 'data-char-index="0">' in result
+        assert "Hello world" in result
+        # No char spans - injected client-side
+        assert "data-char-index" not in result
 
     @pytest.mark.asyncio
     async def test_html_passthrough(self) -> None:
-        """HTML content goes through preprocessing and span injection."""
+        """HTML content goes through preprocessing (no span injection)."""
         result = await process_input("<p>Test</p>", source_type="html")
-        assert 'data-char-index="0">' in result
+        assert "Test" in result
+        # No char spans - injected client-side
+        assert "data-char-index" not in result
 
     @pytest.mark.asyncio
     async def test_text_double_newline_paragraphs(self) -> None:
@@ -38,7 +47,9 @@ class TestProcessInput:
     async def test_bytes_input(self) -> None:
         """Bytes input is decoded and processed."""
         result = await process_input(b"<p>Test</p>", source_type="html")
-        assert 'data-char-index="0">' in result
+        assert "Test" in result
+        # No char spans - injected client-side
+        assert "data-char-index" not in result
 
     @pytest.mark.asyncio
     async def test_unsupported_format_raises(self) -> None:
@@ -47,9 +58,10 @@ class TestProcessInput:
             await process_input("content", source_type="rtf")
 
     @pytest.mark.asyncio
-    async def test_output_strippable(self) -> None:
-        """Output can be stripped back to clean HTML."""
+    async def test_returns_clean_html(self) -> None:
+        """Output is clean HTML ready for client-side span injection."""
         result = await process_input("<p>Hello</p>", source_type="html")
-        stripped = strip_char_spans(result)
-        assert "Hello" in stripped
-        assert "data-char-index" not in stripped
+        assert "Hello" in result
+        # Clean HTML - no char spans (they're injected client-side)
+        assert "data-char-index" not in result
+        assert '<span class="char"' not in result

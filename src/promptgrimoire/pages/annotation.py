@@ -998,9 +998,9 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract characters from raw_content for text extraction when highlighting
-    if hasattr(doc, "raw_content") and doc.raw_content:
-        _, state.document_chars = _process_text_to_char_spans(doc.raw_content)
+    # Extract characters from content for text extraction when highlighting
+    if doc.content:
+        _, state.document_chars = _process_text_to_char_spans(doc.content)
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1350,21 +1350,21 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
-        # Get document's original raw_content (preserves newlines)
+        # Get document's content (HTML with character spans)
         doc = await get_document(state.document_id)
-        raw_content = doc.raw_content if doc else ""
+        doc_content = doc.content if doc else ""
 
-        # DEBUG: Log raw_content to see if newlines are present
+        # DEBUG: Log content to see if newlines are present
         logger.info(
-            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
-            len(raw_content),
-            raw_content.count("\n"),
-            raw_content[:200],
+            "[PDF DEBUG] content length=%d, newlines=%d, first 200 chars: %r",
+            len(doc_content),
+            doc_content.count("\n"),
+            doc_content[:200],
         )
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(
-            html_content=raw_content,
+            html_content=doc_content,
             highlights=highlights,
             tag_colours=tag_colours,
             general_notes="",
@@ -1472,7 +1472,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                     workspace_id=workspace_id,
                     type="source",
                     content=html_content,
-                    raw_content=sanitized,
+                    source_type="text",
                     title=None,
                 )
                 # Reload page to show document

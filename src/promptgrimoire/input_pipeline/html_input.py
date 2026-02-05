@@ -5,6 +5,8 @@ All input types (HTML, RTF, DOCX, PDF, plain text) go through the same
 HTML-based pipeline for character-level annotation support.
 """
 
+# Pattern: Functional Core (pure functions for content detection and transformation)
+
 from __future__ import annotations
 
 import html as html_module
@@ -337,6 +339,7 @@ async def process_input(
         Step 1 (conversion) is implemented in Phase 7.
         For now, only HTML and text inputs are fully supported.
     """
+    # Async marker for Phase 7 compatibility (file conversion will add await points).
     # Convert bytes to string if needed
     if isinstance(content, bytes):
         content = _decode_bytes(content)

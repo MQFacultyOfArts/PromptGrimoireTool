@@ -9,6 +9,12 @@ class TestProcessInput:
     """Tests for process_input()."""
 
     @pytest.mark.asyncio
+    async def test_empty_text_input(self) -> None:
+        """Empty text input produces empty paragraph."""
+        result = await process_input("", source_type="text")
+        assert "<p>" in result
+
+    @pytest.mark.asyncio
     async def test_plain_text_conversion(self) -> None:
         """Plain text is converted to HTML paragraphs."""
         result = await process_input("Hello world", source_type="text")

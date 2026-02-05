@@ -13,6 +13,7 @@ from promptgrimoire.pages import (
     sync_demo,
     text_selection,
 )
+from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 __all__ = [
     "annotation",
@@ -21,6 +22,7 @@ __all__ = [
     "index",
     "logviewer",
     "roleplay",
+    "show_content_type_dialog",
     "sync_demo",
     "text_selection",
 ]

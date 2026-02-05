@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
-from nicegui import app, ui
+from nicegui import app, events, ui
 
 from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocument,
@@ -34,7 +34,13 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.input_pipeline.html_input import (
+    ContentType,
+    detect_content_type,
+    process_input,
+)
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.dialogs import show_content_type_dialog
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -211,7 +217,11 @@ async def _create_workspace_and_redirect() -> None:
 
 
 def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
-    """Convert plain text to HTML with character-level spans.
+    """DEPRECATED: Use input_pipeline.html_input.inject_char_spans() instead.
+
+    This function remains for backward compatibility but will be removed.
+
+    Convert plain text to HTML with character-level spans.
 
     Each character (including whitespace) gets a span with data-char-index
     attribute for annotation targeting. Newlines create paragraph breaks
@@ -1392,6 +1402,145 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
 
 
+def _detect_type_from_extension(filename: str) -> ContentType | None:
+    """Detect content type from file extension.
+
+    Returns None if extension is not recognized.
+    """
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    ext_to_type: dict[str, ContentType] = {
+        "html": "html",
+        "htm": "html",
+        "rtf": "rtf",
+        "docx": "docx",
+        "pdf": "pdf",
+        "txt": "text",
+    }
+    return ext_to_type.get(ext)
+
+
+def _get_file_preview(
+    content_bytes: bytes, detected_type: ContentType, filename: str
+) -> str:
+    """Get preview text for file content."""
+    try:
+        if detected_type in ("html", "text"):
+            return content_bytes.decode("utf-8")[:500]
+        return f"[Binary file: {filename}]"
+    except UnicodeDecodeError:
+        return f"[Binary file: {filename}]"
+
+
+def _render_add_content_form(workspace_id: UUID) -> None:
+    """Render the add content form with editor and file upload.
+
+    Extracted from _render_workspace_view to reduce function complexity.
+    """
+    ui.label("Add content to annotate:").classes("mt-4 font-semibold")
+
+    # HTML-aware editor for paste support (Quasar QEditor)
+    content_input = (
+        ui.editor(placeholder="Paste HTML content or type plain text here...")
+        .classes("w-full min-h-32")
+        .props("toolbar=[]")
+    )  # Hide toolbar for minimal UI
+
+    async def handle_add_document() -> None:
+        """Process input and add document to workspace."""
+        content = content_input.value
+        if not content or not content.strip():
+            ui.notify("Please enter or paste some content", type="warning")
+            return
+
+        detected_type = detect_content_type(content)
+        confirmed_type = await show_content_type_dialog(
+            detected_type=detected_type,
+            preview=content[:500],
+        )
+
+        if confirmed_type is None:
+            return  # User cancelled
+
+        try:
+            processed_html = await process_input(
+                content=content,
+                source_type=confirmed_type,
+                platform_hint=None,
+            )
+            await add_document(
+                workspace_id=workspace_id,
+                type="source",
+                content=processed_html,
+                source_type=confirmed_type,
+                title=None,
+            )
+            content_input.value = ""
+            ui.notify("Document added successfully", type="positive")
+            ui.navigate.to(
+                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+            )
+        except Exception as exc:
+            logger.exception("Failed to add document")
+            ui.notify(f"Failed to add document: {exc}", type="negative")
+
+    ui.button("Add Document", on_click=handle_add_document).classes(
+        "bg-green-500 text-white mt-2"
+    )
+
+    async def handle_file_upload(upload_event: events.UploadEventArguments) -> None:
+        """Handle file upload through HTML pipeline."""
+        # Access file via .file attribute (FileUpload dataclass)
+        # ty cannot resolve this type due to TYPE_CHECKING import in nicegui
+        filename: str = upload_event.file.name  # pyright: ignore[reportAttributeAccessIssue]
+        content_bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+
+        # Detect type from extension, fall back to content detection
+        detected_type = _detect_type_from_extension(filename)
+        if detected_type is None:
+            detected_type = detect_content_type(content_bytes)
+
+        preview = _get_file_preview(content_bytes, detected_type, filename)
+        confirmed_type = await show_content_type_dialog(
+            detected_type=detected_type,
+            preview=preview,
+        )
+
+        if confirmed_type is None:
+            ui.notify("Upload cancelled", type="info")
+            return
+
+        try:
+            processed_html = await process_input(
+                content=content_bytes,
+                source_type=confirmed_type,
+                platform_hint=None,
+            )
+            await add_document(
+                workspace_id=workspace_id,
+                type="source",
+                content=processed_html,
+                source_type=confirmed_type,
+                title=filename,
+            )
+            ui.notify(f"Uploaded: {filename}", type="positive")
+            ui.navigate.to(
+                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+            )
+        except NotImplementedError as not_impl_err:
+            ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
+        except Exception as exc:
+            logger.exception("Failed to process uploaded file")
+            ui.notify(f"Failed to process file: {exc}", type="negative")
+
+    # File upload for HTML, RTF, DOCX, PDF, TXT files
+    ui.upload(
+        label="Or upload a file",
+        on_upload=handle_file_upload,
+        auto_upload=True,
+        max_file_size=10 * 1024 * 1024,  # 10 MB limit
+    ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt"').classes("w-full")
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -1458,43 +1607,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         doc = documents[0]
         await _render_document_with_highlights(state, doc, crdt_doc)
     else:
-        # Show add content form
-        ui.label("Add content to annotate:").classes("mt-4 font-semibold")
-
-        content_input = ui.textarea(
-            placeholder="Paste or type your content here..."
-        ).classes("w-full min-h-32")
-
-        async def handle_add_document() -> None:
-            if not content_input.value or not content_input.value.strip():
-                ui.notify("Please enter some content", type="warning")
-                return
-
-            try:
-                # Sanitize: remove control chars (PostgreSQL rejects NULL, others
-                # cause rendering issues). Keep tab/newline/CR.
-                sanitized = "".join(
-                    c for c in content_input.value.strip() if c >= " " or c in "\t\n\r"
-                )
-                html_content, _ = _process_text_to_char_spans(sanitized)
-                await add_document(
-                    workspace_id=workspace_id,
-                    type="source",
-                    content=html_content,
-                    source_type="text",
-                    title=None,
-                )
-                # Reload page to show document
-                ui.navigate.to(
-                    f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-                )
-            except Exception:
-                logger.exception("Failed to add document")
-                ui.notify("Failed to add document", type="negative")
-
-        ui.button("Add Document", on_click=handle_add_document).classes(
-            "bg-green-500 text-white mt-2"
-        )
+        # Show add content form (extracted to reduce function complexity)
+        _render_add_content_form(workspace_id)
 
 
 @page_route(

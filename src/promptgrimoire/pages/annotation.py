@@ -16,7 +16,7 @@ import contextlib
 import html
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
@@ -998,9 +998,13 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract characters from content for text extraction when highlighting
-    if doc.content:
-        _, state.document_chars = _process_text_to_char_spans(doc.content)
+    # Extract characters from raw_content for text extraction when highlighting
+    # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
+    # proper plain-text extraction
+    if hasattr(doc, "raw_content") and doc.raw_content:
+        _, state.document_chars = _process_text_to_char_spans(
+            cast("str", doc.raw_content)
+        )
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1350,21 +1354,26 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
-        # Get document's content (HTML with character spans)
+        # Get document's original raw_content (preserves newlines)
+        # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
+        # proper plain-text extraction
         doc = await get_document(state.document_id)
-        doc_content = doc.content if doc else ""
+        raw_content = cast(
+            "str",
+            doc.raw_content if doc and hasattr(doc, "raw_content") else "",
+        )
 
-        # DEBUG: Log content to see if newlines are present
+        # DEBUG: Log raw_content to see if newlines are present
         logger.info(
-            "[PDF DEBUG] content length=%d, newlines=%d, first 200 chars: %r",
-            len(doc_content),
-            doc_content.count("\n"),
-            doc_content[:200],
+            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
+            len(raw_content),
+            raw_content.count("\n"),
+            raw_content[:200],
         )
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(
-            html_content=doc_content,
+            html_content=raw_content,
             highlights=highlights,
             tag_colours=tag_colours,
             general_notes="",

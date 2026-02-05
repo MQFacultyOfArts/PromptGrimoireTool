@@ -142,25 +142,25 @@ These are quirks of the source HTML, not issues in our pipeline:
 
 | Fixture | Platform | Type | Screenshots | Status | Issues |
 |---------|----------|------|-------------|--------|--------|
-| austlii | none | legal doc | 6 (ul, ol, blockquote) | FAIL | P6: blockquote/margin not indented; orphan bullet (fixed) |
-| chinese_wikipedia | none | article | 4 (ul, h2) | PASS | CJK renders correctly |
-| claude_cooking | claude | chatbot | 6 (ul, ol, h3, speaker) | FAIL | P1: duplicate labels; P2: thinking not differentiated |
-| claude_maths | claude | chatbot | 1 (short doc) | FAIL | P2: thinking not differentiated |
+| austlii | none | legal doc | 6 (ul, ol, blockquote) | PASS | P6 resolved: `_PAGE_CSS` blockquote rule provides border-left+padding |
+| chinese_wikipedia | none | article | 4 (ul, h2) | PASS | CJK renders correctly; nav remnants are source artefact |
+| claude_cooking | claude | chatbot | 6 (ul, ol, h3, speaker) | FAIL | P1: consecutive Assistant: labels (004); P2: thinking plain text not styled; first turn missing User: label |
+| claude_maths | claude | chatbot | 1 (short doc) | FAIL | P2: thinking not differentiated; only user turn visible (fixture has minimal content) |
 | translation_japanese | none | article | 3 (h2) | PASS | |
 | translation_korean | none | article | 1 (short doc) | PASS | |
 | translation_spanish | none | article | 2 (h2) | PASS | Source artefact: all-caps `<p>`, orphan numbers |
-| openai_biblatex | openai | chatbot | 6 (h3, ol, h2) | FAIL | P3: redundant "You said:"/"ChatGPT said:" + our labels |
-| openai_dh_dr | openai | chatbot | 6 (ol, h1, blockquote, h2) | FAIL | P3: redundant labels |
-| openai_dprk_denmark | openai | chatbot | 6 (h2, pre) | FAIL | P3: redundant labels; P4: math garbled; P5: code whitespace |
-| openai_software_long_dr | openai | chatbot | 6 (ul, h1, h2) | FAIL | P3: redundant labels |
-| google_aistudio_image | aistudio | chatbot | 2 (ol) | FAIL | P1: null User: rounds at top |
-| google_aistudio_ux_discussion | aistudio | chatbot | 6 (h1, ol) | FAIL | P1: null User: rounds; source artefact: code-as-headings |
-| google_gemini_debug | gemini | chatbot | 6 (h3, ul, pre, ol) | FAIL | P1: null User: rounds at top |
-| google_gemini_deep_research | gemini | chatbot | 3 (h1, pre) | FAIL | P1: null User: rounds at top |
+| openai_biblatex | openai | chatbot | 8 (h3, ol, h2) | PASS | P3 fixed: no duplicate labels; missing spaces around italic are source artefact |
+| openai_dh_dr | openai | chatbot | 6 (ol, h1, blockquote, h2) | PASS | P3 fixed; blockquotes have left border |
+| openai_dprk_denmark | openai | chatbot | 6 (h2, pre) | FAIL | P4: math garbled (R≈6371R≈6371km); P5: code whitespace lost in `<pre>` |
+| openai_software_long_dr | openai | chatbot | 6 (ul, h1, h2) | PASS | P3 fixed; table renders excellently |
+| google_aistudio_image | aistudio | chatbot | 2 (ol) | FAIL | Inconsistent labels: original "User"/"Model" text + trailing "Assistant:" badge on disclaimer |
+| google_aistudio_ux_discussion | aistudio | chatbot | 6 (h1, ol) | PASS | Original "User" text labels provide speaker distinction; no duplicate injection; ASCII art preserved |
+| google_gemini_debug | gemini | chatbot | 6 (h3, ul, pre, ol) | FAIL | P1: two consecutive User: badges at top (nested user-query elements) |
+| google_gemini_deep_research | gemini | chatbot | 3 (h1, pre) | FAIL | P1: two consecutive User: badges at top |
 | scienceos_loc | scienceos | chatbot | 6 (h1, h2, speaker, h3) | PASS | Clear speaker distinction |
 | scienceos_philsci | none | research report | 6 (h1, h2, h3) | PASS | No platform markers; continuous prose, acceptable |
 
-**Score: 6/17 PASS**
+**Score: 11/17 PASS**
 
 ## Evaluation Process
 

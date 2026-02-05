@@ -109,6 +109,18 @@ uv run python scripts/analyse_fixture.py structure google_aistudio_image
 
 Fixture names can be partial (substring match). Supports both `.html` and `.html.gz` transparently.
 
+### Visual QA Screenshots
+
+`tests/e2e/test_fixture_screenshots.py` renders all fixtures through the annotation pipeline and captures screenshots to `output/fixture_screenshots/`. Each fixture test clears its own stale screenshots (e.g. `austlii_*.png`) before regenerating — no stale files accumulate.
+
+```bash
+# Generate all fixture screenshots (clears output first)
+uv run pytest tests/e2e/test_fixture_screenshots.py -v
+
+# Single fixture
+uv run pytest tests/e2e/test_fixture_screenshots.py -v -k austlii
+```
+
 ## Git Worktrees
 
 This project uses git worktrees for parallel feature development. Worktrees are located in `.worktrees/`.

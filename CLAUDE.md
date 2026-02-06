@@ -35,6 +35,7 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **pycrdt** - CRDT for real-time collaboration
 - **Stytch** - auth (magic links, passkeys, RBAC)
 - **Lark** - parser generator for LaTeX marker tokenization
+- **selectolax** - fast HTML parser (lexbor backend) for input pipeline
 
 ## Development Workflow
 
@@ -163,23 +164,41 @@ The `.serena/project.yml` uses `project_name: "PromptGrimoire"` (directory-based
 ```text
 src/promptgrimoire/
 ├── __init__.py
-├── main.py           # NiceGUI app entry
-├── models/           # Data models (Character, Session, Turn, LorebookEntry)
-├── parsers/          # SillyTavern character card parser
-├── llm/              # Claude API client, lorebook activation, prompt assembly
-├── pages/            # NiceGUI page routes (/roleplay, /logs, /auth, etc.)
-├── auth/             # Stytch integration
-└── crdt/             # pycrdt collaboration logic
+├── main.py              # NiceGUI app entry
+├── cli.py               # CLI tools
+├── models/              # Data models (Character, Session, Turn, LorebookEntry)
+├── parsers/             # SillyTavern character card parser
+├── llm/                 # Claude API client, lorebook activation, prompt assembly
+├── input_pipeline/      # HTML input processing (detection, conversion, char spans)
+│   └── html_input.py    # Content type detection, char span injection, processing
+├── pages/               # NiceGUI page routes
+│   ├── annotation.py    # Main annotation page (HTML input, char-level highlighting)
+│   ├── dialogs.py       # Reusable dialog components (content type confirmation)
+│   └── milkdown_spike.py # Milkdown editor spike
+├── export/              # PDF/LaTeX export
+│   ├── platforms/       # Platform-specific HTML preprocessing (chatbot exports)
+│   └── filters/         # Export filters
+├── auth/                # Stytch integration
+├── db/                  # Database models, engine, CRUD operations
+└── crdt/                # pycrdt collaboration logic
+
+scripts/
+├── analyse_fixture.py   # CLI for inspecting HTML conversation fixtures
+├── setup_latex.py       # TinyTeX installer
+└── html_to_pdf.py       # HTML to PDF conversion script
 
 tests/
-├── conftest.py       # Shared fixtures
-├── fixtures/         # Test data (Becky Bennett character card)
-├── unit/             # Unit tests
-├── integration/      # Integration tests
-└── e2e/              # Playwright E2E tests
+├── conftest.py          # Shared fixtures
+├── fixtures/            # Test data (character cards, HTML conversation fixtures)
+├── unit/                # Unit tests
+│   ├── input_pipeline/  # Input pipeline unit tests
+│   ├── pages/           # Page component unit tests
+│   └── export/          # Export unit tests
+├── integration/         # Integration tests
+└── e2e/                 # Playwright E2E tests
 
-docs/                 # Cached documentation (auto-populated)
-logs/sessions/        # JSONL session logs (auto-created)
+docs/                    # Cached documentation (auto-populated)
+logs/sessions/           # JSONL session logs (auto-created)
 ```
 
 ## Documentation Caching
@@ -234,6 +253,33 @@ Key types in `latex.py`:
 - `MarkerToken` - Token from lexer (TEXT, HLSTART, HLEND, ANNMARKER)
 - `Region` - Text span with frozenset of active highlight indices
 
+## HTML Input Pipeline
+
+The input pipeline (`src/promptgrimoire/input_pipeline/`) processes pasted or uploaded content for character-level annotation. It is the primary entry path for the annotation page.
+
+### Pipeline Steps
+
+1. **Content type detection** -- `detect_content_type()` uses magic bytes (PDF, DOCX, RTF) and structural heuristics (HTML tags) to classify input
+2. **User confirmation** -- `show_content_type_dialog()` lets user override detected type
+3. **Conversion to HTML** -- Plain text is wrapped in `<p>` tags; HTML passes through; RTF/DOCX/PDF conversion is Phase 7 (not yet implemented)
+4. **Platform preprocessing** -- `preprocess_for_export()` strips chatbot chrome and injects speaker labels (with double-injection guard)
+5. **Attribute stripping** -- Removes heavy inline styles, `data-*` attributes (except `data-speaker`), and class attributes to reduce size
+6. **Empty element removal** -- Strips empty `<p>`/`<div>` elements (common in Office-pasted HTML)
+7. **Client-side char span injection** -- `inject_char_spans()` wraps each text character in `<span class="char" data-char-index="N">` for selection targeting
+
+### Key Design Decision: Client-Side Span Injection
+
+Char span injection multiplies HTML size by ~55x. To avoid hitting NiceGUI websocket message size limits (~1MB), the pipeline returns clean HTML from the server. Span injection happens client-side via JavaScript after the HTML is rendered. The server extracts `document_chars` from the clean HTML using `extract_text_from_html()` for highlight coordinate mapping.
+
+### Public API (`input_pipeline/__init__.py`)
+
+- `detect_content_type(content: str | bytes) -> ContentType` -- Classify input content
+- `process_input(content, source_type, platform_hint) -> str` -- Full pipeline (async)
+- `inject_char_spans(html: str) -> str` -- Wrap text chars in indexed spans
+- `strip_char_spans(html: str) -> str` -- Remove span wrappers, preserving content
+- `ContentType` -- Literal type: `"html" | "rtf" | "docx" | "pdf" | "text"`
+- `CONTENT_TYPES` -- Tuple of all supported type strings
+
 ## Database
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
@@ -245,7 +291,7 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 - **CourseEnrollment** - Maps users to courses with course-level roles
 - **Week** - Week within a course with visibility controls
 - **Workspace** - Container for documents and CRDT state (unit of collaboration)
-- **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation)
+- **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (HTML with char spans), `source_type` ("html", "rtf", "docx", "pdf", "text")
 
 ### Workspace Architecture
 
@@ -273,6 +319,7 @@ This separation prevents conflating audit concerns with authorization logic.
 | case_tool | `/case-tool` | **Yes** |
 | roleplay | `/roleplay` | No |
 | logs | `/logs` | No |
+| milkdown_spike | `/demo/milkdown-spike` | No |
 | auth | `/login`, `/logout` | Optional |
 
 ## Authentication

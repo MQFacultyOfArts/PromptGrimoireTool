@@ -49,16 +49,16 @@ class TestWorkspaceDocumentModel:
         assert doc.type == "source"
         assert isinstance(doc.type, str)
 
-    def test_document_has_content_and_raw_content(
+    def test_document_has_content_and_source_type(
         self, make_workspace_document
     ) -> None:
-        """Document stores both HTML content and raw content."""
+        """Document stores HTML content and source_type."""
         doc = make_workspace_document(
             content="<p><span>Hello</span></p>",
-            raw_content="Hello",
+            source_type="html",
         )
         assert doc.content == "<p><span>Hello</span></p>"
-        assert doc.raw_content == "Hello"
+        assert doc.source_type == "html"
 
     def test_document_has_order_index(self, make_workspace_document) -> None:
         """Document has order_index for display ordering."""

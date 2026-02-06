@@ -9,10 +9,12 @@ from promptgrimoire.pages import (
     courses,
     index,
     logviewer,
+    milkdown_spike,
     roleplay,
     sync_demo,
     text_selection,
 )
+from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 __all__ = [
     "annotation",
@@ -20,7 +22,9 @@ __all__ = [
     "courses",
     "index",
     "logviewer",
+    "milkdown_spike",
     "roleplay",
+    "show_content_type_dialog",
     "sync_demo",
     "text_selection",
 ]
@@ -33,6 +37,7 @@ _PAGES = (
     courses,
     index,
     logviewer,
+    milkdown_spike,
     roleplay,
     sync_demo,
     text_selection,

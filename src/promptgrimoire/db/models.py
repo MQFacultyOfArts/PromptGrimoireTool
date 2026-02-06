@@ -187,8 +187,8 @@ class WorkspaceDocument(SQLModel, table=True):
         id: Primary key UUID, auto-generated.
         workspace_id: Foreign key to Workspace (CASCADE DELETE).
         type: Domain-defined type string ("source", "draft", "ai_conversation").
-        content: HTML with word-level spans for annotation.
-        raw_content: Original pasted/uploaded text.
+        content: HTML with character-level spans for annotation.
+        source_type: Content type - "html", "rtf", "docx", "pdf", or "text".
         order_index: Display order within workspace.
         title: Optional document title.
         created_at: Timestamp when document was added.
@@ -200,7 +200,7 @@ class WorkspaceDocument(SQLModel, table=True):
     workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
     type: str = Field(max_length=50)
     content: str = Field(sa_column=Column(sa.Text(), nullable=False))
-    raw_content: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    source_type: str = Field(max_length=20)  # "html", "rtf", "docx", "pdf", "text"
     order_index: int = Field(default=0)
     title: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(

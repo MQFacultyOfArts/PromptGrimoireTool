@@ -113,7 +113,7 @@ class TestAddDocument:
             workspace_id=workspace.id,
             type="source",
             content="<p><span>Hello</span></p>",
-            raw_content="Hello",
+            source_type="text",
             title="My Document",
         )
 
@@ -121,7 +121,7 @@ class TestAddDocument:
         assert doc.workspace_id == workspace.id
         assert doc.type == "source"
         assert doc.content == "<p><span>Hello</span></p>"
-        assert doc.raw_content == "Hello"
+        assert doc.source_type == "text"
         assert doc.title == "My Document"
         assert doc.order_index == 0
 
@@ -137,13 +137,13 @@ class TestAddDocument:
             workspace_id=workspace.id,
             type="source",
             content="Doc 1",
-            raw_content="Doc 1",
+            source_type="text",
         )
         doc2 = await add_document(
             workspace_id=workspace.id,
             type="draft",
             content="Doc 2",
-            raw_content="Doc 2",
+            source_type="text",
         )
 
         assert doc1.order_index == 0
@@ -165,13 +165,13 @@ class TestListDocuments:
             workspace_id=workspace.id,
             type="source",
             content="First",
-            raw_content="First",
+            source_type="text",
         )
         await add_document(
             workspace_id=workspace.id,
             type="draft",
             content="Second",
-            raw_content="Second",
+            source_type="text",
         )
 
         docs = await list_documents(workspace.id)
@@ -212,13 +212,13 @@ class TestReorderDocuments:
             workspace_id=workspace.id,
             type="source",
             content="First",
-            raw_content="First",
+            source_type="text",
         )
         doc2 = await add_document(
             workspace_id=workspace.id,
             type="draft",
             content="Second",
-            raw_content="Second",
+            source_type="text",
         )
 
         # Reverse order
@@ -245,7 +245,7 @@ class TestCascadeDelete:
             workspace_id=workspace.id,
             type="source",
             content="Will be deleted",
-            raw_content="Will be deleted",
+            source_type="text",
         )
 
         await delete_workspace(workspace.id)
@@ -271,8 +271,8 @@ class TestCRDTRoundTrip:
         # Create document with data
         doc = AnnotationDocument("byte-test")
         doc.add_highlight(
-            start_word=0,
-            end_word=10,
+            start_char=0,
+            end_char=10,
             tag="test",
             text="Test text",
             author="Author",
@@ -308,8 +308,8 @@ class TestCRDTRoundTrip:
         doc = AnnotationDocument("large-test")
         for i in range(100):
             doc.add_highlight(
-                start_word=i * 10,
-                end_word=i * 10 + 5,
+                start_char=i * 10,
+                end_char=i * 10 + 5,
                 tag="issue" if i % 2 == 0 else "citation",
                 text=f"Highlight number {i} with some longer text to increase size",
                 author=f"Author {i % 5}",

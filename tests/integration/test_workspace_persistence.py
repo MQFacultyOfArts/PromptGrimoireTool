@@ -35,8 +35,8 @@ class TestWorkspacePersistence:
         # Create document and register
         doc = AnnotationDocument(f"ws-{workspace.id}")
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Test",
             author="Author",
@@ -71,16 +71,16 @@ class TestWorkspacePersistence:
         doc = AnnotationDocument(f"ws-{workspace.id}")
         doc_uuid = str(uuid4())
         hl1_id = doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="First",
             author="Author",
             document_id=doc_uuid,
         )
         hl2_id = doc.add_highlight(
-            start_word=10,
-            end_word=15,
+            start_char=10,
+            end_char=15,
             tag="citation",
             text="Second",
             author="Author",
@@ -127,8 +127,8 @@ class TestWorkspaceLoading:
         initial_doc = AnnotationDocument("initial")
         doc_uuid = str(uuid4())
         hl_id = initial_doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Persisted highlight",
             author="Author",
@@ -212,8 +212,8 @@ class TestWorkspaceCRDTRoundTrip:
 
         # 3. Add annotations
         hl1 = doc.add_highlight(
-            start_word=0,
-            end_word=10,
+            start_char=0,
+            end_char=10,
             tag="issue",
             text="The main legal issue here",
             author="Test Author",
@@ -221,8 +221,8 @@ class TestWorkspaceCRDTRoundTrip:
             document_id=workspace_doc_id,
         )
         hl2 = doc.add_highlight(
-            start_word=20,
-            end_word=30,
+            start_char=20,
+            end_char=30,
             tag="citation",
             text="Smith v Jones [2024]",
             author="Test Author",
@@ -276,24 +276,24 @@ class TestWorkspaceCRDTRoundTrip:
         doc = await registry.get_or_create_for_workspace(workspace.id)
 
         doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="issue",
             text="Doc A hl 1",
             author="Author",
             document_id=doc_a_id,
         )
         doc.add_highlight(
-            start_word=10,
-            end_word=15,
+            start_char=10,
+            end_char=15,
             tag="citation",
             text="Doc B hl 1",
             author="Author",
             document_id=doc_b_id,
         )
         doc.add_highlight(
-            start_word=20,
-            end_word=25,
+            start_char=20,
+            end_char=25,
             tag="issue",
             text="Doc A hl 2",
             author="Author",

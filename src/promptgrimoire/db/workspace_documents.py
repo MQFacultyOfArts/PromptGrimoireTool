@@ -21,7 +21,7 @@ async def add_document(
     workspace_id: UUID,
     type: str,
     content: str,
-    raw_content: str,
+    source_type: str,
     title: str | None = None,
 ) -> WorkspaceDocument:
     """Add a document to a workspace.
@@ -31,8 +31,8 @@ async def add_document(
     Args:
         workspace_id: The workspace UUID.
         type: Document type ("source", "draft", "ai_conversation", etc.).
-        content: HTML content with word-level spans.
-        raw_content: Original pasted/uploaded text.
+        content: HTML content with character-level spans.
+        source_type: Content type - "html", "rtf", "docx", "pdf", or "text".
         title: Optional document title.
 
     Returns:
@@ -52,7 +52,7 @@ async def add_document(
             workspace_id=workspace_id,
             type=type,
             content=content,
-            raw_content=raw_content,
+            source_type=source_type,
             title=title,
             order_index=next_index,
         )

@@ -1,4 +1,4 @@
-"""Test that raw_content newlines are preserved in PDF export."""
+"""Test that plain text newlines are preserved in PDF export."""
 
 from promptgrimoire.export.pdf_export import _plain_text_to_html
 

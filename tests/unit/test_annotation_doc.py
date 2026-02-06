@@ -75,8 +75,8 @@ class TestHighlights:
         doc = AnnotationDocument("test-doc")
 
         highlight_id = doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="jurisdiction",
             text="test text",
             author="TestAuthor",
@@ -92,8 +92,8 @@ class TestHighlights:
         doc = AnnotationDocument("test-doc")
 
         highlight_id = doc.add_highlight(
-            start_word=0,
-            end_word=5,
+            start_char=0,
+            end_char=5,
             tag="jurisdiction",
             text="test text",
             author="TestAuthor",

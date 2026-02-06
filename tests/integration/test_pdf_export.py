@@ -148,8 +148,8 @@ class TestMarginnoteExportPipeline:
         highlights = [
             {
                 "id": "h1",
-                "start_word": 3,
-                "end_word": 5,
+                "start_char": 3,
+                "end_char": 5,
                 "tag": "jurisdiction",
                 "text": "test document",
                 "author": "Tester",
@@ -202,8 +202,8 @@ class TestMarginnoteExportPipeline:
         highlights = [
             {
                 "id": "h1",
-                "start_word": 0,
-                "end_word": 4,
+                "start_char": 0,
+                "end_char": 4,
                 "tag": "decision",
                 "text": "The court held that",
                 "author": "Alice",
@@ -358,8 +358,8 @@ class TestI18nPdfExport:
         highlights = [
             {
                 "id": "h1",
-                "start_word": 0,
-                "end_word": 1,
+                "start_char": 0,
+                "end_char": 1,
                 "tag": "jurisdiction",
                 "text": "这是中文",
                 "author": "Tester",

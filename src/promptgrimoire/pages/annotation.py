@@ -16,11 +16,11 @@ import contextlib
 import html
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
-from nicegui import app, ui
+from nicegui import app, events, ui
 
 from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocument,
@@ -34,7 +34,14 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.input_pipeline.html_input import (
+    ContentType,
+    detect_content_type,
+    extract_text_from_html,
+    process_input,
+)
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.dialogs import show_content_type_dialog
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -53,13 +60,13 @@ class _ClientState:
         self.callback = callback
         self.color = color
         self.name = name
-        self.cursor_word: int | None = None
+        self.cursor_char: int | None = None
         self.selection_start: int | None = None
         self.selection_end: int | None = None
 
-    def set_cursor(self, word_index: int | None) -> None:
+    def set_cursor(self, char_index: int | None) -> None:
         """Update cursor position."""
-        self.cursor_word = word_index
+        self.cursor_char = char_index
 
     def set_selection(self, start: int | None, end: int | None) -> None:
         """Update selection range."""
@@ -68,13 +75,13 @@ class _ClientState:
 
     def to_cursor_dict(self) -> dict[str, Any]:
         """Get cursor as dict for CSS generation."""
-        return {"word": self.cursor_word, "name": self.name, "color": self.color}
+        return {"char": self.cursor_char, "name": self.name, "color": self.color}
 
     def to_selection_dict(self) -> dict[str, Any]:
         """Get selection as dict for CSS generation."""
         return {
-            "start_word": self.selection_start,
-            "end_word": self.selection_end,
+            "start_char": self.selection_start,
+            "end_char": self.selection_end,
             "name": self.name,
             "color": self.color,
         }
@@ -93,11 +100,150 @@ _PAGE_CSS = """
     .doc-container {
         font-family: "Times New Roman", Times, serif;
         font-size: 12pt;
-        line-height: 1.6;
+        line-height: 1.6 !important;
         padding: 1rem;
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
+        /* Allow horizontal scroll for wide content (tables) */
+        overflow-x: auto;
+    }
+
+    /* Tables: proper table layout, container handles overflow */
+    .doc-container table {
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    .doc-container td,
+    .doc-container th {
+        vertical-align: top;
+        padding: 4px 8px;
+        /* Allow text to wrap in cells */
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* Lists: ensure proper rendering */
+    .doc-container ol,
+    .doc-container ul {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    .doc-container ol {
+        list-style-type: decimal;
+    }
+    .doc-container ul {
+        list-style-type: disc;
+    }
+    .doc-container li {
+        margin: 0.25em 0;
+        display: list-item;
+    }
+
+    /* Paragraphs */
+    .doc-container p {
+        margin: 0.5em 0;
+    }
+
+    /* Normalize headings - prevent oversized inherited styles */
+    .doc-container h1 {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin: 1em 0 0.5em 0;
+    }
+    .doc-container h2 {
+        font-size: 1.3em;
+        font-weight: bold;
+        margin: 0.8em 0 0.4em 0;
+    }
+    .doc-container h3 {
+        font-size: 1.15em;
+        font-weight: bold;
+        margin: 0.6em 0 0.3em 0;
+    }
+    .doc-container h4,
+    .doc-container h5,
+    .doc-container h6 {
+        font-size: 1em;
+        font-weight: bold;
+        margin: 0.5em 0 0.25em 0;
+    }
+
+    /* Blockquotes */
+    .doc-container blockquote {
+        border-left: 3px solid #ccc;
+        padding-left: 1em;
+        margin: 1em 0 1em 0.5em;
+        color: #444;
+    }
+
+    /* Preformatted/code blocks */
+    .doc-container pre {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        padding: 0.8em;
+        overflow-x: auto;
+        white-space: pre;
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.9em;
+        line-height: 1.4 !important;
+    }
+    .doc-container code {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.9em;
+    }
+
+    /* Speaker turn markers for chatbot exports (data-speaker attribute) */
+    .doc-container [data-speaker] {
+        display: block;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    .doc-container [data-speaker="user"]::before {
+        content: "User:";
+        display: inline-block;
+        color: #1a5f7a;
+        background: #e3f2fd;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        margin-bottom: 0.3em;
+    }
+    .doc-container [data-speaker="assistant"]::before {
+        content: "Assistant:";
+        display: inline-block;
+        color: #2e7d32;
+        background: #e8f5e9;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        margin-bottom: 0.3em;
+    }
+
+    /* Thinking block indicators (Claude thinking) */
+    .doc-container [data-thinking] {
+        color: #888;
+        font-style: italic;
+        font-size: 0.9em;
+    }
+
+    /* Character spans - inline to flow naturally */
+    .doc-container .char {
+        /* Keep characters flowing inline */
+        display: inline;
+        /* Preserve spaces (not using &nbsp;) while allowing word wrap */
+        white-space: pre-wrap;
+        /* Override any bad line-height from pasted content (e.g., 1.5px) */
+        line-height: 1.6 !important;
+    }
+
+    /* Plain text documents use monospace */
+    .doc-container.source-text {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+        font-size: 11pt;
+        white-space: pre-wrap;
     }
 
     /* Compact tag toolbar in header */
@@ -211,7 +357,11 @@ async def _create_workspace_and_redirect() -> None:
 
 
 def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
-    """Convert plain text to HTML with character-level spans.
+    """DEPRECATED: Use input_pipeline.html_input.inject_char_spans() instead.
+
+    This function remains for backward compatibility but will be removed.
+
+    Convert plain text to HTML with character-level spans.
 
     Each character (including whitespace) gets a span with data-char-index
     attribute for annotation targeting. Newlines create paragraph breaks
@@ -277,8 +427,8 @@ def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
     # Build char -> list of (highlight_index, tag_color) mapping
     char_highlights: dict[int, list[str]] = {}
     for hl in highlights:
-        start = int(hl.get("start_word", 0))
-        end = int(hl.get("end_word", 0))
+        start = int(hl.get("start_char", 0))
+        end = int(hl.get("end_char", 0))
         hex_color = _get_tag_color(hl.get("tag", "highlight"))
         for i in range(start, end):
             if i not in char_highlights:
@@ -323,20 +473,20 @@ def _build_remote_cursor_css(
     for cid, cursor in cursors.items():
         if cid == exclude_client_id:
             continue
-        word = cursor.get("word")
+        char_idx = cursor.get("char")
         color = cursor.get("color", "#2196f3")
         name = cursor.get("name", "User")
-        if word is None:
+        if char_idx is None:
             continue
         # Cursor indicator using box-shadow (no layout shift)
         rules.append(
-            f'[data-char-index="{word}"] {{ '
+            f'[data-char-index="{char_idx}"] {{ '
             f"position: relative; "
             f"box-shadow: inset 2px 0 0 0 {color}; }}"
         )
         # Floating name label
         rules.append(
-            f'[data-char-index="{word}"]::before {{ '
+            f'[data-char-index="{char_idx}"]::before {{ '
             f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
             f"font-size: 0.6rem; background: {color}; color: white; "
             f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
@@ -353,8 +503,8 @@ def _build_remote_selection_css(
     for cid, sel in selections.items():
         if cid == exclude_client_id:
             continue
-        start = sel.get("start_word")
-        end = sel.get("end_word")
+        start = sel.get("start_char")
+        end = sel.get("end_char")
         color = sel.get("color", "#ffeb3b")
         name = sel.get("name", "User")
         if start is None or end is None:
@@ -583,9 +733,9 @@ def _build_annotation_card(
     author = highlight.get("author", "Unknown")
     full_text = highlight.get("text", "")
 
-    # Get word positions for scroll-sync positioning
-    start_word = highlight.get("start_word", 0)
-    end_word = highlight.get("end_word", start_word)
+    # Get char positions for scroll-sync positioning
+    start_char = highlight.get("start_char", 0)
+    end_char = highlight.get("end_char", start_char)
 
     # Get para_ref if stored
     para_ref = highlight.get("para_ref", "")
@@ -604,7 +754,7 @@ def _build_annotation_card(
         .style(f"border-left: 4px solid {color};")
         .props(
             f'data-testid="annotation-card" data-highlight-id="{highlight_id}" '
-            f'data-start-word="{start_word}" data-end-word="{end_word}"'
+            f'data-start-char="{start_char}" data-end-char="{end_char}"'
         )
     )
 
@@ -649,7 +799,7 @@ def _build_annotation_card(
             with ui.row().classes("gap-1"):
                 # Go-to-highlight button - scrolls to highlight and flashes it
                 async def goto_highlight(
-                    sc: int = start_word, ec: int = end_word
+                    sc: int = start_char, ec: int = end_char
                 ) -> None:
                     # fmt: off
                     # Flash ALL chars in the highlight range, not just start
@@ -779,7 +929,7 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
     if state.save_status:
         state.save_status.text = "Saving..."
 
-    # Add highlight to CRDT (end_word is exclusive)
+    # Add highlight to CRDT (end_char is exclusive)
     start = min(state.selection_start, state.selection_end)
     end = max(state.selection_start, state.selection_end) + 1
 
@@ -793,8 +943,8 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         highlighted_text = "".join(chars_slice)
 
     state.crdt_doc.add_highlight(
-        start_word=start,
-        end_word=end,
+        start_char=start,
+        end_char=end,
         tag=tag_value,
         text=highlighted_text,
         author=state.user_name,
@@ -998,9 +1148,10 @@ async def _render_document_with_highlights(
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
 
-    # Extract characters from raw_content for text extraction when highlighting
-    if hasattr(doc, "raw_content") and doc.raw_content:
-        _, state.document_chars = _process_text_to_char_spans(doc.raw_content)
+    # Extract characters from clean HTML for text extraction when highlighting
+    # (char spans are injected client-side, not stored in DB)
+    if doc.content:
+        state.document_chars = extract_text_from_html(doc.content)
 
     # Load existing highlights and build initial CSS
     highlights = crdt_doc.get_highlights_for_document(str(doc.id))
@@ -1045,14 +1196,89 @@ async def _render_document_with_highlights(
     with layout_wrapper:
         # Document content - proper readable width (~65% of layout)
         # Needs ID for scroll-sync JavaScript positioning
+        # Add source-text class for monospace rendering of plain text
+        container_classes = "doc-container"
+        if hasattr(doc, "source_type") and doc.source_type == "text":
+            container_classes += " source-text"
         doc_container = (
             ui.element("div")
-            .classes("doc-container")
+            .classes(container_classes)
             .style("flex: 2; min-width: 600px; max-width: 900px;")
             .props('id="doc-container"')
         )
         with doc_container:
             ui.html(doc.content, sanitize=False)
+
+        # Inject char spans client-side (avoids websocket size limits)
+        # This wraps each text character in <span class="char" data-char-index="N">
+        # fmt: off
+        inject_spans_js = (
+            "(function() {\n"
+            "  const container = document.getElementById('doc-container');\n"
+            "  if (!container) return;\n"
+            "  let charIndex = 0;\n"
+            "  // Block elements where whitespace-only text nodes should be skipped\n"
+            "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
+            "    'ul','ol','li','dl','dt','dd','div','section','article','aside',\n"
+            "    'header','footer','nav','main','figure','figcaption','blockquote']);\n"
+            "  \n"
+            "  function processNode(node) {\n"
+            "    if (node.nodeType === Node.TEXT_NODE) {\n"
+            "      let text = node.textContent;\n"
+            "      if (!text) return;\n"
+            "      // Skip whitespace-only text nodes inside block containers\n"
+            "      // These are just formatting (indentation) between HTML tags\n"
+            "      const parent = node.parentNode;\n"
+            "      if (parent && blockTags.has(parent.tagName.toLowerCase())) {\n"
+            "        if (/^[\\s]*$/.test(text)) {\n"
+            "          node.remove();\n"
+            "          return;\n"
+            "        }\n"
+            "      }\n"
+            "      // Normalize whitespace: collapse runs to single space (like HTML)\n"
+            "      text = text.replace(/[\\s]+/g, ' ');\n"
+            "      const frag = document.createDocumentFragment();\n"
+            "      for (const char of text) {\n"
+            "        const span = document.createElement('span');\n"
+            "        span.className = 'char';\n"
+            "        span.dataset.charIndex = charIndex++;\n"
+            "        span.textContent = char;\n"
+            "        frag.appendChild(span);\n"
+            "      }\n"
+            "      node.parentNode.replaceChild(frag, node);\n"
+            "    } else if (node.nodeType === Node.ELEMENT_NODE) {\n"
+            "      const tagName = node.tagName.toLowerCase();\n"
+            "      const skip = ['script','style','noscript','template'];\n"
+            "      if (skip.includes(tagName)) {\n"
+            "        return;\n"
+            "      }\n"
+            "      // Handle <br> as newline character\n"
+            "      if (tagName === 'br') {\n"
+            "        const span = document.createElement('span');\n"
+            "        span.className = 'char';\n"
+            "        span.dataset.charIndex = charIndex++;\n"
+            "        span.textContent = '\\n';\n"
+            "        node.parentNode.insertBefore(span, node);\n"
+            "        node.parentNode.removeChild(node);\n"
+            "        return;\n"
+            "      }\n"
+            "      // Process children (copy - modified during iteration)\n"
+            "      const children = Array.from(node.childNodes);\n"
+            "      for (const child of children) {\n"
+            "        processNode(child);\n"
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "  \n"
+            "  // Process the container's children\n"
+            "  const children = Array.from(container.childNodes);\n"
+            "  for (const child of children) {\n"
+            "    processNode(child);\n"
+            "  }\n"
+            "})();"
+        )
+        # fmt: on
+        ui.run_javascript(inject_spans_js)
 
         # Annotations sidebar (~35% of layout)
         # Needs ID for scroll-sync JavaScript positioning
@@ -1084,13 +1310,13 @@ async def _render_document_with_highlights(
         "  if (!docC || !annC) return;\n"
         "  const MIN_GAP = 8;\n"
         "  function positionCards() {\n"
-        "    const cards = Array.from(annC.querySelectorAll('[data-start-word]'));\n"
+        "    const cards = Array.from(annC.querySelectorAll('[data-start-char]'));\n"
         "    if (cards.length === 0) return;\n"
         "    const docRect = docC.getBoundingClientRect();\n"
         "    const annRect = annC.getBoundingClientRect();\n"
         "    const containerOffset = annRect.top - docRect.top;\n"
         "    const cardInfos = cards.map(card => {\n"
-        "      const sc = parseInt(card.dataset.startWord);\n"
+        "      const sc = parseInt(card.dataset.startChar);\n"
         "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
         "      if (!cs) return null;\n"
         "      const cr = cs.getBoundingClientRect();\n"
@@ -1104,7 +1330,7 @@ async def _render_document_with_highlights(
         "    let minY = 0;\n"
         "    for (const info of cardInfos) {\n"
         "      const sc = info.startChar;\n"
-        "      const ec = parseInt(info.card.dataset.endWord) || sc;\n"
+        "      const ec = parseInt(info.card.dataset.endChar) || sc;\n"
         "      var qs='[data-char-index=\"'+sc+'\"]';\n"
         "      const startCS = docC.querySelector(qs);\n"
         "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
@@ -1137,8 +1363,8 @@ async def _render_document_with_highlights(
         "  let hoveredCard = null;\n"
         "  function clearHover() {\n"
         "    if (!hoveredCard) return;\n"
-        "    const sc = parseInt(hoveredCard.dataset.startWord);\n"
-        "    const ec = parseInt(hoveredCard.dataset.endWord) || sc;\n"
+        "    const sc = parseInt(hoveredCard.dataset.startChar);\n"
+        "    const ec = parseInt(hoveredCard.dataset.endChar) || sc;\n"
         "    for (let i = sc; i < ec; i++) {\n"
         "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
         "      if (c) c.classList.remove('card-hover-highlight');\n"
@@ -1146,13 +1372,13 @@ async def _render_document_with_highlights(
         "    hoveredCard = null;\n"
         "  }\n"
         "  annC.addEventListener('mouseover', function(e) {\n"
-        "    const card = e.target.closest('[data-start-word]');\n"
+        "    const card = e.target.closest('[data-start-char]');\n"
         "    if (card === hoveredCard) return;\n"
         "    clearHover();\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sc = parseInt(card.dataset.startWord);\n"
-        "    const ec = parseInt(card.dataset.endWord) || sc;\n"
+        "    const sc = parseInt(card.dataset.startChar);\n"
+        "    const ec = parseInt(card.dataset.endChar) || sc;\n"
         "    for (let i = sc; i < ec; i++) {\n"
         "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
         "      if (c) c.classList.add('card-hover-highlight');\n"
@@ -1351,8 +1577,13 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
         # Get document's original raw_content (preserves newlines)
+        # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
+        # proper plain-text extraction
         doc = await get_document(state.document_id)
-        raw_content = doc.raw_content if doc else ""
+        raw_content = cast(
+            "str",
+            doc.raw_content if doc and hasattr(doc, "raw_content") else "",
+        )
 
         # DEBUG: Log raw_content to see if newlines are present
         logger.info(
@@ -1381,6 +1612,583 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         notification.dismiss()
         logger.exception("Failed to export PDF")
         ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
+
+
+def _detect_type_from_extension(filename: str) -> ContentType | None:
+    """Detect content type from file extension.
+
+    Returns None if extension is not recognized.
+    """
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    ext_to_type: dict[str, ContentType] = {
+        "html": "html",
+        "htm": "html",
+        "rtf": "rtf",
+        "docx": "docx",
+        "pdf": "pdf",
+        "txt": "text",
+        "md": "text",
+        "markdown": "text",
+    }
+    return ext_to_type.get(ext)
+
+
+def _get_file_preview(
+    content_bytes: bytes, detected_type: ContentType, filename: str
+) -> str:
+    """Get preview text for file content."""
+    try:
+        if detected_type in ("html", "text"):
+            return content_bytes.decode("utf-8")[:500]
+        return f"[Binary file: {filename}]"
+    except UnicodeDecodeError:
+        return f"[Binary file: {filename}]"
+
+
+def _render_add_content_form(workspace_id: UUID) -> None:
+    """Render the add content form with editor and file upload.
+
+    Extracted from _render_workspace_view to reduce function complexity.
+    """
+    ui.label("Add content to annotate:").classes("mt-4 font-semibold")
+
+    # HTML-aware editor for paste support (Quasar QEditor)
+    content_input = (
+        ui.editor(placeholder="Paste HTML content or type plain text here...")
+        .classes("w-full min-h-32")
+        .props("toolbar=[]")
+    )  # Hide toolbar for minimal UI
+
+    # Intercept paste, strip CSS client-side, store cleaned HTML.
+    # Browsers include computed CSS (2.7MB for 32KB text). Strip it here.
+    paste_var = f"_pastedHtml_{content_input.id}"
+    platform_var = f"_platformHint_{content_input.id}"
+    ui.add_body_html(f"""
+    <script>
+        window.{paste_var} = null;
+        window.{platform_var} = null;
+        document.addEventListener('DOMContentLoaded', function() {{
+            const sel = '[id="c{content_input.id}"] .q-editor__content';
+            const tryAttach = () => {{
+                const editorEl = document.querySelector(sel);
+                if (!editorEl) {{
+                    setTimeout(tryAttach, 50);
+                    return;
+                }}
+                console.log('[PASTE-INIT] Editor found, attaching handler');
+                editorEl.addEventListener('paste', function(e) {{
+                    let html = e.clipboardData.getData('text/html');
+                    const text = e.clipboardData.getData('text/plain');
+                    if (!html && !text) return;
+
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    let cleaned = text || '';
+                    const origSize = (html || text).length;
+
+                    if (html) {{
+                        // Inject speaker labels into raw HTML
+                        // BEFORE stripping (attrs needed for
+                        // detection get stripped later)
+                        const mk = (role) =>
+                            '<div data-speaker="' +
+                            role + '"></div>';
+                        const sp = {{}};
+                        // Build attr/class regex helpers
+                        const ar = (a) =>
+                            '(<[^>]*' + a + '[^>]*>)';
+                        const cr = (c) =>
+                            '(<[^>]*class="[^"]*'
+                            + c + '[^"]*"[^>]*>)';
+                        if (/font-user-message/.test(html)) {{
+                            window.{platform_var} = 'claude';
+                            sp.u = new RegExp(
+                                ar('data-testid="user-message"'),
+                                'gi');
+                            // Match ONLY the primary response
+                            // container (class starts with
+                            // font-claude-response). Exclude:
+                            // - font-claude-response-body (per-para)
+                            // - secondary divs where font-claude-
+                            //   response appears mid-class (these
+                            //   are UI chrome, not content)
+                            sp.a = new RegExp(
+                                '(<[^>]*class="'
+                                + 'font-claude-response'
+                                + '(?!-)[^"]*"[^>]*>)', 'gi');
+                        }} else if (/conversation-turn/.test(html)) {{
+                            // OpenAI already has "You said:"/"ChatGPT said:"
+                            // labels in content — don't inject duplicates
+                            window.{platform_var} = 'openai';
+                        }} else if (/chat-turn-container/.test(html)) {{
+                            // AI Studio has "User"/"Model" text
+                            // labels in content — don't inject
+                            // duplicates (same as OpenAI)
+                            window.{platform_var} = 'aistudio';
+                        }} else if (/message-actions/.test(html)) {{
+                            window.{platform_var} = 'gemini';
+                            // Match only exact tags, not
+                            // user-query-content etc.
+                            // Negative lookahead (?!-) prevents
+                            // matching user-query-content.
+                            sp.u = new RegExp(
+                                '(<user-query(?!-)(?:\\\\s[^>]*)?>)',
+                                'gi');
+                            sp.a = new RegExp(
+                                '(<model-response(?!-)(?:\\\\s[^>]*)?>)',
+                                'gi');
+                        }} else if (/headroom/.test(html)) {{
+                            window.{platform_var} = 'scienceos';
+                            sp.u = new RegExp(
+                                cr('_prompt_'), 'gi');
+                            sp.a = new RegExp(
+                                cr('_markdown_'), 'gi');
+                        }}
+                        if (sp.u) {{
+                            html = html.replace(
+                                sp.u, mk('user') + '$1');
+                            html = html.replace(
+                                sp.a, mk('assistant') + '$1');
+                        }}
+                        console.log('[PASTE] Platform:',
+                            window.{platform_var});
+
+                        // Parse HTML in hidden iframe
+                        const iframe = document.createElement('iframe');
+                        iframe.style.cssText = 'position:absolute;left:-9999px;';
+                        document.body.appendChild(iframe);
+
+                        iframe.contentDocument.open();
+                        iframe.contentDocument.write(html);
+                        iframe.contentDocument.close();
+
+                        // P2: Collapse Claude thinking blocks
+                        // BEFORE stripping classes — we need them
+                        // to identify thinking containers.
+                        if (window.{platform_var} === 'claude') {{
+                            // Find the thinking toggle div by
+                            // its text content and class
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll('div').forEach(
+                                el => {{
+                                const cls = el.className || '';
+                                const txt = el.textContent.trim();
+                                // The toggle container has
+                                // "Thought process" as text.
+                                // It also contains time (18s)
+                                // and an SVG icon.
+                                if (/^Thought process/i.test(txt)
+                                    && txt.length < 200) {{
+                                    // Extract just "Thought process"
+                                    // and time if present
+                                    const timeM = txt.match(
+                                        /(\\d+s)/);
+                                    const label = 'Thought process'
+                                        + (timeM
+                                            ? ' ' + timeM[1] : '');
+                                    const p = iDoc.createElement(
+                                        'p');
+                                    // Use data-thinking attr to
+                                    // survive style stripping;
+                                    // CSS handles presentation
+                                    p.setAttribute(
+                                        'data-thinking', 'true');
+                                    p.textContent = '[' + label
+                                        + ']';
+                                    el.replaceWith(p);
+                                }}
+                            }});
+                            // Also remove thinking CONTENT divs
+                            // Claude wraps thinking text in divs
+                            // with class containing "grid-cols"
+                            // directly after the toggle
+                        }}
+
+                        // P4: Flatten KaTeX/MathML to plain text
+                        // BEFORE stripping classes — we need
+                        // .katex/.katex-display selectors.
+                        {{
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll(
+                                '.katex, .katex-display'
+                            ).forEach(el => {{
+                                const ann = el.querySelector(
+                                    'annotation[encoding='
+                                    + '"application/x-tex"]'
+                                );
+                                const txt = ann
+                                    ? ann.textContent
+                                    : el.textContent;
+                                const span =
+                                    iDoc.createElement('span');
+                                span.textContent = txt;
+                                el.replaceWith(span);
+                            }});
+                            // Also handle bare <math> elements
+                            iDoc.querySelectorAll('math')
+                                .forEach(el => {{
+                                const span =
+                                    iDoc.createElement('span');
+                                span.textContent = el.textContent;
+                                el.replaceWith(span);
+                            }});
+                        }}
+
+                        // Properties to preserve from inline styles
+                        const keepStyleProps = ['margin-left', 'margin-right',
+                            'margin-top', 'margin-bottom', 'text-indent',
+                            'padding-left', 'padding-right'];
+                        // Also handle margin/padding shorthand
+                        const shorthandProps = ['margin', 'padding'];
+
+                        // Strip style/script/img tags
+                        iframe.contentDocument.querySelectorAll('style, script, img')
+                            .forEach(el => el.remove());
+
+                        // Process all elements - preserve important inline styles
+                        iframe.contentDocument.querySelectorAll('*').forEach(el => {{
+                            const existingStyle = el.getAttribute('style') || '';
+                            const keptStyles = [];
+
+                            // Parse inline style for important properties
+                            for (const prop of keepStyleProps) {{
+                                const pat = prop + '\\\\s*:\\\\s*([^;]+)';
+                                const m = existingStyle.match(
+                                    new RegExp(pat, 'i'));
+                                if (m) {{
+                                    keptStyles.push(
+                                        prop + ':' + m[1].trim());
+                                }}
+                            }}
+                            // Expand margin/padding shorthand
+                            for (const sh of shorthandProps) {{
+                                const pat = '(?:^|;)\\\\s*' + sh
+                                    + '\\\\s*:\\\\s*([^;]+)';
+                                const m = existingStyle.match(
+                                    new RegExp(pat, 'i'));
+                                if (m) {{
+                                    const vals = m[1].trim().split(
+                                        /\\s+/);
+                                    const t = vals[0] || '0';
+                                    const r = vals[1] || t;
+                                    const b = vals[2] || t;
+                                    const l = vals[3] || r;
+                                    // Only keep non-zero values
+                                    if (l !== '0' && l !== '0px')
+                                        keptStyles.push(
+                                            sh + '-left:' + l);
+                                    if (r !== '0' && r !== '0px')
+                                        keptStyles.push(
+                                            sh + '-right:' + r);
+                                }}
+                            }}
+
+                            // Apply preserved styles or remove style attr
+                            if (keptStyles.length > 0) {{
+                                el.setAttribute('style', keptStyles.join(';'));
+                            }} else {{
+                                el.removeAttribute('style');
+                            }}
+
+                            // Remove class attributes
+                            el.removeAttribute('class');
+
+                            // Remove data-* attrs except
+                            // data-speaker and data-thinking
+                            const dataAttrs = [];
+                            const keepData = new Set([
+                                'data-speaker',
+                                'data-thinking']);
+                            for (const attr of el.attributes) {{
+                                if (attr.name.startsWith('data-')
+                                    && !keepData.has(attr.name)) {{
+                                    dataAttrs.push(attr.name);
+                                }}
+                            }}
+                            dataAttrs.forEach(
+                                n => el.removeAttribute(n));
+                        }});
+
+                        // Remove empty containers that only have <br> tags
+                        const removeEmpty = () => {{
+                            let removed = 0;
+                            iframe.contentDocument.querySelectorAll('p, div, span')
+                                .forEach(el => {{
+                                // Preserve speaker marker divs
+                                // and thinking indicators
+                                if (el.hasAttribute('data-speaker')
+                                    || el.hasAttribute(
+                                        'data-thinking')) return;
+                                const text = el.textContent?.trim();
+                                const noBr = el.innerHTML.replace(/<br\\s*\\/?>/gi, '');
+                                const htmlNoBr = noBr.trim();
+                                if (!text && !htmlNoBr) {{
+                                    el.remove();
+                                    removed++;
+                                }}
+                            }});
+                            return removed;
+                        }};
+                        while (removeEmpty() > 0) {{}}
+
+                        // Clean up empty table elements
+                        const removeEmptyTable = () => {{
+                            let removed = 0;
+                            const doc = iframe.contentDocument;
+                            doc.querySelectorAll('td, tr, table, col').forEach(el => {{
+                                if (!el.textContent?.trim()) {{
+                                    el.remove();
+                                    removed++;
+                                }}
+                            }});
+                            return removed;
+                        }};
+                        while (removeEmptyTable() > 0) {{}}
+
+                        // Strip nav elements and empty list items
+                        const doc = iframe.contentDocument;
+                        doc.querySelectorAll('nav').forEach(
+                            el => el.remove());
+                        doc.querySelectorAll('li').forEach(el => {{
+                            if (!el.textContent?.trim())
+                                el.remove();
+                        }});
+
+                        // P5: Flatten <pre> blocks to preserve
+                        // whitespace. OpenAI wraps code in
+                        // <pre><div>...<div><code><span>...
+                        // After class stripping, the intermediate
+                        // divs and spans break formatting.
+                        // Fix: replace <pre> content with plain
+                        // text from the <code> element.
+                        doc.querySelectorAll('pre').forEach(
+                            pre => {{
+                            const code = pre.querySelector(
+                                'code');
+                            if (code) {{
+                                // Preserve the text content
+                                // (includes literal newlines)
+                                const txt = code.textContent;
+                                // Replace pre content with
+                                // just <code>text</code>
+                                const newCode =
+                                    doc.createElement('code');
+                                newCode.textContent = txt;
+                                pre.textContent = '';
+                                pre.appendChild(newCode);
+                            }} else {{
+                                // No <code> child — flatten
+                                // all children to text
+                                const txt = pre.textContent;
+                                pre.textContent = txt;
+                            }}
+                        }});
+
+                        // (P4 KaTeX flatten moved above,
+                        // before attribute stripping)
+
+                        // (P2 thinking collapse moved above,
+                        // before attribute stripping)
+
+                        // P1: Deduplicate speaker labels
+                        // Two rules:
+                        // (a) Same-role consecutive: always remove
+                        //     the earlier one (nesting artefact)
+                        // (b) Different-role consecutive with no
+                        //     real text between: remove earlier
+                        //     (null/empty round)
+                        const FOLLOWING = Node
+                            .DOCUMENT_POSITION_FOLLOWING;
+                        const PRECEDING = Node
+                            .DOCUMENT_POSITION_PRECEDING;
+                        const allSp = Array.from(
+                            doc.querySelectorAll('[data-speaker]'));
+                        const spSet = new Set(allSp);
+                        const toRemove = [];
+                        for (let i = 0; i < allSp.length - 1;
+                                i++) {{
+                            const cur = allSp[i];
+                            const nxt = allSp[i + 1];
+                            const curRole = cur.getAttribute(
+                                'data-speaker');
+                            const nxtRole = nxt.getAttribute(
+                                'data-speaker');
+                            // (a) Same role = always duplicate
+                            if (curRole === nxtRole) {{
+                                toRemove.push(cur);
+                                continue;
+                            }}
+                            // (b) Different role: check for text
+                            // between the two speaker divs.
+                            // Use compareDocumentPosition to
+                            // find text nodes between cur & nxt
+                            // (speaker divs are empty, so
+                            // contains() won't find children).
+                            const tw = doc.createTreeWalker(
+                                doc.body,
+                                NodeFilter.SHOW_TEXT,
+                                null);
+                            let hasContent = false;
+                            while (tw.nextNode()) {{
+                                const n = tw.currentNode;
+                                // Is n after cur?
+                                const afterCur = cur
+                                    .compareDocumentPosition(n)
+                                    & FOLLOWING;
+                                if (!afterCur) continue;
+                                // Is n before nxt?
+                                const beforeNxt = nxt
+                                    .compareDocumentPosition(n)
+                                    & PRECEDING;
+                                if (!beforeNxt) break;
+                                // Skip text inside other speakers
+                                let inSpeaker = false;
+                                for (const s of spSet) {{
+                                    if (s !== cur && s !== nxt
+                                        && s.contains(n)) {{
+                                        inSpeaker = true;
+                                        break;
+                                    }}
+                                }}
+                                if (inSpeaker) continue;
+                                const t = n.textContent.trim();
+                                if (t.length > 2) {{
+                                    hasContent = true;
+                                    break;
+                                }}
+                            }}
+                            if (!hasContent) toRemove.push(cur);
+                        }}
+                        toRemove.forEach(el => el.remove());
+
+                        cleaned = iframe.contentDocument.body.innerHTML;
+                        document.body.removeChild(iframe);
+                        console.log('[PASTE] Cleaned:', cleaned.length, 'bytes');
+                    }}
+
+                    window.{paste_var} = cleaned;
+                    const newSize = cleaned.length;
+                    console.log('[PASTE] Stripped:', origSize, '->', newSize,
+                        '(' + Math.round(100 - newSize*100/origSize) + '% reduction)');
+
+                    // Show placeholder with size info
+                    const p = document.createElement('p');
+                    p.style.cssText = 'color:#666;font-style:italic;';
+                    p.textContent = '✓ Content pasted (' +
+                        Math.round(newSize/1024) + ' KB after cleanup). ' +
+                        'Click "Add Document" to process.';
+                    editorEl.replaceChildren(p);
+                }});
+            }};
+            tryAttach();
+        }});
+    </script>
+    """)
+
+    async def handle_add_document() -> None:
+        """Process input and add document to workspace."""
+        # Try to get pasted content from JS storage (bypasses websocket limit)
+        stored = await ui.run_javascript(f"window.{paste_var}")
+        platform_hint = await ui.run_javascript(f"window.{platform_var}")
+        content = stored if stored else content_input.value
+        from_paste = bool(stored)
+
+        if not content or not content.strip():
+            ui.notify("Please enter or paste some content", type="warning")
+            return
+
+        # Skip dialog if HTML was captured from paste - we know it's HTML
+        confirmed_type: ContentType | None = (
+            "html"
+            if from_paste
+            else (
+                await show_content_type_dialog(
+                    detect_content_type(content), content[:500]
+                )
+            )
+        )
+        if confirmed_type is None:
+            return  # User cancelled
+
+        try:
+            processed_html = await process_input(
+                content=content,
+                source_type=confirmed_type,
+                platform_hint=platform_hint,
+            )
+            await add_document(
+                workspace_id=workspace_id,
+                type="source",
+                content=processed_html,
+                source_type=confirmed_type,
+                title=None,
+            )
+            content_input.value = ""
+            ui.notify("Document added successfully", type="positive")
+            ui.navigate.to(
+                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+            )
+        except Exception as exc:
+            logger.exception("Failed to add document")
+            ui.notify(f"Failed to add document: {exc}", type="negative")
+
+    ui.button("Add Document", on_click=handle_add_document).classes(
+        "bg-green-500 text-white mt-2"
+    )
+
+    async def handle_file_upload(upload_event: events.UploadEventArguments) -> None:
+        """Handle file upload through HTML pipeline."""
+        # Access file via .file attribute (FileUpload dataclass)
+        # ty cannot resolve this type due to TYPE_CHECKING import in nicegui
+        filename: str = upload_event.file.name  # pyright: ignore[reportAttributeAccessIssue]
+        content_bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+
+        # Detect type from extension, fall back to content detection
+        detected_type = _detect_type_from_extension(filename)
+        if detected_type is None:
+            detected_type = detect_content_type(content_bytes)
+
+        preview = _get_file_preview(content_bytes, detected_type, filename)
+        confirmed_type = await show_content_type_dialog(
+            detected_type=detected_type,
+            preview=preview,
+        )
+
+        if confirmed_type is None:
+            ui.notify("Upload cancelled", type="info")
+            return
+
+        try:
+            processed_html = await process_input(
+                content=content_bytes,
+                source_type=confirmed_type,
+                platform_hint=None,
+            )
+            await add_document(
+                workspace_id=workspace_id,
+                type="source",
+                content=processed_html,
+                source_type=confirmed_type,
+                title=filename,
+            )
+            ui.notify(f"Uploaded: {filename}", type="positive")
+            ui.navigate.to(
+                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+            )
+        except NotImplementedError as not_impl_err:
+            ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
+        except Exception as exc:
+            logger.exception("Failed to process uploaded file")
+            ui.notify(f"Failed to process file: {exc}", type="negative")
+
+    # File upload for HTML, RTF, DOCX, PDF, TXT, Markdown files
+    ui.upload(
+        label="Or upload a file",
+        on_upload=handle_file_upload,
+        auto_upload=True,
+        max_file_size=10 * 1024 * 1024,  # 10 MB limit
+    ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
 
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
@@ -1449,43 +2257,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         doc = documents[0]
         await _render_document_with_highlights(state, doc, crdt_doc)
     else:
-        # Show add content form
-        ui.label("Add content to annotate:").classes("mt-4 font-semibold")
-
-        content_input = ui.textarea(
-            placeholder="Paste or type your content here..."
-        ).classes("w-full min-h-32")
-
-        async def handle_add_document() -> None:
-            if not content_input.value or not content_input.value.strip():
-                ui.notify("Please enter some content", type="warning")
-                return
-
-            try:
-                # Sanitize: remove control chars (PostgreSQL rejects NULL, others
-                # cause rendering issues). Keep tab/newline/CR.
-                sanitized = "".join(
-                    c for c in content_input.value.strip() if c >= " " or c in "\t\n\r"
-                )
-                html_content, _ = _process_text_to_char_spans(sanitized)
-                await add_document(
-                    workspace_id=workspace_id,
-                    type="source",
-                    content=html_content,
-                    raw_content=sanitized,
-                    title=None,
-                )
-                # Reload page to show document
-                ui.navigate.to(
-                    f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-                )
-            except Exception:
-                logger.exception("Failed to add document")
-                ui.notify("Failed to add document", type="negative")
-
-        ui.button("Add Document", on_click=handle_add_document).classes(
-            "bg-green-500 text-white mt-2"
-        )
+        # Show add content form (extracted to reduce function complexity)
+        _render_add_content_form(workspace_id)
 
 
 @page_route(

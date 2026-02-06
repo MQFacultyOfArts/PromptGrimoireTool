@@ -49,8 +49,8 @@ class TestCrossEnvironmentHighlights:
         """
         highlights: list[dict[str, Any]] = [
             {
-                "start_word": 848,
-                "end_word": 906,
+                "start_char": 848,
+                "end_char": 906,
                 "tag": "order",
                 "author": "Test User",
                 "text": "test highlight spanning list boundary",

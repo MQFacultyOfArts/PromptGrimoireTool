@@ -46,8 +46,8 @@ class TestPdfPipeline:
         # Use real tag names from TAG_COLOURS in conftest.py
         highlights = [
             {
-                "start_word": 1,  # "quick"
-                "end_word": 4,  # through "fox"
+                "start_char": 1,  # "quick"
+                "end_char": 4,  # through "fox"
                 "tag": "jurisdiction",
                 "author": "Test User",
                 "text": "quick brown fox",
@@ -55,8 +55,8 @@ class TestPdfPipeline:
                 "created_at": "2026-01-28T10:00:00+00:00",
             },
             {
-                "start_word": 2,  # "brown"
-                "end_word": 6,  # through "over"
+                "start_char": 2,  # "brown"
+                "end_char": 6,  # through "over"
                 "tag": "legal_issues",
                 "author": "Test User",
                 "text": "brown fox jumps over",
@@ -123,16 +123,16 @@ IF YOU SEE RAW MARKER TEXT: Issue #85 has regressed!
         # Use real tag names from TAG_COLOURS in conftest.py
         highlights = [
             {
-                "start_word": 1,
-                "end_word": 5,
+                "start_char": 1,
+                "end_char": 5,
                 "tag": "jurisdiction",
                 "author": "Test",
                 "text": "two three four five",
                 "comments": [],
             },
             {
-                "start_word": 3,
-                "end_word": 7,
+                "start_char": 3,
+                "end_char": 7,
                 "tag": "legal_issues",
                 "author": "Test",
                 "text": "four five six seven",
@@ -174,24 +174,24 @@ WHAT TO CHECK:
         # Use real tag names from TAG_COLOURS in conftest.py
         highlights = [
             {
-                "start_word": 0,
-                "end_word": 6,
+                "start_char": 0,
+                "end_char": 6,
                 "tag": "jurisdiction",
                 "author": "Test",
                 "text": "Word one word two word three",
                 "comments": [],
             },
             {
-                "start_word": 1,
-                "end_word": 5,
+                "start_char": 1,
+                "end_char": 5,
                 "tag": "legal_issues",
                 "author": "Test",
                 "text": "one word two word",
                 "comments": [],
             },
             {
-                "start_word": 2,
-                "end_word": 4,
+                "start_char": 2,
+                "end_char": 4,
                 "tag": "reasons",
                 "author": "Test",
                 "text": "word two",
@@ -250,16 +250,16 @@ WHAT TO CHECK:
         #        After(15) the(16) list(17) ends(18) here(19)
         highlights = [
             {
-                "start_word": 3,  # "starts"
-                "end_word": 11,  # through "item" (second)
+                "start_char": 3,  # "starts"
+                "end_char": 11,  # through "item" (second)
                 "tag": "jurisdiction",
                 "author": "Test",
                 "text": "starts here First item in the list Second item",
                 "comments": [],
             },
             {
-                "start_word": 6,  # "item" (first)
-                "end_word": 15,  # through "After"
+                "start_char": 6,  # "item" (first)
+                "end_char": 15,  # through "After"
                 "tag": "legal_issues",
                 "author": "Test",
                 "text": "item in the list Second item in the list After",

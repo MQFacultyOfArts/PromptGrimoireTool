@@ -75,29 +75,42 @@ Milkdown has native Yjs support via `@milkdown/plugin-collab`. pycrdt is
 Yjs-compatible. So: markdown source in CRDT, Milkdown renders it, collab
 plugin syncs it — character-level merging for free.
 
-### Milkdown Spike (In Progress)
+### Milkdown Spike (Complete — merged to main 2026-02-07)
 
 **File**: `src/promptgrimoire/pages/milkdown_spike.py`
 **Route**: `/demo/milkdown-spike` (requires `ENABLE_DEMO_PAGES=true`)
+**Design plan**: `docs/design-plans/2026-02-06-milkdown-crdt-spike.md`
+**Implementation notes**: `docs/implementation-plans/2026-02-06-milkdown-crdt-spike/phase_03.md`
 
-**Status**:
-- Milkdown renders via `@milkdown/kit` (low-level Editor + commonmark preset)
-- `@milkdown/crepe` (high-level wrapper with toolbar) breaks on esm.sh CDN
-  due to static CodeMirror import
-- Import maps must be in `<script type="module">`, not `ui.run_javascript()`
-  (which uses indirect execution that can't resolve bare specifiers)
-- Multi-client sync not yet wired
-- No toolbar/formatting buttons in current low-level setup
+**Result**: All three phases passed UAT. The spike validates the full
+collaborative editing stack:
 
-**Key learning**: `ui.run_javascript()` cannot use ES module import maps.
-Must put Milkdown init in `<script type="module">` via `ui.add_body_html()`.
+- **Phase 1**: Vite IIFE bundle of Milkdown Crepe + Yjs + y-prosemirror,
+  served as a static file. CSS injected by JS (no separate stylesheet).
+  Bundle is ~4.3MB (includes CodeMirror for code blocks).
+- **Phase 2**: Crepe editor renders in NiceGUI with full toolbar (Bold,
+  Italic, Heading, List, Blockquote, Code). Python reads markdown via
+  `window._getMilkdownMarkdown()` through `ui.run_javascript()`.
+- **Phase 3**: Multi-client CRDT sync. Two browser tabs editing the same
+  document with character-level merging. pycrdt Doc on the server relays
+  base64-encoded Yjs updates between clients via NiceGUI WebSocket events.
+  Late joiners receive full state sync.
 
-**Next steps for spike**:
-1. Verify `<script type="module">` approach works (current version)
-2. Wire multi-client broadcast (sync_demo.py pattern)
-3. For toolbar: either bundle Milkdown locally with esbuild (best),
-   or import Crepe feature plugins individually
-4. Test `@milkdown/plugin-collab` with pycrdt websocket
+**Key findings**:
+- Local Vite bundle is the only viable approach. CDN/esm.sh breaks with
+  Crepe's static CodeMirror imports.
+- `@milkdown/plugin-collab` + `collabServiceCtx` binds a Y.Doc to
+  ProseMirror via y-prosemirror. Register plugin before `crepe.create()`,
+  bind doc after.
+- pycrdt Doc acts as a pure binary relay — it doesn't need to understand
+  ProseMirror document structure. Receives Yjs updates, applies them,
+  forwards to other clients.
+- NiceGUI `ui.on()` is per-client scoped (registers on that client's
+  Vue layout element), so each client's event handler fires independently.
+- Echo prevention: JS-side `origin === "remote"` skip + Python-side
+  `client_id != origin_client_id` in broadcast. No ContextVar needed.
+- Do NOT disable `Crepe.Feature.CodeMirror` — triggers a Milkdown 7.x bug
+  where disabled feature configs still execute.
 
 ### Approach Selected
 
@@ -109,19 +122,28 @@ Must put Milkdown init in `<script type="module">` via `ui.add_body_html()`.
 - All three tabs observe same CRDT, all live
 - Milkdown collab plugin handles the hard part (character-level sync)
 
-## Phase 3: Design Presentation (Not Started)
+## Phase 3: Design Presentation (Ready to Start)
 
-Pending completion of Milkdown spike to validate the approach.
+Milkdown spike complete and merged. The approach is validated. Ready to
+design the three-tab interface proper.
+
+## Resolved Questions
+
+1. ~~Should we bundle Milkdown locally or use CDN?~~
+   **Resolved: local Vite bundle.** CDN breaks with Crepe's static imports.
+   Bundle is an IIFE (~4.3MB) served as a static file. CSS injected by JS.
 
 ## Open Questions
 
-1. Should we bundle Milkdown locally (esbuild) or use CDN?
-   - Local: toolbar works, no CDN dependency, version pinned
-   - CDN: simpler setup, but Crepe wrapper breaks
-   - **Leaning**: local bundle
-
-2. Tab lifecycle — performance is a known issue on Tab 1. Lazy-render
+1. Tab lifecycle — performance is a known issue on Tab 1. Lazy-render
    Tabs 2/3 on first visit, or render all upfront?
 
-3. How does the warp-to-Tab-1 navigation work when three different
+2. How does the warp-to-Tab-1 navigation work when three different
    users might be on different tabs?
+
+3. How to integrate the Milkdown collab into `AnnotationDocument`'s
+   existing CRDT structure — the spike uses a standalone `pycrdt.Doc`,
+   but the three-tab interface needs `response_draft` as a field within
+   the shared `AnnotationDocument`. Does y-prosemirror bind to an
+   `XmlFragment` sub-type within the same Doc, or does it need its own
+   Doc?

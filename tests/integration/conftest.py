@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
+import pytest_asyncio
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def reset_db_engine_per_test() -> AsyncGenerator[None]:
     """Dispose shared database engine after each test.
 

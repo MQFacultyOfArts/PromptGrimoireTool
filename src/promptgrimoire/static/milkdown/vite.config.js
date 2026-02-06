@@ -4,6 +4,8 @@ import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 
 export default defineConfig({
   plugins: [cssInjectedByJsPlugin()],
+  // Some deps reference process.env.NODE_ENV which doesn't exist in browsers
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
   build: {
     lib: {
       entry: resolve(__dirname, "src/index.js"),

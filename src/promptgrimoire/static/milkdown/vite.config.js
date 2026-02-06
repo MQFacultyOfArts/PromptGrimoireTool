@@ -12,12 +12,9 @@ export default defineConfig({
       fileName: () => "milkdown-bundle.js",
     },
     outDir: "dist",
-    rollupOptions: {
-      // Externalize CodeMirror — NiceGUI 3.6 already bundles it
-      external: [/^@codemirror\//, /^@lezer\//],
-      output: {
-        globals: {},
-      },
-    },
+    // CodeMirror is NOT externalized: even with Crepe.Feature.CodeMirror
+    // disabled, Milkdown's internal imports still evaluate at bundle load
+    // time, causing ReferenceError for missing IIFE globals. Bundling
+    // everything avoids this. NiceGUI's copy lives in a separate scope.
   },
 });

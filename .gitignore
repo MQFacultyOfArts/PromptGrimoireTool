@@ -3,6 +3,8 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+# But keep the Milkdown bundle dist (committed so deployment needs no Node.js)
+!src/promptgrimoire/static/milkdown/dist/
 wheels/
 *.egg-info
 

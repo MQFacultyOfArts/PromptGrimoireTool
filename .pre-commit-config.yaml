@@ -28,5 +28,5 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: '^(paper/|ai_transcripts/)'
+        exclude: '^(paper/|ai_transcripts/|src/promptgrimoire/static/milkdown/dist/)'
       - id: check-merge-conflict

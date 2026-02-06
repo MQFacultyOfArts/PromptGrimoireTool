@@ -452,3 +452,35 @@ git commit -m "feat: add multi-client CRDT sync to milkdown spike via pycrdt"
 - [ ] Screenshot or recording of two tabs syncing text in real time
 - [ ] Screenshot of "Get Markdown" showing merged content from both tabs
 - [ ] Server log excerpt showing CLIENT_REGISTERED and FULL_STATE_SYNC messages
+
+---
+
+## Implementation Notes (2026-02-07)
+
+**UAT passed.** Phase 3 complete.
+
+### Deviations from the plan in this file
+
+The plan above contained `features: { [Crepe.Feature.CodeMirror]: false }` — this triggers a known Milkdown 7.x bug where disabled feature configs still execute, causing runtime errors. The working Phase 2 code had already removed this. Implementation kept all default features enabled.
+
+The plan's Python code used `async def _broadcast_to_others` with `await push_fn(b64_update)` via stored async closures. Implementation uses synchronous `_broadcast_to_others` with fire-and-forget `client.run_javascript()` calls (not awaited), which is simpler and avoids blocking the update handler. NiceGUI's `Client.run_javascript()` queues the JS execution over the client's websocket without needing to await it for broadcast purposes.
+
+The plan stored `Callable` push functions per client. Implementation stores `Client` objects directly, which is cleaner — `Client.run_javascript()` targets the specific client's websocket.
+
+### Key investigations
+
+1. **Crepe editor access pattern:** `crepe.editor` (getter on `CrepeBuilder`) returns the underlying Milkdown `Editor` instance immediately after construction — no need to wait for `create()`. This allows `crepe.editor.use(collab)` before `crepe.create()`.
+
+2. **Collab service binding:** After `crepe.create()`, the collab service is accessed via `crepe.editor.action(ctx => ctx.get(collabServiceCtx))`. The `CollabService` API chains: `.bindDoc(ydoc).connect()`.
+
+3. **NiceGUI event scoping:** `ui.on('event_name', handler)` is **per-client scoped**, not global. It registers on `context.client.layout` (Vue element ID 0). JS `emitEvent()` calls `getElement(0).$emit()` which only reaches that client's handlers. This means each client's `on_yjs_update` handler fires only for that client's events — no cross-client interference.
+
+4. **Client identification:** NiceGUI `Client` has no `.id` attribute. Used `uuid4()` for client identification in the broadcast registry.
+
+5. **pycrdt Doc as relay:** The server-side pycrdt `Doc` doesn't need to understand ProseMirror structure. It receives raw Yjs binary updates, applies them (maintaining CRDT merge state), and the same binary updates are forwarded to other clients. `Doc.get_update()` with no args returns the full state for late-joiner sync. An empty doc is exactly 2 bytes.
+
+6. **Statement count:** ruff's `PLR0915` (max 50 statements) required extracting `_build_spike_ui()` from the page function. This is purely a lint accommodation, not an architectural choice.
+
+### Bundle size
+
+Phase 2 bundle: ~3.8MB. Phase 3 bundle (with Yjs): ~4.3MB. Yjs adds ~500KB to the IIFE bundle.

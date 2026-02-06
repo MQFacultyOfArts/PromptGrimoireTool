@@ -135,15 +135,16 @@ def test_debug() -> None:
 
 
 def test_all() -> None:
-    """Run the complete test suite, exercising all tests regardless of changes.
+    """Run unit and integration tests under xdist parallel execution.
 
-    Unlike test-debug (which uses pytest-depper to run only affected tests),
-    this command runs every test in the project. Use this for:
-    - Pre-commit verification
-    - CI/CD pipelines
-    - Ensuring full coverage before releases
+    Excludes E2E tests because Playwright's event loop contaminates xdist
+    workers, causing 'Runner.run() cannot be called from a running event loop'
+    in async integration tests. See #121.
+
+    E2E tests must run separately (they need a live app server anyway).
 
     Flags applied:
+        --ignore=tests/e2e: Exclude Playwright E2E tests
         -n auto: Parallel execution with auto-detected workers
         --dist=worksteal: Workers steal tests from others for better load balancing
         --durations=10: Show 10 slowest tests
@@ -152,9 +153,17 @@ def test_all() -> None:
     Output saved to: test-all.log
     """
     _run_pytest(
-        title="Full Test Suite (all tests)",
+        title="Full Test Suite (unit + integration, excludes E2E)",
         log_path=Path("test-all.log"),
-        default_args=["-n", "auto", "--dist=worksteal", "--durations=10", "-v"],
+        default_args=[
+            "-m",
+            "not e2e",
+            "-n",
+            "auto",
+            "--dist=worksteal",
+            "--durations=10",
+            "-v",
+        ],
     )
 
 

@@ -43,6 +43,14 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 
 See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E patterns and database isolation rules.
 
+### Async Fixture Rule
+
+**NEVER use `@pytest.fixture` on `async def` functions.** Always use `@pytest_asyncio.fixture`. The sync decorator on async generators causes `Runner.run() cannot be called from a running event loop` under xdist. A guard test (`tests/unit/test_async_fixture_safety.py`) enforces this. See #121.
+
+### E2E Test Isolation
+
+E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately with a live app server. See #121.
+
 ### Code Quality Hooks
 
 Claude Code hooks automatically run on every `.py` file write:
@@ -71,7 +79,7 @@ uv sync
 # Run tests (smart selection based on changes - fast)
 uv run test-debug
 
-# Run all tests (full suite)
+# Run all tests (unit + integration, excludes E2E)
 uv run test-all
 
 # Run linting

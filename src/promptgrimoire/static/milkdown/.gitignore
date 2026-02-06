@@ -1,0 +1,2 @@
+node_modules/
+# dist/ is intentionally committed (no Node.js required for deployment)

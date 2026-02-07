@@ -158,7 +158,7 @@ def render_organise_tab(
         panel,
         (
             ui.row()
-            .classes("w-full overflow-x-auto gap-4 p-4")
+            .classes("w-full overflow-x-auto gap-4 p-4 flex-nowrap")
             .props('data-testid="organise-columns"')
         ),
     ):

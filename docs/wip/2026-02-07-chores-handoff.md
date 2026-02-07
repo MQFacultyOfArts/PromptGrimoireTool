@@ -71,7 +71,44 @@ milkdown-crdt-spike           — worktree at .worktrees/, 2 ahead
 106-html-input-pipeline       — local only (no worktree), 1 ahead
 ```
 
+### 6. Dependency upgrades
+
+Controlled one-at-a-time upgrades with changelog review and test-all after each.
+
+**Upgraded:**
+| Package | From | To | Notes |
+|---------|------|----|-------|
+| rich | 14.3.1 | 14.3.2 | ZWJ cell_len bugfix |
+| pycrdt | 0.12.45 | 0.12.46 | pyo3 build bump |
+| anthropic | 0.77.0 | 0.78.0 | Beta type additions |
+| sqlmodel | 0.0.31 | 0.0.32 | Annotated fields fix for Pydantic 2.12+ |
+| playwright | 1.57.0 | 1.58.0 | Trace viewer; **run `playwright install` on work machine** (#123) |
+| ruff | 0.14.14 | 0.15.0 | 2026 style guide, reformatted 4 files, fixed 16 lint issues |
+| nicegui | 3.6.1 | 3.7.1 | **2 security fixes** (XSS via ui.markdown, path traversal via FileUpload.name) |
+
+**Removed:**
+- `odfdo` — unused, was intended for Phase 7 input conversion. `lxml` promoted to direct dep (used by `export/html_normaliser.py`).
+
+**Moved to dev deps:**
+- `pytest-xdist[psutil]` — was in production dependencies
+- `ast-grep-cli` — was in production dependencies
+
+### 7. Issues created (dependency session)
+
+- **#122** — Migrate remaining bs4 usage to selectolax
+- **#123** — Run `playwright install` on work machine after 1.58.0 upgrade
+
+### 8. CLAUDE.md audit
+
+- Fixed target date (2025 → 2026)
+- Added lxml, html5lib to tech stack
+- Regenerated project structure tree (was missing ~15 files/dirs)
+- Updated page DB dependencies table
+- Removed duplicate `test-debug` entry
+
 ## Dependabot alerts
 
-2 vulnerabilities on default branch (1 high, 1 moderate). Check:
-https://github.com/MQFacultyOfArts/PromptGrimoireTool/security/dependabot
+All 3 alerts now **fixed** (nicegui 3.7.1 resolved the last two):
+- GHSA-9ffm-fxg3-xrhh (High) — path traversal via FileUpload.name
+- GHSA-v82v-c5x8-w282 (Medium) — XSS via ui.markdown()
+- GHSA-wp53-j4wj-2cfg (High) — python-multipart path traversal (was already fixed)

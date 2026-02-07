@@ -41,6 +41,7 @@ from promptgrimoire.input_pipeline.html_input import (
     process_input,
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.annotation_drag import create_drag_state
 from promptgrimoire.pages.annotation_organise import render_organise_tab
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 from promptgrimoire.pages.dialogs import show_content_type_dialog
@@ -334,6 +335,12 @@ class PageState:
     tag_info_list: list[Any] | None = None  # list[TagInfo]
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
+    # Per-client drag state for Tab 2 drag-and-drop (Phase 4)
+    drag_state: Any | None = None  # DragState from annotation_drag
+    # Callable to refresh the Organise tab from broadcast
+    refresh_organise: Any | None = None  # Callable[[], None]
+    # Track active tab for broadcast-triggered refresh
+    active_tab: str = "Annotate"
 
 
 def _get_current_username() -> str:
@@ -1529,6 +1536,9 @@ def _setup_client_sync(
         _update_user_count(state)
         if state.refresh_annotations:
             state.refresh_annotations()
+        # Refresh Organise tab if client is currently viewing it (Phase 4)
+        if state.active_tab == "Organise" and state.refresh_organise:
+            state.refresh_organise()
 
     # Register this client
     if workspace_key not in _connected_clients:
@@ -2246,6 +2256,71 @@ def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
         export_btn.on_click(on_export_click)
 
 
+def _setup_organise_drag(state: PageState) -> None:
+    """Set up per-client drag state, drop handler, and Organise tab refresh.
+
+    Creates a DragState instance, wires the on_drop callback to CRDT operations,
+    and stores a refresh_organise callable on state for broadcast-triggered re-renders.
+
+    Must be called after state is created but before _on_tab_change is defined,
+    since the tab change handler calls state.refresh_organise.
+    """
+    state.drag_state = create_drag_state()
+
+    async def _on_organise_drop(
+        highlight_id: str, source_tag: str, target_tag: str
+    ) -> None:
+        """Handle a drop event from Tab 2 drag-and-drop.
+
+        Same-column drop reorders within the tag. Cross-column drop moves
+        the highlight to the target tag. Both mutate CRDT and broadcast.
+        """
+        if state.crdt_doc is None:
+            return
+
+        if source_tag == target_tag:
+            # Same-column reorder: move to end of target tag order
+            current_order = state.crdt_doc.get_tag_order(target_tag)
+            if highlight_id in current_order:
+                current_order.remove(highlight_id)
+            current_order.append(highlight_id)
+            state.crdt_doc.set_tag_order(
+                target_tag, current_order, origin_client_id=state.client_id
+            )
+        else:
+            # Cross-column move: reassign tag and update orders
+            state.crdt_doc.move_highlight_to_tag(
+                highlight_id,
+                from_tag=source_tag,
+                to_tag=target_tag,
+                position=-1,
+                origin_client_id=state.client_id,
+            )
+
+        # Re-render own Organise tab
+        _render_organise_now()
+
+        # Broadcast to other clients
+        if state.broadcast_update:
+            await state.broadcast_update()
+
+    def _render_organise_now() -> None:
+        """Re-render the Organise tab with current CRDT state and drag wiring."""
+        if not (state.organise_panel and state.crdt_doc):
+            return
+        if state.tag_info_list is None:
+            state.tag_info_list = brief_tags_to_tag_info()
+        render_organise_tab(
+            state.organise_panel,
+            state.tag_info_list,
+            state.crdt_doc,
+            on_drop=_on_organise_drop,
+            drag_state=state.drag_state,
+        )
+
+    state.refresh_organise = _render_organise_now
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -2275,19 +2350,20 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         ui.tab("Organise")
         ui.tab("Respond")
 
+    # Set up Tab 2 drag-and-drop and tab change handler (Phase 4)
+    _setup_organise_drag(state)
+
     async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
         """Handle tab switching with deferred rendering and refresh."""
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
+        state.active_tab = tab_name
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             # Always re-render Organise tab to show current highlights
             state.initialised_tabs.add(tab_name)
-            if state.tag_info_list is None:
-                state.tag_info_list = brief_tags_to_tag_info()
-            render_organise_tab(
-                state.organise_panel, state.tag_info_list, state.crdt_doc
-            )
+            if state.refresh_organise:
+                state.refresh_organise()
             return
 
         if tab_name in state.initialised_tabs:

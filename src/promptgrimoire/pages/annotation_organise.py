@@ -4,12 +4,17 @@ Renders tag columns with highlight cards, grouped by tag. Each column has a
 coloured header and contains cards for highlights assigned to that tag.
 Highlights with no tag appear in a final "Untagged" column.
 
+Cards are draggable within and between columns. Drop events update the CRDT
+tag_order (reorder) or move highlights between tags (reassign) and broadcast
+changes to all connected clients.
+
 This module imports TagInfo but NOT BriefTag -- the tag-agnostic abstraction
 ensures Tab 2 rendering is decoupled from the domain enum.
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md Task 2
-- AC: three-tab-ui.AC2.1, AC2.2, AC2.6
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 2
+- AC: three-tab-ui.AC2.1, AC2.2, AC2.3, AC2.4, AC2.6
 """
 
 from __future__ import annotations
@@ -19,7 +24,15 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from promptgrimoire.pages.annotation_drag import (
+    DragState,
+    make_draggable_card,
+    make_drop_column,
+)
+
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation_tags import TagInfo
 
@@ -27,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 # Colour for the "Untagged" column header
 _UNTAGGED_COLOUR = "#999999"
+
+# Raw key for the untagged pseudo-tag (empty string in CRDT)
+_UNTAGGED_RAW_KEY = ""
 
 # Maximum characters to show in text snippet before truncation
 _SNIPPET_MAX_CHARS = 100
@@ -36,13 +52,16 @@ def _build_highlight_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
-) -> None:
+) -> ui.card:
     """Render a single highlight card inside a tag column.
 
     Args:
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name (e.g. "Jurisdiction" or "Untagged").
+
+    Returns:
+        The created ui.card element.
     """
     highlight_id = highlight.get("id", "")
     author = highlight.get("author", "Unknown")
@@ -52,12 +71,13 @@ def _build_highlight_card(
         snippet += "..."
     comments: list[dict[str, Any]] = list(highlight.get("comments", []))
 
-    with (
+    card = (
         ui.card()
         .classes("w-full mb-2")
         .style(f"border-left: 4px solid {tag_colour};")
         .props(f'data-testid="organise-card" data-highlight-id="{highlight_id}"')
-    ):
+    )
+    with card:
         # Tag name label
         ui.label(display_tag_name).classes("text-xs font-bold").style(
             f"color: {tag_colour};"
@@ -79,29 +99,46 @@ def _build_highlight_card(
                     )
                     ui.label(comment_text).classes("text-xs text-gray-700")
 
+    return card
+
 
 def _build_tag_column(
     tag_name: str,
     tag_colour: str,
+    raw_key: str,
     highlights: list[dict[str, Any]],
     ordered_ids: list[str],
-) -> None:
+    drag_state: DragState | None,
+    on_drop: Callable[[str, str, str], Awaitable[None]] | None,
+) -> ui.column:
     """Render a single tag column with header and highlight cards.
 
     Cards are ordered by tag_order first, with any unordered highlights
-    appended at the bottom.
+    appended at the bottom. If drag_state and on_drop are provided, cards
+    are draggable and the column accepts drops.
 
     Args:
         tag_name: Display name for column header.
         tag_colour: Hex colour for header background and card borders.
+        raw_key: Raw tag key for CRDT operations (e.g. "jurisdiction").
         highlights: All highlights assigned to this tag.
         ordered_ids: Ordered highlight IDs from CRDT tag_order.
+        drag_state: Per-client DragState (None to disable drag).
+        on_drop: Async drop callback (None to disable drop).
+
+    Returns:
+        The created ui.column element.
     """
-    with (
+    column = (
         ui.column()
         .classes("min-w-64 max-w-80 flex-shrink-0")
         .props(f'data-testid="tag-column" data-tag-name="{tag_name}"')
-    ):
+    )
+
+    if drag_state is not None and on_drop is not None:
+        make_drop_column(column, raw_key, on_drop, drag_state)
+
+    with column:
         # Coloured header
         ui.label(tag_name).classes(
             "text-white font-bold text-sm px-3 py-1 rounded-t w-full text-center"
@@ -114,24 +151,33 @@ def _build_tag_column(
         rendered_ids: set[str] = set()
         for hid in ordered_ids:
             if hid in hl_by_id:
-                _build_highlight_card(hl_by_id[hid], tag_colour, tag_name)
+                card = _build_highlight_card(hl_by_id[hid], tag_colour, tag_name)
+                if drag_state is not None:
+                    make_draggable_card(card, hid, raw_key, drag_state)
                 rendered_ids.add(hid)
 
         # Append unordered highlights
         for hl in highlights:
             hid = hl.get("id", "")
             if hid not in rendered_ids:
-                _build_highlight_card(hl, tag_colour, tag_name)
+                card = _build_highlight_card(hl, tag_colour, tag_name)
+                if drag_state is not None:
+                    make_draggable_card(card, hid, raw_key, drag_state)
 
         # Empty state message
         if not highlights:
             ui.label("No highlights").classes("text-xs text-gray-400 italic p-2")
+
+    return column
 
 
 def render_organise_tab(
     panel: ui.element,
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
+    *,
+    on_drop: Callable[[str, str, str], Awaitable[None]] | None = None,
+    drag_state: DragState | None = None,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
@@ -139,10 +185,15 @@ def render_organise_tab(
     scrollable row of tag columns. Each column shows highlights grouped by tag.
     An "Untagged" column is appended if any highlights have no tag.
 
+    When on_drop and drag_state are provided, cards become draggable and columns
+    accept drops. The on_drop callback receives (highlight_id, source_tag, target_tag).
+
     Args:
         panel: The ui.tab_panel element to populate.
         tags: List of TagInfo instances (from brief_tags_to_tag_info()).
         crdt_doc: The CRDT annotation document containing highlights and tag_order.
+        on_drop: Async callback(highlight_id, source_tag, target_tag) for drop events.
+        drag_state: Per-client DragState instance (created via create_drag_state()).
     """
     # Clear placeholder content
     panel.clear()
@@ -182,16 +233,22 @@ def render_organise_tab(
             _build_tag_column(
                 tag_info.name,
                 tag_info.colour,
+                tag_info.raw_key,
                 highlights_for_tag,
                 ordered_ids,
+                drag_state,
+                on_drop,
             )
 
         # Untagged column (AC2.6) -- only if there are untagged highlights
         if untagged_highlights:
-            ordered_ids = crdt_doc.get_tag_order("")
+            ordered_ids = crdt_doc.get_tag_order(_UNTAGGED_RAW_KEY)
             _build_tag_column(
                 "Untagged",
                 _UNTAGGED_COLOUR,
+                _UNTAGGED_RAW_KEY,
                 untagged_highlights,
                 ordered_ids,
+                drag_state,
+                on_drop,
             )

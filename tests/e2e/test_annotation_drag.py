@@ -85,7 +85,7 @@ class TestDragCards:
 
     @pytestmark_db
     def test_cards_are_draggable(self, drag_workspace_page: Page) -> None:
-        """Cards in Organise tab have draggable attribute and grab cursor."""
+        """Cards in Organise tab are inside a SortableJS container with grab cursor."""
         page = drag_workspace_page
 
         # Create a highlight (tag index 0 = Jurisdiction)
@@ -98,10 +98,13 @@ class TestDragCards:
         card = page.locator('[data-testid="organise-card"]').first
         expect(card).to_be_visible(timeout=3000)
 
-        # Verify draggable attribute is set
-        expect(card).to_have_attribute("draggable", "true")
+        # Verify card is inside a SortableJS container (has sort- prefixed id)
+        sortable_container = page.locator('[id^="sort-"]').first
+        expect(sortable_container).to_be_visible(timeout=3000)
+        inner_card = sortable_container.locator('[data-testid="organise-card"]').first
+        expect(inner_card).to_be_visible()
 
-        # Verify grab cursor style is applied via inline style attribute
+        # Verify grab cursor class is applied
         expect(card).to_have_css("cursor", "grab")
 
 
@@ -192,14 +195,12 @@ class TestDragBetweenColumns:
 
         highlight_id = source_card.get_attribute("data-highlight-id")
 
-        # Find the Procedural History column header as drop target
-        proc_history_col = page.locator(
-            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
-        )
-        expect(proc_history_col).to_be_visible(timeout=3000)
+        # Find the Procedural History Sortable container as drop target
+        proc_history_sortable = page.locator("#sort-procedural_history")
+        expect(proc_history_sortable).to_be_visible(timeout=3000)
 
-        # Drag the card to the Procedural History column
-        source_card.drag_to(proc_history_col)
+        # Drag the card to the Procedural History sortable container
+        source_card.drag_to(proc_history_sortable)
         page.wait_for_timeout(1000)
 
         # Switch tabs and back to verify persistence
@@ -241,12 +242,10 @@ class TestDragBetweenColumns:
         source_card = jurisdiction_col.locator('[data-testid="organise-card"]').first
         expect(source_card).to_be_visible(timeout=3000)
 
-        legal_issues_col = page.locator(
-            '[data-testid="tag-column"][data-tag-name="Legal Issues"]'
-        )
-        expect(legal_issues_col).to_be_visible(timeout=3000)
+        legal_issues_sortable = page.locator("#sort-legal_issues")
+        expect(legal_issues_sortable).to_be_visible(timeout=3000)
 
-        source_card.drag_to(legal_issues_col)
+        source_card.drag_to(legal_issues_sortable)
         page.wait_for_timeout(1000)
 
         # Switch to Annotate tab
@@ -311,10 +310,8 @@ class TestConcurrentDrag:
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
         card_x = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
-        legal_issues_col_p1 = page1.locator(
-            '[data-testid="tag-column"][data-tag-name="Legal Issues"]'
-        )
-        card_x.drag_to(legal_issues_col_p1)
+        legal_issues_sortable_p1 = page1.locator("#sort-legal_issues")
+        card_x.drag_to(legal_issues_sortable_p1)
         page1.wait_for_timeout(500)
 
         # Page2: drag (remaining) first card to Procedural History
@@ -330,10 +327,8 @@ class TestConcurrentDrag:
         remaining_cards = jurisdiction_col_p2.locator('[data-testid="organise-card"]')
         if remaining_cards.count() > 0:
             card_y = remaining_cards.first
-            proc_history_col_p2 = page2.locator(
-                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
-            )
-            card_y.drag_to(proc_history_col_p2)
+            proc_history_sortable_p2 = page2.locator("#sort-procedural_history")
+            card_y.drag_to(proc_history_sortable_p2)
             page2.wait_for_timeout(500)
 
         # Wait for both broadcasts to settle

@@ -2308,8 +2308,10 @@ def _setup_organise_drag(state: PageState) -> None:
                 position="bottom",
             )
 
-        # Re-render own Organise tab
-        _render_organise_now()
+        # Visual update is handled by element.move() in annotation_drag.py.
+        # Do NOT call _render_organise_now() here — panel.clear() would destroy
+        # the card that was just moved. Other clients get a full re-render via
+        # handle_update_from_other → refresh_organise.
 
         # Broadcast to other clients
         if state.broadcast_update:

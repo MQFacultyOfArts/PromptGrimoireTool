@@ -1,27 +1,27 @@
 """Drag-and-drop infrastructure for Tab 2 (Organise) highlight cards.
 
-Follows the canonical NiceGUI drag-and-drop pattern from the trello_cards
-example: pure Python event handlers, .props('draggable'), and per-client
-drag state. No js_handler or emit() — all events flow through NiceGUI's
-normal event pipeline where .prevent modifiers work correctly.
+Uses NiceGUI's element.move() for visual card relocation on drop, following
+the recommended pattern from github.com/zauberzeug/nicegui/discussions/932.
+Never uses panel.clear() — elements are moved in place.
 
 Design decisions:
-- Per-client drag state via DragState class — each client gets its own instance
-- Factory functions wrap existing NiceGUI elements (no subclassing)
-- Callback-based drop handling — on_drop callback decouples from CRDT details
-- dragover.prevent uses throttle=0.05 to prevent event flood (60 events/sec
-  from the browser would overwhelm the server round-trip pipeline)
+- Per-client drag state via DragState — tracks highlight ID, source tag, AND
+  the card element itself (needed for element.move())
+- Factory functions wrap existing NiceGUI elements
+- On drop: move card element first (instant visual), then fire callback for
+  CRDT persistence — never clear + rebuild
+- dragover.prevent throttled to prevent 60/sec event flood
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 1
 - AC: three-tab-ui.AC2.3, AC2.4
-- Pattern: github.com/zauberzeug/nicegui/tree/main/examples/trello_cards
+- Pattern: github.com/zauberzeug/nicegui/discussions/932
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -35,20 +35,27 @@ class DragState:
     """Per-client drag state tracking the currently dragged highlight.
 
     Each client creates its own DragState instance, avoiding cross-client
-    interference. The instance tracks the highlight ID being dragged and
-    its source tag for cross-column drop resolution.
+    interference. Tracks highlight ID, source tag, AND the card element
+    so the drop handler can call card.move() for instant visual relocation.
     """
 
-    __slots__ = ("_dragged_id", "_source_tag")
+    __slots__ = ("_dragged_card", "_dragged_id", "_source_tag")
 
     def __init__(self) -> None:
         self._dragged_id: str | None = None
         self._source_tag: str | None = None
+        self._dragged_card: Any | None = None  # ui.card at runtime
 
-    def set_dragged(self, highlight_id: str, source_tag: str | None = None) -> None:
-        """Record the highlight being dragged and its source tag."""
+    def set_dragged(
+        self,
+        highlight_id: str,
+        source_tag: str | None = None,
+        card: Any | None = None,
+    ) -> None:
+        """Record the highlight being dragged, its source tag, and card element."""
         self._dragged_id = highlight_id
         self._source_tag = source_tag
+        self._dragged_card = card
 
     def get_dragged(self) -> str | None:
         """Return the currently dragged highlight ID, or None."""
@@ -58,18 +65,19 @@ class DragState:
         """Return the source tag of the dragged highlight, or None."""
         return self._source_tag
 
+    def get_dragged_card(self) -> Any | None:
+        """Return the card element being dragged, or None."""
+        return self._dragged_card
+
     def clear(self) -> None:
         """Clear drag state after a drop or cancel."""
         self._dragged_id = None
         self._source_tag = None
+        self._dragged_card = None
 
 
 def create_drag_state() -> DragState:
-    """Create a new per-client drag state instance.
-
-    Returns:
-        A fresh DragState with no dragged highlight.
-    """
+    """Create a new per-client drag state instance."""
     return DragState()
 
 
@@ -81,9 +89,8 @@ def make_draggable_card(
 ) -> ui.card:
     """Add drag attributes and events to an existing highlight card.
 
-    Uses NiceGUI's .props('draggable') and Python-side dragstart handler,
-    following the canonical trello_cards pattern. No js_handler needed —
-    drag state is tracked entirely in Python via DragState.
+    Stores the card element in DragState on dragstart so the drop handler
+    can call card.move() for instant visual relocation.
 
     Args:
         card: The NiceGUI card element to make draggable.
@@ -98,7 +105,7 @@ def make_draggable_card(
     card.classes("cursor-pointer")
 
     def on_dragstart() -> None:
-        drag_state.set_dragged(highlight_id, source_tag=source_tag)
+        drag_state.set_dragged(highlight_id, source_tag=source_tag, card=card)
 
     card.on("dragstart", on_dragstart)
 
@@ -113,12 +120,9 @@ def make_drop_column(
 ) -> ui.column:
     """Make a column a valid drop target for highlight cards.
 
-    Uses NiceGUI's .on('dragover.prevent') to mark the column as a valid
-    drop target (following the trello_cards pattern). The dragover handler
-    is throttled to avoid flooding the server with 60 events/sec.
-
-    No dragenter/dragleave visual feedback — child elements (cards) cause
-    event bubbling that produces flickering highlight/unhighlight cycles.
+    On drop, moves the card element to this column using element.move()
+    (instant visual update), then fires the on_drop callback for CRDT
+    persistence. Never clears or rebuilds the panel.
 
     Args:
         column: The NiceGUI column element to make a drop target.
@@ -130,12 +134,13 @@ def make_drop_column(
         The column (for chaining).
     """
     # dragover.prevent marks as valid drop target.
-    # Throttle heavily — we only need preventDefault(), not the handler.
+    # Throttle — we only need preventDefault(), not the handler.
     column.on("dragover.prevent", lambda: None, throttle=0.05)
 
     async def on_drop_handler() -> None:
         highlight_id = drag_state.get_dragged()
         source_tag = drag_state.get_source_tag()
+        dragged_card = drag_state.get_dragged_card()
         if highlight_id is None or source_tag is None:
             logger.warning("Drop event with no dragged highlight")
             return
@@ -143,6 +148,12 @@ def make_drop_column(
             "Drop: highlight=%s from=%s to=%s", highlight_id, source_tag, tag_name
         )
         drag_state.clear()
+
+        # Move card element to this column (instant visual update)
+        if dragged_card is not None:
+            dragged_card.move(target_container=column)
+
+        # Persist via CRDT callback
         await on_drop(highlight_id, source_tag, tag_name)
 
     column.on("drop", on_drop_handler)

@@ -1,6 +1,6 @@
 # Case Brief Tool - UX Decisions
 
-This document captures UX refinements from the Gemini review session (2025-01-23).
+This document captures UX refinements from the Gemini review session (2026-01-23).
 
 ## Guiding Principle
 

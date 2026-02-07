@@ -41,7 +41,6 @@ from promptgrimoire.input_pipeline.html_input import (
     process_input,
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
-from promptgrimoire.pages.annotation_drag import create_drag_state
 from promptgrimoire.pages.annotation_organise import render_organise_tab
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 from promptgrimoire.pages.dialogs import show_content_type_dialog
@@ -49,8 +48,6 @@ from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui import Client
-
-    from promptgrimoire.pages.annotation_drag import DragState
 
 logger = logging.getLogger(__name__)
 
@@ -337,8 +334,6 @@ class PageState:
     tag_info_list: list[Any] | None = None  # list[TagInfo]
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
-    # Per-client drag state for Tab 2 drag-and-drop (Phase 4)
-    drag_state: DragState | None = None
     # Callable to refresh the Organise tab from broadcast
     refresh_organise: Any | None = None  # Callable[[], None]
     # Track active tab for broadcast-triggered refresh
@@ -2259,66 +2254,80 @@ def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
 
 
 def _setup_organise_drag(state: PageState) -> None:
-    """Set up per-client drag state, drop handler, and Organise tab refresh.
+    """Set up SortableJS sort-end handler and Organise tab refresh.
 
-    Creates a DragState instance, wires the on_drop callback to CRDT operations,
-    and stores a refresh_organise callable on state for broadcast-triggered re-renders.
+    Wires the on_sort_end callback to CRDT operations and stores a
+    refresh_organise callable on state for broadcast-triggered re-renders.
 
-    Must be called after state is created but before _on_tab_change is defined,
-    since the tab change handler calls state.refresh_organise.
+    Must be called after state is created but before _on_tab_change is
+    defined, since the tab change handler calls state.refresh_organise.
     """
-    state.drag_state = create_drag_state()
 
-    async def _on_organise_drop(
-        highlight_id: str, source_tag: str, target_tag: str
-    ) -> None:
-        """Handle a drop event from Tab 2 drag-and-drop.
+    async def _on_organise_sort_end(e: events.GenericEventArguments) -> None:
+        """Handle a SortableJS sort-end event from Tab 2.
 
-        Same-column drop reorders within the tag. Cross-column drop moves
-        the highlight to the target tag. Both mutate CRDT and broadcast.
+        Parses source/target tag from Sortable container HTML IDs
+        (``sort-{raw_key}``) and highlight_id from card HTML ID
+        (``hl-{highlight_id}``). Same-column reorders within the tag;
+        cross-column moves reassign the highlight's tag. Both mutate
+        CRDT and broadcast.
         """
         if state.crdt_doc is None:
             return
 
+        args = e.args
+        item_id: str = args.get("item", "")
+        from_id: str = args.get("from", "")
+        to_id: str = args.get("to", "")
+        new_index: int = args.get("newIndex", -1)
+
+        # Parse IDs: "hl-{highlight_id}" and "sort-{raw_key}"
+        highlight_id = item_id.removeprefix("hl-")
+        source_tag = from_id.removeprefix("sort-")
+        target_tag = to_id.removeprefix("sort-")
+
+        # "sort-untagged" → empty string (CRDT convention)
+        if source_tag == "untagged":
+            source_tag = ""
+        if target_tag == "untagged":
+            target_tag = ""
+
+        if not highlight_id:
+            logger.warning("Sort-end event with no item ID: %s", args)
+            return
+
         if source_tag == target_tag:
-            # Same-column reorder: move to end of target tag order.
-            # MVP: appends to end because HTML5 drag-drop doesn't natively
-            # provide drop index. Position-based reorder needs JS measurement
-            # of child positions against cursor Y.
+            # Same-column reorder: SortableJS gives us the exact newIndex.
             current_order = state.crdt_doc.get_tag_order(target_tag)
             if highlight_id in current_order:
                 current_order.remove(highlight_id)
-            current_order.append(highlight_id)
+            current_order.insert(new_index, highlight_id)
             state.crdt_doc.set_tag_order(
                 target_tag, current_order, origin_client_id=state.client_id
             )
-            ui.notify(f"Reordered in {target_tag}", type="info", position="bottom")
+            ui.notify("Reordered", type="info", position="bottom")
         else:
             # Cross-column move: reassign tag and update orders
             state.crdt_doc.move_highlight_to_tag(
                 highlight_id,
                 from_tag=source_tag,
                 to_tag=target_tag,
-                position=-1,
+                position=new_index,
                 origin_client_id=state.client_id,
             )
             ui.notify(
-                f"Moved to {target_tag}",
+                f"Moved to {target_tag or 'Untagged'}",
                 type="positive",
                 position="bottom",
             )
 
-        # Visual update is handled by element.move() in annotation_drag.py.
-        # Do NOT call _render_organise_now() here — panel.clear() would destroy
-        # the card that was just moved. Other clients get a full re-render via
-        # handle_update_from_other → refresh_organise.
-
-        # Broadcast to other clients
+        # SortableJS handles visual update (DOM already moved).
+        # Broadcast to other clients for CRDT sync.
         if state.broadcast_update:
             await state.broadcast_update()
 
     def _render_organise_now() -> None:
-        """Re-render the Organise tab with current CRDT state and drag wiring."""
+        """Re-render the Organise tab with current CRDT state."""
         if not (state.organise_panel and state.crdt_doc):
             return
         if state.tag_info_list is None:
@@ -2327,8 +2336,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.organise_panel,
             state.tag_info_list,
             state.crdt_doc,
-            on_drop=_on_organise_drop,
-            drag_state=state.drag_state,
+            on_sort_end=_on_organise_sort_end,
         )
 
     state.refresh_organise = _render_organise_now

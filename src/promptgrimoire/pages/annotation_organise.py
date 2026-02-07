@@ -4,9 +4,9 @@ Renders tag columns with highlight cards, grouped by tag. Each column has a
 coloured header and contains cards for highlights assigned to that tag.
 Highlights with no tag appear in a final "Untagged" column.
 
-Cards are draggable within and between columns. Drop events update the CRDT
-tag_order (reorder) or move highlights between tags (reassign) and broadcast
-changes to all connected clients.
+Cards are draggable within and between columns via SortableJS. Sort-end events
+update the CRDT tag_order (reorder) or move highlights between tags (reassign)
+and broadcast changes to all connected clients.
 
 This module imports TagInfo but NOT BriefTag -- the tag-agnostic abstraction
 ensures Tab 2 rendering is decoupled from the domain enum.
@@ -24,14 +24,12 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
-from promptgrimoire.pages.annotation_drag import (
-    DragState,
-    make_draggable_card,
-    make_drop_column,
-)
+from promptgrimoire.elements.sortable import Sortable
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Callable
+
+    from nicegui.events import GenericEventArguments
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation_tags import TagInfo
@@ -55,10 +53,13 @@ def _build_highlight_card(
 ) -> ui.card:
     """Render a single highlight card inside a tag column.
 
+    The card's HTML id is set to ``hl-{highlight_id}`` so that SortableJS
+    event handlers can identify which highlight was dragged.
+
     Args:
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
-        display_tag_name: Human-readable tag name (e.g. "Jurisdiction" or "Untagged").
+        display_tag_name: Human-readable tag name.
 
     Returns:
         The created ui.card element.
@@ -73,21 +74,21 @@ def _build_highlight_card(
 
     card = (
         ui.card()
-        .classes("w-full mb-2")
+        .classes("w-full mb-2 cursor-grab")
         .style(f"border-left: 4px solid {tag_colour};")
-        .props(f'data-testid="organise-card" data-highlight-id="{highlight_id}"')
+        .props(
+            f'data-testid="organise-card"'
+            f' data-highlight-id="{highlight_id}"'
+            f' id="hl-{highlight_id}"'
+        )
     )
     with card:
-        # Tag name label
         ui.label(display_tag_name).classes("text-xs font-bold").style(
             f"color: {tag_colour};"
         )
-        # Author
         ui.label(f"by {author}").classes("text-xs text-gray-500")
-        # Text snippet
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
-        # Comments
         if comments:
             ui.separator().classes("my-1")
             for comment in comments:
@@ -108,35 +109,30 @@ def _build_tag_column(
     raw_key: str,
     highlights: list[dict[str, Any]],
     ordered_ids: list[str],
-    drag_state: DragState | None,
-    on_drop: Callable[[str, str, str], Awaitable[None]] | None,
+    on_sort_end: Callable[[GenericEventArguments], Any] | None,
 ) -> ui.column:
     """Render a single tag column with header and highlight cards.
 
     Cards are ordered by tag_order first, with any unordered highlights
-    appended at the bottom. If drag_state and on_drop are provided, cards
-    are draggable and the column accepts drops.
+    appended at the bottom. If on_sort_end is provided, cards are wrapped
+    in a SortableJS container enabling drag reorder and cross-column moves.
 
     Args:
         tag_name: Display name for column header.
         tag_colour: Hex colour for header background and card borders.
-        raw_key: Raw tag key for CRDT operations (e.g. "jurisdiction").
+        raw_key: Raw tag key for CRDT operations.
         highlights: All highlights assigned to this tag.
         ordered_ids: Ordered highlight IDs from CRDT tag_order.
-        drag_state: Per-client DragState (None to disable drag).
-        on_drop: Async drop callback (None to disable drop).
+        on_sort_end: Callback for sort-end events (None to disable drag).
 
     Returns:
         The created ui.column element.
     """
     column = (
         ui.column()
-        .classes("min-w-64 max-w-80 flex-shrink-0")
+        .classes("min-w-64 max-w-80 flex-shrink-0 self-stretch")
         .props(f'data-testid="tag-column" data-tag-name="{tag_name}"')
     )
-
-    if drag_state is not None and on_drop is not None:
-        make_drop_column(column, raw_key, on_drop, drag_state)
 
     with column:
         # Coloured header
@@ -147,24 +143,34 @@ def _build_tag_column(
         # Build ID-to-highlight lookup
         hl_by_id = {h.get("id", ""): h for h in highlights}
 
-        # Render ordered highlights first
-        rendered_ids: set[str] = set()
-        for hid in ordered_ids:
-            if hid in hl_by_id:
-                card = _build_highlight_card(hl_by_id[hid], tag_colour, tag_name)
-                if drag_state is not None:
-                    make_draggable_card(card, hid, raw_key, drag_state)
-                rendered_ids.add(hid)
+        # Create Sortable container for cards
+        sortable = Sortable(
+            options={
+                "group": "organise-highlights",
+                "animation": 150,
+            },
+            on_end=on_sort_end,
+        )
+        # Set HTML id so event handler can identify the tag
+        sortable_id = f"sort-{raw_key}" if raw_key else "sort-untagged"
+        sortable.props(f'id="{sortable_id}"')
+        sortable.classes("w-full min-h-16")
 
-        # Append unordered highlights
-        for hl in highlights:
-            hid = hl.get("id", "")
-            if hid not in rendered_ids:
-                card = _build_highlight_card(hl, tag_colour, tag_name)
-                if drag_state is not None:
-                    make_draggable_card(card, hid, raw_key, drag_state)
+        with sortable:
+            # Render ordered highlights first
+            rendered_ids: set[str] = set()
+            for hid in ordered_ids:
+                if hid in hl_by_id:
+                    _build_highlight_card(hl_by_id[hid], tag_colour, tag_name)
+                    rendered_ids.add(hid)
 
-        # Empty state message
+            # Append unordered highlights
+            for hl in highlights:
+                hid = hl.get("id", "")
+                if hid not in rendered_ids:
+                    _build_highlight_card(hl, tag_colour, tag_name)
+
+        # Empty state message (outside sortable so it's not draggable)
         if not highlights:
             ui.label("No highlights").classes("text-xs text-gray-400 italic p-2")
 
@@ -176,31 +182,29 @@ def render_organise_tab(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
     *,
-    on_drop: Callable[[str, str, str], Awaitable[None]] | None = None,
-    drag_state: DragState | None = None,
+    on_sort_end: (Callable[[GenericEventArguments], Any] | None) = None,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
-    Clears the placeholder content from the panel, then creates a horizontally
-    scrollable row of tag columns. Each column shows highlights grouped by tag.
-    An "Untagged" column is appended if any highlights have no tag.
+    Clears the placeholder content from the panel, then creates a
+    horizontally scrollable row of tag columns. Each column shows
+    highlights grouped by tag. An "Untagged" column is appended if
+    any highlights have no tag.
 
-    When on_drop and drag_state are provided, cards become draggable and columns
-    accept drops. The on_drop callback receives (highlight_id, source_tag, target_tag).
+    When on_sort_end is provided, cards are wrapped in SortableJS
+    containers enabling drag reorder and cross-column moves.
 
     Args:
         panel: The ui.tab_panel element to populate.
-        tags: List of TagInfo instances (from brief_tags_to_tag_info()).
-        crdt_doc: The CRDT annotation document containing highlights and tag_order.
-        on_drop: Async callback(highlight_id, source_tag, target_tag) for drop events.
-        drag_state: Per-client DragState instance (created via create_drag_state()).
+        tags: List of TagInfo instances.
+        crdt_doc: The CRDT annotation document.
+        on_sort_end: Callback for SortableJS sort-end events.
     """
-    # Clear placeholder content
     panel.clear()
 
     all_highlights = crdt_doc.get_all_highlights()
 
-    # Build raw tag value -> TagInfo lookup for grouping highlights
+    # Build raw tag value -> TagInfo lookup
     tag_raw_values: dict[str, TagInfo] = {tag.raw_key: tag for tag in tags}
 
     # Group highlights by tag
@@ -221,14 +225,12 @@ def render_organise_tab(
         panel,
         (
             ui.row()
-            .classes("w-full overflow-x-auto gap-4 p-4 flex-nowrap")
+            .classes("w-full overflow-x-auto gap-4 p-4 flex-nowrap items-stretch")
             .props('data-testid="organise-columns"')
         ),
     ):
-        # Render one column per tag
         for tag_info in tags:
             highlights_for_tag = tagged_highlights[tag_info.name]
-            # Get tag_order using raw key from TagInfo
             ordered_ids = crdt_doc.get_tag_order(tag_info.raw_key)
             _build_tag_column(
                 tag_info.name,
@@ -236,11 +238,10 @@ def render_organise_tab(
                 tag_info.raw_key,
                 highlights_for_tag,
                 ordered_ids,
-                drag_state,
-                on_drop,
+                on_sort_end,
             )
 
-        # Untagged column (AC2.6) -- only if there are untagged highlights
+        # Untagged column (AC2.6)
         if untagged_highlights:
             ordered_ids = crdt_doc.get_tag_order(_UNTAGGED_RAW_KEY)
             _build_tag_column(
@@ -249,6 +250,5 @@ def render_organise_tab(
                 _UNTAGGED_RAW_KEY,
                 untagged_highlights,
                 ordered_ids,
-                drag_state,
-                on_drop,
+                on_sort_end,
             )

@@ -37,7 +37,6 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **Lark** - parser generator for LaTeX marker tokenization
 - **selectolax** - fast HTML parser (lexbor backend) for input pipeline
 - **lxml** - HTML normalisation in export pipeline
-- **html5lib** - HTML parsing fallback
 
 ## Development Workflow
 

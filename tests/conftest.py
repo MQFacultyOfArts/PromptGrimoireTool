@@ -55,7 +55,7 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001
         pytest.exit(f"Alembic migration failed: {result.stderr}", returncode=1)
 
     # Convert async URL to sync for this one-time operation
-    # Use psycopg (v3) driver which is installed
+    # Use psycopg (v3) driver from dev deps
     sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
 
     engine = create_engine(sync_url)

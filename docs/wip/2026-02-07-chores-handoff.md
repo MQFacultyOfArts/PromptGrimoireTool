@@ -88,10 +88,17 @@ Controlled one-at-a-time upgrades with changelog review and test-all after each.
 
 **Removed:**
 - `odfdo` — unused, was intended for Phase 7 input conversion. `lxml` promoted to direct dep (used by `export/html_normaliser.py`).
+- `html5lib` — zero imports in entire codebase. Was never wired in.
+- `psycopg[binary]` — from production deps (moved to dev, see below). All production DB access uses asyncpg.
 
 **Moved to dev deps:**
 - `pytest-xdist[psutil]` — was in production dependencies
 - `ast-grep-cli` — was in production dependencies
+- `psycopg[binary]` — only used by `tests/conftest.py` for sync table truncation
+- `lorem-text` — only used by `scripts/anonymise_chats.py`
+
+**Fixed duplicate:**
+- `pylatexenc` — was listed in both production deps and `[dependency-groups] dev`. Removed from dev group (production listing is correct).
 
 ### 7. Issues created (dependency session)
 
@@ -101,10 +108,21 @@ Controlled one-at-a-time upgrades with changelog review and test-all after each.
 ### 8. CLAUDE.md audit
 
 - Fixed target date (2025 → 2026)
-- Added lxml, html5lib to tech stack
+- Added lxml to tech stack (html5lib added then removed — was unused)
 - Regenerated project structure tree (was missing ~15 files/dirs)
 - Updated page DB dependencies table
 - Removed duplicate `test-debug` entry
+
+### 9. Dependency rationale audit
+
+Created `docs/dependency-rationale.md` from first principles — searched codebase for every production and dev dependency, documented claims with file/line evidence, classified as hard core vs protective belt.
+
+Key findings acted on:
+- **html5lib**: Zero imports. Removed.
+- **psycopg[binary]**: Not used in production (all connections use asyncpg). Moved to dev deps — only `tests/conftest.py` needs it for sync table truncation.
+- **lorem-text**: Only used in utility script. Moved to dev deps.
+- **pylatexenc**: Duplicate listing in dev group. Removed duplicate.
+- **bs4**: Deprecated, migration tracked in #122 (already known).
 
 ## Dependabot alerts
 

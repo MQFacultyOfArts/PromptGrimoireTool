@@ -74,7 +74,7 @@ def get_expected_tables() -> set[str]:
         Set of table names that should exist in the database.
     """
     # Import models to register them with SQLModel.metadata
-    import promptgrimoire.db.models  # noqa: F401
+    import promptgrimoire.db.models  # noqa: F401, PLC0415
 
     return set(SQLModel.metadata.tables.keys())
 

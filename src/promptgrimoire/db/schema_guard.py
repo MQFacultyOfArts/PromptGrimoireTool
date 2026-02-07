@@ -30,7 +30,7 @@ async def verify_db_schema(
         raise RuntimeError("Database engine is not initialized")
 
     # Ensure all SQLModel tables are registered in metadata.
-    import promptgrimoire.db.models  # noqa: F401
+    import promptgrimoire.db.models  # noqa: F401, PLC0415
 
     expected_tables = set(SQLModel.metadata.tables.keys())
     if not expected_tables:

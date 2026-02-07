@@ -101,9 +101,9 @@ def anonymise_gemini(html: str, source_name: str) -> str:
     ):
         # Find the query-text or query-content
         content = msg.find(
-            class_=lambda c: c and ("query-text" in c or "query-content" in c)
-            if c
-            else False
+            class_=lambda c: (
+                c and ("query-text" in c or "query-content" in c) if c else False
+            )
         )
         if content:
             user_count += 1
@@ -170,9 +170,9 @@ def anonymise_scienceos(html: str, source_name: str) -> str:
     # Bot responses have prose class
     for msg in soup.find_all(
         "div",
-        class_=lambda c: c and "prose" in c and "not-prose" not in " ".join(c)
-        if c
-        else False,
+        class_=lambda c: (
+            c and "prose" in c and "not-prose" not in " ".join(c) if c else False
+        ),
     ):
         asst_count += 1
         label = f"[{source_name.upper()}-ASST-{asst_count}]"

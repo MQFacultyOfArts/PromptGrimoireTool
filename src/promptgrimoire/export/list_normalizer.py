@@ -52,7 +52,7 @@ def normalize_list_values(html: str) -> str:
         # Try to parse as integer
         try:
             start_value = int(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
 
         # Set start on the ol (only if different from default of 1)

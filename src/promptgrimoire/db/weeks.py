@@ -7,9 +7,12 @@ Handles student visibility based on is_published and visible_from.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from sqlmodel import or_, select
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import CourseEnrollment, CourseRole, Week

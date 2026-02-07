@@ -257,7 +257,7 @@ async def upsert_user_on_login(
     Returns:
         The User record (created or updated).
     """
-    name = display_name or email.split("@")[0]
+    name = display_name or email.split("@", maxsplit=1)[0]
 
     async with get_session() as session:
         # Try to find by email first (may be pre-enrolled)
@@ -269,7 +269,7 @@ async def upsert_user_on_login(
             if not user.stytch_member_id:
                 user.stytch_member_id = stytch_member_id
             user.last_login = datetime.now(UTC)
-            if display_name and user.display_name == email.split("@")[0]:
+            if display_name and user.display_name == email.split("@", maxsplit=1)[0]:
                 # Update name if it was just the email prefix
                 user.display_name = display_name
             # Update admin status if explicitly provided

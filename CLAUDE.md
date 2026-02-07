@@ -4,7 +4,7 @@
 
 PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, annotation, and sharing in educational contexts. Based on the pedagogical framework from "Teaching the Unknown" (Ballsun-Stanton & Torrington, 2025).
 
-**Target:** Session 1 2025 (Feb 23)
+**Target:** Session 1 2026 (Feb 23)
 
 ## Use Cases
 
@@ -36,6 +36,8 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **Stytch** - auth (magic links, passkeys, RBAC)
 - **Lark** - parser generator for LaTeX marker tokenization
 - **selectolax** - fast HTML parser (lexbor backend) for input pipeline
+- **lxml** - HTML normalisation in export pipeline
+- **html5lib** - HTML parsing fallback
 
 ## Development Workflow
 
@@ -91,8 +93,6 @@ uvx ty check
 # Run the app
 uv run python -m promptgrimoire
 
-# Find first failing test
-uv run test-debug
 ```
 
 ## Fixture Analysis
@@ -172,26 +172,40 @@ The `.serena/project.yml` uses `project_name: "PromptGrimoire"` (directory-based
 ```text
 src/promptgrimoire/
 ├── __init__.py
-├── main.py              # NiceGUI app entry
-├── cli.py               # CLI tools
+├── __main__.py          # Module entry point
+├── cli.py               # CLI tools (test-debug, test-all, set-admin, etc.)
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
 ├── input_pipeline/      # HTML input processing (detection, conversion, char spans)
-│   └── html_input.py    # Content type detection, char span injection, processing
 ├── pages/               # NiceGUI page routes
 │   ├── annotation.py    # Main annotation page (HTML input, char-level highlighting)
-│   ├── dialogs.py       # Reusable dialog components (content type confirmation)
-│   └── milkdown_spike.py # Milkdown editor spike
+│   ├── auth.py          # Login/logout pages
+│   ├── courses.py       # Course management
+│   ├── dialogs.py       # Reusable dialog components
+│   ├── index.py         # Landing page
+│   ├── layout.py        # Shared page layout
+│   ├── milkdown_spike.py # Milkdown editor spike
+│   ├── registry.py      # Page route registry
+│   ├── roleplay.py      # AI roleplay / client interview
+│   └── text_selection.py # Text selection utilities
 ├── export/              # PDF/LaTeX export
-│   ├── platforms/       # Platform-specific HTML preprocessing (chatbot exports)
+│   ├── html_normaliser.py # HTML normalisation (lxml)
+│   ├── latex.py         # Marker pipeline, LaTeX generation
+│   ├── list_normalizer.py # HTML list normalisation (bs4, see #122)
+│   ├── pdf.py           # LaTeX compilation (async)
+│   ├── pdf_export.py    # Export orchestration
+│   ├── unicode_latex.py # Unicode-to-LaTeX mapping
+│   ├── platforms/       # Platform-specific HTML preprocessing
 │   └── filters/         # Export filters
+├── static/              # Static assets (JS bundles, CSS)
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
 └── crdt/                # pycrdt collaboration logic
 
 scripts/
 ├── analyse_fixture.py   # CLI for inspecting HTML conversation fixtures
+├── anonymise_chats.py   # Chat anonymisation utility
 ├── setup_latex.py       # TinyTeX installer
 └── html_to_pdf.py       # HTML to PDF conversion script
 
@@ -199,11 +213,8 @@ tests/
 ├── conftest.py          # Shared fixtures
 ├── fixtures/            # Test data (character cards, HTML conversation fixtures)
 ├── unit/                # Unit tests
-│   ├── input_pipeline/  # Input pipeline unit tests
-│   ├── pages/           # Page component unit tests
-│   └── export/          # Export unit tests
 ├── integration/         # Integration tests
-└── e2e/                 # Playwright E2E tests
+└── e2e/                 # Playwright E2E tests (excluded from test-all)
 
 docs/                    # Cached documentation (auto-populated)
 logs/sessions/           # JSONL session logs (auto-created)
@@ -324,9 +335,9 @@ This separation prevents conflating audit concerns with authorization logic.
 | Page | Route | DB Required |
 |------|-------|-------------|
 | annotation | `/annotation` | **Yes** |
-| case_tool | `/case-tool` | **Yes** |
+| courses | `/courses` | **Yes** |
 | roleplay | `/roleplay` | No |
-| logs | `/logs` | No |
+| logviewer | `/logs` | No |
 | milkdown_spike | `/demo/milkdown-spike` | No |
 | auth | `/login`, `/logout` | Optional |
 

@@ -27,56 +27,15 @@ from promptgrimoire.export.pdf import get_latexmk_path
 load_dotenv()
 
 
-def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001
-    """Ensure clean database state before xdist workers spawn.
+def pytest_configure(config: pytest.Config) -> None:
+    """Database cleanup is handled by CLI commands (test-all, test-debug).
 
-    Runs once in the main process at pytest startup:
-    1. Run Alembic migrations to ensure schema is correct
-    2. Truncate all tables to remove leftover data from previous runs
+    The CLI runs Alembic migrations and TRUNCATE in a single process before
+    pytest starts, avoiding xdist worker deadlocks. See cli.py._pre_test_db_cleanup().
 
-    This runs BEFORE xdist spawns workers, so no race conditions.
+    When running pytest directly (not via CLI), ensure the database is
+    already migrated and clean, or use the db_schema_guard fixture.
     """
-    from sqlalchemy import create_engine, text
-
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        return  # Skip if no database configured (non-DB tests)
-
-    # Run migrations to ensure schema is up to date
-    project_root = Path(__file__).parent.parent
-    result = subprocess.run(
-        ["uv", "run", "alembic", "upgrade", "head"],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        pytest.exit(f"Alembic migration failed: {result.stderr}", returncode=1)
-
-    # Convert async URL to sync for this one-time operation
-    # Use psycopg (v3) driver from dev deps
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-
-    engine = create_engine(sync_url)
-    with engine.begin() as conn:
-        # Get all table names from public schema (except alembic_version)
-        result = conn.execute(
-            text("""
-                SELECT tablename FROM pg_tables
-                WHERE schemaname = 'public'
-                AND tablename != 'alembic_version'
-            """)
-        )
-        tables = [row[0] for row in result.fetchall()]
-
-        if tables:
-            # Truncate all tables with CASCADE to handle foreign keys
-            # Quote table names to handle reserved keywords like "user"
-            quoted_tables = ", ".join(f'"{t}"' for t in tables)
-            conn.execute(text(f"TRUNCATE {quoted_tables} RESTART IDENTITY CASCADE"))
-
-    engine.dispose()
 
 
 # Canary UUID for database rebuild detection

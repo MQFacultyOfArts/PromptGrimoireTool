@@ -20,12 +20,63 @@ from rich.text import Text
 console = Console()
 
 
+def _pre_test_db_cleanup() -> None:
+    """Run Alembic migrations and truncate all tables before tests.
+
+    This runs once in the CLI process before pytest is spawned,
+    avoiding deadlocks when xdist workers try to truncate simultaneously.
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return  # No database configured — skip
+
+    # Run Alembic migrations
+    project_root = Path(__file__).parent.parent.parent
+    result = subprocess.run(
+        ["uv", "run", "alembic", "upgrade", "head"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Alembic migration failed:[/]\n{result.stderr}")
+        sys.exit(1)
+
+    # Truncate all tables (sync connection, single process — no race)
+    from sqlalchemy import create_engine, text
+
+    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public'
+                AND tablename != 'alembic_version'
+            """)
+        )
+        tables = [row[0] for row in result.fetchall()]
+
+        if tables:
+            quoted_tables = ", ".join(f'"{t}"' for t in tables)
+            conn.execute(text(f"TRUNCATE {quoted_tables} RESTART IDENTITY CASCADE"))
+
+    engine.dispose()
+
+
 def _run_pytest(
     title: str,
     log_path: Path,
     default_args: list[str],
 ) -> None:
     """Run pytest with Rich formatting and logging."""
+    _pre_test_db_cleanup()
+
     start_time = datetime.now()
     user_args = sys.argv[1:]
     all_args = ["uv", "run", "pytest", *default_args, *user_args]

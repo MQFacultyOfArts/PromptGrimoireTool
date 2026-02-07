@@ -157,8 +157,9 @@ class Sortable(
         ordered_items = [
             id_to_item[dom_id] for dom_id in dom_order if dom_id in id_to_item
         ]
+        # Append Python-side children not present in DOM (defensive).
         ordered_items += [
-            id_to_item[dom_id] for dom_id in dom_order if dom_id not in id_to_item
+            id_to_item[item_id] for item_id in id_to_item if item_id not in dom_order
         ]
 
         if self.default_slot.children != ordered_items:

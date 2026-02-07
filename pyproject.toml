@@ -34,16 +34,6 @@ dependencies = [
     "lxml>=6.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "playwright>=1.49",
-    "pre-commit>=4.0",
-    "ruff>=0.9",
-    "alembic>=1.14",
-]
-
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
 test-debug = "promptgrimoire.cli:test_debug"
@@ -98,10 +88,6 @@ ignore = [
 ]
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
-]
-"src/promptgrimoire/pages/case_tool.py" = [
-    "PLR0915",  # Page function needs many statements for UI setup
-    "SIM117",   # Nested with is cleaner for NiceGUI UI composition
 ]
 "src/promptgrimoire/pages/courses.py" = [
     "PLR0915",  # Page function needs many statements for UI setup

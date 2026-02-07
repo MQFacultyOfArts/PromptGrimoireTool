@@ -1,7 +1,7 @@
 repos:
   # Ruff: lint with autofix, then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.11
+    rev: v0.15.0
     hooks:
       # Run the linter with autofix
       - id: ruff-check

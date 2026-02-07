@@ -50,6 +50,8 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from nicegui import Client
 
+    from promptgrimoire.pages.annotation_drag import DragState
+
 logger = logging.getLogger(__name__)
 
 # Global registry for workspace annotation documents
@@ -336,7 +338,7 @@ class PageState:
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
     # Per-client drag state for Tab 2 drag-and-drop (Phase 4)
-    drag_state: Any | None = None  # DragState from annotation_drag
+    drag_state: DragState | None = None
     # Callable to refresh the Organise tab from broadcast
     refresh_organise: Any | None = None  # Callable[[], None]
     # Track active tab for broadcast-triggered refresh
@@ -2279,7 +2281,10 @@ def _setup_organise_drag(state: PageState) -> None:
             return
 
         if source_tag == target_tag:
-            # Same-column reorder: move to end of target tag order
+            # Same-column reorder: move to end of target tag order.
+            # MVP: appends to end because HTML5 drag-drop doesn't natively
+            # provide drop index. Position-based reorder needs JS measurement
+            # of child positions against cursor Y.
             current_order = state.crdt_doc.get_tag_order(target_tag)
             if highlight_id in current_order:
                 current_order.remove(highlight_id)

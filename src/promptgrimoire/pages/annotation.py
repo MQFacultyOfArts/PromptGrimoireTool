@@ -2276,19 +2276,23 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         ui.tab("Respond")
 
     async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
-        """Track which tabs have been visited for deferred rendering."""
+        """Handle tab switching with deferred rendering and refresh."""
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
-        if tab_name in state.initialised_tabs:
-            return
-        state.initialised_tabs.add(tab_name)
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
+            # Always re-render Organise tab to show current highlights
+            state.initialised_tabs.add(tab_name)
             if state.tag_info_list is None:
                 state.tag_info_list = brief_tags_to_tag_info()
             render_organise_tab(
                 state.organise_panel, state.tag_info_list, state.crdt_doc
             )
+            return
+
+        if tab_name in state.initialised_tabs:
+            return
+        state.initialised_tabs.add(tab_name)
 
     with ui.tab_panels(tabs, value="Annotate", on_change=_on_tab_change).classes(
         "w-full"

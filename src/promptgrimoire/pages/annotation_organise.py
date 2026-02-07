@@ -50,6 +50,7 @@ def _build_highlight_card(
     snippet = full_text[:_SNIPPET_MAX_CHARS]
     if len(full_text) > _SNIPPET_MAX_CHARS:
         snippet += "..."
+    comments: list[dict[str, Any]] = list(highlight.get("comments", []))
 
     with (
         ui.card()
@@ -66,6 +67,17 @@ def _build_highlight_card(
         # Text snippet
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
+        # Comments
+        if comments:
+            ui.separator().classes("my-1")
+            for comment in comments:
+                comment_author = comment.get("author", "Unknown")
+                comment_text = comment.get("text", "")
+                with ui.row().classes("w-full gap-1 items-start"):
+                    ui.label(f"{comment_author}:").classes(
+                        "text-xs font-semibold text-gray-600 flex-shrink-0"
+                    )
+                    ui.label(comment_text).classes("text-xs text-gray-700")
 
 
 def _build_tag_column(

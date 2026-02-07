@@ -74,6 +74,23 @@ def create_highlight(page: Page, start_char: int, end_char: int) -> None:
     tag_button.click()
 
 
+def create_highlight_with_tag(
+    page: Page, start_char: int, end_char: int, tag_index: int
+) -> None:
+    """Select characters and click a specific tag button to create a highlight.
+
+    Args:
+        page: Playwright page.
+        start_char: Index of first character to select.
+        end_char: Index of last character to select.
+        tag_index: 0-based index of tag button to click
+            (0=Jurisdiction, 1=Procedural History, etc).
+    """
+    select_chars(page, start_char, end_char)
+    tag_button = page.locator("[data-testid='tag-toolbar'] button").nth(tag_index)
+    tag_button.click()
+
+
 def setup_workspace_with_content(page: Page, app_server: str, content: str) -> None:
     """Navigate to annotation page, create workspace, and add document content.
 

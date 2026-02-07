@@ -144,7 +144,7 @@ def test_all() -> None:
     E2E tests must run separately (they need a live app server anyway).
 
     Flags applied:
-        --ignore=tests/e2e: Exclude Playwright E2E tests
+        -m "not e2e": Exclude Playwright E2E tests by marker
         -n auto: Parallel execution with auto-detected workers
         --dist=worksteal: Workers steal tests from others for better load balancing
         --durations=10: Show 10 slowest tests

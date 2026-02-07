@@ -1,17 +1,20 @@
 """Drag-and-drop infrastructure for Tab 2 (Organise) highlight cards.
 
-Provides factory functions that wrap NiceGUI elements with HTML5 drag event
-handlers. Per-client drag state is held in closure scope (no global state).
-Drop events are dispatched via callbacks that the caller wires to CRDT operations.
+Follows the canonical NiceGUI drag-and-drop pattern from the trello_cards
+example: pure Python event handlers, .props('draggable'), and per-client
+drag state. No js_handler or emit() — all events flow through NiceGUI's
+normal event pipeline where .prevent modifiers work correctly.
 
 Design decisions:
-- No subclassing -- factory functions wrap existing NiceGUI elements
-- Per-client drag state via DragState class -- each client gets its own instance
-- Callback-based drop handling -- on_drop callback decouples from CRDT details
+- Per-client drag state via DragState class — each client gets its own instance
+- Factory functions wrap existing NiceGUI elements (no subclassing)
+- Callback-based drop handling — on_drop callback decouples from CRDT details
+- Visual feedback via CSS class changes (like trello_cards example)
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 1
 - AC: three-tab-ui.AC2.3, AC2.4
+- Pattern: github.com/zauberzeug/nicegui/tree/main/examples/trello_cards
 """
 
 from __future__ import annotations
@@ -25,6 +28,10 @@ if TYPE_CHECKING:
     from nicegui import ui
 
 logger = logging.getLogger(__name__)
+
+# CSS classes for drop target visual feedback
+_DROP_HIGHLIGHT_ADD = "bg-blue-grey-3"
+_DROP_HIGHLIGHT_REMOVE = "bg-blue-grey-1"
 
 
 class DragState:
@@ -75,37 +82,28 @@ def make_draggable_card(
     source_tag: str,
     drag_state: DragState,
 ) -> ui.card:
-    """Add HTML5 drag attributes and events to an existing highlight card.
+    """Add drag attributes and events to an existing highlight card.
 
-    Sets the card as draggable with a grab cursor, and wires dragstart
-    to store the highlight ID in both the JavaScript DataTransfer object
-    and the Python-side DragState.
+    Uses NiceGUI's .props('draggable') and Python-side dragstart handler,
+    following the canonical trello_cards pattern. No js_handler needed —
+    drag state is tracked entirely in Python via DragState.
 
     Args:
         card: The NiceGUI card element to make draggable.
         highlight_id: ID of the highlight this card represents.
-        source_tag: The raw tag key this card belongs to (for cross-column tracking).
+        source_tag: The raw tag key this card belongs to.
         drag_state: Per-client DragState instance for tracking.
 
     Returns:
         The card (for chaining).
     """
-    card.style("cursor: grab;")
-    card._props["draggable"] = "true"
+    card.props("draggable")
+    card.classes("cursor-pointer")
 
     def on_dragstart() -> None:
         drag_state.set_dragged(highlight_id, source_tag=source_tag)
 
-    card.on(
-        "dragstart",
-        handler=on_dragstart,
-        # Use js_handler to set DataTransfer data for browser-level drag
-        js_handler=f"""(e) => {{
-            e.dataTransfer.setData('text/plain', '{highlight_id}');
-            e.dataTransfer.effectAllowed = 'move';
-            emit();
-        }}""",
-    )
+    card.on("dragstart", on_dragstart)
 
     return card
 
@@ -118,42 +116,33 @@ def make_drop_column(
 ) -> ui.column:
     """Make a column a valid drop target for highlight cards.
 
-    Adds dragover (with prevent default) and drop event handlers. On drop,
-    reads the highlight ID from the DragState and calls the on_drop callback
-    with (highlight_id, source_tag, target_tag).
+    Uses NiceGUI's .on('dragover.prevent') to mark the column as a valid
+    drop target (following the trello_cards pattern). Visual feedback is
+    provided via CSS class changes on dragover/dragleave.
 
     Args:
         column: The NiceGUI column element to make a drop target.
         tag_name: The raw tag key this column represents.
-        on_drop: Async callback(highlight_id, source_tag, target_tag) called on drop.
-        drag_state: Per-client DragState instance for reading dragged highlight.
+        on_drop: Async callback(highlight_id, source_tag, target_tag).
+        drag_state: Per-client DragState instance.
 
     Returns:
         The column (for chaining).
     """
-    # Prevent default to allow drop
-    column.on(
-        "dragover.prevent",
-        js_handler="() => {}",
-    )
+    column.classes(_DROP_HIGHLIGHT_REMOVE)
 
-    # Visual feedback on dragenter/dragleave
-    column.on(
-        "dragenter",
-        js_handler="""(e) => {
-            e.currentTarget.style.outline = '2px dashed #1976d2';
-            e.currentTarget.style.outlineOffset = '-2px';
-        }""",
-    )
-    column.on(
-        "dragleave",
-        js_handler="""(e) => {
-            e.currentTarget.style.outline = '';
-            e.currentTarget.style.outlineOffset = '';
-        }""",
-    )
+    def highlight() -> None:
+        column.classes(remove=_DROP_HIGHLIGHT_REMOVE, add=_DROP_HIGHLIGHT_ADD)
+
+    def unhighlight() -> None:
+        column.classes(remove=_DROP_HIGHLIGHT_ADD, add=_DROP_HIGHLIGHT_REMOVE)
+
+    # dragover.prevent marks this as a valid drop target
+    column.on("dragover.prevent", highlight)
+    column.on("dragleave", unhighlight)
 
     async def on_drop_handler() -> None:
+        unhighlight()
         highlight_id = drag_state.get_dragged()
         source_tag = drag_state.get_source_tag()
         if highlight_id is None or source_tag is None:
@@ -162,15 +151,6 @@ def make_drop_column(
         drag_state.clear()
         await on_drop(highlight_id, source_tag, tag_name)
 
-    column.on(
-        "drop",
-        handler=on_drop_handler,
-        js_handler="""(e) => {
-            e.preventDefault();
-            e.currentTarget.style.outline = '';
-            e.currentTarget.style.outlineOffset = '';
-            emit();
-        }""",
-    )
+    column.on("drop", on_drop_handler)
 
     return column

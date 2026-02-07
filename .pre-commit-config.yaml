@@ -19,6 +19,16 @@ repos:
         types: [python]
         pass_filenames: false
 
+  # Docs index regeneration
+  - repo: local
+    hooks:
+      - id: docs-index
+        name: regenerate docs/_index.md
+        entry: uv run python scripts/generate_docs_index.py
+        language: system
+        files: ^docs/.*\.md$
+        pass_filenames: false
+
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

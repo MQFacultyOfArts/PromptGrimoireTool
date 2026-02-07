@@ -12,17 +12,17 @@ Traceability:
 from __future__ import annotations
 
 import os
-import re
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 import pytest
 from playwright.sync_api import expect
 
+from tests.e2e.annotation_helpers import setup_workspace_with_content
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from playwright.sync_api import Browser, Page
+    from playwright.sync_api import Page
 
 
 # Skip if no database configured
@@ -33,42 +33,18 @@ pytestmark_db = pytest.mark.skipif(
 
 
 @pytest.fixture
-def workspace_page(browser: Browser, app_server: str) -> Generator[Page]:
+def workspace_page(authenticated_page: Page, app_server: str) -> Generator[Page]:
     """Authenticated page with a workspace containing document content.
 
-    Creates a workspace via the UI and adds plain text content using
-    the QEditor paste handler. Yields a page ready for tab testing.
+    Reuses the authenticated_page fixture and setup_workspace_with_content helper
+    to create a workspace with plain text content. Yields a page ready for tab testing.
     """
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
+    setup_workspace_with_content(
+        authenticated_page,
+        app_server,
+        "Tab test content for annotation workspace verification",
     )
-    page = context.new_page()
-
-    # Authenticate
-    unique_id = uuid4().hex[:8]
-    email = f"tab-test-{unique_id}@test.example.edu.au"
-    page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
-    page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
-
-    # Navigate to annotation and create workspace
-    page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-    page.wait_for_url(re.compile(r"workspace_id="))
-
-    # Add content via QEditor: focus, type, submit
-    editor = page.locator(".q-editor__content")
-    expect(editor).to_be_visible(timeout=5000)
-    editor.click()
-    page.keyboard.type("Tab test content for annotation workspace verification")
-
-    page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
-    page.locator("[data-char-index]").first.wait_for(state="attached", timeout=15000)
-    page.wait_for_timeout(300)
-
-    yield page
-
-    page.close()
-    context.close()
+    yield authenticated_page
 
 
 class TestTabHeaders:
@@ -117,6 +93,7 @@ class TestDeferredRendering:
         # Organise panel should be visible with placeholder
         organise_panel = page.locator("[role='tabpanel']").nth(1)
         expect(organise_panel).to_be_visible()
+        expect(organise_panel).to_contain_text("Organise tab content will appear here.")
 
         # Click Respond tab
         page.locator("role=tab").nth(2).click()
@@ -125,6 +102,7 @@ class TestDeferredRendering:
         # Respond panel should be visible with placeholder
         respond_panel = page.locator("[role='tabpanel']").nth(2)
         expect(respond_panel).to_be_visible()
+        expect(respond_panel).to_contain_text("Respond tab content will appear here.")
 
 
 class TestTabStatePreservation:

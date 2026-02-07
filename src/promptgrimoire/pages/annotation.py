@@ -324,7 +324,9 @@ class PageState:
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
     # Tab container references (Phase 1: three-tab UI)
-    tab_panels: Any | None = None  # Tab panels container for programmatic switching
+    tab_panels: ui.element | None = (
+        None  # Tab panels container for programmatic switching
+    )
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
 
 

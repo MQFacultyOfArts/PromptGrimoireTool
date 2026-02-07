@@ -2292,6 +2292,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.crdt_doc.set_tag_order(
                 target_tag, current_order, origin_client_id=state.client_id
             )
+            ui.notify(f"Reordered in {target_tag}", type="info", position="bottom")
         else:
             # Cross-column move: reassign tag and update orders
             state.crdt_doc.move_highlight_to_tag(
@@ -2300,6 +2301,11 @@ def _setup_organise_drag(state: PageState) -> None:
                 to_tag=target_tag,
                 position=-1,
                 origin_client_id=state.client_id,
+            )
+            ui.notify(
+                f"Moved to {target_tag}",
+                type="positive",
+                position="bottom",
             )
 
         # Re-render own Organise tab

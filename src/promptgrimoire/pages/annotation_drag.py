@@ -9,7 +9,8 @@ Design decisions:
 - Per-client drag state via DragState class — each client gets its own instance
 - Factory functions wrap existing NiceGUI elements (no subclassing)
 - Callback-based drop handling — on_drop callback decouples from CRDT details
-- Visual feedback via CSS class changes (like trello_cards example)
+- dragover.prevent uses throttle=0.05 to prevent event flood (60 events/sec
+  from the browser would overwhelm the server round-trip pipeline)
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 1
@@ -28,10 +29,6 @@ if TYPE_CHECKING:
     from nicegui import ui
 
 logger = logging.getLogger(__name__)
-
-# CSS classes for drop target visual feedback
-_DROP_HIGHLIGHT_ADD = "bg-blue-grey-3"
-_DROP_HIGHLIGHT_REMOVE = "bg-blue-grey-1"
 
 
 class DragState:
@@ -117,8 +114,11 @@ def make_drop_column(
     """Make a column a valid drop target for highlight cards.
 
     Uses NiceGUI's .on('dragover.prevent') to mark the column as a valid
-    drop target (following the trello_cards pattern). Visual feedback is
-    provided via CSS class changes on dragover/dragleave.
+    drop target (following the trello_cards pattern). The dragover handler
+    is throttled to avoid flooding the server with 60 events/sec.
+
+    No dragenter/dragleave visual feedback — child elements (cards) cause
+    event bubbling that produces flickering highlight/unhighlight cycles.
 
     Args:
         column: The NiceGUI column element to make a drop target.
@@ -129,25 +129,19 @@ def make_drop_column(
     Returns:
         The column (for chaining).
     """
-    column.classes(_DROP_HIGHLIGHT_REMOVE)
-
-    def highlight() -> None:
-        column.classes(remove=_DROP_HIGHLIGHT_REMOVE, add=_DROP_HIGHLIGHT_ADD)
-
-    def unhighlight() -> None:
-        column.classes(remove=_DROP_HIGHLIGHT_ADD, add=_DROP_HIGHLIGHT_REMOVE)
-
-    # dragover.prevent marks this as a valid drop target
-    column.on("dragover.prevent", highlight)
-    column.on("dragleave", unhighlight)
+    # dragover.prevent marks as valid drop target.
+    # Throttle heavily — we only need preventDefault(), not the handler.
+    column.on("dragover.prevent", lambda: None, throttle=0.05)
 
     async def on_drop_handler() -> None:
-        unhighlight()
         highlight_id = drag_state.get_dragged()
         source_tag = drag_state.get_source_tag()
         if highlight_id is None or source_tag is None:
             logger.warning("Drop event with no dragged highlight")
             return
+        logger.info(
+            "Drop: highlight=%s from=%s to=%s", highlight_id, source_tag, tag_name
+        )
         drag_state.clear()
         await on_drop(highlight_id, source_tag, tag_name)
 

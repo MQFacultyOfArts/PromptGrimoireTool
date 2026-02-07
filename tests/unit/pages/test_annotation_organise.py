@@ -29,10 +29,9 @@ class TestHighlightGrouping:
         all_highlights = doc.get_all_highlights()
 
         # Build the same grouping logic as render_organise_tab
-        tag_raw_values: dict[str, str] = {}
-        for tag_info in tags:
-            raw_value = tag_info.name.lower().replace(" ", "_")
-            tag_raw_values[raw_value] = tag_info.name
+        tag_raw_values: dict[str, str] = {
+            tag_info.raw_key: tag_info.name for tag_info in tags
+        }
 
         tagged: dict[str, list[dict]] = {ti.name: [] for ti in tags}
         untagged: list[dict] = []
@@ -57,10 +56,9 @@ class TestHighlightGrouping:
         tags = brief_tags_to_tag_info()
         all_highlights = doc.get_all_highlights()
 
-        tag_raw_values: dict[str, str] = {}
-        for tag_info in tags:
-            raw_value = tag_info.name.lower().replace(" ", "_")
-            tag_raw_values[raw_value] = tag_info.name
+        tag_raw_values: dict[str, str] = {
+            tag_info.raw_key: tag_info.name for tag_info in tags
+        }
 
         tagged: dict[str, list[dict]] = {ti.name: [] for ti in tags}
         untagged: list[dict] = []

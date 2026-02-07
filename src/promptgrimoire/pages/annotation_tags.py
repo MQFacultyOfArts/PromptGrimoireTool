@@ -23,10 +23,13 @@ class TagInfo:
     Attributes:
         name: Human-readable display name (e.g. "Jurisdiction", "Legal Issues").
         colour: Hex colour string (e.g. "#1f77b4").
+        raw_key: The raw enum value as a string (e.g. "jurisdiction"). Derived from
+                 name.lower().replace(" ", "_") for CRDT lookups and tag_order calls.
     """
 
     name: str
     colour: str
+    raw_key: str
 
 
 def brief_tags_to_tag_info() -> list[TagInfo]:
@@ -34,6 +37,7 @@ def brief_tags_to_tag_info() -> list[TagInfo]:
 
     Iterates BriefTag in declaration order, producing display names via
     ``tag.value.replace("_", " ").title()`` and colours from TAG_COLORS.
+    The raw_key is the enum value (lowercase underscore-delimited).
 
     Returns:
         List of TagInfo in enum declaration order, one per BriefTag member.
@@ -42,6 +46,7 @@ def brief_tags_to_tag_info() -> list[TagInfo]:
         TagInfo(
             name=tag.value.replace("_", " ").title(),
             colour=TAG_COLORS[tag],
+            raw_key=tag.value,
         )
         for tag in BriefTag
     ]

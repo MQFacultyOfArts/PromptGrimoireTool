@@ -137,16 +137,8 @@ def render_organise_tab(
 
     all_highlights = crdt_doc.get_all_highlights()
 
-    # Build tag-name -> tag value lookup (reverse of title-case transform)
-    # TagInfo.name is title-cased display; highlight["tag"] is the raw enum value.
-    # We need to match highlights by their raw tag value.
-    tag_name_to_info: dict[str, TagInfo] = {}
-    tag_raw_values: dict[str, TagInfo] = {}
-    for tag_info in tags:
-        # Reverse the title-case transform to get the raw enum value
-        raw_value = tag_info.name.lower().replace(" ", "_")
-        tag_raw_values[raw_value] = tag_info
-        tag_name_to_info[tag_info.name] = tag_info
+    # Build raw tag value -> TagInfo lookup for grouping highlights
+    tag_raw_values: dict[str, TagInfo] = {tag.raw_key: tag for tag in tags}
 
     # Group highlights by tag
     tagged_highlights: dict[str, list[dict[str, Any]]] = {
@@ -173,9 +165,8 @@ def render_organise_tab(
         # Render one column per tag
         for tag_info in tags:
             highlights_for_tag = tagged_highlights[tag_info.name]
-            # Get tag_order using raw enum value
-            raw_value = tag_info.name.lower().replace(" ", "_")
-            ordered_ids = crdt_doc.get_tag_order(raw_value)
+            # Get tag_order using raw key from TagInfo
+            ordered_ids = crdt_doc.get_tag_order(tag_info.raw_key)
             _build_tag_column(
                 tag_info.name,
                 tag_info.colour,

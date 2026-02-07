@@ -11,6 +11,7 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+from promptgrimoire.pages.annotation_organise import _SNIPPET_MAX_CHARS
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 
 
@@ -96,13 +97,8 @@ class TestHighlightGrouping:
     def test_empty_document_no_highlights(self) -> None:
         """An empty document produces no highlights in any group."""
         doc = AnnotationDocument("test-empty")
-        tags = brief_tags_to_tag_info()
         all_highlights = doc.get_all_highlights()
         assert len(all_highlights) == 0
-
-        # All tag groups should be empty
-        for _tag_info in tags:
-            assert len([]) == 0  # trivially empty, but validates the path
 
     def test_highlight_card_data_extraction(self) -> None:
         """Verify highlight dict contains expected fields for card rendering."""
@@ -123,13 +119,12 @@ class TestHighlightGrouping:
         assert "id" in hl
 
     def test_snippet_truncation_logic(self) -> None:
-        """Long text should be truncated at 100 chars in card rendering."""
+        """Long text should be truncated at _SNIPPET_MAX_CHARS in card rendering."""
         long_text = "x" * 150
-        snippet_max = 100
-        snippet = long_text[:snippet_max]
-        if len(long_text) > snippet_max:
+        snippet = long_text[:_SNIPPET_MAX_CHARS]
+        if len(long_text) > _SNIPPET_MAX_CHARS:
             snippet += "..."
-        assert len(snippet) == 103  # 100 + "..."
+        assert len(snippet) == _SNIPPET_MAX_CHARS + 3  # _SNIPPET_MAX_CHARS + "..."
         assert snippet.endswith("...")
 
     def test_all_ten_tags_produce_columns(self) -> None:

@@ -130,7 +130,7 @@ Applied three philosophical lenses to all 30 dependencies. Key findings and acti
 
 **Removed:**
 - `pytest-cov` — orphaned config, wrong pyproject section, no CLI consumer. Config removed.
-- `lorem-text` — single `lorem.paragraphs(1)` call in utility script. Removed from dev deps. `scripts/anonymise_chats.py` will need manual `uv pip install lorem-text` if run again.
+- `lorem-text` — single `lorem.paragraphs(1)` call in utility script. Removed from dev deps. Script (`scripts/anonymise_chats.py`) also deleted — was a one-shot utility.
 
 **Moved to dev deps:**
 - `rich` — only used by `cli.py` (test runner panels), not by the web application.

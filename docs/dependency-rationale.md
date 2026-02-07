@@ -100,7 +100,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** HTML parsing and tree manipulation for list normalisation in the export pipeline.
 
-**Evidence:** `src/promptgrimoire/export/list_normalizer.py` (production), `scripts/anonymise_chats.py` (utility), `tests/benchmark/test_dom_performance.py` (benchmark comparison).
+**Evidence:** `src/promptgrimoire/export/list_normalizer.py` (production), `tests/benchmark/test_dom_performance.py` (benchmark comparison).
 
 **Why not alternatives:** The project is migrating to selectolax. bs4 remains only where tree manipulation (insert, wrap, decompose) is needed — selectolax handles these differently. See #122.
 

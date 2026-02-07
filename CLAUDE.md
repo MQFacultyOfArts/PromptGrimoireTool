@@ -204,7 +204,6 @@ src/promptgrimoire/
 
 scripts/
 ├── analyse_fixture.py   # CLI for inspecting HTML conversation fixtures
-├── anonymise_chats.py   # Chat anonymisation utility
 ├── setup_latex.py       # TinyTeX installer
 └── html_to_pdf.py       # HTML to PDF conversion script
 

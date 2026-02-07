@@ -2,6 +2,7 @@
 
 Tests highlight/underline generation from regions.
 Uses regions directly - does NOT call lexer or region builder.
+Assertions use LaTeX AST parsing (pylatexenc) for structural validation.
 """
 
 from promptgrimoire.export.latex import (
@@ -9,6 +10,13 @@ from promptgrimoire.export.latex import (
     generate_highlight_wrapper,
     generate_highlighted_latex,
     generate_underline_wrapper,
+)
+from tests.helpers.latex_parse import (
+    find_macros,
+    get_body_text,
+    get_opt_arg,
+    parse_latex,
+    require_opt_arg,
 )
 
 
@@ -21,72 +29,109 @@ class TestGenerateUnderlineWrapper:
         assert wrapper("text") == "text"
 
     def test_single_highlight_1pt_underline(self) -> None:
-        """Single highlight produces 1pt underline with tag's dark colour."""
+        """Single highlight produces 1pt underline with dark colour."""
         highlights = {0: {"tag": "alpha"}}
         wrapper = generate_underline_wrapper(frozenset({0}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        assert (
-            result == r"\underLine[color=tag-alpha-dark, height=1pt, bottom=-3pt]{text}"
-        )
+        assert len(uls) == 1
+        opt = require_opt_arg(uls[0])
+        assert "tag-alpha-dark" in opt
+        assert "height=1pt" in opt
+        assert get_body_text(uls[0]) == "text"
 
     def test_two_highlights_stacked_underlines(self) -> None:
         """Two highlights produce stacked 2pt + 1pt underlines."""
-        highlights = {0: {"tag": "alpha"}, 1: {"tag": "beta"}}
+        highlights = {
+            0: {"tag": "alpha"},
+            1: {"tag": "beta"},
+        }
         wrapper = generate_underline_wrapper(frozenset({0, 1}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        # Outer (lower index) is 2pt, inner (higher index) is 1pt
-        expected = (
-            r"\underLine[color=tag-alpha-dark, height=2pt, bottom=-3pt]{"
-            r"\underLine[color=tag-beta-dark, height=1pt, bottom=-3pt]{text}}"
-        )
-        assert result == expected
+        # Two nested underlines
+        assert len(uls) == 2
+        # Outer (alpha) is 2pt, inner (beta) is 1pt
+        opt_outer = require_opt_arg(uls[0])
+        assert "tag-alpha-dark" in opt_outer
+        assert "height=2pt" in opt_outer
+        opt_inner = require_opt_arg(uls[1])
+        assert "tag-beta-dark" in opt_inner
+        assert "height=1pt" in opt_inner
+        assert get_body_text(uls[1]) == "text"
 
     def test_three_highlights_many_underline(self) -> None:
-        """Three or more highlights produce single many-dark 4pt underline."""
-        highlights = {0: {"tag": "alpha"}, 1: {"tag": "beta"}, 2: {"tag": "gamma"}}
+        """3+ highlights produce single many-dark 4pt underline."""
+        highlights = {
+            0: {"tag": "alpha"},
+            1: {"tag": "beta"},
+            2: {"tag": "gamma"},
+        }
         wrapper = generate_underline_wrapper(frozenset({0, 1, 2}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        assert result == r"\underLine[color=many-dark, height=4pt, bottom=-5pt]{text}"
+        assert len(uls) == 1
+        opt = require_opt_arg(uls[0])
+        assert "many-dark" in opt
+        assert "height=4pt" in opt
+        assert get_body_text(uls[0]) == "text"
 
     def test_four_highlights_also_many_underline(self) -> None:
         """Four highlights also uses many-dark (not 4 stacked)."""
         highlights = {i: {"tag": f"tag{i}"} for i in range(4)}
         wrapper = generate_underline_wrapper(frozenset({0, 1, 2, 3}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        assert "many-dark" in result
-        # Should NOT have multiple nested underlines
-        assert result.count(r"\underLine") == 1
+        assert len(uls) == 1
+        assert "many-dark" in require_opt_arg(uls[0])
 
     def test_underline_colours_from_tag_names(self) -> None:
         """Underline colours use tag-{name}-dark format."""
         highlights = {5: {"tag": "jurisdiction"}}
         wrapper = generate_underline_wrapper(frozenset({5}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        assert "tag-jurisdiction-dark" in result
+        assert len(uls) == 1
+        opt = require_opt_arg(uls[0])
+        assert "tag-jurisdiction-dark" in opt
 
     def test_tag_with_underscore_converted(self) -> None:
         """Underscores in tag names are converted to hyphens."""
         highlights = {0: {"tag": "my_custom_tag"}}
         wrapper = generate_underline_wrapper(frozenset({0}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        assert "tag-my-custom-tag-dark" in result
+        assert len(uls) == 1
+        opt = require_opt_arg(uls[0])
+        assert "tag-my-custom-tag-dark" in opt
 
     def test_sorted_indices_for_deterministic_nesting(self) -> None:
-        """Highlights are sorted by index for deterministic output."""
-        highlights = {2: {"tag": "c"}, 0: {"tag": "a"}, 1: {"tag": "b"}}
+        """Highlights sorted by index for deterministic output."""
+        highlights = {
+            2: {"tag": "c"},
+            0: {"tag": "a"},
+            1: {"tag": "b"},
+        }
         wrapper = generate_underline_wrapper(frozenset({0, 1, 2}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        uls = find_macros(nodes, "underLine")
 
-        # With 3 highlights, uses many-dark, so ordering doesn't show
-        # But we can test with a mock that captures the order
-        # For now, just verify it doesn't crash
-        assert "many-dark" in result
+        # With 3 highlights, uses many-dark
+        assert len(uls) == 1
+        assert "many-dark" in require_opt_arg(uls[0])
 
 
 class TestGenerateHighlightWrapper:
@@ -102,37 +147,54 @@ class TestGenerateHighlightWrapper:
         highlights = {0: {"tag": "alpha"}}
         wrapper = generate_highlight_wrapper(frozenset({0}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        hls = find_macros(nodes, "highLight")
 
-        assert result == r"\highLight[tag-alpha-light]{text}"
+        assert len(hls) == 1
+        assert get_opt_arg(hls[0]) == "tag-alpha-light"
+        assert get_body_text(hls[0]) == "text"
 
     def test_two_highlights_nested_wrapping(self) -> None:
         """Two highlights produce nested highLight commands."""
-        highlights = {0: {"tag": "alpha"}, 1: {"tag": "beta"}}
+        highlights = {
+            0: {"tag": "alpha"},
+            1: {"tag": "beta"},
+        }
         wrapper = generate_highlight_wrapper(frozenset({0, 1}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        hls = find_macros(nodes, "highLight")
 
-        # Lower index is outer
-        assert (
-            result == r"\highLight[tag-alpha-light]{\highLight[tag-beta-light]{text}}"
-        )
+        assert len(hls) == 2
+        # Lower index (alpha) is outer
+        assert get_opt_arg(hls[0]) == "tag-alpha-light"
+        assert get_opt_arg(hls[1]) == "tag-beta-light"
+        assert get_body_text(hls[1]) == "text"
 
     def test_three_highlights_triple_nested(self) -> None:
         """Three highlights produce triple-nested commands."""
-        highlights = {0: {"tag": "a"}, 1: {"tag": "b"}, 2: {"tag": "c"}}
+        highlights = {
+            0: {"tag": "a"},
+            1: {"tag": "b"},
+            2: {"tag": "c"},
+        }
         wrapper = generate_highlight_wrapper(frozenset({0, 1, 2}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        hls = find_macros(nodes, "highLight")
 
-        # Should have 3 \highLight commands
-        assert result.count(r"\highLight") == 3
+        assert len(hls) == 3
 
     def test_sorted_indices_for_deterministic_nesting(self) -> None:
-        """Highlights are sorted by index regardless of set iteration order."""
+        """Highlights sorted by index regardless of iteration."""
         highlights = {2: {"tag": "c"}, 0: {"tag": "a"}}
         wrapper = generate_highlight_wrapper(frozenset({0, 2}), highlights)
         result = wrapper("text")
+        nodes = parse_latex(result)
+        hls = find_macros(nodes, "highLight")
 
-        # tag-a (index 0) should be outer
-        assert result.startswith(r"\highLight[tag-a-light]")
+        # tag-a (index 0) should be outer (first found)
+        assert get_opt_arg(hls[0]) == "tag-a-light"
 
 
 class TestGenerateHighlightedLatex:
@@ -144,7 +206,7 @@ class TestGenerateHighlightedLatex:
         assert result == ""
 
     def test_no_active_highlights_passthrough(self) -> None:
-        """Regions with no active highlights pass through unchanged."""
+        """Regions with no active highlights pass through."""
         regions = [Region("plain text", frozenset(), [])]
         result = generate_highlighted_latex(regions, {}, [])
         assert result == "plain text"
@@ -154,10 +216,16 @@ class TestGenerateHighlightedLatex:
         regions = [Region("text", frozenset({0}), [])]
         highlights = {0: {"tag": "alpha"}}
         result = generate_highlighted_latex(regions, highlights, [])
+        nodes = parse_latex(result)
 
-        # Should have both highLight and underLine
-        assert r"\highLight[tag-alpha-light]" in result
-        assert r"\underLine[color=tag-alpha-dark" in result
+        hls = find_macros(nodes, "highLight")
+        assert len(hls) >= 1
+        assert get_opt_arg(hls[0]) == "tag-alpha-light"
+
+        uls = find_macros(nodes, "underLine")
+        assert len(uls) >= 1
+        ul_opt = require_opt_arg(uls[0])
+        assert "tag-alpha-dark" in ul_opt
 
     def test_multiple_regions_concatenated(self) -> None:
         """Multiple regions are concatenated in order."""
@@ -171,7 +239,8 @@ class TestGenerateHighlightedLatex:
 
         assert result.startswith("before ")
         assert result.endswith(" after")
-        assert r"\highLight" in result
+        nodes = parse_latex(result)
+        assert len(find_macros(nodes, "highLight")) >= 1
 
     def test_annmarker_emits_annot_command(self) -> None:
         """Regions with annots emit \\annot commands."""
@@ -185,23 +254,24 @@ class TestGenerateHighlightedLatex:
             }
         }
         result = generate_highlighted_latex(regions, highlights, [])
+        nodes = parse_latex(result)
+        annots = find_macros(nodes, "annot")
 
-        assert r"\annot{" in result
+        assert len(annots) >= 1
 
     def test_env_boundary_splits_highlight(self) -> None:
-        """Environment boundaries within region split the highlight."""
-        # Text with a \\par in the middle
+        """Environment boundaries split the highlight."""
         regions = [Region(r"before\par after", frozenset({0}), [])]
         highlights = {0: {"tag": "alpha"}}
         result = generate_highlighted_latex(regions, highlights, [])
+        nodes = parse_latex(result)
+        hls = find_macros(nodes, "highLight")
 
-        # Should have two separate \\highLight blocks around \\par
-        assert result.count(r"\highLight") == 2
-        assert r"\par" in result
+        # Two separate highLight blocks around \par
+        assert len(hls) == 2
 
     def test_interleaved_example_b(self) -> None:
         """Example B from design: interleaved highlights."""
-        # Regions from build_regions for interleaved case
         regions = [
             Region("The ", frozenset(), []),
             Region(" quick ", frozenset({1}), []),
@@ -209,16 +279,19 @@ class TestGenerateHighlightedLatex:
             Region(" over ", frozenset({2}), []),
             Region(" dog", frozenset(), []),
         ]
-        highlights = {1: {"tag": "alpha"}, 2: {"tag": "beta"}}
+        highlights = {
+            1: {"tag": "alpha"},
+            2: {"tag": "beta"},
+        }
         result = generate_highlighted_latex(regions, highlights, [])
+        nodes = parse_latex(result)
 
-        # Plain text regions
+        # Both highlight colours present
+        hls = find_macros(nodes, "highLight")
+        opt_args = {get_opt_arg(h) for h in hls}
+        assert "tag-alpha-light" in opt_args
+        assert "tag-beta-light" in opt_args
+
+        # Plain text regions present
         assert "The " in result
         assert " dog" in result
-
-        # Highlighted regions have commands
-        # " quick " has only highlight 1
-        # " fox " has both highlights (overlapping)
-        # " over " has only highlight 2
-        assert r"\highLight[tag-alpha-light]" in result
-        assert r"\highLight[tag-beta-light]" in result

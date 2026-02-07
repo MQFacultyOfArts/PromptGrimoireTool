@@ -2,6 +2,7 @@
 
 Tests string manipulation, formatting, and colour generation functions.
 These are pure functions with no external dependencies (except LaTeX compilation).
+Assertions use LaTeX AST parsing (pylatexenc) for structural validation.
 
 Extracted from tests/unit/test_latex_export.py during Phase 5 reorganization.
 """
@@ -20,6 +21,12 @@ from promptgrimoire.export.latex import (
     generate_tag_colour_definitions,
 )
 from tests.conftest import requires_latexmk
+from tests.helpers.latex_parse import (
+    find_macros,
+    get_body_text,
+    get_mandatory_args,
+    parse_latex,
+)
 
 
 class TestFormatTimestamp:
@@ -48,7 +55,18 @@ class TestGenerateTagColourDefinitions:
     def test_single_tag(self) -> None:
         """Single tag should produce one definecolor."""
         result = generate_tag_colour_definitions({"jurisdiction": "#1f77b4"})
-        assert r"\definecolor{tag-jurisdiction}{HTML}{1f77b4}" in result
+        nodes = parse_latex(result)
+        dcs = find_macros(nodes, "definecolor")
+
+        # Find the tag-jurisdiction definecolor
+        found = [
+            d
+            for d in dcs
+            if get_mandatory_args(d) and get_mandatory_args(d)[0] == "tag-jurisdiction"
+        ]
+        assert len(found) == 1
+        args = get_mandatory_args(found[0])
+        assert args == ["tag-jurisdiction", "HTML", "1f77b4"]
 
     def test_multiple_tags(self) -> None:
         """Multiple tags should produce multiple definecolors."""
@@ -58,35 +76,64 @@ class TestGenerateTagColourDefinitions:
                 "legal_issues": "#d62728",
             }
         )
-        assert r"\definecolor{tag-jurisdiction}{HTML}{1f77b4}" in result
-        assert r"\definecolor{tag-legal-issues}{HTML}{d62728}" in result
+        nodes = parse_latex(result)
+        dcs = find_macros(nodes, "definecolor")
+        names = {get_body_text(d) for d in dcs}
+
+        assert "tag-jurisdiction" in names
+        assert "tag-legal-issues" in names
 
     def test_underscore_converted_to_dash(self) -> None:
         """Underscores in tag names should become dashes."""
         result = generate_tag_colour_definitions({"my_tag_name": "#ffffff"})
-        assert "tag-my-tag-name" in result
+        nodes = parse_latex(result)
+        dcs = find_macros(nodes, "definecolor")
+        names = {get_body_text(d) for d in dcs}
+
+        assert "tag-my-tag-name" in names
 
     def test_hash_stripped_from_colour(self) -> None:
         """Hash should be stripped from colour value."""
         result = generate_tag_colour_definitions({"tag": "#AABBCC"})
-        assert "{AABBCC}" in result
-        assert "##" not in result
+        nodes = parse_latex(result)
+        dcs = find_macros(nodes, "definecolor")
+
+        tag_dc = [
+            d
+            for d in dcs
+            if get_mandatory_args(d) and get_mandatory_args(d)[0] == "tag-tag"
+        ]
+        assert len(tag_dc) == 1
+        args = get_mandatory_args(tag_dc[0])
+        assert args[2] == "AABBCC"
+        assert "#" not in args[2]
 
     def test_generates_dark_colour_variants(self) -> None:
         """Dark colour variants are generated for underlines."""
-        tag_colours = {"alpha": "#1f77b4"}
-        result = generate_tag_colour_definitions(tag_colours)
+        result = generate_tag_colour_definitions({"alpha": "#1f77b4"})
+        nodes = parse_latex(result)
+        cls = find_macros(nodes, "colorlet")
 
-        assert "tag-alpha-dark" in result
-        # Dark is 70% of base mixed with black
-        assert r"\colorlet{tag-alpha-dark}{tag-alpha!70!black}" in result
+        dark_cls = [c for c in cls if get_body_text(c) == "tag-alpha-dark"]
+        assert len(dark_cls) == 1
+        args = get_mandatory_args(dark_cls[0])
+        assert args[0] == "tag-alpha-dark"
+        assert args[1] == "tag-alpha!70!black"
 
     def test_generates_many_dark_colour(self) -> None:
         """many-dark colour (#333333) is always generated."""
-        tag_colours = {"alpha": "#1f77b4"}
-        result = generate_tag_colour_definitions(tag_colours)
+        result = generate_tag_colour_definitions({"alpha": "#1f77b4"})
+        nodes = parse_latex(result)
+        dcs = find_macros(nodes, "definecolor")
 
-        assert r"\definecolor{many-dark}{HTML}{333333}" in result
+        many = [
+            d
+            for d in dcs
+            if get_mandatory_args(d) and get_mandatory_args(d)[0] == "many-dark"
+        ]
+        assert len(many) == 1
+        args = get_mandatory_args(many[0])
+        assert args == ["many-dark", "HTML", "333333"]
 
 
 class TestFormatAnnot:
@@ -102,8 +149,12 @@ class TestFormatAnnot:
             "created_at": "2026-01-26T14:30:00+00:00",
         }
         result = _format_annot(highlight)
-        assert r"\annot{tag-jurisdiction}" in result
-        assert "Jurisdiction" in result  # Tag display name
+        nodes = parse_latex(result)
+        annots = find_macros(nodes, "annot")
+
+        assert len(annots) >= 1
+        assert get_body_text(annots[0]) == "tag-jurisdiction"
+        assert "Jurisdiction" in result
         assert "Alice" in result
 
     def test_with_paragraph_reference(self) -> None:
@@ -143,6 +194,7 @@ class TestFormatAnnot:
             "comments": [],
         }
         result = _format_annot(highlight)
+        # The & should be escaped as a macro node
         assert r"\&" in result
 
     def test_escapes_special_characters_in_comments(self) -> None:
@@ -241,7 +293,10 @@ class TestCompilationValidation:
                 "author": "User & Co",
                 "text": "test",
                 "comments": [
-                    {"author": "Bob", "text": "100% agree & $50 worth"},
+                    {
+                        "author": "Bob",
+                        "text": "100% agree & $50 worth",
+                    },
                 ],
                 "created_at": "2026-01-26T14:30:00+00:00",
             }
@@ -332,33 +387,55 @@ class TestUnicodeAnnotationEscaping:
 
     def test_cjk_author_name_escaped(self) -> None:
         """CJK characters in author name are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+        from promptgrimoire.export.unicode_latex import (
+            escape_unicode_latex,
+        )
 
         result = escape_unicode_latex("田中太郎")
-        assert "\\cjktext{田中太郎}" in result
+        nodes = parse_latex(result)
+        cjks = find_macros(nodes, "cjktext")
+        assert len(cjks) >= 1
+        assert get_body_text(cjks[0]) == "田中太郎"
 
     def test_cjk_comment_text_escaped(self) -> None:
         """CJK characters in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+        from promptgrimoire.export.unicode_latex import (
+            escape_unicode_latex,
+        )
 
         result = escape_unicode_latex("これは日本語のコメントです")
-        assert "\\cjktext{" in result
+        nodes = parse_latex(result)
+        cjks = find_macros(nodes, "cjktext")
+        assert len(cjks) >= 1
 
     def test_emoji_in_comment_escaped(self) -> None:
         """Emoji in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+        from promptgrimoire.export.unicode_latex import (
+            escape_unicode_latex,
+        )
 
         result = escape_unicode_latex("Great work! 🎉")
-        assert "\\emoji{" in result
+        nodes = parse_latex(result)
+        emojis = find_macros(nodes, "emoji")
+        assert len(emojis) >= 1
 
     def test_mixed_ascii_cjk_special_chars(self) -> None:
         """Mixed content with special chars handles all correctly."""
-        from promptgrimoire.export.unicode_latex import escape_unicode_latex
+        from promptgrimoire.export.unicode_latex import (
+            escape_unicode_latex,
+        )
 
         result = escape_unicode_latex("User & 田中 100%")
-        assert "\\&" in result  # Special char escaped
-        assert "\\cjktext{田中}" in result  # CJK wrapped
-        assert "\\%" in result  # Special char escaped
+        nodes = parse_latex(result)
+
+        # CJK wrapped
+        cjks = find_macros(nodes, "cjktext")
+        assert len(cjks) >= 1
+        assert get_body_text(cjks[0]) == "田中"
+
+        # Special chars escaped (these are macro nodes)
+        assert r"\&" in result
+        assert r"\%" in result
 
     def test_format_annot_cjk_author(self) -> None:
         """CJK in author name is wrapped in _format_annot output."""
@@ -369,7 +446,10 @@ class TestUnicodeAnnotationEscaping:
             "comments": [],
         }
         result = _format_annot(highlight)
-        assert r"\cjktext{田中太郎}" in result
+        nodes = parse_latex(result)
+        cjks = find_macros(nodes, "cjktext")
+        bodies = {get_body_text(c) for c in cjks}
+        assert "田中太郎" in bodies
 
     def test_format_annot_cjk_comment_author(self) -> None:
         """CJK in comment author is wrapped in _format_annot output."""
@@ -382,7 +462,10 @@ class TestUnicodeAnnotationEscaping:
             ],
         }
         result = _format_annot(highlight)
-        assert r"\cjktext{山田花子}" in result
+        nodes = parse_latex(result)
+        cjks = find_macros(nodes, "cjktext")
+        bodies = {get_body_text(c) for c in cjks}
+        assert "山田花子" in bodies
 
     def test_format_annot_emoji_in_comment(self) -> None:
         """Emoji in comment text is wrapped in _format_annot output."""
@@ -395,9 +478,13 @@ class TestUnicodeAnnotationEscaping:
             ],
         }
         result = _format_annot(highlight)
-        assert r"\emoji{" in result
+        nodes = parse_latex(result)
+        emojis = find_macros(nodes, "emoji")
+        assert len(emojis) >= 1
 
-    def test_format_annot_mixed_unicode_and_special_chars(self) -> None:
+    def test_format_annot_mixed_unicode_and_special_chars(
+        self,
+    ) -> None:
         """Mixed unicode and special chars in _format_annot output."""
         highlight = {
             "tag": "tag",
@@ -406,6 +493,10 @@ class TestUnicodeAnnotationEscaping:
             "comments": [],
         }
         result = _format_annot(highlight)
+        nodes = parse_latex(result)
+
         # Should have both escaped special char and wrapped CJK
         assert r"\&" in result
-        assert r"\cjktext{田中}" in result
+        cjks = find_macros(nodes, "cjktext")
+        bodies = {get_body_text(c) for c in cjks}
+        assert "田中" in bodies

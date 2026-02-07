@@ -106,7 +106,7 @@ Removed 2026-02-07. `list_normalizer.py` rewritten to use stdlib `re` (regex is 
 
 **Evidence:** 8 files: `src/promptgrimoire/input_pipeline/html_input.py` and 7 files in `src/promptgrimoire/export/platforms/` (`__init__.py`, `base.py`, `claude.py`, `gemini.py`, `openai.py`, `scienceos.py`, `aistudio.py`). Used for HTML parsing, attribute stripping, element traversal, and content extraction.
 
-**Why not alternatives:** selectolax with lexbor is significantly faster than BeautifulSoup (see `tests/benchmark/test_dom_performance.py`). Chosen for performance in the HTML processing pipeline.
+**Why not alternatives:** selectolax with lexbor is significantly faster than stdlib alternatives. Chosen for performance in the HTML processing pipeline.
 
 **Classification:** Hard core for the input/export pipeline. Replacing it means rewriting all HTML processing.
 

@@ -152,3 +152,24 @@ All 3 alerts now **fixed** (nicegui 3.7.1 resolved the last two):
 - GHSA-9ffm-fxg3-xrhh (High) — path traversal via FileUpload.name
 - GHSA-v82v-c5x8-w282 (Medium) — XSS via ui.markdown()
 - GHSA-wp53-j4wj-2cfg (High) — python-multipart path traversal (was already fixed)
+
+### 11. bs4 removal (#122, closed)
+
+- `list_normalizer.py` rewritten from bs4 to stdlib `re` — regex is sufficient for the `<li value>` → `<ol start>` transformation. selectolax was tried first but its HTML5 normalisation (inserting `<tbody>`) broke the pandoc LaTeX pipeline.
+- `test_dom_performance.py` migrated from bs4 to selectolax for text extraction in benchmark helpers.
+- bs4 removed from `pyproject.toml` production dependencies.
+- `docs/dependency-rationale.md` updated with removal note.
+
+### 12. xdist TRUNCATE deadlock fix
+
+- `tests/conftest.py` `pytest_configure` gutted — DB cleanup moved to `_pre_test_db_cleanup()` in `cli.py`.
+- Single-process Alembic migration + TRUNCATE runs before pytest spawns, eliminating xdist worker deadlocks.
+- #121 closed (all fixes verified, 1975 tests pass).
+
+### 13. Issue housekeeping
+
+- **#121** — Closed. All fixes applied and verified.
+- **#122** — Closed. bs4 removed.
+- **#123** — Closed. Personal reminder, not a code issue.
+- Deleted stale `docs/odfdo/` (odfdo removed as dependency).
+- Updated CLAUDE.md and dependency-rationale.md to remove stale bs4 references.

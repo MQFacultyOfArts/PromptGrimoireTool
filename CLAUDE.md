@@ -191,7 +191,7 @@ src/promptgrimoire/
 ├── export/              # PDF/LaTeX export
 │   ├── html_normaliser.py # HTML normalisation (lxml)
 │   ├── latex.py         # Marker pipeline, LaTeX generation
-│   ├── list_normalizer.py # HTML list normalisation (bs4, see #122)
+│   ├── list_normalizer.py # HTML list normalisation (stdlib re)
 │   ├── pdf.py           # LaTeX compilation (async)
 │   ├── pdf_export.py    # Export orchestration
 │   ├── unicode_latex.py # Unicode-to-LaTeX mapping

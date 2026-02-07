@@ -2253,6 +2253,51 @@ def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
         export_btn.on_click(on_export_click)
 
 
+def _parse_sort_end_args(
+    args: dict[str, Any],
+) -> tuple[str, str, str, int]:
+    """Parse SortableJS sort-end event args into highlight ID and tag keys.
+
+    Extracts and normalizes IDs from SortableJS event args:
+    - ``item``: Card HTML ID (format: ``hl-{highlight_id}``)
+    - ``from``: Source container ID (format: ``sort-{raw_key}`` or
+      ``sort-untagged``)
+    - ``to``: Target container ID (format: ``sort-{raw_key}`` or
+      ``sort-untagged``)
+    - ``newIndex``: Position in target container (0-indexed)
+
+    Returns tuple: (highlight_id, source_tag_raw_key, target_tag_raw_key,
+    new_index)
+
+    The ``hl-`` and ``sort-`` prefixes are stripped. The special key
+    ``sort-untagged`` is mapped to an empty string (CRDT convention).
+
+    Args:
+        args: Event args dict from SortableJS sort-end event.
+
+    Returns:
+        Tuple of (highlight_id, source_tag, target_tag, new_index).
+        Empty strings or -1 indicate missing/invalid values.
+    """
+    item_id: str = args.get("item", "")
+    from_id: str = args.get("from", "")
+    to_id: str = args.get("to", "")
+    new_index: int = args.get("newIndex", -1)
+
+    # Parse IDs: "hl-{highlight_id}" and "sort-{raw_key}"
+    highlight_id = item_id.removeprefix("hl-")
+    source_tag = from_id.removeprefix("sort-")
+    target_tag = to_id.removeprefix("sort-")
+
+    # "sort-untagged" → empty string (CRDT convention)
+    if source_tag == "untagged":
+        source_tag = ""
+    if target_tag == "untagged":
+        target_tag = ""
+
+    return highlight_id, source_tag, target_tag, new_index
+
+
 def _setup_organise_drag(state: PageState) -> None:
     """Set up SortableJS sort-end handler and Organise tab refresh.
 
@@ -2275,25 +2320,10 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.crdt_doc is None:
             return
 
-        args = e.args
-        item_id: str = args.get("item", "")
-        from_id: str = args.get("from", "")
-        to_id: str = args.get("to", "")
-        new_index: int = args.get("newIndex", -1)
-
-        # Parse IDs: "hl-{highlight_id}" and "sort-{raw_key}"
-        highlight_id = item_id.removeprefix("hl-")
-        source_tag = from_id.removeprefix("sort-")
-        target_tag = to_id.removeprefix("sort-")
-
-        # "sort-untagged" → empty string (CRDT convention)
-        if source_tag == "untagged":
-            source_tag = ""
-        if target_tag == "untagged":
-            target_tag = ""
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(e.args)
 
         if not highlight_id:
-            logger.warning("Sort-end event with no item ID: %s", args)
+            logger.warning("Sort-end event with no item ID: %s", e.args)
             return
 
         if source_tag == target_tag:

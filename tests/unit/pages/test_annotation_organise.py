@@ -3,14 +3,19 @@
 Tests verify that render_organise_tab correctly groups highlights by tag
 into columns, respects tag_order, and handles untagged highlights.
 
+Also tests the SortableJS event arg parsing logic used by the organise
+tab's drag-and-drop reorder/reassign feature.
+
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md Task 2
-- AC: three-tab-ui.AC2.1, AC2.2, AC2.6
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 2
+- AC: three-tab-ui.AC2.1, AC2.2, AC2.3, AC2.4, AC2.6
 """
 
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+from promptgrimoire.pages.annotation import _parse_sort_end_args
 from promptgrimoire.pages.annotation_organise import _SNIPPET_MAX_CHARS
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 
@@ -133,3 +138,165 @@ class TestHighlightGrouping:
         for tag_info in tags:
             assert tag_info.name
             assert tag_info.colour.startswith("#")
+
+
+class TestSortEndEventParsing:
+    """Verify SortableJS sort-end event arg parsing (AC2.3, AC2.4)."""
+
+    def test_parse_simple_same_column_reorder(self) -> None:
+        """Parse event args for reordering within same tag column."""
+        args = {
+            "item": "hl-highlight-123",
+            "from": "sort-jurisdiction",
+            "to": "sort-jurisdiction",
+            "newIndex": 2,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-123"
+        assert source_tag == "jurisdiction"
+        assert target_tag == "jurisdiction"
+        assert new_index == 2
+
+    def test_parse_cross_column_move(self) -> None:
+        """Parse event args for moving highlight between tag columns."""
+        args = {
+            "item": "hl-highlight-456",
+            "from": "sort-jurisdiction",
+            "to": "sort-legal_issues",
+            "newIndex": 1,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-456"
+        assert source_tag == "jurisdiction"
+        assert target_tag == "legal_issues"
+        assert new_index == 1
+
+    def test_parse_untagged_source_to_tagged(self) -> None:
+        """Parse move FROM untagged column (sort-untagged) TO tagged column."""
+        args = {
+            "item": "hl-highlight-789",
+            "from": "sort-untagged",
+            "to": "sort-jurisdiction",
+            "newIndex": 0,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-789"
+        assert source_tag == ""  # sort-untagged -> empty string
+        assert target_tag == "jurisdiction"
+        assert new_index == 0
+
+    def test_parse_tagged_to_untagged_destination(self) -> None:
+        """Parse move FROM tagged column TO untagged column."""
+        args = {
+            "item": "hl-highlight-abc",
+            "from": "sort-legal_issues",
+            "to": "sort-untagged",
+            "newIndex": 3,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-abc"
+        assert source_tag == "legal_issues"
+        assert target_tag == ""  # sort-untagged -> empty string
+        assert new_index == 3
+
+    def test_parse_untagged_reorder_within_column(self) -> None:
+        """Parse reorder event within untagged column (both from/to untagged)."""
+        args = {
+            "item": "hl-highlight-def",
+            "from": "sort-untagged",
+            "to": "sort-untagged",
+            "newIndex": 1,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-def"
+        assert source_tag == ""
+        assert target_tag == ""
+        assert new_index == 1
+
+    def test_parse_missing_item_id(self) -> None:
+        """Parser handles missing item field gracefully."""
+        args = {
+            "from": "sort-jurisdiction",
+            "to": "sort-jurisdiction",
+            "newIndex": 0,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == ""  # Missing item -> empty string
+        assert source_tag == "jurisdiction"
+        assert target_tag == "jurisdiction"
+        assert new_index == 0
+
+    def test_parse_missing_container_ids(self) -> None:
+        """Parser handles missing from/to IDs gracefully."""
+        args = {
+            "item": "hl-highlight-ghi",
+            "newIndex": 1,
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-ghi"
+        assert source_tag == ""  # Missing from -> empty string
+        assert target_tag == ""  # Missing to -> empty string
+        assert new_index == 1
+
+    def test_parse_missing_new_index(self) -> None:
+        """Parser handles missing newIndex field gracefully."""
+        args = {
+            "item": "hl-highlight-jkl",
+            "from": "sort-jurisdiction",
+            "to": "sort-jurisdiction",
+        }
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == "highlight-jkl"
+        assert source_tag == "jurisdiction"
+        assert target_tag == "jurisdiction"
+        assert new_index == -1  # Missing newIndex -> -1
+
+    def test_parse_strips_hl_prefix(self) -> None:
+        """The hl- prefix is correctly stripped from item ID."""
+        args = {
+            "item": "hl-my-custom-id-12345",
+            "from": "sort-jurisdiction",
+            "to": "sort-jurisdiction",
+            "newIndex": 0,
+        }
+        highlight_id, _, _, _ = _parse_sort_end_args(args)
+        assert highlight_id == "my-custom-id-12345"
+        assert not highlight_id.startswith("hl-")
+
+    def test_parse_strips_sort_prefix(self) -> None:
+        """The sort- prefix is correctly stripped from container IDs."""
+        args = {
+            "item": "hl-highlight-123",
+            "from": "sort-my-custom-tag",
+            "to": "sort-another-tag",
+            "newIndex": 0,
+        }
+        _, source_tag, target_tag, _ = _parse_sort_end_args(args)
+        assert source_tag == "my-custom-tag"
+        assert target_tag == "another-tag"
+        assert not source_tag.startswith("sort-")
+        assert not target_tag.startswith("sort-")
+
+    def test_parse_empty_args_dict(self) -> None:
+        """Parser handles empty args dict gracefully."""
+        args: dict[str, str | int] = {}
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(args)
+        assert highlight_id == ""
+        assert source_tag == ""
+        assert target_tag == ""
+        assert new_index == -1
+
+    def test_parse_return_tuple_order(self) -> None:
+        """Return tuple is in correct order: (hl_id, src, dst, idx)."""
+        args = {
+            "item": "hl-hl-id",
+            "from": "sort-src",
+            "to": "sort-dst",
+            "newIndex": 5,
+        }
+        result = _parse_sort_end_args(args)
+        assert len(result) == 4
+        assert result[0] == "hl-id"  # highlight_id
+        assert result[1] == "src"  # source_tag
+        assert result[2] == "dst"  # target_tag
+        assert result[3] == 5  # new_index

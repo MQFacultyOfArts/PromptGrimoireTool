@@ -124,6 +124,28 @@ Key findings acted on:
 - **pylatexenc**: Duplicate listing in dev group. Removed duplicate.
 - **bs4**: Deprecated, migration tracked in #122 (already known).
 
+### 10. Dependency assumptions review (Popper/Lakatos/Haraway)
+
+Applied three philosophical lenses to all 30 dependencies. Key findings and actions:
+
+**Removed:**
+- `pytest-cov` — orphaned config, wrong pyproject section, no CLI consumer. Config removed.
+- `lorem-text` — single `lorem.paragraphs(1)` call in utility script. Removed from dev deps. `scripts/anonymise_chats.py` will need manual `uv pip install lorem-text` if run again.
+
+**Moved to dev deps:**
+- `rich` — only used by `cli.py` (test runner panels), not by the web application.
+
+**Rationale claim fixes:**
+- `pydantic`: No direct imports, but Field constraints (max_length, ge, le) used via SQLModel re-export. Kept as version floor pin. Description corrected.
+- `pylatexenc`: Was "Unicode-to-LaTeX character mapping" → now "LaTeX AST walking for marker tokenization". Classification upgraded to hard core.
+- `sqlmodel`: Removed false `models/scenario.py` evidence (uses stdlib dataclass). File count 11 → 9.
+- `selectolax`: File count 13 → 8.
+- `alembic`: Migration file count 15 → 14.
+- `lark`: "parser generator" → "lexer" (only lexer mode used).
+- `pytest-order`: Evidence expanded from 2 → 7 files.
+- `nicegui`: File count 14 → 13, description broadened.
+- `stytch`: Kept as hard core per user decision (AuthClientProtocol seam exists but auth work is planned).
+
 ## Dependabot alerts
 
 All 3 alerts now **fixed** (nicegui 3.7.1 resolved the last two):

@@ -10,7 +10,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
-**Evidence:** 14 files in `src/promptgrimoire/pages/` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, and client-side JS execution (`ui.run_javascript`).
+**Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 
@@ -20,7 +20,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** ORM combining Pydantic validation with SQLAlchemy query building. All database models are SQLModel classes.
 
-**Evidence:** 11 files in `src/promptgrimoire/db/` and `src/promptgrimoire/models/scenario.py`. All 6 database tables (User, Course, CourseEnrollment, Week, Workspace, WorkspaceDocument) are SQLModel classes. Alembic migrations use SQLModel.metadata.
+**Evidence:** 9 files import from sqlmodel (8 in `src/promptgrimoire/db/` + `src/promptgrimoire/cli.py`). All 6 database tables (User, Course, CourseEnrollment, Week, Workspace, WorkspaceDocument) are SQLModel classes. Alembic migrations use SQLModel.metadata. Note: `models/scenario.py` uses stdlib `@dataclass`, not SQLModel.
 
 **Why not alternatives:** SQLModel unifies the Pydantic validation layer with SQLAlchemy persistence. Using SQLAlchemy alone would require separate Pydantic models and manual mapping.
 
@@ -48,13 +48,13 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 ### pydantic >= 2.10
 
-**Claim:** Data validation. Used directly in database models (via SQLModel) and for structured data throughout.
+**Claim:** Data validation via SQLModel's re-export of `Field`. Provides field constraints (max_length, ge, le, unique, index) used extensively in database models. Version floor pin — no direct `from pydantic import` statements exist in the codebase.
 
-**Evidence:** `src/promptgrimoire/db/models.py` (direct import of `Field`). Also a transitive dependency of SQLModel and NiceGUI.
+**Evidence:** `src/promptgrimoire/db/models.py` uses `from sqlmodel import Field, SQLModel` — the `Field` function is pydantic's, re-exported by sqlmodel. Constraints like `max_length=255`, `ge=1`, `le=52` are pydantic validation features. Also a transitive dependency of SQLModel and NiceGUI.
 
-**Why not alternatives:** Pydantic is the standard Python validation library. SQLModel requires it. Even without SQLModel, Pydantic would be needed for request/response validation.
+**Why not alternatives:** Pydantic is the standard Python validation library. SQLModel requires it. The explicit listing provides a minimum version floor tighter than SQLModel's own pydantic requirement.
 
-**Classification:** Hard core (via SQLModel coupling).
+**Classification:** Hard core (via SQLModel coupling). No advanced pydantic features (model_validator, field_validator, computed fields) are used — only Field constraints.
 
 ### python-dotenv >= 1.0
 
@@ -90,21 +90,11 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** Database schema migration tool. All schema changes go through Alembic migrations.
 
-**Evidence:** 15 migration files in `alembic/versions/`, `alembic/env.py`. CLAUDE.md documents "Alembic is the ONLY way to create/modify schema" as a project rule.
+**Evidence:** 14 migration files in `alembic/versions/`, `alembic/env.py`. CLAUDE.md documents "Alembic is the ONLY way to create/modify schema" as a project rule.
 
 **Why not alternatives:** Alembic is the standard migration tool for SQLAlchemy. No viable alternative for SQLModel projects.
 
 **Classification:** Hard core. All schema evolution depends on it.
-
-### rich >= 14.3.1
-
-**Claim:** Terminal formatting for CLI output.
-
-**Evidence:** `src/promptgrimoire/cli.py` uses Rich for test runner output formatting (panels, status displays).
-
-**Why not alternatives:** Rich provides formatted terminal output. The alternative is plain print statements, which would degrade the developer experience for `test-debug` and `test-all`.
-
-**Classification:** Protective belt. Only used in CLI tooling, not in the web application.
 
 ### bs4 >= 0.0.2
 
@@ -120,7 +110,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** Fast HTML parser (lexbor backend) for the input pipeline and export platform preprocessing.
 
-**Evidence:** 13 files across `src/promptgrimoire/input_pipeline/` and `src/promptgrimoire/export/platforms/`. Used for HTML parsing, attribute stripping, element traversal, and content extraction.
+**Evidence:** 8 files: `src/promptgrimoire/input_pipeline/html_input.py` and 7 files in `src/promptgrimoire/export/platforms/` (`__init__.py`, `base.py`, `claude.py`, `gemini.py`, `openai.py`, `scienceos.py`, `aistudio.py`). Used for HTML parsing, attribute stripping, element traversal, and content extraction.
 
 **Why not alternatives:** selectolax with lexbor is significantly faster than BeautifulSoup (see `tests/benchmark/test_dom_performance.py`). Chosen for performance in the HTML processing pipeline.
 
@@ -128,21 +118,21 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 ### pylatexenc >= 2.10
 
-**Claim:** Unicode-to-LaTeX character mapping for the PDF export pipeline.
+**Claim:** LaTeX AST walking for the marker tokenization pipeline. `LatexWalker` parses LaTeX output from pandoc to identify and preserve marker tokens (HLSTART, HLEND, ANNMARKER) that survive the HTML→LaTeX conversion.
 
-**Evidence:** `src/promptgrimoire/export/latex.py` (imports `pylatexenc` for LaTeX tokenization).
+**Evidence:** `src/promptgrimoire/export/latex.py` (imports `pylatexenc.latexwalker.LatexWalker`). Critical for the overlapping highlight pipeline — markers inserted into HTML must be recovered after pandoc converts to LaTeX.
 
-**Why not alternatives:** pylatexenc provides comprehensive Unicode-to-LaTeX mapping. Building this mapping by hand would be error-prone and incomplete.
+**Why not alternatives:** pylatexenc's `LatexWalker` provides robust LaTeX AST traversal. Regex-based LaTeX parsing is fragile due to LaTeX's context-sensitive grammar. No other Python library provides equivalent LaTeX AST walking.
 
-**Classification:** Protective belt. Used in one module for character mapping.
+**Classification:** Hard core for the export pipeline. The marker recovery step depends on correct LaTeX AST traversal.
 
 ### lark >= 1.1.0
 
-**Claim:** Parser generator for the LaTeX marker tokenization pipeline.
+**Claim:** Lexer for the LaTeX marker tokenization pipeline. Only the lexer mode is used (not the full parser generator).
 
-**Evidence:** `src/promptgrimoire/export/latex.py` — Lark grammar defines the marker token language (HLSTART, HLEND, ANNMARKER, TEXT). `tokenize_markers()` uses the Lark parser.
+**Evidence:** `src/promptgrimoire/export/latex.py` — Lark grammar defines the marker token language (HLSTART, HLEND, ANNMARKER, TEXT). `tokenize_markers()` uses Lark in lexer mode to extract marker tokens from LaTeX text.
 
-**Why not alternatives:** Lark provides EBNF grammar support with multiple parsing algorithms. The marker language has nested, overlapping structures that benefit from a proper parser rather than regex.
+**Why not alternatives:** Lark's lexer provides EBNF grammar support with robust tokenization. The marker language has nested, overlapping structures that benefit from a proper lexer rather than regex.
 
 **Classification:** Hard core for the export pipeline. The marker grammar is defined in Lark syntax.
 
@@ -212,19 +202,13 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** Test ordering. Used to ensure PDF compilation tests run first (they're slow and fail-fast is useful).
 
-**Evidence:** `@pytest.mark.order("first")` in `tests/integration/test_pdf_export.py`, `test_chatbot_fixtures.py`.
+**Evidence:** `@pytest.mark.order("first")` in 7 files: `tests/integration/test_pdf_export.py`, `tests/integration/test_chatbot_fixtures.py`, `tests/integration/test_pdf_pipeline.py`, `tests/unit/test_latex_packages.py`, `tests/unit/test_latex_environment.py`, `tests/unit/test_overlapping_highlights.py`, `tests/unit/export/test_latex_string_functions.py`.
 
 ### pytest-depper >= 0.2.0
 
 **Claim:** Test dependency analysis. Used by `test-debug` CLI command to identify which tests to run based on code changes.
 
 **Evidence:** `src/promptgrimoire/cli.py` references pytest-depper for smart test selection.
-
-### pytest-cov >= 6.0
-
-**Claim:** Code coverage reporting.
-
-**Evidence:** `pyproject.toml` `[tool.coverage.*]` configuration.
 
 ### pre-commit >= 4.5.1
 
@@ -244,6 +228,16 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Evidence:** Used by Claude Code's ast-grep MCP server for structural searches. Not imported by application code.
 
+### rich >= 14.3.1
+
+**Claim:** Terminal formatting for CLI output.
+
+**Evidence:** `src/promptgrimoire/cli.py` uses Rich for test runner output formatting (panels, status displays).
+
+**Why not alternatives:** Rich provides formatted terminal output. The alternative is plain print statements, which would degrade the developer experience for `test-debug` and `test-all`.
+
+**Classification:** Protective belt. Only used in dev CLI tooling (`test-debug`, `test-all`), not in the web application. Moved from production deps to dev.
+
 ### psycopg[binary] >= 3.2
 
 **Claim:** Synchronous PostgreSQL driver for test setup. Used by `tests/conftest.py` to truncate tables via a sync `create_engine` call.
@@ -254,12 +248,3 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Classification:** Protective belt. Only needed for test infrastructure, not production.
 
-### lorem-text >= 3.0
-
-**Claim:** Lorem ipsum text generation for chat anonymisation utility script.
-
-**Evidence:** `scripts/anonymise_chats.py` — single usage for replacing real chat content with placeholder text.
-
-**Why not alternatives:** Simple, single-purpose library. Could be replaced by a hand-rolled generator, but the script is a utility, not production code.
-
-**Classification:** Protective belt. Dev-only utility.

@@ -231,7 +231,6 @@ export default {
       if (!this.sortableInstance) return;
       this.sortableInstance.option(optionName, value); // Directly set the option on the SortableJS instance
       this.options[optionName] = value; // Also update our local options object to keep it in sync
-      console.debug(`Set ${optionName} to:`, value);
     },
     remove(elementId) {
       this.sortableInstance.el.querySelector(`:scope > #${elementId}`)?.remove();

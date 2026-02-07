@@ -32,12 +32,12 @@ dependencies = [
     "rich>=14.3.1",
     "lorem-text>=3.0",
     "bs4>=0.0.2",
-    "odfdo>=3.19.0",
     "selectolax>=0.4.6",
     "html5lib>=1.1",
     "pylatexenc>=2.10",
     "lark>=1.1.0",
     "emoji>=2.0.0",
+    "lxml>=6.0",
 ]
 
 [project.optional-dependencies]

@@ -197,3 +197,153 @@ class TestTagOrder:
         doc2.apply_update(update)
 
         assert doc2.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
+
+
+class TestResponseDraft:
+    """Tests for response_draft XmlFragment field."""
+
+    def test_response_draft_property_returns_xml_fragment(self) -> None:
+        """doc.response_draft returns an XmlFragment instance."""
+        from pycrdt import XmlFragment
+
+        doc = AnnotationDocument("test-doc")
+
+        assert isinstance(doc.response_draft, XmlFragment)
+
+    def test_response_draft_coexists_with_other_fields(self) -> None:
+        """response_draft, highlights, and general_notes all work on the same doc."""
+        doc = AnnotationDocument("test-doc")
+
+        h_id = doc.add_highlight(0, 5, "tag", "text", "author")
+        doc.set_general_notes("some notes")
+        draft = doc.response_draft
+
+        assert doc.get_highlight(h_id) is not None
+        assert doc.get_general_notes() == "some notes"
+        assert draft is not None
+
+    def test_response_draft_survives_full_state_sync(self) -> None:
+        """XmlFragment is present after syncing full state to a new doc."""
+        from pycrdt import XmlFragment
+
+        doc1 = AnnotationDocument("test-doc")
+        state = doc1.get_full_state()
+
+        doc2 = AnnotationDocument("test-doc")
+        doc2.apply_update(state)
+
+        assert isinstance(doc2.response_draft, XmlFragment)
+
+
+class TestResponseDraftMarkdown:
+    """Tests for response_draft_markdown Text field."""
+
+    def test_response_draft_markdown_property(self) -> None:
+        """doc.response_draft_markdown returns a Text instance."""
+        from pycrdt import Text
+
+        doc = AnnotationDocument("test-doc")
+
+        assert isinstance(doc.response_draft_markdown, Text)
+
+    def test_get_response_draft_markdown_empty(self) -> None:
+        """get_response_draft_markdown returns empty string for new doc."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_response_draft_markdown() == ""
+
+    def test_response_draft_markdown_round_trip(self) -> None:
+        """Markdown content set on doc1 syncs to doc2 via CRDT."""
+        doc1 = AnnotationDocument("test-doc")
+        doc2 = AnnotationDocument("test-doc")
+
+        # Sync initial state
+        doc2.apply_update(doc1.get_full_state())
+
+        # Write markdown on doc1 (access Text object, then use iadd)
+        md = doc1.response_draft_markdown
+        md += "# Heading\n\nSome **bold** text."
+        update = doc1.doc.get_update()
+
+        # Apply to doc2
+        doc2.apply_update(update)
+
+        assert doc2.get_response_draft_markdown() == "# Heading\n\nSome **bold** text."
+
+    def test_response_draft_markdown_coexists(self) -> None:
+        """response_draft_markdown does not break other fields."""
+        doc = AnnotationDocument("test-doc")
+
+        h_id = doc.add_highlight(0, 5, "tag", "text", "author")
+        doc.set_general_notes("notes")
+        md = doc.response_draft_markdown
+        md += "markdown content"
+        _ = doc.response_draft  # access XmlFragment
+
+        assert doc.get_highlight(h_id) is not None
+        assert doc.get_general_notes() == "notes"
+        assert doc.get_response_draft_markdown() == "markdown content"
+
+
+class TestCrdtCoexistence:
+    """Tests verifying new CRDT fields do not break existing operations."""
+
+    def test_existing_highlights_unaffected(self) -> None:
+        """Highlight add/get/remove work identically with new fields present."""
+        doc = AnnotationDocument("test-doc")
+
+        h_id = doc.add_highlight(0, 10, "jurisdiction", "some text", "Author")
+        assert doc.get_highlight(h_id) is not None
+
+        all_hl = doc.get_all_highlights()
+        assert len(all_hl) == 1
+        assert all_hl[0]["id"] == h_id
+
+        removed = doc.remove_highlight(h_id)
+        assert removed is True
+        assert doc.get_highlight(h_id) is None
+
+    def test_existing_general_notes_unaffected(self) -> None:
+        """General notes set/get work identically with new fields present."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_general_notes("Test content")
+        assert doc.get_general_notes() == "Test content"
+
+        doc.set_general_notes("Replaced content")
+        assert doc.get_general_notes() == "Replaced content"
+
+    def test_broadcast_fires_for_all_field_types(self) -> None:
+        """Broadcast callback fires for highlights, tag_order, and general_notes."""
+        doc = AnnotationDocument("test-doc")
+        fired: list[str] = []
+
+        def on_update(_update: bytes, _origin: str | None) -> None:
+            fired.append("update")
+
+        doc.set_broadcast_callback(on_update)
+
+        # Modify highlights
+        doc.add_highlight(0, 5, "tag", "text", "author")
+        # Modify tag_order
+        doc.set_tag_order("tag", ["fake-id"])
+        # Modify general_notes
+        doc.set_general_notes("notes")
+
+        assert len(fired) >= 3  # At least one update per mutation
+
+    def test_full_state_includes_all_fields(self) -> None:
+        """Full state sync transfers highlights, tag_order, general_notes."""
+        doc1 = AnnotationDocument("test-doc")
+
+        h_id = doc1.add_highlight(0, 5, "jurisdiction", "text", "author")
+        doc1.set_tag_order("jurisdiction", [h_id])
+        doc1.set_general_notes("shared notes")
+
+        # Create new doc and sync full state
+        doc2 = AnnotationDocument("test-doc")
+        doc2.apply_update(doc1.get_full_state())
+
+        assert doc2.get_highlight(h_id) is not None
+        assert doc2.get_tag_order("jurisdiction") == [h_id]
+        assert doc2.get_general_notes() == "shared notes"

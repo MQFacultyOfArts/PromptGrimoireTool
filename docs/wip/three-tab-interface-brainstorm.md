@@ -133,6 +133,21 @@ design the three-tab interface proper.
    **Resolved: local Vite bundle.** CDN breaks with Crepe's static imports.
    Bundle is an IIFE (~4.3MB) served as a static file. CSS injected by JS.
 
+## Resolved Questions
+
+1. ~~Should we bundle Milkdown locally or use CDN?~~
+   **Resolved: local Vite bundle.** CDN breaks with Crepe's static imports.
+
+2. ~~How to integrate Milkdown collab into AnnotationDocument's CRDT?~~
+   **Resolved: single Doc with named XmlFragment.** Investigation confirmed:
+   - `CollabService.bindXmlFragment(fragment)` exists as public API
+   - `bindDoc(doc)` internally just calls `doc.getXmlFragment('prosemirror')`
+     — both converge to the same codepath
+   - pycrdt `Doc.get_or_insert_xml_fragment(txn, 'response_draft')` works
+     alongside `get_or_insert_map(txn, 'highlights')` in the same Doc
+   - One Doc, one sync channel. No spike needed — one-line change from
+     spike's working code.
+
 ## Open Questions
 
 1. Tab lifecycle — performance is a known issue on Tab 1. Lazy-render
@@ -140,10 +155,3 @@ design the three-tab interface proper.
 
 2. How does the warp-to-Tab-1 navigation work when three different
    users might be on different tabs?
-
-3. How to integrate the Milkdown collab into `AnnotationDocument`'s
-   existing CRDT structure — the spike uses a standalone `pycrdt.Doc`,
-   but the three-tab interface needs `response_draft` as a field within
-   the shared `AnnotationDocument`. Does y-prosemirror bind to an
-   `XmlFragment` sub-type within the same Doc, or does it need its own
-   Doc?

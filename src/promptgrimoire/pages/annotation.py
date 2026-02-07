@@ -323,6 +323,9 @@ class PageState:
     document_chars: list[str] | None = None  # Characters by index
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
+    # Tab container references (Phase 1: three-tab UI)
+    tab_panels: Any | None = None  # Tab panels container for programmatic switching
+    initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
 
 
 def _get_current_username() -> str:
@@ -2246,19 +2249,50 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
 
         export_btn.on_click(on_export_click)
 
-    # Load CRDT document for this workspace
-    crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
+    # Three-tab container (Phase 1: three-tab UI)
+    state.initialised_tabs = {"Annotate"}
 
-    # Load existing documents
-    documents = await list_documents(workspace_id)
+    with ui.tabs().classes("w-full") as tabs:
+        ui.tab("Annotate")
+        ui.tab("Organise")
+        ui.tab("Respond")
 
-    if documents:
-        # Render first document with highlight support
-        doc = documents[0]
-        await _render_document_with_highlights(state, doc, crdt_doc)
-    else:
-        # Show add content form (extracted to reduce function complexity)
-        _render_add_content_form(workspace_id)
+    async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
+        """Track which tabs have been visited for deferred rendering."""
+        assert state.initialised_tabs is not None
+        tab_name = str(e.value)
+        if tab_name in state.initialised_tabs:
+            return
+        state.initialised_tabs.add(tab_name)
+        # Future phases will populate Tab 2 and Tab 3 content here
+
+    with ui.tab_panels(tabs, value="Annotate", on_change=_on_tab_change).classes(
+        "w-full"
+    ) as panels:
+        state.tab_panels = panels
+
+        with ui.tab_panel("Annotate"):
+            # Load CRDT document for this workspace
+            crdt_doc = await _workspace_registry.get_or_create_for_workspace(
+                workspace_id
+            )
+
+            # Load existing documents
+            documents = await list_documents(workspace_id)
+
+            if documents:
+                # Render first document with highlight support
+                doc = documents[0]
+                await _render_document_with_highlights(state, doc, crdt_doc)
+            else:
+                # Show add content form (extracted to reduce function complexity)
+                _render_add_content_form(workspace_id)
+
+        with ui.tab_panel("Organise"):
+            ui.label("Organise tab content will appear here.").classes("text-gray-400")
+
+        with ui.tab_panel("Respond"):
+            ui.label("Respond tab content will appear here.").classes("text-gray-400")
 
 
 @page_route(

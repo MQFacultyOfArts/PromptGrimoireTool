@@ -14,10 +14,25 @@ from __future__ import annotations
 
 import re
 
-from bs4 import BeautifulSoup, Tag
 
-# Pattern for legal numbering: (N) followed by 2+ spaces, e.g. "(1)    text"
-_LEGAL_NUMBER_PATTERN = re.compile(r"^\((\d+)\)(\s{2,})")
+def _add_start(match: re.Match[str]) -> str:
+    """Add start attribute to <ol> based on first <li value>."""
+    ol_tag = match.group(1)
+    li_part = match.group(2)
+    value_str = match.group(3)
+
+    try:
+        start_value = int(value_str)
+    except ValueError, TypeError:
+        return match.group(0)
+
+    # Don't add start=1 (it's the default)
+    if start_value == 1:
+        return match.group(0)
+
+    # Insert start attribute before the closing >
+    new_ol = ol_tag.rstrip(">") + f' start="{start_value}">'
+    return new_ol + li_part
 
 
 def normalize_list_values(html: str) -> str:
@@ -27,36 +42,22 @@ def normalize_list_values(html: str) -> str:
     the start attribute on the <ol>. This preserves continuous numbering
     across multiple <ol> elements (common in legal documents).
 
+    Uses regex rather than DOM parsing to avoid HTML normalisation side-effects
+    (e.g. lexbor inserting <tbody> into <table> elements).
+
     Args:
         html: HTML content to process.
 
     Returns:
         HTML with <ol start> attributes set based on first <li value>.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    if "<ol" not in html:
+        return html
 
-    for ol in soup.find_all("ol"):
-        if not isinstance(ol, Tag):
-            continue
-
-        # Find first direct <li> child
-        first_li = ol.find("li", recursive=False)
-        if first_li is None or not isinstance(first_li, Tag):
-            continue
-
-        # Get value attribute from first li
-        value = first_li.get("value")
-        if value is None:
-            continue
-
-        # Try to parse as integer
-        try:
-            start_value = int(value)
-        except ValueError, TypeError:
-            continue
-
-        # Set start on the ol (only if different from default of 1)
-        if start_value != 1:
-            ol["start"] = str(start_value)
-
-    return str(soup)
+    # Match <ol...> followed (possibly with whitespace) by <li value="N">
+    # Groups: (1) full <ol> tag, (2) whitespace + <li> prefix, (3) value number
+    return re.sub(
+        r"(<ol[^>]*>)(\s*<li\s+value=[\"'](\d+)[\"'])",
+        _add_start,
+        html,
+    )

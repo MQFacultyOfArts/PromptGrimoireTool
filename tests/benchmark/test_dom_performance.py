@@ -38,17 +38,11 @@ def load_blns() -> str:
 
 def load_austlii() -> str:
     """Load AustLII document, extract text content."""
-    try:
-        from bs4 import BeautifulSoup
+    from selectolax.lexbor import LexborHTMLParser
 
-        html = AUSTLII_PATH.read_text(encoding="utf-8")
-        soup = BeautifulSoup(html, "html.parser")
-        return soup.get_text(separator="\n")
-    except ImportError:
-        # Fallback: strip HTML tags with regex
-        html = AUSTLII_PATH.read_text(encoding="utf-8")
-        text = re.sub(r"<[^>]+>", "", html)
-        return text
+    html = AUSTLII_PATH.read_text(encoding="utf-8")
+    tree = LexborHTMLParser(html)
+    return tree.body.text(separator="\n") if tree.body else html
 
 
 def load_conversations() -> list[tuple[str, str]]:
@@ -57,19 +51,14 @@ def load_conversations() -> list[tuple[str, str]]:
     Returns list of (filename, content) tuples.
     Handles HTML files (actual format in fixtures/conversations/).
     """
+    from selectolax.lexbor import LexborHTMLParser
+
     conversations = []
     if CONVERSATIONS_DIR.exists():
         for path in sorted(CONVERSATIONS_DIR.glob("*.html")):
-            try:
-                from bs4 import BeautifulSoup
-
-                html = path.read_text(encoding="utf-8")
-                soup = BeautifulSoup(html, "html.parser")
-                text = soup.get_text(separator="\n")
-            except ImportError:
-                # Fallback: strip HTML tags with regex
-                html = path.read_text(encoding="utf-8")
-                text = re.sub(r"<[^>]+>", "", html)
+            html = path.read_text(encoding="utf-8")
+            tree = LexborHTMLParser(html)
+            text = tree.body.text(separator="\n") if tree.body else html
             conversations.append((path.name, text))
     return conversations
 

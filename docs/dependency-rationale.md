@@ -96,15 +96,9 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Classification:** Hard core. All schema evolution depends on it.
 
-### bs4 >= 0.0.2
+### ~~bs4~~ (REMOVED)
 
-**Claim:** HTML parsing and tree manipulation for list normalisation in the export pipeline.
-
-**Evidence:** `src/promptgrimoire/export/list_normalizer.py` (production), `tests/benchmark/test_dom_performance.py` (benchmark comparison).
-
-**Why not alternatives:** The project is migrating to selectolax. bs4 remains only where tree manipulation (insert, wrap, decompose) is needed — selectolax handles these differently. See #122.
-
-**Status:** DEPRECATED. Migration to selectolax tracked in #122.
+Removed 2026-02-07. `list_normalizer.py` rewritten to use stdlib `re` (regex is sufficient for the simple `<li value>` → `<ol start>` transformation — DOM parsing added unwanted HTML5 normalisation like `<tbody>` insertion). Benchmark test migrated to selectolax. See #122.
 
 ### selectolax >= 0.4.6
 

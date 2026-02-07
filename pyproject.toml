@@ -26,7 +26,6 @@ dependencies = [
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
     "alembic>=1.18.0",
-    "bs4>=0.0.2",
     "selectolax>=0.4.6",
     "pylatexenc>=2.10",
     "lark>=1.1.0",

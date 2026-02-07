@@ -41,6 +41,8 @@ from promptgrimoire.input_pipeline.html_input import (
     process_input,
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.annotation_organise import render_organise_tab
+from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 from promptgrimoire.pages.registry import page_route
 
@@ -328,6 +330,10 @@ class PageState:
         None  # Tab panels container for programmatic switching
     )
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
+    # Tag info list for Tab 2 (Organise) — populated on first visit
+    tag_info_list: list[Any] | None = None  # list[TagInfo]
+    # Reference to the Organise tab panel element for deferred rendering
+    organise_panel: ui.element | None = None
 
 
 def _get_current_username() -> str:
@@ -2196,27 +2202,15 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
-    """Render the workspace content view with documents or add content form."""
-    workspace = await get_workspace(workspace_id)
+def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
+    """Render the header row with save status, user count, and export button.
 
-    if workspace is None:
-        ui.label("Workspace not found").classes("text-red-500")
-        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
-        return
+    Extracted from _render_workspace_view to keep statement count manageable.
 
-    # Create page state
-    state = PageState(
-        workspace_id=workspace_id,
-        user_name=_get_current_username(),
-    )
-
-    # Set up client synchronization
-    _setup_client_sync(workspace_id, client, state)
-
-    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
-
-    # Header row with save status and export button
+    Args:
+        state: Page state to populate with header element references.
+        workspace_id: Workspace UUID for export.
+    """
     with ui.row().classes("gap-4 items-center"):
         # Save status indicator (for E2E test observability)
         state.save_status = (
@@ -2251,6 +2245,28 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
 
         export_btn.on_click(on_export_click)
 
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
+    """Render the workspace content view with documents or add content form."""
+    workspace = await get_workspace(workspace_id)
+
+    if workspace is None:
+        ui.label("Workspace not found").classes("text-red-500")
+        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
+        return
+
+    # Create page state
+    state = PageState(
+        workspace_id=workspace_id,
+        user_name=_get_current_username(),
+    )
+
+    # Set up client synchronization
+    _setup_client_sync(workspace_id, client, state)
+
+    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
+    _render_workspace_header(state, workspace_id)
+
     # Three-tab container (Phase 1: three-tab UI)
     state.initialised_tabs = {"Annotate"}
 
@@ -2266,7 +2282,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
         if tab_name in state.initialised_tabs:
             return
         state.initialised_tabs.add(tab_name)
-        # Future phases will populate Tab 2 and Tab 3 content here
+
+        if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
+            if state.tag_info_list is None:
+                state.tag_info_list = brief_tags_to_tag_info()
+            render_organise_tab(
+                state.organise_panel, state.tag_info_list, state.crdt_doc
+            )
 
     with ui.tab_panels(tabs, value="Annotate", on_change=_on_tab_change).classes(
         "w-full"
@@ -2290,7 +2312,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 # Show add content form (extracted to reduce function complexity)
                 _render_add_content_form(workspace_id)
 
-        with ui.tab_panel("Organise"):
+        with ui.tab_panel("Organise") as organise_panel:
+            state.organise_panel = organise_panel
             ui.label("Organise tab content will appear here.").classes("text-gray-400")
 
         with ui.tab_panel("Respond"):

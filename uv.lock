@@ -1024,7 +1024,6 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "anthropic" },
-    { name = "ast-grep-cli" },
     { name = "asyncpg" },
     { name = "bs4" },
     { name = "emoji" },
@@ -1037,7 +1036,6 @@ dependencies = [
     { name = "pycrdt" },
     { name = "pydantic" },
     { name = "pylatexenc" },
-    { name = "pytest-xdist", extra = ["psutil"] },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "selectolax" },
@@ -1058,6 +1056,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "ast-grep-cli" },
     { name = "pre-commit" },
     { name = "pylatexenc" },
     { name = "pytest" },
@@ -1066,6 +1065,7 @@ dev = [
     { name = "pytest-order" },
     { name = "pytest-playwright" },
     { name = "pytest-subtests" },
+    { name = "pytest-xdist", extra = ["psutil"] },
     { name = "ruff" },
 ]
 
@@ -1074,7 +1074,6 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.0" },
     { name = "alembic", marker = "extra == 'dev'", specifier = ">=1.14" },
     { name = "anthropic", specifier = ">=0.76.0" },
-    { name = "ast-grep-cli", specifier = ">=0.40.5" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "emoji", specifier = ">=2.0.0" },
@@ -1092,7 +1091,6 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "pytest-xdist", extras = ["psutil"], specifier = ">=3.8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "rich", specifier = ">=14.3.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
@@ -1104,6 +1102,7 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ast-grep-cli", specifier = ">=0.40.5" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pytest", specifier = ">=8.0" },
@@ -1112,6 +1111,7 @@ dev = [
     { name = "pytest-order", specifier = ">=1.3.0" },
     { name = "pytest-playwright", specifier = ">=0.7.2" },
     { name = "pytest-subtests", specifier = ">=0.15.0" },
+    { name = "pytest-xdist", extras = ["psutil"], specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.14.11" },
 ]
 

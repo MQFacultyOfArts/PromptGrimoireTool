@@ -34,6 +34,7 @@ library references during development.
 ## lualatex
 
 - [LuaLaTeX package for underlines, strikethrough, and highlighting](lualatex/lua-ul-reference.md)
+- [Why LaTeX export tests use AST parsing instead of string matching](lualatex/test-ast-validation.md)
 
 ## nicegui
 

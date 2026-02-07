@@ -26,7 +26,6 @@ dependencies = [
     "asyncpg>=0.30",
     "anthropic>=0.76.0",
     "alembic>=1.18.0",
-    "rich>=14.3.1",
     "bs4>=0.0.2",
     "selectolax>=0.4.6",
     "pylatexenc>=2.10",
@@ -39,7 +38,6 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "pytest-cov>=6.0",
     "playwright>=1.49",
     "pre-commit>=4.0",
     "ruff>=0.9",
@@ -145,25 +143,14 @@ markers = [
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
 
-[tool.coverage.run]
-source = ["src/promptgrimoire"]
-branch = true
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "if TYPE_CHECKING:",
-    "if __name__ == .__main__.:",
-]
-
 [tool.ty.src]
 exclude = ["alembic/"]
 
 [dependency-groups]
 dev = [
-    "lorem-text>=3.0",
     "pre-commit>=4.5.1",
     "psycopg[binary]>=3.2",
+    "rich>=14.3.1",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-depper>=0.2.0",

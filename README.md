@@ -88,9 +88,6 @@ All checks run automatically on file save (Claude Code hooks) and git commit (pr
 # Run all tests
 uv run pytest
 
-# Run with coverage
-uv run pytest --cov=src/promptgrimoire
-
 # Run E2E tests
 uv run playwright test
 

@@ -14,7 +14,7 @@ PromptGrimoire is a **metacognition platform** for process management and reflec
 **Secondary capability:**
 - **Roleplay** - SillyTavern-compatible character card execution (avoids tedious per-student deployment)
 
-**Target:** Session 1 2025 (Feb 23) MVP launch
+**Target:** Session 1 2026 (Feb 23) MVP launch
 
 **Success looks like:** Students actively using the platform for metacognitive reflection, instructors able to observe and guide annotation patterns, exportable artifacts for assessment.
 

@@ -1,6 +1,6 @@
 # Implementation Plan Guidance for PromptGrimoire
 
-**Last updated:** 2026-01-30
+**Last updated:** 2026-02-07
 
 ## UAT is Critical
 
@@ -46,14 +46,17 @@ uv add --dev <package>
 # Run Python
 uv run python -m promptgrimoire
 
-# Run tests
-uv run pytest
+# Run tests (smart selection based on changes - fast)
+uv run test-debug
+
+# Run all tests (unit + integration, excludes E2E)
+uv run test-all
+
+# Run full test corpus including BLNS and slow tests
+uv run test-all-fixtures
 
 # Run specific test
 uv run pytest tests/unit/test_foo.py -k test_name
-
-# Find first failing test (custom script)
-uv run test-debug
 
 # Type checking
 uvx ty check
@@ -89,7 +92,7 @@ git push -u origin feature/descriptive-name
 gh pr create --title "feat: descriptive title" --body "..."
 ```
 
-**Commit prefixes:** `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`
+**Commit prefixes:** `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`, `deps:`
 
 **Never:**
 - `git add .` or `git add -A` (stage specific files)
@@ -99,11 +102,21 @@ gh pr create --title "feat: descriptive title" --body "..."
 ### Pre-commit Hooks
 
 Commits trigger:
-1. `ruff check` - lint
+1. `ruff check` - lint (with autofix)
 2. `ruff format --check` - format
 3. `ty check` - type check
+4. `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
 
 **If pre-commit fails:** Fix the issue, stage the fix, create a NEW commit (don't amend).
+
+### Claude Code Hooks (on `.py` file write)
+
+Every time a `.py` file is written, hooks automatically run:
+1. `ruff check --fix` - autofix lint issues
+2. `ruff format` - format code
+3. `ty check` - type checking
+
+All three must pass before code is considered complete.
 
 ## Coding Standards
 
@@ -124,24 +137,33 @@ class AnnotationService:
 # No # type: ignore without explanation
 ```
 
-### File Organization
+### Async Fixture Rule
+
+**NEVER use `@pytest.fixture` on `async def` functions.** Always use `@pytest_asyncio.fixture`. The sync decorator on async generators causes `Runner.run() cannot be called from a running event loop` under xdist.
+
+### File Organisation
 
 ```
 src/promptgrimoire/
 ├── models/           # SQLModel data models
 ├── pages/            # NiceGUI page routes
-├── services/         # Business logic
-├── repositories/     # Database access
-└── export/           # PDF/LaTeX export
+├── db/               # Database engine, CRUD operations, schema guard
+├── export/           # PDF/LaTeX export pipeline
+├── input_pipeline/   # HTML input processing (detection, conversion, char spans)
+├── llm/              # Claude API client, lorebook activation, prompt assembly
+├── parsers/          # SillyTavern character card parser
+├── crdt/             # pycrdt collaboration logic
+├── auth/             # Stytch integration
+└── static/           # Static assets (JS bundles, CSS)
 ```
 
 ### Testing Requirements
 
 | Type | Location | When Required |
 |------|----------|---------------|
-| Unit | `tests/unit/` | All pure functions, services |
+| Unit | `tests/unit/` | All pure functions, business logic |
 | Integration | `tests/integration/` | Database, external APIs |
-| E2E | `tests/e2e/` | Critical user flows only |
+| E2E | `tests/e2e/` | Critical user flows only (excluded from `test-all`) |
 
 **TDD is mandatory:**
 1. Write failing test
@@ -150,6 +172,8 @@ src/promptgrimoire/
 4. Repeat
 
 ### E2E Test Rules
+
+E2E tests are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. They must run separately with a live app server.
 
 **NEVER inject JavaScript.** Use Playwright native APIs:
 
@@ -170,6 +194,13 @@ await locator.scroll_into_view_if_needed()
 await expect(locator).to_be_visible()
 ```
 
+### Database Rules
+
+1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations themselves
+2. **All models must be imported before schema operations** - Import `promptgrimoire.db.models` to register tables with SQLModel.metadata
+3. **Pages requiring DB must check availability** - Use `os.environ.get("DATABASE_URL")` and show a helpful error if not configured
+4. **Use `verify_schema()` at startup** - Fail fast if tables are missing
+
 ## Review Criteria
 
 Code review will check:
@@ -182,6 +213,7 @@ Code review will check:
 - [ ] Conventional commit message
 - [ ] Type hints on all functions
 - [ ] No `# type: ignore` without explanation
+- [ ] Async fixtures use `@pytest_asyncio.fixture`
 
 ## Claude Code Plugins Available
 

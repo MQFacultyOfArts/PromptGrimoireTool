@@ -333,7 +333,7 @@ class PageState:
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
     # Tab container references (Phase 1: three-tab UI)
-    tab_panels: ui.element | None = (
+    tab_panels: ui.tab_panels | None = (
         None  # Tab panels container for programmatic switching
     )
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
@@ -362,6 +362,62 @@ def _get_current_username() -> str:
         if auth_user.get("email"):
             return auth_user["email"].split("@")[0]
     return "Anonymous"
+
+
+async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
+    """Switch to the Annotate tab and scroll to a highlight range.
+
+    This is the cross-tab navigation entry point: Tab 2 (Organise) and Tab 3
+    (Respond) "locate" buttons call this to warp the user back to Tab 1 and
+    scroll the highlighted text into view with a brief gold flash.
+
+    Per-client only — ``set_value()`` affects only the calling client's tab
+    state, not other connected users (AC5.4).
+
+    Args:
+        state: Page state with tab_panels and annotations.
+        start_char: First character index of the highlight range.
+        end_char: Last character index (exclusive) of the highlight range.
+    """
+    # 1. Switch tab to Annotate
+    if state.tab_panels is not None:
+        state.tab_panels.set_value("Annotate")
+    state.active_tab = "Annotate"
+
+    # 2. Re-inject char spans (idempotent — no-op if already present)
+    ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+
+    # 3. Refresh Tab 1 annotations and highlight CSS
+    if state.refresh_annotations:
+        state.refresh_annotations()
+    _update_highlight_css(state)
+
+    # 4. Scroll to highlight and flash it (after a short delay for tab switch
+    #    and char span injection to complete)
+    # fmt: off
+    js = (
+        f"setTimeout(function(){{"
+        f"const sc={start_char},ec={end_char};"
+        f"const chars=[];"
+        f"for(var i=sc;i<ec;i++){{"
+        f"var c=document.querySelector("
+        f"'[data-char-index=\"'+i+'\"]');"
+        f"if(c)chars.push(c);"
+        f"}}"
+        f"if(chars.length===0)return;"
+        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
+        f"var origColors=chars.map(function(c){{return c.style.backgroundColor;}});"
+        f"chars.forEach(function(c){{"
+        f"c.style.transition='background-color 0.2s';"
+        f"c.style.backgroundColor='#FFD700';"
+        f"}});"
+        f"setTimeout(function(){{"
+        f"chars.forEach(function(c,i){{c.style.backgroundColor=origColors[i];}});"
+        f"}},800);"
+        f"}},200)"
+    )
+    # fmt: on
+    await ui.run_javascript(js)
 
 
 async def _create_workspace_and_redirect() -> None:
@@ -2389,6 +2445,10 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.broadcast_update:
             await state.broadcast_update()
 
+    async def _on_locate(start_char: int, end_char: int) -> None:
+        """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
+        await _warp_to_highlight(state, start_char, end_char)
+
     def _render_organise_now() -> None:
         """Re-render the Organise tab with current CRDT state."""
         if not (state.organise_panel and state.crdt_doc):
@@ -2400,6 +2460,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.tag_info_list,
             state.crdt_doc,
             on_sort_end=_on_organise_sort_end,
+            on_locate=_on_locate,
         )
 
     state.refresh_organise = _render_organise_now
@@ -2443,6 +2504,9 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
         _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
 
+    async def _on_respond_locate(start_char: int, end_char: int) -> None:
+        await _warp_to_highlight(state, start_char, end_char)
+
     state.refresh_respond_references = await render_respond_tab(
         panel=state.respond_panel,
         tags=tags,
@@ -2450,6 +2514,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         workspace_key=str(workspace_id),
         client_id=state.client_id,
         on_yjs_update_broadcast=_on_broadcast,
+        on_locate=_on_respond_locate,
     )
     state.has_milkdown_editor = True
     # Mark this client as having a Milkdown editor for Yjs relay

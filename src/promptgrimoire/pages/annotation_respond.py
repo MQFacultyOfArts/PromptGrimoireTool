@@ -106,6 +106,7 @@ def _build_reference_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
+    on_locate: Callable[..., Any] | None = None,
 ) -> None:
     """Render a single read-only highlight reference card.
 
@@ -113,8 +114,12 @@ def _build_reference_card(
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name.
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            the highlight in Tab 1.
     """
     author = highlight.get("author", "Unknown")
+    start_char: int = highlight.get("start_char", 0)
+    end_char: int = highlight.get("end_char", 0)
     full_text = highlight.get("text", "")
     snippet = full_text[:_SNIPPET_MAX_CHARS]
     if len(full_text) > _SNIPPET_MAX_CHARS:
@@ -127,9 +132,19 @@ def _build_reference_card(
         .style(f"border-left: 4px solid {tag_colour};")
         .props('data-testid="respond-reference-card"')
     ):
-        ui.label(display_tag_name).classes("text-xs font-bold").style(
-            f"color: {tag_colour};"
-        )
+        with ui.row().classes("w-full items-center justify-between"):
+            ui.label(display_tag_name).classes("text-xs font-bold").style(
+                f"color: {tag_colour};"
+            )
+            if on_locate is not None:
+
+                async def _do_locate(sc: int = start_char, ec: int = end_char) -> None:
+                    await on_locate(sc, ec)
+
+                ui.button(icon="my_location", on_click=_do_locate).props(
+                    "flat dense size=xs"
+                ).tooltip("Locate in document")
+
         ui.label(f"by {author}").classes("text-xs text-gray-500")
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
@@ -168,6 +183,7 @@ def _build_reference_panel(
     crdt_doc: AnnotationDocument,
     filter_text: str | None = None,
     accordion_state: dict[str, bool] | None = None,
+    on_locate: Callable[..., Any] | None = None,
 ) -> None:
     """Build the read-only highlight reference panel (left column).
 
@@ -181,6 +197,8 @@ def _build_reference_panel(
         accordion_state: Dict mapping tag name to open/closed state. Mutated in
             place via ``on_value_change`` callbacks so the caller's dict stays
             in sync across rebuilds.
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            a highlight in Tab 1.
     """
     tagged_highlights, untagged_highlights, has_any_highlights = (
         group_highlights_by_tag(tags, crdt_doc)
@@ -226,7 +244,7 @@ def _build_reference_panel(
 
         with _expansion_for(tag_info.name):
             for hl in highlights_for_tag:
-                _build_reference_card(hl, tag_info.colour, tag_info.name)
+                _build_reference_card(hl, tag_info.colour, tag_info.name, on_locate)
 
     # Untagged highlights
     if active_filter:
@@ -236,7 +254,7 @@ def _build_reference_panel(
     if untagged_highlights:
         with _expansion_for("Untagged"):
             for hl in untagged_highlights:
-                _build_reference_card(hl, "#999999", "Untagged")
+                _build_reference_card(hl, "#999999", "Untagged", on_locate)
 
 
 def _build_reference_column(
@@ -244,6 +262,7 @@ def _build_reference_column(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
     accordion_state: dict[str, bool],
+    on_locate: Callable[..., Any] | None = None,
 ) -> tuple[ui.element, ui.input]:
     """Build the reference panel column inside the splitter's 'before' slot.
 
@@ -272,7 +291,9 @@ def _build_reference_column(
 
         reference_container = ui.column().classes("w-full")
         with reference_container:
-            _build_reference_panel(tags, crdt_doc, accordion_state=accordion_state)
+            _build_reference_panel(
+                tags, crdt_doc, accordion_state=accordion_state, on_locate=on_locate
+            )
 
     return reference_container, search_input
 
@@ -284,6 +305,7 @@ async def render_respond_tab(
     workspace_key: str,
     client_id: str,
     on_yjs_update_broadcast: Any,
+    on_locate: Callable[..., Any] | None = None,
 ) -> Callable[[], None]:
     """Populate the Respond tab panel with Milkdown editor and reference panel.
 
@@ -304,6 +326,8 @@ async def render_respond_tab(
         client_id: This client's unique ID (for echo prevention).
         on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
             broadcast Yjs updates to other clients.
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            a highlight in Tab 1.
 
     Returns:
         A callable that refreshes the reference panel with current CRDT state.
@@ -338,7 +362,7 @@ async def render_respond_tab(
         )
 
         reference_container, search_input = _build_reference_column(
-            splitter, tags, crdt_doc, accordion_state
+            splitter, tags, crdt_doc, accordion_state, on_locate=on_locate
         )
 
         def _filter_highlights(e: object) -> None:
@@ -356,6 +380,7 @@ async def render_respond_tab(
                     crdt_doc,
                     filter_text=filter_val,
                     accordion_state=accordion_state,
+                    on_locate=on_locate,
                 )
 
         search_input.on("update:model-value", _filter_highlights)
@@ -449,6 +474,7 @@ async def render_respond_tab(
                 crdt_doc,
                 filter_text=search_input.value,
                 accordion_state=accordion_state,
+                on_locate=on_locate,
             )
         # Restore scroll position after rebuild
         ui.run_javascript(

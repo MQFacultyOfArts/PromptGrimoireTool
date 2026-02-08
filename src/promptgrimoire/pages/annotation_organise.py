@@ -50,6 +50,7 @@ def _build_highlight_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
+    on_locate: Callable[..., Any] | None = None,
 ) -> ui.card:
     """Render a single highlight card inside a tag column.
 
@@ -60,12 +61,16 @@ def _build_highlight_card(
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name.
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            the highlight in Tab 1.
 
     Returns:
         The created ui.card element.
     """
     highlight_id = highlight.get("id", "")
     author = highlight.get("author", "Unknown")
+    start_char: int = highlight.get("start_char", 0)
+    end_char: int = highlight.get("end_char", 0)
     full_text = highlight.get("text", "")
     snippet = full_text[:_SNIPPET_MAX_CHARS]
     if len(full_text) > _SNIPPET_MAX_CHARS:
@@ -83,9 +88,19 @@ def _build_highlight_card(
         )
     )
     with card:
-        ui.label(display_tag_name).classes("text-xs font-bold").style(
-            f"color: {tag_colour};"
-        )
+        with ui.row().classes("w-full items-center justify-between"):
+            ui.label(display_tag_name).classes("text-xs font-bold").style(
+                f"color: {tag_colour};"
+            )
+            if on_locate is not None:
+
+                async def _do_locate(sc: int = start_char, ec: int = end_char) -> None:
+                    await on_locate(sc, ec)
+
+                ui.button(icon="my_location", on_click=_do_locate).props(
+                    "flat dense size=xs"
+                ).tooltip("Locate in document").classes("sortable-ignore")
+
         ui.label(f"by {author}").classes("text-xs text-gray-500")
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
@@ -110,6 +125,7 @@ def _build_tag_column(
     highlights: list[dict[str, Any]],
     ordered_ids: list[str],
     on_sort_end: Callable[[GenericEventArguments], Any] | None,
+    on_locate: Callable[..., Any] | None = None,
 ) -> ui.column:
     """Render a single tag column with header and highlight cards.
 
@@ -124,6 +140,8 @@ def _build_tag_column(
         highlights: All highlights assigned to this tag.
         ordered_ids: Ordered highlight IDs from CRDT tag_order.
         on_sort_end: Callback for sort-end events (None to disable drag).
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            a highlight in Tab 1.
 
     Returns:
         The created ui.column element.
@@ -162,14 +180,16 @@ def _build_tag_column(
             rendered_ids: set[str] = set()
             for hid in ordered_ids:
                 if hid in hl_by_id:
-                    _build_highlight_card(hl_by_id[hid], tag_colour, tag_name)
+                    _build_highlight_card(
+                        hl_by_id[hid], tag_colour, tag_name, on_locate
+                    )
                     rendered_ids.add(hid)
 
             # Append unordered highlights
             for hl in highlights:
                 hid = hl.get("id", "")
                 if hid not in rendered_ids:
-                    _build_highlight_card(hl, tag_colour, tag_name)
+                    _build_highlight_card(hl, tag_colour, tag_name, on_locate)
 
             # Empty state hint (inside sortable so column is a valid drop target)
             if not highlights:
@@ -186,6 +206,7 @@ def render_organise_tab(
     crdt_doc: AnnotationDocument,
     *,
     on_sort_end: (Callable[[GenericEventArguments], Any] | None) = None,
+    on_locate: Callable[..., Any] | None = None,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
@@ -202,6 +223,8 @@ def render_organise_tab(
         tags: List of TagInfo instances.
         crdt_doc: The CRDT annotation document.
         on_sort_end: Callback for SortableJS sort-end events.
+        on_locate: Optional async callback(start_char, end_char) to warp to
+            a highlight in Tab 1.
     """
     # Save scroll position before clearing (h-scroll across columns, v-scroll
     # within the panel). Uses data-testid selector since the element is rebuilt.
@@ -254,6 +277,7 @@ def render_organise_tab(
                 highlights_for_tag,
                 ordered_ids,
                 on_sort_end,
+                on_locate,
             )
 
         # Untagged column (AC2.6)
@@ -266,6 +290,7 @@ def render_organise_tab(
                 untagged_highlights,
                 ordered_ids,
                 on_sort_end,
+                on_locate,
             )
 
     # Restore scroll position after rebuild

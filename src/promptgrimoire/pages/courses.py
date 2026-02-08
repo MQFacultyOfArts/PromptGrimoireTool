@@ -5,6 +5,7 @@ Routes:
 - /courses/new - Create a new course (instructors only)
 - /courses/{id} - View course details with weeks
 - /courses/{id}/weeks/new - Add a week (instructors only)
+- /courses/{id}/weeks/{week_id}/activities/new - Add an activity (instructors only)
 
 Route: /courses
 """
@@ -14,10 +15,12 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from nicegui import app, ui
 
+from promptgrimoire.db.activities import list_activities_for_week
 from promptgrimoire.db.courses import (
     create_course,
     enroll_user,
@@ -332,6 +335,25 @@ async def course_detail_page(course_id: str) -> None:
                                     ui.button("Publish", on_click=pub).props(
                                         "flat dense"
                                     )
+
+                    # Activity list under each week
+                    activities = await list_activities_for_week(week.id)
+                    if activities:
+                        with ui.column().classes("ml-4 gap-1 mt-2"):
+                            for act in activities:
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.icon("assignment").classes("text-gray-400")
+                                    _qs = urlencode(
+                                        {"workspace_id": str(act.template_workspace_id)}
+                                    )
+                                    ui.link(
+                                        act.title,
+                                        f"/annotation?{_qs}",
+                                    ).classes("text-sm")
+                    elif can_manage:
+                        ui.label("No activities yet").classes(
+                            "text-xs text-gray-400 ml-4 mt-1"
+                        )
 
     await weeks_list()
 

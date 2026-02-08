@@ -13,6 +13,7 @@ from __future__ import annotations
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 from promptgrimoire.pages.annotation_respond import (
     _SNIPPET_MAX_CHARS,
+    _matches_filter,
     group_highlights_by_tag,
 )
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
@@ -114,3 +115,80 @@ class TestReferenceHighlightGrouping:
         for tag_info in tags:
             if tag_info.name != "Jurisdiction":
                 assert len(tagged[tag_info.name]) == 0
+
+
+class TestMatchesFilter:
+    """Verify the highlight search filter logic."""
+
+    def test_matches_highlight_text(self) -> None:
+        """Filter matches against highlight text content."""
+        hl = {"text": "The court held that negligence was proven", "author": "Alice"}
+        assert _matches_filter(hl, "negligence") is True
+
+    def test_matches_author(self) -> None:
+        """Filter matches against highlight author."""
+        hl = {"text": "some text", "author": "Professor Smith"}
+        assert _matches_filter(hl, "smith") is True
+
+    def test_matches_comment_text(self) -> None:
+        """Filter matches against comment text within a highlight."""
+        hl = {
+            "text": "highlighted passage",
+            "author": "Alice",
+            "comments": [{"text": "This is a key finding", "author": "Bob"}],
+        }
+        assert _matches_filter(hl, "key finding") is True
+
+    def test_matches_comment_author(self) -> None:
+        """Filter matches against comment author within a highlight."""
+        hl = {
+            "text": "highlighted passage",
+            "author": "Alice",
+            "comments": [{"text": "Good point", "author": "Dr. Jones"}],
+        }
+        assert _matches_filter(hl, "jones") is True
+
+    def test_no_match_returns_false(self) -> None:
+        """Filter returns False when nothing matches."""
+        hl = {
+            "text": "The sky is blue",
+            "author": "Alice",
+            "comments": [{"text": "Indeed", "author": "Bob"}],
+        }
+        assert _matches_filter(hl, "jurisdiction") is False
+
+    def test_case_insensitive(self) -> None:
+        """Filter matching is case-insensitive."""
+        hl = {"text": "NEGLIGENCE was proven", "author": "alice"}
+        assert _matches_filter(hl, "Negligence") is True
+        assert _matches_filter(hl, "ALICE") is True
+
+    def test_empty_filter_matches_everything(self) -> None:
+        """An empty filter string matches any highlight."""
+        hl = {"text": "anything", "author": "anyone"}
+        assert _matches_filter(hl, "") is True
+
+    def test_missing_fields_do_not_crash(self) -> None:
+        """Highlights with missing keys don't raise errors."""
+        assert _matches_filter({}, "test") is False
+        assert _matches_filter({"text": "hello"}, "hello") is True
+
+    def test_highlight_with_no_comments(self) -> None:
+        """Highlights without a comments key still work."""
+        hl = {"text": "some text", "author": "Alice"}
+        assert _matches_filter(hl, "some") is True
+        assert _matches_filter(hl, "missing") is False
+
+    def test_multiple_comments_any_match(self) -> None:
+        """If any comment matches, the highlight matches."""
+        hl = {
+            "text": "passage",
+            "author": "Alice",
+            "comments": [
+                {"text": "Not relevant", "author": "Bob"},
+                {"text": "Very important point", "author": "Carol"},
+            ],
+        }
+        assert _matches_filter(hl, "important") is True
+        assert _matches_filter(hl, "carol") is True
+        assert _matches_filter(hl, "nonexistent") is False

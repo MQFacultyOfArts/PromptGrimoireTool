@@ -2,14 +2,16 @@
 
 Tests verify that the annotation page renders three tabs (Annotate, Organise,
 Respond), that deferred rendering works for Tabs 2 and 3, and that switching
-tabs preserves Tab 1 state. Phase 3 adds tests for Tag 2 tag columns and
-highlight cards.
+tabs preserves Tab 1 state. Phase 3 adds tests for Tab 2 tag columns and
+highlight cards. Phase 5 adds tests for Tab 3 Milkdown editor and collaboration.
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_01.md
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_05.md
 - AC: three-tab-ui.AC1.1 through AC1.4
 - AC: three-tab-ui.AC2.1, AC2.2, AC2.6
+- AC: three-tab-ui.AC4.1 through AC4.5
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     create_highlight,
+    create_highlight_with_tag,
     setup_workspace_with_content,
 )
 
@@ -107,14 +110,16 @@ class TestDeferredRendering:
             organise_panel.locator('[data-testid="organise-columns"]')
         ).to_be_visible(timeout=3000)
 
-        # Click Respond tab
+        # Click Respond tab -- triggers deferred render of Milkdown editor
         page.locator("role=tab").nth(2).click()
-        page.wait_for_timeout(300)
+        page.wait_for_timeout(1000)
 
-        # Respond panel should be visible with placeholder
+        # Respond panel should show Milkdown editor container (Phase 5)
         respond_panel = page.locator("[role='tabpanel']").nth(2)
         expect(respond_panel).to_be_visible()
-        expect(respond_panel).to_contain_text("Respond tab content will appear here.")
+        expect(
+            respond_panel.locator('[data-testid="milkdown-editor-container"]')
+        ).to_be_visible(timeout=5000)
 
 
 class TestTabStatePreservation:
@@ -247,3 +252,184 @@ class TestOrganiseTabColumns:
         The unit test test_untagged_highlights_collected covers the logic path.
         """
         pytest.skip("No UI mechanism to create untagged highlights yet")
+
+
+class TestRespondTabEditor:
+    """Verify Tab 3 renders Milkdown editor with toolbar.
+
+    Verifies: three-tab-ui.AC4.1
+    """
+
+    @pytestmark_db
+    def test_respond_tab_shows_milkdown_editor(self, workspace_page: Page) -> None:
+        """Navigate to Respond tab and verify Milkdown editor container appears."""
+        page = workspace_page
+
+        # Switch to Respond tab
+        page.locator("role=tab").nth(2).click()
+        page.wait_for_timeout(1500)
+
+        # Verify the editor container is visible
+        editor_container = page.locator('[data-testid="milkdown-editor-container"]')
+        expect(editor_container).to_be_visible(timeout=10000)
+
+        # Verify the editor column label
+        editor_column = page.locator('[data-testid="respond-editor-column"]')
+        expect(editor_column).to_be_visible()
+        expect(editor_column).to_contain_text("Response Draft")
+
+    @pytestmark_db
+    def test_respond_tab_shows_reference_panel(self, workspace_page: Page) -> None:
+        """Navigate to Respond tab and verify reference panel appears."""
+        page = workspace_page
+
+        # Switch to Respond tab
+        page.locator("role=tab").nth(2).click()
+        page.wait_for_timeout(1500)
+
+        # Verify reference panel is visible
+        ref_panel = page.locator('[data-testid="respond-reference-panel"]')
+        expect(ref_panel).to_be_visible(timeout=5000)
+        expect(ref_panel).to_contain_text("Highlight Reference")
+
+
+class TestRespondTabReferenceHighlights:
+    """Verify Tab 3 reference panel shows highlights grouped by tag.
+
+    Verifies: three-tab-ui.AC4.4
+    """
+
+    @pytestmark_db
+    def test_respond_tab_reference_panel_shows_highlights(
+        self, workspace_page: Page
+    ) -> None:
+        """Create highlights with different tags, verify reference panel groups them."""
+        page = workspace_page
+
+        # Create highlights with different tags
+        # Tag index 0 = Jurisdiction, index 1 = Procedural History
+        create_highlight_with_tag(page, 0, 5, tag_index=0)
+        page.wait_for_timeout(500)
+        create_highlight_with_tag(page, 10, 15, tag_index=1)
+        page.wait_for_timeout(500)
+
+        # Switch to Respond tab
+        page.locator("role=tab").nth(2).click()
+        page.wait_for_timeout(1500)
+
+        # Verify reference panel shows tag group sections
+        ref_panel = page.locator('[data-testid="respond-reference-panel"]')
+        expect(ref_panel).to_be_visible(timeout=5000)
+
+        # Should have tag group sections for the tags with highlights
+        tag_groups = ref_panel.locator('[data-testid="respond-tag-group"]')
+        expect(tag_groups.first).to_be_visible(timeout=5000)
+
+        # Should have reference cards
+        ref_cards = ref_panel.locator('[data-testid="respond-reference-card"]')
+        expect(ref_cards).to_have_count(2, timeout=5000)
+
+
+class TestRespondTabEmptyState:
+    """Verify Tab 3 with no highlights shows empty reference panel.
+
+    Verifies: three-tab-ui.AC4.5
+    """
+
+    @pytestmark_db
+    def test_respond_tab_no_highlights_shows_empty_reference(
+        self, workspace_page: Page
+    ) -> None:
+        """Navigate to Respond tab with no highlights, verify empty message."""
+        page = workspace_page
+
+        # Switch to Respond tab (no highlights created)
+        page.locator("role=tab").nth(2).click()
+        page.wait_for_timeout(1500)
+
+        # Verify the editor container is visible (editor still works)
+        editor_container = page.locator('[data-testid="milkdown-editor-container"]')
+        expect(editor_container).to_be_visible(timeout=10000)
+
+        # Verify the empty-state message in the reference panel
+        no_highlights = page.locator('[data-testid="respond-no-highlights"]')
+        expect(no_highlights).to_be_visible(timeout=5000)
+        expect(no_highlights).to_contain_text("No highlights yet")
+
+
+class TestRespondTabCollaboration:
+    """Verify Tab 3 real-time collaboration between two clients.
+
+    Verifies: three-tab-ui.AC4.2, three-tab-ui.AC4.3
+
+    These tests require two browser contexts viewing the same workspace.
+    They use the two_annotation_contexts fixture from conftest.py.
+    """
+
+    @pytestmark_db
+    def test_respond_tab_late_joiner_sync(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Client 1 types in editor, Client 2 joins and sees content.
+
+        Verifies: three-tab-ui.AC4.3
+        """
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # Client 1 switches to Respond tab
+        page1.locator("role=tab").nth(2).click()
+        page1.wait_for_timeout(2000)
+
+        # Verify editor is visible for Client 1
+        editor1 = page1.locator('[data-testid="milkdown-editor-container"]')
+        expect(editor1).to_be_visible(timeout=10000)
+
+        # Client 1 clicks in the editor and types
+        editor1.locator(".ProseMirror").click()
+        page1.wait_for_timeout(500)
+        page1.keyboard.type("Initial content from client one")
+        page1.wait_for_timeout(1000)
+
+        # Client 2 switches to Respond tab (late joiner)
+        page2.locator("role=tab").nth(2).click()
+        page2.wait_for_timeout(3000)
+
+        # Verify editor is visible for Client 2
+        editor2 = page2.locator('[data-testid="milkdown-editor-container"]')
+        expect(editor2).to_be_visible(timeout=10000)
+
+        # Client 2 should see the content typed by Client 1
+        prosemirror2 = editor2.locator(".ProseMirror")
+        expect(prosemirror2).to_contain_text("Initial content", timeout=10000)
+
+    @pytestmark_db
+    def test_respond_tab_two_clients_real_time_sync(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Both clients on Respond tab, edits sync in real time.
+
+        Verifies: three-tab-ui.AC4.2
+        """
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # Both clients switch to Respond tab
+        page1.locator("role=tab").nth(2).click()
+        page1.wait_for_timeout(2000)
+        page2.locator("role=tab").nth(2).click()
+        page2.wait_for_timeout(2000)
+
+        # Verify both editors are visible
+        editor1 = page1.locator('[data-testid="milkdown-editor-container"]')
+        editor2 = page2.locator('[data-testid="milkdown-editor-container"]')
+        expect(editor1).to_be_visible(timeout=10000)
+        expect(editor2).to_be_visible(timeout=10000)
+
+        # Client 1 types in the editor
+        editor1.locator(".ProseMirror").click()
+        page1.wait_for_timeout(500)
+        page1.keyboard.type("Hello World")
+        page1.wait_for_timeout(2000)
+
+        # Client 2 should see the content
+        prosemirror2 = editor2.locator(".ProseMirror")
+        expect(prosemirror2).to_contain_text("Hello World", timeout=10000)

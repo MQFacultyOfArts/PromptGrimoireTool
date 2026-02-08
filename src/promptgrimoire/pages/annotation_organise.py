@@ -148,13 +148,14 @@ def _build_tag_column(
             options={
                 "group": "organise-highlights",
                 "animation": 150,
+                "filter": ".sortable-ignore",
             },
             on_end=on_sort_end,
         )
         # Set HTML id so event handler can identify the tag
         sortable_id = f"sort-{raw_key}" if raw_key else "sort-untagged"
         sortable.props(f'id="{sortable_id}"')
-        sortable.classes("w-full min-h-16")
+        sortable.classes("w-full flex-grow min-h-24 pb-4")
 
         with sortable:
             # Render ordered highlights first
@@ -170,9 +171,11 @@ def _build_tag_column(
                 if hid not in rendered_ids:
                     _build_highlight_card(hl, tag_colour, tag_name)
 
-        # Empty state message (outside sortable so it's not draggable)
-        if not highlights:
-            ui.label("No highlights").classes("text-xs text-gray-400 italic p-2")
+            # Empty state hint (inside sortable so column is a valid drop target)
+            if not highlights:
+                ui.label("No highlights").classes(
+                    "text-xs text-gray-400 italic p-2 sortable-ignore"
+                )
 
     return column
 

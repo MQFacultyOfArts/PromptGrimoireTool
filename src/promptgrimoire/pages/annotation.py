@@ -2350,8 +2350,18 @@ def _setup_organise_drag(state: PageState) -> None:
                 type="positive",
                 position="bottom",
             )
+            # Re-render to update card tag labels and colours
+            _render_organise_now()
 
-        # SortableJS handles visual update (DOM already moved).
+        # Persist to database
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
+        await pm.force_persist_workspace(state.workspace_id)
+
         # Broadcast to other clients for CRDT sync.
         if state.broadcast_update:
             await state.broadcast_update()
@@ -2415,6 +2425,12 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             state.initialised_tabs.add(tab_name)
             if state.refresh_organise:
                 state.refresh_organise()
+            return
+
+        if tab_name == "Annotate" and state.refresh_annotations:
+            # Re-render sidebar cards so tag changes from Organise are visible
+            state.refresh_annotations()
+            _update_highlight_css(state)
             return
 
         if tab_name in state.initialised_tabs:

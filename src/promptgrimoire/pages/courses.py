@@ -20,7 +20,7 @@ from uuid import UUID
 
 from nicegui import app, ui
 
-from promptgrimoire.db.activities import list_activities_for_week
+from promptgrimoire.db.activities import create_activity, list_activities_for_week
 from promptgrimoire.db.courses import (
     create_course,
     enroll_user,
@@ -355,6 +355,14 @@ async def course_detail_page(course_id: str) -> None:
                             "text-xs text-gray-400 ml-4 mt-1"
                         )
 
+                    if can_manage:
+                        ui.button(
+                            "Add Activity",
+                            on_click=lambda wid=week.id: ui.navigate.to(
+                                f"/courses/{course_id}/weeks/{wid}/activities/new"
+                            ),
+                        ).props("flat dense size=sm").classes("ml-4 mt-1")
+
     await weeks_list()
 
     # Register this client for receiving broadcasts
@@ -436,6 +444,78 @@ async def create_week_page(course_id: str) -> None:
         )
 
         ui.notify(f"Created Week {int(week_number.value)}", type="positive")
+        ui.navigate.to(f"/courses/{course_id}")
+
+    with ui.row().classes("gap-2 mt-4"):
+        ui.button("Create", on_click=submit)
+        ui.button(
+            "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
+        ).props("flat")
+
+
+@ui.page("/courses/{course_id}/weeks/{week_id}/activities/new")
+async def create_activity_page(course_id: str, week_id: str) -> None:
+    """Create a new activity page."""
+    if not await _check_auth():
+        return
+
+    if not _is_db_available():
+        ui.label("Database not configured").classes("text-red-500")
+        return
+
+    await init_db()
+
+    try:
+        cid = UUID(course_id)
+        wid = UUID(week_id)
+    except ValueError:
+        ui.label("Invalid course or week ID").classes("text-red-500")
+        return
+
+    course = await get_course_by_id(cid)
+    if not course:
+        ui.label("Course not found").classes("text-red-500")
+        return
+
+    user_id = _get_user_id()
+    if not user_id:
+        ui.label(
+            "User not found in local database. Please log out and log in again."
+        ).classes("text-red-500")
+        return
+
+    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
+
+    if not enrollment or enrollment.role not in (
+        CourseRole.coordinator,
+        CourseRole.instructor,
+    ):
+        ui.label("Only instructors can add activities").classes("text-red-500")
+        return
+
+    ui.label(f"Add Activity to {course.code}").classes("text-2xl font-bold mb-4")
+
+    title = ui.input(
+        "Title", placeholder="e.g., Annotate Becky Bennett Interview"
+    ).classes("w-96")
+    description = ui.textarea(
+        "Description (optional)",
+        placeholder="Markdown description of the activity",
+    ).classes("w-96")
+
+    async def submit() -> None:
+        if not title.value:
+            ui.notify("Title is required", type="negative")
+            return
+
+        await create_activity(
+            week_id=wid,
+            title=title.value,
+            description=description.value or None,
+        )
+
+        ui.notify(f"Created activity: {title.value}", type="positive")
+        _broadcast_weeks_refresh(cid)
         ui.navigate.to(f"/courses/{course_id}")
 
     with ui.row().classes("gap-2 mt-4"):

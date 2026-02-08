@@ -42,6 +42,7 @@ from promptgrimoire.input_pipeline.html_input import (
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.annotation_organise import render_organise_tab
+from promptgrimoire.pages.annotation_respond import render_respond_tab
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 from promptgrimoire.pages.registry import page_route
@@ -58,13 +59,17 @@ _workspace_registry = AnnotationDocumentRegistry()
 class _ClientState:
     """State for a connected client."""
 
-    def __init__(self, callback: Any, color: str, name: str) -> None:
+    def __init__(
+        self, callback: Any, color: str, name: str, nicegui_client: Any = None
+    ) -> None:
         self.callback = callback
         self.color = color
         self.name = name
+        self.nicegui_client = nicegui_client  # NiceGUI Client for JS relay
         self.cursor_char: int | None = None
         self.selection_start: int | None = None
         self.selection_end: int | None = None
+        self.has_milkdown_editor: bool = False  # Set True when Tab 3 editor initialised
 
     def set_cursor(self, char_index: int | None) -> None:
         """Update cursor position."""
@@ -338,6 +343,10 @@ class PageState:
     refresh_organise: Any | None = None  # Callable[[], None]
     # Track active tab for broadcast-triggered refresh
     active_tab: str = "Annotate"
+    # Reference to the Respond tab panel element for deferred rendering
+    respond_panel: ui.element | None = None
+    # Whether the Milkdown editor has been initialised (for Phase 7 export)
+    has_milkdown_editor: bool = False
 
 
 def _get_current_username() -> str:
@@ -1544,6 +1553,7 @@ def _setup_client_sync(
         callback=handle_update_from_other,
         color=state.user_color,
         name=state.user_name,
+        nicegui_client=client,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
@@ -2382,6 +2392,60 @@ def _setup_organise_drag(state: PageState) -> None:
     state.refresh_organise = _render_organise_now
 
 
+def _broadcast_yjs_update(
+    workspace_id: UUID, origin_client_id: str, b64_update: str
+) -> None:
+    """Relay a Yjs update from one client's Milkdown editor to all others.
+
+    Sends ``window._applyRemoteUpdate(b64)`` to every connected client
+    that has initialised the Milkdown editor, except the originating client.
+    """
+    ws_key = str(workspace_id)
+    for cid, cstate in _connected_clients.get(ws_key, {}).items():
+        if cid == origin_client_id:
+            continue
+        if cstate.has_milkdown_editor and cstate.nicegui_client:
+            cstate.nicegui_client.run_javascript(
+                f"window._applyRemoteUpdate('{b64_update}')"
+            )
+            logger.debug(
+                "YJS_RELAY ws=%s from=%s to=%s",
+                ws_key,
+                origin_client_id[:8],
+                cid[:8],
+            )
+
+
+async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
+    """Initialise the Respond tab with Milkdown editor and reference panel.
+
+    Called once on first visit to the Respond tab (deferred rendering).
+    Sets up the editor, CRDT relay, and marks the client for Yjs broadcast.
+    """
+    if not (state.respond_panel and state.crdt_doc):
+        return
+
+    tags = state.tag_info_list or brief_tags_to_tag_info()
+
+    def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
+        _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
+
+    await render_respond_tab(
+        panel=state.respond_panel,
+        tags=tags,
+        crdt_doc=state.crdt_doc,
+        workspace_key=str(workspace_id),
+        client_id=state.client_id,
+        on_yjs_update_broadcast=_on_broadcast,
+    )
+    state.has_milkdown_editor = True
+    # Mark this client as having a Milkdown editor for Yjs relay
+    ws_key = str(workspace_id)
+    clients = _connected_clients.get(ws_key, {})
+    if state.client_id in clients:
+        clients[state.client_id].has_milkdown_editor = True
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -2433,6 +2497,11 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             _update_highlight_css(state)
             return
 
+        if tab_name == "Respond" and tab_name not in state.initialised_tabs:
+            state.initialised_tabs.add(tab_name)
+            await _initialise_respond_tab(state, workspace_id)
+            return
+
         if tab_name in state.initialised_tabs:
             return
         state.initialised_tabs.add(tab_name)
@@ -2463,7 +2532,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             state.organise_panel = organise_panel
             ui.label("Organise tab content will appear here.").classes("text-gray-400")
 
-        with ui.tab_panel("Respond"):
+        with ui.tab_panel("Respond") as respond_panel:
+            state.respond_panel = respond_panel
             ui.label("Respond tab content will appear here.").classes("text-gray-400")
 
 

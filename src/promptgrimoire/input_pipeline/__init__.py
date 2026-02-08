@@ -5,6 +5,7 @@ from promptgrimoire.input_pipeline.html_input import (
     ContentType,
     detect_content_type,
     inject_char_spans,
+    insert_markers_into_dom,
     process_input,
     strip_char_spans,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "ContentType",
     "detect_content_type",
     "inject_char_spans",
+    "insert_markers_into_dom",
     "process_input",
     "strip_char_spans",
 ]

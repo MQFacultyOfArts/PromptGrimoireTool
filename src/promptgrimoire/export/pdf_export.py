@@ -9,10 +9,12 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -151,23 +153,82 @@ def _html_to_latex_notes(html_content: str) -> str:
     return content.strip()
 
 
-def _build_general_notes_section(general_notes: str) -> str:
+async def _markdown_to_latex_notes(markdown_content: str | None) -> str:
+    """Convert markdown content to LaTeX using Pandoc.
+
+    Uses the same Pandoc installation as the main export pipeline for
+    consistency. This is the conversion path for Milkdown editor output
+    (response draft), which produces markdown rather than HTML.
+
+    Args:
+        markdown_content: Markdown text from the Milkdown editor.
+
+    Returns:
+        LaTeX-formatted content, or empty string if input is empty.
+
+    Raises:
+        subprocess.CalledProcessError: If Pandoc fails.
+    """
+    if not markdown_content or not markdown_content.strip():
+        return ""
+
+    proc = await asyncio.create_subprocess_exec(
+        "pandoc",
+        "-f",
+        "markdown",
+        "-t",
+        "latex",
+        "--no-highlight",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate(
+        input=markdown_content.encode("utf-8")
+    )
+    assert proc.returncode is not None
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            proc.returncode,
+            ["pandoc", "-f", "markdown", "-t", "latex"],
+            stderr_bytes.decode(),
+        )
+    return stdout_bytes.decode().strip()
+
+
+def _build_general_notes_section(
+    general_notes: str,
+    latex_content: str | None = None,
+) -> str:
     """Build the LaTeX general notes section.
+
+    Supports two input paths:
+    - **HTML path** (existing): ``general_notes`` contains HTML from the
+      WYSIWYG editor, converted via ``_html_to_latex_notes()``.
+    - **LaTeX path** (Phase 7): ``latex_content`` contains pre-converted
+      LaTeX (e.g., from Pandoc markdown conversion). When provided, this
+      takes precedence over the HTML path.
 
     Args:
         general_notes: HTML content from the notes editor.
+        latex_content: Pre-converted LaTeX content (takes precedence).
 
     Returns:
         LaTeX section string, empty if no notes.
     """
+    # LaTeX path: pre-converted content takes precedence
+    if latex_content and latex_content.strip():
+        return _GENERAL_NOTES_TEMPLATE.format(content=latex_content)
+
+    # HTML path: convert HTML to LaTeX
     if not general_notes or not general_notes.strip():
         return ""
 
-    latex_content = _html_to_latex_notes(general_notes)
-    if not latex_content:
+    converted = _html_to_latex_notes(general_notes)
+    if not converted:
         return ""
 
-    return _GENERAL_NOTES_TEMPLATE.format(content=latex_content)
+    return _GENERAL_NOTES_TEMPLATE.format(content=converted)
 
 
 # Path to Lua filter for LibreOffice HTML handling (tables, margins, etc.)
@@ -198,6 +259,7 @@ async def export_annotation_pdf(
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],
     general_notes: str = "",
+    notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     output_dir: Path | None = None,
     user_id: str | None = None,
@@ -217,6 +279,9 @@ async def export_annotation_pdf(
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
         general_notes: HTML content from general notes editor.
+        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
+            from Pandoc markdown conversion). Takes precedence over
+            ``general_notes`` when non-empty.
         word_to_legal_para: Optional mapping for paragraph references.
         output_dir: Optional output directory for PDF. Defaults to temp dir.
         user_id: Optional user identifier for scoped temp directory.
@@ -264,7 +329,9 @@ async def export_annotation_pdf(
     preamble = build_annotation_preamble(tag_colours)
 
     # Build general notes section
-    notes_section = _build_general_notes_section(general_notes)
+    notes_section = _build_general_notes_section(
+        general_notes, latex_content=notes_latex
+    )
 
     # Assemble complete document
     document = _DOCUMENT_TEMPLATE.format(

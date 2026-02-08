@@ -33,7 +33,10 @@ from promptgrimoire.db.workspace_documents import (
     list_documents,
 )
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
-from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.export.pdf_export import (
+    _markdown_to_latex_notes,
+    export_annotation_pdf,
+)
 from promptgrimoire.input_pipeline.html_input import (
     ContentType,
     detect_content_type,
@@ -1692,12 +1695,38 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             raw_content[:200],
         )
 
+        # Get response draft markdown for the General Notes section (Phase 7).
+        # Primary path: JS extraction from running Milkdown editor (most accurate).
+        # Fallback: CRDT Text field synced by whichever client last edited Tab 3.
+        response_markdown = ""
+        if state.has_milkdown_editor:
+            try:
+                response_markdown = await ui.run_javascript(
+                    "window._getMilkdownMarkdown()", timeout=3.0
+                )
+                if not response_markdown:
+                    response_markdown = ""
+            except (TimeoutError, Exception):
+                logger.debug(
+                    "PDF export: JS markdown extraction failed, using CRDT fallback"
+                )
+                response_markdown = ""
+
+        if not response_markdown and state.crdt_doc is not None:
+            response_markdown = state.crdt_doc.get_response_draft_markdown()
+
+        # Convert markdown to LaTeX via Pandoc (no new dependencies)
+        notes_latex = ""
+        if response_markdown and response_markdown.strip():
+            notes_latex = await _markdown_to_latex_notes(response_markdown)
+
         # Generate PDF
         pdf_path = await export_annotation_pdf(
             html_content=raw_content,
             highlights=highlights,
             tag_colours=tag_colours,
             general_notes="",
+            notes_latex=notes_latex,
             word_to_legal_para=None,
             filename=f"workspace_{workspace_id}",
         )

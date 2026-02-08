@@ -29,7 +29,7 @@ class TestMarkdownToLatexNotes:
         """Empty or whitespace-only markdown produces empty string."""
         assert await _markdown_to_latex_notes("") == ""
         assert await _markdown_to_latex_notes("   ") == ""
-        assert await _markdown_to_latex_notes(None) == ""  # type: ignore[arg-type]
+        assert await _markdown_to_latex_notes(None) == ""
 
     @pytest.mark.asyncio
     async def test_plain_text(self) -> None:

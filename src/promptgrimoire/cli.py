@@ -30,9 +30,9 @@ def _pre_test_db_cleanup() -> None:
 
     load_dotenv()
 
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:
-        return  # No database configured — skip
+        return  # No test database configured — skip
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
@@ -53,14 +53,14 @@ def _pre_test_db_cleanup() -> None:
     sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
     engine = create_engine(sync_url)
     with engine.begin() as conn:
-        result = conn.execute(
+        table_query = conn.execute(
             text("""
                 SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename != 'alembic_version'
             """)
         )
-        tables = [row[0] for row in result.fetchall()]
+        tables = [row[0] for row in table_query.fetchall()]
 
         if tables:
             quoted_tables = ", ".join(f'"{t}"' for t in tables)

@@ -255,3 +255,96 @@ class TestListWorkspaces:
         assert ws3.id in result_ids
         assert ws2.id not in result_ids
         assert len(result) == 2
+
+
+class TestPlacementContext:
+    """Tests for get_placement_context hierarchy resolution."""
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace(self) -> None:
+        """Loose workspace returns placement_type='loose' and 'Unplaced' label.
+
+        Verifies AC3.7 (UI display support).
+        """
+        from promptgrimoire.db.workspaces import (
+            PlacementContext,
+            create_workspace,
+            get_placement_context,
+        )
+
+        ws = await create_workspace()
+        ctx = await get_placement_context(ws.id)
+
+        assert isinstance(ctx, PlacementContext)
+        assert ctx.placement_type == "loose"
+        assert ctx.activity_title is None
+        assert ctx.week_number is None
+        assert ctx.week_title is None
+        assert ctx.course_code is None
+        assert ctx.course_name is None
+        assert ctx.display_label == "Unplaced"
+
+    @pytest.mark.asyncio
+    async def test_activity_placement_shows_full_hierarchy(self) -> None:
+        """Activity placement populates all hierarchy fields.
+
+        Verifies AC3.7 (UI display support).
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        course, _week, activity = await _setup_hierarchy()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+
+        assert ctx.placement_type == "activity"
+        assert ctx.activity_title == "Test Activity"
+        assert ctx.week_number == _week.week_number
+        assert ctx.week_title == _week.title
+        assert ctx.course_code == course.code
+        assert ctx.course_name == course.name
+        assert ctx.display_label == (f"Test Activity in Week 1 for {course.code}")
+
+    @pytest.mark.asyncio
+    async def test_course_placement(self) -> None:
+        """Course placement populates course fields only.
+
+        Verifies AC3.7 (UI display support).
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_course,
+        )
+
+        course, _, _ = await _setup_hierarchy()
+        ws = await create_workspace()
+        await place_workspace_in_course(ws.id, course.id)
+
+        ctx = await get_placement_context(ws.id)
+
+        assert ctx.placement_type == "course"
+        assert ctx.activity_title is None
+        assert ctx.week_number is None
+        assert ctx.week_title is None
+        assert ctx.course_code == course.code
+        assert ctx.course_name == course.name
+        assert ctx.display_label == f"Loose work for {course.code}"
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_workspace(self) -> None:
+        """Non-existent workspace returns loose context.
+
+        Verifies AC3.7 (UI display support).
+        """
+        from promptgrimoire.db.workspaces import get_placement_context
+
+        ctx = await get_placement_context(uuid4())
+
+        assert ctx.placement_type == "loose"
+        assert ctx.display_label == "Unplaced"

@@ -16,7 +16,7 @@ import contextlib
 import html
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
@@ -27,12 +27,23 @@ from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocumentRegistry,
 )
 from promptgrimoire.crdt.persistence import get_persistence_manager
+from promptgrimoire.db.activities import list_activities_for_week
+from promptgrimoire.db.courses import list_courses, list_user_enrollments
+from promptgrimoire.db.weeks import list_weeks
 from promptgrimoire.db.workspace_documents import (
     add_document,
     get_document,
     list_documents,
 )
-from promptgrimoire.db.workspaces import create_workspace, get_workspace
+from promptgrimoire.db.workspaces import (
+    PlacementContext,
+    create_workspace,
+    get_placement_context,
+    get_workspace,
+    make_workspace_loose,
+    place_workspace_in_activity,
+    place_workspace_in_course,
+)
 from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
@@ -2365,7 +2376,232 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
 
 
-def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
+def _get_placement_chip_style(ctx: PlacementContext) -> tuple[str, str, str]:
+    """Return (label, color, icon) for a placement context chip."""
+    if ctx.placement_type == "activity":
+        return ctx.display_label, "blue", "assignment"
+    if ctx.placement_type == "course":
+        return ctx.display_label, "green", "folder"
+    return "Unplaced", "grey", "help_outline"
+
+
+def _get_current_user_id() -> UUID | None:
+    """Get the local User UUID from session storage, if authenticated."""
+    auth_user = app.storage.user.get("auth_user")
+    if auth_user and auth_user.get("user_id"):
+        return UUID(auth_user["user_id"])
+    return None
+
+
+async def _load_enrolled_course_options(
+    user_id: UUID,
+) -> dict[str, str]:
+    """Load course select options for courses the user is enrolled in."""
+    enrollments = await list_user_enrollments(user_id)
+    course_ids = {e.course_id for e in enrollments}
+    courses_list = await list_courses()
+    return {
+        str(c.id): f"{c.code} - {c.name}" for c in courses_list if c.id in course_ids
+    }
+
+
+def _build_activity_cascade(
+    course_options: dict[str, str],
+    selected: dict[str, UUID | None],
+) -> None:
+    """Build the Course -> Week -> Activity cascading selects.
+
+    Renders UI elements in the current NiceGUI context.
+    Stores selected IDs into ``selected`` dict under keys
+    "course", "week", "activity".
+    """
+    course_select = (
+        ui.select(options=course_options, label="Course", with_input=True)
+        .classes("w-full")
+        .props('data-testid="placement-course"')
+    )
+    week_select = (
+        ui.select(options={}, label="Week")
+        .classes("w-full")
+        .props('data-testid="placement-week"')
+    )
+    week_select.disable()
+    activity_select = (
+        ui.select(options={}, label="Activity")
+        .classes("w-full")
+        .props('data-testid="placement-activity"')
+    )
+    activity_select.disable()
+
+    async def on_course_change(e: events.ValueChangeEventArguments) -> None:
+        week_select.options = {}
+        week_select.value = None
+        week_select.disable()
+        activity_select.options = {}
+        activity_select.value = None
+        activity_select.disable()
+        selected["course"] = selected["week"] = selected["activity"] = None
+        if e.value:
+            cid = UUID(e.value)
+            selected["course"] = cid
+            weeks = await list_weeks(cid)
+            week_select.options = {
+                str(w.id): f"Week {w.week_number}: {w.title}" for w in weeks
+            }
+            week_select.update()
+            if weeks:
+                week_select.enable()
+
+    course_select.on_value_change(on_course_change)
+
+    async def on_week_change(e: events.ValueChangeEventArguments) -> None:
+        activity_select.options = {}
+        activity_select.value = None
+        activity_select.disable()
+        selected["week"] = selected["activity"] = None
+        if e.value:
+            wid = UUID(e.value)
+            selected["week"] = wid
+            activities = await list_activities_for_week(wid)
+            activity_select.options = {str(a.id): a.title for a in activities}
+            activity_select.update()
+            if activities:
+                activity_select.enable()
+
+    week_select.on_value_change(on_week_change)
+
+    def on_activity_change(e: events.ValueChangeEventArguments) -> None:
+        selected["activity"] = UUID(e.value) if e.value else None
+
+    activity_select.on_value_change(on_activity_change)
+
+
+def _build_course_only_select(
+    course_options: dict[str, str],
+    selected: dict[str, UUID | None],
+) -> None:
+    """Build a single Course select for course-level placement.
+
+    Stores the selected course ID into ``selected["course_only"]``.
+    """
+    course_only_select = (
+        ui.select(options=course_options, label="Course", with_input=True)
+        .classes("w-full")
+        .props('data-testid="placement-course-only"')
+    )
+
+    def on_change(e: events.ValueChangeEventArguments) -> None:
+        selected["course_only"] = UUID(e.value) if e.value else None
+
+    course_only_select.on_value_change(on_change)
+
+
+async def _apply_placement(
+    mode_value: str,
+    workspace_id: UUID,
+    selected: dict[str, UUID | None],
+) -> bool:
+    """Apply the placement based on the selected mode.
+
+    Returns True on success, False if validation failed.
+    """
+    if mode_value == "loose":
+        await make_workspace_loose(workspace_id)
+        ui.notify("Workspace unplaced", type="positive")
+        return True
+    if mode_value == "activity":
+        aid = selected.get("activity")
+        if aid is None:
+            ui.notify(
+                "Please select a course, week, and activity",
+                type="warning",
+            )
+            return False
+        await place_workspace_in_activity(workspace_id, aid)
+        ui.notify("Workspace placed in activity", type="positive")
+        return True
+    if mode_value == "course":
+        cid = selected.get("course_only")
+        if cid is None:
+            ui.notify("Please select a course", type="warning")
+            return False
+        await place_workspace_in_course(workspace_id, cid)
+        ui.notify("Workspace associated with course", type="positive")
+        return True
+    return False
+
+
+async def _show_placement_dialog(
+    workspace_id: UUID,
+    current_ctx: PlacementContext,
+    on_changed: Any,
+) -> None:
+    """Open the placement dialog for changing workspace placement.
+
+    Args:
+        workspace_id: The workspace to place.
+        current_ctx: Current placement context (for pre-selecting state).
+        on_changed: Async callable to invoke after placement changes.
+    """
+    user_id = _get_current_user_id()
+    if user_id is None:
+        ui.notify("Please log in to change placement", type="warning")
+        return
+
+    initial_mode = current_ctx.placement_type
+    if initial_mode not in {"activity", "course"}:
+        initial_mode = "loose"
+
+    course_options = await _load_enrolled_course_options(user_id)
+    selected: dict[str, UUID | None] = {}
+
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Change Workspace Placement").classes("text-lg font-bold mb-2")
+        mode = ui.radio(
+            options={
+                "loose": "Unplaced",
+                "activity": "Place in Activity",
+                "course": "Associate with Course",
+            },
+            value=initial_mode,
+        ).props('data-testid="placement-mode"')
+
+        activity_container = ui.column().classes("w-full gap-2")
+        course_container = ui.column().classes("w-full gap-2")
+
+        with activity_container:
+            _build_activity_cascade(course_options, selected)
+        with course_container:
+            _build_course_only_select(course_options, selected)
+
+        def update_visibility() -> None:
+            activity_container.set_visibility(mode.value == "activity")
+            course_container.set_visibility(mode.value == "course")
+
+        mode.on_value_change(lambda _: update_visibility())
+        update_visibility()
+
+        with ui.row().classes("w-full justify-end gap-2 mt-4"):
+
+            async def on_confirm() -> None:
+                try:
+                    ok = await _apply_placement(
+                        cast("str", mode.value), workspace_id, selected
+                    )
+                except ValueError as exc:
+                    ui.notify(str(exc), type="negative")
+                    return
+                if ok:
+                    dialog.close()
+                    await on_changed()
+
+            ui.button("Confirm", on_click=on_confirm).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+
+    dialog.open()
+
+
+async def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
     """Render the header row with save status, user count, and export button.
 
     Extracted from _render_workspace_view to keep statement count manageable.
@@ -2407,6 +2643,30 @@ def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
                 export_btn.enable()
 
         export_btn.on_click(on_export_click)
+
+        # Placement status chip (refreshable)
+        @ui.refreshable
+        async def placement_chip() -> None:
+            ctx = await get_placement_context(workspace_id)
+            label, color, icon = _get_placement_chip_style(ctx)
+            is_authenticated = _get_current_user_id() is not None
+
+            async def open_dialog() -> None:
+                await _show_placement_dialog(workspace_id, ctx, placement_chip.refresh)
+
+            props_str = 'data-testid="placement-chip" outline'
+            if not is_authenticated:
+                props_str += " disable"
+            chip = ui.chip(
+                text=label,
+                icon=icon,
+                color=color,
+                on_click=open_dialog if is_authenticated else None,
+            ).props(props_str)
+            if not is_authenticated:
+                chip.tooltip("Log in to change placement")
+
+        await placement_chip()
 
 
 def _parse_sort_end_args(

@@ -4,14 +4,17 @@ Tests verify that the annotation page renders three tabs (Annotate, Organise,
 Respond), that deferred rendering works for Tabs 2 and 3, and that switching
 tabs preserves Tab 1 state. Phase 3 adds tests for Tab 2 tag columns and
 highlight cards. Phase 5 adds tests for Tab 3 Milkdown editor and collaboration.
+Phase 6 adds tests for warp navigation (locate buttons) and cross-tab reactivity.
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_01.md
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_05.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_06.md
 - AC: three-tab-ui.AC1.1 through AC1.4
 - AC: three-tab-ui.AC2.1, AC2.2, AC2.6
 - AC: three-tab-ui.AC4.1 through AC4.5
+- AC: three-tab-ui.AC5.1 through AC5.5
 """
 
 from __future__ import annotations
@@ -433,3 +436,243 @@ class TestRespondTabCollaboration:
         # Client 2 should see the content
         prosemirror2 = editor2.locator(".ProseMirror")
         expect(prosemirror2).to_contain_text("Hello World", timeout=10000)
+
+
+class TestLocateButtonFromTab2:
+    """Verify locate button on Tab 2 cards warps to Tab 1 and scrolls.
+
+    Verifies: three-tab-ui.AC5.1
+    """
+
+    @pytestmark_db
+    def test_locate_button_warps_to_tab1_and_scrolls(
+        self, workspace_page: Page
+    ) -> None:
+        """Create highlight, switch to Organise, click locate -- warp."""
+        page = workspace_page
+
+        # Create a highlight on the first few characters
+        create_highlight(page, 0, 5)
+        page.wait_for_timeout(500)
+
+        # Switch to Organise tab
+        page.locator("role=tab").nth(1).click()
+        page.wait_for_timeout(500)
+
+        # Verify the organise card has a locate button
+        card = page.locator('[data-testid="organise-card"]').first
+        expect(card).to_be_visible(timeout=3000)
+        locate_btn = card.locator("button", has=page.locator("text=my_location")).first
+        # Fall back to tooltip-based lookup if icon text not directly visible
+        if not locate_btn.is_visible(timeout=1000):
+            locate_btn = card.locator('button[title="Locate in document"]').first
+        if not locate_btn.is_visible(timeout=1000):
+            # NiceGUI renders icon buttons with .q-icon containing the icon name
+            locate_btn = card.locator("button").first
+
+        expect(locate_btn).to_be_visible(timeout=3000)
+        locate_btn.click()
+        page.wait_for_timeout(1000)
+
+        # Verify the active tab switched to Annotate
+        annotate_tab = page.locator("role=tab").nth(0)
+        expect(annotate_tab).to_have_attribute("aria-selected", "true", timeout=3000)
+
+        # Verify char spans are visible (Tab 1 content rendered)
+        expect(page.locator("[data-char-index='0']")).to_be_visible(timeout=3000)
+
+
+class TestLocateButtonFromTab3:
+    """Verify locate button on Tab 3 reference panel cards warps to Tab 1.
+
+    Verifies: three-tab-ui.AC5.1
+    """
+
+    @pytestmark_db
+    def test_locate_button_from_tab3_warps_to_tab1(self, workspace_page: Page) -> None:
+        """Create highlight, switch to Respond, click locate -- verify warp to Tab 1."""
+        page = workspace_page
+
+        # Create a highlight
+        create_highlight(page, 0, 5)
+        page.wait_for_timeout(500)
+
+        # Switch to Respond tab
+        page.locator("role=tab").nth(2).click()
+        page.wait_for_timeout(1500)
+
+        # Verify reference panel has a card with locate button
+        ref_panel = page.locator('[data-testid="respond-reference-panel"]')
+        expect(ref_panel).to_be_visible(timeout=5000)
+
+        ref_card = ref_panel.locator('[data-testid="respond-reference-card"]').first
+        expect(ref_card).to_be_visible(timeout=5000)
+
+        # Click the locate button on the reference card
+        locate_btn = ref_card.locator("button").first
+        expect(locate_btn).to_be_visible(timeout=3000)
+        locate_btn.click()
+        page.wait_for_timeout(1000)
+
+        # Verify the active tab switched to Annotate
+        annotate_tab = page.locator("role=tab").nth(0)
+        expect(annotate_tab).to_have_attribute("aria-selected", "true", timeout=3000)
+
+        # Verify char spans are visible (Tab 1 content rendered)
+        expect(page.locator("[data-char-index='0']")).to_be_visible(timeout=3000)
+
+
+class TestReturnToPreviousTab:
+    """Verify user can return to previous tab after warp.
+
+    Verifies: three-tab-ui.AC5.5
+    """
+
+    @pytestmark_db
+    def test_return_to_previous_tab_after_warp(self, workspace_page: Page) -> None:
+        """Warp to Tab 1 from Organise, then click Organise -- tab is still there."""
+        page = workspace_page
+
+        # Create a highlight
+        create_highlight(page, 0, 5)
+        page.wait_for_timeout(500)
+
+        # Switch to Organise tab
+        page.locator("role=tab").nth(1).click()
+        page.wait_for_timeout(500)
+
+        # Verify Organise content is rendered
+        columns = page.locator('[data-testid="organise-columns"]')
+        expect(columns).to_be_visible(timeout=3000)
+
+        # Click locate button to warp to Tab 1
+        card = page.locator('[data-testid="organise-card"]').first
+        expect(card).to_be_visible(timeout=3000)
+        locate_btn = card.locator("button").first
+        locate_btn.click()
+        page.wait_for_timeout(1000)
+
+        # Verify we're on Tab 1
+        annotate_tab = page.locator("role=tab").nth(0)
+        expect(annotate_tab).to_have_attribute("aria-selected", "true", timeout=3000)
+
+        # Click Organise tab to return
+        page.locator("role=tab").nth(1).click()
+        page.wait_for_timeout(500)
+
+        # Verify Organise tab content is still rendered (not blank)
+        columns_after = page.locator('[data-testid="organise-columns"]')
+        expect(columns_after).to_be_visible(timeout=3000)
+
+        # Verify Organise is the active tab
+        organise_tab = page.locator("role=tab").nth(1)
+        expect(organise_tab).to_have_attribute("aria-selected", "true")
+
+
+class TestCrossTabHighlightReactivity:
+    """Verify highlights created in Tab 1 appear in Tab 2 and Tab 3.
+
+    Verifies: three-tab-ui.AC5.2
+
+    These tests require two browser contexts viewing the same workspace.
+    """
+
+    @pytestmark_db
+    def test_new_highlight_appears_in_tab2(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Client 1 creates highlight on Tab 1, Client 2 sees it on Tab 2.
+
+        Verifies: three-tab-ui.AC5.2
+        """
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # Client 2 switches to Organise tab
+        page2.locator("role=tab").nth(1).click()
+        page2.wait_for_timeout(500)
+
+        # Client 1 creates a highlight on Tab 1 (Annotate)
+        create_highlight(page1, 0, 5)
+        page1.wait_for_timeout(1000)
+
+        # Client 2 should see the new highlight appear in Organise tab
+        card = page2.locator('[data-testid="organise-card"]')
+        expect(card.first).to_be_visible(timeout=10000)
+
+    @pytestmark_db
+    def test_new_highlight_appears_in_tab3_reference(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Client 1 creates highlight on Tab 1, Client 2 sees it in Tab 3 reference.
+
+        Verifies: three-tab-ui.AC5.2
+        """
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # Client 2 switches to Respond tab (initialises Milkdown + reference panel)
+        page2.locator("role=tab").nth(2).click()
+        page2.wait_for_timeout(2000)
+
+        # Verify reference panel shows empty state initially
+        ref_panel = page2.locator('[data-testid="respond-reference-panel"]')
+        expect(ref_panel).to_be_visible(timeout=5000)
+
+        # Client 1 creates a highlight on Tab 1 (Annotate)
+        create_highlight(page1, 0, 5)
+        page1.wait_for_timeout(1000)
+
+        # Client 2's reference panel should show the new highlight
+        ref_card = ref_panel.locator('[data-testid="respond-reference-card"]')
+        expect(ref_card.first).to_be_visible(timeout=10000)
+
+
+class TestWarpDoesNotAffectOtherUsers:
+    """Verify that warp navigation is per-client only.
+
+    Verifies: three-tab-ui.AC5.4
+    """
+
+    @pytestmark_db
+    def test_warp_does_not_affect_other_user(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Client 1 warps from Tab 2, Client 2 stays on their current tab.
+
+        Verifies: three-tab-ui.AC5.4
+        """
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # Client 1 creates a highlight
+        create_highlight(page1, 0, 5)
+        page1.wait_for_timeout(500)
+
+        # Both clients switch to Organise tab
+        page1.locator("role=tab").nth(1).click()
+        page1.wait_for_timeout(500)
+        page2.locator("role=tab").nth(1).click()
+        page2.wait_for_timeout(500)
+
+        # Verify both are on Organise
+        expect(page1.locator("role=tab").nth(1)).to_have_attribute(
+            "aria-selected", "true", timeout=3000
+        )
+        expect(page2.locator("role=tab").nth(1)).to_have_attribute(
+            "aria-selected", "true", timeout=3000
+        )
+
+        # Client 1 clicks locate on a card (warps to Tab 1)
+        card1 = page1.locator('[data-testid="organise-card"]').first
+        expect(card1).to_be_visible(timeout=3000)
+        locate_btn = card1.locator("button").first
+        locate_btn.click()
+        page1.wait_for_timeout(1000)
+
+        # Client 1 should now be on Annotate tab
+        expect(page1.locator("role=tab").nth(0)).to_have_attribute(
+            "aria-selected", "true", timeout=3000
+        )
+
+        # Client 2 should STILL be on Organise tab (not affected by warp)
+        expect(page2.locator("role=tab").nth(1)).to_have_attribute(
+            "aria-selected", "true", timeout=3000
+        )

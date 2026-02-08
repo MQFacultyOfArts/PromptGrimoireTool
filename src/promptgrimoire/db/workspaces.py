@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
+from uuid import UUID
 
 from sqlmodel import select
 
@@ -21,8 +22,6 @@ from promptgrimoire.db.models import (
 )
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 
@@ -332,6 +331,77 @@ async def list_loose_workspaces_for_course(
         return list(result.all())
 
 
+def _replay_crdt_state(
+    template: Workspace,
+    clone: Workspace,
+    doc_id_map: dict[UUID, UUID],
+) -> None:
+    """Replay CRDT state from template into clone with document ID remapping.
+
+    Loads the template's CRDT state into a temporary AnnotationDocument,
+    creates a fresh AnnotationDocument for the clone, and replays all
+    highlights (with remapped document_id values), comments, and general
+    notes. Client metadata is deliberately NOT replayed (AC4.9).
+
+    If template has no crdt_state, the clone gets None (AC4.10).
+
+    Args:
+        template: The template Workspace (source of CRDT state).
+        clone: The cloned Workspace (destination for replayed state).
+        doc_id_map: Mapping of {template_doc_id: cloned_doc_id}.
+    """
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
+
+    if not template.crdt_state:
+        return
+
+    # Load template CRDT state
+    template_doc = AnnotDoc("template-tmp")
+    template_doc.apply_update(template.crdt_state)
+
+    # Fresh document for clone (empty client_meta satisfies AC4.9)
+    clone_doc = AnnotDoc("clone-tmp")
+
+    # Replay highlights with remapped document_id
+    for hl in template_doc.get_all_highlights():
+        # Remap document_id: template doc UUID -> cloned doc UUID
+        raw_doc_id = hl.get("document_id")
+        if raw_doc_id is not None:
+            from uuid import UUID as UUIDCls
+
+            template_uuid = UUIDCls(raw_doc_id)
+            remapped_uuid = doc_id_map.get(template_uuid, template_uuid)
+            remapped_doc_id: str | None = str(remapped_uuid)
+        else:
+            remapped_doc_id = None
+
+        new_hl_id = clone_doc.add_highlight(
+            start_char=hl["start_char"],
+            end_char=hl["end_char"],
+            tag=hl["tag"],
+            text=hl["text"],
+            author=hl["author"],
+            para_ref=hl.get("para_ref", ""),
+            document_id=remapped_doc_id,
+        )
+
+        # Replay comments for this highlight
+        for comment in hl.get("comments", []):
+            clone_doc.add_comment(
+                highlight_id=new_hl_id,
+                author=comment["author"],
+                text=comment["text"],
+            )
+
+    # Clone general notes
+    notes = template_doc.get_general_notes()
+    if notes:
+        clone_doc.set_general_notes(notes)
+
+    # Serialise and assign to cloned workspace
+    clone.crdt_state = clone_doc.get_full_state()
+
+
 async def clone_workspace_from_activity(
     activity_id: UUID,
 ) -> tuple[Workspace, dict[UUID, UUID]]:
@@ -339,9 +409,9 @@ async def clone_workspace_from_activity(
 
     Creates a new Workspace within a single transaction, copies all template
     documents (preserving content, type, source_type, title, order_index),
-    and builds a document ID mapping for CRDT remapping (Phase 4).
-
-    Does NOT clone CRDT state -- that is Phase 4's responsibility.
+    builds a document ID mapping, and replays CRDT state (highlights,
+    comments, general notes) with remapped document IDs. Client metadata
+    is NOT cloned -- the fresh workspace starts with empty client state.
 
     Args:
         activity_id: The Activity UUID whose template workspace to clone.
@@ -394,5 +464,9 @@ async def clone_workspace_from_activity(
             await session.flush()
             doc_id_map[tmpl_doc.id] = cloned_doc.id
 
+        # --- CRDT state cloning via API replay ---
+        _replay_crdt_state(template, clone, doc_id_map)
+
+        await session.flush()
         await session.refresh(clone)
         return clone, doc_id_map

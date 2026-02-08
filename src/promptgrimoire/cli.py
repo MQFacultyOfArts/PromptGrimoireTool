@@ -290,6 +290,124 @@ def set_admin() -> None:
     asyncio.run(_set_admin())
 
 
+async def _seed_user_and_course() -> tuple:
+    """Create instructor user and course. Returns (user, course)."""
+    from sqlmodel import select
+
+    from promptgrimoire.db.courses import create_course
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Course
+    from promptgrimoire.db.users import find_or_create_user
+
+    user, user_created = await find_or_create_user(
+        email="instructor@uni.edu",
+        display_name="Test Instructor",
+    )
+    status = "[green]Created" if user_created else "[yellow]Exists"
+    console.print(f"{status}:[/] instructor@uni.edu (id={user.id})")
+
+    # Check for existing course first (code is not unique — same
+    # code may appear in different semesters)
+    async with get_session() as session:
+        result = await session.exec(
+            select(Course)
+            .where(Course.code == "LAWS1100")
+            .where(Course.semester == "2026-S1")
+        )
+        course = result.first()
+
+    if course:
+        console.print(f"[yellow]Course exists:[/] LAWS1100 (id={course.id})")
+    else:
+        course = await create_course(code="LAWS1100", name="Torts", semester="2026-S1")
+        console.print(f"[green]Created course:[/] LAWS1100 (id={course.id})")
+
+    return user, course
+
+
+async def _seed_enrolment_and_weeks(course, user) -> None:  # type: ignore[no-untyped-def]  -- internal CLI helper, types are Course/User
+    """Enrol user and create weeks with activities."""
+    from promptgrimoire.db.activities import create_activity
+    from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user
+    from promptgrimoire.db.models import CourseRole
+    from promptgrimoire.db.weeks import create_week
+
+    try:
+        await enroll_user(
+            course_id=course.id,
+            user_id=user.id,
+            role=CourseRole.coordinator,
+        )
+        console.print("[green]Enrolled:[/] instructor@uni.edu as coordinator")
+    except DuplicateEnrollmentError:
+        console.print("[yellow]Already enrolled:[/] instructor@uni.edu")
+
+    from sqlmodel import select
+
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Week
+
+    async with get_session() as session:
+        result = await session.exec(select(Week).where(Week.course_id == course.id))
+        existing_weeks = list(result.all())
+
+    if existing_weeks:
+        console.print(f"[yellow]Weeks exist:[/] {len(existing_weeks)} in course")
+        return
+
+    week1 = await create_week(course_id=course.id, week_number=1, title="Introduction")
+    week2 = await create_week(
+        course_id=course.id, week_number=2, title="Client Interviews"
+    )
+    console.print(f"[green]Created weeks:[/] 1, 2 (ids={week1.id}, {week2.id})")
+
+    desc = "Read the interview transcript and annotate key issues."
+    activity = await create_activity(
+        week_id=week1.id,
+        title="Annotate Becky Bennett Interview",
+        description=desc,
+    )
+    console.print(f"[green]Created activity:[/] {activity.title} (id={activity.id})")
+
+
+def seed_data() -> None:
+    """Seed the database with test data for development.
+
+    Creates an instructor user, a course with two weeks, and an activity.
+    Idempotent: safe to run multiple times. Existing data is reused.
+
+    Usage:
+        uv run seed-data
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    if not os.environ.get("DATABASE_URL"):
+        console.print("[red]Error:[/] DATABASE_URL not set")
+        sys.exit(1)
+
+    async def _seed() -> None:
+        from promptgrimoire.db.engine import init_db
+
+        await init_db()
+
+        user, course = await _seed_user_and_course()
+        await _seed_enrolment_and_weeks(course, user)
+
+        console.print()
+        console.print(
+            Panel(
+                f"[bold]Login:[/] http://localhost:8080/login\n"
+                f"[bold]Email:[/] instructor@uni.edu\n"
+                f"[bold]Course:[/] http://localhost:8080/courses/{course.id}",
+                title="Seed Data Ready",
+            )
+        )
+
+    asyncio.run(_seed())
+
+
 def _find_export_dir(user_id: str | None) -> Path:
     """Find the export directory for a user or most recent."""
     import tempfile

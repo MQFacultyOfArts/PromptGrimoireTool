@@ -26,6 +26,7 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.models import (
+    Activity,
     Course,
     CourseEnrollment,
     CourseRole,
@@ -61,6 +62,7 @@ from promptgrimoire.db.workspaces import (
 )
 
 __all__ = [
+    "Activity",
     "Course",
     "CourseEnrollment",
     "CourseRole",

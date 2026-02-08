@@ -738,15 +738,11 @@ class TestCrossTabTagUpdate:
 
         # The tag should now show "procedural_history" (or similar)
         # We verify this by checking the tag select/combobox element
-        tag_select = sidebar_card.locator("select, [role='combobox']").first
-
-        if tag_select.count() > 0:
-            # Get the selected value
-            selected_value = tag_select.input_value()
-            assert "procedural" in selected_value.lower(), (
-                f"Expected 'procedural_history' tag in sidebar after drag, "
-                f"got: {selected_value}"
-            )
+        # NiceGUI's ui.select() renders as Quasar q-select with role="combobox"
+        # The selected option text is displayed inside the component
+        tag_select = sidebar_card.locator("[role='combobox']").first
+        expect(tag_select).to_be_visible(timeout=5000)
+        expect(tag_select).to_contain_text("Procedural", timeout=5000)
 
         # Also verify on page2 that the card is now in the correct column
         proc_cards = page2.locator(

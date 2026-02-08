@@ -349,6 +349,8 @@ class PageState:
     respond_panel: ui.element | None = None
     # Whether the Milkdown editor has been initialised (for Phase 7 export)
     has_milkdown_editor: bool = False
+    # Callable to refresh the Respond reference panel from tab switch / broadcast
+    refresh_respond_references: Any | None = None  # Callable[[], None]
 
 
 def _get_current_username() -> str:
@@ -1237,11 +1239,16 @@ async def _render_document_with_highlights(
 
         # Inject char spans client-side (avoids websocket size limits)
         # This wraps each text character in <span class="char" data-char-index="N">
+        # Defined as a named global so it can be re-invoked if NiceGUI re-renders
+        # the HTML element (e.g. after Tab 3 initialisation triggers "Event listeners
+        # changed" — see _on_tab_change Annotate handler).
         # fmt: off
         inject_spans_js = (
-            "(function() {\n"
+            "window._injectCharSpans = function() {\n"
             "  const container = document.getElementById('doc-container');\n"
             "  if (!container) return;\n"
+            "  // Guard: skip if char spans already exist (idempotent)\n"
+            "  if (container.querySelector('[data-char-index]')) return;\n"
             "  let charIndex = 0;\n"
             "  // Block elements where whitespace-only text nodes should be skipped\n"
             "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
@@ -1301,7 +1308,8 @@ async def _render_document_with_highlights(
             "  for (const child of children) {\n"
             "    processNode(child);\n"
             "  }\n"
-            "})();"
+            "};\n"
+            "window._injectCharSpans();"
         )
         # fmt: on
         ui.run_javascript(inject_spans_js)
@@ -1487,7 +1495,7 @@ def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
                 task.add_done_callback(_background_tasks.discard)
 
 
-def _setup_client_sync(
+def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7
     workspace_id: UUID,
     client: Client,
     state: PageState,
@@ -1547,6 +1555,9 @@ def _setup_client_sync(
         # Refresh Organise tab if client is currently viewing it (Phase 4)
         if state.active_tab == "Organise" and state.refresh_organise:
             state.refresh_organise()
+        # Refresh Respond reference panel if client is currently viewing it
+        if state.active_tab == "Respond" and state.refresh_respond_references:
+            state.refresh_respond_references()
 
     # Register this client
     if workspace_key not in _connected_clients:
@@ -2432,7 +2443,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
         _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
 
-    await render_respond_tab(
+    state.refresh_respond_references = await render_respond_tab(
         panel=state.respond_panel,
         tags=tags,
         crdt_doc=state.crdt_doc,
@@ -2448,7 +2459,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         clients[state.client_id].has_milkdown_editor = True
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 — extract tab setup into helpers
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
 
@@ -2468,6 +2479,11 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
     _render_workspace_header(state, workspace_id)
+
+    # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
+    # is first visited. Must be added during page construction — dynamically
+    # injected <script> tags via ui.add_body_html after page load don't execute.
+    ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
 
     # Three-tab container (Phase 1: three-tab UI)
     state.initialised_tabs = {"Annotate"}
@@ -2493,20 +2509,27 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
                 state.refresh_organise()
             return
 
-        if tab_name == "Annotate" and state.refresh_annotations:
-            # Re-render sidebar cards so tag changes from Organise are visible
-            state.refresh_annotations()
+        if tab_name == "Annotate":
+            # Re-inject char spans if NiceGUI re-rendered the HTML element
+            # (Tab 3 init triggers "Event listeners changed" which can destroy
+            # the JS-injected char spans). The function is idempotent — it's a
+            # no-op if spans already exist.
+            ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+            if state.refresh_annotations:
+                state.refresh_annotations()
             _update_highlight_css(state)
             return
 
-        if tab_name == "Respond" and tab_name not in state.initialised_tabs:
-            state.initialised_tabs.add(tab_name)
-            await _initialise_respond_tab(state, workspace_id)
+        if tab_name == "Respond":
+            if tab_name not in state.initialised_tabs:
+                state.initialised_tabs.add(tab_name)
+                await _initialise_respond_tab(state, workspace_id)
+            elif state.refresh_respond_references:
+                state.refresh_respond_references()
             return
 
-        if tab_name in state.initialised_tabs:
-            return
-        state.initialised_tabs.add(tab_name)
+        if tab_name not in state.initialised_tabs:
+            state.initialised_tabs.add(tab_name)
 
     with ui.tab_panels(tabs, value="Annotate", on_change=_on_tab_change).classes(
         "w-full"

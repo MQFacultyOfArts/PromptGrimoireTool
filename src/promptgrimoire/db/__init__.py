@@ -64,6 +64,7 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import (
     PlacementContext,
+    clone_workspace_from_activity,
     create_workspace,
     delete_workspace,
     get_placement_context,
@@ -89,6 +90,7 @@ __all__ = [
     "WorkspaceDocument",
     "add_document",
     "archive_course",
+    "clone_workspace_from_activity",
     "close_db",
     "create_activity",
     "create_course",

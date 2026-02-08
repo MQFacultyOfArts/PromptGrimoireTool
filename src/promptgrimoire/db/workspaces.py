@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, Literal
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Activity, Course, Week, Workspace
+from promptgrimoire.db.models import (
+    Activity,
+    Course,
+    Week,
+    Workspace,
+    WorkspaceDocument,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -324,3 +330,69 @@ async def list_loose_workspaces_for_course(
             .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
         )
         return list(result.all())
+
+
+async def clone_workspace_from_activity(
+    activity_id: UUID,
+) -> tuple[Workspace, dict[UUID, UUID]]:
+    """Clone an Activity's template workspace into a new student workspace.
+
+    Creates a new Workspace within a single transaction, copies all template
+    documents (preserving content, type, source_type, title, order_index),
+    and builds a document ID mapping for CRDT remapping (Phase 4).
+
+    Does NOT clone CRDT state -- that is Phase 4's responsibility.
+
+    Args:
+        activity_id: The Activity UUID whose template workspace to clone.
+
+    Returns:
+        Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
+
+    Raises:
+        ValueError: If Activity or its template workspace is not found.
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        if not activity:
+            msg = f"Activity {activity_id} not found"
+            raise ValueError(msg)
+
+        template = await session.get(Workspace, activity.template_workspace_id)
+        if not template:
+            msg = f"Template workspace {activity.template_workspace_id} not found"
+            raise ValueError(msg)
+
+        # Create new workspace with activity_id and enable_save_as_draft copied
+        clone = Workspace(
+            activity_id=activity_id,
+            enable_save_as_draft=template.enable_save_as_draft,
+        )
+        session.add(clone)
+        await session.flush()
+
+        # Fetch all template documents ordered by order_index
+        result = await session.exec(
+            select(WorkspaceDocument)
+            .where(WorkspaceDocument.workspace_id == template.id)
+            .order_by(WorkspaceDocument.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        template_docs = list(result.all())
+
+        # Clone each document, preserving field values
+        doc_id_map: dict[UUID, UUID] = {}
+        for tmpl_doc in template_docs:
+            cloned_doc = WorkspaceDocument(
+                workspace_id=clone.id,
+                type=tmpl_doc.type,
+                content=tmpl_doc.content,
+                source_type=tmpl_doc.source_type,
+                title=tmpl_doc.title,
+                order_index=tmpl_doc.order_index,
+            )
+            session.add(cloned_doc)
+            await session.flush()
+            doc_id_map[tmpl_doc.id] = cloned_doc.id
+
+        await session.refresh(clone)
+        return clone, doc_id_map

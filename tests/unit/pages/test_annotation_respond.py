@@ -10,41 +10,12 @@ Traceability:
 
 from __future__ import annotations
 
-from typing import Any
-
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation_respond import _SNIPPET_MAX_CHARS
-from promptgrimoire.pages.annotation_tags import TagInfo, brief_tags_to_tag_info
-
-
-def _group_highlights_for_reference(
-    tags: list[TagInfo],
-    crdt_doc: AnnotationDocument,
-) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], bool]:
-    """Replicate the reference panel grouping logic for testing.
-
-    Returns:
-        (tagged_highlights, untagged_highlights, has_any_highlights)
-    """
-    all_highlights = crdt_doc.get_all_highlights()
-
-    tag_raw_values: dict[str, TagInfo] = {tag.raw_key: tag for tag in tags}
-
-    tagged_highlights: dict[str, list[dict[str, Any]]] = {
-        tag_info.name: [] for tag_info in tags
-    }
-    untagged_highlights: list[dict[str, Any]] = []
-
-    for hl in all_highlights:
-        raw_tag = hl.get("tag", "")
-        if raw_tag and raw_tag in tag_raw_values:
-            display_name = tag_raw_values[raw_tag].name
-            tagged_highlights[display_name].append(hl)
-        else:
-            untagged_highlights.append(hl)
-
-    has_any = bool(all_highlights)
-    return tagged_highlights, untagged_highlights, has_any
+from promptgrimoire.pages.annotation_respond import (
+    _SNIPPET_MAX_CHARS,
+    group_highlights_by_tag,
+)
+from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 
 
 class TestReferenceHighlightGrouping:
@@ -58,7 +29,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(20, 30, "jurisdiction", "test text 3", "Author A")
 
         tags = brief_tags_to_tag_info()
-        tagged, untagged, has_any = _group_highlights_for_reference(tags, doc)
+        tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
         assert len(tagged["Jurisdiction"]) == 2
@@ -69,7 +40,7 @@ class TestReferenceHighlightGrouping:
         """An empty document produces has_any_highlights=False (AC4.5)."""
         doc = AnnotationDocument("test-ref-empty")
         tags = brief_tags_to_tag_info()
-        tagged, untagged, has_any = _group_highlights_for_reference(tags, doc)
+        tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is False
         assert len(untagged) == 0
@@ -85,7 +56,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(20, 30, "jurisdiction", "good tag", "Author C")
 
         tags = brief_tags_to_tag_info()
-        tagged, untagged, has_any = _group_highlights_for_reference(tags, doc)
+        tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
         assert len(tagged["Jurisdiction"]) == 1
@@ -120,7 +91,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(30, 40, "reasons", "hl4", "D")
 
         tags = brief_tags_to_tag_info()
-        tagged, untagged, has_any = _group_highlights_for_reference(tags, doc)
+        tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
         assert len(tagged["Jurisdiction"]) == 1
@@ -135,7 +106,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(0, 10, "jurisdiction", "only one tag", "A")
 
         tags = brief_tags_to_tag_info()
-        tagged, _untagged, has_any = _group_highlights_for_reference(tags, doc)
+        tagged, _untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
         assert len(tagged["Jurisdiction"]) == 1

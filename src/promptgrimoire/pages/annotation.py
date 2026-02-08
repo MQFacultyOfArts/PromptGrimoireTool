@@ -50,6 +50,8 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from nicegui import Client
 
+    from promptgrimoire.pages.annotation_tags import TagInfo
+
 logger = logging.getLogger(__name__)
 
 # Global registry for workspace annotation documents
@@ -336,7 +338,7 @@ class PageState:
     )
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
     # Tag info list for Tab 2 (Organise) — populated on first visit
-    tag_info_list: list[Any] | None = None  # list[TagInfo]
+    tag_info_list: list[TagInfo] | None = None
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast

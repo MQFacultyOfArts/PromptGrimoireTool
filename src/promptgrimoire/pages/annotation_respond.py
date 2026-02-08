@@ -44,6 +44,50 @@ _EDITOR_CONTAINER_STYLE = (
 _FRAGMENT_NAME = "response_draft"
 
 
+def group_highlights_by_tag(
+    tags: list[TagInfo],
+    crdt_doc: AnnotationDocument,
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], bool]:
+    """Pure function to group highlights by tag for reference panel rendering.
+
+    Extracts all highlights from the CRDT doc and organizes them by tag,
+    with untagged highlights in a separate list. This logic is decoupled
+    from UI rendering to enable unit testing.
+
+    Args:
+        tags: List of TagInfo instances for grouping.
+        crdt_doc: The CRDT annotation document.
+
+    Returns:
+        A tuple of:
+        - tagged_highlights: dict mapping tag display name to list of highlights
+        - untagged_highlights: list of highlights without a recognized tag
+        - has_any_highlights: boolean indicating if any highlights exist
+    """
+    all_highlights = crdt_doc.get_all_highlights()
+
+    # Build raw tag value -> TagInfo lookup
+    tag_raw_values: dict[str, TagInfo] = {tag.raw_key: tag for tag in tags}
+
+    # Group highlights by tag
+    tagged_highlights: dict[str, list[dict[str, Any]]] = {
+        tag_info.name: [] for tag_info in tags
+    }
+    untagged_highlights: list[dict[str, Any]] = []
+
+    for hl in all_highlights:
+        raw_tag = hl.get("tag", "")
+        if raw_tag and raw_tag in tag_raw_values:
+            display_name = tag_raw_values[raw_tag].name
+            tagged_highlights[display_name].append(hl)
+        else:
+            untagged_highlights.append(hl)
+
+    has_any_highlights = bool(all_highlights)
+
+    return tagged_highlights, untagged_highlights, has_any_highlights
+
+
 def _build_reference_card(
     highlight: dict[str, Any],
     tag_colour: str,
@@ -89,26 +133,9 @@ def _build_reference_panel(
         tags: List of TagInfo instances for grouping.
         crdt_doc: The CRDT annotation document.
     """
-    all_highlights = crdt_doc.get_all_highlights()
-
-    # Build raw tag value -> TagInfo lookup
-    tag_raw_values: dict[str, TagInfo] = {tag.raw_key: tag for tag in tags}
-
-    # Group highlights by tag
-    tagged_highlights: dict[str, list[dict[str, Any]]] = {
-        tag_info.name: [] for tag_info in tags
-    }
-    untagged_highlights: list[dict[str, Any]] = []
-
-    for hl in all_highlights:
-        raw_tag = hl.get("tag", "")
-        if raw_tag and raw_tag in tag_raw_values:
-            display_name = tag_raw_values[raw_tag].name
-            tagged_highlights[display_name].append(hl)
-        else:
-            untagged_highlights.append(hl)
-
-    has_any_highlights = bool(all_highlights)
+    tagged_highlights, untagged_highlights, has_any_highlights = (
+        group_highlights_by_tag(tags, crdt_doc)
+    )
 
     if not has_any_highlights:
         ui.label("No highlights yet").classes("text-gray-400 italic p-4").props(
@@ -206,7 +233,7 @@ async def render_respond_tab(
     # Set up the Yjs update handler that relays edits to Python
     def on_yjs_update(e: object) -> None:
         """Receive a Yjs update from the JS Milkdown editor."""
-        b64_update: str = e.args["update"]  # type: ignore[union-attr]
+        b64_update: str = e.args["update"]  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
         raw = base64.b64decode(b64_update)
         # Apply to server-side CRDT Doc
         crdt_doc.apply_update(raw, origin_client_id=client_id)

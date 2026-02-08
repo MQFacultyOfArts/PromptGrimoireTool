@@ -5,6 +5,14 @@ Provides async SQLModel operations with PostgreSQL.
 
 from __future__ import annotations
 
+from promptgrimoire.db.activities import (
+    create_activity,
+    delete_activity,
+    get_activity,
+    list_activities_for_course,
+    list_activities_for_week,
+    update_activity,
+)
 from promptgrimoire.db.bootstrap import (
     get_expected_tables,
     is_db_configured,
@@ -74,12 +82,15 @@ __all__ = [
     "add_document",
     "archive_course",
     "close_db",
+    "create_activity",
     "create_course",
     "create_user",
     "create_workspace",
+    "delete_activity",
     "delete_workspace",
     "enroll_user",
     "find_or_create_user",
+    "get_activity",
     "get_course_by_id",
     "get_engine",
     "get_enrollment",
@@ -92,6 +103,8 @@ __all__ = [
     "init_db",
     "is_db_configured",
     "link_stytch_member",
+    "list_activities_for_course",
+    "list_activities_for_week",
     "list_all_users",
     "list_course_enrollments",
     "list_courses",
@@ -103,6 +116,7 @@ __all__ = [
     "save_workspace_crdt_state",
     "set_admin",
     "unenroll_user",
+    "update_activity",
     "update_display_name",
     "update_last_login",
     "update_user_role",

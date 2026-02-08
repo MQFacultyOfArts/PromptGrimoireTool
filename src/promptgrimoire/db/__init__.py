@@ -63,8 +63,10 @@ from promptgrimoire.db.workspace_documents import (
     reorder_documents,
 )
 from promptgrimoire.db.workspaces import (
+    PlacementContext,
     create_workspace,
     delete_workspace,
+    get_placement_context,
     get_workspace,
     list_loose_workspaces_for_course,
     list_workspaces_for_activity,
@@ -80,6 +82,7 @@ __all__ = [
     "CourseEnrollment",
     "CourseRole",
     "DuplicateEnrollmentError",
+    "PlacementContext",
     "User",
     "Week",
     "Workspace",
@@ -100,6 +103,7 @@ __all__ = [
     "get_engine",
     "get_enrollment",
     "get_expected_tables",
+    "get_placement_context",
     "get_session",
     "get_user_by_email",
     "get_user_by_id",

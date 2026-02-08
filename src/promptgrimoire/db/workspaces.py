@@ -5,16 +5,115 @@ Provides async database functions for workspace management.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Activity, Course, Workspace
+from promptgrimoire.db.models import Activity, Course, Week, Workspace
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+
+@dataclass(frozen=True)
+class PlacementContext:
+    """Full hierarchy context for a workspace's placement."""
+
+    placement_type: str  # "activity", "course", or "loose"
+    activity_title: str | None = None
+    week_number: int | None = None
+    week_title: str | None = None
+    course_code: str | None = None
+    course_name: str | None = None
+
+    @property
+    def display_label(self) -> str:
+        """Human-readable placement label.
+
+        Shows full hierarchy: "Activity Title in Week N for COURSE_CODE"
+        """
+        if self.placement_type == "activity":
+            return (
+                f"{self.activity_title} "
+                f"in Week {self.week_number} "
+                f"for {self.course_code}"
+            )
+        if self.placement_type == "course":
+            return f"Loose work for {self.course_code}"
+        return "Unplaced"
+
+
+async def get_placement_context(workspace_id: UUID) -> PlacementContext:
+    """Resolve the full hierarchy context for a workspace's placement.
+
+    Fetches the workspace and walks the Activity -> Week -> Course chain
+    (if placed in an Activity) or just the Course (if placed in a Course)
+    within a single session for consistency.
+
+    Args:
+        workspace_id: The workspace UUID.
+
+    Returns:
+        PlacementContext with all resolved fields. Returns a loose context
+        if the workspace is not found or has no placement.
+    """
+    loose = PlacementContext(placement_type="loose")
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return loose
+
+        if workspace.activity_id is not None:
+            return await _resolve_activity_placement(session, workspace.activity_id)
+
+        if workspace.course_id is not None:
+            return await _resolve_course_placement(session, workspace.course_id)
+
+        return loose
+
+
+async def _resolve_activity_placement(
+    session: AsyncSession,
+    activity_id: UUID,
+) -> PlacementContext:
+    """Walk Activity -> Week -> Course chain. Falls back to loose on orphan."""
+    activity = await session.get(Activity, activity_id)
+    if activity is None:
+        return PlacementContext(placement_type="loose")
+    week = await session.get(Week, activity.week_id)
+    if week is None:
+        return PlacementContext(placement_type="loose")
+    course = await session.get(Course, week.course_id)
+    if course is None:
+        return PlacementContext(placement_type="loose")
+    return PlacementContext(
+        placement_type="activity",
+        activity_title=activity.title,
+        week_number=week.week_number,
+        week_title=week.title,
+        course_code=course.code,
+        course_name=course.name,
+    )
+
+
+async def _resolve_course_placement(
+    session: AsyncSession,
+    course_id: UUID,
+) -> PlacementContext:
+    """Resolve Course placement. Falls back to loose on orphan."""
+    course = await session.get(Course, course_id)
+    if course is None:
+        return PlacementContext(placement_type="loose")
+    return PlacementContext(
+        placement_type="course",
+        course_code=course.code,
+        course_name=course.name,
+    )
 
 
 async def create_workspace() -> Workspace:

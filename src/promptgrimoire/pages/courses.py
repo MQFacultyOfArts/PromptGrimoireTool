@@ -32,7 +32,7 @@ from promptgrimoire.db.courses import (
     unenroll_user,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.models import CourseRole
+from promptgrimoire.db.models import Activity, CourseRole
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -41,6 +41,7 @@ from promptgrimoire.db.weeks import (
     publish_week,
     unpublish_week,
 )
+from promptgrimoire.db.workspaces import clone_workspace_from_activity
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -289,6 +290,28 @@ async def course_detail_page(course_id: str) -> None:
     # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
+    def _render_activity_row(act: Activity, *, can_manage: bool) -> None:
+        """Render a single Activity row with title and Start button."""
+        with ui.row().classes("items-center gap-2"):
+            ui.icon("assignment").classes("text-gray-400")
+            if can_manage:
+                _qs = urlencode({"workspace_id": str(act.template_workspace_id)})
+                ui.link(
+                    act.title,
+                    f"/annotation?{_qs}",
+                ).classes("text-sm")
+            else:
+                ui.label(act.title).classes("text-sm")
+
+            async def start_activity(aid: UUID = act.id) -> None:
+                clone, _doc_map = await clone_workspace_from_activity(aid)
+                qs = urlencode({"workspace_id": str(clone.id)})
+                ui.navigate.to(f"/annotation?{qs}")
+
+            ui.button("Start", on_click=start_activity).props(
+                "flat dense size=sm color=primary"
+            )
+
     @ui.refreshable
     async def weeks_list() -> None:
         """Render the weeks list with publish/unpublish controls."""
@@ -341,15 +364,7 @@ async def course_detail_page(course_id: str) -> None:
                     if activities:
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
-                                with ui.row().classes("items-center gap-2"):
-                                    ui.icon("assignment").classes("text-gray-400")
-                                    _qs = urlencode(
-                                        {"workspace_id": str(act.template_workspace_id)}
-                                    )
-                                    ui.link(
-                                        act.title,
-                                        f"/annotation?{_qs}",
-                                    ).classes("text-sm")
+                                _render_activity_row(act, can_manage=can_manage)
                     elif can_manage:
                         ui.label("No activities yet").classes(
                             "text-xs text-gray-400 ml-4 mt-1"

@@ -298,6 +298,87 @@ def _build_reference_column(
     return reference_container, search_input
 
 
+async def _sync_markdown_to_crdt(
+    crdt_doc: AnnotationDocument,
+    workspace_key: str,
+    client_id: str,
+) -> None:
+    """Extract markdown from Milkdown and write to the CRDT Text field.
+
+    Called after Yjs updates and on tab-leave to keep the server-side
+    ``response_draft_markdown`` Text field in sync with the editor content.
+    This enables PDF export from clients that never visited Tab 3 (AC6.3).
+
+    Args:
+        crdt_doc: The CRDT annotation document.
+        workspace_key: Workspace identifier for logging.
+        client_id: Client identifier for logging.
+    """
+    try:
+        md: str = await ui.run_javascript("window._getMilkdownMarkdown()", timeout=3.0)
+        if md is None:
+            md = ""
+    except (TimeoutError, Exception):
+        logger.debug("RESPOND_MD_SYNC_SKIP ws=%s (JS call failed)", workspace_key)
+        return
+
+    # Replace the entire Text field content atomically
+    text_field = crdt_doc.response_draft_markdown
+    current = str(text_field)
+    if current != md:
+        current_len = len(text_field)
+        if current_len > 0:
+            del text_field[:current_len]
+        if md:
+            text_field += md
+        logger.debug(
+            "RESPOND_MD_SYNC ws=%s client=%s len=%d",
+            workspace_key,
+            client_id[:8],
+            len(md),
+        )
+
+
+def _setup_yjs_event_handler(
+    crdt_doc: AnnotationDocument,
+    workspace_key: str,
+    client_id: str,
+    on_yjs_update_broadcast: Any,
+) -> None:
+    """Register the NiceGUI event handler for Yjs updates from the Milkdown editor.
+
+    Receives base64-encoded Yjs updates from the browser, applies them to the
+    server-side CRDT Doc, broadcasts to other clients, and syncs the markdown
+    mirror to the CRDT Text field.
+
+    Args:
+        crdt_doc: The CRDT annotation document.
+        workspace_key: Workspace identifier for broadcast lookup.
+        client_id: This client's unique ID (for echo prevention).
+        on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
+            broadcast Yjs updates to other clients.
+    """
+
+    async def on_yjs_update(e: object) -> None:
+        """Receive a Yjs update from the JS Milkdown editor."""
+        b64_update: str = e.args["update"]  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+        raw = base64.b64decode(b64_update)
+        # Apply to server-side CRDT Doc
+        crdt_doc.apply_update(raw, origin_client_id=client_id)
+        # Broadcast to other clients
+        on_yjs_update_broadcast(b64_update, client_id)
+        logger.debug(
+            "RESPOND_YJS_UPDATE ws=%s client=%s bytes=%d",
+            workspace_key,
+            client_id[:8],
+            len(raw),
+        )
+        # Sync markdown mirror to CRDT Text field for server-side access
+        await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
+
+    ui.on("respond_yjs_update", on_yjs_update)
+
+
 async def render_respond_tab(
     panel: ui.element,
     tags: list[TagInfo],
@@ -306,7 +387,7 @@ async def render_respond_tab(
     client_id: str,
     on_yjs_update_broadcast: Any,
     on_locate: Callable[..., Any] | None = None,
-) -> Callable[[], None]:
+) -> tuple[Callable[[], None], Callable[[], Any]]:
     """Populate the Respond tab panel with Milkdown editor and reference panel.
 
     Clears the placeholder content from the panel, then creates a two-column
@@ -330,9 +411,10 @@ async def render_respond_tab(
             a highlight in Tab 1.
 
     Returns:
-        A callable that refreshes the reference panel with current CRDT state.
-        Store this and call it on tab revisit or broadcast to keep the panel
-        in sync.
+        A tuple of (refresh_references, sync_markdown):
+        - refresh_references: Callable that refreshes the reference panel.
+        - sync_markdown: Async callable that syncs editor markdown to the
+          CRDT Text field for server-side access (PDF export fallback).
     """
     panel.clear()
     editor_id = "milkdown-respond-editor"
@@ -402,23 +484,9 @@ async def render_respond_tab(
                 sanitize=False,
             ).classes("w-full").style("display: flex; flex-direction: column; flex: 1;")
 
-    # Set up the Yjs update handler that relays edits to Python
-    def on_yjs_update(e: object) -> None:
-        """Receive a Yjs update from the JS Milkdown editor."""
-        b64_update: str = e.args["update"]  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
-        raw = base64.b64decode(b64_update)
-        # Apply to server-side CRDT Doc
-        crdt_doc.apply_update(raw, origin_client_id=client_id)
-        # Broadcast to other clients
-        on_yjs_update_broadcast(b64_update, client_id)
-        logger.debug(
-            "RESPOND_YJS_UPDATE ws=%s client=%s bytes=%d",
-            workspace_key,
-            client_id[:8],
-            len(raw),
-        )
-
-    ui.on("respond_yjs_update", on_yjs_update)
+    _setup_yjs_event_handler(
+        crdt_doc, workspace_key, client_id, on_yjs_update_broadcast
+    )
 
     # Wait for WebSocket, then initialize the editor
     await ui.context.client.connected()
@@ -485,4 +553,8 @@ async def render_respond_tab(
             "}, 50);"
         )
 
-    return refresh_references
+    async def sync_markdown() -> None:
+        """Sync the Milkdown editor markdown to the CRDT Text field."""
+        await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
+
+    return refresh_references, sync_markdown

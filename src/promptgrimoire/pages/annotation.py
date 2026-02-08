@@ -351,6 +351,8 @@ class PageState:
     has_milkdown_editor: bool = False
     # Callable to refresh the Respond reference panel from tab switch / broadcast
     refresh_respond_references: Any | None = None  # Callable[[], None]
+    # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
+    sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
 
 
 def _get_current_username() -> str:
@@ -2507,7 +2509,10 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     async def _on_respond_locate(start_char: int, end_char: int) -> None:
         await _warp_to_highlight(state, start_char, end_char)
 
-    state.refresh_respond_references = await render_respond_tab(
+    (
+        state.refresh_respond_references,
+        state.sync_respond_markdown,
+    ) = await render_respond_tab(
         panel=state.respond_panel,
         tags=tags,
         crdt_doc=state.crdt_doc,
@@ -2565,7 +2570,12 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         """Handle tab switching with deferred rendering and refresh."""
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
+        prev_tab = state.active_tab
         state.active_tab = tab_name
+
+        # Sync markdown to CRDT when leaving the Respond tab (Phase 7)
+        if prev_tab == "Respond" and state.sync_respond_markdown:
+            await state.sync_respond_markdown()
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             # Always re-render Organise tab to show current highlights

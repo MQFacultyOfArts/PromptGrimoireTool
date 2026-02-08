@@ -96,7 +96,6 @@ ignore = [
 ]
 "src/promptgrimoire/db/workspaces.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with crdt
-    "TC003",    # UUID used at runtime for CRDT document ID remapping
 ]
 "src/promptgrimoire/crdt/persistence.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with db

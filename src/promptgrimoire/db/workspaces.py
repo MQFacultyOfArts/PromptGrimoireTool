@@ -352,7 +352,7 @@ def _replay_crdt_state(
     """
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
 
-    if not template.crdt_state:
+    if template.crdt_state is None:
         return
 
     # Load template CRDT state
@@ -367,9 +367,7 @@ def _replay_crdt_state(
         # Remap document_id: template doc UUID -> cloned doc UUID
         raw_doc_id = hl.get("document_id")
         if raw_doc_id is not None:
-            from uuid import UUID as UUIDCls
-
-            template_uuid = UUIDCls(raw_doc_id)
+            template_uuid = UUID(raw_doc_id)
             remapped_uuid = doc_id_map.get(template_uuid, template_uuid)
             remapped_doc_id: str | None = str(remapped_uuid)
         else:

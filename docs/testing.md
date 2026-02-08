@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-02-04*
+*Last updated: 2026-02-08*
 
 ## TDD is Mandatory
 
@@ -94,3 +94,63 @@ user = await create_user(...)  # Not needed for workspace tests
 ```
 
 This simplifies tests and reflects the design: workspaces are silos, access control comes later via ACL.
+
+## Integration Test Patterns
+
+### Skip Guard
+
+Integration tests that require a database use a module-level skip guard. Every new integration test file must include this at the top:
+
+```python
+import os
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+)
+```
+
+This ensures the entire module is skipped when no test database is available, rather than failing with connection errors.
+
+### Class-Based Organisation
+
+Group tests by the function or behaviour they exercise:
+
+```python
+class TestCreateWorkspace:
+    """Tests for create_workspace."""
+
+    @pytest.mark.asyncio
+    async def test_creates_workspace(self) -> None: ...
+
+class TestGetWorkspace:
+    """Tests for get_workspace."""
+
+    @pytest.mark.asyncio
+    async def test_returns_workspace_by_id(self) -> None: ...
+    async def test_returns_none_for_missing(self) -> None: ...
+```
+
+Each class maps to one public function or one logical group of related operations. This keeps test files navigable as they grow.
+
+### Reference Files
+
+When writing new CRUD integration tests, use these as templates:
+
+- **`tests/integration/test_workspace_crud.py`** — Workspace and document CRUD. Shows the skip guard, class-based grouping, UUID isolation, and `from __future__ import annotations` import.
+
+## Test Markers
+
+Custom markers are defined in `pyproject.toml` under `[tool.pytest.ini_options]`:
+
+| Marker | Purpose | Default |
+|--------|---------|---------|
+| `slow` | Long-running tests | Deselected (`-m "not slow"`) |
+| `e2e` | Playwright end-to-end tests | Excluded from `test-all` (`-m "not e2e"`) |
+| `blns` | Big List of Naughty Strings | Opt-in (`-m blns`) |
+| `latex` | Tests requiring TinyTeX/system fonts | Included by default |
+
+Default addopts: `-ra -q -m 'not blns and not slow'`
+
+To run a specific marker: `uv run pytest -m e2e` or `uv run pytest -m latex`.

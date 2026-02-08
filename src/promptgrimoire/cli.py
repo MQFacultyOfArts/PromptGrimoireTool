@@ -25,14 +25,20 @@ def _pre_test_db_cleanup() -> None:
 
     This runs once in the CLI process before pytest is spawned,
     avoiding deadlocks when xdist workers try to truncate simultaneously.
+
+    Uses TEST_DATABASE_URL (not DATABASE_URL) to prevent accidentally
+    truncating production or development databases.
     """
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    database_url = os.environ.get("TEST_DATABASE_URL")
-    if not database_url:
+    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_database_url:
         return  # No test database configured — skip
+
+    # Override DATABASE_URL so Alembic migrations target the test database
+    os.environ["DATABASE_URL"] = test_database_url
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
@@ -50,7 +56,9 @@ def _pre_test_db_cleanup() -> None:
     # Truncate all tables (sync connection, single process — no race)
     from sqlalchemy import create_engine, text
 
-    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    sync_url = test_database_url.replace(
+        "postgresql+asyncpg://", "postgresql+psycopg://"
+    )
     engine = create_engine(sync_url)
     with engine.begin() as conn:
         table_query = conn.execute(
@@ -325,7 +333,7 @@ async def _seed_user_and_course() -> tuple:
     return user, course
 
 
-async def _seed_enrolment_and_weeks(course, user) -> None:  # type: ignore[no-untyped-def]  -- internal CLI helper, types are Course/User
+async def _seed_enrolment_and_weeks(course, user) -> None:
     """Enrol user and create weeks with activities."""
     from promptgrimoire.db.activities import create_activity
     from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from sqlmodel import select
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class PlacementContext:
     """Full hierarchy context for a workspace's placement."""
 
-    placement_type: str  # "activity", "course", or "loose"
+    placement_type: Literal["activity", "course", "loose"]
     activity_title: str | None = None
     week_number: int | None = None
     week_title: str | None = None
@@ -295,7 +295,7 @@ async def list_workspaces_for_activity(
         result = await session.exec(
             select(Workspace)
             .where(Workspace.activity_id == activity_id)
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
         )
         return list(result.all())
 
@@ -321,6 +321,6 @@ async def list_loose_workspaces_for_course(
             select(Workspace)
             .where(Workspace.course_id == course_id)
             .where(Workspace.activity_id == None)  # noqa: E711
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by() stubs don't accept Column expressions
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
         )
         return list(result.all())

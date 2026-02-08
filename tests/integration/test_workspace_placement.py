@@ -62,12 +62,14 @@ class TestPlaceWorkspace:
         before = await get_workspace(ws.id)
         assert before is not None
         assert before.course_id == course.id
+        original_updated_at = before.updated_at
 
         # Now place in activity -- should clear course_id
         result = await place_workspace_in_activity(ws.id, activity.id)
 
         assert result.activity_id == activity.id
         assert result.course_id is None
+        assert result.updated_at > original_updated_at
 
         # Verify persistence
         after = await get_workspace(ws.id)

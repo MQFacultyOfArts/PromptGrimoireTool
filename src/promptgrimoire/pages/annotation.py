@@ -2442,15 +2442,18 @@ def _build_activity_cascade(
         activity_select.disable()
         selected["course"] = selected["week"] = selected["activity"] = None
         if e.value:
-            cid = UUID(e.value)
-            selected["course"] = cid
-            weeks = await list_weeks(cid)
-            week_select.options = {
-                str(w.id): f"Week {w.week_number}: {w.title}" for w in weeks
-            }
-            week_select.update()
-            if weeks:
-                week_select.enable()
+            try:
+                cid = UUID(e.value)
+                selected["course"] = cid
+                weeks = await list_weeks(cid)
+                week_select.options = {
+                    str(w.id): f"Week {w.week_number}: {w.title}" for w in weeks
+                }
+                week_select.update()
+                if weeks:
+                    week_select.enable()
+            except Exception as exc:
+                ui.notify(str(exc), type="negative")
 
     course_select.on_value_change(on_course_change)
 
@@ -2460,13 +2463,16 @@ def _build_activity_cascade(
         activity_select.disable()
         selected["week"] = selected["activity"] = None
         if e.value:
-            wid = UUID(e.value)
-            selected["week"] = wid
-            activities = await list_activities_for_week(wid)
-            activity_select.options = {str(a.id): a.title for a in activities}
-            activity_select.update()
-            if activities:
-                activity_select.enable()
+            try:
+                wid = UUID(e.value)
+                selected["week"] = wid
+                activities = await list_activities_for_week(wid)
+                activity_select.options = {str(a.id): a.title for a in activities}
+                activity_select.update()
+                if activities:
+                    activity_select.enable()
+            except Exception as exc:
+                ui.notify(str(exc), type="negative")
 
     week_select.on_value_change(on_week_change)
 

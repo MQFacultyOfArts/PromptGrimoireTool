@@ -203,6 +203,18 @@ def render_organise_tab(
         crdt_doc: The CRDT annotation document.
         on_sort_end: Callback for SortableJS sort-end events.
     """
+    # Save scroll position before clearing (h-scroll across columns, v-scroll
+    # within the panel). Uses data-testid selector since the element is rebuilt.
+    ui.run_javascript(
+        "window._organiseScroll = (function() {"
+        "  var el = document.querySelector("
+        "'[data-testid=\"organise-columns\"]');"
+        "  return el"
+        "    ? {x: el.scrollLeft, y: el.scrollTop}"
+        "    : {x: 0, y: 0};"
+        "})();"
+    )
+
     panel.clear()
 
     all_highlights = crdt_doc.get_all_highlights()
@@ -255,3 +267,15 @@ def render_organise_tab(
                 ordered_ids,
                 on_sort_end,
             )
+
+    # Restore scroll position after rebuild
+    ui.run_javascript(
+        "setTimeout(function() {"
+        "  var el = document.querySelector("
+        "'[data-testid=\"organise-columns\"]');"
+        "  if (el && window._organiseScroll) {"
+        "    el.scrollLeft = window._organiseScroll.x;"
+        "    el.scrollTop = window._organiseScroll.y;"
+        "  }"
+        "}, 50);"
+    )

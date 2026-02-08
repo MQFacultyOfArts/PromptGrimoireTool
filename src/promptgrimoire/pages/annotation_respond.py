@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any
 from nicegui import ui
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation_tags import TagInfo
 
@@ -35,13 +37,25 @@ logger = logging.getLogger(__name__)
 # Maximum characters to show in highlight text snippet before truncation
 _SNIPPET_MAX_CHARS = 100
 
-# Milkdown editor container styling
-_EDITOR_CONTAINER_STYLE = (
-    "min-height: 300px; border: 1px solid #ddd; border-radius: 8px; padding: 16px;"
-)
+# Initial split percentage for the reference panel (left side of splitter)
+_REFERENCE_PANEL_SPLIT = 25
+
+# Split value when the reference panel is collapsed
+_REFERENCE_PANEL_COLLAPSED = 0
 
 # Fragment name for the response draft in the shared CRDT Doc
 _FRAGMENT_NAME = "response_draft"
+
+# Override Milkdown's default ProseMirror padding (60px 120px) for constrained layouts.
+# Asymmetric: generous left for Crepe's block-handle controls (~66px for two 32px
+# operation-items + gap), minimal right so the right margin collapses first when
+# the splitter is narrow.  No overflow-x:hidden — that clips the absolutely-
+# positioned block handles and floating toolbar.
+_EDITOR_CSS = """
+    #milkdown-respond-editor .milkdown .ProseMirror {
+        padding: 24px 0 24px 82px;
+    }
+"""
 
 
 def group_highlights_by_tag(
@@ -105,6 +119,7 @@ def _build_reference_card(
     snippet = full_text[:_SNIPPET_MAX_CHARS]
     if len(full_text) > _SNIPPET_MAX_CHARS:
         snippet += "..."
+    comments: list[dict[str, Any]] = highlight.get("comments", [])
 
     with (
         ui.card()
@@ -118,13 +133,43 @@ def _build_reference_card(
         ui.label(f"by {author}").classes("text-xs text-gray-500")
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
+        for comment in comments:
+            comment_author = comment.get("author", "")
+            comment_text = comment.get("text", "")
+            if comment_text:
+                with (
+                    ui.row()
+                    .classes("w-full items-start gap-1 mt-1 pl-2")
+                    .style("border-left: 2px solid #e0e0e0;")
+                ):
+                    ui.label(f"{comment_author}:").classes(
+                        "text-xs text-gray-500 font-medium shrink-0"
+                    )
+                    ui.label(comment_text).classes("text-xs text-gray-700")
+
+
+def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
+    """Check if a highlight matches the search filter (case-insensitive)."""
+    needle = filter_text.lower()
+    text = highlight.get("text", "").lower()
+    author = highlight.get("author", "").lower()
+    if needle in text or needle in author:
+        return True
+    for comment in highlight.get("comments", []):
+        if needle in comment.get("text", "").lower():
+            return True
+        if needle in comment.get("author", "").lower():
+            return True
+    return False
 
 
 def _build_reference_panel(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
+    filter_text: str | None = None,
+    accordion_state: dict[str, bool] | None = None,
 ) -> None:
-    """Build the read-only highlight reference panel (right column).
+    """Build the read-only highlight reference panel (left column).
 
     Shows highlights grouped by tag with coloured section headers.
     If no highlights exist, shows an empty-state message.
@@ -132,6 +177,10 @@ def _build_reference_panel(
     Args:
         tags: List of TagInfo instances for grouping.
         crdt_doc: The CRDT annotation document.
+        filter_text: Optional search string to filter highlights by text or author.
+        accordion_state: Dict mapping tag name to open/closed state. Mutated in
+            place via ``on_value_change`` callbacks so the caller's dict stays
+            in sync across rebuilds.
     """
     tagged_highlights, untagged_highlights, has_any_highlights = (
         group_highlights_by_tag(tags, crdt_doc)
@@ -143,29 +192,89 @@ def _build_reference_panel(
         )
         return
 
+    # Apply text filter if provided
+    active_filter = filter_text.strip() if filter_text else ""
+
+    def _expansion_for(tag_name: str) -> ui.expansion:
+        """Create an expansion panel that tracks its open/closed state."""
+        is_open = accordion_state.get(tag_name, True) if accordion_state else True
+        exp = (
+            ui.expansion(tag_name, value=is_open)
+            .classes("w-full")
+            .props(f'data-testid="respond-tag-group" data-tag-name="{tag_name}"')
+        )
+        if accordion_state is not None:
+
+            def _track(e: Any, name: str = tag_name) -> None:
+                accordion_state[name] = bool(e.value)
+
+            exp.on_value_change(_track)
+        return exp
+
     # Render grouped highlights
     for tag_info in tags:
         highlights_for_tag = tagged_highlights[tag_info.name]
+        if active_filter:
+            highlights_for_tag = [
+                hl
+                for hl in highlights_for_tag
+                if _matches_filter(hl, active_filter)
+                or active_filter.lower() in tag_info.name.lower()
+            ]
         if not highlights_for_tag:
             continue
 
-        with (
-            ui.expansion(tag_info.name, value=True)
-            .classes("w-full")
-            .props(f'data-testid="respond-tag-group" data-tag-name="{tag_info.name}"')
-        ):
+        with _expansion_for(tag_info.name):
             for hl in highlights_for_tag:
                 _build_reference_card(hl, tag_info.colour, tag_info.name)
 
     # Untagged highlights
+    if active_filter:
+        untagged_highlights = [
+            hl for hl in untagged_highlights if _matches_filter(hl, active_filter)
+        ]
     if untagged_highlights:
-        with (
-            ui.expansion("Untagged", value=True)
-            .classes("w-full")
-            .props('data-testid="respond-tag-group" data-tag-name="Untagged"')
-        ):
+        with _expansion_for("Untagged"):
             for hl in untagged_highlights:
                 _build_reference_card(hl, "#999999", "Untagged")
+
+
+def _build_reference_column(
+    splitter: ui.splitter,
+    tags: list[TagInfo],
+    crdt_doc: AnnotationDocument,
+    accordion_state: dict[str, bool],
+) -> tuple[ui.element, ui.input]:
+    """Build the reference panel column inside the splitter's 'before' slot.
+
+    Returns the reference_container and search_input elements so the caller
+    can wire up refresh and filter callbacks.
+    """
+    with (
+        splitter.before,
+        ui.column()
+        .classes("w-full p-2 overflow-y-auto")
+        .style("max-height: 80vh;")
+        .props('id="respond-ref-scroll" data-testid="respond-reference-panel"'),
+    ):
+        with ui.row().classes("w-full items-center justify-between mb-2"):
+            ui.label("Highlight Reference").classes("text-lg font-bold")
+            ui.button(
+                icon="chevron_left",
+                on_click=lambda: splitter.set_value(_REFERENCE_PANEL_COLLAPSED),
+            ).props("flat dense round size=sm")
+
+        search_input = (
+            ui.input(placeholder="Filter highlights...")
+            .classes("w-full mb-2")
+            .props("dense clearable outlined")
+        )
+
+        reference_container = ui.column().classes("w-full")
+        with reference_container:
+            _build_reference_panel(tags, crdt_doc, accordion_state=accordion_state)
+
+    return reference_container, search_input
 
 
 async def render_respond_tab(
@@ -175,7 +284,7 @@ async def render_respond_tab(
     workspace_key: str,
     client_id: str,
     on_yjs_update_broadcast: Any,
-) -> None:
+) -> Callable[[], None]:
     """Populate the Respond tab panel with Milkdown editor and reference panel.
 
     Clears the placeholder content from the panel, then creates a two-column
@@ -195,40 +304,78 @@ async def render_respond_tab(
         client_id: This client's unique ID (for echo prevention).
         on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
             broadcast Yjs updates to other clients.
+
+    Returns:
+        A callable that refreshes the reference panel with current CRDT state.
+        Store this and call it on tab revisit or broadcast to keep the panel
+        in sync.
     """
     panel.clear()
+    editor_id = "milkdown-respond-editor"
 
-    with (
-        panel,
-        ui.row().classes("w-full gap-4 flex-nowrap").style("min-height: 400px;"),
-    ):
-        # Left column: Milkdown editor (flex: 2)
-        with (
-            ui.column()
-            .classes("flex-grow")
-            .style("flex: 2; min-width: 0;")
-            .props('data-testid="respond-editor-column"')
-        ):
-            ui.label("Response Draft").classes("text-lg font-bold mb-2")
-            editor_id = "milkdown-respond-editor"
+    # Tracks which tag accordions are open/closed across rebuilds.
+    # Mutated in place by on_value_change callbacks inside _build_reference_panel.
+    accordion_state: dict[str, bool] = {}
+
+    def _toggle_reference() -> None:
+        """Toggle the reference panel between collapsed and expanded."""
+        if splitter.value <= _REFERENCE_PANEL_COLLAPSED:
+            splitter.set_value(_REFERENCE_PANEL_SPLIT)
+        else:
+            splitter.set_value(_REFERENCE_PANEL_COLLAPSED)
+
+    with panel:
+        ui.add_css(_EDITOR_CSS)
+
+        splitter = (
+            ui.splitter(value=_REFERENCE_PANEL_SPLIT)
+            .classes("w-full")
+            .style("min-height: 70vh;")
+            .props(
+                f':limits="[{_REFERENCE_PANEL_COLLAPSED}, 40]"'
+                ' data-testid="respond-splitter"'
+            )
+        )
+
+        reference_container, search_input = _build_reference_column(
+            splitter, tags, crdt_doc, accordion_state
+        )
+
+        def _filter_highlights(e: object) -> None:
+            """Re-render reference panel filtered by search text.
+
+            Uses the event value directly rather than search_input.value because
+            NiceGUI debounces server-side value sync — reading .value here would
+            return stale data.
+            """
+            filter_val = e.args if isinstance(e.args, str) else ""  # type: ignore[union-attr]  # NiceGUI GenericEventArguments.args is untyped
+            reference_container.clear()
+            with reference_container:
+                _build_reference_panel(
+                    tags,
+                    crdt_doc,
+                    filter_text=filter_val,
+                    accordion_state=accordion_state,
+                )
+
+        search_input.on("update:model-value", _filter_highlights)
+
+        with splitter.separator:
+            ui.button(
+                icon="drag_indicator",
+                on_click=_toggle_reference,
+            ).props("flat dense round color=primary size=sm")
+
+        with splitter.after:
+            # Milkdown editor — main editing workspace (~75% default).
+            # The raw HTML div is the mount point for Milkdown's ProseMirror
+            # instance; everything else uses NiceGUI components.
+            ui.label("Response Draft").classes("text-lg font-bold mb-2 ml-2")
             ui.html(
-                f'<div id="{editor_id}" style="{_EDITOR_CONTAINER_STYLE}"'
+                f'<div id="{editor_id}" style="flex: 1; min-height: 60vh;"'
                 f' data-testid="milkdown-editor-container"></div>',
                 sanitize=False,
-            )
-
-        # Right column: Reference panel (flex: 1)
-        with (
-            ui.column()
-            .classes("flex-grow overflow-y-auto")
-            .style("flex: 1; min-width: 200px; max-height: 80vh;")
-            .props('data-testid="respond-reference-panel"')
-        ):
-            ui.label("Highlight Reference").classes("text-lg font-bold mb-2")
-            _build_reference_panel(tags, crdt_doc)
-
-    # Load the Milkdown JS bundle (idempotent if already loaded by spike)
-    ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
+            ).classes("w-full").style("display: flex; flex-direction: column; flex: 1;")
 
     # Set up the Yjs update handler that relays edits to Python
     def on_yjs_update(e: object) -> None:
@@ -282,3 +429,34 @@ async def render_respond_tab(
             client_id[:8],
             len(full_state),
         )
+
+    def refresh_references() -> None:
+        """Re-render the reference panel with current CRDT state.
+
+        Called on tab revisit and broadcast to keep highlights in sync.
+        Preserves the current search filter, accordion state, and scroll
+        position across rebuilds.
+        """
+        # Save scroll position before clearing
+        ui.run_javascript(
+            "window._respondRefScroll = "
+            "(document.getElementById('respond-ref-scroll') || {}).scrollTop || 0;"
+        )
+        reference_container.clear()
+        with reference_container:
+            _build_reference_panel(
+                tags,
+                crdt_doc,
+                filter_text=search_input.value,
+                accordion_state=accordion_state,
+            )
+        # Restore scroll position after rebuild
+        ui.run_javascript(
+            "setTimeout(function() {"
+            "  var el = document.getElementById('respond-ref-scroll');"
+            "  if (el && window._respondRefScroll)"
+            "    el.scrollTop = window._respondRefScroll;"
+            "}, 50);"
+        )
+
+    return refresh_references

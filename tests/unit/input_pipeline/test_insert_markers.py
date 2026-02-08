@@ -249,3 +249,57 @@ class TestAnnmarkerPresent:
             f"ANNMARKER should appear after HLEND: "
             f"HLEND at {hlend_pos}, ANNMARKER at {ann_pos}"
         )
+
+
+class TestBoundaryConditions:
+    """Edge cases: start_char=0, end_char=len(chars), entire document."""
+
+    def test_highlight_starting_at_char_0(self) -> None:
+        """Highlight starting at char 0 (boundary: start of document)."""
+        html = "<p>Hello world</p>"
+        # Highlight from char 0 to 5
+        _assert_round_trip(html, [{"start_char": 0, "end_char": 5}])
+
+    def test_highlight_ending_at_document_end(self) -> None:
+        """Highlight ending at exact document end (boundary: end of document)."""
+        html = "<p>Hello world</p>"
+        chars = extract_text_from_html(html)
+        total = len(chars)
+        # Highlight from char 0 to end
+        _assert_round_trip(html, [{"start_char": 0, "end_char": total}])
+
+    def test_highlight_spanning_entire_document(self) -> None:
+        """Highlight spanning the entire document [0, len(chars)]."""
+        html = "<p>Hello world</p>"
+        chars = extract_text_from_html(html)
+        total = len(chars)
+        _assert_round_trip(html, [{"start_char": 0, "end_char": total}])
+
+    def test_block_boundary_whitespace_at_start(self) -> None:
+        """Highlight starting at char 0 when first text node is after block boundary."""
+        html = "<div>\n  <p>Hello world</p>\n</div>"
+        # Highlight from char 0 to 5
+        _assert_round_trip(html, [{"start_char": 0, "end_char": 5}])
+
+    def test_multi_block_highlight_to_end(self) -> None:
+        """Highlight ending at document end in multi-block HTML."""
+        html = "<div>\n  <p>Hello</p>\n  <p>world</p>\n</div>"
+        chars = extract_text_from_html(html)
+        total = len(chars)
+        # Highlight from middle to end
+        mid = total // 2
+        _assert_round_trip(html, [{"start_char": mid, "end_char": total}])
+
+    def test_multiple_highlights_with_boundaries(self) -> None:
+        """Multiple highlights including boundaries: [0, N], [N, len]."""
+        html = "<p>Hello world</p>"
+        chars = extract_text_from_html(html)
+        total = len(chars)
+        mid = total // 2
+        _assert_round_trip(
+            html,
+            [
+                {"start_char": 0, "end_char": mid},  # Start boundary
+                {"start_char": mid, "end_char": total},  # End boundary
+            ],
+        )

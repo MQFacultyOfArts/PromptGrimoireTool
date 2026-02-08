@@ -633,6 +633,71 @@ def _collapsed_to_html_offset(
     return html_pos
 
 
+def _add_marker_insertions(
+    text_nodes: list[_TextNodeInfo],
+    byte_offsets: list[int],
+    start_char: int,
+    end_char: int,
+    marker_idx: int,
+    insertions: list[tuple[int, str]],
+) -> None:
+    """Add HLSTART and HLEND markers for a single highlight to insertions list.
+
+    Handles boundary cases where markers fall outside all text nodes.
+    """
+    # Find start position
+    start_node_found = False
+    for i, node_info in enumerate(text_nodes):
+        if node_info.char_start <= start_char < node_info.char_end:
+            offset_in_collapsed = start_char - node_info.char_start
+            raw_offset = _collapsed_to_html_offset(
+                node_info.html_text, node_info.decoded_text, offset_in_collapsed
+            )
+            byte_pos = byte_offsets[i] + raw_offset
+            insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
+            start_node_found = True
+            break
+
+    # Fallback: if start_char=0 but first text node has char_start>0
+    if not start_node_found and text_nodes and start_char == 0:
+        byte_pos = byte_offsets[0]
+        insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
+
+    # Find end position
+    end_node_found = False
+    for i, node_info in enumerate(text_nodes):
+        if node_info.char_start < end_char <= node_info.char_end:
+            offset_in_collapsed = end_char - node_info.char_start
+            raw_offset = _collapsed_to_html_offset(
+                node_info.html_text, node_info.decoded_text, offset_in_collapsed
+            )
+            byte_pos = byte_offsets[i] + raw_offset
+            insertions.append(
+                (
+                    byte_pos,
+                    HLEND_TEMPLATE.format(marker_idx)
+                    + MARKER_TEMPLATE.format(marker_idx),
+                )
+            )
+            end_node_found = True
+            break
+
+    # Fallback: if end_char equals document length or exceeds all nodes
+    if not end_node_found and text_nodes:
+        node_info = text_nodes[-1]
+        offset_in_collapsed = len(node_info.collapsed_text)
+        raw_offset = _collapsed_to_html_offset(
+            node_info.html_text, node_info.decoded_text, offset_in_collapsed
+        )
+        byte_pos = byte_offsets[-1] + raw_offset
+        insertions.append(
+            (
+                byte_pos,
+                HLEND_TEMPLATE.format(marker_idx) + MARKER_TEMPLATE.format(marker_idx),
+            )
+        )
+
+
 def insert_markers_into_dom(
     html: str,
     highlights: list[dict[str, Any]],
@@ -692,38 +757,24 @@ def insert_markers_into_dom(
         marker_idx = len(marker_to_highlight)
         marker_to_highlight.append(hl)
 
-        # Find start position
-        for i, node_info in enumerate(text_nodes):
-            if node_info.char_start <= start_char < node_info.char_end:
-                offset_in_collapsed = start_char - node_info.char_start
-                raw_offset = _collapsed_to_html_offset(
-                    node_info.html_text, node_info.decoded_text, offset_in_collapsed
-                )
-                byte_pos = byte_offsets[i] + raw_offset
-                insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
-                break
-
-        # Find end position
-        for i, node_info in enumerate(text_nodes):
-            if node_info.char_start < end_char <= node_info.char_end:
-                offset_in_collapsed = end_char - node_info.char_start
-                raw_offset = _collapsed_to_html_offset(
-                    node_info.html_text, node_info.decoded_text, offset_in_collapsed
-                )
-                byte_pos = byte_offsets[i] + raw_offset
-                # HLEND then ANNMARKER (so \annot{} with \par is outside \highLight{})
-                insertions.append(
-                    (
-                        byte_pos,
-                        HLEND_TEMPLATE.format(marker_idx)
-                        + MARKER_TEMPLATE.format(marker_idx),
-                    )
-                )
-                break
+        _add_marker_insertions(
+            text_nodes, byte_offsets, start_char, end_char, marker_idx, insertions
+        )
 
     # Sort insertions by byte offset descending — insert back-to-front
-    # so earlier insertions don't shift later positions
     insertions.sort(key=lambda x: x[0], reverse=True)
+
+    # Reverse items at the same byte position so they insert in correct order.
+    # When multiple markers are at the same position, the insertion loop processes
+    # them in order, each pushing earlier markers forward. By reversing items at
+    # each position level, we ensure later-appended markers are processed first.
+    i = 0
+    while i < len(insertions):
+        j = i + 1
+        while j < len(insertions) and insertions[j][0] == insertions[i][0]:
+            j += 1
+        insertions[i:j] = list(reversed(insertions[i:j]))
+        i = j
 
     result = html
     for byte_pos, marker in insertions:

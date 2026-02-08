@@ -318,19 +318,24 @@ async def _sync_markdown_to_crdt(
         md: str = await ui.run_javascript("window._getMilkdownMarkdown()", timeout=3.0)
         if md is None:
             md = ""
-    except (TimeoutError, Exception):
-        logger.debug("RESPOND_MD_SYNC_SKIP ws=%s (JS call failed)", workspace_key)
+    except (TimeoutError, OSError) as exc:
+        logger.debug(
+            "RESPOND_MD_SYNC_SKIP ws=%s (JS call failed: %s)",
+            workspace_key,
+            type(exc).__name__,
+        )
         return
 
     # Replace the entire Text field content atomically
     text_field = crdt_doc.response_draft_markdown
     current = str(text_field)
     if current != md:
-        current_len = len(text_field)
-        if current_len > 0:
-            del text_field[:current_len]
-        if md:
-            text_field += md
+        with crdt_doc.doc.transaction():
+            current_len = len(text_field)
+            if current_len > 0:
+                del text_field[:current_len]
+            if md:
+                text_field += md
         logger.debug(
             "RESPOND_MD_SYNC ws=%s client=%s len=%d",
             workspace_key,

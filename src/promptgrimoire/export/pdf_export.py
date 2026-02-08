@@ -153,7 +153,7 @@ def _html_to_latex_notes(html_content: str) -> str:
     return content.strip()
 
 
-async def _markdown_to_latex_notes(markdown_content: str | None) -> str:
+async def markdown_to_latex_notes(markdown_content: str | None) -> str:
     """Convert markdown content to LaTeX using Pandoc.
 
     Uses the same Pandoc installation as the main export pipeline for
@@ -186,10 +186,9 @@ async def _markdown_to_latex_notes(markdown_content: str | None) -> str:
     stdout_bytes, stderr_bytes = await proc.communicate(
         input=markdown_content.encode("utf-8")
     )
-    assert proc.returncode is not None
-    if proc.returncode != 0:
+    if proc.returncode is None or proc.returncode != 0:
         raise subprocess.CalledProcessError(
-            proc.returncode,
+            proc.returncode or 1,
             ["pandoc", "-f", "markdown", "-t", "latex"],
             stderr_bytes.decode(),
         )

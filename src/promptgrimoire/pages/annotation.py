@@ -34,8 +34,8 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
 from promptgrimoire.export.pdf_export import (
-    _markdown_to_latex_notes,
     export_annotation_pdf,
+    markdown_to_latex_notes,
 )
 from promptgrimoire.input_pipeline.html_input import (
     ContentType,
@@ -1706,9 +1706,11 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
                 )
                 if not response_markdown:
                     response_markdown = ""
-            except (TimeoutError, Exception):
+            except (TimeoutError, OSError) as exc:
                 logger.debug(
-                    "PDF export: JS markdown extraction failed, using CRDT fallback"
+                    "PDF export: JS markdown extraction failed (%s), "
+                    "using CRDT fallback",
+                    type(exc).__name__,
                 )
                 response_markdown = ""
 
@@ -1718,7 +1720,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Convert markdown to LaTeX via Pandoc (no new dependencies)
         notes_latex = ""
         if response_markdown and response_markdown.strip():
-            notes_latex = await _markdown_to_latex_notes(response_markdown)
+            notes_latex = await markdown_to_latex_notes(response_markdown)
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(

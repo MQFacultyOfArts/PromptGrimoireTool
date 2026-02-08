@@ -1,19 +1,23 @@
 """Unit tests for markdown-to-LaTeX conversion via Pandoc.
 
-Tests the _markdown_to_latex_notes() function added for Phase 7
+Tests the markdown_to_latex_notes() function added for Phase 7
 (PDF export of response draft from Milkdown editor).
 """
 
 from __future__ import annotations
 
 import shutil
+import subprocess
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from promptgrimoire.export.pdf_export import (
     _build_general_notes_section,
-    _markdown_to_latex_notes,
+    markdown_to_latex_notes,
 )
+
+__all__ = ["TestBuildGeneralNotesSectionWithLatex", "TestMarkdownToLatexNotes"]
 
 requires_pandoc = pytest.mark.skipif(
     not shutil.which("pandoc"), reason="Pandoc not installed"
@@ -27,32 +31,32 @@ class TestMarkdownToLatexNotes:
     @pytest.mark.asyncio
     async def test_empty_markdown_returns_empty(self) -> None:
         """Empty or whitespace-only markdown produces empty string."""
-        assert await _markdown_to_latex_notes("") == ""
-        assert await _markdown_to_latex_notes("   ") == ""
-        assert await _markdown_to_latex_notes(None) == ""
+        assert await markdown_to_latex_notes("") == ""
+        assert await markdown_to_latex_notes("   ") == ""
+        assert await markdown_to_latex_notes(None) == ""
 
     @pytest.mark.asyncio
     async def test_plain_text(self) -> None:
         """Plain text markdown is converted to LaTeX."""
-        result = await _markdown_to_latex_notes("Hello world")
+        result = await markdown_to_latex_notes("Hello world")
         assert "Hello world" in result
 
     @pytest.mark.asyncio
     async def test_bold_text(self) -> None:
         """Markdown bold converts to LaTeX textbf."""
-        result = await _markdown_to_latex_notes("This is **bold** text")
+        result = await markdown_to_latex_notes("This is **bold** text")
         assert r"\textbf{bold}" in result
 
     @pytest.mark.asyncio
     async def test_italic_text(self) -> None:
         """Markdown italic converts to LaTeX emph."""
-        result = await _markdown_to_latex_notes("This is *italic* text")
+        result = await markdown_to_latex_notes("This is *italic* text")
         assert r"\emph{italic}" in result
 
     @pytest.mark.asyncio
     async def test_heading(self) -> None:
         """Markdown heading converts to LaTeX section."""
-        result = await _markdown_to_latex_notes("# My Heading")
+        result = await markdown_to_latex_notes("# My Heading")
         # Pandoc uses \section for h1 in default mode
         assert "My Heading" in result
 
@@ -60,7 +64,7 @@ class TestMarkdownToLatexNotes:
     async def test_bullet_list(self) -> None:
         """Markdown bullet list converts to LaTeX itemize."""
         md = "- Item one\n- Item two\n- Item three"
-        result = await _markdown_to_latex_notes(md)
+        result = await markdown_to_latex_notes(md)
         assert r"\begin{itemize}" in result
         assert "Item one" in result
         assert "Item three" in result
@@ -69,7 +73,7 @@ class TestMarkdownToLatexNotes:
     async def test_numbered_list(self) -> None:
         """Markdown numbered list converts to LaTeX enumerate."""
         md = "1. First\n2. Second\n3. Third"
-        result = await _markdown_to_latex_notes(md)
+        result = await markdown_to_latex_notes(md)
         assert r"\begin{enumerate}" in result
         assert "First" in result
 
@@ -77,9 +81,26 @@ class TestMarkdownToLatexNotes:
     async def test_multiline_paragraphs(self) -> None:
         """Multiple paragraphs are preserved in LaTeX output."""
         md = "First paragraph.\n\nSecond paragraph."
-        result = await _markdown_to_latex_notes(md)
+        result = await markdown_to_latex_notes(md)
         assert "First paragraph" in result
         assert "Second paragraph" in result
+
+    @pytest.mark.asyncio
+    async def test_pandoc_failure_raises_error(self) -> None:
+        """Pandoc failure is reported as CalledProcessError."""
+        # Mock the subprocess to return non-zero exit code
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 127  # "command not found"
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"", b"pandoc: command not found")
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(subprocess.CalledProcessError) as exc_info:
+                await markdown_to_latex_notes("test content")
+            assert exc_info.value.returncode == 127
+            # The error message is in the exception's string representation
+            assert "pandoc" in str(exc_info.value)
 
 
 class TestBuildGeneralNotesSectionWithLatex:

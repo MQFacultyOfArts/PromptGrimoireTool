@@ -403,7 +403,7 @@ class TestResponseDraftExport:
         Converts markdown to LaTeX via Pandoc and includes it in the
         General Notes section.
         """
-        from promptgrimoire.export.pdf_export import _markdown_to_latex_notes
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
 
         html = "<p>Document text for annotation.</p>"
         highlights: list[dict] = []
@@ -411,7 +411,7 @@ class TestResponseDraftExport:
 
         # Simulate response draft markdown from Milkdown editor
         markdown = "# My Response\n\nThis is my **analysis** of the document."
-        notes_latex = await _markdown_to_latex_notes(markdown)
+        notes_latex = await markdown_to_latex_notes(markdown)
 
         pdf_path = await export_annotation_pdf(
             html_content=html,
@@ -453,7 +453,7 @@ class TestResponseDraftExport:
     @pytest.mark.asyncio
     async def test_export_with_rich_markdown_ac6_1(self, tmp_path: RealPath) -> None:
         """AC6.1: Rich markdown (lists, bold, italic) survives export."""
-        from promptgrimoire.export.pdf_export import _markdown_to_latex_notes
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
 
         html = "<p>Source document.</p>"
         highlights: list[dict] = []
@@ -466,7 +466,7 @@ class TestResponseDraftExport:
             "- Point three is resolved\n\n"
             "The overall conclusion is positive."
         )
-        notes_latex = await _markdown_to_latex_notes(markdown)
+        notes_latex = await markdown_to_latex_notes(markdown)
 
         pdf_path = await export_annotation_pdf(
             html_content=html,
@@ -489,7 +489,7 @@ class TestResponseDraftExport:
         self, tmp_path: RealPath
     ) -> None:
         """notes_latex takes precedence over general_notes HTML."""
-        from promptgrimoire.export.pdf_export import _markdown_to_latex_notes
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
 
         html = "<p>Document text.</p>"
         highlights: list[dict] = []
@@ -498,7 +498,7 @@ class TestResponseDraftExport:
         # Both paths provided — LaTeX should win
         general_notes_html = "<p>HTML notes content</p>"
         markdown = "Markdown response draft content"
-        notes_latex = await _markdown_to_latex_notes(markdown)
+        notes_latex = await markdown_to_latex_notes(markdown)
 
         pdf_path = await export_annotation_pdf(
             html_content=html,

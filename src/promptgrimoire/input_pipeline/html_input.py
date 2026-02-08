@@ -30,6 +30,41 @@ _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 # Self-closing (void) tags to strip (e.g., base64 images from clipboard paste)
 _STRIP_VOID_TAGS = frozenset(("img",))
 
+# Block-level elements where whitespace-only text nodes are formatting artefacts
+# (indentation between tags) and should be skipped.  Must match the JS blockTags
+# set in _injectCharSpans (annotation.py) for char-index parity.
+_BLOCK_TAGS = frozenset(
+    (
+        "table",
+        "tbody",
+        "thead",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "div",
+        "section",
+        "article",
+        "aside",
+        "header",
+        "footer",
+        "nav",
+        "main",
+        "figure",
+        "figcaption",
+        "blockquote",
+    )
+)
+
+# Whitespace pattern matching JS /[\s]+/g — includes \u00a0 (nbsp)
+_WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
+
 # Map of characters that need HTML entity escaping
 # Note: Spaces are NOT converted to &nbsp; - we use CSS white-space: pre-wrap
 # to preserve them. This allows proper word wrapping at word boundaries.
@@ -338,10 +373,18 @@ def extract_chars_from_spans(html_with_spans: str) -> list[str]:
 
 
 def extract_text_from_html(html: str) -> list[str]:
-    """Extract text characters from clean HTML (no char spans).
+    """Extract text characters from clean HTML, matching JS _injectCharSpans.
 
-    Used for building document_chars list server-side when char spans
-    are injected client-side.
+    Walks the DOM via selectolax child/next iteration (which exposes text
+    nodes) so that the resulting character list has the same indices as the
+    client-side char-span injection.  The two must agree for highlight
+    coordinates to be correct (Issue #129).
+
+    Matching rules (mirroring the JS):
+    - ``<br>`` → ``\\n``
+    - script / style / noscript / template → skipped entirely
+    - Whitespace-only text nodes inside block containers → skipped
+    - Whitespace runs (including ``\\u00a0``) → collapsed to single space
 
     Args:
         html: Clean HTML without char span wrappers.
@@ -354,7 +397,6 @@ def extract_text_from_html(html: str) -> list[str]:
 
     tree = LexborHTMLParser(html)
 
-    # Get body or full content
     body = tree.body
     root = body if body else tree.root
 
@@ -363,33 +405,50 @@ def extract_text_from_html(html: str) -> list[str]:
 
     chars: list[str] = []
 
-    def walk_node(node: Any) -> None:
-        """Recursively walk nodes and extract text."""
-        # Skip script, style, etc.
-        if hasattr(node, "tag") and node.tag in _STRIP_TAGS:
+    def _walk(node: Any) -> None:
+        tag = node.tag
+
+        # Text node — selectolax uses "-text" as the tag
+        if tag == "-text":
+            text = node.text_content
+            if not text:
+                return
+            # Skip whitespace-only text nodes inside block containers
+            # (these are formatting indentation between tags, not content)
+            parent = node.parent
+            if (
+                parent is not None
+                and parent.tag in _BLOCK_TAGS
+                and _WHITESPACE_RUN.fullmatch(text)
+            ):
+                return
+            # Collapse whitespace runs (including nbsp) to single space
+            text = _WHITESPACE_RUN.sub(" ", text)
+            chars.extend(text)
             return
 
-        # Handle <br> as newline
-        if hasattr(node, "tag") and node.tag == "br":
+        # Skip stripped tags entirely
+        if tag in _STRIP_TAGS:
+            return
+
+        # <br> → newline
+        if tag == "br":
             chars.append("\n")
             return
 
-        # Get text content of this node (not children)
-        if hasattr(node, "text_content"):
-            text = node.text_content
-            if text:
-                for char in text:
-                    chars.append(char)
+        # Recurse into children
+        child = node.child
+        while child is not None:
+            _walk(child)
+            child = child.next
 
-        # Walk children
-        if hasattr(node, "iter"):
-            for child in node.iter():
-                if child != node:  # Don't re-process self
-                    walk_node(child)
+    # Start from root's children (skip the root element itself)
+    child = root.child
+    while child is not None:
+        _walk(child)
+        child = child.next
 
-    # Use text() which extracts all text content
-    text = root.text() or ""
-    return list(text)
+    return chars
 
 
 def _strip_html_to_text(html_content: str) -> str:

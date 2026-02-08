@@ -217,9 +217,11 @@ class TestExtractCharsFromSpans:
 class TestExtractTextFromHtml:
     """Tests for extract_text_from_html() - clean HTML to char list.
 
-    Used for client-side span injection architecture where we need to build
-    document_chars from clean HTML (no char spans).
+    Must match client-side JS _injectCharSpans behaviour exactly so that
+    server-side document_chars indices agree with client-side char spans.
     """
+
+    # --- Existing basic tests ---
 
     def test_simple_text(self) -> None:
         """Extracts text from simple paragraph."""
@@ -253,3 +255,111 @@ class TestExtractTextFromHtml:
         html = "<!DOCTYPE html><html><body><p>Test</p></body></html>"
         chars = extract_text_from_html(html)
         assert "".join(chars) == "Test"
+
+    # --- Issue #129: parity with client-side _injectCharSpans ---
+
+    def test_br_becomes_newline(self) -> None:
+        """<br> tags are counted as newline characters (JS: tagName === 'br')."""
+        chars = extract_text_from_html("<p>A<br>B</p>")
+        assert "".join(chars) == "A\nB"
+
+    def test_multiple_br_tags(self) -> None:
+        """Multiple <br> tags each produce a newline."""
+        chars = extract_text_from_html("<p>A<br><br>B</p>")
+        assert "".join(chars) == "A\n\nB"
+
+    def test_whitespace_only_text_in_block_skipped(self) -> None:
+        """Whitespace-only text nodes inside block containers are removed.
+
+        JS blockTags includes div, ul, ol, li, table, tr, td, etc.
+        Indentation between HTML tags should not produce characters.
+        """
+        # The whitespace between </li> and <li> is inside <ul> (a block)
+        html = "<ul>\n  <li>A</li>\n  <li>B</li>\n</ul>"
+        chars = extract_text_from_html(html)
+        text = "".join(chars)
+        # Should contain A and B but not the inter-tag whitespace
+        assert "A" in text
+        assert "B" in text
+        # No leading/trailing whitespace from the formatting
+        assert text.strip() == text
+
+    def test_whitespace_collapse(self) -> None:
+        """Whitespace runs are collapsed to a single space (like HTML rendering).
+
+        JS: text.replace(/[\\s]+/g, ' ')
+        """
+        chars = extract_text_from_html("<p>A   B</p>")
+        assert "".join(chars) == "A B"
+
+    def test_tab_and_newline_collapse(self) -> None:
+        """Tabs and embedded newlines in text nodes collapse to single space."""
+        chars = extract_text_from_html("<p>A\t\n\tB</p>")
+        assert "".join(chars) == "A B"
+
+    def test_script_tag_skipped(self) -> None:
+        """Script tags and their content are excluded entirely."""
+        chars = extract_text_from_html("<p>A</p><script>var x = 1;</script><p>B</p>")
+        text = "".join(chars)
+        assert "var" not in text
+        assert "A" in text
+        assert "B" in text
+
+    def test_style_tag_skipped(self) -> None:
+        """Style tags and their content are excluded entirely."""
+        chars = extract_text_from_html("<p>X</p><style>.cls{}</style><p>Y</p>")
+        text = "".join(chars)
+        assert ".cls" not in text
+        assert "X" in text
+        assert "Y" in text
+
+    def test_noscript_tag_skipped(self) -> None:
+        """Noscript tags and their content are excluded."""
+        chars = extract_text_from_html("<p>A</p><noscript>Enable JS</noscript><p>B</p>")
+        text = "".join(chars)
+        assert "Enable" not in text
+
+    def test_template_tag_skipped(self) -> None:
+        """Template tags and their content are excluded."""
+        chars = extract_text_from_html(
+            "<p>A</p><template><p>hidden</p></template><p>B</p>"
+        )
+        text = "".join(chars)
+        assert "hidden" not in text
+
+    def test_html_entities_decoded(self) -> None:
+        """HTML entities are decoded to their character equivalents."""
+        chars = extract_text_from_html("<p>&amp; &lt; &gt;</p>")
+        text = "".join(chars)
+        assert "&" in text
+        assert "<" in text
+        assert ">" in text
+
+    def test_nbsp_collapsed_to_space(self) -> None:
+        """Non-breaking spaces (&nbsp; / U+00A0) collapse with whitespace.
+
+        JS: /[\\s]+/g matches \\u00a0, so nbsp is treated as whitespace.
+        """
+        chars = extract_text_from_html("<p>A&nbsp;B</p>")
+        text = "".join(chars)
+        # Should be "A B" (regular space), not "A\u00a0B"
+        assert text == "A B"
+
+    def test_inline_element_whitespace_preserved(self) -> None:
+        """Whitespace inside inline elements is preserved (not skipped).
+
+        Only whitespace-only text in *block* containers is removed.
+        """
+        chars = extract_text_from_html("<p><span>A </span><span>B</span></p>")
+        text = "".join(chars)
+        assert text == "A B"
+
+    def test_matches_inject_char_spans(self) -> None:
+        """Server extract_text_from_html must produce same chars as inject_char_spans.
+
+        This is the core invariant: the two must agree for highlights to work.
+        """
+        html = "<div><p>Hello <b>world</b></p><p>Line<br>two</p></div>"
+        server_chars = extract_text_from_html(html)
+        client_chars = extract_chars_from_spans(inject_char_spans(html))
+        assert server_chars == client_chars

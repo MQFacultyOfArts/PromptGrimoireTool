@@ -2541,6 +2541,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         tags=tags,
         crdt_doc=state.crdt_doc,
         workspace_key=str(workspace_id),
+        workspace_id=workspace_id,
         client_id=state.client_id,
         on_yjs_update_broadcast=_on_broadcast,
         on_locate=_on_respond_locate,

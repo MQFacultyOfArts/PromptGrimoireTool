@@ -26,8 +26,11 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from promptgrimoire.crdt.persistence import get_persistence_manager
+
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation_tags import TagInfo
@@ -347,6 +350,7 @@ async def _sync_markdown_to_crdt(
 def _setup_yjs_event_handler(
     crdt_doc: AnnotationDocument,
     workspace_key: str,
+    workspace_id: UUID,
     client_id: str,
     on_yjs_update_broadcast: Any,
 ) -> None:
@@ -359,6 +363,7 @@ def _setup_yjs_event_handler(
     Args:
         crdt_doc: The CRDT annotation document.
         workspace_key: Workspace identifier for broadcast lookup.
+        workspace_id: Workspace UUID for persistence.
         client_id: This client's unique ID (for echo prevention).
         on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
             broadcast Yjs updates to other clients.
@@ -380,6 +385,13 @@ def _setup_yjs_event_handler(
         )
         # Sync markdown mirror to CRDT Text field for server-side access
         await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
+        # Persist CRDT state to database (debounced by persistence manager)
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            workspace_id,
+            crdt_doc.doc_id,
+            last_editor=client_id,
+        )
 
     ui.on("respond_yjs_update", on_yjs_update)
 
@@ -389,6 +401,7 @@ async def render_respond_tab(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
     workspace_key: str,
+    workspace_id: UUID,
     client_id: str,
     on_yjs_update_broadcast: Any,
     on_locate: Callable[..., Any] | None = None,
@@ -490,7 +503,7 @@ async def render_respond_tab(
             ).classes("w-full").style("display: flex; flex-direction: column; flex: 1;")
 
     _setup_yjs_event_handler(
-        crdt_doc, workspace_key, client_id, on_yjs_update_broadcast
+        crdt_doc, workspace_key, workspace_id, client_id, on_yjs_update_broadcast
     )
 
     # Wait for WebSocket, then initialize the editor

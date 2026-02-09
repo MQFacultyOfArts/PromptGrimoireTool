@@ -168,6 +168,7 @@ exclude = ["alembic/"]
 dev = [
     "pre-commit>=4.5.1",
     "pylatexenc>=2.10",
+    "pymupdf>=1.26.7",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-depper>=0.2.0",

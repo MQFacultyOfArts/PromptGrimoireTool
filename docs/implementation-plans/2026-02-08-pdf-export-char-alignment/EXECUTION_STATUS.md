@@ -9,7 +9,7 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1: `insert_markers_into_dom` + Tests | **COMPLETE** | UAT confirmed 2026-02-09. 2152 tests pass, 80 Phase 1 tests pass. |
-| Phase 2: Wire into Export Pipeline | **BLOCKED** | 4 tasks done, code review APPROVED. Manual test revealed LaTeX bugs → design pivot to Issue #132 (AST-based splitting). |
+| Phase 2: Wire into Export Pipeline | **COMPLETE** | Issue #132 resolved: AST-walk `walk_and_wrap` implemented. 2210 tests pass (18 new). |
 | Phase 3: Rename general_notes to response_draft | Not started | |
 | Phase 4: Delete Dead Code | Not started | |
 
@@ -25,13 +25,13 @@
 4. `a82b538` — `test: add ValueError guard and fixture regression tests for export pipeline`
 5. `f51940b` — `fix: move \annot outside LaTeX sectioning commands (Issue #132)`
 
-### What's Broken
+### What Was Broken (Now Resolved)
 
-PDF export crashes when highlights span block boundaries. Two bugs found:
+PDF export crashed when highlights span block boundaries. Two bugs found:
 
-**Bug 1 (FIXED):** `\annot` (contains `\par` via `\marginalia`/`\parbox`) placed inside `\section{}` (moving argument). Fixed with `_move_annots_outside_sections()` post-processor in f51940b.
+**Bug 1 (FIXED in f51940b):** `\annot` inside `\section{}`. Fixed with `_move_annots_outside_sections()` post-processor.
 
-**Bug 2 (BLOCKING):** Blank lines (= `\par` in LaTeX) inside `\highLight`/`\underLine` (lua-ul). Error: `Paragraph ended before \text@command was complete`. The `_wrap_content_with_nested_highlights()` splits at a hardcoded delimiter list (`\par`, `\\`, `\tabularnewline`, `&`, `\begin{}`/`\end{}`), but misses blank lines. Adding blank lines would fix this case, but the hardcoded-list approach is whack-a-mole — every new restricted context requires another delimiter.
+**Bug 2 (FIXED via Issue #132):** Blank lines/`\par` inside `\highLight`/`\underLine` (lua-ul). Resolved by replacing `_wrap_content_with_nested_highlights()` with `walk_and_wrap()` — AST-based splitting using pylatexenc.
 
 ### Design Decision: AST-Walk Approach (Issue #132)
 

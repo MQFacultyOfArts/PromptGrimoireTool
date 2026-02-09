@@ -16,7 +16,7 @@ import contextlib
 import html
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
@@ -33,7 +33,10 @@ from promptgrimoire.db.workspace_documents import (
     list_documents,
 )
 from promptgrimoire.db.workspaces import create_workspace, get_workspace
-from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.export.pdf_export import (
+    export_annotation_pdf,
+    markdown_to_latex_notes,
+)
 from promptgrimoire.input_pipeline.html_input import (
     ContentType,
     detect_content_type,
@@ -41,11 +44,16 @@ from promptgrimoire.input_pipeline.html_input import (
     process_input,
 )
 from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+from promptgrimoire.pages.annotation_organise import render_organise_tab
+from promptgrimoire.pages.annotation_respond import render_respond_tab
+from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from nicegui import Client
+
+    from promptgrimoire.pages.annotation_tags import TagInfo
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +64,17 @@ _workspace_registry = AnnotationDocumentRegistry()
 class _ClientState:
     """State for a connected client."""
 
-    def __init__(self, callback: Any, color: str, name: str) -> None:
+    def __init__(
+        self, callback: Any, color: str, name: str, nicegui_client: Any = None
+    ) -> None:
         self.callback = callback
         self.color = color
         self.name = name
+        self.nicegui_client = nicegui_client  # NiceGUI Client for JS relay
         self.cursor_char: int | None = None
         self.selection_start: int | None = None
         self.selection_end: int | None = None
+        self.has_milkdown_editor: bool = False  # Set True when Tab 3 editor initialised
 
     def set_cursor(self, char_index: int | None) -> None:
         """Update cursor position."""
@@ -323,6 +335,27 @@ class PageState:
     document_chars: list[str] | None = None  # Characters by index
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
+    # Tab container references (Phase 1: three-tab UI)
+    tab_panels: ui.tab_panels | None = (
+        None  # Tab panels container for programmatic switching
+    )
+    initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
+    # Tag info list for Tab 2 (Organise) — populated on first visit
+    tag_info_list: list[TagInfo] | None = None
+    # Reference to the Organise tab panel element for deferred rendering
+    organise_panel: ui.element | None = None
+    # Callable to refresh the Organise tab from broadcast
+    refresh_organise: Any | None = None  # Callable[[], None]
+    # Track active tab for broadcast-triggered refresh
+    active_tab: str = "Annotate"
+    # Reference to the Respond tab panel element for deferred rendering
+    respond_panel: ui.element | None = None
+    # Whether the Milkdown editor has been initialised (for Phase 7 export)
+    has_milkdown_editor: bool = False
+    # Callable to refresh the Respond reference panel from tab switch / broadcast
+    refresh_respond_references: Any | None = None  # Callable[[], None]
+    # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
+    sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
 
 
 def _get_current_username() -> str:
@@ -334,6 +367,62 @@ def _get_current_username() -> str:
         if auth_user.get("email"):
             return auth_user["email"].split("@")[0]
     return "Anonymous"
+
+
+async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
+    """Switch to the Annotate tab and scroll to a highlight range.
+
+    This is the cross-tab navigation entry point: Tab 2 (Organise) and Tab 3
+    (Respond) "locate" buttons call this to warp the user back to Tab 1 and
+    scroll the highlighted text into view with a brief gold flash.
+
+    Per-client only — ``set_value()`` affects only the calling client's tab
+    state, not other connected users (AC5.4).
+
+    Args:
+        state: Page state with tab_panels and annotations.
+        start_char: First character index of the highlight range.
+        end_char: Last character index (exclusive) of the highlight range.
+    """
+    # 1. Switch tab to Annotate
+    if state.tab_panels is not None:
+        state.tab_panels.set_value("Annotate")
+    state.active_tab = "Annotate"
+
+    # 2. Re-inject char spans (idempotent — no-op if already present)
+    ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+
+    # 3. Refresh Tab 1 annotations and highlight CSS
+    if state.refresh_annotations:
+        state.refresh_annotations()
+    _update_highlight_css(state)
+
+    # 4. Scroll to highlight and flash it (after a short delay for tab switch
+    #    and char span injection to complete)
+    # fmt: off
+    js = (
+        f"setTimeout(function(){{"
+        f"const sc={start_char},ec={end_char};"
+        f"const chars=[];"
+        f"for(var i=sc;i<ec;i++){{"
+        f"var c=document.querySelector("
+        f"'[data-char-index=\"'+i+'\"]');"
+        f"if(c)chars.push(c);"
+        f"}}"
+        f"if(chars.length===0)return;"
+        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
+        f"var origColors=chars.map(function(c){{return c.style.backgroundColor;}});"
+        f"chars.forEach(function(c){{"
+        f"c.style.transition='background-color 0.2s';"
+        f"c.style.backgroundColor='#FFD700';"
+        f"}});"
+        f"setTimeout(function(){{"
+        f"chars.forEach(function(c,i){{c.style.backgroundColor=origColors[i];}});"
+        f"}},800);"
+        f"}},200)"
+    )
+    # fmt: on
+    await ui.run_javascript(js)
 
 
 async def _create_workspace_and_redirect() -> None:
@@ -1211,11 +1300,16 @@ async def _render_document_with_highlights(
 
         # Inject char spans client-side (avoids websocket size limits)
         # This wraps each text character in <span class="char" data-char-index="N">
+        # Defined as a named global so it can be re-invoked if NiceGUI re-renders
+        # the HTML element (e.g. after Tab 3 initialisation triggers "Event listeners
+        # changed" — see _on_tab_change Annotate handler).
         # fmt: off
         inject_spans_js = (
-            "(function() {\n"
+            "window._injectCharSpans = function() {\n"
             "  const container = document.getElementById('doc-container');\n"
             "  if (!container) return;\n"
+            "  // Guard: skip if char spans already exist (idempotent)\n"
+            "  if (container.querySelector('[data-char-index]')) return;\n"
             "  let charIndex = 0;\n"
             "  // Block elements where whitespace-only text nodes should be skipped\n"
             "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
@@ -1275,7 +1369,8 @@ async def _render_document_with_highlights(
             "  for (const child of children) {\n"
             "    processNode(child);\n"
             "  }\n"
-            "})();"
+            "};\n"
+            "window._injectCharSpans();"
         )
         # fmt: on
         ui.run_javascript(inject_spans_js)
@@ -1461,7 +1556,7 @@ def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
                 task.add_done_callback(_background_tasks.discard)
 
 
-def _setup_client_sync(
+def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7
     workspace_id: UUID,
     client: Client,
     state: PageState,
@@ -1518,6 +1613,12 @@ def _setup_client_sync(
         _update_user_count(state)
         if state.refresh_annotations:
             state.refresh_annotations()
+        # Refresh Organise tab if client is currently viewing it (Phase 4)
+        if state.active_tab == "Organise" and state.refresh_organise:
+            state.refresh_organise()
+        # Refresh Respond reference panel if client is currently viewing it
+        if state.active_tab == "Respond" and state.refresh_respond_references:
+            state.refresh_respond_references()
 
     # Register this client
     if workspace_key not in _connected_clients:
@@ -1526,6 +1627,7 @@ def _setup_client_sync(
         callback=handle_update_from_other,
         color=state.user_color,
         name=state.user_name,
+        nicegui_client=client,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
@@ -1576,29 +1678,50 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
-        # Get document's original raw_content (preserves newlines)
-        # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
-        # proper plain-text extraction
         doc = await get_document(state.document_id)
-        raw_content = cast(
-            "str",
-            doc.raw_content if doc and hasattr(doc, "raw_content") else "",
-        )
+        if doc is None or not doc.content:
+            notification.dismiss()
+            ui.notify(
+                "No document content to export. Please paste or upload content first.",
+                type="warning",
+            )
+            return
+        html_content = doc.content
 
-        # DEBUG: Log raw_content to see if newlines are present
-        logger.info(
-            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
-            len(raw_content),
-            raw_content.count("\n"),
-            raw_content[:200],
-        )
+        # Get response draft markdown for the General Notes section (Phase 7).
+        # Primary path: JS extraction from running Milkdown editor (most accurate).
+        # Fallback: CRDT Text field synced by whichever client last edited Tab 3.
+        response_markdown = ""
+        if state.has_milkdown_editor:
+            try:
+                response_markdown = await ui.run_javascript(
+                    "window._getMilkdownMarkdown()", timeout=3.0
+                )
+                if not response_markdown:
+                    response_markdown = ""
+            except (TimeoutError, OSError) as exc:
+                logger.debug(
+                    "PDF export: JS markdown extraction failed (%s), "
+                    "using CRDT fallback",
+                    type(exc).__name__,
+                )
+                response_markdown = ""
+
+        if not response_markdown and state.crdt_doc is not None:
+            response_markdown = state.crdt_doc.get_response_draft_markdown()
+
+        # Convert markdown to LaTeX via Pandoc (no new dependencies)
+        notes_latex = ""
+        if response_markdown and response_markdown.strip():
+            notes_latex = await markdown_to_latex_notes(response_markdown)
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(
-            html_content=raw_content,
+            html_content=html_content,
             highlights=highlights,
             tag_colours=tag_colours,
             general_notes="",
+            notes_latex=notes_latex,
             word_to_legal_para=None,
             filename=f"workspace_{workspace_id}",
         )
@@ -2191,27 +2314,15 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
-    """Render the workspace content view with documents or add content form."""
-    workspace = await get_workspace(workspace_id)
+def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
+    """Render the header row with save status, user count, and export button.
 
-    if workspace is None:
-        ui.label("Workspace not found").classes("text-red-500")
-        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
-        return
+    Extracted from _render_workspace_view to keep statement count manageable.
 
-    # Create page state
-    state = PageState(
-        workspace_id=workspace_id,
-        user_name=_get_current_username(),
-    )
-
-    # Set up client synchronization
-    _setup_client_sync(workspace_id, client, state)
-
-    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
-
-    # Header row with save status and export button
+    Args:
+        state: Page state to populate with header element references.
+        workspace_id: Workspace UUID for export.
+    """
     with ui.row().classes("gap-4 items-center"):
         # Save status indicator (for E2E test observability)
         state.save_status = (
@@ -2246,19 +2357,309 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
 
         export_btn.on_click(on_export_click)
 
-    # Load CRDT document for this workspace
-    crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
 
-    # Load existing documents
-    documents = await list_documents(workspace_id)
+def _parse_sort_end_args(
+    args: dict[str, Any],
+) -> tuple[str, str, str, int]:
+    """Parse SortableJS sort-end event args into highlight ID and tag keys.
 
-    if documents:
-        # Render first document with highlight support
-        doc = documents[0]
-        await _render_document_with_highlights(state, doc, crdt_doc)
-    else:
-        # Show add content form (extracted to reduce function complexity)
-        _render_add_content_form(workspace_id)
+    Extracts and normalizes IDs from SortableJS event args:
+    - ``item``: Card HTML ID (format: ``hl-{highlight_id}``)
+    - ``from``: Source container ID (format: ``sort-{raw_key}`` or
+      ``sort-untagged``)
+    - ``to``: Target container ID (format: ``sort-{raw_key}`` or
+      ``sort-untagged``)
+    - ``newIndex``: Position in target container (0-indexed)
+
+    Returns tuple: (highlight_id, source_tag_raw_key, target_tag_raw_key,
+    new_index)
+
+    The ``hl-`` and ``sort-`` prefixes are stripped. The special key
+    ``sort-untagged`` is mapped to an empty string (CRDT convention).
+
+    Args:
+        args: Event args dict from SortableJS sort-end event.
+
+    Returns:
+        Tuple of (highlight_id, source_tag, target_tag, new_index).
+        Empty strings or -1 indicate missing/invalid values.
+    """
+    item_id: str = args.get("item", "")
+    from_id: str = args.get("from", "")
+    to_id: str = args.get("to", "")
+    new_index: int = args.get("newIndex", -1)
+
+    # Parse IDs: "hl-{highlight_id}" and "sort-{raw_key}"
+    highlight_id = item_id.removeprefix("hl-")
+    source_tag = from_id.removeprefix("sort-")
+    target_tag = to_id.removeprefix("sort-")
+
+    # "sort-untagged" → empty string (CRDT convention)
+    if source_tag == "untagged":
+        source_tag = ""
+    if target_tag == "untagged":
+        target_tag = ""
+
+    return highlight_id, source_tag, target_tag, new_index
+
+
+def _setup_organise_drag(state: PageState) -> None:
+    """Set up SortableJS sort-end handler and Organise tab refresh.
+
+    Wires the on_sort_end callback to CRDT operations and stores a
+    refresh_organise callable on state for broadcast-triggered re-renders.
+
+    Must be called after state is created but before _on_tab_change is
+    defined, since the tab change handler calls state.refresh_organise.
+    """
+
+    async def _on_organise_sort_end(e: events.GenericEventArguments) -> None:
+        """Handle a SortableJS sort-end event from Tab 2.
+
+        Parses source/target tag from Sortable container HTML IDs
+        (``sort-{raw_key}``) and highlight_id from card HTML ID
+        (``hl-{highlight_id}``). Same-column reorders within the tag;
+        cross-column moves reassign the highlight's tag. Both mutate
+        CRDT and broadcast.
+        """
+        if state.crdt_doc is None:
+            return
+
+        highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(e.args)
+
+        if not highlight_id:
+            logger.warning("Sort-end event with no item ID: %s", e.args)
+            return
+
+        if source_tag == target_tag:
+            # Same-column reorder: SortableJS gives us the exact newIndex.
+            current_order = state.crdt_doc.get_tag_order(target_tag)
+            if highlight_id in current_order:
+                current_order.remove(highlight_id)
+            current_order.insert(new_index, highlight_id)
+            state.crdt_doc.set_tag_order(
+                target_tag, current_order, origin_client_id=state.client_id
+            )
+            ui.notify("Reordered", type="info", position="bottom")
+        else:
+            # Cross-column move: reassign tag and update orders
+            state.crdt_doc.move_highlight_to_tag(
+                highlight_id,
+                from_tag=source_tag,
+                to_tag=target_tag,
+                position=new_index,
+                origin_client_id=state.client_id,
+            )
+            ui.notify(
+                f"Moved to {target_tag or 'Untagged'}",
+                type="positive",
+                position="bottom",
+            )
+            # Re-render to update card tag labels and colours
+            _render_organise_now()
+
+        # Persist to database
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
+        await pm.force_persist_workspace(state.workspace_id)
+
+        # Broadcast to other clients for CRDT sync.
+        if state.broadcast_update:
+            await state.broadcast_update()
+
+    async def _on_locate(start_char: int, end_char: int) -> None:
+        """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
+        await _warp_to_highlight(state, start_char, end_char)
+
+    def _render_organise_now() -> None:
+        """Re-render the Organise tab with current CRDT state."""
+        if not (state.organise_panel and state.crdt_doc):
+            return
+        if state.tag_info_list is None:
+            state.tag_info_list = brief_tags_to_tag_info()
+        render_organise_tab(
+            state.organise_panel,
+            state.tag_info_list,
+            state.crdt_doc,
+            on_sort_end=_on_organise_sort_end,
+            on_locate=_on_locate,
+        )
+
+    state.refresh_organise = _render_organise_now
+
+
+def _broadcast_yjs_update(
+    workspace_id: UUID, origin_client_id: str, b64_update: str
+) -> None:
+    """Relay a Yjs update from one client's Milkdown editor to all others.
+
+    Sends ``window._applyRemoteUpdate(b64)`` to every connected client
+    that has initialised the Milkdown editor, except the originating client.
+    """
+    ws_key = str(workspace_id)
+    for cid, cstate in _connected_clients.get(ws_key, {}).items():
+        if cid == origin_client_id:
+            continue
+        if cstate.has_milkdown_editor and cstate.nicegui_client:
+            cstate.nicegui_client.run_javascript(
+                f"window._applyRemoteUpdate('{b64_update}')"
+            )
+            logger.debug(
+                "YJS_RELAY ws=%s from=%s to=%s",
+                ws_key,
+                origin_client_id[:8],
+                cid[:8],
+            )
+
+
+async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
+    """Initialise the Respond tab with Milkdown editor and reference panel.
+
+    Called once on first visit to the Respond tab (deferred rendering).
+    Sets up the editor, CRDT relay, and marks the client for Yjs broadcast.
+    """
+    if not (state.respond_panel and state.crdt_doc):
+        return
+
+    tags = state.tag_info_list or brief_tags_to_tag_info()
+
+    def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
+        _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
+
+    async def _on_respond_locate(start_char: int, end_char: int) -> None:
+        await _warp_to_highlight(state, start_char, end_char)
+
+    (
+        state.refresh_respond_references,
+        state.sync_respond_markdown,
+    ) = await render_respond_tab(
+        panel=state.respond_panel,
+        tags=tags,
+        crdt_doc=state.crdt_doc,
+        workspace_key=str(workspace_id),
+        workspace_id=workspace_id,
+        client_id=state.client_id,
+        on_yjs_update_broadcast=_on_broadcast,
+        on_locate=_on_respond_locate,
+    )
+    state.has_milkdown_editor = True
+    # Mark this client as having a Milkdown editor for Yjs relay
+    ws_key = str(workspace_id)
+    clients = _connected_clients.get(ws_key, {})
+    if state.client_id in clients:
+        clients[state.client_id].has_milkdown_editor = True
+
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 — extract tab setup into helpers
+    """Render the workspace content view with documents or add content form."""
+    workspace = await get_workspace(workspace_id)
+
+    if workspace is None:
+        ui.label("Workspace not found").classes("text-red-500")
+        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
+        return
+
+    # Create page state
+    state = PageState(
+        workspace_id=workspace_id,
+        user_name=_get_current_username(),
+    )
+
+    # Set up client synchronization
+    _setup_client_sync(workspace_id, client, state)
+
+    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
+    _render_workspace_header(state, workspace_id)
+
+    # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
+    # is first visited. Must be added during page construction — dynamically
+    # injected <script> tags via ui.add_body_html after page load don't execute.
+    ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
+
+    # Three-tab container (Phase 1: three-tab UI)
+    state.initialised_tabs = {"Annotate"}
+
+    with ui.tabs().classes("w-full") as tabs:
+        ui.tab("Annotate")
+        ui.tab("Organise")
+        ui.tab("Respond")
+
+    # Set up Tab 2 drag-and-drop and tab change handler (Phase 4)
+    _setup_organise_drag(state)
+
+    async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
+        """Handle tab switching with deferred rendering and refresh."""
+        assert state.initialised_tabs is not None
+        tab_name = str(e.value)
+        prev_tab = state.active_tab
+        state.active_tab = tab_name
+
+        # Sync markdown to CRDT when leaving the Respond tab (Phase 7)
+        if prev_tab == "Respond" and state.sync_respond_markdown:
+            await state.sync_respond_markdown()
+
+        if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
+            # Always re-render Organise tab to show current highlights
+            state.initialised_tabs.add(tab_name)
+            if state.refresh_organise:
+                state.refresh_organise()
+            return
+
+        if tab_name == "Annotate":
+            # Re-inject char spans if NiceGUI re-rendered the HTML element
+            # (Tab 3 init triggers "Event listeners changed" which can destroy
+            # the JS-injected char spans). The function is idempotent — it's a
+            # no-op if spans already exist.
+            ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+            if state.refresh_annotations:
+                state.refresh_annotations()
+            _update_highlight_css(state)
+            return
+
+        if tab_name == "Respond":
+            if tab_name not in state.initialised_tabs:
+                state.initialised_tabs.add(tab_name)
+                await _initialise_respond_tab(state, workspace_id)
+            elif state.refresh_respond_references:
+                state.refresh_respond_references()
+            return
+
+        if tab_name not in state.initialised_tabs:
+            state.initialised_tabs.add(tab_name)
+
+    with ui.tab_panels(tabs, value="Annotate", on_change=_on_tab_change).classes(
+        "w-full"
+    ) as panels:
+        state.tab_panels = panels
+
+        with ui.tab_panel("Annotate"):
+            # Load CRDT document for this workspace
+            crdt_doc = await _workspace_registry.get_or_create_for_workspace(
+                workspace_id
+            )
+
+            # Load existing documents
+            documents = await list_documents(workspace_id)
+
+            if documents:
+                # Render first document with highlight support
+                doc = documents[0]
+                await _render_document_with_highlights(state, doc, crdt_doc)
+            else:
+                # Show add content form (extracted to reduce function complexity)
+                _render_add_content_form(workspace_id)
+
+        with ui.tab_panel("Organise") as organise_panel:
+            state.organise_panel = organise_panel
+            ui.label("Organise tab content will appear here.").classes("text-gray-400")
+
+        with ui.tab_panel("Respond") as respond_panel:
+            state.respond_panel = respond_panel
+            ui.label("Respond tab content will appear here.").classes("text-gray-400")
 
 
 @page_route(

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 from lark import Lark
 from pylatexenc.latexwalker import (
+    LatexCharsNode,
     LatexEnvironmentNode,
     LatexGroupNode,
     LatexMacroNode,
@@ -50,6 +51,7 @@ from promptgrimoire.export.unicode_latex import (
     _strip_control_chars,
     escape_unicode_latex,
 )
+from promptgrimoire.input_pipeline.html_input import insert_markers_into_dom
 
 logger = logging.getLogger(__name__)
 
@@ -446,6 +448,273 @@ def generate_highlighted_latex(
     return "".join(result_parts)
 
 
+# ---------------------------------------------------------------------------
+# Sectioning macro names where \par is forbidden ("moving arguments")
+# ---------------------------------------------------------------------------
+_SECTION_MACRO_NAMES = frozenset(
+    {"section", "subsection", "subsubsection", "paragraph", "subparagraph"}
+)
+
+
+def walk_and_wrap(
+    latex: str,
+    highlights: dict[int, dict[str, Any]],
+) -> str:
+    r"""Replace markers in LaTeX with \highLight, \underLine, and \annot commands.
+
+    Uses pylatexenc to parse the full LaTeX AST and walks it depth-first,
+    maintaining a stack of active highlights. At structural boundaries
+    (environments, sections, paragraph breaks, blank lines) the active
+    highlights are closed and reopened, preventing \par inside lua-ul commands.
+
+    This replaces the tokenize→build_regions→generate_highlighted_latex pipeline
+    and the _move_annots_outside_restricted post-processor.
+
+    Args:
+        latex: LaTeX content with HLSTART{n}ENDHL, HLEND{n}ENDHL, and
+               ANNMARKER{n}ENDMARKER markers from insert_markers_into_dom.
+        highlights: Mapping from highlight index to highlight dict with
+                   tag, author, created_at, comments, para_ref.
+
+    Returns:
+        LaTeX with highlight/underline/annot commands at correct positions.
+    """
+    if not latex:
+        return ""
+
+    # Fast path: no markers at all
+    if "HLSTART" not in latex and "ANNMARKER" not in latex:
+        return latex
+
+    # Tokenize markers using the existing Lark lexer
+    tokens = tokenize_markers(latex)
+    regions = build_regions(tokens)
+
+    if not regions:
+        return latex
+
+    # Rebuild the full LaTeX from regions, wrapping highlighted text.
+    # For each region with active highlights, we need to parse it with
+    # pylatexenc to find structural boundaries and split around them.
+    #
+    # Annots are collected and emitted after the region text. However,
+    # if the annot would land inside a restricted context (section argument),
+    # it is deferred to _move_annots_outside_restricted().
+    result_parts: list[str] = []
+
+    for region in regions:
+        if not region.active:
+            # No highlights — pass through unchanged
+            result_parts.append(region.text)
+        else:
+            # Wrap the region using AST-aware splitting
+            wrapped = _wrap_region_ast(region.text, region.active, highlights)
+            result_parts.append(wrapped)
+
+        # Emit annotation commands for this region
+        for annot_idx in region.annots:
+            if annot_idx in highlights:
+                hl = highlights[annot_idx]
+                para_ref = hl.get("para_ref", "")
+                result_parts.append(_format_annot(hl, para_ref))
+
+    result = "".join(result_parts)
+
+    # Move \annot commands out of restricted contexts (\section{}, etc.)
+    return _move_annots_outside_restricted(result)
+
+
+def _wrap_region_ast(
+    content: str,
+    active: frozenset[int],
+    highlights: dict[int, dict[str, Any]],
+) -> str:
+    r"""Wrap a highlighted region, splitting at structural boundaries via AST.
+
+    Parses content with pylatexenc and walks the AST. At structural nodes
+    (\par, blank lines, environments, sectioning commands), the highlight
+    wrapping is closed and reopened around the boundary.
+
+    Args:
+        content: LaTeX text of a single region (constant highlight set).
+        active: Frozenset of active highlight indices.
+        highlights: Full highlight mapping for colour lookup.
+
+    Returns:
+        LaTeX with highlight/underline wrapping split at boundaries.
+    """
+    if not content.strip():
+        return content
+
+    underline_wrap = generate_underline_wrapper(active, highlights)
+    highlight_wrap = generate_highlight_wrapper(active, highlights)
+
+    # Build a latex context that knows about our custom macros
+    latex_context = get_default_latex_context_db()
+    latex_context = latex_context.filter_context(keep_categories=["latex-base"])
+    latex_context.add_context_category(
+        "custom-highlight",
+        macros=[
+            MacroSpec("highLight", "[{"),
+            MacroSpec("underLine", "[{"),
+            MacroSpec("annot", "{{"),
+            MacroSpec("item", "["),
+        ],
+    )
+
+    try:
+        walker = LatexWalker(
+            content, latex_context=latex_context, tolerant_parsing=True
+        )
+        nodelist, _, _ = walker.get_latex_nodes(pos=0)
+    except Exception:
+        # Parsing failed — fall back to simple wrapping
+        return highlight_wrap(underline_wrap(content))
+
+    # Walk the AST and collect segments
+    segments: list[tuple[str, str]] = []
+    _walk_nodes(nodelist, content, segments)
+
+    if not segments:
+        return highlight_wrap(underline_wrap(content))
+
+    # Wrap each segment: structural boundaries pass through unwrapped,
+    # text segments get highlight+underline wrapping.
+    result_parts: list[str] = []
+    for seg_type, seg_text in segments:
+        if seg_type == "boundary" or not seg_text.strip():
+            result_parts.append(seg_text)
+        else:
+            result_parts.append(highlight_wrap(underline_wrap(seg_text)))
+
+    return "".join(result_parts)
+
+
+def _classify_node(
+    node: Any,
+    source: str,
+    segments: list[tuple[str, str]],
+) -> None:
+    """Classify a single pylatexenc AST node as 'text' or 'boundary'.
+
+    Args:
+        node: A pylatexenc AST node (untyped — pylatexenc v2 has no stubs).
+        source: Original LaTeX source string.
+        segments: Output list to append to.
+    """
+    if isinstance(node, LatexCharsNode):
+        text = (
+            node.chars
+            if hasattr(node, "chars")
+            else source[node.pos : node.pos + node.len]
+        )
+        _split_text_at_boundaries(text, segments)
+    elif isinstance(node, (LatexEnvironmentNode, LatexGroupNode)):
+        node_text = source[node.pos : node.pos + node.len]
+        if isinstance(node, LatexEnvironmentNode):
+            segments.append(("boundary", node_text))
+        else:
+            segments.append(("text", node_text))
+    elif isinstance(node, LatexMacroNode):
+        _classify_macro(node, source, segments)
+    elif hasattr(node, "specials_chars"):
+        # LatexSpecialsNode — table & separator must be a boundary
+        chars = getattr(node, "specials_chars", "")
+        p = int(node.pos)
+        n = int(node.len)
+        node_text = source[p : p + n]
+        if chars == "&":
+            segments.append(("boundary", node_text))
+        else:
+            segments.append(("text", node_text))
+    elif hasattr(node, "pos") and hasattr(node, "len"):
+        p2: int = node.pos
+        n2: int = node.len
+        segments.append(("text", source[p2 : p2 + n2]))
+
+
+def _classify_macro(
+    node: Any,
+    source: str,
+    segments: list[tuple[str, str]],
+) -> None:
+    """Classify a macro node — sectioning/\\par are boundaries, others are text."""
+    p: int = node.pos
+    n: int = node.len
+    node_text = source[p : p + n]
+    if node.macroname in _SECTION_MACRO_NAMES | {"par"} or node_text.startswith("\\\\"):
+        segments.append(("boundary", node_text))
+    else:
+        segments.append(("text", node_text))
+
+
+def _walk_nodes(
+    nodes: list,
+    source: str,
+    segments: list[tuple[str, str]],
+) -> None:
+    """Walk pylatexenc AST nodes, classifying each as 'text' or 'boundary'.
+
+    Structural boundaries (environments, sectioning commands, \\par, blank lines)
+    are emitted as 'boundary' segments. Gaps between nodes (e.g., unmatched
+    braces that pylatexenc skips in tolerant mode) are also boundaries.
+
+    Args:
+        nodes: List of pylatexenc AST nodes.
+        source: Original LaTeX source string (for position-based extraction).
+        segments: Output list of (type, text) tuples to append to.
+    """
+    pos = 0  # Track position to detect gaps
+    if nodes and hasattr(nodes[0], "pos"):
+        pos = nodes[0].pos  # Start from first node's position
+
+    for node in nodes:
+        if node is None or not hasattr(node, "pos") or not hasattr(node, "len"):
+            continue
+
+        # Emit any gap between previous node end and this node start
+        if node.pos > pos:
+            gap_text = source[pos : node.pos]
+            if gap_text:
+                segments.append(("boundary", gap_text))
+
+        _classify_node(node, source, segments)
+        pos = node.pos + node.len
+
+    # Emit any trailing content after the last node
+    if nodes:
+        total_len = len(source)
+        if pos < total_len:
+            trailing = source[pos:total_len]
+            if trailing:
+                segments.append(("boundary", trailing))
+
+
+def _split_text_at_boundaries(text: str, segments: list[tuple[str, str]]) -> None:
+    r"""Split text at \par commands, blank lines, and table separators.
+
+    Table cell separators (``&``) and row terminators (``\\``) must not
+    be wrapped inside ``\highLight`` — they are structural LaTeX tokens
+    that break when placed inside a group.
+
+    Args:
+        text: Raw text from a LatexCharsNode.
+        segments: Output list to append (type, text) tuples to.
+    """
+    # Split at blank lines, explicit \par, table & separators, and \\
+    parts = re.split(r"(\n\s*\n|\\par\b|&|\\\\)", text)
+    for part in parts:
+        if not part:
+            continue
+        if part.strip() == "" and "\n" in part and part.count("\n") >= 2:
+            # Blank line = paragraph break
+            segments.append(("boundary", part))
+        elif re.match(r"^\\par\b", part) or part in {"&", "\\\\"}:
+            segments.append(("boundary", part))
+        else:
+            segments.append(("text", part))
+
+
 # Lark grammar for marker tokenization
 # Literals have higher priority than regex, so markers match first
 # TEXT catches everything else with negative lookahead
@@ -541,8 +810,7 @@ _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 # Highlighting uses lua-ul's \highLight for robust cross-line-break backgrounds.
 # marginalia package auto-stacks overlapping margin notes (requires 2+ lualatex runs).
 ANNOTATION_PREAMBLE_BASE = r"""
-\usepackage{fontspec}
-\setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
+% fontspec and \setmainfont are in UNICODE_PREAMBLE (with fallback chain)
 \usepackage{amsmath}           % Math extensions (\text{} in math mode)
 \usepackage{microtype}         % Better typography (kerning, protrusion)
 \usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
@@ -1006,12 +1274,10 @@ def _replace_markers_with_annots(
     marker_highlights: list[dict],
     word_to_legal_para: dict[int, int | None] | None = None,
 ) -> str:
-    """Replace markers in LaTeX with \\annot and \\highLight commands.
+    r"""Replace markers in LaTeX with \annot and \highLight commands.
 
-    Handles arbitrarily interleaved highlights by:
-    1. Tokenizing markers with lark lexer
-    2. Building regions with active highlight sets
-    3. Generating nested LaTeX for each region using generate_highlighted_latex()
+    Converts marker_highlights list to dict, builds para_refs, then delegates
+    to walk_and_wrap() for AST-aware highlight wrapping.
 
     Args:
         latex: LaTeX content with HLSTART{n}ENDHL, HLEND{n}ENDHL, ANNMARKER{n}ENDMARKER
@@ -1019,7 +1285,7 @@ def _replace_markers_with_annots(
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
 
     Returns:
-        LaTeX with \\highLight and \\underLine commands.
+        LaTeX with \highLight and \underLine commands.
     """
     if not latex:
         return latex
@@ -1047,13 +1313,7 @@ def _replace_markers_with_annots(
         # Use en-dash for ranges
         return f"[{start_para}]–[{end_para}]"  # noqa: RUF001
 
-    # Step 1: Tokenize markers using lark lexer
-    tokens = tokenize_markers(latex)
-
-    # Step 2: Build regions with active highlight tracking
-    regions = build_regions(tokens)
-
-    # Step 3: Convert list to dict and ensure para_refs exist
+    # Convert list to dict and ensure para_refs exist
     # marker_highlights is indexed by position (list), convert to dict[int, dict]
     highlights: dict[int, dict[str, Any]] = {}
     for idx, hl in enumerate(marker_highlights):
@@ -1063,10 +1323,155 @@ def _replace_markers_with_annots(
             hl_copy["para_ref"] = build_para_ref(hl)
         highlights[idx] = hl_copy
 
-    # Step 4: Generate LaTeX using the region-based generator
-    # env_boundaries parameter kept for API compatibility but not used
-    # (inline delimiters are detected per-region in generate_highlighted_latex)
-    return generate_highlighted_latex(regions, highlights, [])
+    return walk_and_wrap(latex, highlights)
+
+
+def _brace_depth_at(latex: str, pos: int) -> int:
+    """Calculate brace nesting depth at a position in a LaTeX string."""
+    depth = 0
+    for j in range(pos):
+        if latex[j] == "{":
+            depth += 1
+        elif latex[j] == "}":
+            depth -= 1
+    return depth
+
+
+def _find_closing_brace_at_depth(latex: str, start: int, target_depth: int) -> int:
+    """Find ``}`` reducing depth to *target_depth* from *start*."""
+    depth = _brace_depth_at(latex, start)
+    for i in range(start, len(latex)):
+        if latex[i] == "{":
+            depth += 1
+        elif latex[i] == "}":
+            depth -= 1
+            if depth == target_depth:
+                return i
+    return -1
+
+
+def _move_annots_outside_restricted(latex: str) -> str:
+    r"""Move \annot commands out of any brace group where they're nested.
+
+    The \annot macro uses \marginalia and \parbox which contain \par.
+    Since \par is forbidden inside most LaTeX command arguments (any
+    non-\long command like \textbf, \emph, \section, etc.), \annot must
+    appear at brace depth 0.
+
+    Uses brace-depth tracking — no hardcoded command name list. This
+    handles \section{}, \textbf{}, \emph{}, and any future command
+    generically.
+
+    Args:
+        latex: LaTeX with \annot commands potentially inside brace groups.
+
+    Returns:
+        LaTeX with all \annot commands at brace depth 0.
+    """
+    if r"\annot" not in latex:
+        return latex
+
+    result = latex
+    max_iterations = 50  # Safety limit
+    for _ in range(max_iterations):
+        moved = False
+        pos = 0
+        while pos < len(result):
+            idx = result.find(r"\annot", pos)
+            if idx == -1:
+                break
+
+            # Verify it's \annot{ not \annotation or similar
+            after = idx + len(r"\annot")
+            if after < len(result) and result[after] != "{":
+                pos = after
+                continue
+
+            depth = _brace_depth_at(result, idx)
+            if depth <= 0:
+                pos = after
+                continue
+
+            # \annot is nested at depth > 0 — extract and move out
+            annot_text = _extract_annot_command(result, idx)
+            if not annot_text:
+                pos = after
+                continue
+
+            annot_end_pos = idx + len(annot_text)
+            close_pos = _find_closing_brace_at_depth(
+                result, annot_end_pos, target_depth=0
+            )
+            if close_pos == -1:
+                pos = after
+                continue
+
+            # Remove \annot from current position, place after outermost }
+            result = (
+                result[:idx]
+                + result[annot_end_pos : close_pos + 1]
+                + annot_text
+                + result[close_pos + 1 :]
+            )
+            moved = True
+            break  # Restart since positions shifted
+
+        if not moved:
+            break
+
+    return result
+
+
+def _extract_annot_command(latex: str, pos: int) -> str | None:
+    r"""Extract a complete \annot{...}{...} command starting at pos.
+
+    Returns the full command text including both brace groups, or None if
+    the structure doesn't match.
+    """
+    prefix = r"\annot"
+    if not latex[pos:].startswith(prefix):
+        return None
+
+    cursor = pos + len(prefix)
+
+    # Extract first brace group {colour}
+    if cursor >= len(latex) or latex[cursor] != "{":
+        return None
+    end1 = _find_matching_brace(latex, cursor)
+    if end1 == -1:
+        return None
+
+    cursor = end1 + 1
+
+    # Extract second brace group {margin content}
+    if cursor >= len(latex) or latex[cursor] != "{":
+        return None
+    end2 = _find_matching_brace(latex, cursor)
+    if end2 == -1:
+        return None
+
+    return latex[pos : end2 + 1]
+
+
+def _find_matching_brace(latex: str, open_pos: int) -> int:
+    """Find the position of the matching closing brace.
+
+    Args:
+        latex: LaTeX string.
+        open_pos: Position of the opening '{'.
+
+    Returns:
+        Position of the matching '}', or -1 if not found.
+    """
+    depth = 0
+    for i in range(open_pos, len(latex)):
+        if latex[i] == "{":
+            depth += 1
+        elif latex[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
 
 
 def _fix_invalid_newlines(latex: str) -> str:
@@ -1255,7 +1660,6 @@ async def convert_html_with_annotations(
     tag_colours: dict[str, str],  # noqa: ARG001 - colours used in preamble generation
     filter_path: Path | None = None,
     word_to_legal_para: dict[int, int | None] | None = None,
-    escape_text: bool = False,
 ) -> str:
     """Convert HTML to LaTeX with annotations inserted as marginnote+soul.
 
@@ -1270,10 +1674,6 @@ async def convert_html_with_annotations(
         tag_colours: Mapping of tag names to hex colours.
         filter_path: Optional Lua filter for legal document fixes.
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
-        escape_text: If True, escape HTML special chars in text content AFTER
-            marker insertion. Use when input is plain text wrapped in tags
-            without escaping (Issue #113 fix). When True, skip HTML normalization
-            steps since input is plain text, not browser HTML.
 
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
@@ -1284,27 +1684,14 @@ async def convert_html_with_annotations(
         [h.get("id", "")[:8] for h in highlights],
     )
 
-    # HTML normalization is only for browser-copied HTML content
-    # Skip when processing plain text (escape_text=True)
-    if not escape_text:
-        # Strip script/style tags from browser copy-paste content
-        html = strip_scripts_and_styles(html)
+    # Strip script/style tags from browser copy-paste content
+    html = strip_scripts_and_styles(html)
 
-        # Fix mid-word font tag splits from LibreOffice RTF export
-        html = fix_midword_font_splits(html)
+    # Fix mid-word font tag splits from LibreOffice RTF export
+    html = fix_midword_font_splits(html)
 
-    # IMPORTANT: Insert markers BEFORE stripping control chars!
-    # The UI counts words including control char "words" (e.g., BLNS has standalone
-    # 0x01-0x1F chars). If we strip first, word indices become misaligned.
-    # Markers are ASCII (HLSTARTnENDHL) so they survive the strip.
-    marked_html, marker_highlights = _insert_markers_into_html(html, highlights)
-
-    # Escape text content AFTER markers are placed (Issue #113 fix).
-    # Markers are ASCII and won't be affected by html.escape().
-    # This ensures character indices match between UI (counts raw chars)
-    # and PDF export (also counts raw chars, not escaped chars).
-    if escape_text:
-        marked_html = _escape_html_text_content(marked_html)
+    # Insert markers at character positions matching extract_text_from_html
+    marked_html, marker_highlights = insert_markers_into_dom(html, highlights)
 
     # Strip control characters that are invalid in LaTeX AFTER markers are placed
     # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)
@@ -1314,4 +1701,8 @@ async def convert_html_with_annotations(
     latex = await convert_html_to_latex(marked_html, filter_path=filter_path)
 
     # Replace markers with annots
-    return _replace_markers_with_annots(latex, marker_highlights, word_to_legal_para)
+    result = _replace_markers_with_annots(latex, marker_highlights, word_to_legal_para)
+
+    # Move \annot commands outside sectioning commands (\section{}, etc.)
+    # where \par is forbidden — see Issue #132
+    return _move_annots_outside_restricted(result)

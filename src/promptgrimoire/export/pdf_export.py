@@ -9,10 +9,12 @@ Coordinates the full pipeline from HTML + annotations to PDF:
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -151,23 +153,81 @@ def _html_to_latex_notes(html_content: str) -> str:
     return content.strip()
 
 
-def _build_general_notes_section(general_notes: str) -> str:
+async def markdown_to_latex_notes(markdown_content: str | None) -> str:
+    """Convert markdown content to LaTeX using Pandoc.
+
+    Uses the same Pandoc installation as the main export pipeline for
+    consistency. This is the conversion path for Milkdown editor output
+    (response draft), which produces markdown rather than HTML.
+
+    Args:
+        markdown_content: Markdown text from the Milkdown editor.
+
+    Returns:
+        LaTeX-formatted content, or empty string if input is empty.
+
+    Raises:
+        subprocess.CalledProcessError: If Pandoc fails.
+    """
+    if not markdown_content or not markdown_content.strip():
+        return ""
+
+    proc = await asyncio.create_subprocess_exec(
+        "pandoc",
+        "-f",
+        "markdown",
+        "-t",
+        "latex",
+        "--no-highlight",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate(
+        input=markdown_content.encode("utf-8")
+    )
+    if proc.returncode is None or proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            proc.returncode or 1,
+            ["pandoc", "-f", "markdown", "-t", "latex"],
+            stderr_bytes.decode(),
+        )
+    return stdout_bytes.decode().strip()
+
+
+def _build_general_notes_section(
+    general_notes: str,
+    latex_content: str | None = None,
+) -> str:
     """Build the LaTeX general notes section.
+
+    Supports two input paths:
+    - **HTML path** (existing): ``general_notes`` contains HTML from the
+      WYSIWYG editor, converted via ``_html_to_latex_notes()``.
+    - **LaTeX path** (Phase 7): ``latex_content`` contains pre-converted
+      LaTeX (e.g., from Pandoc markdown conversion). When provided, this
+      takes precedence over the HTML path.
 
     Args:
         general_notes: HTML content from the notes editor.
+        latex_content: Pre-converted LaTeX content (takes precedence).
 
     Returns:
         LaTeX section string, empty if no notes.
     """
+    # LaTeX path: pre-converted content takes precedence
+    if latex_content and latex_content.strip():
+        return _GENERAL_NOTES_TEMPLATE.format(content=latex_content)
+
+    # HTML path: convert HTML to LaTeX
     if not general_notes or not general_notes.strip():
         return ""
 
-    latex_content = _html_to_latex_notes(general_notes)
-    if not latex_content:
+    converted = _html_to_latex_notes(general_notes)
+    if not converted:
         return ""
 
-    return _GENERAL_NOTES_TEMPLATE.format(content=latex_content)
+    return _GENERAL_NOTES_TEMPLATE.format(content=converted)
 
 
 # Path to Lua filter for LibreOffice HTML handling (tables, margins, etc.)
@@ -198,6 +258,7 @@ async def export_annotation_pdf(
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],
     general_notes: str = "",
+    notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     output_dir: Path | None = None,
     user_id: str | None = None,
@@ -206,48 +267,40 @@ async def export_annotation_pdf(
     """Generate PDF with annotations from live annotation data.
 
     This is the main entry point for PDF export. It orchestrates:
-    1. HTML → LaTeX conversion with annotation markers
+    1. HTML -> LaTeX conversion with annotation markers
     2. Complete document assembly with preamble
     3. General notes section
     4. PDF compilation via latexmk
 
     Args:
-        html_content: Content to export. Can be plain text or HTML.
-            Plain text (no HTML tags) is auto-converted to HTML paragraphs.
+        html_content: HTML content to export (from ``doc.content``).
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
         general_notes: HTML content from general notes editor.
+        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
+            from Pandoc markdown conversion). Takes precedence over
+            ``general_notes`` when non-empty.
         word_to_legal_para: Optional mapping for paragraph references.
         output_dir: Optional output directory for PDF. Defaults to temp dir.
         user_id: Optional user identifier for scoped temp directory.
             If provided, creates a per-user export dir that is cleaned on reuse.
+        filename: Base name for the output PDF file (without extension).
 
     Returns:
         Path to the generated PDF file.
 
     Raises:
+        ValueError: If highlights are provided but content is empty.
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
-    # Detect if content is ALREADY structured HTML (starts with HTML tags).
-    # Plain text newlines are collapsed by Pandoc, so we wrap in <p> tags.
-    # We check the START of content - not anywhere - because content like BLNS
-    # contains HTML strings (XSS payloads) that shouldn't trigger HTML detection.
-    is_structured_html = html_content and re.match(
-        r"\s*<(?:!DOCTYPE|html|body|p|div|table|ul|ol|h[1-6])\b",
-        html_content,
-        re.IGNORECASE,
-    )
+    if highlights and (not html_content or not html_content.strip()):
+        raise ValueError(
+            "Cannot insert annotation markers into empty content. "
+            "Provide document content or remove highlights."
+        )
 
-    # For plain text: wrap in <p> WITHOUT escaping, then escape AFTER markers
-    # are inserted. This fixes Issue #113 where HTML escaping changed character
-    # counts and caused marker position misalignment.
-    escape_text_after_markers = False
-    if is_structured_html:
-        # Preprocess HTML: detect platform, remove chrome, inject speaker labels
-        processed_html = preprocess_for_export(html_content)
-    else:
-        processed_html = _plain_text_to_html(html_content, escape=False)
-        escape_text_after_markers = True
+    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
+    processed_html = preprocess_for_export(html_content) if html_content else ""
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
@@ -257,14 +310,15 @@ async def export_annotation_pdf(
         tag_colours=tag_colours,
         filter_path=_LIBREOFFICE_FILTER,
         word_to_legal_para=word_to_legal_para,
-        escape_text=escape_text_after_markers,
     )
 
     # Build preamble with tag colours
     preamble = build_annotation_preamble(tag_colours)
 
     # Build general notes section
-    notes_section = _build_general_notes_section(general_notes)
+    notes_section = _build_general_notes_section(
+        general_notes, latex_content=notes_latex
+    )
 
     # Assemble complete document
     document = _DOCUMENT_TEMPLATE.format(

@@ -1,0 +1,216 @@
+{
+  "workspace_id": "fa008b89-a772-4d02-a3a3-d5a99b62c720",
+  "source": "AustLII - Lawlis v R [2025] NSWCCA 183",
+  "highlights": [
+    {
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "para_ref": "",
+      "text": "Lawlis v R [2025] NSWCCA 183 (3 November 2025)",
+      "end_char": 46,
+      "comments": [
+        {
+          "text": "juristdiction 1",
+          "created_at": "2026-02-09T03:22:42.873504+00:00",
+          "author": "brian.ballsun-stanton",
+          "id": "d835259b-f413-41f7-999a-87809c173cf7"
+        }
+      ],
+      "start_char": 0,
+      "id": "9eb95c50-5d0e-476a-927b-b4b947d80b91",
+      "created_at": "2026-02-09T02:09:09.827353+00:00",
+      "author": "brian.ballsun-stanton",
+      "tag": "jurisdiction"
+    },
+    {
+      "author": "brian.ballsun-stanton",
+      "tag": "jurisdiction",
+      "end_char": 76,
+      "para_ref": "",
+      "created_at": "2026-02-09T02:09:11.289562+00:00",
+      "id": "9b42a761-510c-4a79-9b67-bc7f717dcf48",
+      "text": "Last Updated: 10 November 2025",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "comments": [
+        {
+          "created_at": "2026-02-09T03:22:48.591285+00:00",
+          "author": "brian.ballsun-stanton",
+          "text": "last fliberty",
+          "id": "4f8a4514-980f-4dfb-815e-67c69d3a9472"
+        }
+      ],
+      "start_char": 46
+    },
+    {
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "tag": "jurisdiction",
+      "end_char": 102,
+      "start_char": 78,
+      "created_at": "2026-02-09T02:09:12.424939+00:00",
+      "comments": [
+        {
+          "text": "header court",
+          "created_at": "2026-02-09T03:22:54.926944+00:00",
+          "author": "brian.ballsun-stanton",
+          "id": "86734ac2-927a-452b-b23e-1b1ebd66abe6"
+        }
+      ],
+      "id": "e3b6a3e7-9c4c-469e-96a5-74c878be6407",
+      "text": "Court of Criminal Appeal",
+      "para_ref": "",
+      "author": "brian.ballsun-stanton"
+    },
+    {
+      "tag": "procedural_history",
+      "para_ref": "",
+      "start_char": 104,
+      "created_at": "2026-02-09T02:09:13.568071+00:00",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "text": "Supreme Court",
+      "author": "brian.ballsun-stanton",
+      "comments": [
+        {
+          "created_at": "2026-02-09T03:23:00.358300+00:00",
+          "author": "brian.ballsun-stanton",
+          "text": "supremes",
+          "id": "fa9fe556-baec-4970-a35c-1ff630f764da"
+        }
+      ],
+      "id": "b5abb414-7336-494a-b45c-e29c729b7ad3",
+      "end_char": 117
+    },
+    {
+      "comments": [
+        {
+          "id": "82bdd83c-b555-4221-847d-951107a5e3a3",
+          "text": "this is going to break a lot of stuff",
+          "created_at": "2026-02-09T03:23:10.774349+00:00",
+          "author": "brian.ballsun-stanton"
+        }
+      ],
+      "created_at": "2026-02-09T03:23:04.481947+00:00",
+      "start_char": 286,
+      "para_ref": "",
+      "end_char": 513,
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "text": "efore:Kirk JA\n\nSweeney J\n\nColeman JDecision:Orders made on 3 November 2025:\n\n(1) Grant leave to appeal.\n\n(2) Allow the appeal.\n\n(3) Quash the sentence imposed in the District Court on 12 September 2024.\n\n(4) Taking into account",
+      "tag": "reasons",
+      "id": "a741412b-7f93-46d3-9281-8fcd6ae79cd0",
+      "author": "brian.ballsun-stanton"
+    },
+    {
+      "para_ref": "",
+      "comments": [
+        {
+          "id": "fc2afb12-8c05-4a13-aa7a-725af4595031",
+          "created_at": "2026-02-09T02:09:34.507914+00:00",
+          "author": "brian.ballsun-stanton",
+          "text": "1"
+        }
+      ],
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "author": "brian.ballsun-stanton",
+      "end_char": 5171,
+      "id": "dcf9e059-eadf-4e50-a9e0-ce3703411612",
+      "text": "Grounds of AppealMr Lawlis sought leave to rely on three grounds of appeal:\u201cGround 1 \u2013 The sentencing judge erred by finding that general deterrence weighed heavily on the sentence.Ground 2 \u2013 The sentencing judge erred by approaching community protection as a matter that weighed against the applicant.Ground 3 \u2013 The sentence imposed was manifestly excessive.\u201d",
+      "tag": "jurisdiction",
+      "created_at": "2026-02-09T02:09:20.160128+00:00",
+      "start_char": 4811
+    },
+    {
+      "id": "a3b9f6f8-273a-4988-9d44-5be00085e797",
+      "para_ref": "",
+      "created_at": "2026-02-09T02:09:22.436993+00:00",
+      "author": "brian.ballsun-stanton",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "comments": [
+        {
+          "id": "8eeb1f99-732d-4f7f-b323-d4c48ca5193d",
+          "author": "brian.ballsun-stanton",
+          "created_at": "2026-02-09T02:09:35.937018+00:00",
+          "text": "2"
+        }
+      ],
+      "text": "Remarks on Sentence",
+      "tag": "procedural_history",
+      "end_char": 5190,
+      "start_char": 5171
+    },
+    {
+      "text": "Judge Abadee sentenced Mr Lawlis on the day he heard the sentence proceedings.",
+      "start_char": 5190,
+      "end_char": 5268,
+      "comments": [
+        {
+          "created_at": "2026-02-09T02:09:37.375200+00:00",
+          "author": "brian.ballsun-stanton",
+          "id": "fa076212-358e-4cf4-bfd6-c10cf9754c8f",
+          "text": "3"
+        }
+      ],
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "tag": "legally_relevant_facts",
+      "created_at": "2026-02-09T02:09:23.574672+00:00",
+      "id": "6a2e4b34-d953-437f-a44c-a1671de98d38",
+      "para_ref": "",
+      "author": "brian.ballsun-stanton"
+    },
+    {
+      "para_ref": "",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "comments": [
+        {
+          "created_at": "2026-02-09T02:09:30.294318+00:00",
+          "text": "4",
+          "author": "brian.ballsun-stanton",
+          "id": "c73e327c-7fb8-46a7-9854-5974790f90ca"
+        }
+      ],
+      "tag": "legal_issues",
+      "author": "brian.ballsun-stanton",
+      "text": "His Honour applied a 5% discount to the sentence he indicated for each offence for Mr Lawlis\u2019s guilty pleas to the offences 10 days before his trial was due to commence.",
+      "end_char": 5437,
+      "start_char": 5268,
+      "id": "1569a104-6c1b-40ca-bed3-9709834112b0",
+      "created_at": "2026-02-09T02:09:24.663481+00:00"
+    },
+    {
+      "created_at": "2026-02-09T03:23:18.496500+00:00",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "text": "omes of the victims and being committed for financial gain. His Honour found the offences were not part of a planned or organised criminal activity, that the level of planning was not any higher than would be contemplated for offending of the kind.Subjective factorsMr Lawlis was 21 years old at the time of the offences and 25 at the time of sentence. His Honour stated:\u201cThe offender remains young and that fact alone usually renders considerations of general deterrence and retribution of less significance and elevates the significance of rehabilitation; the law recognises the potential for cognitive, emotional and psychological immaturity of a young person contributing to offending.\u201dMr Lawlis is an Indigenous man. His Honour recounted most of Mr Lawlis\u2019s background from a report by psychiatrist Dr Calum Smith. During Mr Lawlis\u2019s childhood his father was in gaol for much of the time. When Mr Lawlis was aged 14 or 15, he was sexually abused by an officer in juvenile detention. He became depressed and subject to flashbacks. He began to use cannabis and the drug \u2018ice\u2019 to block out the effects of the assault. He committed crimes to fund his drug addiction. Mr Lawlis told Dr Smith that after he was released from gaol (which was in September 2022) he had begun to see drug and alcohol and psychology counsellors, and had tried medication",
+      "para_ref": "",
+      "start_char": 9058,
+      "id": "4eb44bf4-5848-47c2-80b4-993793aa1f25",
+      "tag": "legal_issues",
+      "comments": [
+        {
+          "created_at": "2026-02-09T03:23:25.081401+00:00",
+          "id": "70702de1-25a9-4e0a-8728-1787feb03312",
+          "text": "this is also going to break stuff.",
+          "author": "brian.ballsun-stanton"
+        }
+      ],
+      "author": "brian.ballsun-stanton",
+      "end_char": 10406
+    },
+    {
+      "text": "Therefore, on 3 November 2025 the Court made the following orders:(1) Grant leave to appeal.(2) Allow the appeal.(3) Quash the sentence imposed in the District Court on 12 September 2024.(4) Taking into account the time served in custody, sentence Joel Lawlis to 15 months imprisonment, commencing today 3 November 2025 and expiring 2 February 2027.(5) Pursuant tos 7(1)of theCrimes (Sentencing Procedure) Act 1999, the sentence imposed is to be served by way of an Intensive Corrections Order.(6) The standard conditions of the order apply, namely:(1) the offender must not commit any offence; and(2) the offender must submit to supervision by a Community Corrections Officer.(7) The following additional conditions apply:(1) the offender must participate and maintain his participation in any programs and treatment facilitated by the Community Corrections Service, for psychological therapy and/or other treatment appropriate for trauma and substance abuse issues, as your treating doctors consider appropriate, for so long as the doctors consider appropriate, within the term of the Order.(2) for the term of the Order, the offender must not take any illicit drugs or drugs not prescribed for you by a doctor.(8) Within 48 hours of his release from custody, the offender must report to the Community Corrections Office nearest to his residence.**********AboutCopyright & UsagePrivacyDisclaimersHelp",
+      "document_id": "9cbc77f2-8887-4be0-a5bb-f6ff6b1176ea",
+      "comments": [
+        {
+          "created_at": "2026-02-09T03:24:11.325721+00:00",
+          "text": "lol",
+          "author": "brian.ballsun-stanton",
+          "id": "e65568c1-97fb-4ac4-8db9-7f6b57996d27"
+        }
+      ],
+      "end_char": 27152,
+      "created_at": "2026-02-09T03:24:06.310488+00:00",
+      "author": "brian.ballsun-stanton",
+      "para_ref": "",
+      "tag": "reflection",
+      "start_char": 25750,
+      "id": "2b1f4833-f95f-46fe-910e-dd00841bdd18"
+    }
+  ],
+  "response_draft_markdown": "[\\\n\u0540\u0561\u0575\u0565\u0580\u0565\u0576](http://hy.lipsum.com/)\u00a0[Shqip](http://sq.lipsum.com/)\u00a0[\u202b\u0627\u0644\u0639\u0631\u0628\u064a\u0629](http://ar.lipsum.com/)\u00a0[\u0411\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u0438](http://bg.lipsum.com/)\u00a0[Catal\u00e0](http://ca.lipsum.com/)\u00a0[\u4e2d\u6587\u7b80\u4f53](http://cn.lipsum.com/)\u00a0[Hrvatski](http://hr.lipsum.com/)\u00a0[\u010cesky](http://cs.lipsum.com/)\u00a0[Dansk](http://da.lipsum.com/)\u00a0[Nederlands](http://nl.lipsum.com/)\u00a0[English](http://www.lipsum.com/)\u00a0[Eesti](http://et.lipsum.com/)\u00a0[Filipino](http://ph.lipsum.com/)\u00a0[Suomi](http://fi.lipsum.com/)\u00a0[Fran\u00e7ais](http://fr.lipsum.com/)\u00a0[\u10e5\u10d0\u10e0\u10d7\u10e3\u10da\u10d8](http://ka.lipsum.com/)\u00a0[Deutsch](http://de.lipsum.com/)\u00a0[\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac](http://el.lipsum.com/)\u00a0[\u202b\u05e2\u05d1\u05e8\u05d9\u05ea](http://he.lipsum.com/)\u00a0[\u0939\u093f\u0928\u094d\u0926\u0940](http://hi.lipsum.com/)\u00a0[Magyar](http://hu.lipsum.com/)\u00a0[Indonesia](http://id.lipsum.com/)\u00a0[Italiano](http://it.lipsum.com/)\u00a0[Latviski](http://lv.lipsum.com/)\u00a0[Lietuvi\u0161kai](http://lt.lipsum.com/)\u00a0[\u043c\u0430\u043a\u0435\u0434\u043e\u043d\u0441\u043a\u0438](http://mk.lipsum.com/)\u00a0[Melayu](http://ms.lipsum.com/)\u00a0[Norsk](http://no.lipsum.com/)\u00a0[Polski](http://pl.lipsum.com/)\u00a0[Portugu\u00eas](http://pt.lipsum.com/)\u00a0[Rom\u00e2na](http://ro.lipsum.com/)\u00a0[Pycc\u043a\u0438\u0439](http://ru.lipsum.com/)\u00a0[\u0421\u0440\u043f\u0441\u043a\u0438](http://sr.lipsum.com/)\u00a0[Sloven\u010dina](http://sk.lipsum.com/)\u00a0[Sloven\u0161\u010dina](http://sl.lipsum.com/)\u00a0[Espa\u00f1ol](http://es.lipsum.com/)\u00a0[Svenska](http://sv.lipsum.com/)\u00a0[\u0e44\u0e17\u0e22](http://th.lipsum.com/)\u00a0[T\u00fcrk\u00e7e](http://tr.lipsum.com/)\u00a0[\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430](http://uk.lipsum.com/)\u00a0[Ti\u1ebfng Vi\u1ec7t](http://vi.lipsum.com/)\n\n# Lorem Ipsum\n\n#### *\"Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit...\"*\n\n##### \"There is no one who loves pain itself, who seeks after it and wants to have it, simply because it is pain...\"\n\n***\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum id quam ac urna hendrerit ultricies. Etiam et nunc vehicula, lacinia nisi nec, blandit ex. Etiam aliquet ornare magna. Quisque vitae luctus odio. Etiam accumsan ipsum orci, vel viverra massa mollis sed. Sed lorem lacus, lacinia suscipit euismod eu, aliquam id ligula. Suspendisse potenti. Nulla pellentesque pulvinar mi, eu elementum nibh tempor eu. Pellentesque laoreet dictum tortor ac fermentum. Sed tincidunt aliquam neque. Vivamus vulputate, justo ac ullamcorper finibus, nulla nisl efficitur arcu, id lobortis urna nisl id purus.\n\nNulla semper luctus leo vitae tincidunt. Vivamus vehicula non lectus at sollicitudin. Nam ultricies sapien eu nisi accumsan faucibus ut quis tortor. Ut et orci vitae ante ultricies tincidunt nec non justo. Aliquam erat volutpat. Vivamus id vestibulum enim, tristique interdum risus. Nullam id tristique arcu, non dignissim turpis. Pellentesque velit dui, dignissim scelerisque mattis et, euismod sit amet massa. Integer auctor nisl sed lacus aliquam, a vulputate massa pharetra.\n\nNam nulla erat, mattis eu hendrerit in, ullamcorper at purus. Nunc eget est elementum, iaculis tortor sit amet, volutpat ipsum. Cras quis luctus erat. Morbi finibus nisi et sem luctus ornare. Donec quis neque vel odio posuere sodales. In hac habitasse platea dictumst. Nulla in felis nulla. Suspendisse convallis rutrum dui.\n\nPhasellus aliquam nec mi id dictum. Sed a erat id diam sagittis porta non ac mauris. Sed gravida varius pellentesque. Maecenas lobortis, orci porttitor vestibulum porta, ex leo tincidunt metus, commodo sollicitudin dui mauris quis risus. Praesent in ipsum nisl. Morbi non pulvinar enim. Sed sodales diam ut ligula lobortis malesuada.\n\nDuis vitae sapien a diam sodales gravida vitae non velit. Vivamus et felis in urna euismod hendrerit. Pellentesque elit sapien, rhoncus sed dolor quis, vehicula elementum sem. Mauris sagittis massa ut tristique pulvinar. Praesent at eros a nulla consequat iaculis sed varius quam. Fusce tortor risus, condimentum at pellentesque vitae, feugiat et erat. Curabitur luctus felis diam, eu placerat turpis ullamcorper vel. Aliquam faucibus faucibus lorem sed porta.\n\n**Generated 5 paragraphs, 328 words, 2198 bytes of\u00a0[Lorem Ipsum](https://www.lipsum.com/ \"Lorem Ipsum\")**\n\n***\n\n<help@lipsum.com>\\\n[Privacy Policy](https://www.lipsum.com/privacy)\u00a0\u00b7\u00a0\n"
+}

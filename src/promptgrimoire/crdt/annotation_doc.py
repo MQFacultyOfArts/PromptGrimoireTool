@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from pycrdt import Awareness, Doc, Map, Text, TransactionEvent
+from pycrdt import Array, Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -62,6 +62,9 @@ class AnnotationDocument:
         self.doc["highlights"] = Map()  # {highlight_id: HighlightData}
         self.doc["client_meta"] = Map()  # {client_id: {name, color}}
         self.doc["general_notes"] = Text()  # Collaborative text for general notes
+        self.doc["tag_order"] = Map()  # {tag_name: Array([highlight_id, ...])}
+        self.doc["response_draft"] = XmlFragment()  # Milkdown/ProseMirror document
+        self.doc["response_draft_markdown"] = Text()  # Plain markdown mirror
 
         # Awareness for ephemeral state (cursors, selections)
         self.awareness = Awareness(self.doc)
@@ -89,6 +92,21 @@ class AnnotationDocument:
         """Get the general notes Text object."""
         return self.doc["general_notes"]
 
+    @property
+    def tag_order(self) -> Map:
+        """Get the tag_order Map."""
+        return self.doc["tag_order"]
+
+    @property
+    def response_draft(self) -> XmlFragment:
+        """Get the response_draft XmlFragment."""
+        return self.doc["response_draft"]
+
+    @property
+    def response_draft_markdown(self) -> Text:
+        """Get the response_draft_markdown Text."""
+        return self.doc["response_draft_markdown"]
+
     def get_general_notes(self) -> str:
         """Get the current general notes content.
 
@@ -96,6 +114,10 @@ class AnnotationDocument:
             The general notes as a string.
         """
         return str(self.general_notes)
+
+    def get_response_draft_markdown(self) -> str:
+        """Get the current response draft markdown content."""
+        return str(self.response_draft_markdown)
 
     def set_general_notes(
         self, content: str, origin_client_id: str | None = None
@@ -316,6 +338,94 @@ class AnnotationDocument:
             h for h in self.highlights.values() if h.get("document_id") == document_id
         ]
         return sorted(highlights, key=lambda h: h.get("start_char", 0))
+
+    # --- Tag order operations ---
+
+    def get_tag_order(self, tag: str) -> list[str]:
+        """Return the ordered list of highlight IDs for a given tag.
+
+        Args:
+            tag: The tag name to look up.
+
+        Returns:
+            Ordered list of highlight IDs, or empty list if tag has no ordering.
+        """
+        arr = self.tag_order.get(tag)
+        if arr is None:
+            return []
+        return list(arr)
+
+    def set_tag_order(
+        self,
+        tag: str,
+        highlight_ids: list[str],
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Replace the ordered list of highlight IDs for a tag.
+
+        Args:
+            tag: The tag name.
+            highlight_ids: Ordered list of highlight IDs.
+            origin_client_id: Client making the change (for echo prevention).
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tag_order[tag] = Array(highlight_ids)
+        finally:
+            _origin_var.reset(token)
+
+    def move_highlight_to_tag(
+        self,
+        highlight_id: str,
+        from_tag: str | None,
+        to_tag: str,
+        position: int = -1,
+        origin_client_id: str | None = None,
+    ) -> bool:
+        """Move a highlight from one tag's order to another.
+
+        Removes ``highlight_id`` from ``from_tag``'s order (if present and
+        ``from_tag`` is not None), then inserts it into ``to_tag``'s order at
+        ``position`` (-1 means append). Also updates the highlight's tag field.
+
+        Args:
+            highlight_id: ID of the highlight to move.
+            from_tag: Tag to remove from (None to skip removal).
+            to_tag: Tag to add to.
+            position: Insertion index in target order (-1 to append).
+            origin_client_id: Client making the change (for echo prevention).
+
+        Returns:
+            True if the highlight exists and was moved.
+        """
+        if highlight_id not in self.highlights:
+            return False
+
+        token = _origin_var.set(origin_client_id)
+        try:
+            # Remove from source tag order
+            if from_tag is not None:
+                source_ids = self.get_tag_order(from_tag)
+                if highlight_id in source_ids:
+                    source_ids.remove(highlight_id)
+                    self.tag_order[from_tag] = Array(source_ids)
+
+            # Insert into target tag order
+            target_ids = self.get_tag_order(to_tag)
+            if position == -1:
+                target_ids.append(highlight_id)
+            else:
+                target_ids.insert(position, highlight_id)
+            self.tag_order[to_tag] = Array(target_ids)
+
+            # Update the highlight's tag field
+            hl_data = dict(self.highlights[highlight_id])
+            hl_data["tag"] = to_tag
+            self.highlights[highlight_id] = hl_data
+        finally:
+            _origin_var.reset(token)
+
+        return True
 
     # --- Comment operations ---
 

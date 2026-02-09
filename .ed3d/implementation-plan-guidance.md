@@ -66,7 +66,14 @@ uv run ruff check .
 uv run ruff format .
 ```
 
+**Standard test commands (use ONLY these):**
+- `uv run test-debug` — smart test selection, finds first failure (fast)
+- `uv run test-all` — full unit + integration suite (excludes E2E)
+- `uv run pytest tests/unit/test_foo.py -k test_name` — specific test
+
 **Never use:** `pip install`, `python -m pip`, raw `python` (always `uv run python`)
+
+**Never set environment variables manually** (e.g., `DATABASE_URL="" uv run ...`). The test commands handle configuration. If a test needs a database, it will skip gracefully when `TEST_DATABASE_URL` is not set.
 
 ### Git Workflow
 

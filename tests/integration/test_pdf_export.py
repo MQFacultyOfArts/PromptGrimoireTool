@@ -383,3 +383,134 @@ class TestI18nPdfExport:
 
         assert pdf_path.exists()
         assert pdf_path.stat().st_size > 0
+
+
+@pytest.mark.order("first")
+@requires_pandoc
+@requires_latexmk
+class TestResponseDraftExport:
+    """Integration tests for PDF export with response draft markdown (Phase 7).
+
+    Tests AC6.1 (response draft in PDF), AC6.2 (empty draft = no section),
+    AC6.3 (CRDT fallback). These test the export pipeline directly, not
+    the UI layer.
+    """
+
+    @pytest.mark.asyncio
+    async def test_export_with_markdown_notes_ac6_1(self, tmp_path: RealPath) -> None:
+        """AC6.1: Export PDF includes response draft content.
+
+        Converts markdown to LaTeX via Pandoc and includes it in the
+        General Notes section.
+        """
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
+
+        html = "<p>Document text for annotation.</p>"
+        highlights: list[dict] = []
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        # Simulate response draft markdown from Milkdown editor
+        markdown = "# My Response\n\nThis is my **analysis** of the document."
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists()
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert "My Response" in tex_content
+        assert "analysis" in tex_content
+
+    @pytest.mark.asyncio
+    async def test_export_empty_draft_no_section_ac6_2(
+        self, tmp_path: RealPath
+    ) -> None:
+        """AC6.2: Empty response draft produces no extra section in PDF."""
+        html = "<p>Document text for annotation.</p>"
+        highlights: list[dict] = []
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            notes_latex="",
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists()
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert "General Notes" not in tex_content
+
+    @pytest.mark.asyncio
+    async def test_export_with_rich_markdown_ac6_1(self, tmp_path: RealPath) -> None:
+        """AC6.1: Rich markdown (lists, bold, italic) survives export."""
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
+
+        html = "<p>Source document.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        markdown = (
+            "## Key Findings\n\n"
+            "- Point **one** is critical\n"
+            "- Point *two* needs review\n"
+            "- Point three is resolved\n\n"
+            "The overall conclusion is positive."
+        )
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists()
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert "Key Findings" in tex_content
+        assert r"\begin{itemize}" in tex_content
+        assert "overall conclusion" in tex_content
+
+    @pytest.mark.asyncio
+    async def test_notes_latex_takes_precedence_over_general_notes(
+        self, tmp_path: RealPath
+    ) -> None:
+        """notes_latex takes precedence over general_notes HTML."""
+        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
+
+        html = "<p>Document text.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        # Both paths provided — LaTeX should win
+        general_notes_html = "<p>HTML notes content</p>"
+        markdown = "Markdown response draft content"
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            general_notes=general_notes_html,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists()
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert "Markdown response draft content" in tex_content

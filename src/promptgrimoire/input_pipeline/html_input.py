@@ -12,10 +12,16 @@ from __future__ import annotations
 import html as html_module
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
+from promptgrimoire.export.marker_constants import (
+    HLEND_TEMPLATE,
+    HLSTART_TEMPLATE,
+    MARKER_TEMPLATE,
+)
 from promptgrimoire.export.platforms import preprocess_for_export
 
 logger = logging.getLogger(__name__)
@@ -29,6 +35,41 @@ _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 
 # Self-closing (void) tags to strip (e.g., base64 images from clipboard paste)
 _STRIP_VOID_TAGS = frozenset(("img",))
+
+# Block-level elements where whitespace-only text nodes are formatting artefacts
+# (indentation between tags) and should be skipped.  Must match the JS blockTags
+# set in _injectCharSpans (annotation.py) for char-index parity.
+_BLOCK_TAGS = frozenset(
+    (
+        "table",
+        "tbody",
+        "thead",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "div",
+        "section",
+        "article",
+        "aside",
+        "header",
+        "footer",
+        "nav",
+        "main",
+        "figure",
+        "figcaption",
+        "blockquote",
+    )
+)
+
+# Whitespace pattern matching JS /[\s]+/g — includes \u00a0 (nbsp)
+_WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
 
 # Map of characters that need HTML entity escaping
 # Note: Spaces are NOT converted to &nbsp; - we use CSS white-space: pre-wrap
@@ -338,10 +379,18 @@ def extract_chars_from_spans(html_with_spans: str) -> list[str]:
 
 
 def extract_text_from_html(html: str) -> list[str]:
-    """Extract text characters from clean HTML (no char spans).
+    """Extract text characters from clean HTML, matching JS _injectCharSpans.
 
-    Used for building document_chars list server-side when char spans
-    are injected client-side.
+    Walks the DOM via selectolax child/next iteration (which exposes text
+    nodes) so that the resulting character list has the same indices as the
+    client-side char-span injection.  The two must agree for highlight
+    coordinates to be correct (Issue #129).
+
+    Matching rules (mirroring the JS):
+    - ``<br>`` → ``\\n``
+    - script / style / noscript / template → skipped entirely
+    - Whitespace-only text nodes inside block containers → skipped
+    - Whitespace runs (including ``\\u00a0``) → collapsed to single space
 
     Args:
         html: Clean HTML without char span wrappers.
@@ -354,7 +403,6 @@ def extract_text_from_html(html: str) -> list[str]:
 
     tree = LexborHTMLParser(html)
 
-    # Get body or full content
     body = tree.body
     root = body if body else tree.root
 
@@ -363,33 +411,389 @@ def extract_text_from_html(html: str) -> list[str]:
 
     chars: list[str] = []
 
-    def walk_node(node: Any) -> None:
-        """Recursively walk nodes and extract text."""
-        # Skip script, style, etc.
-        if hasattr(node, "tag") and node.tag in _STRIP_TAGS:
+    def _walk(node: Any) -> None:
+        tag = node.tag
+
+        # Text node — selectolax uses "-text" as the tag
+        if tag == "-text":
+            text = node.text_content
+            if not text:
+                return
+            # Skip whitespace-only text nodes inside block containers
+            # (these are formatting indentation between tags, not content)
+            parent = node.parent
+            if (
+                parent is not None
+                and parent.tag in _BLOCK_TAGS
+                and _WHITESPACE_RUN.fullmatch(text)
+            ):
+                return
+            # Collapse whitespace runs (including nbsp) to single space
+            text = _WHITESPACE_RUN.sub(" ", text)
+            chars.extend(text)
             return
 
-        # Handle <br> as newline
-        if hasattr(node, "tag") and node.tag == "br":
+        # Skip stripped tags entirely
+        if tag in _STRIP_TAGS:
+            return
+
+        # <br> → newline
+        if tag == "br":
             chars.append("\n")
             return
 
-        # Get text content of this node (not children)
-        if hasattr(node, "text_content"):
+        # Recurse into children
+        child = node.child
+        while child is not None:
+            _walk(child)
+            child = child.next
+
+    # Start from root's children (skip the root element itself)
+    child = root.child
+    while child is not None:
+        _walk(child)
+        child = child.next
+
+    return chars
+
+
+# ---------------------------------------------------------------------------
+# Marker insertion (two-pass DOM walk + string insertion)
+# ---------------------------------------------------------------------------
+
+# Common HTML entities and their decoded forms
+_ENTITY_MAP: dict[str, str] = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&apos;": "'",
+    "&nbsp;": "\u00a0",
+}
+
+
+@dataclass
+class _TextNodeInfo:
+    """Info about a text node's contribution to the character stream."""
+
+    html_text: str  # HTML-encoded text (for finding in serialised HTML)
+    decoded_text: str  # Decoded text (from text_content)
+    collapsed_text: str  # After whitespace collapsing
+    char_start: int  # Starting char index in the stream
+    char_end: int  # Ending char index (exclusive)
+
+
+def _walk_and_map(html: str) -> tuple[list[str], list[_TextNodeInfo]]:
+    """Walk DOM exactly like extract_text_from_html, returning chars + node map.
+
+    Pass 1 of the two-pass marker insertion approach. Builds a position map
+    that records where each text node's characters fall in the collapsed
+    character stream, along with the HTML-encoded text for byte-offset
+    matching in pass 2.
+    """
+    if not html:
+        return [], []
+
+    tree = LexborHTMLParser(html)
+    body = tree.body
+    root = body if body else tree.root
+    if root is None:
+        return [], []
+
+    chars: list[str] = []
+    text_nodes: list[_TextNodeInfo] = []
+
+    def _walk(node: Any) -> None:
+        tag = node.tag
+
+        if tag == "-text":
             text = node.text_content
-            if text:
-                for char in text:
-                    chars.append(char)
+            if not text:
+                return
+            parent = node.parent
+            if (
+                parent is not None
+                and parent.tag in _BLOCK_TAGS
+                and _WHITESPACE_RUN.fullmatch(text)
+            ):
+                return
+            collapsed = _WHITESPACE_RUN.sub(" ", text)
+            start = len(chars)
+            chars.extend(collapsed)
+            text_nodes.append(
+                _TextNodeInfo(
+                    html_text=node.html,  # HTML-encoded (e.g. "&amp;")
+                    decoded_text=text,  # Decoded (e.g. "&")
+                    collapsed_text=collapsed,
+                    char_start=start,
+                    char_end=len(chars),
+                )
+            )
+            return
 
-        # Walk children
-        if hasattr(node, "iter"):
-            for child in node.iter():
-                if child != node:  # Don't re-process self
-                    walk_node(child)
+        if tag in _STRIP_TAGS:
+            return
 
-    # Use text() which extracts all text content
-    text = root.text() or ""
-    return list(text)
+        if tag == "br":
+            chars.append("\n")
+            return
+
+        child = node.child
+        while child is not None:
+            _walk(child)
+            child = child.next
+
+    child = root.child
+    while child is not None:
+        _walk(child)
+        child = child.next
+
+    return chars, text_nodes
+
+
+def _find_text_node_offsets(html: str, text_nodes: list[_TextNodeInfo]) -> list[int]:
+    """Find the byte offset of each text node's html_text in the serialised HTML.
+
+    Searches sequentially, advancing the search position so matches follow
+    document order.
+
+    When selectolax re-encodes characters (e.g. literal ``\\xa0`` becomes
+    ``&nbsp;`` in ``node.html``), the entity form will not match the source
+    HTML.  In that case we fall back to ``decoded_text`` and update the
+    node's ``html_text`` so downstream offset calculations stay consistent.
+    """
+    offsets: list[int] = []
+    search_from = 0
+
+    for info in text_nodes:
+        idx = html.find(info.html_text, search_from)
+        if idx == -1:
+            # selectolax may re-encode chars (e.g. \xa0 -> &nbsp;).
+            # Fall back to decoded_text which matches the source.
+            idx = html.find(info.decoded_text, search_from)
+            if idx != -1:
+                info.html_text = info.decoded_text
+            else:
+                msg = (
+                    f"Could not find text node "
+                    f"{info.html_text!r} "
+                    f"in HTML starting from offset "
+                    f"{search_from}"
+                )
+                raise ValueError(msg)
+        offsets.append(idx)
+        search_from = idx + len(info.html_text)
+
+    return offsets
+
+
+def _html_char_length(html_text: str, html_pos: int, decoded_char: str) -> int:
+    """Determine how many bytes in *html_text* correspond to one decoded char.
+
+    If ``html_text[html_pos]`` starts an entity (e.g. ``&amp;``), return the
+    entity length.  Otherwise return 1.
+    """
+    if html_pos >= len(html_text):
+        return 1
+
+    if html_text[html_pos] == "&":
+        # Try to match a known entity
+        for entity, decoded in _ENTITY_MAP.items():
+            if html_text[html_pos:].startswith(entity) and decoded == decoded_char:
+                return len(entity)
+        # Try numeric entity &#NNN; or &#xHHH;
+        semicolon = html_text.find(";", html_pos + 1)
+        if semicolon != -1 and semicolon - html_pos < 12:
+            return semicolon - html_pos + 1
+    return 1
+
+
+def _collapsed_to_html_offset(
+    html_text: str, decoded_text: str, collapsed_offset: int
+) -> int:
+    """Map an offset in collapsed-decoded text to an offset in HTML-encoded text.
+
+    Walks the decoded text (which has entities resolved, e.g. ``&`` not
+    ``&amp;``) applying whitespace collapsing.  Simultaneously advances
+    through the HTML text to track the corresponding byte position.
+    """
+    if collapsed_offset == 0:
+        return 0
+
+    collapsed_pos = 0
+    decoded_pos = 0
+    html_pos = 0
+    in_whitespace = False
+
+    while decoded_pos < len(decoded_text) and collapsed_pos < collapsed_offset:
+        ch = decoded_text[decoded_pos]
+        is_ws = ch in (" ", "\t", "\n", "\r", "\u00a0") or ch.isspace()
+
+        html_char_len = _html_char_length(html_text, html_pos, ch)
+
+        if is_ws:
+            if not in_whitespace:
+                collapsed_pos += 1
+                in_whitespace = True
+            html_pos += html_char_len
+            decoded_pos += 1
+        else:
+            collapsed_pos += 1
+            html_pos += html_char_len
+            decoded_pos += 1
+            in_whitespace = False
+
+    return html_pos
+
+
+def _add_marker_insertions(
+    text_nodes: list[_TextNodeInfo],
+    byte_offsets: list[int],
+    start_char: int,
+    end_char: int,
+    marker_idx: int,
+    insertions: list[tuple[int, str]],
+) -> None:
+    """Add HLSTART and HLEND markers for a single highlight to insertions list.
+
+    Handles boundary cases where markers fall outside all text nodes.
+    """
+    # Find start position
+    start_node_found = False
+    for i, node_info in enumerate(text_nodes):
+        if node_info.char_start <= start_char < node_info.char_end:
+            offset_in_collapsed = start_char - node_info.char_start
+            raw_offset = _collapsed_to_html_offset(
+                node_info.html_text, node_info.decoded_text, offset_in_collapsed
+            )
+            byte_pos = byte_offsets[i] + raw_offset
+            insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
+            start_node_found = True
+            break
+
+    # Fallback: if start_char=0 but first text node has char_start>0
+    if not start_node_found and text_nodes and start_char == 0:
+        byte_pos = byte_offsets[0]
+        insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
+
+    # Find end position
+    end_node_found = False
+    for i, node_info in enumerate(text_nodes):
+        if node_info.char_start < end_char <= node_info.char_end:
+            offset_in_collapsed = end_char - node_info.char_start
+            raw_offset = _collapsed_to_html_offset(
+                node_info.html_text, node_info.decoded_text, offset_in_collapsed
+            )
+            byte_pos = byte_offsets[i] + raw_offset
+            insertions.append(
+                (
+                    byte_pos,
+                    HLEND_TEMPLATE.format(marker_idx)
+                    + MARKER_TEMPLATE.format(marker_idx),
+                )
+            )
+            end_node_found = True
+            break
+
+    # Fallback: if end_char equals document length or exceeds all nodes
+    if not end_node_found and text_nodes:
+        node_info = text_nodes[-1]
+        offset_in_collapsed = len(node_info.collapsed_text)
+        raw_offset = _collapsed_to_html_offset(
+            node_info.html_text, node_info.decoded_text, offset_in_collapsed
+        )
+        byte_pos = byte_offsets[-1] + raw_offset
+        insertions.append(
+            (
+                byte_pos,
+                HLEND_TEMPLATE.format(marker_idx) + MARKER_TEMPLATE.format(marker_idx),
+            )
+        )
+
+
+def insert_markers_into_dom(
+    html: str,
+    highlights: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, Any]]]:
+    """Insert annotation markers into HTML at correct character positions.
+
+    Walks the DOM using the same logic as ``extract_text_from_html``
+    (same whitespace rules, same block/strip tags, same collapse).
+    Inserts ``HLSTART``/``HLEND``/``ANNMARKER`` text into the serialised
+    HTML at positions matching the char indices from
+    ``extract_text_from_html``.
+
+    Args:
+        html: Clean HTML (from doc.content, no char spans).
+        highlights: List of highlight dicts with ``start_char``, ``end_char``,
+            ``tag``, etc.  Supports both ``start_char``/``end_char`` and
+            legacy ``start_word``/``end_word`` fields.
+
+    Returns:
+        ``(marked_html, ordered_highlights)`` -- marked HTML with markers
+        inserted, and highlights in marker order (same contract as
+        ``_insert_markers_into_html``).
+
+    Raises:
+        ValueError: If *html* is empty/None and *highlights* are non-empty.
+    """
+    if not highlights:
+        return html, []
+
+    if not html:
+        msg = "Cannot insert markers into empty HTML when highlights are non-empty"
+        raise ValueError(msg)
+
+    # Sort by start_char, then by tag (matching _insert_markers_into_html)
+    sorted_highlights = sorted(
+        highlights,
+        key=lambda h: (
+            h.get("start_char", h.get("start_word", 0)),
+            h.get("tag", ""),
+        ),
+    )
+
+    # Pass 1 — DOM walk to build position map
+    _chars, text_nodes = _walk_and_map(html)
+
+    # Pass 2a — find byte offsets of each text node in serialised HTML
+    byte_offsets = _find_text_node_offsets(html, text_nodes)
+
+    # Pass 2b — build insertion list
+    insertions: list[tuple[int, str]] = []
+    marker_to_highlight: list[dict[str, Any]] = []
+
+    for hl in sorted_highlights:
+        start_char = int(hl.get("start_char", hl.get("start_word", 0)))
+        end_char = int(hl.get("end_char", hl.get("end_word", start_char + 1)))
+
+        marker_idx = len(marker_to_highlight)
+        marker_to_highlight.append(hl)
+
+        _add_marker_insertions(
+            text_nodes, byte_offsets, start_char, end_char, marker_idx, insertions
+        )
+
+    # Sort insertions by byte offset descending — insert back-to-front
+    insertions.sort(key=lambda x: x[0], reverse=True)
+
+    # Reverse items at the same byte position so they insert in correct order.
+    # When multiple markers are at the same position, the insertion loop processes
+    # them in order, each pushing earlier markers forward. By reversing items at
+    # each position level, we ensure later-appended markers are processed first.
+    i = 0
+    while i < len(insertions):
+        j = i + 1
+        while j < len(insertions) and insertions[j][0] == insertions[i][0]:
+            j += 1
+        insertions[i:j] = list(reversed(insertions[i:j]))
+        i = j
+
+    result = html
+    for byte_pos, marker in insertions:
+        result = result[:byte_pos] + marker + result[byte_pos:]
+
+    return result, marker_to_highlight
 
 
 def _strip_html_to_text(html_content: str) -> str:

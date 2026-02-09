@@ -30,9 +30,13 @@ function base64ToUint8Array(b64) {
  * @param {HTMLElement} rootEl - DOM element to mount the editor in.
  * @param {string} initialMd - Initial markdown content (used only if no CRDT state exists).
  * @param {function} onYjsUpdate - Callback called with (base64Update: string) on local Yjs changes.
+ * @param {string} [fragmentName] - Optional XmlFragment name within the Yjs Doc. When provided,
+ *   binds to the named fragment via CollabService.bindXmlFragment() instead of bindDoc().
+ *   This allows multiple editors to bind to different fragments in the same Doc.
+ *   When undefined (default), uses bindDoc() for backward compatibility with the spike page.
  * @returns {Promise<Crepe>} The Crepe editor instance.
  */
-async function createEditor(rootEl, initialMd, onYjsUpdate) {
+async function createEditor(rootEl, initialMd, onYjsUpdate, fragmentName) {
   if (window.__milkdownCrepe) {
     console.error(
       "[milkdown-bundle] Crepe editor already initialized. " +
@@ -64,11 +68,20 @@ async function createEditor(rootEl, initialMd, onYjsUpdate) {
   await crepe.create();
   console.log("[milkdown-bundle] Crepe editor created");
 
-  // Bind the Yjs doc to the collab service and connect
+  // Bind the Yjs doc (or a named XmlFragment) to the collab service and connect
   crepe.editor.action((ctx) => {
-    ctx.get(collabServiceCtx).bindDoc(ydoc).connect();
+    const service = ctx.get(collabServiceCtx);
+    if (fragmentName) {
+      const fragment = ydoc.getXmlFragment(fragmentName);
+      service.bindXmlFragment(fragment).connect();
+      console.log(
+        `[milkdown-bundle] Yjs collab bound to XmlFragment '${fragmentName}'`
+      );
+    } else {
+      service.bindDoc(ydoc).connect();
+      console.log("[milkdown-bundle] Yjs collab bound to Doc (default)");
+    }
   });
-  console.log("[milkdown-bundle] Yjs collab bound");
 
   // Observe local Yjs updates and forward to Python via callback
   if (onYjsUpdate) {

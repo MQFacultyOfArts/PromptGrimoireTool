@@ -389,13 +389,14 @@ class TestEdgeCases:
         }
         assert required.issubset(PANDOC_BLOCK_ELEMENTS)
 
-    def test_crlf_in_highlighted_text(self) -> None:
-        """CRLF line endings in text are handled correctly.
+    def test_newline_in_highlighted_text(self) -> None:
+        """Newline characters in text are handled correctly.
 
-        When HTML contains CRLF (\\r\\n) line endings within highlighted
-        ranges, char indices should map correctly to byte positions.
+        When HTML contains newline characters within highlighted ranges,
+        char indices should map correctly to byte positions.  CRLF is
+        normalised to LF by upstream HTML parsers before this layer.
         """
-        # HTML with CRLF line ending within a paragraph
+        # HTML with newline within a paragraph
         html = "<p>line one\nline two</p>"
         chars = extract_text_from_html(html)
         # chars should be: "line one", "\n", "line two"

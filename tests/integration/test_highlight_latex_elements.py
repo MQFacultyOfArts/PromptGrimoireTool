@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from promptgrimoire.export.latex import convert_html_with_annotations
+from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 
 # Sectioning commands that are "moving arguments" in LaTeX — \par is forbidden inside

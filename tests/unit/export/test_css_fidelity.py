@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from promptgrimoire.export.latex import convert_html_to_latex
+from promptgrimoire.export.pandoc import convert_html_to_latex
 from tests.conftest import load_conversation_fixture
 
 # Filter paths

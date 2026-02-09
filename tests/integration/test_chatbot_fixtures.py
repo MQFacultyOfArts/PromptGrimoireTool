@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from promptgrimoire.export.latex import convert_html_to_latex
+from promptgrimoire.export.pandoc import convert_html_to_latex
 from promptgrimoire.export.platforms import get_handler, preprocess_for_export
 from tests.conftest import load_conversation_fixture, requires_latexmk
 

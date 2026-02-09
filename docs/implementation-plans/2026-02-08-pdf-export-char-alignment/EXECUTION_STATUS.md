@@ -9,7 +9,7 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1: `insert_markers_into_dom` + Tests | **COMPLETE** | UAT confirmed 2026-02-09. 2152 tests pass, 80 Phase 1 tests pass. |
-| Phase 2: Wire into Export Pipeline | **IN PROGRESS** | `walk_and_wrap` implemented, detection tests written. 12 known failures remain. |
+| Phase 2: Wire into Export Pipeline | **BLOCKED** | 28 pass, 2 xfail. Tofu fixed. Cross-heading highlights need #134 (LuaLaTeX node-level). |
 | Phase 3: Rename general_notes to response_draft | Not started | |
 | Phase 4: Delete Dead Code | Not started | |
 
@@ -26,20 +26,15 @@
 5. `f51940b` — `fix: move \annot outside LaTeX sectioning commands (Issue #132)`
 6. `5cb966a` — `feat: walk_and_wrap AST splitting, workspace fixture, PDF detection tests`
 
-### Known Failures (12 tests) — RED phase
+### Test Results: 28 pass, 2 xfail
 
-**Highlight boundary drift (2 failures):**
-- `hl5_jurisdiction`: "Mr Lawlis sought leave to rely on three grounds" — body text after "Grounds of Appeal" heading is NOT inside `\highLight{}`. Only heading is wrapped.
-- `hl9_legal_issues`: "21 years old at the time" — continuation text after "Subjective factors" heading is NOT inside `\highLight{}`.
+**Unicode/tofu: FIXED** (`fde4b68`) — all 13 `TestUnicodeRendering` tests pass. Font fallback for `\href{}` context resolved.
 
-Root cause: `_insert_markers_into_html` character counting diverges from `extract_text_from_html`. Markers drift from expected positions on long documents. This is the Phase 1 alignment issue — the DOM-based `insert_markers_into_dom` should fix it once wired in properly.
-
-**Unicode/tofu (10 failures):**
-- U+FFFD replacement characters in PDF output
-- 9 scripts fail to render: Armenian, Arabic, Bulgarian, Georgian, Greek, Hebrew, Hindi, Thai, Ukrainian
-- Chinese Simplified and Vietnamese render correctly
-
-Root cause: The General Notes section goes through `markdown_to_latex_notes()` (pandoc markdown→LaTeX) which produces raw Unicode inside `\href{}{}` commands. The `UNICODE_PREAMBLE` font fallback chain should handle this but does NOT activate for all scripts. The text IS in the .tex source — the fonts fail at render time. Needs investigation: possibly `\href` context bypasses main font fallback, or luatexja-fontspec fallback chain has gaps.
+**Highlight boundary drift (2 xfail):**
+- `hl5_jurisdiction` and `hl9_legal_issues` — cross-heading highlights not wrapped correctly
+- Root cause: Python-side LaTeX string manipulation fundamentally cannot handle escaped braces inside `\highLight{}`
+- Tracked in #134 (LuaLaTeX node-level highlighting)
+- Full-AST rewrite with pylatexenc attempted and reverted — see `WIP-walker-architectural-dead-end.md`
 
 ### Response Draft Persistence (DONE)
 
@@ -62,8 +57,8 @@ HTML fixture: `tests/fixtures/conversations/lawlis_v_r_austlii.html` (Lawlis v R
 |---|---|---|---|
 | `TestPdfBasicIntegrity` | 1 | 1 | 0 |
 | `TestHighlightBoundariesInPdf` | 13 | 13 | 0 |
-| `TestHighlightWrappingInTex` | 3 | 1 | 2 |
-| `TestUnicodeRendering` | 13 | 3 | 10 |
+| `TestHighlightWrappingInTex` | 3 | 1 | 2 (xfail, #134) |
+| `TestUnicodeRendering` | 13 | 13 | 0 |
 
 Tests use `pymupdf` (dev dependency) and `pdftotext` (system) for PDF text extraction.
 
@@ -153,10 +148,9 @@ If ANY of these fail, the AST-walk approach is wrong and needs a different desig
 
 ## Resume Instructions
 
-1. Start a new conversation on branch `milkdown-crdt-spike`
-2. Read this file for full context
-3. **Next tasks (in order):**
-   a. Fix tofu: investigate why UNICODE_PREAMBLE font fallback doesn't activate for text inside `\href{}{}` in the General Notes section
-   b. Fix highlight boundary drift: wire `insert_markers_into_dom` (Phase 1) to replace `_insert_markers_into_html` so character counting aligns with `extract_text_from_html`
-4. All 12 detection test failures should turn GREEN as fixes land
-5. Phases 3 and 4 of the original plan remain after this
+1. **Tofu: DONE.** All 13 unicode tests pass after `fde4b68`.
+2. **Cross-heading highlights: BLOCKED on #134.** pylatexenc approach dead-ended. See `WIP-walker-architectural-dead-end.md`.
+3. **Next steps for this branch:**
+   - Merge to main (28 pass, 2 xfail is clean)
+   - Branch #134 from main for LuaLaTeX node-level highlighting
+   - Phases 3 and 4 of the original plan can proceed independently

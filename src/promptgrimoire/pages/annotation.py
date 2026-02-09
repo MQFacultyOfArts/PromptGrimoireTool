@@ -16,7 +16,7 @@ import contextlib
 import html
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
@@ -1678,22 +1678,15 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
-        # Get document's original raw_content (preserves newlines)
-        # NOTE: raw_content removed in Phase 1, will be fixed in Phase 6 with
-        # proper plain-text extraction
         doc = await get_document(state.document_id)
-        raw_content = cast(
-            "str",
-            doc.raw_content if doc and hasattr(doc, "raw_content") else "",
-        )
-
-        # DEBUG: Log raw_content to see if newlines are present
-        logger.info(
-            "[PDF DEBUG] raw_content length=%d, newlines=%d, first 200 chars: %r",
-            len(raw_content),
-            raw_content.count("\n"),
-            raw_content[:200],
-        )
+        if doc is None or not doc.content:
+            notification.dismiss()
+            ui.notify(
+                "No document content to export. Please paste or upload content first.",
+                type="warning",
+            )
+            return
+        html_content = doc.content
 
         # Get response draft markdown for the General Notes section (Phase 7).
         # Primary path: JS extraction from running Milkdown editor (most accurate).
@@ -1724,7 +1717,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
 
         # Generate PDF
         pdf_path = await export_annotation_pdf(
-            html_content=raw_content,
+            html_content=html_content,
             highlights=highlights,
             tag_colours=tag_colours,
             general_notes="",

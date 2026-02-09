@@ -19,12 +19,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from promptgrimoire.export.latex import (
-    build_annotation_preamble,
-    convert_html_with_annotations,
-)
+from promptgrimoire.export.latex import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
+from promptgrimoire.export.preamble import build_annotation_preamble
 
 logger = logging.getLogger(__name__)
 

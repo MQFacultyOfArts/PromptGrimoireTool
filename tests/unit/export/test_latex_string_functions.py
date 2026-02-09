@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from promptgrimoire.export.latex import (
+from promptgrimoire.export.latex import _format_annot
+from promptgrimoire.export.preamble import (
     ANNOTATION_PREAMBLE_BASE,
     _escape_latex,
-    _format_annot,
     _format_timestamp,
     generate_tag_colour_definitions,
 )

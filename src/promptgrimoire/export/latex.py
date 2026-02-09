@@ -810,8 +810,7 @@ _HLEND_PATTERN = re.compile(r"HLEND(\d+)ENDHL")
 # Highlighting uses lua-ul's \highLight for robust cross-line-break backgrounds.
 # marginalia package auto-stacks overlapping margin notes (requires 2+ lualatex runs).
 ANNOTATION_PREAMBLE_BASE = r"""
-\usepackage{fontspec}
-\setmainfont{TeX Gyre Termes}  % Times New Roman equivalent
+% fontspec and \setmainfont are in UNICODE_PREAMBLE (with fallback chain)
 \usepackage{amsmath}           % Math extensions (\text{} in math mode)
 \usepackage{microtype}         % Better typography (kerning, protrusion)
 \usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX

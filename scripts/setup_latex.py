@@ -10,9 +10,15 @@ System font requirements (install via OS package manager):
 - Noto Sans (Deseret, Osage, Shavian - for historic scripts in BLNS)
 - Noto Sans Symbols, Noto Sans Symbols2, Noto Sans Math
 - Noto Color Emoji
+- SIL fonts (Gentium Plus, Charis SIL, Scheherazade, Ezra SIL, etc.)
 
-Ubuntu/Debian (install ALL Noto fonts for complete Unicode coverage):
+Ubuntu/Debian (install ALL Noto and SIL fonts for complete Unicode coverage):
     sudo apt install --install-recommends fonts-noto
+    sudo apt install fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+        fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+        fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+        fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+        fonts-sil-taiheritagepro
 
 Fedora:
     sudo dnf install google-noto-fonts-all google-noto-emoji-fonts
@@ -74,7 +80,21 @@ REQUIRED_SYSTEM_FONTS = [
     # CJK fonts (at least one variant needed)
     "Noto Serif CJK SC",
     "Noto Sans CJK SC",
-    # Script-specific fonts for fallback chain
+    # SIL fonts — high quality, script-specific coverage
+    "Gentium Plus",  # Latin, Greek, Cyrillic
+    "Charis SIL",  # Latin, Cyrillic
+    "Doulos SIL",  # Latin, Cyrillic (single weight, very complete)
+    "Ezra SIL",  # Hebrew
+    "Scheherazade",  # Arabic (Naskh)
+    "Annapurna SIL",  # Devanagari
+    "Abyssinica SIL",  # Ethiopic
+    "Padauk",  # Myanmar (Burmese)
+    "Khmer Mondulkiri",  # Khmer
+    "Galatia SIL",  # Greek (polytonic)
+    "Sophia Nubian",  # Nubian/Coptic
+    "Nuosu SIL",  # Yi
+    "Tai Heritage Pro",  # Tai Viet
+    # Noto Serif — broad coverage fallback
     "Noto Serif",
     "Noto Serif Hebrew",
     "Noto Naskh Arabic",
@@ -82,6 +102,13 @@ REQUIRED_SYSTEM_FONTS = [
     "Noto Serif Bengali",
     "Noto Serif Tamil",
     "Noto Serif Thai",
+    "Noto Serif Georgian",
+    "Noto Serif Armenian",
+    "Noto Serif Ethiopic",
+    "Noto Serif Khmer",
+    "Noto Serif Lao",
+    "Noto Serif Myanmar",
+    "Noto Serif Sinhala",
     # Historic/rare scripts (for BLNS coverage)
     "Noto Sans Deseret",
     "Noto Sans Osage",

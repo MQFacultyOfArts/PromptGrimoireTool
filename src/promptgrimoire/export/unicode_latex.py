@@ -15,18 +15,28 @@ UNICODE_PREAMBLE = r"""
 \usepackage{luatexja-fontspec}
 \usepackage{emoji}
 
+% luatexja range 2 (U+0370-U+04FF: Greek + basic Cyrillic) defaults to +2 (JAchar),
+% routing these characters to the CJK font which lacks accented Greek (ά U+03AC)
+% and extended Cyrillic (ї U+0457). Set -2 to route through main font fallback.
+\ltjsetparameter{jacharrange={-2}}
+
 % Define comprehensive font fallback chain BEFORE loading fonts
 % Fonts are tried in order until one has the glyph
-% Using Noto Serif variants for consistency with TeX Gyre Termes (TNR)
+% SIL fonts first (higher quality for their target scripts), then Noto as backup
 \directlua{
   luaotfload.add_fallback("mainfallback", {
-    % Extended Latin, Greek, Cyrillic
+    % Latin, Greek, Cyrillic — SIL fonts with excellent coverage
+    "Gentium Plus:mode=node;",
+    "Charis SIL:mode=node;",
     "Noto Serif:mode=node;",
-    % Hebrew script (U+0590-U+05FF)
+    % Hebrew
+    "Ezra SIL:mode=node;script=hebr;",
     "Noto Serif Hebrew:mode=node;script=hebr;",
-    % Arabic script (U+0600-U+06FF, U+0750-U+077F, etc.)
+    % Arabic
+    "Scheherazade:mode=node;script=arab;",
     "Noto Naskh Arabic:mode=node;script=arab;",
-    % Indic scripts - Devanagari (Hindi, Sanskrit, Marathi)
+    % Devanagari (Hindi, Sanskrit, Marathi)
+    "Annapurna SIL:mode=node;script=deva;",
     "Noto Serif Devanagari:mode=node;script=deva;",
     % Bengali, Assamese
     "Noto Serif Bengali:mode=node;script=beng;",
@@ -39,19 +49,30 @@ UNICODE_PREAMBLE = r"""
     % Armenian
     "Noto Serif Armenian:mode=node;script=armn;",
     % Ethiopic
+    "Abyssinica SIL:mode=node;script=ethi;",
     "Noto Serif Ethiopic:mode=node;script=ethi;",
     % Khmer (Cambodian)
+    "Khmer Mondulkiri:mode=node;script=khmr;",
     "Noto Serif Khmer:mode=node;script=khmr;",
     % Lao
     "Noto Serif Lao:mode=node;script=lao;",
     % Myanmar (Burmese)
+    "Padauk:mode=node;script=mymr;",
     "Noto Serif Myanmar:mode=node;script=mymr;",
     % Sinhala (Sri Lankan)
     "Noto Serif Sinhala:mode=node;script=sinh;",
+    % Tai Viet
+    "Tai Heritage Pro:mode=node;",
+    % Nubian/Coptic
+    "Sophia Nubian:mode=node;",
+    % Yi
+    "Nuosu SIL:mode=node;",
+    % Greek polytonic (backup)
+    "Galatia SIL:mode=node;script=grek;",
     % Historic/rare scripts (for BLNS coverage)
-    "Noto Sans Deseret:mode=node;",  % U+10400-U+1044F (19th c. Utah)
-    "Noto Sans Osage:mode=node;",    % U+104B0-U+104FF
-    "Noto Sans Shavian:mode=node;",  % U+10450-U+1047F
+    "Noto Sans Deseret:mode=node;",
+    "Noto Sans Osage:mode=node;",
+    "Noto Sans Shavian:mode=node;",
     % Symbols and math (last resort for missing glyphs)
     "Noto Sans Symbols:mode=node;",
     "Noto Sans Symbols2:mode=node;",

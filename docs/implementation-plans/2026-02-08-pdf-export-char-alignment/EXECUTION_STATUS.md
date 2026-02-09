@@ -8,8 +8,8 @@
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| Phase 1: `insert_markers_into_dom` + Tests | **UAT PENDING** | Code review passed (zero issues). Proleptic challenge done. Awaiting human UAT confirmation. |
-| Phase 2: Wire into Export Pipeline | Not started | |
+| Phase 1: `insert_markers_into_dom` + Tests | **COMPLETE** | UAT confirmed 2026-02-09. 2152 tests pass, 80 Phase 1 tests pass. |
+| Phase 2: Wire into Export Pipeline | **IN PROGRESS** | |
 | Phase 3: Rename general_notes to response_draft | Not started | |
 | Phase 4: Delete Dead Code | Not started | |
 
@@ -33,15 +33,15 @@
 - **Review 2:** Important: 1 (type:ignore comment), Minor: 1 (walk dupe = Issue #131)
 - **Review 3:** APPROVED, zero issues
 
-## Phase 1 UAT Checklist (pending human confirmation)
+## Phase 1 UAT Checklist (CONFIRMED 2026-02-09)
 
-- [ ] Shared marker constants module at `src/promptgrimoire/export/marker_constants.py`
-- [ ] `insert_markers_into_dom` in `src/promptgrimoire/input_pipeline/html_input.py`
-- [ ] Round-trip property holds for all test cases
-- [ ] 27 unit tests pass (including 6 boundary condition tests)
-- [ ] 53 fixture-based integration tests pass across 17 real platform HTML fixtures
-- [ ] Boundary bugs fixed
-- [ ] ACs covered: AC3.1-AC3.5, AC1.3, AC1.4
+- [x] Shared marker constants module at `src/promptgrimoire/export/marker_constants.py`
+- [x] `insert_markers_into_dom` in `src/promptgrimoire/input_pipeline/html_input.py`
+- [x] Round-trip property holds for all test cases
+- [x] 27 unit tests pass (including 6 boundary condition tests)
+- [x] 53 fixture-based integration tests pass across 17 real platform HTML fixtures
+- [x] Boundary bugs fixed
+- [x] ACs covered: AC3.1-AC3.5, AC1.3, AC1.4
 
 ## Files Changed in Phase 1
 

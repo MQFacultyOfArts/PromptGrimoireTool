@@ -556,6 +556,11 @@ def _find_text_node_offsets(html: str, text_nodes: list[_TextNodeInfo]) -> list[
 
     Searches sequentially, advancing the search position so matches follow
     document order.
+
+    When selectolax re-encodes characters (e.g. literal ``\\xa0`` becomes
+    ``&nbsp;`` in ``node.html``), the entity form will not match the source
+    HTML.  In that case we fall back to ``decoded_text`` and update the
+    node's ``html_text`` so downstream offset calculations stay consistent.
     """
     offsets: list[int] = []
     search_from = 0
@@ -563,11 +568,19 @@ def _find_text_node_offsets(html: str, text_nodes: list[_TextNodeInfo]) -> list[
     for info in text_nodes:
         idx = html.find(info.html_text, search_from)
         if idx == -1:
-            msg = (
-                f"Could not find text node {info.html_text!r} "
-                f"in HTML starting from offset {search_from}"
-            )
-            raise ValueError(msg)
+            # selectolax may re-encode chars (e.g. \xa0 -> &nbsp;).
+            # Fall back to decoded_text which matches the source.
+            idx = html.find(info.decoded_text, search_from)
+            if idx != -1:
+                info.html_text = info.decoded_text
+            else:
+                msg = (
+                    f"Could not find text node "
+                    f"{info.html_text!r} "
+                    f"in HTML starting from offset "
+                    f"{search_from}"
+                )
+                raise ValueError(msg)
         offsets.append(idx)
         search_from = idx + len(info.html_text)
 

@@ -302,16 +302,13 @@ async def export_annotation_pdf(
         re.IGNORECASE,
     )
 
-    # For plain text: wrap in <p> WITHOUT escaping, then escape AFTER markers
-    # are inserted. This fixes Issue #113 where HTML escaping changed character
-    # counts and caused marker position misalignment.
-    escape_text_after_markers = False
+    # Plain text path removed: doc.content is always HTML.
+    # Full cleanup of is_structured_html detection in Phase 2 Task 3.
     if is_structured_html:
         # Preprocess HTML: detect platform, remove chrome, inject speaker labels
         processed_html = preprocess_for_export(html_content)
     else:
         processed_html = _plain_text_to_html(html_content, escape=False)
-        escape_text_after_markers = True
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling
@@ -321,7 +318,6 @@ async def export_annotation_pdf(
         tag_colours=tag_colours,
         filter_path=_LIBREOFFICE_FILTER,
         word_to_legal_para=word_to_legal_para,
-        escape_text=escape_text_after_markers,
     )
 
     # Build preamble with tag colours

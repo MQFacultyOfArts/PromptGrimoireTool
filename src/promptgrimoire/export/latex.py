@@ -50,6 +50,7 @@ from promptgrimoire.export.unicode_latex import (
     _strip_control_chars,
     escape_unicode_latex,
 )
+from promptgrimoire.input_pipeline.html_input import insert_markers_into_dom
 
 logger = logging.getLogger(__name__)
 
@@ -1255,7 +1256,6 @@ async def convert_html_with_annotations(
     tag_colours: dict[str, str],  # noqa: ARG001 - colours used in preamble generation
     filter_path: Path | None = None,
     word_to_legal_para: dict[int, int | None] | None = None,
-    escape_text: bool = False,
 ) -> str:
     """Convert HTML to LaTeX with annotations inserted as marginnote+soul.
 
@@ -1270,10 +1270,6 @@ async def convert_html_with_annotations(
         tag_colours: Mapping of tag names to hex colours.
         filter_path: Optional Lua filter for legal document fixes.
         word_to_legal_para: Optional mapping of word index to legal paragraph number.
-        escape_text: If True, escape HTML special chars in text content AFTER
-            marker insertion. Use when input is plain text wrapped in tags
-            without escaping (Issue #113 fix). When True, skip HTML normalization
-            steps since input is plain text, not browser HTML.
 
     Returns:
         LaTeX body with marginnote+soul annotations at correct positions.
@@ -1284,27 +1280,14 @@ async def convert_html_with_annotations(
         [h.get("id", "")[:8] for h in highlights],
     )
 
-    # HTML normalization is only for browser-copied HTML content
-    # Skip when processing plain text (escape_text=True)
-    if not escape_text:
-        # Strip script/style tags from browser copy-paste content
-        html = strip_scripts_and_styles(html)
+    # Strip script/style tags from browser copy-paste content
+    html = strip_scripts_and_styles(html)
 
-        # Fix mid-word font tag splits from LibreOffice RTF export
-        html = fix_midword_font_splits(html)
+    # Fix mid-word font tag splits from LibreOffice RTF export
+    html = fix_midword_font_splits(html)
 
-    # IMPORTANT: Insert markers BEFORE stripping control chars!
-    # The UI counts words including control char "words" (e.g., BLNS has standalone
-    # 0x01-0x1F chars). If we strip first, word indices become misaligned.
-    # Markers are ASCII (HLSTARTnENDHL) so they survive the strip.
-    marked_html, marker_highlights = _insert_markers_into_html(html, highlights)
-
-    # Escape text content AFTER markers are placed (Issue #113 fix).
-    # Markers are ASCII and won't be affected by html.escape().
-    # This ensures character indices match between UI (counts raw chars)
-    # and PDF export (also counts raw chars, not escaped chars).
-    if escape_text:
-        marked_html = _escape_html_text_content(marked_html)
+    # Insert markers at character positions matching extract_text_from_html
+    marked_html, marker_highlights = insert_markers_into_dom(html, highlights)
 
     # Strip control characters that are invalid in LaTeX AFTER markers are placed
     # (e.g., BLNS contains 0x01-0x1F non-whitespace controls)

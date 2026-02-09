@@ -267,14 +267,13 @@ async def export_annotation_pdf(
     """Generate PDF with annotations from live annotation data.
 
     This is the main entry point for PDF export. It orchestrates:
-    1. HTML → LaTeX conversion with annotation markers
+    1. HTML -> LaTeX conversion with annotation markers
     2. Complete document assembly with preamble
     3. General notes section
     4. PDF compilation via latexmk
 
     Args:
-        html_content: Content to export. Can be plain text or HTML.
-            Plain text (no HTML tags) is auto-converted to HTML paragraphs.
+        html_content: HTML content to export (from ``doc.content``).
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
         general_notes: HTML content from general notes editor.
@@ -285,30 +284,23 @@ async def export_annotation_pdf(
         output_dir: Optional output directory for PDF. Defaults to temp dir.
         user_id: Optional user identifier for scoped temp directory.
             If provided, creates a per-user export dir that is cleaned on reuse.
+        filename: Base name for the output PDF file (without extension).
 
     Returns:
         Path to the generated PDF file.
 
     Raises:
+        ValueError: If highlights are provided but content is empty.
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
-    # Detect if content is ALREADY structured HTML (starts with HTML tags).
-    # Plain text newlines are collapsed by Pandoc, so we wrap in <p> tags.
-    # We check the START of content - not anywhere - because content like BLNS
-    # contains HTML strings (XSS payloads) that shouldn't trigger HTML detection.
-    is_structured_html = html_content and re.match(
-        r"\s*<(?:!DOCTYPE|html|body|p|div|table|ul|ol|h[1-6])\b",
-        html_content,
-        re.IGNORECASE,
-    )
+    if highlights and (not html_content or not html_content.strip()):
+        raise ValueError(
+            "Cannot insert annotation markers into empty content. "
+            "Provide document content or remove highlights."
+        )
 
-    # Plain text path removed: doc.content is always HTML.
-    # Full cleanup of is_structured_html detection in Phase 2 Task 3.
-    if is_structured_html:
-        # Preprocess HTML: detect platform, remove chrome, inject speaker labels
-        processed_html = preprocess_for_export(html_content)
-    else:
-        processed_html = _plain_text_to_html(html_content, escape=False)
+    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
+    processed_html = preprocess_for_export(html_content) if html_content else ""
 
     # Convert HTML to LaTeX body with annotations
     # Use libreoffice.lua filter for proper table handling

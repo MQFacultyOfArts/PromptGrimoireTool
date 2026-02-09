@@ -1070,6 +1070,139 @@ def _replace_markers_with_annots(
     return generate_highlighted_latex(regions, highlights, [])
 
 
+# Sectioning commands where \par is forbidden (LaTeX "moving arguments")
+_SECTION_COMMANDS_RE = re.compile(
+    r"\\(section|subsection|subsubsection|paragraph|subparagraph)\*?\{",
+)
+
+
+def _move_annots_outside_sections(latex: str) -> str:
+    r"""Move \annot commands from inside sectioning commands to outside.
+
+    LaTeX sectioning commands (\section{}, \subsection{}, etc.) are "moving
+    arguments" that forbid \par. The \annot macro uses \marginalia and \parbox
+    which contain \par, so it must not appear inside section braces.
+
+    This post-processor finds \annot{...}{...} inside \section{...} and moves
+    it to immediately after the section's closing brace.
+
+    Args:
+        latex: LaTeX with \annot commands potentially inside sectioning commands.
+
+    Returns:
+        LaTeX with \annot commands moved outside sectioning commands.
+    """
+    if r"\annot" not in latex:
+        return latex
+
+    result = latex
+    # Iterate until no more annots inside sections (handles nested cases)
+    max_iterations = 50  # Safety limit
+    for _ in range(max_iterations):
+        moved = False
+        for match in _SECTION_COMMANDS_RE.finditer(result):
+            brace_start = match.end() - 1  # Position of '{'
+            # Find the matching closing brace
+            depth = 0
+            section_end = -1
+            for i in range(brace_start, len(result)):
+                if result[i] == "{":
+                    depth += 1
+                elif result[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        section_end = i
+                        break
+
+            if section_end == -1:
+                continue  # Unclosed brace, skip
+
+            content = result[brace_start + 1 : section_end]
+            if r"\annot" not in content:
+                continue
+
+            # Find the last \annot{...}{...} in the section content
+            # Work backwards to find the outermost \annot
+            annot_pos = content.rfind(r"\annot")
+            if annot_pos == -1:
+                continue
+
+            # Extract the \annot{...}{...} — need to match two brace groups
+            abs_annot_pos = brace_start + 1 + annot_pos
+            annot_text = _extract_annot_command(result, abs_annot_pos)
+            if not annot_text:
+                continue
+
+            # Remove from inside section, place after section closing brace
+            annot_end = abs_annot_pos + len(annot_text)
+            result = (
+                result[:abs_annot_pos]
+                + result[annot_end:section_end]
+                + "}"
+                + annot_text
+                + result[section_end + 1 :]
+            )
+            moved = True
+            break  # Restart search since positions shifted
+
+        if not moved:
+            break
+
+    return result
+
+
+def _extract_annot_command(latex: str, pos: int) -> str | None:
+    r"""Extract a complete \annot{...}{...} command starting at pos.
+
+    Returns the full command text including both brace groups, or None if
+    the structure doesn't match.
+    """
+    prefix = r"\annot"
+    if not latex[pos:].startswith(prefix):
+        return None
+
+    cursor = pos + len(prefix)
+
+    # Extract first brace group {colour}
+    if cursor >= len(latex) or latex[cursor] != "{":
+        return None
+    end1 = _find_matching_brace(latex, cursor)
+    if end1 == -1:
+        return None
+
+    cursor = end1 + 1
+
+    # Extract second brace group {margin content}
+    if cursor >= len(latex) or latex[cursor] != "{":
+        return None
+    end2 = _find_matching_brace(latex, cursor)
+    if end2 == -1:
+        return None
+
+    return latex[pos : end2 + 1]
+
+
+def _find_matching_brace(latex: str, open_pos: int) -> int:
+    """Find the position of the matching closing brace.
+
+    Args:
+        latex: LaTeX string.
+        open_pos: Position of the opening '{'.
+
+    Returns:
+        Position of the matching '}', or -1 if not found.
+    """
+    depth = 0
+    for i in range(open_pos, len(latex)):
+        if latex[i] == "{":
+            depth += 1
+        elif latex[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
 def _fix_invalid_newlines(latex: str) -> str:
     """Remove \\newline{} commands in invalid table contexts.
 
@@ -1297,4 +1430,8 @@ async def convert_html_with_annotations(
     latex = await convert_html_to_latex(marked_html, filter_path=filter_path)
 
     # Replace markers with annots
-    return _replace_markers_with_annots(latex, marker_highlights, word_to_legal_para)
+    result = _replace_markers_with_annots(latex, marker_highlights, word_to_legal_para)
+
+    # Move \annot commands outside sectioning commands (\section{}, etc.)
+    # where \par is forbidden — see Issue #132
+    return _move_annots_outside_sections(result)

@@ -473,7 +473,7 @@ _ENTITY_MAP: dict[str, str] = {
 
 
 @dataclass
-class _TextNodeInfo:
+class TextNodeInfo:
     """Info about a text node's contribution to the character stream."""
 
     html_text: str  # HTML-encoded text (for finding in serialised HTML)
@@ -483,7 +483,7 @@ class _TextNodeInfo:
     char_end: int  # Ending char index (exclusive)
 
 
-def _walk_and_map(html: str) -> tuple[list[str], list[_TextNodeInfo]]:
+def walk_and_map(html: str) -> tuple[list[str], list[TextNodeInfo]]:
     """Walk DOM exactly like extract_text_from_html, returning chars + node map.
 
     Pass 1 of the two-pass marker insertion approach. Builds a position map
@@ -501,7 +501,7 @@ def _walk_and_map(html: str) -> tuple[list[str], list[_TextNodeInfo]]:
         return [], []
 
     chars: list[str] = []
-    text_nodes: list[_TextNodeInfo] = []
+    text_nodes: list[TextNodeInfo] = []
 
     def _walk(node: Any) -> None:
         tag = node.tag
@@ -521,7 +521,7 @@ def _walk_and_map(html: str) -> tuple[list[str], list[_TextNodeInfo]]:
             start = len(chars)
             chars.extend(collapsed)
             text_nodes.append(
-                _TextNodeInfo(
+                TextNodeInfo(
                     html_text=node.html,  # HTML-encoded (e.g. "&amp;")
                     decoded_text=text,  # Decoded (e.g. "&")
                     collapsed_text=collapsed,
@@ -551,7 +551,7 @@ def _walk_and_map(html: str) -> tuple[list[str], list[_TextNodeInfo]]:
     return chars, text_nodes
 
 
-def _find_text_node_offsets(html: str, text_nodes: list[_TextNodeInfo]) -> list[int]:
+def find_text_node_offsets(html: str, text_nodes: list[TextNodeInfo]) -> list[int]:
     """Find the byte offset of each text node's html_text in the serialised HTML.
 
     Searches sequentially, advancing the search position so matches follow
@@ -608,7 +608,7 @@ def _html_char_length(html_text: str, html_pos: int, decoded_char: str) -> int:
     return 1
 
 
-def _collapsed_to_html_offset(
+def collapsed_to_html_offset(
     html_text: str, decoded_text: str, collapsed_offset: int
 ) -> int:
     """Map an offset in collapsed-decoded text to an offset in HTML-encoded text.
@@ -647,7 +647,7 @@ def _collapsed_to_html_offset(
 
 
 def _add_marker_insertions(
-    text_nodes: list[_TextNodeInfo],
+    text_nodes: list[TextNodeInfo],
     byte_offsets: list[int],
     start_char: int,
     end_char: int,
@@ -663,7 +663,7 @@ def _add_marker_insertions(
     for i, node_info in enumerate(text_nodes):
         if node_info.char_start <= start_char < node_info.char_end:
             offset_in_collapsed = start_char - node_info.char_start
-            raw_offset = _collapsed_to_html_offset(
+            raw_offset = collapsed_to_html_offset(
                 node_info.html_text, node_info.decoded_text, offset_in_collapsed
             )
             byte_pos = byte_offsets[i] + raw_offset
@@ -681,7 +681,7 @@ def _add_marker_insertions(
     for i, node_info in enumerate(text_nodes):
         if node_info.char_start < end_char <= node_info.char_end:
             offset_in_collapsed = end_char - node_info.char_start
-            raw_offset = _collapsed_to_html_offset(
+            raw_offset = collapsed_to_html_offset(
                 node_info.html_text, node_info.decoded_text, offset_in_collapsed
             )
             byte_pos = byte_offsets[i] + raw_offset
@@ -699,7 +699,7 @@ def _add_marker_insertions(
     if not end_node_found and text_nodes:
         node_info = text_nodes[-1]
         offset_in_collapsed = len(node_info.collapsed_text)
-        raw_offset = _collapsed_to_html_offset(
+        raw_offset = collapsed_to_html_offset(
             node_info.html_text, node_info.decoded_text, offset_in_collapsed
         )
         byte_pos = byte_offsets[-1] + raw_offset
@@ -754,10 +754,10 @@ def insert_markers_into_dom(
     )
 
     # Pass 1 — DOM walk to build position map
-    _chars, text_nodes = _walk_and_map(html)
+    _chars, text_nodes = walk_and_map(html)
 
     # Pass 2a — find byte offsets of each text node in serialised HTML
-    byte_offsets = _find_text_node_offsets(html, text_nodes)
+    byte_offsets = find_text_node_offsets(html, text_nodes)
 
     # Pass 2b — build insertion list
     insertions: list[tuple[int, str]] = []

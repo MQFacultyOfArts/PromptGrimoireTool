@@ -198,6 +198,15 @@ class TestAC1_1_CrossBlockSplit:
         for s in spans:
             assert s["data-hl"] == "0"
 
+        # Verify span text content
+        span_texts = [s["_text"] for s in spans]
+        assert "Title" in span_texts, (
+            f"Expected 'Title' in spans, got texts: {span_texts}"
+        )
+        assert "Body text" in span_texts, (
+            f"Expected 'Body text' in spans, got texts: {span_texts}"
+        )
+
     def test_h2_to_p_split(self) -> None:
         html = "<h2>Heading</h2><p>Body</p>"
         chars = extract_text_from_html(html)
@@ -229,6 +238,17 @@ class TestAC1_5_NoCrossBlockSpan:
 
         # Parse the result and verify no single span crosses from h2 into p
         tree = LexborHTMLParser(result)
+        spans = _find_spans(result)
+
+        # Verify span text content
+        span_texts = [s["_text"] for s in spans]
+        assert "Heading" in span_texts, (
+            f"Expected 'Heading' in spans, got texts: {span_texts}"
+        )
+        assert "Body" in span_texts, (
+            f"Expected 'Body' in spans, got texts: {span_texts}"
+        )
+
         for span in tree.css("span[data-hl]"):
             parent = span.parent
             # Walk up to find block ancestor
@@ -250,6 +270,15 @@ class TestAC1_5_NoCrossBlockSpan:
         # Verify there are separate spans
         spans = _find_spans(result)
         assert len(spans) >= 2, f"Expected separate spans per block, got {spans}"
+
+        # Verify span text content
+        span_texts = [s["_text"] for s in spans]
+        assert "Heading" in span_texts, (
+            f"Expected 'Heading' in spans, got texts: {span_texts}"
+        )
+        assert "Body" in span_texts, (
+            f"Expected 'Body' in spans, got texts: {span_texts}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -359,3 +388,28 @@ class TestEdgeCases:
             "dd",
         }
         assert required.issubset(PANDOC_BLOCK_ELEMENTS)
+
+    def test_crlf_in_highlighted_text(self) -> None:
+        """CRLF line endings in text are handled correctly.
+
+        When HTML contains CRLF (\\r\\n) line endings within highlighted
+        ranges, char indices should map correctly to byte positions.
+        """
+        # HTML with CRLF line ending within a paragraph
+        html = "<p>line one\nline two</p>"
+        chars = extract_text_from_html(html)
+        # chars should be: "line one", "\n", "line two"
+        # Total = 18 chars
+        total_len = len(chars)
+
+        # Highlight spanning both lines
+        hl = _make_hl(0, total_len, tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        assert len(spans) >= 1, "Expected at least 1 span for text with newline"
+
+        # Verify the span covers both lines
+        full_text = "".join(s["_text"] for s in spans)
+        assert "line one" in full_text
+        assert "line two" in full_text

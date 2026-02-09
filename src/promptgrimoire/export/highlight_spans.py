@@ -169,21 +169,24 @@ def _compute_regions(
 def _detect_block_boundaries(
     html: str,
     text_nodes: list[TextNodeInfo],
+    byte_offsets: list[int],
 ) -> set[int]:
     """Identify character positions where a block boundary occurs.
 
     A block boundary is the ``char_start`` of a text node whose nearest
     block-level ancestor differs from that of the preceding text node.
 
-    We parse the HTML with selectolax to find each text node's nearest
-    block ancestor tag, then compare consecutive text nodes.
+    Scans backwards through the serialized HTML to find the nearest
+    block-level ancestor tag for each text node, then compares consecutive
+    text nodes to detect boundary transitions.
+
+    Args:
+        html: Serialized HTML string.
+        text_nodes: List of text node info from walk_and_map.
+        byte_offsets: Byte offsets of each text node in the HTML string.
     """
     if len(text_nodes) <= 1:
         return set()
-
-    # Use the byte offsets to find each text node
-    # in the serialized HTML, then find its containing block element.
-    byte_offsets = find_text_node_offsets(html, text_nodes)
 
     def _find_block_ancestor_at(byte_pos: int) -> str:
         """Find the innermost block-level ancestor tag at a byte position.
@@ -362,23 +365,49 @@ def _insert_spans_into_html(
         )
 
         # Find the byte position for the start of this region
-        start_byte = _char_to_byte_pos(region.start, text_nodes, byte_offsets)
+        start_byte = _char_to_byte_pos(
+            region.start, text_nodes, byte_offsets, is_region_end=False
+        )
         # Find the byte position for the end of this region
-        end_byte = _char_to_byte_pos(region.end, text_nodes, byte_offsets)
+        end_byte = _char_to_byte_pos(
+            region.end, text_nodes, byte_offsets, is_region_end=True
+        )
 
         if start_byte is not None and end_byte is not None:
             insertions.append((end_byte, close_tag))
             insertions.append((start_byte, open_tag))
 
-    # Sort by byte position descending (back-to-front insertion)
-    # For same position: closing tags before opening tags (higher position
-    # value in the tuple -- close_tag has end_byte which is >= start_byte).
-    # Since we insert back-to-front, later insertions don't shift earlier ones.
-    insertions.sort(key=lambda x: x[0], reverse=True)
+    # Sort by byte position descending (back-to-front insertion).
+    # At the same position: closing tags before opening tags, so that when
+    # inserted in order at the same byte position, we get: </old><new>
+    # which is the correct order in the resulting HTML.
+    def sort_key(item: tuple[int, str]) -> tuple[int, bool]:
+        byte_pos, tag = item
+        is_closing = tag.startswith("</")
+        # Return (pos, is_closing): with reverse=True, (pos, True) > (pos, False)
+        # so closing tags (True) come first in the sorted order
+        return (byte_pos, is_closing)
+
+    insertions.sort(key=sort_key, reverse=True)
 
     result = html
+    prev_pos: int | None = None
+    # Group insertions by position to handle same-position tags together.
+    # When multiple insertions are at the same position, concatenate them
+    # so they're inserted atomically, preserving the intended order.
+    same_pos_buffer: list[str] = []
+
     for byte_pos, tag in insertions:
-        result = result[:byte_pos] + tag + result[byte_pos:]
+        if prev_pos is not None and byte_pos != prev_pos:
+            # Different position: flush the buffer
+            result = result[:prev_pos] + "".join(same_pos_buffer) + result[prev_pos:]
+            same_pos_buffer = []
+        same_pos_buffer.append(tag)
+        prev_pos = byte_pos
+
+    # Flush remaining buffer
+    if same_pos_buffer and prev_pos is not None:
+        result = result[:prev_pos] + "".join(same_pos_buffer) + result[prev_pos:]
 
     return result
 
@@ -387,19 +416,64 @@ def _char_to_byte_pos(
     char_idx: int,
     text_nodes: list[TextNodeInfo],
     byte_offsets: list[int],
+    is_region_end: bool = False,
 ) -> int | None:
     """Map a character index to a byte position in the serialized HTML.
 
     Finds the text node containing ``char_idx`` and computes the
     byte offset within it using ``collapsed_to_html_offset``.
+
+    At block boundaries where char_idx equals the char_end of one node AND
+    the char_start of the next:
+    - If ``is_region_end`` is False (default): uses the start of the next node
+    - If ``is_region_end`` is True: uses the end of the previous node
+
+    Args:
+        char_idx: Character index to map.
+        text_nodes: List of text node information.
+        byte_offsets: Byte offsets of each text node.
+        is_region_end: If True, map to position AFTER the last character
+            (for region close tags). If False, map to position AT the character
+            (for region open tags and positions within nodes).
     """
+    # Match char_idx strictly within a text node's interior
     for i, tn in enumerate(text_nodes):
-        if tn.char_start <= char_idx <= tn.char_end:
+        if tn.char_start < char_idx < tn.char_end:
             offset_in_collapsed = char_idx - tn.char_start
             raw_offset = collapsed_to_html_offset(
                 tn.html_text, tn.decoded_text, offset_in_collapsed
             )
             return byte_offsets[i] + raw_offset
+
+    # At block boundaries: char_idx == prev_node.char_end == next_node.char_start.
+    for i, tn in enumerate(text_nodes):
+        if char_idx == tn.char_start:
+            if is_region_end and i > 0:
+                # For region ends at a boundary, use the END of the previous node
+                prev = text_nodes[i - 1]
+                prev_idx = i - 1
+                raw_offset = collapsed_to_html_offset(
+                    prev.html_text, prev.decoded_text, len(prev.collapsed_text)
+                )
+                return byte_offsets[prev_idx] + raw_offset
+            else:
+                # For region starts or positions within first node,
+                # use the START of this node
+                offset_in_collapsed = 0
+                raw_offset = collapsed_to_html_offset(
+                    tn.html_text, tn.decoded_text, offset_in_collapsed
+                )
+                return byte_offsets[i] + raw_offset
+
+    # Match char_idx at the end of the last text node
+    # (position after the final character)
+    if text_nodes and char_idx == text_nodes[-1].char_end:
+        last = text_nodes[-1]
+        last_idx = len(text_nodes) - 1
+        raw_offset = collapsed_to_html_offset(
+            last.html_text, last.decoded_text, len(last.collapsed_text)
+        )
+        return byte_offsets[last_idx] + raw_offset
 
     # Fallback: char_idx beyond all text nodes -> end of last text node
     if text_nodes:
@@ -475,7 +549,7 @@ def compute_highlight_spans(
         return html
 
     # Detect block boundaries
-    boundaries = _detect_block_boundaries(html, text_nodes)
+    boundaries = _detect_block_boundaries(html, text_nodes, byte_offsets)
 
     # Split regions at block boundaries
     regions = _split_regions_at_boundaries(regions, boundaries)

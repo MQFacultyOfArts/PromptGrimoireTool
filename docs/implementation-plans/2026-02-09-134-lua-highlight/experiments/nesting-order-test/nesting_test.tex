@@ -1,0 +1,11 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{xcolor}
+\begin{document}
+
+Test 1 (underlines outside): \underLine[color=yellow!70!black, height=2pt, bottom=-5pt]{\underLine[color=cyan!70!black, height=1pt, bottom=-3pt]{\highLight[yellow]{\highLight[cyan]{Underlines outside.}}}}
+
+Test 2 (underlines interleaved): \underLine[color=yellow!70!black, height=2pt, bottom=-5pt]{\highLight[yellow]{\underLine[color=cyan!70!black, height=1pt, bottom=-3pt]{\highLight[cyan]{Underlines interleaved.}}}}
+
+\end{document}

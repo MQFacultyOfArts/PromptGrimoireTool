@@ -64,26 +64,6 @@ local function parse_margin_left(style)
   return parse_margin(style, 'margin%-left')
 end
 
--- Escape special LaTeX characters in text
-local function escape_latex(text)
-  local replacements = {
-    ['\\'] = '\\textbackslash{}',
-    ['&'] = '\\&',
-    ['%%'] = '\\%%',
-    ['%$'] = '\\$',
-    ['#'] = '\\#',
-    ['_'] = '\\_',
-    ['{'] = '\\{',
-    ['}'] = '\\}',
-    ['~'] = '\\textasciitilde{}',
-    ['%^'] = '\\textasciicircum{}',
-  }
-  for char, escaped in pairs(replacements) do
-    text = text:gsub(char, escaped)
-  end
-  return text
-end
-
 -- Convert Pandoc inlines to LaTeX string
 local function inlines_to_latex(inlines)
   -- Use pandoc's writer to convert inlines to latex

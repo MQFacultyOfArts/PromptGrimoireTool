@@ -1,0 +1,25 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\begin{document}
+\section{Introduction}\label{introduction}
+
+\highLight[yellow]{This intro text is highlighted.}
+
+\subsection{\texorpdfstring{\highLight[yellow]{Highlighted
+Heading}}{Highlighted Heading}}\label{highlighted-heading}
+
+\highLight[yellow]{Still highlighted after heading.} Normal text
+resumes.
+
+\subsection{Normal Heading}\label{normal-heading}
+
+Some text. \highLight[cyan]{Highlight starts here}
+
+\subsubsection{\texorpdfstring{\highLight[cyan]{Starts in
+H3}}{Starts in H3}}\label{starts-in-h3}
+
+\highLight[cyan]{Continues after H3.} Done.
+\end{document}

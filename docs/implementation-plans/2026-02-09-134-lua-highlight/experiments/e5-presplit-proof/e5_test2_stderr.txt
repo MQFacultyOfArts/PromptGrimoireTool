@@ -1,0 +1,22 @@
+[001] Str: text="Some"
+[002] Space
+[003] Str: text="text"
+[004] Str: text="highlighted"
+[005] Space
+[006] Str: text="across"
+[007] Str: text="A"
+[008] Space
+[009] Str: text="Heading"
+[010] Str: text="multiple"
+[011] Space
+[012] Str: text="blocks"
+[013] Space
+[014] Str: text="and"
+[015] Space
+[016] Str: text="more"
+[017] Space
+[018] Str: text="text."
+[019] Para:
+[020] Para:
+[021] Header: id=a-heading
+[022] Para:

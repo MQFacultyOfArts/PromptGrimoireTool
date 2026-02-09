@@ -1,0 +1,80 @@
+=== INPUT HTML ===
+<h1>This is demo. With silly header.</h1>
+<p>Foo bar the test text is going here but is very mixed up.</p>
+
+=== MARKED HTML ===
+<h1>This HLSTART0ENDHLis demo. With HLSTART1ENDHLsilly header.</h1>
+<p>Foo bar the test text HLSTART2ENDHLis goingHLEND0ENDHLANNMARKER0ENDMARKER here HLSTART3ENDHLbutHLEND3ENDHLANNMARKER3ENDMARKER HLEND1ENDHLANNMARKER1ENDMARKERis veryHLEND2ENDHLANNMARKER2ENDMARKER mixed up.</p>
+
+=== MARKER MAPPING ===
+  marker 0: tag=jurisdiction, start=5, end=62
+  marker 1: tag=legal_issues, start=19, end=72
+  marker 2: tag=ratio, start=54, end=79
+  marker 3: tag=obiter, start=68, end=71
+
+=== MARKED LATEX (after Pandoc) ===
+\section{This HLSTART0ENDHLis demo. With HLSTART1ENDHLsilly
+header.}\label{this-hlstart0endhlis-demo.-with-hlstart1endhlsilly-header.}
+
+Foo bar the test text HLSTART2ENDHLis
+goingHLEND0ENDHLANNMARKER0ENDMARKER here
+HLSTART3ENDHLbutHLEND3ENDHLANNMARKER3ENDMARKER
+HLEND1ENDHLANNMARKER1ENDMARKERis veryHLEND2ENDHLANNMARKER2ENDMARKER
+mixed up.
+
+
+=== TOKENS ===
+  [0] TEXT       idx=None val='\\section{This '
+  [1] HLSTART    idx=0 val='HLSTART0ENDHL'
+  [2] TEXT       idx=None val='is demo. With '
+  [3] HLSTART    idx=1 val='HLSTART1ENDHL'
+  [4] TEXT       idx=None val='silly\\nheader.}\\label{this-hlstart0endhlis-demo.-with-hlstart'
+  [5] HLSTART    idx=2 val='HLSTART2ENDHL'
+  [6] TEXT       idx=None val='is\\ngoing'
+  [7] HLEND      idx=0 val='HLEND0ENDHL'
+  [8] ANNMARKER  idx=0 val='ANNMARKER0ENDMARKER'
+  [9] TEXT       idx=None val=' here\\n'
+  [10] HLSTART    idx=3 val='HLSTART3ENDHL'
+  [11] TEXT       idx=None val='but'
+  [12] HLEND      idx=3 val='HLEND3ENDHL'
+  [13] ANNMARKER  idx=3 val='ANNMARKER3ENDMARKER'
+  [14] TEXT       idx=None val='\\n'
+  [15] HLEND      idx=1 val='HLEND1ENDHL'
+  [16] ANNMARKER  idx=1 val='ANNMARKER1ENDMARKER'
+  [17] TEXT       idx=None val='is very'
+  [18] HLEND      idx=2 val='HLEND2ENDHL'
+  [19] ANNMARKER  idx=2 val='ANNMARKER2ENDMARKER'
+  [20] TEXT       idx=None val='\\nmixed up.\\n'
+
+=== REGIONS ===
+  [0] active={} annots=[]
+      text='\\section{This '
+  [1] active={hl0=jurisdiction} annots=[]
+      text='is demo. With '
+  [2] active={hl0=jurisdiction, hl1=legal_issues} annots=[]
+      text='silly\\nheader.}\\label{this-hlstart0endhlis-demo.-with-hlstart1endhlsilly-header.}'
+  [3] active={hl0=jurisdiction, hl1=legal_issues, hl2=ratio} annots=['ann0']
+      text='is\\ngoing'
+  [4] active={hl1=legal_issues, hl2=ratio} annots=[]
+      text=' here\\n'
+  [5] active={hl1=legal_issues, hl2=ratio, hl3=obiter} annots=['ann3']
+      text='but'
+  [6] active={hl1=legal_issues, hl2=ratio} annots=['ann1']
+      text='\\n'
+  [7] active={hl2=ratio} annots=['ann2']
+      text='is very'
+  [8] active={} annots=[]
+      text='\\nmixed up.\\n'
+
+=== HIGHLIGHTED LATEX ===
+\section{This \highLight[tag-jurisdiction-light]{\underLine[color=tag-jurisdiction-dark, height=1pt, bottom=-3pt]{is demo. With }}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{silly
+header.}}}}}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{\label{this-hlstart0endhlis-demo.-with-hlstart1endhlsilly-header.}}}}}
+
+\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{Foo bar the test text }}}}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\underLine[color=many-dark, height=4pt, bottom=-5pt]{is
+going}}}}\annot{tag-jurisdiction}{\textbf{Jurisdiction}\par{\scriptsize Alice}}\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\underLine[color=tag-legal-issues-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-ratio-dark, height=1pt, bottom=-3pt]{ here
+}}}}\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\highLight[tag-obiter-light]{\underLine[color=many-dark, height=4pt, bottom=-5pt]{but}}}}\annot{tag-obiter}{\textbf{Obiter}\par{\scriptsize Dave}}
+\annot{tag-legal-issues}{\textbf{Legal Issues}\par{\scriptsize Bob}}\highLight[tag-ratio-light]{\underLine[color=tag-ratio-dark, height=1pt, bottom=-3pt]{is very}}\annot{tag-ratio}{\textbf{Ratio}\par{\scriptsize Carol}}
+mixed up.
+
+
+=== DONE ===

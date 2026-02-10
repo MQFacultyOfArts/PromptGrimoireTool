@@ -27,6 +27,10 @@ library references during development.
 
 - [How to create and configure Claude Code skills (markdown files that teach Claude specialized knowledge)](claude-code/skills.md)
 
+## dead-ends
+
+- [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
+
 ## lark
 
 - [Using Lark as a standalone lexer (tokenizer only, no parsing)](lark/lexer-usage.md)

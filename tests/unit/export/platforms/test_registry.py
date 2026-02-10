@@ -42,11 +42,17 @@ class TestDiscoverHandlers:
 
         assert "scienceos" in _handlers
 
-    def test_discovers_all_five_handlers(self) -> None:
-        """Autodiscovery finds exactly 5 handlers."""
+    def test_discovers_wikimedia_handler(self) -> None:
+        """Autodiscovery finds Wikimedia handler."""
         from promptgrimoire.export.platforms import _handlers
 
-        assert len(_handlers) == 5
+        assert "wikimedia" in _handlers
+
+    def test_discovers_all_six_handlers(self) -> None:
+        """Autodiscovery finds exactly 6 handlers."""
+        from promptgrimoire.export.platforms import _handlers
+
+        assert len(_handlers) == 6
 
 
 class TestGetHandler:

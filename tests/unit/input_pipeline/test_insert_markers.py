@@ -256,6 +256,26 @@ class TestSelectolaxEntityNormalization:
             [{"start_char": 6, "end_char": 13}],
         )
 
+    def test_newline_entity_in_xss_payload(self) -> None:
+        """#113: &#x0A; → newline, collapsed to space.
+
+        Marker must not split the entity.
+        """
+        # The BLNS XSS payload that triggered the original LaTeX compilation failure.
+        # &#x0A; decodes to \n which collapses to a space in the character stream.
+        _assert_round_trip(
+            "<p>jav&#x0A;ascript:alert(1)</p>",
+            [{"start_char": 0, "end_char": 10}],
+        )
+
+    def test_highlight_boundary_at_newline_entity(self) -> None:
+        """#113: Highlight boundary lands exactly at the &#x0A; entity position."""
+        # Highlight starts right after the collapsed whitespace from &#x0A;
+        _assert_round_trip(
+            "<p>jav&#x0A;ascript:alert(1)</p>",
+            [{"start_char": 4, "end_char": 15}],
+        )
+
 
 class TestBackwardCompat:
     """Legacy start_word/end_word field names work as aliases."""

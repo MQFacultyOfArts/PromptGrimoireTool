@@ -93,6 +93,10 @@ library references during development.
 - [SAML SSO connections - integrate SAML identity providers including AAF](stytch/sso-saml.md)
 - [Testing guide - E2E testing, sandbox values, test credentials](stytch/testing.md)
 
+## test-plans
+
+- [Human Test Plan: 134-lua-highlight](test-plans/2026-02-09-134-lua-highlight.md)
+
 ---
 
 ## Project Documents

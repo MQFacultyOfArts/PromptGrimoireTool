@@ -170,6 +170,14 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
     if not markdown_content or not markdown_content.strip():
         return ""
 
+    # Strip markdown image syntax — we don't support images in export.
+    # Inline: ![alt](url)  Reference: ![alt][id] and [id]: url
+    markdown_content = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", markdown_content)
+    markdown_content = re.sub(r"!\[[^\]]*\]\[[^\]]*\]", "", markdown_content)
+    markdown_content = re.sub(
+        r"^\[[^\]]*\]:\s+\S+.*$", "", markdown_content, flags=re.MULTILINE
+    )
+
     proc = await asyncio.create_subprocess_exec(
         "pandoc",
         "-f",

@@ -40,6 +40,20 @@ ANNOTATION_PREAMBLE_BASE = r"""
 \usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
 \usepackage[framemethod=tikz]{mdframed}  % For speaker turn borders
 
+% Stub for \includegraphics - Pandoc converts <img> tags to this.
+% hyperref loads graphicx which defines \includegraphics, so we must
+% \renewcommand AFTER all \usepackage calls to survive.
+\renewcommand{\includegraphics}[2][]{[image]}
+
+% No-op otherlanguage environment - Pandoc generates \begin{otherlanguage}{X}
+% for non-English content but we handle multilingual via luatexja + font fallbacks.
+% babel (loaded by hyperref/luabidi chain) may define it, so override safely.
+\makeatletter
+\@ifundefined{otherlanguage}%
+  {\newenvironment{otherlanguage}[1]{}{}}%
+  {\renewenvironment{otherlanguage}[1]{}{}}
+\makeatother
+
 % Paragraph formatting for chatbot exports (no indent, paragraph spacing)
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.5\baselineskip}

@@ -156,9 +156,13 @@ def test_debug() -> None:
     Uses pytest-depper for smart test selection based on code dependencies.
     Only tests that depend on changed files (vs main branch) will run.
 
+    Excludes E2E tests (same as test-all) because Playwright's event loop
+    contaminates xdist workers. See #121.
+
     Flags applied:
         --depper: Enable smart test selection based on changed files
         --depper-run-all-on-error: Fall back to all tests if analysis fails
+        -m "not e2e": Exclude Playwright E2E tests by marker
         -n auto: Parallel execution with auto-detected workers
         --dist=worksteal: Workers steal tests from others for better load balancing
         -x: Stop on first failure
@@ -174,6 +178,8 @@ def test_debug() -> None:
         default_args=[
             "--depper",
             "--depper-run-all-on-error",
+            "-m",
+            "not e2e",
             "-n",
             "auto",
             "--dist=worksteal",

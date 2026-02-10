@@ -1,6 +1,6 @@
 -- Pandoc Lua filter for highlight rendering.
--- Reads data-hl and data-colors span attributes and emits
--- nested \highLight / \underLine LaTeX commands.
+-- Reads data-hl, data-colors, and data-annots span attributes and emits
+-- nested \highLight / \underLine / \annot LaTeX commands.
 --
 -- Stacking model ("one, two, many"):
 --   1 highlight:  single 1pt underline in tag's dark colour
@@ -134,6 +134,17 @@ function Span(el)
   -- Underline closes (inner first for stacked)
   for _, c in ipairs(ul_closes) do
     result:insert(c)
+  end
+
+  -- Annotation emission: annots attribute contains pre-formatted LaTeX
+  -- (produced by Python's format_annot_latex in highlight_spans.py).
+  -- Emitted as RawInline AFTER the closing highlight/underline braces.
+  -- No special heading handling needed: Pandoc auto-wraps the entire
+  -- Span content (including RawInline outputs) in \texorpdfstring{}
+  -- when the span is inside a heading (validated in E2b experiment).
+  local annots = el.attributes["annots"]
+  if annots ~= nil and annots ~= "" then
+    result:insert(pandoc.RawInline("latex", annots))
   end
 
   return result

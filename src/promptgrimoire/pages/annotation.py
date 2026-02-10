@@ -1867,6 +1867,10 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 cr('_prompt_'), 'gi');
                             sp.a = new RegExp(
                                 cr('_markdown_'), 'gi');
+                        }} else if (/mw-parser-output|mw-body-content/.test(html)) {{
+                            window.{platform_var} = 'wikimedia';
+                            // No speaker labels — wiki content
+                            // has no user/assistant turns
                         }}
                         if (sp.u) {{
                             html = html.replace(
@@ -1968,6 +1972,34 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                         // Strip style/script/img tags
                         iframe.contentDocument.querySelectorAll('style, script, img')
                             .forEach(el => el.remove());
+
+                        // Strip MediaWiki chrome (if wikimedia platform)
+                        if (window.{platform_var} === 'wikimedia') {{
+                            const mwChrome = [
+                                'nav', '.vector-header-container',
+                                '.vector-main-menu-landmark',
+                                '.vector-main-menu-container',
+                                '.vector-sidebar', '.mw-portlet',
+                                '#footer', '.mw-footer',
+                                '.mw-editsection', '#toc', '.toc',
+                                '#catlinks', '.vector-column-start',
+                                '.vector-column-end', '#mw-navigation',
+                                '.vector-page-toolbar',
+                                '.vector-page-titlebar',
+                                '.vector-sitenotice-container',
+                                '.vector-dropdown',
+                                '.vector-sticky-header',
+                                '#p-search', '.vector-search-box',
+                                '.vector-user-links',
+                                '.mw-jump-link',
+                                '#mw-aria-live-region',
+                            ];
+                            const iDoc = iframe.contentDocument;
+                            for (const sel of mwChrome) {{
+                                iDoc.querySelectorAll(sel)
+                                    .forEach(el => el.remove());
+                            }}
+                        }}
 
                         // Process all elements - preserve important inline styles
                         iframe.contentDocument.querySelectorAll('*').forEach(el => {{

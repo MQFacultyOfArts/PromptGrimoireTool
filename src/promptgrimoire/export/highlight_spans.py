@@ -373,7 +373,7 @@ def _split_regions_at_boundaries(
 def _build_span_tag(
     region: _HlRegion,
     highlights: list[dict[str, Any]],
-    tag_colours: dict[str, str],  # noqa: ARG001 — reserved for Phase 4 hex lookup
+    tag_colours: dict[str, str],  # noqa: ARG001 — API placeholder; colours derived from tag slugs
     word_to_legal_para: dict[int, int | None] | None,
 ) -> tuple[str, str]:
     """Build opening and closing ``<span>`` tags for a region.

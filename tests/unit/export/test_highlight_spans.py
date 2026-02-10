@@ -1,4 +1,4 @@
-"""Tests for compute_highlight_spans — AC1.1 through AC1.5.
+"""Tests for compute_highlight_spans — AC1.1 through AC1.5, plus AC4.6.
 
 Verifies pre-Pandoc highlight span insertion:
 - AC1.1: Cross-block highlights produce pre-split spans
@@ -6,19 +6,19 @@ Verifies pre-Pandoc highlight span insertion:
 - AC1.3: Single-block highlight produces one span
 - AC1.4: No highlights leaves HTML unchanged
 - AC1.5: Cross-block spans are NOT left crossing the boundary
+- AC4.6: format_annot_latex produces correct LaTeX annotation strings
 
 Plus edge cases: CRLF, HTML entities, adjacent highlights, data-annots placement.
 """
 
 from __future__ import annotations
 
-import json
-
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.export.highlight_spans import (
     PANDOC_BLOCK_ELEMENTS,
     compute_highlight_spans,
+    format_annot_latex,
 )
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 
@@ -321,7 +321,7 @@ class TestEdgeCases:
         assert "&" in full_text or "amp" in full_text.lower()
 
     def test_annots_on_last_span(self) -> None:
-        """data-annots appears on the last span of a highlight."""
+        """data-annots appears on the last span of a highlight as LaTeX."""
         html = "<h1>Title</h1><p>Body</p>"
         chars = extract_text_from_html(html)
         hl = _make_hl(0, len(chars), tag="jurisdiction", author="Alice")
@@ -334,12 +334,10 @@ class TestEdgeCases:
             f"Expected exactly 1 span with data-annots, got {len(annot_spans)}"
         )
 
-        # Verify the annotation content
+        # Verify the annotation content is pre-formatted LaTeX
         annots_raw = annot_spans[0]["data-annots"]
-        annots = json.loads(annots_raw)
-        assert len(annots) == 1
-        assert annots[0]["tag"] == "jurisdiction"
-        assert annots[0]["author"] == "Alice"
+        assert r"\annot{tag-jurisdiction}" in annots_raw
+        assert "Alice" in annots_raw
 
     def test_annots_with_para_ref(self) -> None:
         """data-annots includes para_ref when word_to_legal_para is provided."""
@@ -353,8 +351,9 @@ class TestEdgeCases:
         spans = _find_spans(result)
         annot_spans = [s for s in spans if "data-annots" in s]
         assert len(annot_spans) == 1
-        annots = json.loads(annot_spans[0]["data-annots"])
-        assert annots[0]["para_ref"] == 5
+        annots_raw = annot_spans[0]["data-annots"]
+        assert r"\annot{tag-jurisdiction}" in annots_raw
+        assert "[5]" in annots_raw
 
     def test_pandoc_block_elements_constant(self) -> None:
         """PANDOC_BLOCK_ELEMENTS contains all required elements."""
@@ -414,3 +413,138 @@ class TestEdgeCases:
         full_text = "".join(s["_text"] for s in spans)
         assert "line one" in full_text
         assert "line two" in full_text
+
+
+# ---------------------------------------------------------------------------
+# AC4.6: format_annot_latex produces correct LaTeX annotation strings
+# ---------------------------------------------------------------------------
+
+
+class TestFormatAnnotLatex:
+    """Verify format_annot_latex() produces correct \\annot{}{} LaTeX strings."""
+
+    def test_basic_annotation(self) -> None:
+        """Basic highlight with tag and author produces \\annot command."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "Alice Jones",
+            "comments": [],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        assert result.startswith(r"\annot{tag-jurisdiction}{")
+        assert r"\textbf{Jurisdiction}" in result
+        assert "Alice Jones" in result
+
+    def test_underscore_tag_slug(self) -> None:
+        """Tag with underscores produces hyphenated colour name."""
+        hl = {
+            "tag": "key_issue",
+            "author": "Bob",
+            "comments": [],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        assert r"\annot{tag-key-issue}{" in result
+        assert r"\textbf{Key Issue}" in result
+
+    def test_para_ref_included(self) -> None:
+        """para_ref string is included in margin content."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "Tester",
+            "comments": [],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl, para_ref="[45]")
+        assert "[45]" in result
+
+    def test_timestamp_formatted(self) -> None:
+        """ISO timestamp is formatted as human-readable."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "Tester",
+            "comments": [],
+            "created_at": "2026-01-26T14:30:00+00:00",
+        }
+        result = format_annot_latex(hl)
+        assert "26 Jan 2026" in result
+        assert "14:30" in result
+
+    def test_comments_with_separator(self) -> None:
+        """Comments produce hrulefill separator and formatted entries."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "Alice",
+            "comments": [
+                {
+                    "author": "Bob",
+                    "text": "Good point",
+                    "created_at": "",
+                }
+            ],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        assert r"\par\hrulefill" in result
+        assert "Bob" in result
+        assert "Good point" in result
+
+    def test_multiple_comments(self) -> None:
+        """Multiple comments each appear in the output."""
+        hl = {
+            "tag": "evidence",
+            "author": "Alice",
+            "comments": [
+                {"author": "Bob", "text": "First comment", "created_at": ""},
+                {"author": "Carol", "text": "Second comment", "created_at": ""},
+            ],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        assert "First comment" in result
+        assert "Second comment" in result
+        assert "Bob" in result
+        assert "Carol" in result
+
+    def test_special_chars_escaped(self) -> None:
+        """LaTeX special characters in author/text are escaped."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "O'Brien & Sons",
+            "comments": [],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        # & should be escaped as \&
+        assert r"\&" in result
+
+    def test_test_uuid_stripped(self) -> None:
+        """Test UUIDs appended to author names are stripped."""
+        hl = {
+            "tag": "jurisdiction",
+            "author": "Alice Jones 1664E02D",
+            "comments": [],
+            "created_at": "",
+        }
+        result = format_annot_latex(hl)
+        assert "Alice Jones" in result
+        assert "1664E02D" not in result
+
+    def test_annot_in_data_annots_attribute(self) -> None:
+        """data-annots contains pre-formatted LaTeX from format_annot_latex."""
+        html = "<p>some text here</p>"
+        hl = _make_hl(0, 9, tag="jurisdiction", author="Alice")
+        hl["created_at"] = "2026-01-26T14:30:00+00:00"
+        hl["comments"] = [{"author": "Bob", "text": "Nice", "created_at": ""}]
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        annot_spans = [s for s in spans if "data-annots" in s]
+        assert len(annot_spans) == 1
+        annots_raw = annot_spans[0]["data-annots"]
+        # Should be pre-formatted LaTeX, not JSON
+        assert r"\annot{tag-jurisdiction}" in annots_raw
+        assert "Alice" in annots_raw
+        assert "Bob" in annots_raw
+        assert "Nice" in annots_raw

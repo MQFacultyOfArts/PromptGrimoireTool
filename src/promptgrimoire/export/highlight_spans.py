@@ -15,10 +15,11 @@ Architecture:
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
+from promptgrimoire.export.preamble import _format_timestamp, _strip_test_uuid
+from promptgrimoire.export.unicode_latex import escape_unicode_latex
 from promptgrimoire.input_pipeline.html_input import (
     TextNodeInfo,
     collapsed_to_html_offset,
@@ -63,6 +64,87 @@ PANDOC_BLOCK_ELEMENTS: frozenset[str] = frozenset(
         "dd",
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# Annotation formatting (adapted from _format_annot in latex.py)
+# ---------------------------------------------------------------------------
+
+
+def format_annot_latex(
+    highlight: dict[str, Any],
+    para_ref: str = "",
+) -> str:
+    r"""Format a highlight as a LaTeX ``\annot`` command.
+
+    Layout in margin note::
+
+        **Tag** [para]
+        name, date
+        ---
+        comment text...
+
+    Adapts the logic from ``_format_annot()`` (formerly in ``latex.py``) for
+    use by ``compute_highlight_spans()`` when populating the ``data-annots``
+    attribute.
+
+    Args:
+        highlight: Highlight dict with ``tag``, ``author``, ``text``,
+            ``comments``, ``created_at``.
+        para_ref: Paragraph reference string (e.g. ``"[45]"`` or
+            ``"[45]-[48]"``).
+
+    Returns:
+        LaTeX ``\annot{colour}{margin_content}`` command string.
+    """
+    tag = highlight.get("tag", "jurisdiction")
+    author = _strip_test_uuid(highlight.get("author", "Unknown"))
+    comments = highlight.get("comments", [])
+    created_at = highlight.get("created_at", "")
+
+    # Tag colour name (matches \definecolor name)
+    colour_name = f"tag-{tag.replace('_', '-')}"
+
+    # Build margin content
+    tag_display = tag.replace("_", " ").title()
+    timestamp = _format_timestamp(created_at)
+
+    # Line 1: **Tag** [para]
+    if para_ref:
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}} {para_ref}"]
+    else:
+        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}}"]
+
+    # Line 2: name, date (scriptsize)
+    if timestamp:
+        margin_parts.append(
+            f"\\par{{\\scriptsize {escape_unicode_latex(author)}, {timestamp}}}"
+        )
+    else:
+        margin_parts.append(f"\\par{{\\scriptsize {escape_unicode_latex(author)}}}")
+
+    # Separator and comments if present
+    if comments:
+        margin_parts.append("\\par\\hrulefill")
+        for comment in comments:
+            c_author = _strip_test_uuid(comment.get("author", "Unknown"))
+            c_text = comment.get("text", "")
+            c_timestamp = _format_timestamp(comment.get("created_at", ""))
+            c_author_esc = escape_unicode_latex(c_author)
+            c_text_esc = escape_unicode_latex(c_text)
+            if c_timestamp:
+                margin_parts.append(
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}}}, "
+                    f"{c_timestamp}:}} {c_text_esc}"
+                )
+            else:
+                margin_parts.append(
+                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}:}}}} {c_text_esc}"
+                )
+
+    margin_content = "".join(margin_parts)
+
+    return f"\\annot{{{colour_name}}}{{{margin_content}}}"
 
 
 # ---------------------------------------------------------------------------
@@ -312,26 +394,24 @@ def _build_span_tag(
 
     open_tag = f'<span data-hl="{hl_attr}" data-colors="{colors_attr}"'
 
-    # Build data-annots attribute if this region has annotations
+    # Build data-annots attribute if this region has annotations.
+    # The value is pre-formatted LaTeX (\annot{...}{...} commands) that the
+    # Lua filter emits verbatim as RawInline.
     if region.annots:
-        annot_list: list[dict[str, Any]] = []
+        annot_parts: list[str] = []
         for annot_idx in region.annots:
             hl = highlights[annot_idx]
-            annot_entry: dict[str, Any] = {
-                "tag": hl.get("tag", ""),
-                "author": hl.get("author", ""),
-            }
-            # Resolve para_ref
+            # Resolve para_ref string
+            para_ref = ""
             if word_to_legal_para is not None:
                 start_char = int(hl.get("start_char", hl.get("start_word", 0)))
                 para_num = word_to_legal_para.get(start_char)
                 if para_num is not None:
-                    annot_entry["para_ref"] = para_num
-            annot_entry["comments"] = hl.get("comments", [])
-            annot_list.append(annot_entry)
-        annots_json = json.dumps(annot_list, separators=(",", ":"))
-        # Use single quotes for the attribute since JSON uses double quotes
-        open_tag += f" data-annots='{annots_json}'"
+                    para_ref = f"[{para_num}]"
+            annot_parts.append(format_annot_latex(hl, para_ref=para_ref))
+        annots_latex = "".join(annot_parts)
+        # Use single quotes for the attribute since LaTeX uses braces/backslashes
+        open_tag += f" data-annots='{annots_latex}'"
 
     open_tag += ">"
     close_tag = "</span>"

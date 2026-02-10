@@ -45,7 +45,7 @@ def _run_pandoc_with_filter(html: str) -> str:
     Raises:
         subprocess.CalledProcessError: If Pandoc exits with non-zero status.
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=True) as tmp:
         tmp.write(html)
         tmp.flush()
         result = subprocess.run(

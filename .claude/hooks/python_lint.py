@@ -12,7 +12,7 @@ comprehensive linting with --fix when Claude finishes work.
 
 Exit codes:
 - 0: Success (or non-Python file, skipped)
-- 2: Blocking error (lint/type check failed)
+- 2: Lint warnings shown to Claude (PostToolUse exit 2 cannot block, only shows stderr)
 """
 
 import json
@@ -40,11 +40,17 @@ def main() -> int:
     if not path.exists():
         return 0
 
+    # Skip linting if file has merge conflict markers — ruff will always
+    # fail on them, and the error output just wastes context.
+    content = path.read_text(errors="replace")
+    if "<<<<<<< " in content:
+        return 0
+
     errors = []
 
     # Step 1: ruff format
     result = subprocess.run(
-        ["uv", "run", "ruff", "format", file_path],
+        ["uv", "run", "--quiet", "ruff", "format", file_path],
         capture_output=True,
         text=True,
         timeout=30,
@@ -55,7 +61,7 @@ def main() -> int:
 
     # Step 2: ruff check (report issues, no autofix)
     result = subprocess.run(
-        ["uv", "run", "ruff", "check", file_path],
+        ["uv", "run", "--quiet", "ruff", "check", file_path],
         capture_output=True,
         text=True,
         timeout=30,
@@ -66,7 +72,7 @@ def main() -> int:
 
     # Step 3: ty check (via uvx)
     result = subprocess.run(
-        ["uvx", "ty", "check", file_path],
+        ["uvx", "--quiet", "ty", "check", file_path],
         capture_output=True,
         text=True,
         timeout=60,
@@ -78,11 +84,10 @@ def main() -> int:
     if errors:
         error_summary = "\n".join(errors)
         msg = f"Lint/type errors in {file_path}:\n{error_summary}"
-        # Exit 2 with stderr for blocking errors
+        # Exit 2 to show warnings to Claude (PostToolUse can't block, tool already ran)
         print(msg, file=sys.stderr)
         return 2
 
-    # Success - empty JSON or simple continue
     print(json.dumps({"continue": True, "suppressOutput": True}))
     return 0
 

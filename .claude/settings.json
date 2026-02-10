@@ -11,6 +11,7 @@
       "Bash(git rev-parse *)",
       "Bash(git ls-files *)",
       "Bash(git remote *)",
+      "Bash(git worktree *)",
       "Bash(git -C * status *)",
       "Bash(git -C * log *)",
       "Bash(git -C * diff *)",

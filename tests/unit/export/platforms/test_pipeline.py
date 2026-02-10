@@ -81,3 +81,39 @@ class TestPipelineEquivalence:
         assert "visual rendering" not in result
         # MathML preserved
         assert "katex-mathml" in result
+
+
+class TestInteractiveElementSanitisation:
+    """#117: Interactive elements must not interfere with annotation."""
+
+    def test_links_unwrapped(self) -> None:
+        """<a> tags unwrapped — visible text kept, href dropped."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = '<p>See <a href="https://example.com">the docs</a> here</p>'
+        result = preprocess_for_export(html)
+
+        assert "the docs" in result
+        assert "href" not in result
+        assert "<a " not in result
+
+    def test_all_buttons_removed(self) -> None:
+        """All buttons removed, not just copy/share/download."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = "<div><button>Retry</button><p>Content</p></div>"
+        result = preprocess_for_export(html)
+
+        assert "Retry" not in result
+        assert "Content" in result
+
+    def test_event_attributes_stripped(self) -> None:
+        """on* event attributes stripped from all elements."""
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        html = '<div onclick="alert(1)" onmouseover="x()"><p>Text</p></div>'
+        result = preprocess_for_export(html)
+
+        assert "Text" in result
+        assert "onclick" not in result
+        assert "onmouseover" not in result

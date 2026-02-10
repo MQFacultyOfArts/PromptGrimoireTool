@@ -87,11 +87,20 @@ def _remove_chrome_elements(tree: LexborHTMLParser) -> None:
     for node in tree.css('[style*="visibility: hidden"], [style*="visibility:hidden"]'):
         node.decompose()
 
-    # Remove action buttons
+    # Remove all buttons (#117 — interactive elements block text selection)
     for button in tree.css("button"):
-        text = (button.text() or "").lower()
-        if any(action in text for action in ("copy", "share", "download")):
-            button.decompose()
+        button.decompose()
+
+    # Unwrap links — keep visible text, drop href (#117)
+    for a in tree.css("a"):
+        a.unwrap()
+
+    # Strip on* event attributes from all elements (#117)
+    for node in tree.css("*"):
+        attrs = node.attributes
+        for attr in list(attrs):
+            if attr and attr.startswith("on"):
+                del node.attrs[attr]
 
     # Remove KaTeX visual rendering (keep MathML for Pandoc)
     for node in tree.css(".katex-html"):

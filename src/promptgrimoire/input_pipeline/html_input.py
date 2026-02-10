@@ -551,16 +551,85 @@ def walk_and_map(html: str) -> tuple[list[str], list[TextNodeInfo]]:
     return chars, text_nodes
 
 
+def _entity_aware_find(
+    html: str, decoded_text: str, start: int
+) -> tuple[int, int] | None:
+    """Find *decoded_text* in *html* matching through HTML entities.
+
+    Walks the source HTML character by character starting from *start*.
+    Each decoded character can match either its literal form or any HTML
+    entity that decodes to it (named like ``&quot;``, decimal like ``&#34;``,
+    or hex like ``&#x22;``).
+
+    Returns ``(match_start, match_end)`` byte offsets in *html*, or
+    ``None`` if no match is found.
+    """
+    if not decoded_text:
+        return (start, start)
+
+    html_len = len(html)
+
+    for candidate_start in range(start, html_len):
+        # Skip positions inside tags — text nodes can't start there
+        if html[candidate_start] == "<":
+            # Advance past the tag
+            continue
+
+        html_pos = candidate_start
+        decoded_pos = 0
+
+        while decoded_pos < len(decoded_text) and html_pos < html_len:
+            if html[html_pos] == "<":
+                # Hit a tag boundary — text node can't span tags
+                break
+
+            if html[html_pos] == "&":
+                # Try to parse an entity
+                semicolon = html.find(";", html_pos + 1)
+                if semicolon != -1 and semicolon - html_pos < 12:
+                    entity_text = html[html_pos : semicolon + 1]
+                    decoded_entity = html_module.unescape(entity_text)
+                    # Check if the decoded entity matches the next character(s)
+                    if (
+                        decoded_text[decoded_pos : decoded_pos + len(decoded_entity)]
+                        == decoded_entity
+                    ):
+                        decoded_pos += len(decoded_entity)
+                        html_pos = semicolon + 1
+                        continue
+                # Not a matching entity — try literal '&' match
+                if decoded_text[decoded_pos] == "&":
+                    decoded_pos += 1
+                    html_pos += 1
+                    continue
+                break
+            elif html[html_pos] == decoded_text[decoded_pos]:
+                html_pos += 1
+                decoded_pos += 1
+            else:
+                break
+
+        if decoded_pos == len(decoded_text):
+            return (candidate_start, html_pos)
+
+    return None
+
+
 def find_text_node_offsets(html: str, text_nodes: list[TextNodeInfo]) -> list[int]:
     """Find the byte offset of each text node's html_text in the serialised HTML.
 
     Searches sequentially, advancing the search position so matches follow
     document order.
 
-    When selectolax re-encodes characters (e.g. literal ``\\xa0`` becomes
-    ``&nbsp;`` in ``node.html``), the entity form will not match the source
-    HTML.  In that case we fall back to ``decoded_text`` and update the
-    node's ``html_text`` so downstream offset calculations stay consistent.
+    Three fallback strategies for matching text nodes to source HTML:
+
+    1. ``html_text`` (selectolax serialization) — handles entities that
+       selectolax preserves (``&amp;``, ``&lt;``, ``&gt;``, ``&nbsp;``).
+    2. ``decoded_text`` — handles cases where selectolax re-encodes
+       (e.g. literal ``\\xa0`` becomes ``&nbsp;`` in ``node.html``).
+    3. Entity-aware matching — handles entities that selectolax decodes
+       but the source retains (``&quot;``, ``&#x27;``, numeric refs).
+       See #143.
     """
     offsets: list[int] = []
     search_from = 0
@@ -574,13 +643,21 @@ def find_text_node_offsets(html: str, text_nodes: list[TextNodeInfo]) -> list[in
             if idx != -1:
                 info.html_text = info.decoded_text
             else:
-                msg = (
-                    f"Could not find text node "
-                    f"{info.html_text!r} "
-                    f"in HTML starting from offset "
-                    f"{search_from}"
-                )
-                raise ValueError(msg)
+                # #143: selectolax decoded entities (e.g. &quot; -> ") that
+                # the source HTML retains.  Match character-by-character,
+                # allowing entity forms in source to match decoded chars.
+                result = _entity_aware_find(html, info.decoded_text, search_from)
+                if result is not None:
+                    idx, end = result
+                    info.html_text = html[idx:end]
+                else:
+                    msg = (
+                        f"Could not find text node "
+                        f"{info.html_text!r} "
+                        f"in HTML starting from offset "
+                        f"{search_from}"
+                    )
+                    raise ValueError(msg)
         offsets.append(idx)
         search_from = idx + len(info.html_text)
 

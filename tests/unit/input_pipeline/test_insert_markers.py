@@ -218,6 +218,45 @@ class TestEmptyHighlights:
             insert_markers_into_dom("", [{"start_char": 0, "end_char": 5}])
 
 
+class TestSelectolaxEntityNormalization:
+    """#143: Entities that selectolax decodes (quot, numeric refs) must not crash."""
+
+    def test_quot_entity(self) -> None:
+        """&quot; in source HTML — selectolax decodes to literal quote."""
+        _assert_round_trip(
+            "<p>She said &quot;hello&quot; loudly</p>",
+            [{"start_char": 0, "end_char": 10}],
+        )
+
+    def test_hex_numeric_ref(self) -> None:
+        """&#x27; (hex apostrophe) — selectolax decodes to literal '."""
+        _assert_round_trip(
+            "<p>It&#x27;s a test</p>",
+            [{"start_char": 0, "end_char": 6}],
+        )
+
+    def test_decimal_numeric_ref(self) -> None:
+        """&#34; (decimal quote) — selectolax decodes to literal "."""
+        _assert_round_trip(
+            "<p>A &#34;quoted&#34; word</p>",
+            [{"start_char": 0, "end_char": 10}],
+        )
+
+    def test_mixed_entities_preserved_and_decoded(self) -> None:
+        """Mix of preserved (&amp;) and decoded (&quot;) entities."""
+        _assert_round_trip(
+            "<p>A &amp; B &quot;C&quot;</p>",
+            [{"start_char": 0, "end_char": 11}],
+        )
+
+    def test_highlight_spanning_decoded_entity(self) -> None:
+        """Highlight boundary lands exactly on a decoded entity character."""
+        _assert_round_trip(
+            "<p>Hello &quot;world&quot; end</p>",
+            [{"start_char": 6, "end_char": 13}],
+        )
+
+
 class TestBackwardCompat:
     """Legacy start_word/end_word field names work as aliases."""
 

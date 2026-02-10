@@ -1,0 +1,62 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{xcolor}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fontspec}
+\usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{marginalia}
+
+% Tag colours
+\definecolor{tag-jurisdiction}{HTML}{1F77B4}
+\colorlet{tag-jurisdiction-light}{tag-jurisdiction!30}
+\colorlet{tag-jurisdiction-dark}{tag-jurisdiction!70!black}
+
+\definecolor{tag-legal-issues}{HTML}{FF7F0E}
+\colorlet{tag-legal-issues-light}{tag-legal-issues!30}
+\colorlet{tag-legal-issues-dark}{tag-legal-issues!70!black}
+
+\definecolor{tag-ratio}{HTML}{2CA02C}
+\colorlet{tag-ratio-light}{tag-ratio!30}
+\colorlet{tag-ratio-dark}{tag-ratio!70!black}
+
+\definecolor{tag-obiter}{HTML}{D62728}
+\colorlet{tag-obiter-light}{tag-obiter!30}
+\colorlet{tag-obiter-dark}{tag-obiter!70!black}
+
+\definecolor{many-dark}{HTML}{333333}
+
+% Paragraph formatting
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5\baselineskip}
+
+% Pandoc compat
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setlength{\emergencystretch}{3em}
+\setcounter{secnumdepth}{-\maxdimen}
+
+% Annotation counter and macro
+\newcounter{annotnum}
+\newcommand{\annot}[2]{%
+  \stepcounter{annotnum}%
+  \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+  \marginalia[ysep=3pt]{%
+    \fcolorbox{#1}{#1!20}{%
+      \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
+    }%
+  }%
+}
+
+\begin{document}
+
+\section{This \highLight[tag-jurisdiction-light]{\underLine[color=tag-jurisdiction-dark, height=1pt, bottom=-3pt]{is demo. With }}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{silly
+header.}}}}}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{\label{this-hlstart0endhlis-demo.-with-hlstart1endhlsilly-header.}}}}}
+
+\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\underLine[color=tag-jurisdiction-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-legal-issues-dark, height=1pt, bottom=-3pt]{Foo bar the test text }}}}\highLight[tag-jurisdiction-light]{\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\underLine[color=many-dark, height=4pt, bottom=-5pt]{is
+going}}}}\annot{tag-jurisdiction}{\textbf{Jurisdiction}\par{\scriptsize Alice}}\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\underLine[color=tag-legal-issues-dark, height=2pt, bottom=-3pt]{\underLine[color=tag-ratio-dark, height=1pt, bottom=-3pt]{ here
+}}}}\highLight[tag-legal-issues-light]{\highLight[tag-ratio-light]{\highLight[tag-obiter-light]{\underLine[color=many-dark, height=4pt, bottom=-5pt]{but}}}}\annot{tag-obiter}{\textbf{Obiter}\par{\scriptsize Dave}}
+\annot{tag-legal-issues}{\textbf{Legal Issues}\par{\scriptsize Bob}}\highLight[tag-ratio-light]{\underLine[color=tag-ratio-dark, height=1pt, bottom=-3pt]{is very}}\annot{tag-ratio}{\textbf{Ratio}\par{\scriptsize Carol}}
+mixed up.
+
+\end{document}

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
-from promptgrimoire.export.latex import convert_html_to_latex
+from promptgrimoire.export.pandoc import convert_html_to_latex
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
 from promptgrimoire.export.pdf_export import export_annotation_pdf
 from tests.conftest import PDF_TEST_OUTPUT_DIR, requires_latexmk
@@ -67,7 +67,7 @@ class TestHtmlToLatexIntegration:
             / "legal.lua"
         )
 
-        result = await convert_html_to_latex(html, filter_path=filter_path)
+        result = await convert_html_to_latex(html, filter_paths=[filter_path])
 
         assert "CASE NAME" in result
         assert r"\begin{enumerate}" in result

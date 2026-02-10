@@ -34,7 +34,6 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **PostgreSQL** - persistence
 - **pycrdt** - CRDT for real-time collaboration
 - **Stytch** - auth (magic links, passkeys, RBAC)
-- **Lark** - parser generator for LaTeX marker tokenization
 - **selectolax** - fast HTML parser (lexbor backend) for input pipeline
 - **lxml** - HTML normalisation in export pipeline
 
@@ -189,14 +188,16 @@ src/promptgrimoire/
 │   ├── roleplay.py      # AI roleplay / client interview
 │   └── text_selection.py # Text selection utilities
 ├── export/              # PDF/LaTeX export
+│   ├── highlight_spans.py # Pre-Pandoc highlight span insertion (region computation)
 │   ├── html_normaliser.py # HTML normalisation (lxml)
-│   ├── latex.py         # Marker pipeline, LaTeX generation
 │   ├── list_normalizer.py # HTML list normalisation (stdlib re)
+│   ├── pandoc.py        # Pandoc HTML-to-LaTeX conversion + pipeline orchestration
 │   ├── pdf.py           # LaTeX compilation (async)
 │   ├── pdf_export.py    # Export orchestration
+│   ├── preamble.py      # LaTeX preamble assembly + colour definitions
 │   ├── unicode_latex.py # Unicode-to-LaTeX mapping
 │   ├── platforms/       # Platform-specific HTML preprocessing
-│   └── filters/         # Export filters
+│   └── filters/         # Pandoc Lua filters (highlight.lua, legal.lua)
 ├── static/              # Static assets (JS bundles, CSS)
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
@@ -256,19 +257,26 @@ The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave e
 
 **Note:** `compile_latex()` is async and uses `asyncio.create_subprocess_exec()` for non-blocking compilation.
 
-### LaTeX Marker Pipeline
+### Highlight Pipeline (Pandoc + Lua Filter)
 
-The annotation export uses a Lark-based lexer pipeline (Issue #85) to handle arbitrarily nested and overlapping highlights:
+The annotation export uses a pre-Pandoc span injection + Lua filter pipeline (Issue #134) to handle arbitrarily nested and overlapping highlights:
 
-1. **Marker insertion** - `_insert_markers_into_html()` inserts `HLSTART{n}ENDHL`, `HLEND{n}ENDHL`, and `ANNMARKER{n}ENDMARKER` at word positions
-2. **Pandoc conversion** - HTML to LaTeX (markers survive as plain text)
-3. **Lexer tokenization** - `tokenize_markers()` uses Lark grammar to extract marker tokens
-4. **Region building** - `build_regions()` tracks active highlight state to create regions with constant highlight sets
-5. **LaTeX generation** - `generate_highlighted_latex()` wraps each region in nested `\highLight` and `\underLine` commands
+1. **Region computation** - `compute_highlight_spans()` in `highlight_spans.py` computes non-overlapping regions from overlapping highlights using an event-sweep algorithm, then inserts `<span data-hl="..." data-colors="..." data-annots="...">` elements into clean HTML
+2. **Block boundary splitting** - Spans are pre-split at block element boundaries (p, h1-h6, li, etc.) because Pandoc silently destroys cross-block spans
+3. **Pandoc conversion** - HTML to LaTeX with `highlight.lua` Lua filter included
+4. **Lua filter rendering** - `highlight.lua` reads span attributes and emits nested `\highLight` / `\underLine` / `\annot` LaTeX commands using a "one, two, many" stacking model:
+   - 1 highlight: single 1pt underline in tag's dark colour
+   - 2 highlights: stacked 2pt outer + 1pt inner underlines
+   - 3+ highlights: single 4pt underline in many-dark colour
+5. **Post-processing** - `\annot` commands (which contain `\par`) are moved outside restricted LaTeX contexts (e.g. `\section{}` arguments)
 
-Key types in `latex.py`:
-- `MarkerToken` - Token from lexer (TEXT, HLSTART, HLEND, ANNMARKER)
-- `Region` - Text span with frozenset of active highlight indices
+Key files:
+- `highlight_spans.py` - `compute_highlight_spans()`, `format_annot_latex()`, `_HlRegion`
+- `filters/highlight.lua` - Pandoc Lua filter for highlight/annotation rendering
+- `pandoc.py` - `convert_html_with_annotations()` orchestrator, `convert_html_to_latex()` Pandoc subprocess
+- `preamble.py` - `build_annotation_preamble()`, colour definitions, `\annot` macro
+
+**Note:** Pandoc strips the `data-` prefix from HTML attributes in Lua filters (e.g. `data-hl` becomes `hl`).
 
 ## HTML Input Pipeline
 

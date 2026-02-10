@@ -478,10 +478,6 @@ _MUST_BE_HIGHLIGHTED = [
                 "Mr Lawlis sought leave to rely on three grounds",
             ],
         },
-        marks=pytest.mark.xfail(
-            reason="Cross-heading highlight wrapping needs #134 (LuaLaTeX node-level)",
-            strict=False,
-        ),
         id="hl5_jurisdiction",
     ),
     pytest.param(
@@ -494,10 +490,6 @@ _MUST_BE_HIGHLIGHTED = [
                 "tried medication",
             ],
         },
-        marks=pytest.mark.xfail(
-            reason="Cross-heading highlight wrapping needs #134 (LuaLaTeX node-level)",
-            strict=False,
-        ),
         id="hl9_legal_issues",
     ),
     pytest.param(

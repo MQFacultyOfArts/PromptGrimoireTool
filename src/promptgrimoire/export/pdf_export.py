@@ -19,12 +19,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from promptgrimoire.export.latex import (
-    build_annotation_preamble,
-    convert_html_with_annotations,
-)
+from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
+from promptgrimoire.export.preamble import build_annotation_preamble
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +170,14 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
     if not markdown_content or not markdown_content.strip():
         return ""
 
+    # Strip markdown image syntax — we don't support images in export.
+    # Inline: ![alt](url)  Reference: ![alt][id] and [id]: url
+    markdown_content = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", markdown_content)
+    markdown_content = re.sub(r"!\[[^\]]*\]\[[^\]]*\]", "", markdown_content)
+    markdown_content = re.sub(
+        r"^\[[^\]]*\]:\s+\S+.*$", "", markdown_content, flags=re.MULTILINE
+    )
+
     proc = await asyncio.create_subprocess_exec(
         "pandoc",
         "-f",
@@ -308,7 +314,7 @@ async def export_annotation_pdf(
         html=processed_html,
         highlights=highlights,
         tag_colours=tag_colours,
-        filter_path=_LIBREOFFICE_FILTER,
+        filter_paths=[_LIBREOFFICE_FILTER],
         word_to_legal_para=word_to_legal_para,
     )
 

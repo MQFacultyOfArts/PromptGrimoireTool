@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from promptgrimoire.export.latex import convert_html_to_latex
+from promptgrimoire.export.pandoc import convert_html_to_latex
 from tests.conftest import load_conversation_fixture
 
 # Filter paths
@@ -70,7 +70,7 @@ class TestTableColumnWidths:
             </tr>
         </table>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Should use longtable with proportional widths
         assert "\\begin{longtable}" in result
@@ -91,7 +91,7 @@ class TestTableColumnWidths:
             </tr>
         </table>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Without widths, filter doesn't intervene - Pandoc handles it
         # Just verify it produces something reasonable
@@ -111,7 +111,7 @@ class TestMarginLeft:
             <p>Indented paragraph</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         assert "\\begin{adjustwidth}{0.5in}{}" in result
         assert "\\end{adjustwidth}" in result
@@ -126,7 +126,7 @@ class TestMarginLeft:
             <p>More indented</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         assert "\\begin{adjustwidth}{1.25in}{}" in result
 
@@ -139,7 +139,7 @@ class TestMarginLeft:
             <p>Indented quote from judgment</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         assert "\\begin{adjustwidth}{2.38cm}{}" in result
 
@@ -154,7 +154,7 @@ class TestMarginLeft:
         html = """
         <p style="margin-left: 0.75in">Styled paragraph</p>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Preprocessor wraps in div, filter creates adjustwidth
         assert "\\begin{adjustwidth}{0.75in}{}" in result
@@ -174,7 +174,7 @@ class TestOrderedListStart:
             <li>Item six</li>
         </ol>
         """
-        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LEGAL_FILTER])
 
         # start=5 means first displayed number is 5, so counter = 4
         assert "\\setcounter{enumi}{4}" in result
@@ -189,7 +189,7 @@ class TestOrderedListStart:
             <li>Item one</li>
         </ol>
         """
-        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LEGAL_FILTER])
 
         # start=1 is default, no setcounter needed
         assert "\\setcounter" not in result
@@ -205,7 +205,7 @@ class TestOrderedListStart:
             <li>Second</li>
         </ol>
         """
-        result = await convert_html_to_latex(html, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LEGAL_FILTER])
 
         assert "\\setcounter" not in result
         assert "First" in result
@@ -270,7 +270,7 @@ class TestListValueNormalization:
 
         html = '<ol><li value="5">Para 5</li></ol>'
         normalized = normalize_list_values(html)
-        result = await convert_html_to_latex(normalized, filter_path=LEGAL_FILTER)
+        result = await convert_html_to_latex(normalized, filter_paths=[LEGAL_FILTER])
 
         assert "\\setcounter{enumi}{4}" in result
         assert "Para 5" in result
@@ -288,7 +288,7 @@ class TestUnitConversion:
             <p>Em-indented paragraph</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         assert "\\begin{adjustwidth}{2em}{}" in result
         assert "Em-indented paragraph" in result
@@ -302,7 +302,7 @@ class TestUnitConversion:
             <p>Rem-indented paragraph</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # rem converts to em at 1:1 ratio
         assert "\\begin{adjustwidth}{1.5em}{}" in result
@@ -317,7 +317,7 @@ class TestUnitConversion:
             <p>Pixel-indented paragraph</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # 40px * 0.75 = 30pt
         assert "\\begin{adjustwidth}{30pt}{}" in result
@@ -332,7 +332,7 @@ class TestUnitConversion:
             <p>Small indent</p>
         </div>
         """
-        result = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # 20px * 0.75 = 15pt
         assert "\\begin{adjustwidth}{15pt}{}" in result

@@ -114,10 +114,6 @@ UNICODE_PREAMBLE = r"""
 % Just show placeholder text for unknown emoji
 \newcommand{\emojifallbackchar}[1]{[#1]}
 
-% Stub for \includegraphics - Pandoc converts <img> tags to this
-% Make it a no-op to handle BLNS XSS test strings like <img src=x>
-% We don't actually want to include external images from user content
-\newcommand{\includegraphics}[2][]{[image: #2]}
 """
 
 

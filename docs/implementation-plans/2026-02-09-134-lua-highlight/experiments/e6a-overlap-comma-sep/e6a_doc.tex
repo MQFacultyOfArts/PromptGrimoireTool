@@ -1,0 +1,24 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\definecolor{many-dark}{HTML}{333333}
+\begin{document}
+\section{E6 Approach A: Comma-separated}
+\underLine[color=yellow!70!black, height=1pt, bottom=-3pt]{\highLight[yellow]{One
+highlight only. }}
+\underLine[color=yellow!70!black, height=2pt, bottom=-5pt]{\underLine[color=cyan!70!black, height=1pt, bottom=-3pt]{\highLight[yellow]{\highLight[cyan]{Two
+highlights overlap. }}}}
+\underLine[color=many-dark, height=4pt, bottom=-5pt]{\highLight[yellow]{\highLight[cyan]{\highLight[pink]{Three
+overlap. }}}}
+\underLine[color=cyan!70!black, height=1pt, bottom=-3pt]{\highLight[cyan]{Only
+second. }} Normal text.
+
+\subsection{\texorpdfstring{\underLine[color=yellow!70!black, height=1pt, bottom=-3pt]{\highLight[yellow]{Section
+in one
+highlight}}}{Section in one highlight}}\label{section-in-one-highlight}
+
+\underLine[color=yellow!70!black, height=2pt, bottom=-5pt]{\underLine[color=cyan!70!black, height=1pt, bottom=-3pt]{\highLight[yellow]{\highLight[cyan]{Overlap
+after heading.}}}} Normal.
+\end{document}

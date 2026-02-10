@@ -1,0 +1,87 @@
+% Experiment E4 FINAL: Environment-based lua-ul highlighting
+% spanning paragraph breaks and section boundaries.
+%
+% ANSWER: Yes, a custom LaTeX ENVIRONMENT can span \par and \section{}
+% while applying lua-ul highlighting. The key is:
+% 1. Use \@highLight (the "setter" without braces) to activate highlighting
+% 2. Use \LuaULResetUnderline* to deactivate ALL underline attributes
+% 3. Use \nointerlineskip{\parskip=0pt\relax\leavevmode\par} to create
+%    a zero-height empty paragraph that absorbs the lingering attribute
+%    (without this, highlighting leaks one paragraph past the reset)
+%
+\documentclass{article}
+\usepackage{luacolor}
+\usepackage{lua-ul}
+
+\makeatletter
+\newenvironment{hlenv}[1][yellow]{%
+  \@highLight[#1]%
+}{%
+  \par
+  \LuaULResetUnderline*%
+  \nointerlineskip
+  {\parskip=0pt\relax\leavevmode\par}%
+}
+\makeatother
+
+\begin{document}
+
+\section{Test A: Spanning paragraph breaks}
+
+Normal text before.
+
+\begin{hlenv}
+First highlighted paragraph. Lorem ipsum dolor sit amet, consectetur
+adipiscing elit. Sed do eiusmod tempor incididunt.
+
+Second highlighted paragraph. Ut enim ad minim veniam, quis nostrud
+exercitation ullamco laboris nisi ut aliquip.
+
+Third highlighted paragraph. Duis aute irure dolor in reprehenderit
+in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+\end{hlenv}
+
+THIS SHOULD NOT BE HIGHLIGHTED (Test A). Excepteur sint occaecat
+cupidatat non proident, sunt in culpa qui officia deserunt mollit.
+
+\section{Test B: Spanning a section boundary}
+
+Normal text before.
+
+\begin{hlenv}[cyan]
+Text before the section boundary. This paragraph is highlighted
+in cyan.
+
+\section{A Section Inside the Highlight}
+
+Text after the section heading, still inside the highlight environment.
+This paragraph is also highlighted in cyan.
+
+Another paragraph inside. Still cyan.
+\end{hlenv}
+
+THIS SHOULD NOT BE HIGHLIGHTED (Test B). Back to normal text.
+
+\section{Test C: Multiple sequential environments}
+
+\begin{hlenv}[yellow]
+Yellow environment.
+\end{hlenv}
+
+Not highlighted gap.
+
+\begin{hlenv}[cyan]
+Cyan environment.
+\end{hlenv}
+
+THIS SHOULD NOT BE HIGHLIGHTED (Test C).
+
+\section{Test D: Single paragraph}
+
+\begin{hlenv}
+Just one short highlighted paragraph.
+\end{hlenv}
+
+THIS SHOULD NOT BE HIGHLIGHTED (Test D).
+
+\end{document}

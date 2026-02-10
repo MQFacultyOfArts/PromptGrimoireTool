@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from promptgrimoire.export.latex import (
+from promptgrimoire.export.highlight_spans import format_annot_latex
+from promptgrimoire.export.preamble import (
     ANNOTATION_PREAMBLE_BASE,
-    _escape_latex,
-    _format_annot,
     _format_timestamp,
     generate_tag_colour_definitions,
 )
+from promptgrimoire.export.unicode_latex import escape_unicode_latex
 from tests.conftest import requires_latexmk
 from tests.helpers.latex_parse import (
     find_macros,
@@ -148,7 +148,7 @@ class TestFormatAnnot:
             "comments": [],
             "created_at": "2026-01-26T14:30:00+00:00",
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         nodes = parse_latex(result)
         annots = find_macros(nodes, "annot")
 
@@ -165,7 +165,7 @@ class TestFormatAnnot:
             "text": "reasoning here",
             "comments": [],
         }
-        result = _format_annot(highlight, para_ref="[45]")
+        result = format_annot_latex(highlight, para_ref="[45]")
         assert "[45]" in result
 
     def test_with_comments(self) -> None:
@@ -179,7 +179,7 @@ class TestFormatAnnot:
                 {"author": "Carol", "text": "I agree"},
             ],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         assert "Bob" in result
         assert "Good point" in result
         assert "Carol" in result
@@ -193,7 +193,7 @@ class TestFormatAnnot:
             "text": "some text",
             "comments": [],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         # The & should be escaped as a macro node
         assert r"\&" in result
 
@@ -205,7 +205,7 @@ class TestFormatAnnot:
             "text": "some text",
             "comments": [{"author": "Bob", "text": "100% agree & more"}],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         assert r"\%" in result
         assert r"\&" in result
 
@@ -282,12 +282,12 @@ class TestCompilationValidation:
         colour_defs = generate_tag_colour_definitions(tag_colours)
 
         # Test all escape sequences in body text
-        escaped_text = _escape_latex(
+        escaped_text = escape_unicode_latex(
             "Special chars: A & B, 100%, $50, #1, foo_bar, {braces}, ~tilde, ^caret"
         )
 
         # Test annotation with special characters in author and comments
-        annot_special = _format_annot(
+        annot_special = format_annot_latex(
             {
                 "tag": "jurisdiction",
                 "author": "User & Co",
@@ -303,7 +303,7 @@ class TestCompilationValidation:
         )
 
         # Test annotation with paragraph reference
-        annot_with_para = _format_annot(
+        annot_with_para = format_annot_latex(
             {
                 "tag": "legal_issues",
                 "author": "Alice",
@@ -314,7 +314,7 @@ class TestCompilationValidation:
         )
 
         # Test annotation with multiple comments
-        annot_multi_comment = _format_annot(
+        annot_multi_comment = format_annot_latex(
             {
                 "tag": "my_tag_name",
                 "author": "Carol",
@@ -387,9 +387,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_cjk_author_name_escaped(self) -> None:
         """CJK characters in author name are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("田中太郎")
         nodes = parse_latex(result)
@@ -399,9 +396,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_cjk_comment_text_escaped(self) -> None:
         """CJK characters in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("これは日本語のコメントです")
         nodes = parse_latex(result)
@@ -410,9 +404,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_emoji_in_comment_escaped(self) -> None:
         """Emoji in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("Great work! 🎉")
         nodes = parse_latex(result)
@@ -421,9 +412,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_mixed_ascii_cjk_special_chars(self) -> None:
         """Mixed content with special chars handles all correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("User & 田中 100%")
         nodes = parse_latex(result)
@@ -445,7 +433,7 @@ class TestUnicodeAnnotationEscaping:
             "text": "some text",
             "comments": [],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         nodes = parse_latex(result)
         cjks = find_macros(nodes, "cjktext")
         bodies = {get_body_text(c) for c in cjks}
@@ -461,7 +449,7 @@ class TestUnicodeAnnotationEscaping:
                 {"author": "山田花子", "text": "Comment text"},
             ],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         nodes = parse_latex(result)
         cjks = find_macros(nodes, "cjktext")
         bodies = {get_body_text(c) for c in cjks}
@@ -477,7 +465,7 @@ class TestUnicodeAnnotationEscaping:
                 {"author": "Bob", "text": "Great work! 🎉"},
             ],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         nodes = parse_latex(result)
         emojis = find_macros(nodes, "emoji")
         assert len(emojis) >= 1
@@ -492,7 +480,7 @@ class TestUnicodeAnnotationEscaping:
             "text": "some text",
             "comments": [],
         }
-        result = _format_annot(highlight)
+        result = format_annot_latex(highlight)
         nodes = parse_latex(result)
 
         # Should have both escaped special char and wrapped CJK

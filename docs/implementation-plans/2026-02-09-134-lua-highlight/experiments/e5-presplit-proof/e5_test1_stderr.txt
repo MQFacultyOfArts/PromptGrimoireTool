@@ -1,0 +1,42 @@
+[001] Str: text="Some"
+[002] Space
+[003] Str: text="text"
+[004] Space
+[005] Str: text="highlighted"
+[006] Space
+[007] Str: text="text"
+[008] Space
+[009] Str: text="before"
+[010] Space
+[011] Str: text="heading"
+[012] Span: classes={hl} hl=5
+  >> Found hl=5, wrapping in \highLight
+[013] Str: text="Grounds"
+[014] Space
+[015] Str: text="of"
+[016] Space
+[017] Str: text="Appeal"
+[018] Span: classes={hl} hl=5
+  >> Found hl=5, wrapping in \highLight
+[019] Str: text="Mr"
+[020] Space
+[021] Str: text="Lawlis"
+[022] Space
+[023] Str: text="sought"
+[024] Space
+[025] Str: text="leave"
+[026] Span: classes={hl} hl=5
+  >> Found hl=5, wrapping in \highLight
+[027] Space
+[028] Str: text="to"
+[029] Space
+[030] Str: text="rely"
+[031] Space
+[032] Str: text="on"
+[033] Space
+[034] Str: text="three"
+[035] Space
+[036] Str: text="grounds."
+[037] Para:
+[038] Header: id=grounds-of-appeal
+[039] Para:

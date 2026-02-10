@@ -150,6 +150,15 @@ Removed 2026-02-07. `list_normalizer.py` rewritten to use stdlib `re` (regex is 
 
 **Classification:** Protective belt. Used in one module. Could potentially be replaced by selectolax, but lxml's HTML normalisation behaviour is well-understood and standards-compliant.
 
+### pydantic-ai >= 1.56.0
+
+**Added:** 2026-02-10
+**Design plan:** docs/design-plans/2026-02-10-llm-playground.md
+**Claim:** Model-agnostic LLM agent framework for the playground. Provides unified streaming events (`ThinkingPart`, `TextPart`, `PartStartEvent`, `PartDeltaEvent`) across Anthropic and OpenRouter providers, eliminating the need for per-provider streaming code.
+**Evidence:** Will be imported in `src/promptgrimoire/llm/playground_provider.py` (provider factory), `src/promptgrimoire/pages/playground.py` (streaming handler). Uses `AnthropicModel` for direct Claude access and `OpenRouterModel` for all other providers.
+**Why not alternatives:** The existing `ClaudeClient` (anthropic SDK) only supports Anthropic. pydantic-ai abstracts multiple providers with a single streaming interface, supports extended thinking across providers (Claude native, DeepSeek `<think>` tags, Gemini reasoning_details), and handles `message_history` serialization for cross-model conversations. LiteLLM was considered but adds a proxy server; pydantic-ai is a library.
+**Classification:** Hard core for the playground feature. The provider abstraction and streaming event model are built around pydantic-ai's API.
+
 ## Dev Dependencies
 
 ### pytest >= 8.0
@@ -241,4 +250,3 @@ Removed 2026-02-07. `list_normalizer.py` rewritten to use stdlib `re` (regex is 
 **Why not alternatives:** SQLAlchemy's synchronous `create_engine` needs a sync driver. asyncpg only works with `create_async_engine`. The test conftest needs a one-shot sync connection for table cleanup.
 
 **Classification:** Protective belt. Only needed for test infrastructure, not production.
-

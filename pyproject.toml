@@ -27,8 +27,6 @@ dependencies = [
     "anthropic>=0.76.0",
     "alembic>=1.18.0",
     "selectolax>=0.4.6",
-    "pylatexenc>=2.10",
-    "lark>=1.1.0",
     "emoji>=2.0.0",
     "lxml>=6.0",
 ]

@@ -2,9 +2,9 @@
 
 Verifies that Phase 1 refactoring preserved public API while splitting
 latex.py into preamble.py and pandoc.py along DFD process boundaries.
+Phase 4 deleted latex.py entirely.
 
-AC3.1: No single module exceeds ~400 lines (new modules); latex.py is
-       smaller than its pre-split 1,708 lines.
+AC3.1: No single module exceeds ~400 lines (new modules); latex.py is deleted.
 AC3.2: Symbols land in the correct module per DFD alignment.
 AC3.3: All public imports continue to resolve.
 """
@@ -19,12 +19,10 @@ EXPORT_DIR = Path(__file__).resolve().parents[3] / "src" / "promptgrimoire" / "e
 
 # Generous threshold — allows growth without false alarms
 _NEW_MODULE_LINE_LIMIT = 450
-# latex.py was 1,708 lines before the split
-_ORIGINAL_LATEX_LINES = 1708
 
 
 class TestAC3_1_LineCounts:
-    """AC3.1: Each new module stays under ~400 lines; latex.py shrinks."""
+    """AC3.1: Each new module stays under ~400 lines; latex.py is deleted."""
 
     def test_preamble_under_limit(self) -> None:
         lines = (EXPORT_DIR / "preamble.py").read_text().splitlines()
@@ -38,16 +36,11 @@ class TestAC3_1_LineCounts:
             f"pandoc.py has {len(lines)} lines (limit {_NEW_MODULE_LINE_LIMIT})"
         )
 
-    def test_latex_still_exists(self) -> None:
-        assert (EXPORT_DIR / "latex.py").exists(), (
-            "latex.py should still exist (P2+P4 code remains)"
-        )
-
-    def test_latex_smaller_than_original(self) -> None:
-        lines = (EXPORT_DIR / "latex.py").read_text().splitlines()
-        assert len(lines) < _ORIGINAL_LATEX_LINES, (
-            f"latex.py has {len(lines)} lines, "
-            f"expected fewer than {_ORIGINAL_LATEX_LINES}"
+    def test_latex_deleted(self) -> None:
+        """latex.py was deleted in Phase 4 (AC4.2) after all code moved out."""
+        assert not (EXPORT_DIR / "latex.py").exists(), (
+            "latex.py should have been deleted (all code moved to preamble.py, "
+            "pandoc.py, highlight_spans.py)"
         )
 
 

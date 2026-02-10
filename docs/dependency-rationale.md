@@ -1,16 +1,18 @@
 # Dependency Rationale
 
-Last reviewed: 2026-02-07
+Last reviewed: 2026-02-10
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
 ## Production Dependencies
 
-### nicegui >= 2.0
+### nicegui == 3.6.1
 
 **Claim:** Web UI framework. The entire frontend is built on NiceGUI's component model, server-sent events, and WebSocket integration.
 
 **Evidence:** 13 files across `src/promptgrimoire/pages/` and `src/promptgrimoire/__init__.py` import from nicegui. Every page route, dialog, and UI component depends on it. Also provides the app server (`ui.run`), static file serving, client-side JS execution (`ui.run_javascript`), and the WebSocket-based client–server communication layer.
+
+**Pin rationale:** Pinned to 3.6.1 because 3.7.x introduces a destroy+recreate regression that breaks char span injection. See `docs/design-plans/2026-02-10-nicegui-3.7.x-regression.md`.
 
 **Why not alternatives:** NiceGUI was chosen for Python-native UI without a JS frontend build step. The project is deeply coupled to NiceGUI's component API, page routing, and storage system.
 
@@ -110,25 +112,13 @@ Removed 2026-02-07. `list_normalizer.py` rewritten to use stdlib `re` (regex is 
 
 **Classification:** Hard core for the input/export pipeline. Replacing it means rewriting all HTML processing.
 
-### pylatexenc >= 2.10
+### ~~pylatexenc~~ (REMOVED)
 
-**Claim:** LaTeX AST walking for the marker tokenization pipeline. `LatexWalker` parses LaTeX output from pandoc to identify and preserve marker tokens (HLSTART, HLEND, ANNMARKER) that survive the HTML→LaTeX conversion.
+Removed 2026-02-10. The Lark+pylatexenc marker pipeline in `export/latex.py` was replaced by the Pandoc Lua filter pipeline (`export/highlight_spans.py` + `export/filters/highlight.lua`). Highlights are now injected as HTML `<span>` attributes before Pandoc conversion, and the Lua filter reads them directly -- no post-Pandoc LaTeX AST walking needed. See #134.
 
-**Evidence:** `src/promptgrimoire/export/latex.py` (imports `pylatexenc.latexwalker.LatexWalker`). Critical for the overlapping highlight pipeline — markers inserted into HTML must be recovered after pandoc converts to LaTeX.
+### ~~lark~~ (REMOVED)
 
-**Why not alternatives:** pylatexenc's `LatexWalker` provides robust LaTeX AST traversal. Regex-based LaTeX parsing is fragile due to LaTeX's context-sensitive grammar. No other Python library provides equivalent LaTeX AST walking.
-
-**Classification:** Hard core for the export pipeline. The marker recovery step depends on correct LaTeX AST traversal.
-
-### lark >= 1.1.0
-
-**Claim:** Lexer for the LaTeX marker tokenization pipeline. Only the lexer mode is used (not the full parser generator).
-
-**Evidence:** `src/promptgrimoire/export/latex.py` — Lark grammar defines the marker token language (HLSTART, HLEND, ANNMARKER, TEXT). `tokenize_markers()` uses Lark in lexer mode to extract marker tokens from LaTeX text.
-
-**Why not alternatives:** Lark's lexer provides EBNF grammar support with robust tokenization. The marker language has nested, overlapping structures that benefit from a proper lexer rather than regex.
-
-**Classification:** Hard core for the export pipeline. The marker grammar is defined in Lark syntax.
+Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar for marker tokenization is no longer needed -- the Lua filter reads highlight data from span attributes set during pre-Pandoc processing. See #134.
 
 ### emoji >= 2.0.0
 

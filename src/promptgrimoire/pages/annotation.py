@@ -2001,6 +2001,25 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             }}
                         }}
 
+                        // Unwrap hyperlinks: replace <a href="url">text</a>
+                        // with text [url] — links are not interactive in
+                        // the annotation view and interfere with selection
+                        iframe.contentDocument.querySelectorAll('a[href]')
+                            .forEach(a => {{
+                                const href = a.getAttribute('href') || '';
+                                const text = a.textContent || '';
+                                // Skip anchors that are just fragment links
+                                // or have no meaningful href
+                                if (!href || href.startsWith('#')) {{
+                                    // Just unwrap, keep text
+                                    a.replaceWith(text);
+                                    return;
+                                }}
+                                // Show URL after link text
+                                const suffix = ' [' + href + ']';
+                                a.replaceWith(text + suffix);
+                            }});
+
                         // Process all elements - preserve important inline styles
                         iframe.contentDocument.querySelectorAll('*').forEach(el => {{
                             const existingStyle = el.getAttribute('style') || '';

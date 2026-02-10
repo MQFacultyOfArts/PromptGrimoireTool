@@ -165,25 +165,6 @@ def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
     )
 
 
-def _escape_latex(text: str) -> str:
-    """Escape LaTeX special characters in text."""
-    replacements = [
-        ("\\", r"\textbackslash{}"),
-        ("&", r"\&"),
-        ("%", r"\%"),
-        ("$", r"\$"),
-        ("#", r"\#"),
-        ("_", r"\_"),
-        ("{", r"\{"),
-        ("}", r"\}"),
-        ("~", r"\textasciitilde{}"),
-        ("^", r"\textasciicircum{}"),
-    ]
-    for char, escaped in replacements:
-        text = text.replace(char, escaped)
-    return text
-
-
 def _format_timestamp(iso_timestamp: str) -> str:
     """Format ISO timestamp to human-readable format (e.g., '26 Jan 2026 14:30')."""
     try:

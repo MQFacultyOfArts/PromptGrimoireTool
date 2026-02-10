@@ -116,12 +116,9 @@ def format_annot_latex(
         margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}}"]
 
     # Line 2: name, date (scriptsize)
-    if timestamp:
-        margin_parts.append(
-            f"\\par{{\\scriptsize {escape_unicode_latex(author)}, {timestamp}}}"
-        )
-    else:
-        margin_parts.append(f"\\par{{\\scriptsize {escape_unicode_latex(author)}}}")
+    author_esc = escape_unicode_latex(author)
+    byline = f"{author_esc}, {timestamp}" if timestamp else author_esc
+    margin_parts.append(f"\\par{{\\scriptsize {byline}}}")
 
     # Separator and comments if present
     if comments:
@@ -133,14 +130,10 @@ def format_annot_latex(
             c_author_esc = escape_unicode_latex(c_author)
             c_text_esc = escape_unicode_latex(c_text)
             if c_timestamp:
-                margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}}}, "
-                    f"{c_timestamp}:}} {c_text_esc}"
-                )
+                attribution = f"\\textbf{{{c_author_esc}}}, {c_timestamp}:"
             else:
-                margin_parts.append(
-                    f"\\par{{\\scriptsize \\textbf{{{c_author_esc}:}}}} {c_text_esc}"
-                )
+                attribution = f"\\textbf{{{c_author_esc}:}}"
+            margin_parts.append(f"\\par{{\\scriptsize {attribution}}} {c_text_esc}")
 
     margin_content = "".join(margin_parts)
 

@@ -17,12 +17,12 @@ from typing import Any, Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.export.marker_constants import (
+from promptgrimoire.export.platforms import preprocess_for_export
+from promptgrimoire.input_pipeline.marker_constants import (
     HLEND_TEMPLATE,
     HLSTART_TEMPLATE,
     MARKER_TEMPLATE,
 )
-from promptgrimoire.export.platforms import preprocess_for_export
 
 logger = logging.getLogger(__name__)
 

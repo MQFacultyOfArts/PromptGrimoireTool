@@ -16,10 +16,10 @@ import pytest
 from promptgrimoire.export.highlight_spans import format_annot_latex
 from promptgrimoire.export.preamble import (
     ANNOTATION_PREAMBLE_BASE,
-    _escape_latex,
     _format_timestamp,
     generate_tag_colour_definitions,
 )
+from promptgrimoire.export.unicode_latex import escape_unicode_latex
 from tests.conftest import requires_latexmk
 from tests.helpers.latex_parse import (
     find_macros,
@@ -282,7 +282,7 @@ class TestCompilationValidation:
         colour_defs = generate_tag_colour_definitions(tag_colours)
 
         # Test all escape sequences in body text
-        escaped_text = _escape_latex(
+        escaped_text = escape_unicode_latex(
             "Special chars: A & B, 100%, $50, #1, foo_bar, {braces}, ~tilde, ^caret"
         )
 
@@ -387,9 +387,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_cjk_author_name_escaped(self) -> None:
         """CJK characters in author name are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("田中太郎")
         nodes = parse_latex(result)
@@ -399,9 +396,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_cjk_comment_text_escaped(self) -> None:
         """CJK characters in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("これは日本語のコメントです")
         nodes = parse_latex(result)
@@ -410,9 +404,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_emoji_in_comment_escaped(self) -> None:
         """Emoji in comment text are wrapped correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("Great work! 🎉")
         nodes = parse_latex(result)
@@ -421,9 +412,6 @@ class TestUnicodeAnnotationEscaping:
 
     def test_mixed_ascii_cjk_special_chars(self) -> None:
         """Mixed content with special chars handles all correctly."""
-        from promptgrimoire.export.unicode_latex import (
-            escape_unicode_latex,
-        )
 
         result = escape_unicode_latex("User & 田中 100%")
         nodes = parse_latex(result)

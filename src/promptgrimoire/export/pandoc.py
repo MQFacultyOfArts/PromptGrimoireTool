@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from promptgrimoire.export.highlight_spans import compute_highlight_spans
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
     normalise_styled_paragraphs,
@@ -94,9 +95,11 @@ def _brace_depth_at(latex: str, pos: int) -> int:
     return depth
 
 
-def _find_closing_brace_at_depth(latex: str, start: int, target_depth: int) -> int:
+def _find_closing_brace_at_depth(
+    latex: str, start: int, start_depth: int, target_depth: int
+) -> int:
     """Find ``}`` reducing depth to *target_depth* from *start*."""
-    depth = _brace_depth_at(latex, start)
+    depth = start_depth
     for i in range(start, len(latex)):
         if latex[i] == "{":
             depth += 1
@@ -207,7 +210,7 @@ def _move_annots_outside_restricted(latex: str) -> str:
 
             annot_end_pos = idx + len(annot_text)
             close_pos = _find_closing_brace_at_depth(
-                result, annot_end_pos, target_depth=0
+                result, annot_end_pos, start_depth=depth, target_depth=0
             )
             if close_pos == -1:
                 pos = after
@@ -335,11 +338,6 @@ async def convert_html_with_annotations(
 
     # Fix mid-word font tag splits from LibreOffice RTF export
     html = fix_midword_font_splits(html)
-
-    # Lazy import to avoid circular import:
-    # export/__init__ -> pandoc -> highlight_spans -> input_pipeline/html_input
-    # -> export/marker_constants -> export/__init__ (cycle)
-    from promptgrimoire.export.highlight_spans import compute_highlight_spans  # noqa: PLC0415, I001
 
     # Insert highlight spans with pre-formatted LaTeX annotations
     span_html = compute_highlight_spans(

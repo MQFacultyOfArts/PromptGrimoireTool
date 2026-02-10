@@ -1,13 +1,10 @@
-"""Marker format constants for annotation export.
+"""Marker format constants for HTML annotation markers.
 
 These marker strings are inserted into HTML at character positions matching
 the UI's extract_text_from_html character indexing. They survive Pandoc
-HTML-to-LaTeX conversion as plain text, then get replaced with LaTeX
-annotation commands by the marker pipeline.
+HTML-to-LaTeX conversion as plain text.
 
-Shared between:
-- input_pipeline/html_input.py (insert_markers_into_dom)
-- export/latex.py (marker replacement pipeline)
+Used by input_pipeline/html_input.py (insert_markers_into_dom).
 """
 
 from __future__ import annotations

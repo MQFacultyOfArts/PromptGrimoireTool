@@ -139,13 +139,49 @@ function Span(el)
   -- Annotation emission: annots attribute contains pre-formatted LaTeX
   -- (produced by Python's format_annot_latex in highlight_spans.py).
   -- Emitted as RawInline AFTER the closing highlight/underline braces.
-  -- No special heading handling needed: Pandoc auto-wraps the entire
-  -- Span content (including RawInline outputs) in \texorpdfstring{}
-  -- when the span is inside a heading (validated in E2b experiment).
+  -- NOTE: When this span is inside a heading, Pandoc wraps the output in
+  -- \texorpdfstring{}{} which lives inside \section{} — \par is forbidden
+  -- there. The Header callback below detects and moves annots outside.
   local annots = el.attributes["annots"]
   if annots ~= nil and annots ~= "" then
     result:insert(pandoc.RawInline("latex", annots))
   end
 
   return result
+end
+
+--- Collect all RawInline elements matching \annot from an inline list.
+--- Returns two lists: cleaned inlines (annots removed) and extracted annots.
+--- @param inlines pandoc.List  inline elements to scan
+--- @return pandoc.List, pandoc.List  cleaned inlines, extracted annot RawInlines
+local function extract_annots(inlines)
+  local cleaned = pandoc.List({})
+  local annots = pandoc.List({})
+  for _, el in ipairs(inlines) do
+    if el.t == "RawInline" and el.format == "latex"
+       and string.find(el.text, "\\annot{", 1, true) then
+      annots:insert(el)
+    else
+      cleaned:insert(el)
+    end
+  end
+  return cleaned, annots
+end
+
+--- Header callback: move \annot commands out of headings.
+--- \annot contains \par and \marginalia which are forbidden inside
+--- \section{} (LaTeX "moving argument"). This callback extracts any
+--- \annot RawInline from the header content and returns a list of blocks:
+--- the cleaned Header followed by a Plain block with the annots.
+function Header(el)
+  if FORMAT ~= "latex" then return el end
+
+  local cleaned, annots = extract_annots(el.content)
+  if #annots == 0 then
+    return el  -- no annots to move
+  end
+
+  -- Return cleaned header + annots as a separate Plain block
+  el.content = cleaned
+  return { el, pandoc.Plain(annots) }
 end

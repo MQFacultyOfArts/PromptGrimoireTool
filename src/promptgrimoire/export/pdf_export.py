@@ -306,7 +306,7 @@ async def export_annotation_pdf(
         html=processed_html,
         highlights=highlights,
         tag_colours=tag_colours,
-        filter_path=_LIBREOFFICE_FILTER,
+        filter_paths=[_LIBREOFFICE_FILTER],
         word_to_legal_para=word_to_legal_para,
     )
 

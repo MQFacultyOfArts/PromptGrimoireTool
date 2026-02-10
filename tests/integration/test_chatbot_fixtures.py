@@ -85,7 +85,7 @@ class TestChatbotFixturesToLatex:
         html = _preprocess_chatbot_html(html)
 
         # Convert to LaTeX (should not raise)
-        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Basic sanity checks
         assert latex, f"No LaTeX output for {fixture_name}"
@@ -115,7 +115,7 @@ class TestSpeakerLabelsInjected:
         html = _preprocess_chatbot_html(html)
 
         # Convert to LaTeX
-        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Check labels appear (textbf is how strong renders)
         assert "User:" in latex, f"No User: label in {fixture_name}"
@@ -127,7 +127,7 @@ class TestSpeakerLabelsInjected:
         html = _load_fixture("claude_maths.html")
         html = _preprocess_chatbot_html(html)
 
-        latex = await convert_html_to_latex(html, filter_path=LIBREOFFICE_FILTER)
+        latex = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
         # Has user label but no assistant (fixture is incomplete)
         assert "User:" in latex

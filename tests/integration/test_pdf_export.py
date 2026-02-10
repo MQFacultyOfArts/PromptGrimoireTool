@@ -67,7 +67,7 @@ class TestHtmlToLatexIntegration:
             / "legal.lua"
         )
 
-        result = await convert_html_to_latex(html, filter_path=filter_path)
+        result = await convert_html_to_latex(html, filter_paths=[filter_path])
 
         assert "CASE NAME" in result
         assert r"\begin{enumerate}" in result

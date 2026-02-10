@@ -314,8 +314,12 @@ class TestI18nPdfExport:
         # Pass raw HTML to export - production pipeline handles script stripping
         html_content = fixture_path.read_text(encoding="utf-8")
 
-        # Use persistent output directory for inspection
+        # Use persistent output directory for inspection (purge first for clean state)
         output_dir = self._OUTPUT_DIR / fixture_name
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         pdf_path = await export_annotation_pdf(
@@ -369,8 +373,12 @@ class TestI18nPdfExport:
         ]
         tag_colours = {"jurisdiction": "#1f77b4"}
 
-        # Use persistent output directory for inspection
+        # Use persistent output directory for inspection (purge first for clean state)
         output_dir = self._OUTPUT_DIR / "cjk_highlight_test"
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         pdf_path = await export_annotation_pdf(

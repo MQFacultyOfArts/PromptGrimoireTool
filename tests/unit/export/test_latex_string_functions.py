@@ -269,8 +269,12 @@ class TestCompilationValidation:
         """
         from promptgrimoire.export.pdf import compile_latex
 
-        # Create output directory for inspection
+        # Create output directory for inspection (purge first for clean state)
         output_dir = Path(_OUTPUT_DIR)
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Build comprehensive test content

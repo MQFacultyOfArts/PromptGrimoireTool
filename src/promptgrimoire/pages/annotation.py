@@ -2379,8 +2379,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
 def _get_placement_chip_style(ctx: PlacementContext) -> tuple[str, str, str]:
     """Return (label, color, icon) for a placement context chip."""
     if ctx.is_template and ctx.placement_type == "activity":
-        label = f"Template: {ctx.display_label}"
-        return label, "purple", "lock"
+        return f"Template: {ctx.display_label}", "purple", "lock"
     if ctx.placement_type == "activity":
         return ctx.display_label, "blue", "assignment"
     if ctx.placement_type == "course":

@@ -5,7 +5,7 @@ Provides async database functions for workspace management.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
@@ -83,15 +83,7 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         if workspace.activity_id is not None:
             ctx = await _resolve_activity_placement(session, workspace.activity_id)
             if is_template:
-                return PlacementContext(
-                    placement_type=ctx.placement_type,
-                    activity_title=ctx.activity_title,
-                    week_number=ctx.week_number,
-                    week_title=ctx.week_title,
-                    course_code=ctx.course_code,
-                    course_name=ctx.course_name,
-                    is_template=True,
-                )
+                return replace(ctx, is_template=True)
             return ctx
 
         if workspace.course_id is not None:

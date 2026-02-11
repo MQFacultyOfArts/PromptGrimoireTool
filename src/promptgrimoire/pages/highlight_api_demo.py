@@ -3,9 +3,9 @@
 Proves two claims:
 1. CSS Custom Highlight API ranges span across DOM block boundaries
    (p, h2, li, blockquote) without splitting or DOM modification.
-   Uses real 183-austlii.html fixture (Lawlis v R [2025] NSWCCA 183).
+   Uses workspace export of Lawlis v R [2025] NSWCCA 183 (pre-processed).
 2. The same character offsets used for live highlighting feed directly
-   into the PDF export pipeline (compute_highlight_spans) unchanged.
+   into the PDF export pipeline (export_annotation_pdf) unchanged.
 
 Route: /demo/highlight-api (requires ENABLE_DEMO_PAGES=true)
 """
@@ -19,22 +19,19 @@ from typing import Any
 
 from nicegui import ui
 
-from promptgrimoire.export.highlight_spans import compute_highlight_spans
-from promptgrimoire.input_pipeline.html_input import (
-    extract_text_from_html,
-    process_input,
-)
+from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 from promptgrimoire.pages.layout import require_demo_enabled
 from promptgrimoire.pages.registry import page_route
 
 logger = logging.getLogger(__name__)
 
-# --- Fixture path ---
+# --- Fixture path (pre-processed workspace export, no pipeline needed) ---
 _FIXTURE_PATH = (
     Path(__file__).parent.parent.parent.parent
     / "tests"
     / "fixtures"
-    / "183-austlii.html"
+    / "workspace_lawlis_v_r.html"
 )
 
 _CROSS_BLOCK_HIGHLIGHTS: list[dict[str, Any]] = []
@@ -246,7 +243,7 @@ def _render_header(
     """Render page title, description, and tag selector buttons."""
     ui.label("CSS Custom Highlight API — Proof of Concept").classes("text-h4")
     ui.markdown(
-        "**Fixture:** `183-austlii.html` "
+        "**Fixture:** `workspace_lawlis_v_r.html` "
         "(Lawlis v R [2025] NSWCCA 183). "
         "Select text, click a tag. Highlights use the "
         "CSS Custom Highlight API — **no DOM modification**."
@@ -281,24 +278,29 @@ def _build_highlight_css() -> str:
     return f"<style>{chr(10).join(lines)}</style>"
 
 
-def _render_export_preview(
-    export_el: ui.html,
-    parity_el: ui.label,
+async def _do_export_pdf(
     highlights: list[dict[str, Any]],
-    doc_chars_len: int,
     clean_html: str,
+    status_label: ui.label,
 ) -> None:
-    """Update the export preview panel with highlight span output."""
-    if highlights:
-        result = compute_highlight_spans(clean_html, highlights, _TAG_COLOURS)
-        preview = result[:3000]
-        export_el.set_content(
-            f"<pre style='white-space:pre-wrap;font-size:0.8em;'>"
-            f"{_escape_html(preview)}</pre>"
+    """Export current highlights to PDF and trigger browser download."""
+    if not highlights:
+        status_label.set_text("No highlights to export.")
+        return
+    status_label.set_text("Generating PDF...")
+    try:
+        pdf_path = await export_annotation_pdf(
+            html_content=clean_html,
+            highlights=highlights,
+            tag_colours=_TAG_COLOURS,
+            user_id="demo",
+            filename="highlight_api_demo",
         )
-    else:
-        export_el.set_content("")
-    parity_el.set_text(f"Server chars: {doc_chars_len} | Highlights: {len(highlights)}")
+        ui.download(pdf_path)
+        status_label.set_text(f"PDF exported ({len(highlights)} highlights).")
+    except Exception:
+        logger.exception("PDF export failed")
+        status_label.set_text("PDF export failed — check server logs.")
 
 
 @page_route(
@@ -315,9 +317,8 @@ async def highlight_api_demo() -> None:
     if not require_demo_enabled():
         return
 
-    # Load 183-austlii fixture and clean via input pipeline
-    raw_html = _FIXTURE_PATH.read_text(encoding="utf-8")
-    clean_html = await process_input(raw_html, "html", None)
+    # Load pre-processed workspace fixture (already through input pipeline)
+    clean_html = _FIXTURE_PATH.read_text(encoding="utf-8")
     document_chars = extract_text_from_html(clean_html)
 
     highlights: list[dict[str, Any]] = list(_CROSS_BLOCK_HIGHLIGHTS)
@@ -334,10 +335,8 @@ async def highlight_api_demo() -> None:
 
     ui.add_head_html(_build_highlight_css())
 
-    # --- Export preview ---
-    ui.label("Export Preview:").classes("text-h6 q-mt-lg")
-    export_el = ui.html("", sanitize=False).classes("border rounded p-4 bg-grey-1")
-    parity_label = ui.label("").classes("text-caption q-mt-sm")
+    # --- Export status ---
+    export_status = ui.label("").classes("text-caption q-mt-sm")
 
     # --- Inject JS ---
     all_js = _TEXT_WALKER_JS + _APPLY_HIGHLIGHTS_JS + _SELECTION_JS
@@ -354,13 +353,8 @@ async def highlight_api_demo() -> None:
             f"const c = document.getElementById('hl-demo-doc');"
             f"if(c) applyHighlights(c, {json.dumps(manifest)});"
         )
-        _render_export_preview(
-            export_el,
-            parity_label,
-            highlights,
-            len(document_chars),
-            clean_html,
-        )
+        n = len(highlights)
+        export_status.set_text(f"{n} highlight{'s' if n != 1 else ''} active.")
 
     async def on_selection(e: Any) -> None:
         start = e.args.get("start_char")
@@ -395,7 +389,7 @@ async def highlight_api_demo() -> None:
         )
         py_count = len(document_chars)
         match = js_chars == py_count
-        parity_label.set_text(
+        export_status.set_text(
             f"Parity: JS={js_chars}, Python={py_count}"
             f" — {'MATCH' if match else 'MISMATCH'}"
         )
@@ -407,6 +401,10 @@ async def highlight_api_demo() -> None:
     # --- Action buttons ---
     with ui.row().classes("gap-2 q-mt-md"):
         ui.button("Verify JS/Python Parity", on_click=verify_parity).props("outline")
+        ui.button(
+            "Export PDF",
+            on_click=lambda: _do_export_pdf(highlights, clean_html, export_status),
+        ).props("outline color=primary")
         ui.button("Clear Highlights", on_click=clear_all).props("outline color=red")
 
     # --- Init selection handler after DOM ready ---
@@ -416,14 +414,4 @@ async def highlight_api_demo() -> None:
             "const c = document.getElementById('hl-demo-doc');if(c) setupSelection(c);"
         ),
         once=True,
-    )
-
-
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters for display in <pre>."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
     )

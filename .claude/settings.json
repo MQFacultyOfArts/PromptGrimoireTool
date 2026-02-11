@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_serena_serena",
       "Bash(uv run *)",
       "Bash(git status *)",
       "Bash(git log *)",
@@ -26,16 +25,6 @@
     ]
   },
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'SERENA_INIT_REQUIRED: Call mcp__plugin_serena_serena__activate_project with project path: '\"$CLAUDE_PROJECT_DIR\""
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",

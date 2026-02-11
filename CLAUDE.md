@@ -88,6 +88,9 @@ uv run ruff check .
 # Run type checking
 uvx ty check
 
+# Seed development data (idempotent)
+uv run seed-data
+
 # Run the app
 uv run python -m promptgrimoire
 
@@ -171,7 +174,7 @@ The `.serena/project.yml` uses `project_name: "PromptGrimoire"` (directory-based
 src/promptgrimoire/
 ├── __init__.py
 ├── __main__.py          # Module entry point
-├── cli.py               # CLI tools (test-debug, test-all, set-admin, etc.)
+├── cli.py               # CLI tools (test-debug, test-all, seed-data, set-admin, etc.)
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
@@ -201,6 +204,10 @@ src/promptgrimoire/
 ├── static/              # Static assets (JS bundles, CSS)
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
+│   ├── models.py        # SQLModel table classes (User, Course, ..., Activity, Workspace, WorkspaceDocument)
+│   ├── activities.py    # Activity CRUD (create with template workspace, list by week/course)
+│   ├── workspaces.py    # Workspace CRUD, placement, cloning, PlacementContext query
+│   └── workspace_documents.py  # Document CRUD, workspaces_with_documents batch query
 └── crdt/                # pycrdt collaboration logic
 
 scripts/
@@ -309,13 +316,14 @@ Char span injection multiplies HTML size by ~55x. To avoid hitting NiceGUI webso
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-### Tables (6 SQLModel classes)
+### Tables (7 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
 - **Course** - Course/unit of study with weeks and enrolled members
 - **CourseEnrollment** - Maps users to courses with course-level roles
 - **Week** - Week within a course with visibility controls
-- **Workspace** - Container for documents and CRDT state (unit of collaboration)
+- **Activity** - Assignment within a Week; owns a template Workspace (RESTRICT delete). `week_id` FK with CASCADE delete, `template_workspace_id` FK with RESTRICT delete (unique).
+- **Workspace** - Container for documents and CRDT state (unit of collaboration). Placement fields: `activity_id` (SET NULL), `course_id` (SET NULL), `enable_save_as_draft`. Mutual exclusivity: a workspace can be in an Activity OR a Course, never both (Pydantic validator + DB CHECK constraint `ck_workspace_placement_exclusivity`).
 - **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (HTML with char spans), `source_type` ("html", "rtf", "docx", "pdf", "text")
 
 ### Workspace Architecture
@@ -328,6 +336,27 @@ Workspaces are isolated silos identified by UUID. Key design decisions:
 - **`create_workspace()` takes no parameters** - Just creates an empty workspace with UUID
 
 This separation prevents conflating audit concerns with authorization logic.
+
+### Hierarchy: Course > Week > Activity > Workspace
+
+The content hierarchy is: Course contains Weeks, Weeks contain Activities, Activities own template Workspaces. Students clone the template to get their own Workspace.
+
+- **Activity** owns exactly one **template Workspace** (1:1, RESTRICT delete). `create_activity()` atomically creates both.
+- **Workspace placement** is optional: `activity_id` OR `course_id` (mutually exclusive via Pydantic validator + DB CHECK). A workspace with neither is "loose".
+- **`PlacementContext`** (frozen dataclass) resolves the full hierarchy chain (Activity -> Week -> Course) for UI display. `display_label` provides a human-readable string like "Annotate Becky in Week 1 for LAWS1100".
+- **Template detection**: `is_template` flag on PlacementContext is True when the workspace is an Activity's `template_workspace_id`.
+
+### Workspace Cloning
+
+`clone_workspace_from_activity(activity_id)` creates a student workspace from a template:
+
+1. Creates new Workspace with `activity_id` set and `enable_save_as_draft` copied
+2. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
+3. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
+4. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
+5. Entire operation is atomic (single session)
+
+**Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
 
 ### Database Rules
 

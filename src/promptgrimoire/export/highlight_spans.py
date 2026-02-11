@@ -65,6 +65,34 @@ PANDOC_BLOCK_ELEMENTS: frozenset[str] = frozenset(
     )
 )
 
+# Inline formatting elements whose boundaries require span splitting.
+# A highlight span opening inside <b> and closing outside </b> produces
+# malformed HTML that parsers and Pandoc silently destroy.
+INLINE_FORMATTING_ELEMENTS: frozenset[str] = frozenset(
+    (
+        "b",
+        "strong",
+        "em",
+        "i",
+        "u",
+        "s",
+        "del",
+        "ins",
+        "mark",
+        "small",
+        "sub",
+        "sup",
+        "code",
+        "abbr",
+        "cite",
+        "dfn",
+        "kbd",
+        "q",
+        "samp",
+        "var",
+    )
+)
+
 
 # ---------------------------------------------------------------------------
 # Annotation formatting (adapted from _format_annot in latex.py)
@@ -313,7 +341,91 @@ def _detect_block_boundaries(
 
 
 # ---------------------------------------------------------------------------
-# Split regions at block boundaries
+# Inline-formatting boundary detection
+# ---------------------------------------------------------------------------
+
+
+def _inline_context_at(
+    html: str,
+    byte_pos: int,
+) -> tuple[str, ...]:
+    """Compute the inline formatting ancestor context at a byte position.
+
+    Scans backwards from *byte_pos* through the serialised HTML, collecting
+    unclosed inline formatting tags until a block-level element is reached.
+    Returns a sorted tuple of inline tag names that are open at this position.
+    """
+    # Track nesting: when we see a closing tag we need to skip its matching
+    # open tag (it's a completed element, not an ancestor).
+    depth: dict[str, int] = {}
+    ancestors: list[str] = []
+    i = byte_pos - 1
+
+    while i >= 0:
+        if html[i] == ">":
+            tag_end = i
+            tag_start = html.rfind("<", 0, i)
+            if tag_start == -1:
+                i -= 1
+                continue
+            tag_content = html[tag_start + 1 : tag_end]
+            if tag_content.startswith("/"):
+                # Closing tag — the element is completed, skip its opener
+                tag_name = tag_content[1:].split()[0].strip("/").lower()
+                if tag_name in PANDOC_BLOCK_ELEMENTS:
+                    break  # Stop at block boundary
+                if tag_name in INLINE_FORMATTING_ELEMENTS:
+                    depth[tag_name] = depth.get(tag_name, 0) + 1
+            elif not tag_content.startswith("!"):
+                # Opening tag
+                tag_name = tag_content.split()[0].strip("/").lower()
+                if tag_name in PANDOC_BLOCK_ELEMENTS:
+                    break  # Stop at block boundary
+                if tag_name in INLINE_FORMATTING_ELEMENTS:
+                    d = depth.get(tag_name, 0)
+                    if d > 0:
+                        depth[tag_name] = d - 1
+                    else:
+                        ancestors.append(tag_name)
+            i = tag_start - 1
+        else:
+            i -= 1
+
+    return tuple(sorted(ancestors))
+
+
+def _detect_inline_boundaries(
+    html: str,
+    text_nodes: list[TextNodeInfo],
+    byte_offsets: list[int],
+) -> set[int]:
+    """Identify character positions where inline formatting context changes.
+
+    For each pair of consecutive text nodes within the same block, computes
+    the set of inline formatting ancestors.  When the inline context differs,
+    a boundary is recorded at the ``char_start`` of the second text node.
+
+    This ensures that highlight ``<span>`` elements are split at inline
+    formatting boundaries (e.g. ``</b>``, ``</em>``) so the resulting HTML
+    is well-formed.
+    """
+    if len(text_nodes) <= 1:
+        return set()
+
+    boundaries: set[int] = set()
+    prev_ctx: tuple[str, ...] | None = None
+
+    for i, tn in enumerate(text_nodes):
+        ctx = _inline_context_at(html, byte_offsets[i])
+        if prev_ctx is not None and ctx != prev_ctx:
+            boundaries.add(tn.char_start)
+        prev_ctx = ctx
+
+    return boundaries
+
+
+# ---------------------------------------------------------------------------
+# Split regions at boundaries
 # ---------------------------------------------------------------------------
 
 
@@ -321,7 +433,7 @@ def _split_regions_at_boundaries(
     regions: list[_HlRegion],
     boundaries: set[int],
 ) -> list[_HlRegion]:
-    """Split regions that cross block boundaries.
+    """Split regions that cross block or inline formatting boundaries.
 
     Each region that spans a boundary position is split into sub-regions
     with the same ``active`` set but different character ranges.
@@ -621,10 +733,11 @@ def compute_highlight_spans(
     if not regions:
         return html
 
-    # Detect block boundaries
+    # Detect block and inline formatting boundaries
     boundaries = _detect_block_boundaries(html, text_nodes, byte_offsets)
+    boundaries |= _detect_inline_boundaries(html, text_nodes, byte_offsets)
 
-    # Split regions at block boundaries
+    # Split regions at boundaries
     regions = _split_regions_at_boundaries(regions, boundaries)
 
     # Insert spans into HTML

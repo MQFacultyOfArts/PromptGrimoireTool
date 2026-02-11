@@ -282,6 +282,127 @@ class TestAC1_5_NoCrossBlockSpan:
 
 
 # ---------------------------------------------------------------------------
+# Inline formatting boundary splitting
+# ---------------------------------------------------------------------------
+
+
+class TestInlineFormattingBoundary:
+    """Highlight spans crossing inline formatting boundaries (<b>, <em>, etc.)
+    must be split so the resulting HTML is well-formed.
+
+    Bug: <b><span>BOLD:</b>not bold</span> is malformed HTML.
+    Fix: split at the </b> boundary to produce
+         <b><span>BOLD:</span></b><span>not bold</span>
+    """
+
+    def test_bold_boundary_produces_two_spans(self) -> None:
+        """A highlight crossing a </b> boundary is split into two spans."""
+        html = "<p><b>BOLD:</b>not bold</p>"
+        chars = extract_text_from_html(html)
+        # "BOLD:not bold" = 13 chars
+        hl = _make_hl(0, len(chars), tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        assert len(spans) >= 2, (
+            f"Expected >=2 spans (split at </b>), got {len(spans)}: {spans}"
+        )
+
+        span_texts = [s["_text"] for s in spans]
+        assert "BOLD:" in span_texts
+        assert "not bold" in span_texts
+
+    def test_bold_boundary_html_is_well_formed(self) -> None:
+        """The span inside <b> closes before </b>, not after."""
+        html = "<p><b>BOLD:</b>not bold</p>"
+        chars = extract_text_from_html(html)
+        hl = _make_hl(0, len(chars), tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        # The result must NOT contain a span that opens inside <b> and
+        # closes outside it. Check that </span> comes before </b>.
+        tree = LexborHTMLParser(result)
+        b_tag = tree.css_first("b")
+        assert b_tag is not None
+        # Every data-hl span inside <b> must be fully contained within <b>
+        for span in tree.css("b span[data-hl]"):
+            # The span's parent chain should include the <b>
+            parent = span.parent
+            while parent is not None and parent.tag != "b":
+                parent = parent.parent
+            assert parent is not None and parent.tag == "b", (
+                "Span inside <b> must be fully contained within <b>"
+            )
+
+    def test_em_boundary_produces_split(self) -> None:
+        """A highlight crossing an </em> boundary is split."""
+        html = "<p><em>italic</em> normal</p>"
+        chars = extract_text_from_html(html)
+        hl = _make_hl(0, len(chars), tag="evidence")
+        result = compute_highlight_spans(html, [hl], {"evidence": "#ff6600"})
+
+        spans = _find_spans(result)
+        assert len(spans) >= 2, (
+            f"Expected >=2 spans (split at </em>), got {len(spans)}: {spans}"
+        )
+
+    def test_highlight_within_bold_no_split_needed(self) -> None:
+        """A highlight entirely within <b> does NOT get split."""
+        html = "<p><b>all bold text</b></p>"
+        chars = extract_text_from_html(html)
+        hl = _make_hl(0, len(chars), tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        assert len(spans) == 1, (
+            f"Expected 1 span (no split needed), got {len(spans)}: {spans}"
+        )
+        assert spans[0]["_text"] == "all bold text"
+
+    def test_nested_bold_em_boundary(self) -> None:
+        """Highlight crossing from <b><em> to plain text is split."""
+        html = "<p><b><em>bold italic</em></b> plain</p>"
+        chars = extract_text_from_html(html)
+        hl = _make_hl(0, len(chars), tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        assert len(spans) >= 2, (
+            f"Expected >=2 spans at inline boundary, got {len(spans)}: {spans}"
+        )
+
+    def test_lawlis_bold_court_pattern(self) -> None:
+        """Reproduce the production bug: <li><b>THE COURT:</b>After...</li>"""
+        html = (
+            '<li value="1"><b>THE COURT:</b>After the hearing of this appeal, '
+            "the Court made orders.</li>"
+        )
+        chars = extract_text_from_html(html)
+        hl = _make_hl(0, len(chars), tag="jurisdiction")
+        result = compute_highlight_spans(html, [hl], {"jurisdiction": "#3366cc"})
+
+        spans = _find_spans(result)
+        assert len(spans) >= 2, (
+            f"Expected >=2 spans (split at </b>), got {len(spans)}: {spans}"
+        )
+
+        # Verify "THE COURT:" is in its own span within <b>
+        tree = LexborHTMLParser(result)
+        b_spans = tree.css("b span[data-hl]")
+        b_span_texts = [s.text() for s in b_spans]
+        assert any("THE COURT:" in t for t in b_span_texts), (
+            f"Expected 'THE COURT:' span inside <b>, got: {b_span_texts}"
+        )
+
+        # Verify text after </b> is also highlighted
+        span_texts = [s["_text"] for s in spans]
+        after_bold = [t for t in span_texts if "After" in t]
+        assert len(after_bold) >= 1, (
+            f"Expected span containing 'After' text, got: {span_texts}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
 

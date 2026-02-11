@@ -55,6 +55,12 @@ async def create_activity(
         )
         session.add(activity)
         await session.flush()
+
+        # Back-link: template workspace belongs to this activity
+        template.activity_id = activity.id
+        session.add(template)
+        await session.flush()
+
         await session.refresh(activity)
         return activity
 

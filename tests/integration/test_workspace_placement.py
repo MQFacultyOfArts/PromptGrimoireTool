@@ -224,7 +224,8 @@ class TestListWorkspaces:
         result_ids = {w.id for w in result}
         assert ws1.id in result_ids
         assert ws2.id in result_ids
-        assert len(result) == 2
+        # +1 for the template workspace auto-placed by create_activity
+        assert len(result) == 3
 
     @pytest.mark.asyncio
     async def test_list_loose_for_course(self) -> None:

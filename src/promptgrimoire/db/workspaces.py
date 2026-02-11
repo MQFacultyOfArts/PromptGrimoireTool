@@ -35,6 +35,7 @@ class PlacementContext:
     week_title: str | None = None
     course_code: str | None = None
     course_name: str | None = None
+    is_template: bool = False
 
     @property
     def display_label(self) -> str:
@@ -73,8 +74,25 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         if workspace is None:
             return loose
 
+        # Check if this workspace is a template for any Activity
+        template_result = await session.exec(
+            select(Activity).where(Activity.template_workspace_id == workspace_id)
+        )
+        is_template = template_result.first() is not None
+
         if workspace.activity_id is not None:
-            return await _resolve_activity_placement(session, workspace.activity_id)
+            ctx = await _resolve_activity_placement(session, workspace.activity_id)
+            if is_template:
+                return PlacementContext(
+                    placement_type=ctx.placement_type,
+                    activity_title=ctx.activity_title,
+                    week_number=ctx.week_number,
+                    week_title=ctx.week_title,
+                    course_code=ctx.course_code,
+                    course_name=ctx.course_name,
+                    is_template=True,
+                )
+            return ctx
 
         if workspace.course_id is not None:
             return await _resolve_course_placement(session, workspace.course_id)

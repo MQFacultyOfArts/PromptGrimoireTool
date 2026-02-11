@@ -291,24 +291,25 @@ async def course_detail_page(course_id: str) -> None:
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
     def _render_activity_row(act: Activity, *, can_manage: bool) -> None:
-        """Render a single Activity row with title and Start button."""
+        """Render a single Activity row with template/start buttons."""
         with ui.row().classes("items-center gap-2"):
             ui.icon("assignment").classes("text-gray-400")
+            ui.label(act.title).classes("text-sm font-medium")
+
             if can_manage:
                 _qs = urlencode({"workspace_id": str(act.template_workspace_id)})
-                ui.link(
-                    act.title,
-                    f"/annotation?{_qs}",
-                ).classes("text-sm")
-            else:
-                ui.label(act.title).classes("text-sm")
+                ui.button(
+                    "Edit Template",
+                    icon="edit",
+                    on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
+                ).props("flat dense size=sm color=secondary")
 
             async def start_activity(aid: UUID = act.id) -> None:
                 clone, _doc_map = await clone_workspace_from_activity(aid)
                 qs = urlencode({"workspace_id": str(clone.id)})
                 ui.navigate.to(f"/annotation?{qs}")
 
-            ui.button("Start", on_click=start_activity).props(
+            ui.button("Start Activity", on_click=start_activity).props(
                 "flat dense size=sm color=primary"
             )
 

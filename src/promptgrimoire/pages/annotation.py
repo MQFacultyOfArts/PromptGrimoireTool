@@ -2378,6 +2378,9 @@ def _render_add_content_form(workspace_id: UUID) -> None:
 
 def _get_placement_chip_style(ctx: PlacementContext) -> tuple[str, str, str]:
     """Return (label, color, icon) for a placement context chip."""
+    if ctx.is_template and ctx.placement_type == "activity":
+        label = f"Template: {ctx.display_label}"
+        return label, "purple", "lock"
     if ctx.placement_type == "activity":
         return ctx.display_label, "blue", "assignment"
     if ctx.placement_type == "course":
@@ -2660,16 +2663,20 @@ async def _render_workspace_header(state: PageState, workspace_id: UUID) -> None
             async def open_dialog() -> None:
                 await _show_placement_dialog(workspace_id, ctx, placement_chip.refresh)
 
+            # Template workspaces have locked placement
+            clickable = is_authenticated and not ctx.is_template
             props_str = 'data-testid="placement-chip" outline'
-            if not is_authenticated:
+            if not clickable:
                 props_str += " disable"
             chip = ui.chip(
                 text=label,
                 icon=icon,
                 color=color,
-                on_click=open_dialog if is_authenticated else None,
+                on_click=open_dialog if clickable else None,
             ).props(props_str)
-            if not is_authenticated:
+            if ctx.is_template:
+                chip.tooltip("Template placement is managed by the Activity")
+            elif not is_authenticated:
                 chip.tooltip("Log in to change placement")
 
         await placement_chip()
@@ -2890,7 +2897,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     _setup_client_sync(workspace_id, client, state)
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
-    _render_workspace_header(state, workspace_id)
+    await _render_workspace_header(state, workspace_id)
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
     # is first visited. Must be added during page construction — dynamically

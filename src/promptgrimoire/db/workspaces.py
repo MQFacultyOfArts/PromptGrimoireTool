@@ -96,7 +96,11 @@ async def _resolve_activity_placement(
     session: AsyncSession,
     activity_id: UUID,
 ) -> PlacementContext:
-    """Walk Activity -> Week -> Course chain. Falls back to loose on orphan."""
+    """Walk Activity -> Week -> Course chain. Falls back to loose on orphan.
+
+    TODO: Replace 3 sequential session.get() calls with a single JOIN query
+    if this becomes a performance concern (currently once per page load).
+    """
     activity = await session.get(Activity, activity_id)
     if activity is None:
         return PlacementContext(placement_type="loose")

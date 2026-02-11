@@ -2401,6 +2401,7 @@ async def _load_enrolled_course_options(
     """Load course select options for courses the user is enrolled in."""
     enrollments = await list_user_enrollments(user_id)
     course_ids = {e.course_id for e in enrollments}
+    # TODO(Seam-D): Replace with single JOIN query if course count grows
     courses_list = await list_courses()
     return {
         str(c.id): f"{c.code} - {c.name}" for c in courses_list if c.id in course_ids

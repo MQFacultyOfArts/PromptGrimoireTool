@@ -504,7 +504,7 @@ class TestListActivities:
 
         activities = await list_activities_for_week(week.id)
 
-        assert len(activities) >= 3
+        assert len(activities) == 3
         titles = [a.title for a in activities]
         assert titles.index("First") < titles.index("Second") < titles.index("Third")
 
@@ -543,7 +543,7 @@ class TestListActivities:
 
         activities = await list_activities_for_course(course.id)
 
-        assert len(activities) >= 3
+        assert len(activities) == 3
         titles = [a.title for a in activities]
         # Week 1 activities should come before Week 2
         assert titles.index("W1-First") < titles.index("W2-First")

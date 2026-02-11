@@ -314,6 +314,7 @@ async def course_detail_page(course_id: str) -> None:
                 ).props("flat dense size=sm color=secondary")
 
             async def start_activity(aid: UUID = act.id) -> None:
+                # TODO(Seam-D): Add workspace-level auth check here
                 clone, _doc_map = await clone_workspace_from_activity(aid)
                 qs = urlencode({"workspace_id": str(clone.id)})
                 ui.navigate.to(f"/annotation?{qs}")
@@ -370,6 +371,7 @@ async def course_detail_page(course_id: str) -> None:
                                     )
 
                     # Activity list under each week
+                    # TODO: Batch into single query if week count grows
                     activities = await list_activities_for_week(week.id)
                     if activities:
                         populated = (

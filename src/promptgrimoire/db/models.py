@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from pydantic import model_validator
 from sqlalchemy import Column, DateTime, ForeignKey, UniqueConstraint, Uuid
 from sqlmodel import Field, SQLModel
 
@@ -40,6 +41,11 @@ def _timestamptz_column() -> Any:
 def _cascade_fk_column(target: str) -> Any:
     """Create a UUID foreign key column with CASCADE DELETE."""
     return Column(Uuid(), ForeignKey(target, ondelete="CASCADE"), nullable=False)
+
+
+def _set_null_fk_column(target: str) -> Any:
+    """Create a UUID foreign key column with SET NULL on delete."""
+    return Column(Uuid(), ForeignKey(target, ondelete="SET NULL"), nullable=True)
 
 
 class User(SQLModel, table=True):
@@ -155,15 +161,60 @@ class Week(SQLModel, table=True):
     )
 
 
+class Activity(SQLModel, table=True):
+    """A discrete assignment or exercise within a Week.
+
+    Each Activity has an instructor-managed template workspace that students
+    clone when they start work. The template workspace is CASCADE-deleted
+    when the Activity is deleted.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        week_id: Foreign key to Week (CASCADE DELETE).
+        template_workspace_id: Foreign key to Workspace (RESTRICT DELETE).
+        title: Activity title (e.g., "Annotate Becky Bennett Interview").
+        description: Optional markdown description of the activity.
+        created_at: Timestamp when activity was created.
+        updated_at: Timestamp when activity was last modified.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    week_id: UUID = Field(sa_column=_cascade_fk_column("week.id"))
+    template_workspace_id: UUID = Field(
+        sa_column=Column(
+            Uuid(),
+            ForeignKey("workspace.id", ondelete="RESTRICT"),
+            nullable=False,
+            unique=True,
+        )
+    )
+    title: str = Field(max_length=200)
+    description: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
 class Workspace(SQLModel, table=True):
     """Container for documents and CRDT state. Unit of collaboration.
 
     Workspaces are isolated silos - each workspace's documents and CRDT state
     are independent. Access control is handled via ACL (Seam D, future).
 
+    A workspace may be optionally placed in either an Activity (student clone)
+    or a Course (shared resource), but never both.
+
     Attributes:
         id: Primary key UUID, auto-generated.
         crdt_state: Serialized pycrdt state bytes for all annotations.
+        activity_id: Optional FK to Activity (SET NULL on delete).
+        course_id: Optional FK to Course (SET NULL on delete).
+        enable_save_as_draft: Whether students can save drafts in this workspace.
         created_at: Timestamp when workspace was created.
         updated_at: Timestamp when workspace was last modified.
     """
@@ -172,12 +223,27 @@ class Workspace(SQLModel, table=True):
     crdt_state: bytes | None = Field(
         default=None, sa_column=Column(sa.LargeBinary(), nullable=True)
     )
+    activity_id: UUID | None = Field(
+        default=None, sa_column=_set_null_fk_column("activity.id")
+    )
+    course_id: UUID | None = Field(
+        default=None, sa_column=_set_null_fk_column("course.id")
+    )
+    enable_save_as_draft: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
     updated_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
+
+    @model_validator(mode="after")
+    def _check_placement_exclusivity(self) -> Self:
+        """Ensure activity_id and course_id are mutually exclusive."""
+        if self.activity_id is not None and self.course_id is not None:
+            msg = "Workspace cannot be placed in both an Activity and a Course"
+            raise ValueError(msg)
+        return self
 
 
 class WorkspaceDocument(SQLModel, table=True):

@@ -6,9 +6,9 @@ Maintained by project-claude-librarian at branch completion.
 Overlapping tests and coverage gaps are documented intentionally --
 they reveal where the test suite is redundant or incomplete.
 
-> **Scope:** This file currently covers tests added or modified on the
-> 134-lua-highlight branch. Existing tests from before this branch are
-> not yet documented here.
+> **Scope:** This file covers tests added or modified on the
+> 134-lua-highlight and 94-hierarchy-placement branches. Existing tests
+> from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -262,3 +262,130 @@ they reveal where the test suite is redundant or incomplete.
 4. Verify empty/whitespace markdown returns empty string
 
 **Verifies:** Image syntax in response drafts cannot produce \includegraphics in LaTeX
+
+## Workspace Placement Validation (Unit)
+
+### Mutual exclusivity model validator
+**File:** tests/unit/test_workspace_placement_validation.py::TestWorkspacePlacementExclusivity
+1. Workspace.model_validate({}) -- both None is valid
+2. Workspace.model_validate({activity_id: uuid}) -- activity only is valid
+3. Workspace.model_validate({course_id: uuid}) -- course only is valid
+4. Workspace.model_validate({activity_id: uuid, course_id: uuid}) -- raises ValueError "cannot be placed in both"
+5. Direct construction Workspace(activity_id=X, course_id=Y) bypasses validator (documents SQLModel behavior; DB CHECK is the real guard)
+6. enable_save_as_draft defaults to False; can be set to True
+
+**Verifies:** Pydantic model_validator enforces mutual exclusivity of placement fields; documents that direct construction skips validation (intentional -- DB constraint covers it)
+
+## Activity CRUD (Integration)
+
+### Activity creation and schema constraints
+**File:** tests/integration/test_activity_crud.py::TestCreateActivity
+1. Create course+week, create workspace, create Activity with all fields -- assert UUID and timestamps auto-generated
+2. Create workspace then Activity in single transaction -- assert template workspace exists after commit (atomic creation)
+3. Create Activity with non-existent week_id -- assert IntegrityError (FK constraint)
+4. Create Activity with null week_id -- assert IntegrityError (NOT NULL)
+
+**Verifies:** Activity model has correct auto-fields, FK constraints, and NOT NULL enforcement at DB level
+
+### Workspace placement DB constraints
+**File:** tests/integration/test_activity_crud.py::TestWorkspacePlacementFields
+1. Create workspace -- assert activity_id, course_id are None, enable_save_as_draft is False
+2. Set both activity_id and course_id on a workspace via session -- assert IntegrityError matching "ck_workspace_placement_exclusivity"
+
+**Verifies:** DB CHECK constraint enforces mutual exclusivity independently of Pydantic validator
+
+### FK cascade and set-null behaviors
+**File:** tests/integration/test_activity_crud.py::TestCascadeBehavior
+1. Delete Activity that has a student workspace placed in it -- assert student workspace still exists with activity_id=None (SET NULL)
+2. Delete Course that has a workspace with course_id set -- assert workspace still exists with course_id=None (SET NULL)
+3. Delete Week that has an Activity -- assert Activity is gone (CASCADE)
+
+**Verifies:** FK behaviors: Activity deletion SET NULLs workspace.activity_id, Course deletion SET NULLs workspace.course_id, Week deletion CASCADEs to Activity
+
+### Activity CRUD lifecycle
+**File:** tests/integration/test_activity_crud.py::TestActivityCRUD
+1. create_activity -- assert UUID, title, description, template_workspace_id; verify template workspace has activity_id back-link
+2. get_activity -- assert fields match
+3. update_activity with new title+description -- assert fields updated, updated_at advanced
+4. delete_activity -- assert returns True; get_activity returns None
+5. delete_activity also deletes template workspace (CASCADE via explicit code)
+6. update_activity with description=None -- clears description
+7. update/delete/get on non-existent ID -- returns None/False/None
+
+**Verifies:** Full Activity CRUD lifecycle, template workspace lifecycle, sentinel-based description clearing
+
+### List activities by week and course
+**File:** tests/integration/test_activity_crud.py::TestListActivities
+1. Create 3 activities in one week -- list_activities_for_week returns them ordered by created_at
+2. list_activities_for_week on empty week -- returns empty list
+3. Create activities across 2 weeks in one course -- list_activities_for_course returns them ordered by week_number then created_at
+
+**Verifies:** Activity listing respects ordering contracts (created_at within week, week_number across course)
+
+## Workspace Placement (Integration)
+
+### Place, move, and unplace workspaces
+**File:** tests/integration/test_workspace_placement.py::TestPlaceWorkspace
+1. Place workspace in course, then place in activity -- assert activity_id set, course_id cleared, updated_at advanced
+2. Place workspace in activity, then place in course -- assert course_id set, activity_id cleared
+3. Place in activity, then make_workspace_loose -- assert both IDs cleared
+4. place_workspace_in_activity with non-existent Activity -- ValueError
+5. place_workspace_in_course with non-existent Course -- ValueError
+6. place_workspace_in_activity with non-existent Workspace -- ValueError
+
+**Verifies:** Placement functions enforce mutual exclusivity, update timestamps, validate entity existence
+
+### List workspaces by activity and course
+**File:** tests/integration/test_workspace_placement.py::TestListWorkspaces
+1. Place 2 workspaces in Activity (plus auto-created template = 3) -- list_workspaces_for_activity returns all 3
+2. Place 2 workspaces in Course, 1 in Activity -- list_loose_workspaces_for_course returns only the 2 course-placed ones
+
+**Verifies:** Listing functions filter correctly; template workspace appears in activity listing
+
+### PlacementContext hierarchy resolution
+**File:** tests/integration/test_workspace_placement.py::TestPlacementContext
+1. Loose workspace -- placement_type="loose", all hierarchy fields None, display_label="Unplaced"
+2. Activity-placed workspace -- placement_type="activity", all fields populated (activity_title, week_number, week_title, course_code, course_name), display_label format correct
+3. Course-placed workspace -- placement_type="course", course fields only, display_label="Loose work for CODE"
+4. Template workspace -- is_template=True
+5. Student workspace in same activity -- is_template=False
+6. Loose workspace -- is_template=False
+7. Non-existent workspace ID -- returns loose context
+
+**Verifies:** PlacementContext correctly walks Activity->Week->Course chain, detects template workspaces, and degrades gracefully
+
+### workspaces_with_documents batch query
+**File:** tests/integration/test_workspace_placement.py::TestWorkspacesWithDocuments
+1. Empty input set -- returns empty set (no DB query)
+2. Workspace with 1 document -- included in result
+3. Workspace with 0 documents -- excluded from result
+4. Mixed set (1 with, 1 without documents) -- returns only the populated one
+5. Non-existent UUIDs -- silently excluded
+
+**Verifies:** Batch presence-check for documents is correct and handles edge cases
+
+## Workspace Cloning (Integration)
+
+### Document cloning
+**File:** tests/integration/test_workspace_cloning.py::TestCloneDocuments
+1. Clone activity with template that has enable_save_as_draft=True -- assert clone has activity_id set and flag copied
+2. Clone template with 2 docs (source+draft) -- cloned docs preserve content, type, source_type, title, order_index
+3. Clone template with 2 docs -- cloned doc UUIDs are all new; doc_id_map maps each template UUID to its clone
+4. After clone, template workspace and all its documents are unchanged (field-by-field comparison)
+5. Clone empty template (no docs) -- returns workspace with activity_id, empty doc_id_map, zero documents
+6. Clone non-existent activity -- ValueError
+
+**Verifies:** Document cloning preserves field values, generates independent UUIDs, does not mutate template, handles empty/missing cases
+
+### CRDT state cloning
+**File:** tests/integration/test_workspace_cloning.py::TestCloneCRDT
+1. Template with highlight referencing doc 0 -- clone highlight has document_id remapped to cloned doc UUID (not template doc UUID)
+2. Template with highlight with specific fields (start_char, end_char, tag, text, author, para_ref) -- all preserved in clone
+3. Template with highlight + 2 comments -- comments preserved (author, text)
+4. Template with registered client -- clone's client_meta map is empty (client metadata excluded)
+5. Template with null crdt_state -- clone crdt_state is None
+6. Template with 2 highlights + 2 docs -- all parts present after clone (atomicity)
+7. Template with general notes -- notes cloned
+8. Template with highlights referencing 2 different docs -- each highlight's document_id remapped to correct cloned doc
+
+**Verifies:** CRDT replay correctly remaps document IDs, preserves highlight fields and comments, excludes client metadata, handles null state, and clones general notes

@@ -18,6 +18,7 @@ def test_all_models_registered() -> None:
     import promptgrimoire.db.models  # noqa: F401 - import registers tables
 
     expected_tables = {
+        "activity",
         "user",
         "course",
         "course_enrollment",
@@ -37,12 +38,13 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 6 table names."""
+    """get_expected_tables() returns all 7 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 6
+    assert len(tables) == 7
+    assert "activity" in tables
     assert "user" in tables
     assert "course" in tables
     assert "course_enrollment" in tables

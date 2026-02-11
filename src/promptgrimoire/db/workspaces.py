@@ -5,14 +5,134 @@ Provides async database functions for workspace management.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+from uuid import UUID
+
+from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Workspace
+from promptgrimoire.db.models import (
+    Activity,
+    Course,
+    Week,
+    Workspace,
+    WorkspaceDocument,
+)
 
 if TYPE_CHECKING:
-    from uuid import UUID
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+
+@dataclass(frozen=True)
+class PlacementContext:
+    """Full hierarchy context for a workspace's placement."""
+
+    placement_type: Literal["activity", "course", "loose"]
+    activity_title: str | None = None
+    week_number: int | None = None
+    week_title: str | None = None
+    course_code: str | None = None
+    course_name: str | None = None
+    is_template: bool = False
+
+    @property
+    def display_label(self) -> str:
+        """Human-readable placement label.
+
+        Shows full hierarchy: "Activity Title in Week N for COURSE_CODE"
+        """
+        if self.placement_type == "activity":
+            return (
+                f"{self.activity_title} "
+                f"in Week {self.week_number} "
+                f"for {self.course_code}"
+            )
+        if self.placement_type == "course":
+            return f"Loose work for {self.course_code}"
+        return "Unplaced"
+
+
+async def get_placement_context(workspace_id: UUID) -> PlacementContext:
+    """Resolve the full hierarchy context for a workspace's placement.
+
+    Fetches the workspace and walks the Activity -> Week -> Course chain
+    (if placed in an Activity) or just the Course (if placed in a Course)
+    within a single session for consistency.
+
+    Args:
+        workspace_id: The workspace UUID.
+
+    Returns:
+        PlacementContext with all resolved fields. Returns a loose context
+        if the workspace is not found or has no placement.
+    """
+    loose = PlacementContext(placement_type="loose")
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return loose
+
+        # Check if this workspace is a template for any Activity
+        template_result = await session.exec(
+            select(Activity).where(Activity.template_workspace_id == workspace_id)
+        )
+        is_template = template_result.first() is not None
+
+        if workspace.activity_id is not None:
+            ctx = await _resolve_activity_placement(session, workspace.activity_id)
+            if is_template:
+                return replace(ctx, is_template=True)
+            return ctx
+
+        if workspace.course_id is not None:
+            return await _resolve_course_placement(session, workspace.course_id)
+
+        return loose
+
+
+async def _resolve_activity_placement(
+    session: AsyncSession,
+    activity_id: UUID,
+) -> PlacementContext:
+    """Walk Activity -> Week -> Course chain. Falls back to loose on orphan.
+
+    TODO: Replace 3 sequential session.get() calls with a single JOIN query
+    if this becomes a performance concern (currently once per page load).
+    """
+    activity = await session.get(Activity, activity_id)
+    if activity is None:
+        return PlacementContext(placement_type="loose")
+    week = await session.get(Week, activity.week_id)
+    if week is None:
+        return PlacementContext(placement_type="loose")
+    course = await session.get(Course, week.course_id)
+    if course is None:
+        return PlacementContext(placement_type="loose")
+    return PlacementContext(
+        placement_type="activity",
+        activity_title=activity.title,
+        week_number=week.week_number,
+        week_title=week.title,
+        course_code=course.code,
+        course_name=course.name,
+    )
+
+
+async def _resolve_course_placement(
+    session: AsyncSession,
+    course_id: UUID,
+) -> PlacementContext:
+    """Resolve Course placement. Falls back to loose on orphan."""
+    course = await session.get(Course, course_id)
+    if course is None:
+        return PlacementContext(placement_type="loose")
+    return PlacementContext(
+        placement_type="course",
+        course_code=course.code,
+        course_name=course.name,
+    )
 
 
 async def create_workspace() -> Workspace:
@@ -72,3 +192,293 @@ async def save_workspace_crdt_state(workspace_id: UUID, crdt_state: bytes) -> bo
             session.add(workspace)
             return True
         return False
+
+
+async def place_workspace_in_activity(
+    workspace_id: UUID,
+    activity_id: UUID,
+) -> Workspace:
+    """Place a workspace in an Activity.
+
+    Sets activity_id and clears course_id (mutual exclusivity).
+
+    Args:
+        workspace_id: The workspace UUID.
+        activity_id: The activity UUID.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace or activity not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+
+        activity = await session.get(Activity, activity_id)
+        if not activity:
+            msg = f"Activity {activity_id} not found"
+            raise ValueError(msg)
+
+        workspace.activity_id = activity_id
+        workspace.course_id = None
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
+async def place_workspace_in_course(
+    workspace_id: UUID,
+    course_id: UUID,
+) -> Workspace:
+    """Place a workspace in a Course (loose association).
+
+    Sets course_id and clears activity_id (mutual exclusivity).
+
+    Args:
+        workspace_id: The workspace UUID.
+        course_id: The course UUID.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace or course not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+
+        course = await session.get(Course, course_id)
+        if not course:
+            msg = f"Course {course_id} not found"
+            raise ValueError(msg)
+
+        workspace.course_id = course_id
+        workspace.activity_id = None
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
+async def make_workspace_loose(workspace_id: UUID) -> Workspace:
+    """Remove a workspace from any Activity or Course placement.
+
+    Clears both activity_id and course_id.
+
+    Args:
+        workspace_id: The workspace UUID.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+
+        workspace.activity_id = None
+        workspace.course_id = None
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
+async def list_workspaces_for_activity(
+    activity_id: UUID,
+) -> list[Workspace]:
+    """List all workspaces placed in an Activity.
+
+    Args:
+        activity_id: The activity UUID.
+
+    Returns:
+        List of Workspaces ordered by created_at.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace)
+            .where(Workspace.activity_id == activity_id)
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        return list(result.all())
+
+
+async def list_loose_workspaces_for_course(
+    course_id: UUID,
+) -> list[Workspace]:
+    """List workspaces associated with a Course but not in an Activity.
+
+    The activity_id == None filter is defense-in-depth. The mutual
+    exclusivity constraint guarantees that course_id being set implies
+    activity_id is None, but the explicit filter protects against
+    constraint violations and makes the query intent clear.
+
+    Args:
+        course_id: The course UUID.
+
+    Returns:
+        List of loose Workspaces ordered by created_at.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace)
+            .where(Workspace.course_id == course_id)
+            .where(Workspace.activity_id == None)  # noqa: E711
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        return list(result.all())
+
+
+def _replay_crdt_state(
+    template: Workspace,
+    clone: Workspace,
+    doc_id_map: dict[UUID, UUID],
+) -> None:
+    """Replay CRDT state from template into clone with document ID remapping.
+
+    Loads the template's CRDT state into a temporary AnnotationDocument,
+    creates a fresh AnnotationDocument for the clone, and replays all
+    highlights (with remapped document_id values), comments, and general
+    notes. Client metadata is deliberately NOT replayed (AC4.9).
+
+    If template has no crdt_state, the clone gets None (AC4.10).
+
+    Args:
+        template: The template Workspace (source of CRDT state).
+        clone: The cloned Workspace (destination for replayed state).
+        doc_id_map: Mapping of {template_doc_id: cloned_doc_id}.
+    """
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
+
+    if template.crdt_state is None:
+        return
+
+    # Load template CRDT state
+    template_doc = AnnotDoc("template-tmp")
+    template_doc.apply_update(template.crdt_state)
+
+    # Fresh document for clone (empty client_meta satisfies AC4.9)
+    clone_doc = AnnotDoc("clone-tmp")
+
+    # Replay highlights with remapped document_id
+    for hl in template_doc.get_all_highlights():
+        # Remap document_id: template doc UUID -> cloned doc UUID
+        raw_doc_id = hl.get("document_id")
+        if raw_doc_id is not None:
+            template_uuid = UUID(raw_doc_id)
+            remapped_uuid = doc_id_map.get(template_uuid, template_uuid)
+            remapped_doc_id: str | None = str(remapped_uuid)
+        else:
+            remapped_doc_id = None
+
+        new_hl_id = clone_doc.add_highlight(
+            start_char=hl["start_char"],
+            end_char=hl["end_char"],
+            tag=hl["tag"],
+            text=hl["text"],
+            author=hl["author"],
+            para_ref=hl.get("para_ref", ""),
+            document_id=remapped_doc_id,
+        )
+
+        # Replay comments for this highlight
+        for comment in hl.get("comments", []):
+            clone_doc.add_comment(
+                highlight_id=new_hl_id,
+                author=comment["author"],
+                text=comment["text"],
+            )
+
+    # Clone general notes
+    notes = template_doc.get_general_notes()
+    if notes:
+        clone_doc.set_general_notes(notes)
+
+    # Serialise and assign to cloned workspace
+    clone.crdt_state = clone_doc.get_full_state()
+
+
+async def clone_workspace_from_activity(
+    activity_id: UUID,
+) -> tuple[Workspace, dict[UUID, UUID]]:
+    """Clone an Activity's template workspace into a new student workspace.
+
+    Creates a new Workspace within a single transaction, copies all template
+    documents (preserving content, type, source_type, title, order_index),
+    builds a document ID mapping, and replays CRDT state (highlights,
+    comments, general notes) with remapped document IDs. Client metadata
+    is NOT cloned -- the fresh workspace starts with empty client state.
+
+    Args:
+        activity_id: The Activity UUID whose template workspace to clone.
+
+    Returns:
+        Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
+
+    Raises:
+        ValueError: If Activity or its template workspace is not found.
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        if not activity:
+            msg = f"Activity {activity_id} not found"
+            raise ValueError(msg)
+
+        template = await session.get(Workspace, activity.template_workspace_id)
+        if not template:
+            msg = f"Template workspace {activity.template_workspace_id} not found"
+            raise ValueError(msg)
+
+        # Create new workspace with activity_id and enable_save_as_draft copied
+        clone = Workspace(
+            activity_id=activity_id,
+            enable_save_as_draft=template.enable_save_as_draft,
+        )
+        session.add(clone)
+        await session.flush()
+
+        # Fetch all template documents ordered by order_index
+        result = await session.exec(
+            select(WorkspaceDocument)
+            .where(WorkspaceDocument.workspace_id == template.id)
+            .order_by(WorkspaceDocument.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        template_docs = list(result.all())
+
+        # Clone each document, preserving field values
+        doc_id_map: dict[UUID, UUID] = {}
+        for tmpl_doc in template_docs:
+            cloned_doc = WorkspaceDocument(
+                workspace_id=clone.id,
+                type=tmpl_doc.type,
+                content=tmpl_doc.content,
+                source_type=tmpl_doc.source_type,
+                title=tmpl_doc.title,
+                order_index=tmpl_doc.order_index,
+            )
+            session.add(cloned_doc)
+            await session.flush()
+            doc_id_map[tmpl_doc.id] = cloned_doc.id
+
+        # --- CRDT state cloning via API replay ---
+        _replay_crdt_state(template, clone, doc_id_map)
+
+        await session.flush()
+        await session.refresh(clone)
+        return clone, doc_id_map

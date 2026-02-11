@@ -96,6 +96,22 @@ async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:
         return list(result.all())
 
 
+async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
+    """Return the subset of workspace_ids that have at least one document.
+
+    Single query using SELECT DISTINCT for clarity.
+    """
+    if not workspace_ids:
+        return set()
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument.workspace_id)
+            .where(WorkspaceDocument.workspace_id.in_(workspace_ids))  # type: ignore[union-attr]  -- SQLAlchemy Column has .in_(); TODO(2026-Q2): Revisit when SQLModel updates type stubs
+            .distinct()
+        )
+        return set(result.all())
+
+
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:
     """Reorder documents in a workspace.
 

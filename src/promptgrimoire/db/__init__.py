@@ -61,6 +61,7 @@ from promptgrimoire.db.workspace_documents import (
     add_document,
     list_documents,
     reorder_documents,
+    workspaces_with_documents,
 )
 from promptgrimoire.db.workspaces import (
     PlacementContext,
@@ -138,4 +139,5 @@ __all__ = [
     "update_user_role",
     "upsert_user_on_login",
     "verify_schema",
+    "workspaces_with_documents",
 ]

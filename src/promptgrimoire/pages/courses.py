@@ -41,6 +41,7 @@ from promptgrimoire.db.weeks import (
     publish_week,
     unpublish_week,
 )
+from promptgrimoire.db.workspace_documents import workspaces_with_documents
 from promptgrimoire.db.workspaces import clone_workspace_from_activity
 from promptgrimoire.pages.registry import page_route
 
@@ -290,17 +291,25 @@ async def course_detail_page(course_id: str) -> None:
     # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
-    def _render_activity_row(act: Activity, *, can_manage: bool) -> None:
+    def _render_activity_row(
+        act: Activity,
+        *,
+        can_manage: bool,
+        populated_templates: set[UUID],
+    ) -> None:
         """Render a single Activity row with template/start buttons."""
         with ui.row().classes("items-center gap-2"):
             ui.icon("assignment").classes("text-gray-400")
             ui.label(act.title).classes("text-sm font-medium")
 
             if can_manage:
+                has_content = act.template_workspace_id in populated_templates
+                btn_label = "Edit Template" if has_content else "Create Template"
+                btn_icon = "edit" if has_content else "add"
                 _qs = urlencode({"workspace_id": str(act.template_workspace_id)})
                 ui.button(
-                    "Edit Template",
-                    icon="edit",
+                    btn_label,
+                    icon=btn_icon,
                     on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
                 ).props("flat dense size=sm color=secondary")
 
@@ -363,9 +372,15 @@ async def course_detail_page(course_id: str) -> None:
                     # Activity list under each week
                     activities = await list_activities_for_week(week.id)
                     if activities:
+                        template_ids = {a.template_workspace_id for a in activities}
+                        populated = await workspaces_with_documents(template_ids)
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
-                                _render_activity_row(act, can_manage=can_manage)
+                                _render_activity_row(
+                                    act,
+                                    can_manage=can_manage,
+                                    populated_templates=populated,
+                                )
                     elif can_manage:
                         ui.label("No activities yet").classes(
                             "text-xs text-gray-400 ml-4 mt-1"

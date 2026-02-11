@@ -366,6 +366,13 @@ class TestActivityCRUD:
         assert activity.description == "Original description"
         assert activity.template_workspace_id is not None
 
+        # Verify template workspace back-link
+        from promptgrimoire.db.workspaces import get_workspace
+
+        template = await get_workspace(activity.template_workspace_id)
+        assert template is not None
+        assert template.activity_id == activity.id
+
         # Get
         fetched = await get_activity(activity.id)
         assert fetched is not None

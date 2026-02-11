@@ -99,15 +99,15 @@ async def list_documents(workspace_id: UUID) -> list[WorkspaceDocument]:
 async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
     """Return the subset of workspace_ids that have at least one document.
 
-    Single query using GROUP BY for efficiency.
+    Single query using SELECT DISTINCT for clarity.
     """
     if not workspace_ids:
         return set()
     async with get_session() as session:
         result = await session.exec(
             select(WorkspaceDocument.workspace_id)
-            .where(WorkspaceDocument.workspace_id.in_(workspace_ids))  # type: ignore[union-attr]  -- SQLAlchemy Column has .in_()
-            .group_by(WorkspaceDocument.workspace_id)  # type: ignore[arg-type]  -- SQLModel stubs don't accept Column expressions
+            .where(WorkspaceDocument.workspace_id.in_(workspace_ids))  # type: ignore[union-attr]  -- SQLAlchemy Column has .in_(); TODO(2026-Q2): Revisit when SQLModel updates type stubs
+            .distinct()
         )
         return set(result.all())
 

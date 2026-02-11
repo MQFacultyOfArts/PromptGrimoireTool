@@ -340,6 +340,63 @@ class TestPlacementContext:
         assert ctx.display_label == f"Loose work for {course.code}"
 
     @pytest.mark.asyncio
+    async def test_template_workspace_is_template(self) -> None:
+        """Template workspace returns is_template=True.
+
+        Verifies UAT fix: template placement chip is locked.
+        """
+        from promptgrimoire.db.workspaces import get_placement_context, get_workspace
+
+        _, _, activity = await _setup_hierarchy()
+
+        # The template workspace is auto-placed in the activity
+        template = await get_workspace(activity.template_workspace_id)
+        assert template is not None
+
+        ctx = await get_placement_context(template.id)
+
+        assert ctx.placement_type == "activity"
+        assert ctx.is_template is True
+
+    @pytest.mark.asyncio
+    async def test_student_workspace_not_template(self) -> None:
+        """Student workspace placed in activity returns is_template=False.
+
+        Verifies UAT fix: only actual templates are locked.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _, _, activity = await _setup_hierarchy()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+
+        assert ctx.placement_type == "activity"
+        assert ctx.is_template is False
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_not_template(self) -> None:
+        """Loose workspace returns is_template=False.
+
+        Verifies UAT fix: loose workspaces are not flagged as templates.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+        )
+
+        ws = await create_workspace()
+        ctx = await get_placement_context(ws.id)
+
+        assert ctx.placement_type == "loose"
+        assert ctx.is_template is False
+
+    @pytest.mark.asyncio
     async def test_nonexistent_workspace(self) -> None:
         """Non-existent workspace returns loose context.
 
@@ -351,3 +408,70 @@ class TestPlacementContext:
 
         assert ctx.placement_type == "loose"
         assert ctx.display_label == "Unplaced"
+
+
+class TestWorkspacesWithDocuments:
+    """Tests for workspaces_with_documents batch query."""
+
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty(self) -> None:
+        """Empty input set returns empty set without querying."""
+        from promptgrimoire.db.workspace_documents import workspaces_with_documents
+
+        result = await workspaces_with_documents(set())
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_workspace_with_documents_returned(self) -> None:
+        """Workspace with documents is included in result."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            workspaces_with_documents,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        ws = await create_workspace()
+        await add_document(
+            ws.id, type="source", content="<p>test</p>", source_type="html"
+        )
+
+        result = await workspaces_with_documents({ws.id})
+        assert ws.id in result
+
+    @pytest.mark.asyncio
+    async def test_workspace_without_documents_excluded(self) -> None:
+        """Workspace with no documents is not included in result."""
+        from promptgrimoire.db.workspace_documents import workspaces_with_documents
+        from promptgrimoire.db.workspaces import create_workspace
+
+        ws = await create_workspace()
+
+        result = await workspaces_with_documents({ws.id})
+        assert ws.id not in result
+        assert result == set()
+
+    @pytest.mark.asyncio
+    async def test_mixed_set_returns_only_populated(self) -> None:
+        """Mixed set of populated/empty workspaces returns correct subset."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            workspaces_with_documents,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        ws_with = await create_workspace()
+        ws_without = await create_workspace()
+        await add_document(
+            ws_with.id, type="source", content="<p>content</p>", source_type="html"
+        )
+
+        result = await workspaces_with_documents({ws_with.id, ws_without.id})
+        assert result == {ws_with.id}
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_ids_excluded(self) -> None:
+        """Non-existent workspace IDs are silently excluded."""
+        from promptgrimoire.db.workspace_documents import workspaces_with_documents
+
+        result = await workspaces_with_documents({uuid4(), uuid4()})
+        assert result == set()

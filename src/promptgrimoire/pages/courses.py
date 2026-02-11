@@ -372,8 +372,13 @@ async def course_detail_page(course_id: str) -> None:
                     # Activity list under each week
                     activities = await list_activities_for_week(week.id)
                     if activities:
-                        template_ids = {a.template_workspace_id for a in activities}
-                        populated = await workspaces_with_documents(template_ids)
+                        populated = (
+                            await workspaces_with_documents(
+                                {a.template_workspace_id for a in activities}
+                            )
+                            if can_manage
+                            else set()
+                        )
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
                                 _render_activity_row(

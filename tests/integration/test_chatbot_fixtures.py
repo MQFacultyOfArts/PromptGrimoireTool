@@ -9,18 +9,12 @@ See: docs/design-plans/2026-01-29-css-fidelity-pdf-export.md Phase 4
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from promptgrimoire.export.pandoc import convert_html_to_latex
-from promptgrimoire.export.platforms import get_handler, preprocess_for_export
-from tests.conftest import load_conversation_fixture, requires_latexmk
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine
-
-    from tests.conftest import PdfExportResult
+from promptgrimoire.export.platforms import preprocess_for_export
+from tests.conftest import load_conversation_fixture
 
 # Fixture directory
 FIXTURES_DIR = Path(__file__).parents[1] / "fixtures" / "conversations"
@@ -146,67 +140,6 @@ class TestChromeRemoved:
         assert len(result) < len(html), "Chrome removal should reduce HTML size"
 
 
-# CJK/i18n fixtures still compiled individually here
-# (migrated to i18n mega-document in Task 12).
-# English fixtures are in test_english_mega_doc.py.
-_CJK_CHATBOT_FIXTURES = [
-    "chinese_wikipedia.html",
-    "translation_japanese_sample.html",
-    "translation_korean_sample.html",
-    "translation_spanish_sample.html",
-]
-
-
-@pytest.mark.order("first")
-class TestChatbotFixturesToPdf:
-    """Generate PDFs from CJK chatbot fixtures.
-
-    English fixtures have been migrated to the English
-    mega-document (test_english_mega_doc.py). CJK fixtures
-    remain here temporarily until Task 12 migrates them to
-    the i18n mega-document.
-    """
-
-    @requires_latexmk
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("fixture_name", _CJK_CHATBOT_FIXTURES)
-    async def test_fixture_compiles_to_pdf(
-        self,
-        fixture_name: str,
-        pdf_exporter: Callable[..., Coroutine[Any, Any, PdfExportResult]],
-    ) -> None:
-        """Each fixture compiles to PDF without LaTeX errors."""
-        html = _load_fixture(fixture_name)
-        html = _preprocess_chatbot_html(html)
-
-        # Derive test name from fixture
-        # e.g., "claude_cooking.html" -> "chatbot_claude_cooking"
-        test_name = f"chatbot_{fixture_name.replace('.html', '')}"
-
-        # Platform info for acceptance criteria
-        raw_html = _load_fixture(fixture_name)
-        handler = get_handler(raw_html)
-        platform = handler.name if handler else "unknown"
-
-        acceptance_criteria = f"""
-FIXTURE: {fixture_name}
-PLATFORM: {platform}
-
-VISUAL CHECKS:
-1. Speaker labels visible (User:/Assistant:) if chatbot fixture
-2. Content readable - no garbled text
-3. No obvious layout breakage
-4. UI chrome removed (no avatars, icons, copy buttons)
-5. Content images preserved (if any)
-"""
-
-        result = await pdf_exporter(
-            html=html,
-            highlights=[],  # No annotations for these tests
-            test_name=test_name,
-            acceptance_criteria=acceptance_criteria,
-        )
-
-        # Verify PDF was generated
-        assert result.pdf_path.exists(), f"PDF not generated for {fixture_name}"
-        assert result.pdf_path.stat().st_size > 0, f"PDF is empty for {fixture_name}"
+# CJK/i18n compile tests migrated to test_i18n_mega_doc.py (Task 12).
+# English compile tests migrated to test_english_mega_doc.py (Task 10).
+# TestChatbotFixturesToPdf deleted — all compile tests now in mega-documents.

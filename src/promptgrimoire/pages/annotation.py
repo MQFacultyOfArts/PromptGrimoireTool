@@ -689,14 +689,28 @@ def _push_highlights_to_client(state: PageState) -> None:
     Rebuilds the highlight JSON from CRDT and calls the JS function to
     re-register all ``CSS.highlights`` entries. Called after any highlight
     mutation (add, delete, tag change) and on tab switch back to Annotate.
+
+    Looks up the NiceGUI client from ``_connected_clients`` to use
+    ``client.run_javascript()`` — this avoids slot-stack errors when called
+    from background contexts (CRDT sync callbacks).
     """
     highlight_json = _build_highlight_json(state)
-    ui.run_javascript(
+    js = (
         f"(function() {{"
         f"  const c = document.getElementById('doc-container');"
         f"  if (c) applyHighlights(c, {highlight_json});"
         f"}})()"
     )
+    # Look up the NiceGUI client from the connected clients registry.
+    # Using client.run_javascript() is safe in background contexts (CRDT
+    # sync callbacks) where ui.run_javascript() would crash with a
+    # slot-stack RuntimeError.
+    workspace_key = str(state.workspace_id)
+    client_state = _connected_clients.get(workspace_key, {}).get(state.client_id)
+    if client_state and client_state.nicegui_client:
+        client_state.nicegui_client.run_javascript(js)
+    else:
+        ui.run_javascript(js)
 
 
 def _update_highlight_css(state: PageState) -> None:
@@ -1049,68 +1063,72 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         ui.notify("CRDT not initialized", type="warning")
         return
 
-    # Update status to show saving
-    if state.save_status:
-        state.save_status.text = "Saving..."
+    try:
+        # Update status to show saving
+        if state.save_status:
+            state.save_status.text = "Saving..."
 
-    # Add highlight to CRDT (end_char is exclusive)
-    start = min(state.selection_start, state.selection_end)
-    end = max(state.selection_start, state.selection_end) + 1
+        # Add highlight to CRDT (end_char is exclusive).
+        # The JS text walker's setupAnnotationSelection() already returns
+        # exclusive end_char (per Range API semantics), so no +1 needed.
+        start = min(state.selection_start, state.selection_end)
+        end = max(state.selection_start, state.selection_end)
 
-    # Use tag value if provided, otherwise default to "highlight"
-    tag_value = tag.value if tag else "highlight"
+        # Use tag value if provided, otherwise default to "highlight"
+        tag_value = tag.value if tag else "highlight"
 
-    # Extract highlighted text from document characters
-    highlighted_text = ""
-    if state.document_chars:
-        chars_slice = state.document_chars[start:end]
-        highlighted_text = "".join(chars_slice)
+        # Extract highlighted text from document characters
+        highlighted_text = ""
+        if state.document_chars:
+            chars_slice = state.document_chars[start:end]
+            highlighted_text = "".join(chars_slice)
 
-    state.crdt_doc.add_highlight(
-        start_char=start,
-        end_char=end,
-        tag=tag_value,
-        text=highlighted_text,
-        author=state.user_name,
-        document_id=str(state.document_id),
-    )
+        state.crdt_doc.add_highlight(
+            start_char=start,
+            end_char=end,
+            tag=tag_value,
+            text=highlighted_text,
+            author=state.user_name,
+            document_id=str(state.document_id),
+        )
 
-    # Schedule persistence
-    pm = get_persistence_manager()
-    pm.mark_dirty_workspace(
-        state.workspace_id,
-        state.crdt_doc.doc_id,
-        last_editor=state.user_name,
-    )
+        # Schedule persistence
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
 
-    # Force immediate save for test observability
-    await pm.force_persist_workspace(state.workspace_id)
+        # Force immediate save for test observability
+        await pm.force_persist_workspace(state.workspace_id)
 
-    if state.save_status:
-        state.save_status.text = "Saved"
+        if state.save_status:
+            state.save_status.text = "Saved"
 
-    # Update CSS to show new highlight
-    _update_highlight_css(state)
+        # Update CSS to show new highlight
+        _update_highlight_css(state)
 
-    # Refresh annotation cards to show new highlight
-    if state.refresh_annotations:
-        state.refresh_annotations()
+        # Refresh annotation cards to show new highlight
+        if state.refresh_annotations:
+            state.refresh_annotations()
 
-    # Broadcast to other clients
-    if state.broadcast_update:
-        await state.broadcast_update()
+        # Broadcast to other clients
+        if state.broadcast_update:
+            await state.broadcast_update()
 
-    # Clear browser selection first to prevent re-triggering on next mouseup
-    await ui.run_javascript("window.getSelection().removeAllRanges();")
+        # Clear browser selection first to prevent re-triggering on next mouseup
+        await ui.run_javascript("window.getSelection().removeAllRanges();")
 
-    # Clear selection state and hide menu
-    state.selection_start = None
-    state.selection_end = None
-    if state.highlight_menu:
-        state.highlight_menu.set_visibility(False)
-
-    # Release processing lock
-    state.processing_highlight = False
+        # Clear selection state and hide menu
+        state.selection_start = None
+        state.selection_end = None
+        if state.highlight_menu:
+            state.highlight_menu.set_visibility(False)
+    finally:
+        # Always release processing lock — prevents permanent lockout if any
+        # step above raises (e.g. JS relay failure, persistence error).
+        state.processing_highlight = False
 
 
 def _setup_selection_handlers(state: PageState) -> None:

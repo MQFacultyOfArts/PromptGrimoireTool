@@ -1121,8 +1121,8 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     async def on_selection(e: Any) -> None:
         """Handle selection event from JavaScript."""
-        state.selection_start = e.args.get("start")
-        state.selection_end = e.args.get("end")
+        state.selection_start = e.args.get("start_char")
+        state.selection_end = e.args.get("end_char")
         if state.highlight_menu:
             state.highlight_menu.set_visibility(True)
         # Broadcast selection to other clients
@@ -1159,103 +1159,33 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     ui.on("keydown", on_keydown)
 
-    # JavaScript to detect text selection via selectionchange and mouseup
-    # Wrapped in setTimeout to ensure DOM is ready and emitEvent is available
-    js_code = """
-    setTimeout(function() {
-        function processSelection() {
-            const selection = window.getSelection();
-            if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-                return;
-            }
-
-            const range = selection.getRangeAt(0);
-
-            // Find all char spans that intersect with the selection
-            // This is more robust than checking start/end containers
-            const allCharSpans = document.querySelectorAll('[data-char-index]');
-            let minChar = Infinity;
-            let maxChar = -Infinity;
-
-            for (const span of allCharSpans) {
-                if (range.intersectsNode(span)) {
-                    const charIdx = parseInt(span.dataset.charIndex);
-                    minChar = Math.min(minChar, charIdx);
-                    maxChar = Math.max(maxChar, charIdx);
-                }
-            }
-
-            if (minChar !== Infinity && maxChar !== -Infinity) {
-                emitEvent('selection_made', {
-                    start: minChar,
-                    end: maxChar
-                });
-            }
-        }
-
-        // Listen for selectionchange (handles click+shift+click)
-        document.addEventListener('selectionchange', function() {
-            const selection = window.getSelection();
-            if (selection && !selection.isCollapsed) {
-                processSelection();
-            }
-        });
-
-        // Also listen for mouseup (handles drag selection)
-        document.addEventListener('mouseup', function() {
-            setTimeout(processSelection, 10);
-        });
-
-        // Clear selection on click (but not on toolbar)
-        document.addEventListener('click', function(e) {
-            // Don't clear selection when clicking toolbar buttons
-            if (e.target.closest('[data-testid="tag-toolbar"]')) {
-                return;
-            }
-            // Small delay to check if selection was cleared by this click
-            setTimeout(function() {
-                const selection = window.getSelection();
-                if (!selection || selection.isCollapsed) {
-                    emitEvent('selection_cleared', {});
-                }
-            }, 50);
-        });
-
-        // Keyboard shortcuts (1-0 keys for tags)
-        // Debounce to prevent duplicate events
-        let lastKeyTime = 0;
-        document.addEventListener('keydown', function(e) {
-            // Ignore held keys and rapid repeats
-            if (e.repeat) return;
-            const now = Date.now();
-            if (now - lastKeyTime < 300) return;
-            lastKeyTime = now;
-            if (['1','2','3','4','5','6','7','8','9','0'].includes(e.key)) {
-                emitEvent('keydown', { key: e.key });
-            }
-        });
-
-        // Track cursor position over char spans for remote cursor display
-        let lastCursorChar = null;
-        const docC = document.getElementById('doc-container');
-        if (docC) {
-            docC.addEventListener('mouseover', function(e) {
-                const charEl = e.target.closest('[data-char-index]');
-                const charIdx = charEl ? parseInt(charEl.dataset.charIndex) : null;
-                if (charIdx !== lastCursorChar) {
-                    lastCursorChar = charIdx;
-                    emitEvent('cursor_move', { char: charIdx });
-                }
-            });
-            docC.addEventListener('mouseleave', function() {
-                if (lastCursorChar !== null) {
-                    lastCursorChar = null;
-                    emitEvent('cursor_move', { char: null });
-                }
-            });
-        }
-    }, 100);
-    """
+    # Selection detection is handled by setupAnnotationSelection() in the
+    # init JS (loaded in _render_document_with_highlights). This remaining
+    # JS handles: selection clearing on click and keyboard shortcuts.
+    # Remote cursor tracking (Phase 5) will use the text walker.
+    # fmt: off
+    js_code = (
+        "setTimeout(function() {"
+        "  document.addEventListener('click', function(e) {"
+        "    if (e.target.closest('[data-testid=\"tag-toolbar\"]')) return;"
+        "    setTimeout(function() {"
+        "      var s = window.getSelection();"
+        "      if (!s || s.isCollapsed) emitEvent('selection_cleared', {});"
+        "    }, 50);"
+        "  });"
+        "  var lastKeyTime = 0;"
+        "  document.addEventListener('keydown', function(e) {"
+        "    if (e.repeat) return;"
+        "    var now = Date.now();"
+        "    if (now - lastKeyTime < 300) return;"
+        "    lastKeyTime = now;"
+        "    if ('1234567890'.indexOf(e.key) >= 0) {"
+        "      emitEvent('keydown', {key: e.key});"
+        "    }"
+        "  });"
+        "}, 100);"
+    )
+    # fmt: on
     ui.run_javascript(js_code)
 
 

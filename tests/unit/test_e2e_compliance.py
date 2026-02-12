@@ -23,6 +23,11 @@ ALLOWED_JS_FILES = {
     # Other tests use evaluate() for CSS.highlights introspection and
     # text selection simulation (no Playwright API for CSS.highlights).
     "test_highlight_rendering.py",
+    # Text selection tests: AC2.1 uses evaluate() to locate text node
+    # bounding rects for precise mouse selection. AC2.2 uses evaluate()
+    # to emit synthetic selection events spanning block boundaries.
+    # CSS.highlights introspection requires evaluate() (no Playwright API).
+    "test_text_selection.py",
 }
 
 

@@ -1,4 +1,4 @@
-"""HTML input pipeline: detection, conversion, and char span injection.
+"""HTML input pipeline: detection, conversion, and text extraction.
 
 This module provides the unified input pipeline for the annotation page.
 All input types (HTML, RTF, DOCX, PDF, plain text) go through the same
@@ -33,12 +33,10 @@ ContentType = Literal["html", "rtf", "docx", "pdf", "text"]
 # Tags to strip entirely (security: NiceGUI rejects script tags)
 _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 
-# Self-closing (void) tags to strip (e.g., base64 images from clipboard paste)
-_STRIP_VOID_TAGS = frozenset(("img",))
 
 # Block-level elements where whitespace-only text nodes are formatting artefacts
 # (indentation between tags) and should be skipped.  Must match the JS blockTags
-# set in _injectCharSpans (annotation.py) for char-index parity.
+# set in walkTextNodes (annotation-highlight.js) for char-index parity.
 _BLOCK_TAGS = frozenset(
     (
         "table",
@@ -70,15 +68,6 @@ _BLOCK_TAGS = frozenset(
 
 # Whitespace pattern matching JS /[\s]+/g — includes \u00a0 (nbsp)
 _WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
-
-# Map of characters that need HTML entity escaping
-# Note: Spaces are NOT converted to &nbsp; - we use CSS white-space: pre-wrap
-# to preserve them. This allows proper word wrapping at word boundaries.
-_CHAR_ESCAPE_MAP: dict[str, str] = {
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-}
 
 
 def _detect_from_bytes(content: bytes) -> ContentType | None:
@@ -157,233 +146,12 @@ def detect_content_type(content: str | bytes) -> ContentType:
     return _detect_from_string(content)
 
 
-def inject_char_spans(html: str) -> str:
-    """Wrap each text character in a data-char-index span.
-
-    Args:
-        html: HTML content (after preprocessing).
-
-    Returns:
-        HTML with each text character wrapped in
-        <span class="char" data-char-index="N">c</span>
-
-    Implementation notes:
-        Uses a state-machine approach because selectolax doesn't support
-        direct text node manipulation. We parse to validate structure,
-        then iterate through HTML to wrap text characters in spans.
-
-        Special handling:
-        - Whitespace is preserved as HTML entities (&nbsp; etc.)
-        - <br> tags become newline characters with indices
-        - Script, style, and other non-content tags are ignored
-    """
-    if not html:
-        return html
-
-    # Parse to validate and normalize HTML
-    tree = LexborHTMLParser(html)
-
-    # Get body content (or full html if no body)
-    body = tree.body
-    if body is None:
-        # Not a full document, parse as fragment
-        return _inject_spans_to_html(html)
-
-    body_html = body.inner_html
-    if not body_html:
-        return html
-
-    injected = _inject_spans_to_html(body_html)
-
-    # Reconstruct full document if we had one
-    head = tree.head
-    head_html = head.html if head else ""
-    return f"<!DOCTYPE html><html>{head_html}<body>{injected}</body></html>"
-
-
-def _make_char_span(char_index: int, content: str) -> str:
-    """Create a span element wrapping a single character."""
-    return f'<span class="char" data-char-index="{char_index}">{content}</span>'
-
-
-def _escape_char(char: str) -> str:
-    """Escape a character to its HTML entity if needed."""
-    return _CHAR_ESCAPE_MAP.get(char, char)
-
-
-def _get_tag_name(tag_content: str) -> str:
-    """Extract tag name from tag content (without < and >).
-
-    Examples:
-        "div class='foo'" -> "div"
-        "/div" -> "div"
-        "br/" -> "br"
-    """
-    # Remove leading / for closing tags
-    content = tag_content.lstrip("/").strip()
-    # Get first word (tag name)
-    name = content.split()[0] if content.split() else ""
-    # Remove trailing / for self-closing
-    return name.rstrip("/").lower()
-
-
-def _process_skip_tag(html: str, tag_name: str, tag_end: int) -> int | None:
-    """Handle tags to strip entirely (script, style, etc.).
-
-    Security: NiceGUI rejects HTML with script tags. Strip them during processing.
-
-    Returns new position after closing tag, or None if not a strip tag.
-    """
-    if tag_name not in _STRIP_TAGS:
-        return None
-
-    close_tag = f"</{tag_name}>"
-    close_pos = html.lower().find(close_tag.lower(), tag_end + 1)
-    if close_pos != -1:
-        return close_pos + len(close_tag)
-    return None
-
-
-def _process_tag(
-    html: str, i: int, result: list[str], char_index: int
-) -> tuple[int, int]:
-    """Process an HTML tag at position i.
-
-    Returns (new_position, new_char_index). Returns (-1, char_index) on malformed HTML.
-    """
-    tag_end = html.find(">", i)
-    if tag_end == -1:
-        return -1, char_index  # Malformed HTML
-
-    tag_content = html[i + 1 : tag_end]
-    full_tag = html[i : tag_end + 1]
-    tag_name = _get_tag_name(tag_content)
-
-    # Strip script, style, etc. tags entirely (security: NiceGUI rejects script tags)
-    skip_pos = _process_skip_tag(html, tag_name, tag_end)
-    if skip_pos is not None:
-        # Don't append - strip the tag entirely
-        return skip_pos, char_index
-
-    # Strip void/self-closing tags like img (removes base64 images from clipboard)
-    if tag_name in _STRIP_VOID_TAGS:
-        # Skip this tag entirely - no content to process
-        return tag_end + 1, char_index
-
-    # Handle <br> as newline character
-    if tag_name == "br":
-        result.append(_make_char_span(char_index, "\n"))
-        return tag_end + 1, char_index + 1
-
-    # Pass through other tags unchanged
-    result.append(full_tag)
-    return tag_end + 1, char_index
-
-
-def _process_entity(
-    html: str, i: int, result: list[str], char_index: int
-) -> tuple[int, int]:
-    """Process an HTML entity at position i.
-
-    Returns (new_position, new_char_index).
-    """
-    entity_end = html.find(";", i)
-    if entity_end != -1 and entity_end - i < 10:
-        entity = html[i : entity_end + 1]
-        result.append(_make_char_span(char_index, entity))
-        return entity_end + 1, char_index + 1
-
-    # Not a valid entity, treat & as character
-    result.append(_make_char_span(char_index, "&amp;"))
-    return i + 1, char_index + 1
-
-
-def _inject_spans_to_html(html: str) -> str:
-    """Inject char spans into HTML fragment.
-
-    Internal function that processes HTML text content character by character,
-    wrapping each in a span with data-char-index attribute.
-    """
-    result: list[str] = []
-    char_index = 0
-    i = 0
-    n = len(html)
-
-    while i < n:
-        char = html[i]
-        if char == "<":
-            i, char_index = _process_tag(html, i, result, char_index)
-            if i == -1:
-                break  # Malformed HTML
-        elif char == "&":
-            i, char_index = _process_entity(html, i, result, char_index)
-        else:
-            escaped = _escape_char(char)
-            result.append(_make_char_span(char_index, escaped))
-            char_index += 1
-            i += 1
-
-    return "".join(result)
-
-
-def strip_char_spans(html_with_spans: str) -> str:
-    """Remove char span wrappers, preserving content.
-
-    Args:
-        html_with_spans: HTML with <span class="char" data-char-index="N"> wrappers.
-
-    Returns:
-        Clean HTML with char spans unwrapped (content preserved).
-    """
-    tree = LexborHTMLParser(html_with_spans)
-
-    # Find all char spans and unwrap them
-    for span in tree.css("span.char[data-char-index]"):
-        span.unwrap()
-
-    return tree.html or html_with_spans
-
-
-def extract_chars_from_spans(html_with_spans: str) -> list[str]:
-    """Extract characters from char-span HTML, ordered by index.
-
-    Args:
-        html_with_spans: HTML with <span class="char" data-char-index="N"> wrappers.
-
-    Returns:
-        List of characters where index matches data-char-index.
-    """
-    tree = LexborHTMLParser(html_with_spans)
-    chars: dict[int, str] = {}
-
-    for span in tree.css("span.char[data-char-index]"):
-        index_attr = span.attributes.get("data-char-index")
-        if index_attr is not None:
-            try:
-                idx = int(index_attr)
-                # Get text content, decode HTML entities
-                text = span.text() or ""
-                # Handle &nbsp; which appears as \xa0
-                if text == "\xa0":
-                    text = " "
-                chars[idx] = text
-            except ValueError:
-                pass
-
-    if not chars:
-        return []
-
-    # Build ordered list
-    max_idx = max(chars.keys())
-    return [chars.get(i, "") for i in range(max_idx + 1)]
-
-
 def extract_text_from_html(html: str) -> list[str]:
-    """Extract text characters from clean HTML, matching JS _injectCharSpans.
+    """Extract text characters from clean HTML, matching JS walkTextNodes.
 
     Walks the DOM via selectolax child/next iteration (which exposes text
-    nodes) so that the resulting character list has the same indices as the
-    client-side char-span injection.  The two must agree for highlight
+    nodes) so that the resulting character list has the same indices as
+    the client-side text walker.  The two must agree for highlight
     coordinates to be correct (Issue #129).
 
     Matching rules (mirroring the JS):
@@ -1036,7 +804,7 @@ async def process_input(
     source_type: ContentType,
     platform_hint: str | None = None,
 ) -> str:
-    """Full input processing pipeline: convert -> preprocess -> inject spans.
+    """Full input processing pipeline: convert -> preprocess -> clean.
 
     Args:
         content: Raw input content (string or bytes).
@@ -1044,12 +812,14 @@ async def process_input(
         platform_hint: Optional platform hint for chatbot exports.
 
     Returns:
-        Processed HTML with char spans ready for annotation.
+        Clean processed HTML ready for annotation. Highlight rendering
+        and text selection use the CSS Custom Highlight API and JS
+        text walker on the client side.
 
     Pipeline steps:
         1. Convert to HTML (if not already HTML)
         2. Preprocess for export (remove chrome, inject speaker labels)
-        3. Inject character spans for selection
+        3. Strip heavy attributes and empty elements
 
     Note:
         Step 1 (conversion) is implemented in Phase 7.

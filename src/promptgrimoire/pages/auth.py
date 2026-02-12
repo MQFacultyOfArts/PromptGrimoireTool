@@ -398,8 +398,7 @@ async def login_page() -> None:
         ui.navigate.to("/")
         return
 
-    # Browser feature gate: block unsupported browsers before login UI renders.
-    # On unsupported browsers, a full-page overlay covers the login form.
+    # Inject before login UI so the overlay covers the form immediately.
     ui.add_body_html(_BROWSER_GATE_JS)
 
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")

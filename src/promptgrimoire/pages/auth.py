@@ -35,6 +35,7 @@ _BROWSER_GATE_JS = """
 <script>
 (function() {
     function checkBrowserGate() {
+        if (document.getElementById('browser-gate-overlay')) return;
         if (!('highlights' in CSS)) {
             var overlay = document.createElement('div');
             overlay.id = 'browser-gate-overlay';
@@ -55,6 +56,10 @@ _BROWSER_GATE_JS = """
                 'padding: 2rem'
             ].join('; ');
 
+            var heading = document.createElement('h1');
+            heading.style.cssText = 'margin-bottom: 1rem; font-size: 1.875rem;';
+            heading.textContent = 'Browser Not Supported';
+
             var msg = document.createElement('p');
             msg.style.cssText = 'max-width: 500px; line-height: 1.6; color: #333;';
             msg.textContent = 'Your browser does not support features required '
@@ -74,6 +79,7 @@ _BROWSER_GATE_JS = """
                 'font-size: 1rem'
             ].join('; ');
 
+            overlay.appendChild(heading);
             overlay.appendChild(msg);
             overlay.appendChild(link);
             document.body.appendChild(overlay);

@@ -13,6 +13,10 @@ ALLOWED_JS_FILES = {
     # Fixture screenshot tests use clipboard paste simulation (same as above)
     # and DOM introspection (data-speaker element counts, scroll positions).
     "test_fixture_screenshots.py",
+    # Browser feature gate test: Playwright only ships supported browsers
+    # (Chromium, Firefox, WebKit all support CSS.highlights). Simulating an
+    # unsupported browser requires deleting CSS.highlights via evaluate().
+    "test_browser_gate.py",
 }
 
 

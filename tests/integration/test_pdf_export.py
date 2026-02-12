@@ -141,37 +141,8 @@ Test.
 class TestMarginnoteExportPipeline:
     """Tests for the marginalia+lua-ul export pipeline."""
 
-    @pytest.mark.asyncio
-    async def test_export_annotation_pdf_basic(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should produce a valid PDF."""
-        html = "<p>This is a test document with highlighted text.</p>"
-        highlights = [
-            {
-                "id": "h1",
-                "start_char": 3,
-                "end_char": 5,
-                "tag": "jurisdiction",
-                "text": "test document",
-                "author": "Tester",
-                "created_at": "2026-01-26T14:30:00+00:00",
-                "comments": [],
-            }
-        ]
-        tag_colours = {"jurisdiction": "#1f77b4"}
-
-        pdf_path = await export_annotation_pdf(
-            html_content=html,
-            highlights=highlights,
-            tag_colours=tag_colours,
-            output_dir=tmp_path,
-        )
-
-        assert pdf_path.exists()
-        assert pdf_path.suffix == ".pdf"
-        # Check it's actually a PDF
-        with pdf_path.open("rb") as f:
-            header = f.read(4)
-        assert header == b"%PDF"
+    # test_export_annotation_pdf_basic removed — migrated to
+    # test_english_mega_doc.py::TestBasicPipeline
 
     @pytest.mark.asyncio
     async def test_export_with_general_notes(self, tmp_path: Path) -> None:

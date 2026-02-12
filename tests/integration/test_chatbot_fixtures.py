@@ -146,21 +146,30 @@ class TestChromeRemoved:
         assert len(result) < len(html), "Chrome removal should reduce HTML size"
 
 
+# CJK/i18n fixtures still compiled individually here
+# (migrated to i18n mega-document in Task 12).
+# English fixtures are in test_english_mega_doc.py.
+_CJK_CHATBOT_FIXTURES = [
+    "chinese_wikipedia.html",
+    "translation_japanese_sample.html",
+    "translation_korean_sample.html",
+    "translation_spanish_sample.html",
+]
+
+
 @pytest.mark.order("first")
 class TestChatbotFixturesToPdf:
-    """Generate PDFs from chatbot fixtures for visual review.
+    """Generate PDFs from CJK chatbot fixtures.
 
-    These tests compile actual PDFs and save them to output/test_output/
-    for manual visual inspection.
-
-    Each fixture gets its own subdirectory with:
-    - {fixture_name}.tex - LaTeX source
-    - {fixture_name}.pdf - Compiled PDF
+    English fixtures have been migrated to the English
+    mega-document (test_english_mega_doc.py). CJK fixtures
+    remain here temporarily until Task 12 migrates them to
+    the i18n mega-document.
     """
 
     @requires_latexmk
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("fixture_name", CHATBOT_FIXTURES)
+    @pytest.mark.parametrize("fixture_name", _CJK_CHATBOT_FIXTURES)
     async def test_fixture_compiles_to_pdf(
         self,
         fixture_name: str,

@@ -18,6 +18,7 @@
 // Text Walker
 // ============================================================================
 
+const WHITESPACE_RE = /[\s\u00a0]/;
 const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE']);
 const BLOCK_TAGS = new Set([
     'TABLE','TBODY','THEAD','TFOOT','TR','TD','TH',
@@ -50,8 +51,7 @@ function walkTextNodes(root) {
                 let nodeStart = charIdx;
                 let prevWasSpace = false;
                 for (const ch of text) {
-                    const isSpace = /[\s\u00a0]/.test(ch);
-                    if (isSpace) {
+                    if (WHITESPACE_RE.test(ch)) {
                         if (!prevWasSpace) {
                             charIdx++;
                             prevWasSpace = true;
@@ -90,18 +90,18 @@ function applyHighlights(container, highlightData) {
         }
         if (ranges.length) {
             const hl = new Highlight(...ranges);
-            hl.priority = region_priority(tag);
+            hl.priority = regionPriority(tag);
             CSS.highlights.set('hl-' + tag, hl);
         }
     }
 }
 
-function region_priority(tag) {
-    const p = {
+function regionPriority(tag) {
+    const priorities = {
         jurisdiction: 10, legal_issues: 20,
         legislation: 30, evidence: 40
     };
-    return p[tag] || 0;
+    return priorities[tag] || 0;
 }
 
 function charOffsetToRange(textNodes, startChar, endChar) {
@@ -137,8 +137,7 @@ function findLocalOffset(textNode, collapsedOffset) {
     let prevWasSpace = false;
     for (let i = 0; i < text.length; i++) {
         if (collapsed >= collapsedOffset) return i;
-        const isSpace = /[\s\u00a0]/.test(text[i]);
-        if (isSpace) {
+        if (WHITESPACE_RE.test(text[i])) {
             if (!prevWasSpace) { collapsed++; prevWasSpace = true; }
         } else {
             collapsed++;
@@ -197,8 +196,7 @@ function countCollapsed(text, rawOffset) {
     let collapsed = 0;
     let prevWasSpace = false;
     for (let i = 0; i < rawOffset && i < text.length; i++) {
-        const isSpace = /[\s\u00a0]/.test(text[i]);
-        if (isSpace) {
+        if (WHITESPACE_RE.test(text[i])) {
             if (!prevWasSpace) { collapsed++; prevWasSpace = true; }
         } else {
             collapsed++;

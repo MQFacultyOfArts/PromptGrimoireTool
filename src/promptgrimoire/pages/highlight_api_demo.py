@@ -146,7 +146,7 @@ async def highlight_api_demo() -> None:
     # --- Export status ---
     export_status = ui.label("").classes("text-caption q-mt-sm")
 
-    # --- Inject JS (static module extracted from inline constants) ---
+    # --- Load text walker + highlight API module ---
     ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
 
     # --- Event handlers ---

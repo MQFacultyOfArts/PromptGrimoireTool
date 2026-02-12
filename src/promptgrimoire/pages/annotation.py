@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import html
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -382,8 +383,8 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         state.tab_panels.set_value("Annotate")
     state.active_tab = "Annotate"
 
-    # 2. Re-inject char spans (idempotent — no-op if already present)
-    ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+    # 2. Re-apply highlights (idempotent — rebuilds text walker and CSS.highlights)
+    _push_highlights_to_client(state)
 
     # 3. Refresh Tab 1 annotations and highlight CSS
     if state.refresh_annotations:
@@ -648,13 +649,60 @@ def _build_tag_toolbar(
             )
 
 
+def _build_highlight_json(state: PageState) -> str:
+    """Build JSON highlight data from CRDT state for ``applyHighlights()``.
+
+    Groups highlights by tag into the format expected by the JS function:
+    ``{tag: [{start_char, end_char, id}, ...], ...}``
+
+    Returns:
+        JSON string ready for injection into ``applyHighlights()`` call.
+    """
+    if state.crdt_doc is None:
+        return "{}"
+
+    if state.document_id is not None:
+        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+    else:
+        highlights = state.crdt_doc.get_all_highlights()
+
+    # Group by tag
+    by_tag: dict[str, list[dict[str, Any]]] = {}
+    for hl in highlights:
+        tag = hl.get("tag", "highlight")
+        entry = {
+            "start_char": hl.get("start_char", 0),
+            "end_char": hl.get("end_char", 0),
+            "id": hl.get("id", ""),
+        }
+        by_tag.setdefault(tag, []).append(entry)
+
+    return json.dumps(by_tag)
+
+
+def _push_highlights_to_client(state: PageState) -> None:
+    """Push current highlight state to the client via ``applyHighlights()``.
+
+    Rebuilds the highlight JSON from CRDT and calls the JS function to
+    re-register all ``CSS.highlights`` entries. Called after any highlight
+    mutation (add, delete, tag change) and on tab switch back to Annotate.
+    """
+    highlight_json = _build_highlight_json(state)
+    ui.run_javascript(
+        f"(function() {{"
+        f"  const c = document.getElementById('doc-container');"
+        f"  if (c) applyHighlights(c, {highlight_json});"
+        f"}})()"
+    )
+
+
 def _update_highlight_css(state: PageState) -> None:
-    """Update the highlight CSS based on current CRDT state.
+    """Update highlight CSS and push highlight ranges to the client.
 
     With the CSS Custom Highlight API, the ``::highlight()`` pseudo-element
     rules are static (one rule per tag). The actual highlight ranges are
     registered in ``CSS.highlights`` by JS ``applyHighlights()``. This
-    function ensures the ``::highlight()`` CSS is present.
+    function ensures both the CSS and the JS highlight state are current.
     """
     if state.highlight_style is None or state.crdt_doc is None:
         return
@@ -662,6 +710,9 @@ def _update_highlight_css(state: PageState) -> None:
     css = _build_highlight_pseudo_css()
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
+
+    # Push updated highlight ranges to the client
+    _push_highlights_to_client(state)
 
 
 async def _delete_highlight(
@@ -1279,82 +1330,27 @@ async def _render_document_with_highlights(
         with doc_container:
             ui.html(doc.content, sanitize=False)
 
-        # Inject char spans client-side (avoids websocket size limits)
-        # This wraps each text character in <span class="char" data-char-index="N">
-        # Defined as a named global so it can be re-invoked if NiceGUI re-renders
-        # the HTML element (e.g. after Tab 3 initialisation triggers "Event listeners
-        # changed" — see _on_tab_change Annotate handler).
-        # fmt: off
-        inject_spans_js = (
-            "window._injectCharSpans = function() {\n"
-            "  const container = document.getElementById('doc-container');\n"
-            "  if (!container) return;\n"
-            "  // Guard: skip if char spans already exist (idempotent)\n"
-            "  if (container.querySelector('[data-char-index]')) return;\n"
-            "  let charIndex = 0;\n"
-            "  // Block elements where whitespace-only text nodes should be skipped\n"
-            "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
-            "    'ul','ol','li','dl','dt','dd','div','section','article','aside',\n"
-            "    'header','footer','nav','main','figure','figcaption','blockquote']);\n"
-            "  \n"
-            "  function processNode(node) {\n"
-            "    if (node.nodeType === Node.TEXT_NODE) {\n"
-            "      let text = node.textContent;\n"
-            "      if (!text) return;\n"
-            "      // Skip whitespace-only text nodes inside block containers\n"
-            "      // These are just formatting (indentation) between HTML tags\n"
-            "      const parent = node.parentNode;\n"
-            "      if (parent && blockTags.has(parent.tagName.toLowerCase())) {\n"
-            "        if (/^[\\s]*$/.test(text)) {\n"
-            "          node.remove();\n"
-            "          return;\n"
-            "        }\n"
-            "      }\n"
-            "      // Normalize whitespace: collapse runs to single space (like HTML)\n"
-            "      text = text.replace(/[\\s]+/g, ' ');\n"
-            "      const frag = document.createDocumentFragment();\n"
-            "      for (const char of text) {\n"
-            "        const span = document.createElement('span');\n"
-            "        span.className = 'char';\n"
-            "        span.dataset.charIndex = charIndex++;\n"
-            "        span.textContent = char;\n"
-            "        frag.appendChild(span);\n"
-            "      }\n"
-            "      node.parentNode.replaceChild(frag, node);\n"
-            "    } else if (node.nodeType === Node.ELEMENT_NODE) {\n"
-            "      const tagName = node.tagName.toLowerCase();\n"
-            "      const skip = ['script','style','noscript','template'];\n"
-            "      if (skip.includes(tagName)) {\n"
-            "        return;\n"
-            "      }\n"
-            "      // Handle <br> as newline character\n"
-            "      if (tagName === 'br') {\n"
-            "        const span = document.createElement('span');\n"
-            "        span.className = 'char';\n"
-            "        span.dataset.charIndex = charIndex++;\n"
-            "        span.textContent = '\\n';\n"
-            "        node.parentNode.insertBefore(span, node);\n"
-            "        node.parentNode.removeChild(node);\n"
-            "        return;\n"
-            "      }\n"
-            "      // Process children (copy - modified during iteration)\n"
-            "      const children = Array.from(node.childNodes);\n"
-            "      for (const child of children) {\n"
-            "        processNode(child);\n"
-            "      }\n"
-            "    }\n"
-            "  }\n"
-            "  \n"
-            "  // Process the container's children\n"
-            "  const children = Array.from(container.childNodes);\n"
-            "  for (const child of children) {\n"
-            "    processNode(child);\n"
-            "  }\n"
-            "};\n"
-            "window._injectCharSpans();"
+        # Load annotation-highlight.js for CSS Custom Highlight API support.
+        # This script provides walkTextNodes(), applyHighlights(),
+        # clearHighlights(), and setupAnnotationSelection().
+        ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
+
+        # Initialise text walker, apply highlights, and set up selection
+        # detection after DOM is ready. Uses setTimeout to ensure the script
+        # has loaded and the HTML element is rendered.
+        highlight_json = _build_highlight_json(state)
+        init_js = (
+            "setTimeout(function() {"
+            "  const c = document.getElementById('doc-container');"
+            "  if (!c) return;"
+            "  window._textNodes = walkTextNodes(c);"
+            f"  applyHighlights(c, {highlight_json});"
+            "  setupAnnotationSelection(c, function(sel) {"
+            "    emitEvent('selection_made', sel);"
+            "  });"
+            "}, 100);"
         )
-        # fmt: on
-        ui.run_javascript(inject_spans_js)
+        ui.run_javascript(init_js)
 
         # Annotations sidebar (~35% of layout)
         # Needs ID for scroll-sync JavaScript positioning
@@ -3003,11 +2999,10 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
             return
 
         if tab_name == "Annotate":
-            # Re-inject char spans if NiceGUI re-rendered the HTML element
-            # (Tab 3 init triggers "Event listeners changed" which can destroy
-            # the JS-injected char spans). The function is idempotent — it's a
-            # no-op if spans already exist.
-            ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+            # Rebuild text node map and re-apply highlights. The text walker
+            # does not modify the DOM (unlike char span injection) so this
+            # is safe to call on every tab switch.
+            _push_highlights_to_client(state)
             if state.refresh_annotations:
                 state.refresh_annotations()
             _update_highlight_css(state)

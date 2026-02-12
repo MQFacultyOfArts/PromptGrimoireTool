@@ -17,6 +17,12 @@ ALLOWED_JS_FILES = {
     # (Chromium, Firefox, WebKit all support CSS.highlights). Simulating an
     # unsupported browser requires deleting CSS.highlights via evaluate().
     "test_browser_gate.py",
+    # Highlight rendering tests: AC1.4 validates JS error handling (invalid
+    # offsets logged as warning, no crash) by calling applyHighlights()
+    # directly with crafted inputs — no user action produces these inputs.
+    # Other tests use evaluate() for CSS.highlights introspection and
+    # text selection simulation (no Playwright API for CSS.highlights).
+    "test_highlight_rendering.py",
 }
 
 

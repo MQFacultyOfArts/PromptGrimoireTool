@@ -40,7 +40,7 @@ Create `annotation-highlight.js` containing the functions currently embedded in 
 From `_TEXT_WALKER_JS` (lines 48-99):
 - `SKIP_TAGS` constant (Set)
 - `BLOCK_TAGS` constant (Set)
-- `walkTextNodes(root)` — returns `{nodes: [{node, startChar, endChar}], endChar: number}`
+- `walkTextNodes(root)` — returns flat array of `{node, startChar, endChar}` objects (one per text node). Total char count is `result[result.length - 1].endChar` (or 0 if empty).
 
 From `_APPLY_HIGHLIGHTS_JS` (lines 102-177):
 - `charOffsetToRange(textNodes, startChar, endChar)` — returns `StaticRange`
@@ -93,7 +93,7 @@ Expected: Demo page renders highlights and selection detection works identically
 The test is parameterised over all `tests/fixtures/workspace_*.html` files (glob pattern). For each fixture:
 
 1. **Python side:** Read the HTML file, run `extract_text_from_html(html)`, get `len(result)` as the Python char count
-2. **Playwright side:** Create a page, set the HTML as content via `page.set_content(html)`, inject `annotation-highlight.js` via `page.add_script_tag(path=...)`, run `page.evaluate("walkTextNodes(document.body).endChar")` to get JS char count
+2. **Playwright side:** Create a page, set the HTML as content via `page.set_content(html)`, inject `annotation-highlight.js` via `page.add_script_tag(path=...)`, run `page.evaluate("(() => { const nodes = walkTextNodes(document.body); return nodes.length ? nodes[nodes.length - 1].endChar : 0; })()")` to get JS char count
 3. **Assert:** Python char count equals JS char count
 
 Note on Playwright usage: These tests use `page.set_content()` to load fixtures directly — no running NiceGUI server needed. However, `page.evaluate()` is used here because this is an integration test validating JS/Python algorithm parity, not an E2E user interaction test. The "no JS injection" rule from docs/testing.md applies to E2E tests simulating user behaviour, not to integration tests that need to invoke JS functions directly.

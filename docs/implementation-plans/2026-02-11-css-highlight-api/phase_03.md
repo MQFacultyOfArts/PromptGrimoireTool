@@ -131,13 +131,13 @@ Rewrite `_render_document_with_highlights()` to:
 3. **Replace:** Instead of `_build_highlight_css()` generating per-char CSS, call `_build_highlight_pseudo_css()` for static `::highlight()` rules
 4. **Replace:** Instead of injecting `inject_spans_js` (inline JS, L1318-1395), load `annotation-highlight.js` via `ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')` (if not already loaded)
 5. **Add:** After page renders (using `ui.timer()` for DOM readiness, matching demo page pattern at L411-417), call `ui.run_javascript()` to:
-   - Build text node map: `walkTextNodes(document.querySelector('#doc-container'))`
+   - Build text node map and store as global: `window._textNodes = walkTextNodes(document.querySelector('#doc-container'))` (Phase 4 and later reference `window._textNodes`)
    - Apply highlights: `applyHighlights(container, highlightData, tagColors)` where `highlightData` is JSON serialised from the CRDT highlights
    - Set up selection: `setupAnnotationSelection(container, (sel) => emitEvent('selection_made', sel))`
 
 6. **Replace:** Selection event handler JS (L1155-1171) — delete the `[data-char-index]` query-based selection code. The `setupAnnotationSelection()` function from the JS module now handles this, emitting `selection_made` with `{start_char, end_char}`.
 
-7. **Keep:** Python `on_selection()` handler (L1101-1109) — it already expects `{start, end}` args, just rename to match new field names (`start_char`, `end_char`)
+7. **Keep:** Python `on_selection()` handler (L1101-1109) — field rename (`start` → `start_char`, `end` → `end_char`) is handled in Task 4
 
 The highlight update flow for when a user creates/deletes a highlight: server recalculates highlights from CRDT, rebuilds JSON, calls `ui.run_javascript()` with updated `applyHighlights(...)` call. This replaces the current flow of rebuilding `_build_highlight_css()` and updating the `<style>` element innerHTML.
 
@@ -201,14 +201,14 @@ Expected: All tests pass
 **Verifies:** css-highlight-api.AC5.1, css-highlight-api.AC5.2, css-highlight-api.AC5.3
 
 **Files:**
-- Modify: `src/promptgrimoire/input_pipeline/html_input.py` — delete `inject_char_spans()` (~L160), `strip_char_spans()` (~L329), `extract_chars_from_spans()` (~L347)
-- Modify: `src/promptgrimoire/input_pipeline/__init__.py` — remove `inject_char_spans` and `strip_char_spans` from imports and `__all__`
+- Modify: `src/promptgrimoire/input_pipeline/html_input.py` — delete `inject_char_spans()` (~L160), `_make_char_span()` (~L204), `_inject_spans_to_html()` (~L301), `strip_char_spans()` (~L329), `extract_chars_from_spans()` (~L347)
+- Modify: `src/promptgrimoire/input_pipeline/__init__.py` — remove `inject_char_spans` and `strip_char_spans` from imports and `__all__`; ensure `extract_text_from_html` is exported (add to imports and `__all__` if not already present)
 - Delete test code: `tests/unit/input_pipeline/test_char_spans.py` — remove `TestInjectCharSpans`, `TestStripCharSpans`, `TestExtractCharsFromSpans` test classes. Keep `TestExtractTextFromHtml` and `TestStripHtmlToText` (they test functions that remain).
 
 **Implementation:**
 
-1. Delete the three functions from `html_input.py`. Keep `extract_text_from_html()` (L381+) — it's the foundation of the new system.
-2. Remove `inject_char_spans` and `strip_char_spans` from `__init__.py` imports and `__all__`. `extract_chars_from_spans` was never in `__all__` so no change needed there.
+1. Delete the five char-span functions from `html_input.py`: the three public functions (`inject_char_spans`, `strip_char_spans`, `extract_chars_from_spans`) and their two internal helpers (`_make_char_span`, `_inject_spans_to_html`). Keep `extract_text_from_html()` (L381+) — it's the foundation of the new system.
+2. Update `__init__.py`: remove `inject_char_spans` and `strip_char_spans` from imports and `__all__`. `extract_chars_from_spans` was never in `__all__` so no change needed there. Add `extract_text_from_html` to imports and `__all__` if not already present (AC5.3 requires it to remain importable from the package).
 3. In `test_char_spans.py`, delete the test classes for the removed functions. Keep `TestExtractTextFromHtml` (19 tests) and `TestStripHtmlToText` — rename the file to `test_text_extraction.py` since it no longer tests char spans.
 4. Delete the `test_matches_inject_char_spans` parity test — replaced by Phase 2's JS/Python parity test suite.
 

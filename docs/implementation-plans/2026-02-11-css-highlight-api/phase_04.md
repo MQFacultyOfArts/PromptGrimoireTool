@@ -39,13 +39,13 @@ This phase implements and tests:
 
 Add `charOffsetToRect(textNodes, charIdx)` function that:
 1. Calls `charOffsetToRange(textNodes, charIdx, charIdx + 1)` to get a Range covering a single character
-2. Note: `charOffsetToRange()` currently returns a `StaticRange`. For `getBoundingClientRect()` support, either modify it to return a live `Range` (from `document.createRange()`) or create a temporary live `Range` here
-3. Calls `range.getBoundingClientRect()` to get a DOMRect
+2. Note: `charOffsetToRange()` returns a `StaticRange` (required by `CSS.highlights`). Create a temporary live `Range` from the StaticRange's start/end containers and offsets (`document.createRange()` + `setStart/setEnd`), since `StaticRange` does not support `getBoundingClientRect()`
+3. Calls `range.getBoundingClientRect()` on the live `Range` to get a DOMRect
 4. Returns the DOMRect (has `top`, `left`, `width`, `height`, `bottom`, `right`)
 
 Also add `scrollToCharOffset(textNodes, startChar, endChar)` convenience function that:
-1. Creates a Range spanning the char range
-2. Calls `range.getBoundingClientRect()` to check if visible
+1. Creates a live `Range` spanning the char range (same StaticRange → live Range conversion as `charOffsetToRect`: call `charOffsetToRange()` for the StaticRange, then `document.createRange()` + `setStart/setEnd` from its containers/offsets)
+2. Calls `range.getBoundingClientRect()` on the live Range to check if visible
 3. Creates a temporary element at the range position and scrolls to it, or uses `element.scrollIntoView()` on the range's start node
 
 Also add hover/throb highlight functions:
@@ -140,7 +140,7 @@ Run: `uv run pytest tests/e2e/test_scroll_sync.py -v`
 - Removes all `querySelector('[data-char-index]')` loops — O(1) instead of O(n)
 
 **Go-to-highlight rewrite** (replaces L900-928):
-- Create Range via `charOffsetToRange()` for `scrollIntoView()`
+- Call `scrollToCharOffset(window._textNodes, startChar, endChar)` to scroll the document to the highlight (handles StaticRange → live Range conversion and scrolling internally)
 - Call `throbHighlight(window._textNodes, startChar, endChar, 800)` for the flash effect
 - Remove char-span-based scroll and individual char background manipulation
 
@@ -173,7 +173,7 @@ Run: `uv run pytest tests/e2e/test_card_interaction.py -v`
 1. Remove `TestHighlightInteractionsConsolidated` from `test_annotation_highlights.py` — replaced by new tests in `test_scroll_sync.py` and `test_card_interaction.py` (Tasks 3-4)
 
 2. Update `annotation_helpers.py`:
-   - `select_chars()` currently finds char spans by `[data-char-index]` to get bounding boxes for mouse simulation. Rewrite to use Playwright's text-based locators or evaluate `charOffsetToRect()` from the JS module to get coordinates for mouse events.
+   - `select_chars()` currently finds char spans by `[data-char-index]` to get bounding boxes for mouse simulation. **Defer the full rewrite to Phase 6 Task 5** (which provides the concrete `charOffsetToRect()`-based implementation). For now, mark `select_chars()` with a `# TODO: Phase 6 Task 5 rewrites this to use charOffsetToRect()` comment and leave the existing implementation (the old E2E tests that call it are being deleted in step 1 of this task, so it won't be exercised).
    - `setup_workspace_with_content()` currently waits for `[data-char-index]` elements to appear. Replace with waiting for `annotation-highlight.js` to initialise (e.g. wait for `window._textNodes` to be defined, or wait for the document container to have content).
 
 3. Move `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md` to `docs/e2e-test-audit.md` and update:

@@ -13,29 +13,12 @@
 | 2. JS Text Walker Module | done | done | done | done | done |
 | 3. Highlight Rendering Swap | done | done | done | done | done |
 | 4. Scroll-Sync and Card Interaction | done | done | done | done | done |
-| 5. Remote Presence via pycrdt Awareness | done | done | **stalled** | pending | pending |
-| 6. Cleanup and Verification | pending | pending | pending | pending | pending |
+| 5. Remote Presence (in-memory, not Awareness) | done | done | done | done | done |
+| 6. Cleanup and Verification | done | done | done | done | done |
 
-**Finalization:** pending (blocked by phases 5D, 6D)
-**Test Requirements:** pending (blocked by finalization)
-**Execution Handoff:** pending
-
-## Phase 5 Investigation Findings (completed, not yet written to plan)
-
-Codebase investigation completed successfully. Key findings for when resuming:
-
-- `update_cursor()` (L511), `update_selection()` (L531), `clear_cursor_and_selection()` (L561) confirmed in `crdt/annotation_doc.py` — all **uncalled**
-- `_ClientState` class (L75-111): stores cursor_char, selection_start/end, color, name, callback
-- `_connected_clients` dict (L115): `workspace_id -> {client_id -> _ClientState}`
-- `_build_remote_cursor_css()` (L568-595): generates `box-shadow` on `[data-char-index]` + `::before` label
-- `_build_remote_selection_css()` (L598-634): generates `background-color` on char range + `::before` label
-- `_update_cursor_css()` / `_update_selection_css()` (L1520-1541): inject CSS on broadcast
-- **Critical:** Awareness methods exist but are completely bypassed — current system uses in-memory `_ClientState` objects with NiceGUI callbacks, not pycrdt Awareness
-- Awareness schema confirmed: `{client_id, name, color, cursor: int|None, selection: {start_char, end_char}|None}`
-- `self.awareness = Awareness(self.doc)` at L70 — created but never read
-- **Zero E2E tests** for remote cursor/selection visibility
-
-External research on pycrdt Awareness API stalled (user rejected web fetch). Resume with internet-researcher or cached docs.
+**Finalization:** done (5 review rounds — round 5 APPROVED with 0 issues)
+**Test Requirements:** done (30 sub-criteria mapped, 11 new test files, 5 human verification items)
+**Execution Handoff:** ready — first phase: `phase_01.md`
 
 ## Design Decisions Made
 
@@ -61,14 +44,19 @@ External research on pycrdt Awareness API stalled (user rejected web fetch). Res
 - E2E tests completely rewritten, old ones nuked
 - E2E test audit doc moved from buried location to `docs/e2e-test-audit.md`
 
-## To Resume
+### Phase 5
+- **In-memory dict, NOT pycrdt Awareness** — server-hub architecture doesn't match Awareness's peer-to-peer model. `set_local_state()` only tracks one client; multi-client needs `apply_awareness_update()` with per-client encoding. Simpler dict approach matches NiceGUI's architecture.
+- `_ClientState` → `_RemotePresence` dataclass, `_connected_clients` → `_workspace_presence`
+- JS-targeted broadcast via `client.run_javascript()` (not CSS regeneration)
+- Remote cursors as positioned DOM `<div>` elements (CSS Highlight API can't do borders/positioning)
+- Remote selections as `CSS.highlights` entries with `priority = -1` (below annotation highlights)
+- NiceGUI `client.on_disconnect` for cleanup (immediate, not 30s Awareness timeout)
+- Delete unused Awareness helper methods (`update_cursor`, `update_selection`, `clear_cursor_and_selection`)
+- Unit tests for JS rendering + one multi-context E2E smoke test
 
-Run `/denubis-plan-and-execute:start-implementation-plan` with this design plan and pick up from Phase 5C (pycrdt Awareness research). Or continue manually:
-
-1. Research pycrdt Awareness API (Phase 5C)
-2. Present Phase 5 design decisions for approval
-3. Write phase_05.md (Phase 5D)
-4. Phase 6: investigate, design decisions, write phase_06.md
-5. Finalization: code-reviewer over all 6 phases
-6. Test Requirements: generate test-requirements.md
-7. Execution handoff
+### Phase 6
+- Delete `inject_char_spans`, `strip_char_spans`, `extract_chars_from_spans` (all dead code)
+- Keep `extract_text_from_html` (PDF export pipeline dependency)
+- E2E test helpers: **mouse events + JS coordinate lookup** (not full JS injection). `page.evaluate()` only for "where is char N on screen?" — actual selection via Playwright mouse API.
+- Update CLAUDE.md only; leave historical implementation plan docs as archaeological record
+- Final sweep: grep for all char-span references in `src/`, expect zero matches

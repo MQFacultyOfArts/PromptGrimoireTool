@@ -50,9 +50,7 @@ This is an infrastructure gate — the primary verification is operational (E2E)
 
 Tests must verify each AC listed above:
 - css-highlight-api.AC4.1: E2E test navigating to `/login` on a supported browser (Playwright's Chromium) — login UI should be visible, no upgrade message shown
-- css-highlight-api.AC4.2: E2E test that uses `page.evaluate()` to delete `CSS.highlights` before navigation, OR uses Playwright browser context with JS disabled/modified — verify upgrade message is visible and login UI is hidden
-
-Note on AC4.2 testing: Playwright runs Chromium which supports CSS.highlights. To test the unsupported path, the E2E test should navigate to login, then inject JS that simulates the gate being triggered (add the overlay div programmatically and verify it renders correctly). Alternatively, extract the gate check into a testable function and unit test the overlay creation logic separately.
+- css-highlight-api.AC4.2: E2E test that navigates to `/login`, then uses `page.evaluate()` to delete `CSS.highlights` (`delete CSS.highlights`) and re-invoke the gate check function. Verify the upgrade overlay becomes visible and covers the login UI. This tests the actual gate UI rendering without requiring a genuinely unsupported browser.
 
 Test file: `tests/e2e/test_browser_gate.py`
 

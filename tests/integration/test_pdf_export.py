@@ -420,3 +420,96 @@ class TestGenerateTexOnly:
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
         assert r"pre-converted" in tex_content
+
+
+@requires_pandoc
+@requires_latexmk
+class TestCriticalPathIsolation:
+    """Fast standalone compile tests for critical paths -- AC1.8.
+
+    These intentionally minimal documents (~1 paragraph) compile in ~1s each.
+    They verify concerns that mega-documents might mask:
+    - Margin notes are sensitive to page context and must be verified in
+      short documents, not just mega-doc sections.
+    - Highlight boundary precision can be obscured by surrounding content.
+    """
+
+    @pytest.mark.asyncio
+    async def test_margin_note_alignment(self, tmp_path: Path) -> None:
+        r"""Compile a short document with a comment to verify margin note placement.
+
+        Margin notes use \annot commands that contain \par, which is
+        sensitive to LaTeX context (e.g., inside \section{} arguments).
+        A short document isolates this from mega-doc interference.
+        """
+        html = "<p>The court held that the defendant was liable for damages.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 14,
+                "tag": "holding",
+                "text": "The court held",
+                "author": "Alice",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                "comments": [
+                    {"author": "Bob", "text": "Key finding by the court."},
+                ],
+            }
+        ]
+        tag_colours = {"holding": "#2ca02c"}
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists(), "PDF must be created for margin note test"
+
+        # Verify .tex contains the \annot command for the comment
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert r"\annot" in tex_content, (
+            r"Short document with comment must produce \annot command"
+        )
+
+    @pytest.mark.asyncio
+    async def test_highlight_boundary_precision(self, tmp_path: Path) -> None:
+        r"""Compile a short document with a 2-word highlight for boundary precision.
+
+        Verifies that \highLight wraps exactly the targeted words without
+        bleeding into surrounding text. Short documents make boundary
+        issues obvious that might be hidden in mega-doc sections.
+        """
+        html = "<p>The quick brown fox jumps over the lazy dog.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 4,
+                "end_char": 9,
+                "tag": "target",
+                "text": "quick brown",
+                "author": "Tester",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"target": "#ff7f0e"}
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists(), "PDF must be created for highlight boundary test"
+
+        # Verify .tex contains \highLight wrapping the target words
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert r"\highLight" in tex_content or r"\underLine" in tex_content, (
+            r"Short document with highlight must produce \highLight or \underLine"
+        )

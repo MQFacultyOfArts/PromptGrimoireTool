@@ -122,3 +122,71 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
     page.wait_for_selector("[data-char-index]")
     page.wait_for_timeout(200)
+
+
+def setup_workspace_with_content_highlight_api(
+    page: Page, app_server: str, content: str
+) -> None:
+    """Set up a workspace and wait for CSS Highlight API initialisation.
+
+    Unlike ``setup_workspace_with_content`` which waits for ``[data-char-index]``
+    (char spans), this waits for the text walker to initialise by checking
+    ``window._textNodes`` is populated.
+
+    Args:
+        page: Playwright page (must be authenticated).
+        app_server: Base URL of the app server.
+        content: Text content to add as document.
+    """
+    page.goto(f"{app_server}/annotation")
+    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.wait_for_url(re.compile(r"workspace_id="))
+
+    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
+    content_input.fill(content)
+    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+
+    # Wait for the text walker to initialise (replaces waiting for char spans)
+    page.wait_for_function(
+        "() => window._textNodes && window._textNodes.length > 0",
+        timeout=10000,
+    )
+    page.wait_for_timeout(200)
+
+
+def select_text_range(page: Page, text: str) -> None:
+    """Select a text substring in the document container by evaluating JS.
+
+    Uses the browser's native selection API to select the given text
+    within ``#doc-container``. This approach works without char spans.
+
+    Args:
+        page: Playwright page.
+        text: The text substring to select.
+    """
+    page.evaluate(
+        """(text) => {
+            const container = document.getElementById('doc-container');
+            const walker = document.createTreeWalker(
+                container, NodeFilter.SHOW_TEXT, null
+            );
+            let node;
+            while ((node = walker.nextNode())) {
+                const idx = node.textContent.indexOf(text);
+                if (idx >= 0) {
+                    const range = document.createRange();
+                    range.setStart(node, idx);
+                    range.setEnd(node, idx + text.length);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    // Trigger mouseup to fire selection handler
+                    container.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                    return;
+                }
+            }
+            throw new Error('Text not found: ' + text);
+        }""",
+        text,
+    )
+    page.wait_for_timeout(200)

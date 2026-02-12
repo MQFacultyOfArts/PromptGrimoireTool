@@ -16,81 +16,17 @@ Traceability:
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from .annotation_helpers import (
+    select_text_range,
+    setup_workspace_with_content_highlight_api,
+)
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-
-def _setup_workspace_with_content_highlight_api(
-    page: Page, app_server: str, content: str
-) -> None:
-    """Set up a workspace and wait for CSS Highlight API initialisation.
-
-    Unlike ``annotation_helpers.setup_workspace_with_content`` which waits for
-    ``[data-char-index]`` (char spans), this waits for the text walker to
-    initialise by checking ``window._textNodes`` is populated.
-
-    Args:
-        page: Playwright page (must be authenticated).
-        app_server: Base URL of the app server.
-        content: Text content to add as document.
-    """
-    page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-    page.wait_for_url(re.compile(r"workspace_id="))
-
-    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
-    content_input.fill(content)
-    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-
-    # Wait for the text walker to initialise (replaces waiting for char spans)
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
-    page.wait_for_timeout(200)
-
-
-def _select_text_range(page: Page, text: str) -> None:
-    """Select a text substring in the document container by evaluating JS.
-
-    Uses the browser's native selection API to select the given text
-    within ``#doc-container``. This approach works without char spans.
-
-    Args:
-        page: Playwright page.
-        text: The text substring to select.
-    """
-    page.evaluate(
-        """(text) => {
-            const container = document.getElementById('doc-container');
-            const walker = document.createTreeWalker(
-                container, NodeFilter.SHOW_TEXT, null
-            );
-            let node;
-            while ((node = walker.nextNode())) {
-                const idx = node.textContent.indexOf(text);
-                if (idx >= 0) {
-                    const range = document.createRange();
-                    range.setStart(node, idx);
-                    range.setEnd(node, idx + text.length);
-                    const sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                    // Trigger mouseup to fire selection handler
-                    container.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
-                    return;
-                }
-            }
-            throw new Error('Text not found: ' + text);
-        }""",
-        text,
-    )
-    page.wait_for_timeout(200)
 
 
 class TestHighlightRendering:
@@ -107,12 +43,12 @@ class TestHighlightRendering:
         2. The highlight is registered in ``CSS.highlights``
         """
         page = authenticated_page
-        _setup_workspace_with_content_highlight_api(
+        setup_workspace_with_content_highlight_api(
             page, app_server, "The court held that the defendant was liable."
         )
 
         # Select text and create highlight via tag button
-        _select_text_range(page, "defendant")
+        select_text_range(page, "defendant")
         page.wait_for_timeout(300)
 
         # Click first tag button (Jurisdiction)
@@ -144,20 +80,20 @@ class TestHighlightRendering:
         registered as separate entries in ``CSS.highlights``.
         """
         page = authenticated_page
-        _setup_workspace_with_content_highlight_api(
+        setup_workspace_with_content_highlight_api(
             page,
             app_server,
             "The jurisdiction is New South Wales. The legal issue is negligence.",
         )
 
         # Create highlight with first tag (index 0 = jurisdiction)
-        _select_text_range(page, "New South Wales")
+        select_text_range(page, "New South Wales")
         page.wait_for_timeout(300)
         page.locator("[data-testid='tag-toolbar'] button").nth(0).click()
         page.wait_for_timeout(500)
 
         # Create highlight with second tag (index 1)
-        _select_text_range(page, "negligence")
+        select_text_range(page, "negligence")
         page.wait_for_timeout(300)
         page.locator("[data-testid='tag-toolbar'] button").nth(1).click()
         page.wait_for_timeout(500)
@@ -187,7 +123,7 @@ class TestHighlightRendering:
         page = authenticated_page
         # Use HTML with paragraph boundary
         html_content = "<p>First paragraph text.</p><p>Second paragraph text.</p>"
-        _setup_workspace_with_content_highlight_api(page, app_server, html_content)
+        setup_workspace_with_content_highlight_api(page, app_server, html_content)
 
         # Select text spanning both paragraphs using JS evaluation
         # (native mouse selection across block boundaries is hard to automate)
@@ -230,7 +166,7 @@ class TestHighlightRendering:
         test using ``page.evaluate()``.
         """
         page = authenticated_page
-        _setup_workspace_with_content_highlight_api(
+        setup_workspace_with_content_highlight_api(
             page, app_server, "Short test document."
         )
 
@@ -277,20 +213,20 @@ class TestHighlightRendering:
         both are registered in ``CSS.highlights``.
         """
         page = authenticated_page
-        _setup_workspace_with_content_highlight_api(
+        setup_workspace_with_content_highlight_api(
             page,
             app_server,
             "The defendant was negligent in their duty of care.",
         )
 
         # Create first highlight on "defendant was negligent" (tag 0)
-        _select_text_range(page, "defendant was negligent")
+        select_text_range(page, "defendant was negligent")
         page.wait_for_timeout(300)
         page.locator("[data-testid='tag-toolbar'] button").nth(0).click()
         page.wait_for_timeout(500)
 
         # Create second highlight on "negligent in their" (tag 1, overlaps first)
-        _select_text_range(page, "negligent in their")
+        select_text_range(page, "negligent in their")
         page.wait_for_timeout(300)
         page.locator("[data-testid='tag-toolbar'] button").nth(1).click()
         page.wait_for_timeout(500)

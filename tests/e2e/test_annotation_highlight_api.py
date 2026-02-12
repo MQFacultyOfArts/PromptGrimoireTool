@@ -15,31 +15,14 @@ Traceability:
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from .annotation_helpers import setup_workspace_with_content_highlight_api
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-
-def _setup_workspace(page: Page, app_server: str, content: str) -> None:
-    """Set up workspace and wait for text walker init."""
-    page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-    page.wait_for_url(re.compile(r"workspace_id="))
-
-    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
-    content_input.fill(content)
-    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-
-    # Wait for the text walker to initialise
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
-    page.wait_for_timeout(200)
 
 
 def _select_text_by_mouse(page: Page, text: str) -> dict[str, float] | None:
@@ -106,7 +89,7 @@ class TestAnnotationHighlightApiIntegration:
             "The plaintiff alleged that the defendant breached "
             "their duty of care in the workplace."
         )
-        _setup_workspace(page, app_server, content)
+        setup_workspace_with_content_highlight_api(page, app_server, content)
 
         # Step 2: Select text by mouse drag
         coords = _select_text_by_mouse(page, "defendant")
@@ -147,7 +130,7 @@ class TestAnnotationHighlightApiIntegration:
         """
         page = authenticated_page
         content = "The jurisdiction is Queensland. The cause of action is negligence."
-        _setup_workspace(page, app_server, content)
+        setup_workspace_with_content_highlight_api(page, app_server, content)
 
         # First highlight: "Queensland" with tag 0
         coords = _select_text_by_mouse(page, "Queensland")

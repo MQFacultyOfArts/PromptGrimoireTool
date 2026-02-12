@@ -6,8 +6,6 @@ Verifies:
 - css-highlight-api.AC5.3: extract_text_from_html remains available
 """
 
-import importlib
-
 import pytest
 
 import promptgrimoire.input_pipeline as pkg
@@ -23,15 +21,6 @@ class TestCharSpanFunctionsRemoved:
     def test_not_in_all(self, name: str) -> None:
         """AC5.1: removed functions must not appear in __all__."""
         assert name not in pkg.__all__
-
-    @pytest.mark.parametrize(
-        "name",
-        ["inject_char_spans", "strip_char_spans", "extract_chars_from_spans"],
-    )
-    def test_import_raises_import_error(self, name: str) -> None:
-        """AC5.2: importing removed functions raises ImportError."""
-        with pytest.raises(ImportError):
-            importlib.import_module(f"promptgrimoire.input_pipeline.{name}")
 
     def test_inject_char_spans_not_importable_from_package(self) -> None:
         """AC5.2: from promptgrimoire.input_pipeline import inject_char_spans fails."""

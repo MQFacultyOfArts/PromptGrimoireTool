@@ -378,6 +378,8 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         start_char: First character index of the highlight range.
         end_char: Last character index (exclusive) of the highlight range.
     """
+    # TODO(phase-4): Rewrite to use CSS Custom Highlight API — currently broken
+    # (char spans removed in Phase 3)
     # 1. Switch tab to Annotate
     if state.tab_panels is not None:
         state.tab_panels.set_value("Annotate")
@@ -440,9 +442,10 @@ async def _create_workspace_and_redirect() -> None:
 
 
 def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
-    """DEPRECATED: Use input_pipeline.html_input.inject_char_spans() instead.
+    """DEPRECATED: Will be removed in Phase 6.
 
-    This function remains for backward compatibility but will be removed.
+    Use extract_text_from_html() for text extraction instead.
+    This function remains for backward compatibility.
 
     Convert plain text to HTML with character-level spans.
 

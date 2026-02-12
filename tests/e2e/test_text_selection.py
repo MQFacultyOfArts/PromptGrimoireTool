@@ -15,30 +15,14 @@ Traceability:
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from .annotation_helpers import setup_workspace_with_content_highlight_api
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-
-def _setup_workspace(page: Page, app_server: str, content: str) -> None:
-    """Set up workspace and wait for text walker initialisation."""
-    page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
-    page.wait_for_url(re.compile(r"workspace_id="))
-
-    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
-    content_input.fill(content)
-    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
-    page.wait_for_timeout(200)
 
 
 class TestTextSelection:
@@ -55,7 +39,7 @@ class TestTextSelection:
         """
         page = authenticated_page
         content = "The court held that the defendant was liable."
-        _setup_workspace(page, app_server, content)
+        setup_workspace_with_content_highlight_api(page, app_server, content)
 
         # Find the text "defendant" in the rendered document
         doc = page.locator("#doc-container")
@@ -124,7 +108,7 @@ class TestTextSelection:
         """
         page = authenticated_page
         html = "<p>First paragraph end.</p><p>Second paragraph start.</p>"
-        _setup_workspace(page, app_server, html)
+        setup_workspace_with_content_highlight_api(page, app_server, html)
 
         # Emit a synthetic selection spanning the boundary
         page.evaluate(
@@ -168,7 +152,8 @@ class TestTextSelection:
         and verifies no ``selection_made`` event triggers a highlight.
         """
         page = authenticated_page
-        _setup_workspace(page, app_server, "Document content for testing.")
+        content = "Document content for testing."
+        setup_workspace_with_content_highlight_api(page, app_server, content)
 
         # Click on the toolbar area (outside #doc-container)
         toolbar = page.locator("[data-testid='tag-toolbar']")
@@ -213,7 +198,9 @@ class TestTextSelection:
         trigger a ``selection_made`` event.
         """
         page = authenticated_page
-        _setup_workspace(page, app_server, "Click test document content.")
+        setup_workspace_with_content_highlight_api(
+            page, app_server, "Click test document content."
+        )
 
         # Single click in the document (no drag)
         doc = page.locator("#doc-container")

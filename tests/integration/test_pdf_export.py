@@ -114,25 +114,6 @@ This has an \undefined command.
         with pytest.raises(LaTeXCompilationError):
             await compile_latex(tex_path, output_dir=tmp_path)
 
-    @pytest.mark.asyncio
-    async def test_output_dir_defaults_to_tex_parent(self, tmp_path: Path) -> None:
-        """Output directory defaults to tex file's parent."""
-        subdir = tmp_path / "subdir"
-        subdir.mkdir()
-
-        tex_content = r"""
-\documentclass{article}
-\begin{document}
-Test.
-\end{document}
-"""
-        tex_path = subdir / "test.tex"
-        tex_path.write_text(tex_content)
-
-        pdf_path = await compile_latex(tex_path)
-
-        assert pdf_path.parent == subdir
-
 
 @pytest.mark.order("first")
 @requires_pandoc

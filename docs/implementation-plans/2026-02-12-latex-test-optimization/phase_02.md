@@ -99,6 +99,8 @@ End with `\endinput`.
 
 **CRITICAL:** Copy the LaTeX content EXACTLY from the existing Python string constants. Do not paraphrase, reformat, or "improve" the LaTeX — any change risks breaking compilation. Diff the `.sty` content against the combined `ANNOTATION_PREAMBLE_BASE` + `UNICODE_PREAMBLE` + speaker colours to ensure nothing was lost or altered.
 
+**Note:** The full font setup (section 7 — `\directlua` fallback chain, CJK setup, `\setmainfont`) is placed in the `.sty` temporarily for this phase. Phase 3 removes it and replaces it with dynamic font loading via `build_font_preamble()`. This two-phase approach ensures Phase 2 produces byte-identical output to pre-extraction (AC2.2), while Phase 3 then optimises font loading.
+
 **Verification:**
 No direct test yet — verified by Task 3.
 
@@ -131,7 +133,9 @@ Use `@requires_latexmk` decorator.
 
 **Verification:**
 Run: `uv run pytest tests/integration/test_pdf_export.py -k test_sty_compiles -v`
-Expected: Test fails initially (`.sty` not yet integrated into pipeline). After Task 3, it should pass.
+Expected: Test passes — Task 1 created the `.sty`, and this test copies it to the temp directory manually.
+
+**Commit:** `test: guard test for standalone .sty compilation`
 <!-- END_TASK_2 -->
 <!-- END_SUBCOMPONENT_A -->
 
@@ -219,11 +223,35 @@ Expected: Test passes (compilation fails as expected when `.sty` is missing)
 <!-- END_TASK_4 -->
 <!-- END_SUBCOMPONENT_B -->
 
-<!-- START_SUBCOMPONENT_C (tasks 5-6) -->
+<!-- START_SUBCOMPONENT_C (tasks 5-7) -->
 ## Subcomponent C: Regression Verification and Cleanup
 
 <!-- START_TASK_5 -->
-### Task 5: Verify production output parity
+### Task 5: Migrate test_latex_packages.py away from UNICODE_PREAMBLE
+
+**Verifies:** latex-test-optimization.AC2.3 (tests must work after constant removal)
+
+**Files:**
+- Modify: `tests/unit/test_latex_packages.py` (update imports and preamble construction)
+
+**Implementation:**
+`test_latex_packages.py` directly imports `UNICODE_PREAMBLE` from `unicode_latex.py`. Task 3 deletes this constant. Update the test to use the production pipeline instead:
+
+1. Find the import: `from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE`
+2. Replace with: `from promptgrimoire.export.preamble import build_annotation_preamble`
+3. Where the test constructs a preamble using `UNICODE_PREAMBLE`, replace with `build_annotation_preamble({})` (empty tag colours) or the appropriate production function.
+
+The test `test_unicode_preamble_compiles_without_tofu` should now compile using the production preamble path (which loads the `.sty`), verifying the real pipeline works end-to-end.
+
+**Verification:**
+Run: `uv run pytest tests/unit/test_latex_packages.py -v`
+Expected: All tests pass with the new import path
+
+**Commit:** `fix: migrate test_latex_packages.py from UNICODE_PREAMBLE to production preamble`
+<!-- END_TASK_5 -->
+
+<!-- START_TASK_6 -->
+### Task 6: Verify production output parity
 
 **Verifies:** latex-test-optimization.AC2.2
 
@@ -244,10 +272,10 @@ For a manual spot-check (optional): export a reference document via `generate_te
 **Verification:**
 Run: `uv run test-all`
 Expected: All tests pass, zero regressions
-<!-- END_TASK_5 -->
+<!-- END_TASK_6 -->
 
-<!-- START_TASK_6 -->
-### Task 6: Update mega-document infrastructure to copy `.sty`
+<!-- START_TASK_7 -->
+### Task 7: Update mega-document infrastructure to copy `.sty`
 
 **Verifies:** latex-test-optimization.AC2.1 (in test context)
 
@@ -269,7 +297,7 @@ Run: `uv run test-all -m latex`
 Expected: All mega-doc tests pass
 
 **Commit:** `fix: ensure .sty is copied for mega-document test compilation`
-<!-- END_TASK_6 -->
+<!-- END_TASK_7 -->
 <!-- END_SUBCOMPONENT_C -->
 
 ---

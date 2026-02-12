@@ -1,10 +1,10 @@
 # LaTeX Test Optimisation — Phase 1: Mega-document Test Infrastructure
 
-**Goal:** Reduce 68 `compile_latex()` invocations to ~8 compiles while preserving all existing test assertions.
+**Goal:** Reduce 68 `compile_latex()` invocations to ~12 compiles while preserving all existing test assertions.
 
-**Architecture:** Three mechanisms: (1) `generate_tex_only()` for tests that only need `.tex` content (no compilation), (2) module-scoped async fixtures that compile once per test module and cache results, (3) mega-document compilation combining multiple test bodies into a single LaTeX document using the `subfiles` package, with automatic per-subfile fallback debugging on compilation failure. Built-in pytest 9 subtests enable independent assertions per segment.
+**Architecture:** Three mechanisms: (1) `generate_tex_only()` for tests that only need `.tex` content (no compilation), (2) module-scoped async fixtures that compile once per test module and cache results, (3) mega-document compilation combining multiple test bodies into a single LaTeX document using the `subfiles` package, with automatic per-subfile fallback debugging on compilation failure. The pytest-subtests plugin enables independent assertions per segment.
 
-**Tech Stack:** Python 3.14, pytest 9.0.2 (built-in subtests), LaTeX subfiles package, pytest_asyncio
+**Tech Stack:** Python 3.14, pytest 9.0.2, pytest-subtests plugin, LaTeX subfiles package, pytest_asyncio
 
 **Scope:** 5 phases from original design (phase 1 of 5)
 
@@ -32,7 +32,7 @@ This phase implements and tests:
 - **latex-test-optimization.AC1.7 Edge:** Duplicate tests (`test_interleaved_highlights_compile`, `test_export_cjk_with_highlight`, `test_output_dir_defaults_to_tex_parent`) are deleted without coverage loss -- their assertions are covered by remaining tests
 - **latex-test-optimization.AC1.8 Success:** Critical paths (margin note alignment, Unicode rendering, highlight boundaries) retain fast standalone isolation tests alongside mega-doc subtests -- margin notes are sensitive to page context and must be verified in short documents, not just mega-doc sections
 
-**Note on AC1.1 vs AC1.8:** The <=6 target (5 mega-docs + 1 error) does not account for AC1.8's standalone isolation tests. Actual target is ~8 compiles (5 mega/module-scoped + 1 error + ~2 isolation). This is still an 8x reduction from 68.
+**Note on AC1.1 vs AC1.8:** The <=6 target (5 mega-docs + 1 error) does not account for AC1.8's standalone isolation tests, infrastructure tests, or standalone tests that don't fit mega-document structure (error paths, preamble smoke tests, rich markdown compilation). Actual target is ~12 compiles — see Task 16 for the full breakdown. This is still an 82% reduction from 68.
 
 ---
 
@@ -48,6 +48,8 @@ Before implementing, the executor should read these files for context:
 | `tests/conftest.py` | `pdf_exporter` fixture (lines 301-379), `TAG_COLOURS`, `requires_latexmk` | 692 |
 | `tests/integration/conftest.py` | Integration fixtures | 42 |
 | `docs/wip/2026-02-12-latexmk-test-optimization.md` | Detailed per-test compile audit (68 compiles) | 582 |
+| `tests/unit/test_latex_packages.py` | Preamble smoke tests (`test_unicode_preamble_compiles_without_tofu`) — standalone compile, not migrated to mega-doc | — |
+| `tests/unit/export/test_latex_string_functions.py` | String function compilation test — standalone compile, not migrated to mega-doc | — |
 | `docs/lualatex/subfiles-reference.md` | subfiles package API reference | 88 |
 
 ---
@@ -72,31 +74,29 @@ Expected: Script installs subfiles package without errors. Verify with: `~/.Tiny
 <!-- END_TASK_1 -->
 
 <!-- START_TASK_2 -->
-### Task 2: Remove pytest-subtests dependency
+### Task 2: Verify pytest-subtests dependency
 
-**Verifies:** None (infrastructure cleanup)
+**Verifies:** None (infrastructure verification)
 
 **Files:**
-- Modify: `pyproject.toml:148` (remove `"pytest-subtests>=0.15.0"` from dev dependencies)
+- No file changes (verification only)
 
 **Implementation:**
-The `subtests` fixture is built into pytest 9.0+ (project is on 9.0.2). Remove the external dependency. After removal, run `uv sync` to update the lock file.
+The `subtests` fixture comes from the `pytest-subtests` package (already in dev dependencies as `"pytest-subtests>=0.15.0"`). Verify it works correctly, as all mega-document tests depend on it.
 
 **Verification:**
-Run: `uv sync`
-Run: `uv run python -c "import pytest; print(pytest.__version__)"` — should print 9.0.2
-Run: `uv run pytest tests/unit/test_env_vars.py -v` — ensure env var test still passes (no .env.example impact)
-
-To verify the built-in subtests fixture works, create a quick throwaway test:
+Create a quick throwaway test:
 ```python
-def test_subtests_builtin(subtests):
+def test_subtests_work(subtests):
     for i in range(3):
         with subtests.test(msg=f"case-{i}"):
             assert i >= 0
 ```
 Run it, verify it passes, then delete the throwaway test.
 
-**Commit:** `chore: remove pytest-subtests dependency (built into pytest 9.0+)`
+Run: `uv run python -c "import pytest_subtests; print(pytest_subtests.__version__)"` — should print a version
+
+**Note:** `pytest-subtests` is an EXTERNAL package, not built into pytest. Do NOT remove it — all mega-document tests use the `subtests` fixture.
 <!-- END_TASK_2 -->
 <!-- END_SUBCOMPONENT_A -->
 

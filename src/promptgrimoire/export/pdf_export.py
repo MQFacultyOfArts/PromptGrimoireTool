@@ -259,45 +259,40 @@ def _get_export_dir(user_id: str) -> Path:
     return export_dir
 
 
-async def export_annotation_pdf(
+async def generate_tex_only(
     html_content: str,
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],
+    output_dir: Path,
     general_notes: str = "",
     notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
-    output_dir: Path | None = None,
-    user_id: str | None = None,
     filename: str = "annotated_document",
 ) -> Path:
-    """Generate PDF with annotations from live annotation data.
+    """Generate a .tex file from HTML + annotations without compiling to PDF.
 
-    This is the main entry point for PDF export. It orchestrates:
-    1. HTML -> LaTeX conversion with annotation markers
-    2. Complete document assembly with preamble
-    3. General notes section
-    4. PDF compilation via latexmk
+    Runs the full export pipeline (preprocess, convert, assemble) up to
+    writing the .tex file but does NOT invoke ``compile_latex()``. This
+    enables fast assertions on LaTeX content in tests without paying
+    the 5-10s compilation cost.
 
     Args:
         html_content: HTML content to export (from ``doc.content``).
         highlights: List of highlight dicts from CRDT doc.
         tag_colours: Mapping of tag names to hex colours.
+        output_dir: Directory where the .tex file will be written.
         general_notes: HTML content from general notes editor.
         notes_latex: Pre-converted LaTeX for the notes section (e.g.,
             from Pandoc markdown conversion). Takes precedence over
             ``general_notes`` when non-empty.
         word_to_legal_para: Optional mapping for paragraph references.
-        output_dir: Optional output directory for PDF. Defaults to temp dir.
-        user_id: Optional user identifier for scoped temp directory.
-            If provided, creates a per-user export dir that is cleaned on reuse.
-        filename: Base name for the output PDF file (without extension).
+        filename: Base name for the output file (without extension).
 
     Returns:
-        Path to the generated PDF file.
+        Path to the generated .tex file.
 
     Raises:
         ValueError: If highlights are provided but content is empty.
-        subprocess.CalledProcessError: If LaTeX compilation fails.
     """
     if highlights and (not html_content or not html_content.strip()):
         raise ValueError(
@@ -333,15 +328,68 @@ async def export_annotation_pdf(
         general_notes_section=notes_section,
     )
 
-    # Write to temp file and compile
+    tex_path = output_dir / f"{filename}.tex"
+    tex_path.write_text(document)
+
+    return tex_path
+
+
+async def export_annotation_pdf(
+    html_content: str,
+    highlights: list[dict[str, Any]],
+    tag_colours: dict[str, str],
+    general_notes: str = "",
+    notes_latex: str = "",
+    word_to_legal_para: dict[int, int | None] | None = None,
+    output_dir: Path | None = None,
+    user_id: str | None = None,
+    filename: str = "annotated_document",
+) -> Path:
+    """Generate PDF with annotations from live annotation data.
+
+    This is the main entry point for PDF export. It orchestrates:
+    1. HTML -> LaTeX conversion with annotation markers (via ``generate_tex_only``)
+    2. PDF compilation via latexmk
+
+    Args:
+        html_content: HTML content to export (from ``doc.content``).
+        highlights: List of highlight dicts from CRDT doc.
+        tag_colours: Mapping of tag names to hex colours.
+        general_notes: HTML content from general notes editor.
+        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
+            from Pandoc markdown conversion). Takes precedence over
+            ``general_notes`` when non-empty.
+        word_to_legal_para: Optional mapping for paragraph references.
+        output_dir: Optional output directory for PDF. Defaults to temp dir.
+        user_id: Optional user identifier for scoped temp directory.
+            If provided, creates a per-user export dir that is cleaned on reuse.
+        filename: Base name for the output PDF file (without extension).
+
+    Returns:
+        Path to the generated PDF file.
+
+    Raises:
+        ValueError: If highlights are provided but content is empty.
+        subprocess.CalledProcessError: If LaTeX compilation fails.
+    """
+    # Resolve output directory
     if output_dir is None:
         if user_id:
             output_dir = _get_export_dir(user_id)
         else:
             output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
 
-    tex_path = output_dir / f"{filename}.tex"
-    tex_path.write_text(document)
+    # Generate .tex file via the shared pipeline
+    tex_path = await generate_tex_only(
+        html_content=html_content,
+        highlights=highlights,
+        tag_colours=tag_colours,
+        output_dir=output_dir,
+        general_notes=general_notes,
+        notes_latex=notes_latex,
+        word_to_legal_para=word_to_legal_para,
+        filename=filename,
+    )
 
     # Compile to PDF
     pdf_path = await compile_latex(tex_path, output_dir)

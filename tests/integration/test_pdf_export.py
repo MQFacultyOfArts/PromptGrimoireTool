@@ -522,3 +522,97 @@ class TestResponseDraftExport:
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
         assert "Markdown response draft content" in tex_content
+
+
+@requires_pandoc
+class TestGenerateTexOnly:
+    """Tests for generate_tex_only() — AC1.4.
+
+    generate_tex_only() runs the full export pipeline up to .tex file creation
+    but does NOT invoke compile_latex(). This enables fast assertions on LaTeX
+    content without paying the 5-10s compilation cost.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_tex_path_without_compilation(self, tmp_path: Path) -> None:
+        """AC1.4: generate_tex_only() returns .tex path, no PDF created."""
+        from promptgrimoire.export.pdf_export import generate_tex_only
+
+        html = "<p>This is a test document with highlighted text.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 3,
+                "end_char": 5,
+                "tag": "jurisdiction",
+                "text": "test document",
+                "author": "Tester",
+                "created_at": "2026-01-26T14:30:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Returns a Path to a .tex file that exists
+        assert tex_path.exists(), "generate_tex_only() must create the .tex file"
+        assert tex_path.suffix == ".tex"
+
+        # .tex file contains expected LaTeX structure
+        tex_content = tex_path.read_text()
+        assert r"\documentclass" in tex_content
+        assert r"\begin{document}" in tex_content
+
+        # .tex file contains highlight commands (from the annotation pipeline)
+        assert r"\highLight" in tex_content or r"\underLine" in tex_content
+
+        # No PDF file exists — compile_latex was NOT called
+        pdf_files = list(tmp_path.glob("*.pdf"))
+        assert pdf_files == [], (
+            f"generate_tex_only() must NOT produce a PDF, found: {pdf_files}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_with_general_notes(self, tmp_path: Path) -> None:
+        """generate_tex_only() includes General Notes section when provided."""
+        from promptgrimoire.export.pdf_export import generate_tex_only
+
+        html = "<p>Document text here.</p>"
+        general_notes = "<p>These are <strong>general notes</strong> for document.</p>"
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours={"jurisdiction": "#1f77b4"},
+            output_dir=tmp_path,
+            general_notes=general_notes,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+
+    @pytest.mark.asyncio
+    async def test_with_notes_latex(self, tmp_path: Path) -> None:
+        """generate_tex_only() includes pre-converted LaTeX notes."""
+        from promptgrimoire.export.pdf_export import generate_tex_only
+
+        html = "<p>Document text here.</p>"
+        notes_latex = r"This is \textbf{pre-converted} LaTeX notes content."
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours={"jurisdiction": "#1f77b4"},
+            output_dir=tmp_path,
+            notes_latex=notes_latex,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert r"pre-converted" in tex_content

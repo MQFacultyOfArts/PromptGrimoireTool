@@ -28,6 +28,10 @@ ALLOWED_JS_FILES = {
     # to emit synthetic selection events spanning block boundaries.
     # CSS.highlights introspection requires evaluate() (no Playwright API).
     "test_text_selection.py",
+    # Integration test for full CSS Highlight API flow: uses evaluate()
+    # to locate text node bounding rects for mouse selection and to
+    # introspect CSS.highlights entries (no Playwright API for either).
+    "test_annotation_highlight_api.py",
 }
 
 

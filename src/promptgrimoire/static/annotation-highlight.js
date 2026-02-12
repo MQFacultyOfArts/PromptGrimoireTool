@@ -1,10 +1,12 @@
 /**
  * annotation-highlight.js — CSS Custom Highlight API text walker and selection.
  *
- * Provides three capabilities:
+ * Provides five capabilities:
  * 1. walkTextNodes(root) — flat character offset map of all text nodes
- * 2. applyHighlights(container, highlightData) — register CSS highlights
- * 3. setupSelection(container) — mouseup listener emitting hl_demo_selection
+ * 2. applyHighlights(container, highlightData, tagColors) — register CSS highlights
+ * 3. clearHighlights() — remove all hl-* entries from CSS.highlights
+ * 4. setupSelection(container) — mouseup listener emitting hl_demo_selection (demo)
+ * 5. setupAnnotationSelection(container, emitCallback) — mouseup listener with callback
  *
  * All functions are in the global scope (no ES modules) for compatibility
  * with NiceGUI's <script src="..."> loading.
@@ -73,35 +75,86 @@ function walkTextNodes(root) {
 // Highlight Application (CSS Custom Highlight API)
 // ============================================================================
 
-function applyHighlights(container, highlightData) {
-    const textNodes = walkTextNodes(container);
-    if (!textNodes.length) return;
-
-    // Clear existing highlights
+/**
+ * Clear all hl-* entries from CSS.highlights.
+ */
+function clearHighlights() {
     for (const name of CSS.highlights.keys()) {
         if (name.startsWith('hl-')) CSS.highlights.delete(name);
     }
+}
 
+/**
+ * Apply highlight data to a container using the CSS Custom Highlight API.
+ *
+ * Accepts two highlight data formats:
+ * - Annotation format: {tag: [{start_char, end_char, id}, ...], ...}
+ * - Demo format:       {tag: [{start, end}, ...], ...}
+ *
+ * @param {Element} container - DOM element containing the document text
+ * @param {Object} highlightData - tag-keyed highlight ranges
+ * @param {Object} [tagColors] - optional tag-to-priority map (reserved for future use)
+ */
+function applyHighlights(container, highlightData, tagColors) {
+    const textNodes = walkTextNodes(container);
+    const totalChars = textNodes.length
+        ? textNodes[textNodes.length - 1].endChar : 0;
+
+    clearHighlights();
+
+    if (!textNodes.length) return;
+
+    let tagIdx = 0;
     for (const [tag, regions] of Object.entries(highlightData)) {
         const ranges = [];
         for (const region of regions) {
-            const range = charOffsetToRange(textNodes, region.start, region.end);
+            // Support both annotation format (start_char/end_char) and
+            // demo format (start/end)
+            const startChar = region.start_char !== undefined
+                ? region.start_char : region.start;
+            const endChar = region.end_char !== undefined
+                ? region.end_char : region.end;
+
+            // Validate offsets (AC1.4)
+            if (startChar < 0 || endChar < 0) {
+                console.warn(
+                    `applyHighlights: negative offset for tag "${tag}":`,
+                    `start=${startChar}, end=${endChar} — skipping`);
+                continue;
+            }
+            if (startChar >= endChar) {
+                console.warn(
+                    `applyHighlights: start >= end for tag "${tag}":`,
+                    `start=${startChar}, end=${endChar} — skipping`);
+                continue;
+            }
+            if (startChar >= totalChars) {
+                console.warn(
+                    `applyHighlights: start beyond document length for tag "${tag}":`,
+                    `start=${startChar}, totalChars=${totalChars} — skipping`);
+                continue;
+            }
+
+            // Clamp end to document length (don't skip, just clamp)
+            const clampedEnd = Math.min(endChar, totalChars);
+            const range = charOffsetToRange(textNodes, startChar, clampedEnd);
             if (range) ranges.push(range);
         }
         if (ranges.length) {
             const hl = new Highlight(...ranges);
-            hl.priority = regionPriority(tag);
+            hl.priority = regionPriority(tag, tagIdx);
             CSS.highlights.set('hl-' + tag, hl);
         }
+        tagIdx++;
     }
 }
 
-function regionPriority(tag) {
+function regionPriority(tag, tagIdx) {
     const priorities = {
         jurisdiction: 10, legal_issues: 20,
         legislation: 30, evidence: 40
     };
-    return priorities[tag] || 0;
+    return priorities[tag] || (tagIdx !== undefined ? tagIdx : 0);
 }
 
 function charOffsetToRange(textNodes, startChar, endChar) {
@@ -151,6 +204,9 @@ function findLocalOffset(textNode, collapsedOffset) {
 // Selection Detection
 // ============================================================================
 
+/**
+ * Demo page selection handler — emits hl_demo_selection via NiceGUI emitEvent.
+ */
 function setupSelection(container) {
     document.addEventListener('mouseup', () => {
         const sel = window.getSelection();
@@ -166,6 +222,39 @@ function setupSelection(container) {
 
         if (startChar !== null && endChar !== null && startChar < endChar) {
             emitEvent('hl_demo_selection', {start_char: startChar, end_char: endChar});
+        }
+    });
+}
+
+/**
+ * Annotation page selection handler — calls emitCallback with {start_char, end_char}.
+ *
+ * Unlike setupSelection (demo), this:
+ * - Takes a callback instead of using emitEvent (the caller wires it to NiceGUI)
+ * - Checks both startContainer and endContainer are within the container (AC2.3)
+ * - Silently ignores collapsed selections (AC2.4)
+ *
+ * @param {Element} container - DOM element containing the document text
+ * @param {Function} emitCallback - called with {start_char, end_char} on valid selection
+ */
+function setupAnnotationSelection(container, emitCallback) {
+    document.addEventListener('mouseup', () => {
+        const sel = window.getSelection();
+        // AC2.4: ignore collapsed selection (click without drag)
+        if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        // AC2.3: ignore selection outside the document container
+        if (!container.contains(range.startContainer)) return;
+        if (!container.contains(range.endContainer)) return;
+
+        const textNodes = walkTextNodes(container);
+        const startChar = rangePointToCharOffset(
+            textNodes, range.startContainer, range.startOffset);
+        const endChar = rangePointToCharOffset(
+            textNodes, range.endContainer, range.endOffset);
+
+        if (startChar !== null && endChar !== null && startChar < endChar) {
+            emitCallback({start_char: startChar, end_char: endChar});
         }
     });
 }

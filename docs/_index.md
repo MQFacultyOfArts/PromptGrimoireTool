@@ -21,6 +21,7 @@ library references during development.
 
 ## browser
 
+- [Complete API reference for CSS.highlights, Highlight class, ::highlight() pseudo-element, StaticRange](browser/css-custom-highlight-api.md)
 - [Browser Selection API for text selection and annotation](browser/selection-api.md)
 
 ## claude-code
@@ -64,6 +65,7 @@ library references during development.
 ## pycrdt
 
 - [Complete API reference for pycrdt CRDT library - Text, Doc, StickyIndex, sync functions](pycrdt/api-reference.md)
+- [Awareness API for ephemeral presence state (cursors, selections, disconnect cleanup)](pycrdt/awareness.md)
 - [pycrdt Integration with NiceGUI](pycrdt/nicegui-integration.md)
 - [pycrdt usage guide - CRDT data types, sync, transactions, observers](pycrdt/usage.md)
 - [pycrdt WebSocket sync patterns for real-time collaboration](pycrdt/websocket-sync.md)

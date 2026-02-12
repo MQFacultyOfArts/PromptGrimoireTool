@@ -252,16 +252,6 @@ _PAGE_CSS = """
         font-size: 0.9em;
     }
 
-    /* Character spans - inline to flow naturally */
-    .doc-container .char {
-        /* Keep characters flowing inline */
-        display: inline;
-        /* Preserve spaces (not using &nbsp;) while allowing word wrap */
-        white-space: pre-wrap;
-        /* Override any bad line-height from pasted content (e.g., 1.5px) */
-        line-height: 1.6 !important;
-    }
-
     /* Plain text documents use monospace */
     .doc-container.source-text {
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -305,15 +295,6 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Character spans for selection */
-    .char {
-        cursor: text;
-    }
-
-    /* Hover highlight effect when card is hovered */
-    .char.card-hover-highlight {
-        box-shadow: inset 0 2px 0 #FFD700, inset 0 -2px 0 #FFD700 !important;
-    }
 """
 
 
@@ -511,57 +492,44 @@ def _get_tag_color(tag_str: str) -> str:
         return "#FFEB3B"
 
 
-def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
-    """Generate CSS rules for highlighting characters with tag-specific colors.
+def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
+    """Generate ::highlight() pseudo-element CSS rules for annotation tags.
 
-    Uses stacked underlines to show overlapping highlights (matching latex.py):
-    - 1 highlight: background + 1pt underline
-    - 2 highlights: blended background + 2pt outer + 1pt inner underlines
-    - 3+ highlights: blended background + 4pt thick underline
+    Uses the CSS Custom Highlight API: each tag gets a ``::highlight(hl-<tag>)``
+    rule with a semi-transparent background and underline in the tag's colour.
+    The JS ``applyHighlights()`` function registers the actual highlight ranges
+    in ``CSS.highlights``; this CSS just defines the visual style.
+
+    Note: ``::highlight()`` supports only ``background-color``, ``color``,
+    ``text-decoration``, and ``text-shadow``. Properties like
+    ``text-decoration-thickness`` and ``text-underline-offset`` are NOT
+    supported inside ``::highlight()`` rules.
 
     Args:
-        highlights: List of highlight dicts with start_word, end_word, tag.
+        tags: Optional set of tag strings to generate rules for.
+              If None, generates rules for all BriefTag values.
 
     Returns:
-        CSS string with background-color and underline rules.
+        CSS string with ``::highlight()`` rules.
     """
-    # Build char -> list of (highlight_index, tag_color) mapping
-    char_highlights: dict[int, list[str]] = {}
-    for hl in highlights:
-        start = int(hl.get("start_char", 0))
-        end = int(hl.get("end_char", 0))
-        hex_color = _get_tag_color(hl.get("tag", "highlight"))
-        for i in range(start, end):
-            if i not in char_highlights:
-                char_highlights[i] = []
-            char_highlights[i].append(hex_color)
+    tag_strings = [t.value for t in BriefTag] if tags is None else sorted(tags)
 
     css_rules: list[str] = []
-    for char_idx, colors in char_highlights.items():
-        # Background: use first highlight's color with transparency
-        first_color = colors[0]
+    for tag_str in tag_strings:
+        hex_color = _get_tag_color(tag_str)
         r, g, b = (
-            int(first_color[1:3], 16),
-            int(first_color[3:5], 16),
-            int(first_color[5:7], 16),
+            int(hex_color[1:3], 16),
+            int(hex_color[3:5], 16),
+            int(hex_color[5:7], 16),
         )
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
-
-        overlap_count = len(colors)
-        underline_color = first_color if overlap_count < 3 else "#333"
-        thickness = f"{min(overlap_count, 3)}px"
-
-        # Main character styling
         css_rules.append(
-            f'[data-char-index="{char_idx}"] {{ '
-            f"background-color: {bg_rgba}; "
-            f"text-decoration: underline; "
-            f"text-decoration-color: {underline_color}; "
-            f"text-decoration-thickness: {thickness}; "
-            f"text-underline-offset: 2px; }}"
+            f"::highlight(hl-{tag_str}) {{\n"
+            f"    background-color: {bg_rgba};\n"
+            f"    text-decoration: underline;\n"
+            f"    text-decoration-color: {hex_color};\n"
+            f"}}"
         )
-        # Note: No ::after pseudo-element needed for character-based tokenization.
-        # Spaces are now individual character spans that get their own highlighting.
 
     return "\n".join(css_rules)
 
@@ -681,16 +649,17 @@ def _build_tag_toolbar(
 
 
 def _update_highlight_css(state: PageState) -> None:
-    """Update the highlight CSS based on current CRDT state."""
+    """Update the highlight CSS based on current CRDT state.
+
+    With the CSS Custom Highlight API, the ``::highlight()`` pseudo-element
+    rules are static (one rule per tag). The actual highlight ranges are
+    registered in ``CSS.highlights`` by JS ``applyHighlights()``. This
+    function ensures the ``::highlight()`` CSS is present.
+    """
     if state.highlight_style is None or state.crdt_doc is None:
         return
 
-    if state.document_id is not None:
-        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
-    else:
-        highlights = state.crdt_doc.get_all_highlights()
-
-    css = _build_highlight_css(highlights)
+    css = _build_highlight_pseudo_css()
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
 
@@ -1254,9 +1223,9 @@ async def _render_document_with_highlights(
     if doc.content:
         state.document_chars = extract_text_from_html(doc.content)
 
-    # Load existing highlights and build initial CSS
-    highlights = crdt_doc.get_highlights_for_document(str(doc.id))
-    initial_css = _build_highlight_css(highlights)
+    # Static ::highlight() CSS for all tags — actual highlight ranges are
+    # registered in CSS.highlights by JS applyHighlights()
+    initial_css = _build_highlight_pseudo_css()
 
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")

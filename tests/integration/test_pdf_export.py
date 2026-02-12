@@ -15,7 +15,11 @@ import pytest
 
 from promptgrimoire.export.pandoc import convert_html_to_latex
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
-from promptgrimoire.export.pdf_export import export_annotation_pdf
+from promptgrimoire.export.pdf_export import (
+    export_annotation_pdf,
+    generate_tex_only,
+    markdown_to_latex_notes,
+)
 from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
@@ -132,22 +136,27 @@ Test.
 
 @pytest.mark.order("first")
 @requires_pandoc
-@requires_latexmk
-class TestMarginnoteExportPipeline:
-    """Tests for the marginalia+lua-ul export pipeline."""
+class TestMarginnoteTexOnly:
+    """Tex-only tests for the marginalia+lua-ul export pipeline.
 
-    # test_export_annotation_pdf_basic removed — migrated to
+    These tests use generate_tex_only() to verify .tex content without
+    paying the 5-10s compilation cost. No latexmk required.
+
+    Migrated from TestMarginnoteExportPipeline (Task 13).
+    """
+
+    # test_export_annotation_pdf_basic removed -- migrated to
     # test_english_mega_doc.py::TestBasicPipeline
 
     @pytest.mark.asyncio
     async def test_export_with_general_notes(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should include general notes section."""
+        """export pipeline should include general notes section in .tex."""
         html = "<p>Document text here.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
         general_notes = "<p>These are <strong>general notes</strong> for document.</p>"
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -155,15 +164,13 @@ class TestMarginnoteExportPipeline:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
         # Check the tex file was created with notes section
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
 
     @pytest.mark.asyncio
     async def test_export_with_comments(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should include comment threads."""
+        """export pipeline should include comment threads in .tex."""
         html = "<p>The court held that the defendant was liable.</p>"
         highlights = [
             {
@@ -182,45 +189,41 @@ class TestMarginnoteExportPipeline:
         ]
         tag_colours = {"decision": "#e377c2"}
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
         # Check the tex file includes comments
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "Bob" in tex_content
         assert "Good catch" in tex_content
 
 
-# TestI18nPdfExport removed — migrated to test_i18n_mega_doc.py (Task 12).
-# test_export_cjk_with_highlight removed — redundant coverage (Task 15).
+# TestI18nPdfExport removed -- migrated to test_i18n_mega_doc.py (Task 12).
+# test_export_cjk_with_highlight removed -- redundant coverage (Task 15).
 
 
 @pytest.mark.order("first")
 @requires_pandoc
-@requires_latexmk
-class TestResponseDraftExport:
-    """Integration tests for PDF export with response draft markdown (Phase 7).
+class TestResponseDraftTexOnly:
+    """Tex-only tests for PDF export with response draft markdown (Phase 7).
 
-    Tests AC6.1 (response draft in PDF), AC6.2 (empty draft = no section),
-    AC6.3 (CRDT fallback). These test the export pipeline directly, not
-    the UI layer.
+    Tests AC6.1 (response draft in PDF), AC6.2 (empty draft = no section).
+    These use generate_tex_only() to verify .tex content without compilation.
+
+    Migrated from TestResponseDraftExport (Task 13).
     """
 
     @pytest.mark.asyncio
     async def test_export_with_markdown_notes_ac6_1(self, tmp_path: Path) -> None:
-        """AC6.1: Export PDF includes response draft content.
+        """AC6.1: Export includes response draft content in .tex.
 
         Converts markdown to LaTeX via Pandoc and includes it in the
         General Notes section.
         """
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
-
         html = "<p>Document text for annotation.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
@@ -229,7 +232,7 @@ class TestResponseDraftExport:
         markdown = "# My Response\n\nThis is my **analysis** of the document."
         notes_latex = await markdown_to_latex_notes(markdown)
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -237,8 +240,6 @@ class TestResponseDraftExport:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
         assert "My Response" in tex_content
@@ -246,12 +247,12 @@ class TestResponseDraftExport:
 
     @pytest.mark.asyncio
     async def test_export_empty_draft_no_section_ac6_2(self, tmp_path: Path) -> None:
-        """AC6.2: Empty response draft produces no extra section in PDF."""
+        """AC6.2: Empty response draft produces no extra section in .tex."""
         html = "<p>Document text for annotation.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -259,16 +260,50 @@ class TestResponseDraftExport:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" not in tex_content
 
     @pytest.mark.asyncio
+    async def test_notes_latex_takes_precedence_over_general_notes(
+        self, tmp_path: Path
+    ) -> None:
+        """notes_latex takes precedence over general_notes HTML."""
+        html = "<p>Document text.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        # Both paths provided -- LaTeX should win
+        general_notes_html = "<p>HTML notes content</p>"
+        markdown = "Markdown response draft content"
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            general_notes=general_notes_html,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert "Markdown response draft content" in tex_content
+
+
+@pytest.mark.order("first")
+@requires_pandoc
+@requires_latexmk
+class TestResponseDraftCompile:
+    """Compile test for rich markdown response draft (Phase 7).
+
+    Kept as a compile test because rich markdown (lists, bold, italic)
+    is the most complex notes path and must be verified to actually compile.
+    """
+
+    @pytest.mark.asyncio
     async def test_export_with_rich_markdown_ac6_1(self, tmp_path: Path) -> None:
         """AC6.1: Rich markdown (lists, bold, italic) survives export."""
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
-
         html = "<p>Source document.</p>"
         highlights: list[dict] = []
         tag_colours: dict[str, str] = {}
@@ -298,41 +333,10 @@ class TestResponseDraftExport:
         assert r"\begin{itemize}" in tex_content
         assert "overall conclusion" in tex_content
 
-    @pytest.mark.asyncio
-    async def test_notes_latex_takes_precedence_over_general_notes(
-        self, tmp_path: Path
-    ) -> None:
-        """notes_latex takes precedence over general_notes HTML."""
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
-
-        html = "<p>Document text.</p>"
-        highlights: list[dict] = []
-        tag_colours: dict[str, str] = {}
-
-        # Both paths provided — LaTeX should win
-        general_notes_html = "<p>HTML notes content</p>"
-        markdown = "Markdown response draft content"
-        notes_latex = await markdown_to_latex_notes(markdown)
-
-        pdf_path = await export_annotation_pdf(
-            html_content=html,
-            highlights=highlights,
-            tag_colours=tag_colours,
-            general_notes=general_notes_html,
-            notes_latex=notes_latex,
-            output_dir=tmp_path,
-        )
-
-        assert pdf_path.exists()
-        tex_path = tmp_path / "annotated_document.tex"
-        tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
-        assert "Markdown response draft content" in tex_content
-
 
 @requires_pandoc
 class TestGenerateTexOnly:
-    """Tests for generate_tex_only() — AC1.4.
+    """Tests for generate_tex_only() -- AC1.4.
 
     generate_tex_only() runs the full export pipeline up to .tex file creation
     but does NOT invoke compile_latex(). This enables fast assertions on LaTeX
@@ -342,8 +346,6 @@ class TestGenerateTexOnly:
     @pytest.mark.asyncio
     async def test_returns_tex_path_without_compilation(self, tmp_path: Path) -> None:
         """AC1.4: generate_tex_only() returns .tex path, no PDF created."""
-        from promptgrimoire.export.pdf_export import generate_tex_only
-
         html = "<p>This is a test document with highlighted text.</p>"
         highlights = [
             {
@@ -378,7 +380,7 @@ class TestGenerateTexOnly:
         # .tex file contains highlight commands (from the annotation pipeline)
         assert r"\highLight" in tex_content or r"\underLine" in tex_content
 
-        # No PDF file exists — compile_latex was NOT called
+        # No PDF file exists -- compile_latex was NOT called
         pdf_files = list(tmp_path.glob("*.pdf"))
         assert pdf_files == [], (
             f"generate_tex_only() must NOT produce a PDF, found: {pdf_files}"
@@ -387,8 +389,6 @@ class TestGenerateTexOnly:
     @pytest.mark.asyncio
     async def test_with_general_notes(self, tmp_path: Path) -> None:
         """generate_tex_only() includes General Notes section when provided."""
-        from promptgrimoire.export.pdf_export import generate_tex_only
-
         html = "<p>Document text here.</p>"
         general_notes = "<p>These are <strong>general notes</strong> for document.</p>"
 
@@ -406,8 +406,6 @@ class TestGenerateTexOnly:
     @pytest.mark.asyncio
     async def test_with_notes_latex(self, tmp_path: Path) -> None:
         """generate_tex_only() includes pre-converted LaTeX notes."""
-        from promptgrimoire.export.pdf_export import generate_tex_only
-
         html = "<p>Document text here.</p>"
         notes_latex = r"This is \textbf{pre-converted} LaTeX notes content."
 

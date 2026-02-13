@@ -408,3 +408,93 @@ function countCollapsed(text, rawOffset) {
     }
     return collapsed;
 }
+
+// ============================================================================
+// Remote Presence: Cursors
+// ============================================================================
+
+/**
+ * Render a remote user's cursor as a coloured vertical line with name label.
+ *
+ * The cursor is absolutely positioned within container.parentElement (the
+ * scroll container) so it scrolls with the document content.
+ *
+ * @param {Element} container - The #doc-container element
+ * @param {string} clientId - Unique ID for the remote client
+ * @param {number} charIdx - Character offset for cursor position
+ * @param {string} name - Display name for the remote user
+ * @param {string} color - CSS colour for the cursor line and label
+ */
+function renderRemoteCursor(container, clientId, charIdx, name, color) {
+    // Remove any existing cursor for this client
+    const existingId = 'remote-cursor-' + clientId;
+    const existing = document.getElementById(existingId);
+    if (existing) existing.remove();
+
+    const textNodes = window._textNodes || walkTextNodes(container);
+    const rect = charOffsetToRect(textNodes, charIdx);
+    if (rect.width === 0 && rect.height === 0) return;
+
+    // Get container position for relative offset calculation
+    const parent = container.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+
+    const cursor = document.createElement('div');
+    cursor.className = 'remote-cursor';
+    cursor.id = existingId;
+    cursor.dataset.charIdx = String(charIdx);
+    cursor.dataset.clientId = clientId;
+    cursor.dataset.name = name;
+    cursor.dataset.color = color;
+    cursor.style.left = (rect.left - parentRect.left + parent.scrollLeft) + 'px';
+    cursor.style.top = (rect.top - parentRect.top + parent.scrollTop) + 'px';
+    cursor.style.height = rect.height + 'px';
+    cursor.style.borderLeft = '2px solid ' + color;
+
+    const label = document.createElement('span');
+    label.className = 'remote-cursor-label';
+    label.textContent = name;
+    label.style.backgroundColor = color;
+    cursor.appendChild(label);
+
+    parent.appendChild(cursor);
+}
+
+/**
+ * Remove a remote user's cursor element from the DOM.
+ *
+ * @param {string} clientId - The client whose cursor to remove
+ */
+function removeRemoteCursor(clientId) {
+    const el = document.getElementById('remote-cursor-' + clientId);
+    if (el) el.remove();
+}
+
+/**
+ * Recalculate positions for all remote cursors.
+ *
+ * Call on scroll/resize to keep cursors aligned with their character
+ * positions after layout changes.
+ *
+ * @param {Element} container - The #doc-container element
+ */
+function updateRemoteCursorPositions(container) {
+    const textNodes = window._textNodes || walkTextNodes(container);
+    const parent = container.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+
+    const cursors = document.querySelectorAll('.remote-cursor');
+    for (const cursor of cursors) {
+        const charIdx = parseInt(cursor.dataset.charIdx, 10);
+        if (isNaN(charIdx)) continue;
+
+        const rect = charOffsetToRect(textNodes, charIdx);
+        if (rect.width === 0 && rect.height === 0) continue;
+
+        cursor.style.left = (rect.left - parentRect.left + parent.scrollLeft) + 'px';
+        cursor.style.top = (rect.top - parentRect.top + parent.scrollTop) + 'px';
+        cursor.style.height = rect.height + 'px';
+    }
+}

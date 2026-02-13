@@ -164,7 +164,7 @@ def detect_scripts(text: str) -> frozenset[str]:
                     found.add(tag)
                     break
         if found >= _REQUIRED_SCRIPTS:
-            break  # All possible scripts found, stop scanning
+            break  # All registry-covered scripts detected, stop scanning
     return frozenset(found)
 
 

@@ -41,7 +41,7 @@ class TestLatinOnlyPreambleAC33:
         assert r"\setmainjfont" not in latin_preamble
 
     def test_no_renewcommand_cjktext(self, latin_preamble: str) -> None:
-        assert r"\renewcommand" not in latin_preamble or "cjktext" not in latin_preamble
+        assert r"\renewcommand{\cjktext}" not in latin_preamble
 
     def test_no_non_base_fonts(self, latin_preamble: str) -> None:
         """No script-specific fonts in Latin-only output."""

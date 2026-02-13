@@ -492,26 +492,13 @@ class TestCopyProtectionResolution:
         Verifies 103-copy-protection.AC1.1.
         """
         from promptgrimoire.db.activities import get_activity
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import Activity, Workspace
 
         _, week = await _make_course_and_week_cp("ac1-1")
+        activity = await _make_activity_with_cp(
+            week.id, "CP True", copy_protection=True
+        )
 
-        async with get_session() as session:
-            template = Workspace()
-            session.add(template)
-            await session.flush()
-            activity = Activity(
-                week_id=week.id,
-                template_workspace_id=template.id,
-                title="CP True",
-                copy_protection=True,
-            )
-            session.add(activity)
-            await session.flush()
-            activity_id = activity.id
-
-        fetched = await get_activity(activity_id)
+        fetched = await get_activity(activity.id)
         assert fetched is not None
         assert fetched.copy_protection is True
 
@@ -524,26 +511,13 @@ class TestCopyProtectionResolution:
         Verifies 103-copy-protection.AC1.2.
         """
         from promptgrimoire.db.activities import get_activity
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import Activity, Workspace
 
         _, week = await _make_course_and_week_cp("ac1-2")
+        activity = await _make_activity_with_cp(
+            week.id, "CP False", copy_protection=False
+        )
 
-        async with get_session() as session:
-            template = Workspace()
-            session.add(template)
-            await session.flush()
-            activity = Activity(
-                week_id=week.id,
-                template_workspace_id=template.id,
-                title="CP False",
-                copy_protection=False,
-            )
-            session.add(activity)
-            await session.flush()
-            activity_id = activity.id
-
-        fetched = await get_activity(activity_id)
+        fetched = await get_activity(activity.id)
         assert fetched is not None
         assert fetched.copy_protection is False
 
@@ -556,26 +530,13 @@ class TestCopyProtectionResolution:
         Verifies 103-copy-protection.AC1.3.
         """
         from promptgrimoire.db.activities import get_activity
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import Activity, Workspace
 
         _, week = await _make_course_and_week_cp("ac1-3")
+        activity = await _make_activity_with_cp(
+            week.id, "CP None", copy_protection=None
+        )
 
-        async with get_session() as session:
-            template = Workspace()
-            session.add(template)
-            await session.flush()
-            activity = Activity(
-                week_id=week.id,
-                template_workspace_id=template.id,
-                title="CP None",
-                copy_protection=None,
-            )
-            session.add(activity)
-            await session.flush()
-            activity_id = activity.id
-
-        fetched = await get_activity(activity_id)
+        fetched = await get_activity(activity.id)
         assert fetched is not None
         assert fetched.copy_protection is None
 
@@ -607,8 +568,6 @@ class TestCopyProtectionResolution:
 
         Verifies 103-copy-protection.AC2.1.
         """
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import Activity, Workspace
         from promptgrimoire.db.workspaces import (
             create_workspace,
             get_placement_context,
@@ -616,23 +575,12 @@ class TestCopyProtectionResolution:
         )
 
         _, week = await _make_course_and_week_cp("ac2-1")
-
-        async with get_session() as session:
-            template = Workspace()
-            session.add(template)
-            await session.flush()
-            activity = Activity(
-                week_id=week.id,
-                template_workspace_id=template.id,
-                title="CP True Ctx",
-                copy_protection=True,
-            )
-            session.add(activity)
-            await session.flush()
-            activity_id = activity.id
+        activity = await _make_activity_with_cp(
+            week.id, "CP True Ctx", copy_protection=True
+        )
 
         ws = await create_workspace()
-        await place_workspace_in_activity(ws.id, activity_id)
+        await place_workspace_in_activity(ws.id, activity.id)
 
         ctx = await get_placement_context(ws.id)
         assert ctx.copy_protection is True
@@ -645,8 +593,6 @@ class TestCopyProtectionResolution:
 
         Verifies 103-copy-protection.AC2.2.
         """
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import Activity, Workspace
         from promptgrimoire.db.workspaces import (
             create_workspace,
             get_placement_context,
@@ -654,23 +600,12 @@ class TestCopyProtectionResolution:
         )
 
         _, week = await _make_course_and_week_cp("ac2-2")
-
-        async with get_session() as session:
-            template = Workspace()
-            session.add(template)
-            await session.flush()
-            activity = Activity(
-                week_id=week.id,
-                template_workspace_id=template.id,
-                title="CP False Ctx",
-                copy_protection=False,
-            )
-            session.add(activity)
-            await session.flush()
-            activity_id = activity.id
+        activity = await _make_activity_with_cp(
+            week.id, "CP False Ctx", copy_protection=False
+        )
 
         ws = await create_workspace()
-        await place_workspace_in_activity(ws.id, activity_id)
+        await place_workspace_in_activity(ws.id, activity.id)
 
         ctx = await get_placement_context(ws.id)
         assert ctx.copy_protection is False

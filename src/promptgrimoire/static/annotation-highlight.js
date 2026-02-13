@@ -97,9 +97,12 @@ function clearHighlights() {
  */
 function applyHighlights(container, highlightData, tagColors) {
     const textNodes = walkTextNodes(container);
+    // Keep global reference fresh for scroll-sync and hover
+    window._textNodes = textNodes;
     const totalChars = textNodes.length
         ? textNodes[textNodes.length - 1].endChar : 0;
 
+    window._highlightsReady = false;
     clearHighlights();
 
     if (!textNodes.length) return;
@@ -147,6 +150,9 @@ function applyHighlights(container, highlightData, tagColors) {
         }
         tagIdx++;
     }
+    // Signal that highlights (and _textNodes) are ready
+    window._highlightsReady = true;
+    document.dispatchEvent(new Event('highlights-ready'));
 }
 
 function regionPriority(tag, tagIdx) {
@@ -201,6 +207,71 @@ function findLocalOffset(textNode, collapsedOffset) {
 }
 
 // ============================================================================
+// Position Lookup and Highlight Interaction
+// ============================================================================
+
+/**
+ * Convert a char offset to a viewport-relative DOMRect.
+ *
+ * Creates a live Range from the StaticRange returned by charOffsetToRange(),
+ * then calls getBoundingClientRect(). Returns a zero-size DOMRect at (0,0)
+ * if the offset cannot be resolved.
+ */
+function charOffsetToRect(textNodes, charIdx) {
+    const sr = charOffsetToRange(textNodes, charIdx, charIdx + 1);
+    if (!sr) return new DOMRect(0, 0, 0, 0);
+    const r = document.createRange();
+    r.setStart(sr.startContainer, sr.startOffset);
+    r.setEnd(sr.endContainer, sr.endOffset);
+    return r.getBoundingClientRect();
+}
+
+/**
+ * Scroll the document so that the given char range is visible, centred vertically.
+ */
+function scrollToCharOffset(textNodes, startChar, endChar) {
+    const sr = charOffsetToRange(textNodes, startChar, endChar);
+    if (!sr) return;
+    const r = document.createRange();
+    r.setStart(sr.startContainer, sr.startOffset);
+    r.setEnd(sr.endContainer, sr.endOffset);
+    // Compute target scroll position from the range's viewport rect,
+    // then use window.scrollTo which reliably fires scroll events.
+    // (Previous approach: insert marker → scrollIntoView → remove marker.
+    // This failed because removing the marker before the smooth scroll
+    // animation started could silently cancel the scroll.)
+    const rect = r.getBoundingClientRect();
+    const targetY = rect.top + window.scrollY - window.innerHeight / 2 + rect.height / 2;
+    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+}
+
+/**
+ * Show a hover highlight over the given char range via CSS.highlights.
+ */
+function showHoverHighlight(textNodes, startChar, endChar) {
+    const sr = charOffsetToRange(textNodes, startChar, endChar);
+    if (!sr) return;
+    CSS.highlights.set('hl-hover', new Highlight(sr));
+}
+
+/**
+ * Remove the hover highlight.
+ */
+function clearHoverHighlight() {
+    CSS.highlights.delete('hl-hover');
+}
+
+/**
+ * Flash a highlight over the given char range, removing it after durationMs.
+ */
+function throbHighlight(textNodes, startChar, endChar, durationMs) {
+    const sr = charOffsetToRange(textNodes, startChar, endChar);
+    if (!sr) return;
+    CSS.highlights.set('hl-throb', new Highlight(sr));
+    setTimeout(() => CSS.highlights.delete('hl-throb'), durationMs);
+}
+
+// ============================================================================
 // Selection Detection
 // ============================================================================
 
@@ -234,11 +305,13 @@ function setupSelection(container) {
  * - Checks both startContainer and endContainer are within the container (AC2.3)
  * - Silently ignores collapsed selections (AC2.4)
  *
- * @param {Element} container - DOM element containing the document text
+ * @param {string} containerId - ID of the DOM element containing the document text
  * @param {Function} emitCallback - called with {start_char, end_char} on valid selection
  */
-function setupAnnotationSelection(container, emitCallback) {
+function setupAnnotationSelection(containerId, emitCallback) {
     document.addEventListener('mouseup', () => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
         const sel = window.getSelection();
         // AC2.4: ignore collapsed selection (click without drag)
         if (!sel || sel.isCollapsed || !sel.rangeCount) return;

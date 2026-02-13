@@ -263,8 +263,22 @@ function rangePointToCharOffset(textNodes, node, offset) {
     // If node is an element, convert to text node reference
     if (node.nodeType === Node.ELEMENT_NODE) {
         if (offset < node.childNodes.length) {
-            node = node.childNodes[offset];
-            offset = 0;
+            const child = node.childNodes[offset];
+            if (child.nodeType === Node.TEXT_NODE) {
+                node = child;
+                offset = 0;
+            } else {
+                // Child is an element — find first text node
+                // inside it (gives the char offset at this
+                // boundary point)
+                const inside = textNodes.filter(
+                    tn => child.contains(tn.node));
+                if (inside.length) return inside[0].startChar;
+                // No text inside (BR, void elements, etc.) —
+                // scan siblings for the nearest text boundary
+                return _boundaryFromSiblings(
+                    textNodes, node, offset);
+            }
         } else {
             // Past end of element — find last text node inside
             const last = textNodes.filter(
@@ -275,7 +289,34 @@ function rangePointToCharOffset(textNodes, node, offset) {
     }
     for (const tn of textNodes) {
         if (tn.node === node) {
-            return tn.startChar + countCollapsed(node.textContent, offset);
+            return tn.startChar + countCollapsed(
+                node.textContent, offset);
+        }
+    }
+    return null;
+}
+
+function _boundaryFromSiblings(textNodes, parent, offset) {
+    // Look backwards through preceding siblings for last text boundary
+    for (let i = offset - 1; i >= 0; i--) {
+        const sib = parent.childNodes[i];
+        if (sib.nodeType === Node.TEXT_NODE) {
+            const tn = textNodes.find(t => t.node === sib);
+            if (tn) return tn.endChar;
+        } else {
+            const found = textNodes.filter(t => sib.contains(t.node));
+            if (found.length) return found[found.length - 1].endChar;
+        }
+    }
+    // Nothing before — look forward past the void element
+    for (let i = offset + 1; i < parent.childNodes.length; i++) {
+        const sib = parent.childNodes[i];
+        if (sib.nodeType === Node.TEXT_NODE) {
+            const tn = textNodes.find(t => t.node === sib);
+            if (tn) return tn.startChar;
+        } else {
+            const found = textNodes.filter(t => sib.contains(t.node));
+            if (found.length) return found[0].startChar;
         }
     }
     return null;

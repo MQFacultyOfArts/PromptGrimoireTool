@@ -19,12 +19,22 @@ import logging
 from typing import Any
 
 from promptgrimoire.export.latex_format import format_annot_latex
-from promptgrimoire.export.span_boundaries import (  # noqa: F401 — re-export constants
+from promptgrimoire.export.span_boundaries import (
     INLINE_FORMATTING_ELEMENTS,
     PANDOC_BLOCK_ELEMENTS,
     _detect_block_boundaries,
     _detect_inline_boundaries,
 )
+
+# Re-exported for backwards compatibility:
+#   format_annot_latex — used by _build_span_tag() and imported by tests
+#   PANDOC_BLOCK_ELEMENTS, INLINE_FORMATTING_ELEMENTS — imported by tests
+__all__ = [
+    "INLINE_FORMATTING_ELEMENTS",
+    "PANDOC_BLOCK_ELEMENTS",
+    "compute_highlight_spans",
+    "format_annot_latex",
+]
 from promptgrimoire.input_pipeline.html_input import (
     TextNodeInfo,
     collapsed_to_html_offset,

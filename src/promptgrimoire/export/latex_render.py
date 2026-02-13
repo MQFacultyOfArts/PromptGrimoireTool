@@ -17,7 +17,9 @@ from string.templatelib import Interpolation, Template
 
 __all__ = ["NoEscape", "escape_latex", "latex_cmd", "render_latex"]
 
-# Ordered dict: backslash MUST be first to avoid double-escaping.
+# The same 10 LaTeX specials are defined as _LATEX_SPECIAL_CHARS in
+# unicode_latex.py (list-of-tuples for chained str.replace in the full
+# Unicode pipeline).  This dict serves escape_latex().  Keep in sync.
 _LATEX_SPECIALS: dict[str, str] = {
     "\\": r"\textbackslash{}",
     "#": r"\#",

@@ -12,13 +12,10 @@ import emoji as emoji_lib
 
 from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 
-# Note: UNICODE_PREAMBLE has been removed. All static LaTeX preamble content
-# (font setup, fallback chain, CJK/emoji configuration) now lives in
-# promptgrimoire-export.sty. See src/promptgrimoire/export/promptgrimoire-export.sty.
-
+# Static LaTeX preamble content lives in promptgrimoire-export.sty.
 
 # =============================================================================
-# Font registry for dynamic font loading (Phase 3)
+# Font registry for dynamic font loading
 # =============================================================================
 
 
@@ -368,7 +365,9 @@ def get_emoji_spans(text: str) -> list[tuple[int, int, str]]:
     return [(m["match_start"], m["match_end"], m["emoji"]) for m in matches]
 
 
-# ASCII special characters for LaTeX escaping
+# The same 10 LaTeX specials are defined as _LATEX_SPECIALS in
+# latex_render.py (dict for char-by-char escape_latex()).  This list
+# serves _escape_ascii_special() via chained str.replace.  Keep in sync.
 _LATEX_SPECIAL_CHARS = [
     ("\\", r"\textbackslash{}"),
     ("&", r"\&"),

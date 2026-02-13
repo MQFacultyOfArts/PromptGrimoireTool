@@ -60,6 +60,8 @@ def format_annot_latex(
     tag_esc = NoEscape(escape_unicode_latex(tag_display))
 
     # Line 1: **Tag** [para]
+    # para_ref is inserted raw — safe because callers pass only "[N]" or
+    # "[N]-[M]" paragraph references (no LaTeX specials in brackets/digits).
     tag_bold = latex_cmd("textbf", tag_esc)
     if para_ref:
         margin_parts: list[str] = [f"{tag_bold} {para_ref}"]

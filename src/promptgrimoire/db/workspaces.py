@@ -36,6 +36,11 @@ class PlacementContext:
     course_code: str | None = None
     course_name: str | None = None
     is_template: bool = False
+    copy_protection: bool = False
+    """Resolved copy protection for this workspace.
+
+    True = protection active.
+    """
 
     @property
     def display_label(self) -> str:
@@ -110,6 +115,13 @@ async def _resolve_activity_placement(
     course = await session.get(Course, week.course_id)
     if course is None:
         return PlacementContext(placement_type="loose")
+
+    # Resolve tri-state copy_protection: explicit wins, else course default
+    if activity.copy_protection is not None:
+        resolved_cp = activity.copy_protection
+    else:
+        resolved_cp = course.default_copy_protection
+
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -117,6 +129,7 @@ async def _resolve_activity_placement(
         week_title=week.title,
         course_code=course.code,
         course_name=course.name,
+        copy_protection=resolved_cp,
     )
 
 

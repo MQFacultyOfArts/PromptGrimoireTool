@@ -9,13 +9,11 @@ listing by Activity/Course, and error handling for non-existent entities.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
-if TYPE_CHECKING:
-    from promptgrimoire.db.models import Activity, Course, Week
+from promptgrimoire.db.models import Activity, Course, Week
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_DATABASE_URL"),
@@ -475,3 +473,507 @@ class TestWorkspacesWithDocuments:
 
         result = await workspaces_with_documents({uuid4(), uuid4()})
         assert result == set()
+
+
+class TestCopyProtectionResolution:
+    """Tests for copy_protection field storage and PlacementContext resolution.
+
+    Verifies AC1.1-AC1.4, AC2.1-AC2.4, AC3.1-AC3.7.
+    """
+
+    # --- AC1: Activity copy_protection field round-trip ---
+
+    @pytest.mark.asyncio
+    async def test_ac1_1_activity_copy_protection_true_roundtrips(
+        self,
+    ) -> None:
+        """Activity with copy_protection=True stores and retrieves.
+
+        Verifies 103-copy-protection.AC1.1.
+        """
+        from promptgrimoire.db.activities import get_activity
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
+
+        _, week = await _make_course_and_week_cp("ac1-1")
+
+        async with get_session() as session:
+            template = Workspace()
+            session.add(template)
+            await session.flush()
+            activity = Activity(
+                week_id=week.id,
+                template_workspace_id=template.id,
+                title="CP True",
+                copy_protection=True,
+            )
+            session.add(activity)
+            await session.flush()
+            activity_id = activity.id
+
+        fetched = await get_activity(activity_id)
+        assert fetched is not None
+        assert fetched.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac1_2_activity_copy_protection_false_roundtrips(
+        self,
+    ) -> None:
+        """Activity with copy_protection=False stores and retrieves.
+
+        Verifies 103-copy-protection.AC1.2.
+        """
+        from promptgrimoire.db.activities import get_activity
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
+
+        _, week = await _make_course_and_week_cp("ac1-2")
+
+        async with get_session() as session:
+            template = Workspace()
+            session.add(template)
+            await session.flush()
+            activity = Activity(
+                week_id=week.id,
+                template_workspace_id=template.id,
+                title="CP False",
+                copy_protection=False,
+            )
+            session.add(activity)
+            await session.flush()
+            activity_id = activity.id
+
+        fetched = await get_activity(activity_id)
+        assert fetched is not None
+        assert fetched.copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_ac1_3_activity_copy_protection_null_roundtrips(
+        self,
+    ) -> None:
+        """Activity with copy_protection=None stores and retrieves.
+
+        Verifies 103-copy-protection.AC1.3.
+        """
+        from promptgrimoire.db.activities import get_activity
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
+
+        _, week = await _make_course_and_week_cp("ac1-3")
+
+        async with get_session() as session:
+            template = Workspace()
+            session.add(template)
+            await session.flush()
+            activity = Activity(
+                week_id=week.id,
+                template_workspace_id=template.id,
+                title="CP None",
+                copy_protection=None,
+            )
+            session.add(activity)
+            await session.flush()
+            activity_id = activity.id
+
+        fetched = await get_activity(activity_id)
+        assert fetched is not None
+        assert fetched.copy_protection is None
+
+    @pytest.mark.asyncio
+    async def test_ac1_4_default_copy_protection_is_null(self) -> None:
+        """Activity created without specifying copy_protection defaults to None.
+
+        Verifies 103-copy-protection.AC1.4 (pre-migration default).
+        """
+        from promptgrimoire.db.activities import (
+            create_activity,
+            get_activity,
+        )
+
+        _, week = await _make_course_and_week_cp("ac1-4")
+        activity = await create_activity(week_id=week.id, title="Default CP")
+
+        fetched = await get_activity(activity.id)
+        assert fetched is not None
+        assert fetched.copy_protection is None
+
+    # --- AC2: PlacementContext resolution ---
+
+    @pytest.mark.asyncio
+    async def test_ac2_1_activity_cp_true_in_placement_context(
+        self,
+    ) -> None:
+        """Workspace in activity with copy_protection=True resolves True.
+
+        Verifies 103-copy-protection.AC2.1.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _, week = await _make_course_and_week_cp("ac2-1")
+
+        async with get_session() as session:
+            template = Workspace()
+            session.add(template)
+            await session.flush()
+            activity = Activity(
+                week_id=week.id,
+                template_workspace_id=template.id,
+                title="CP True Ctx",
+                copy_protection=True,
+            )
+            session.add(activity)
+            await session.flush()
+            activity_id = activity.id
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity_id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac2_2_activity_cp_false_in_placement_context(
+        self,
+    ) -> None:
+        """Workspace in activity with copy_protection=False resolves False.
+
+        Verifies 103-copy-protection.AC2.2.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _, week = await _make_course_and_week_cp("ac2-2")
+
+        async with get_session() as session:
+            template = Workspace()
+            session.add(template)
+            await session.flush()
+            activity = Activity(
+                week_id=week.id,
+                template_workspace_id=template.id,
+                title="CP False Ctx",
+                copy_protection=False,
+            )
+            session.add(activity)
+            await session.flush()
+            activity_id = activity.id
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity_id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_ac2_3_loose_workspace_cp_false(self) -> None:
+        """Loose workspace has copy_protection=False.
+
+        Verifies 103-copy-protection.AC2.3.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+        )
+
+        ws = await create_workspace()
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_ac2_4_course_placed_workspace_cp_false(self) -> None:
+        """Course-placed workspace has copy_protection=False.
+
+        Verifies 103-copy-protection.AC2.4.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_course,
+        )
+
+        course, _ = await _make_course_and_week_cp("ac2-4")
+        ws = await create_workspace()
+        await place_workspace_in_course(ws.id, course.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+    # --- AC3: Nullable fallback inheritance ---
+
+    @pytest.mark.asyncio
+    async def test_ac3_1_null_cp_inherits_course_true(self) -> None:
+        """Activity with cp=None in course with default=True resolves True.
+
+        Verifies 103-copy-protection.AC3.1.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _course, week = await _make_course_and_week_cp(
+            "ac3-1", default_copy_protection=True
+        )
+
+        activity = await _make_activity_with_cp(
+            week.id, "Inherit True", copy_protection=None
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac3_2_null_cp_inherits_course_false(self) -> None:
+        """Activity with cp=None in course with default=False resolves False.
+
+        Verifies 103-copy-protection.AC3.2.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _course, week = await _make_course_and_week_cp(
+            "ac3-2", default_copy_protection=False
+        )
+
+        activity = await _make_activity_with_cp(
+            week.id, "Inherit False", copy_protection=None
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_ac3_3_explicit_true_overrides_course_false(
+        self,
+    ) -> None:
+        """Activity cp=True overrides course default=False.
+
+        Verifies 103-copy-protection.AC3.3.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _, week = await _make_course_and_week_cp("ac3-3", default_copy_protection=False)
+
+        activity = await _make_activity_with_cp(
+            week.id, "Override True", copy_protection=True
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac3_4_explicit_false_overrides_course_true(
+        self,
+    ) -> None:
+        """Activity cp=False overrides course default=True.
+
+        Verifies 103-copy-protection.AC3.4.
+        """
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        _, week = await _make_course_and_week_cp("ac3-4", default_copy_protection=True)
+
+        activity = await _make_activity_with_cp(
+            week.id, "Override False", copy_protection=False
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_ac3_5_changing_course_default_affects_null_activity(
+        self,
+    ) -> None:
+        """Changing course default dynamically affects activities with cp=None.
+
+        Verifies 103-copy-protection.AC3.5.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        course, week = await _make_course_and_week_cp(
+            "ac3-5", default_copy_protection=False
+        )
+
+        activity = await _make_activity_with_cp(
+            week.id, "Dynamic", copy_protection=None
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        # Initially False (inheriting course default=False)
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is False
+
+        # Update course default to True
+        async with get_session() as session:
+            c = await session.get(Course, course.id)
+            assert c is not None
+            c.default_copy_protection = True
+            session.add(c)
+
+        # Now should resolve to True
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac3_6_changing_course_default_no_effect_on_explicit(
+        self,
+    ) -> None:
+        """Changing course default does NOT affect activities with explicit cp.
+
+        Verifies 103-copy-protection.AC3.6.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        course, week = await _make_course_and_week_cp(
+            "ac3-6", default_copy_protection=False
+        )
+
+        activity = await _make_activity_with_cp(
+            week.id, "Explicit", copy_protection=True
+        )
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        # Explicitly True
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+        # Change course default -- should not matter
+        async with get_session() as session:
+            c = await session.get(Course, course.id)
+            assert c is not None
+            c.default_copy_protection = True
+            session.add(c)
+
+        # Still True (from explicit, not course)
+        ctx = await get_placement_context(ws.id)
+        assert ctx.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_ac3_7_new_activity_defaults_to_null_cp(self) -> None:
+        """New activities default to copy_protection=None (inherit).
+
+        Verifies 103-copy-protection.AC3.7.
+        """
+        from promptgrimoire.db.activities import create_activity
+
+        _, week = await _make_course_and_week_cp("ac3-7")
+        activity = await create_activity(week_id=week.id, title="Default")
+        assert activity.copy_protection is None
+
+
+async def _make_course_and_week_cp(
+    suffix: str,
+    *,
+    default_copy_protection: bool = False,
+) -> tuple[Course, Week]:
+    """Create Course (with copy protection setting) and Week."""
+    from promptgrimoire.db.courses import create_course
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.weeks import create_week
+
+    code = f"CP{uuid4().hex[:6].upper()}"
+    course = await create_course(
+        code=code,
+        name=f"CP Test {suffix}",
+        semester="2026-S1",
+    )
+
+    if default_copy_protection:
+        async with get_session() as session:
+            c = await session.get(Course, course.id)
+            assert c is not None
+            c.default_copy_protection = default_copy_protection
+            session.add(c)
+            await session.flush()
+        # Session committed on exit; re-read to confirm
+        async with get_session() as session:
+            refreshed = await session.get(Course, course.id)
+            assert refreshed is not None
+            course = refreshed
+
+    week = await create_week(course_id=course.id, week_number=1, title="Week 1")
+    return course, week
+
+
+async def _make_activity_with_cp(
+    week_id: UUID,
+    title: str,
+    *,
+    copy_protection: bool | None = None,
+) -> Activity:
+    """Create Activity with a specific copy_protection value."""
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Activity, Workspace
+
+    async with get_session() as session:
+        template = Workspace()
+        session.add(template)
+        await session.flush()
+
+        activity = Activity(
+            week_id=week_id,
+            template_workspace_id=template.id,
+            title=title,
+            copy_protection=copy_protection,
+        )
+        session.add(activity)
+        await session.flush()
+
+        # Back-link template to activity
+        template.activity_id = activity.id
+        session.add(template)
+        await session.flush()
+
+        await session.refresh(activity)
+        return activity

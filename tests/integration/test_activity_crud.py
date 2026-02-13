@@ -477,6 +477,119 @@ class TestActivityCRUD:
         result = await get_activity(uuid4())
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_create_with_copy_protection_true(self) -> None:
+        """create_activity with copy_protection=True persists the value."""
+        from promptgrimoire.db.activities import create_activity, get_activity
+
+        _, week = await _make_course_and_week("cp-create-true")
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Protected Activity",
+            copy_protection=True,
+        )
+        assert activity.copy_protection is True
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_create_without_copy_protection_defaults_none(self) -> None:
+        """create_activity without copy_protection defaults to None (inherit)."""
+        from promptgrimoire.db.activities import create_activity, get_activity
+
+        _, week = await _make_course_and_week("cp-create-default")
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Default Activity",
+        )
+        assert activity.copy_protection is None
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.copy_protection is None
+
+    @pytest.mark.asyncio
+    async def test_update_copy_protection_none_to_true(self) -> None:
+        """update_activity sets copy_protection from None to True."""
+        from promptgrimoire.db.activities import (
+            create_activity,
+            get_activity,
+            update_activity,
+        )
+
+        _, week = await _make_course_and_week("cp-update-to-true")
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Will Enable CP",
+        )
+        assert activity.copy_protection is None
+
+        updated = await update_activity(activity.id, copy_protection=True)
+        assert updated is not None
+        assert updated.copy_protection is True
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_update_copy_protection_true_to_none(self) -> None:
+        """update_activity resets copy_protection from True to None (inherit)."""
+        from promptgrimoire.db.activities import (
+            create_activity,
+            get_activity,
+            update_activity,
+        )
+
+        _, week = await _make_course_and_week("cp-update-to-none")
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Will Reset CP",
+            copy_protection=True,
+        )
+        assert activity.copy_protection is True
+
+        updated = await update_activity(activity.id, copy_protection=None)
+        assert updated is not None
+        assert updated.copy_protection is None
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.copy_protection is None
+
+    @pytest.mark.asyncio
+    async def test_update_title_only_preserves_copy_protection(self) -> None:
+        """update_activity with only title does NOT change copy_protection."""
+        from promptgrimoire.db.activities import (
+            create_activity,
+            get_activity,
+            update_activity,
+        )
+
+        _, week = await _make_course_and_week("cp-update-title")
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Original",
+            copy_protection=True,
+        )
+        assert activity.copy_protection is True
+
+        updated = await update_activity(activity.id, title="Renamed")
+        assert updated is not None
+        assert updated.title == "Renamed"
+        assert updated.copy_protection is True
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.copy_protection is True
+
 
 class TestListActivities:
     """Tests for list_activities_for_week and list_activities_for_course.

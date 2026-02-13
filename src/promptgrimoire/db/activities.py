@@ -22,6 +22,7 @@ async def create_activity(
     week_id: UUID,
     title: str,
     description: str | None = None,
+    copy_protection: bool | None = None,
 ) -> Activity:
     """Create a new activity with its template workspace atomically.
 
@@ -36,6 +37,9 @@ async def create_activity(
         Activity title.
     description : str | None
         Optional markdown description.
+    copy_protection : bool | None
+        Tri-state copy protection. None=inherit from course,
+        True=on, False=off.
 
     Returns
     -------
@@ -51,6 +55,7 @@ async def create_activity(
             week_id=week_id,
             title=title,
             description=description,
+            copy_protection=copy_protection,
             template_workspace_id=template.id,
         )
         session.add(activity)
@@ -75,10 +80,13 @@ async def update_activity(
     activity_id: UUID,
     title: str | None = None,
     description: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear description)
+    copy_protection: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
 ) -> Activity | None:
     """Update activity details.
 
     Use description=None to clear it. Omit (or pass ...) to leave unchanged.
+    Use copy_protection=None to reset to inherit from course.
+    Omit (or pass ...) to leave unchanged.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
@@ -89,6 +97,8 @@ async def update_activity(
             activity.title = title
         if description is not ...:
             activity.description = description
+        if copy_protection is not ...:
+            activity.copy_protection = copy_protection
 
         activity.updated_at = datetime.now(UTC)
         session.add(activity)

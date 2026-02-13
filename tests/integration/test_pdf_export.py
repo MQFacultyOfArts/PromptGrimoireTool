@@ -149,6 +149,27 @@ This has an \undefined command.
         with pytest.raises(LaTeXCompilationError):
             await compile_latex(tex_path, output_dir=tmp_path)
 
+    @pytest.mark.asyncio
+    async def test_missing_sty_raises_error(self, tmp_path: Path) -> None:
+        """AC2.4: Missing .sty causes LaTeXCompilationError, not silent fallback.
+
+        When the .sty is not in the output directory, latexmk must fail
+        because \\usepackage{promptgrimoire-export} cannot be resolved.
+        """
+        tex_content = r"""
+\documentclass{article}
+\usepackage{promptgrimoire-export}
+\begin{document}
+This should fail because the .sty is missing.
+\end{document}
+"""
+        tex_path = tmp_path / "missing_sty.tex"
+        tex_path.write_text(tex_content)
+
+        # Do NOT copy .sty to tmp_path -- that's the point of this test
+        with pytest.raises(LaTeXCompilationError):
+            await compile_latex(tex_path, output_dir=tmp_path)
+
 
 @pytest.mark.order("first")
 @requires_pandoc

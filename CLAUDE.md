@@ -49,7 +49,14 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### E2E Test Isolation
 
-E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately with a live app server. See #121.
+E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run test-e2e`, which:
+
+1. Runs Alembic migrations and truncates the test database
+2. Starts a NiceGUI server on a random port (single instance)
+3. Runs `pytest -m e2e` with xdist -- all workers share one server via `E2E_BASE_URL`
+4. Shuts down the server when tests complete
+
+See #121.
 
 ### Code Quality Hooks
 
@@ -81,6 +88,9 @@ uv run test-debug
 
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all
+
+# Run E2E tests (starts server, runs Playwright with xdist)
+uv run test-e2e
 
 # Run linting
 uv run ruff check .
@@ -174,16 +184,17 @@ The `.serena/project.yml` uses `project_name: "PromptGrimoire"` (directory-based
 src/promptgrimoire/
 ├── __init__.py
 ├── __main__.py          # Module entry point
-├── cli.py               # CLI tools (test-debug, test-all, seed-data, set-admin, etc.)
+├── cli.py               # CLI tools (test-debug, test-all, test-e2e, seed-data, set-admin, etc.)
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
 ├── input_pipeline/      # HTML input processing (detection, conversion, text extraction)
 ├── pages/               # NiceGUI page routes
-│   ├── annotation.py    # Main annotation page (HTML input, char-level highlighting)
-│   ├── auth.py          # Login/logout pages
+│   ├── annotation.py    # Main annotation page (CSS Highlight API rendering)
+│   ├── auth.py          # Login/logout pages (browser feature gate)
 │   ├── courses.py       # Course management
 │   ├── dialogs.py       # Reusable dialog components
+│   ├── highlight_api_demo.py # CSS Highlight API standalone demo
 │   ├── index.py         # Landing page
 │   ├── layout.py        # Shared page layout
 │   ├── milkdown_spike.py # Milkdown editor spike
@@ -205,7 +216,8 @@ src/promptgrimoire/
 │   ├── unicode_latex.py # Unicode detection, font registry, LaTeX escaping
 │   ├── platforms/       # Platform-specific HTML preprocessing
 │   └── filters/         # Pandoc Lua filters (highlight.lua, legal.lua)
-├── static/              # Static assets (JS bundles, CSS)
+├── static/              # Static assets (JS, CSS)
+│   └── annotation-highlight.js # Text walker, highlight rendering, remote presence
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
 │   ├── models.py        # SQLModel table classes (User, Course, ..., Activity, Workspace, WorkspaceDocument)
@@ -328,6 +340,7 @@ The input pipeline (`src/promptgrimoire/input_pipeline/`) processes pasted or up
 4. **Platform preprocessing** -- `preprocess_for_export()` strips chatbot chrome and injects speaker labels (with double-injection guard)
 5. **Attribute stripping** -- Removes heavy inline styles, `data-*` attributes (except `data-speaker`), and class attributes to reduce size
 6. **Empty element removal** -- Strips empty `<p>`/`<div>` elements (common in Office-pasted HTML)
+7. **Text extraction** -- `extract_text_from_html()` builds a character list from clean HTML for highlight coordinate mapping. Highlight rendering and text selection use the CSS Custom Highlight API and JS text walker on the client side.
 
 ### Key Design Decision: CSS Custom Highlight API
 
@@ -403,6 +416,7 @@ The content hierarchy is: Course contains Weeks, Weeks contain Activities, Activ
 | courses | `/courses` | **Yes** |
 | roleplay | `/roleplay` | No |
 | logviewer | `/logs` | No |
+| highlight_api_demo | `/demo/highlight-api` | No |
 | milkdown_spike | `/demo/milkdown-spike` | No |
 | auth | `/login`, `/logout` | Optional |
 

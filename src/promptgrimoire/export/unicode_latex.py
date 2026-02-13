@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import re
 import subprocess
@@ -12,6 +13,136 @@ import emoji as emoji_lib
 # Note: UNICODE_PREAMBLE has been removed. All static LaTeX preamble content
 # (font setup, fallback chain, CJK/emoji configuration) now lives in
 # promptgrimoire-export.sty. See src/promptgrimoire/export/promptgrimoire-export.sty.
+
+
+# =============================================================================
+# Font registry for dynamic font loading (Phase 3)
+# =============================================================================
+
+
+@dataclasses.dataclass(frozen=True)
+class FallbackFont:
+    """A font entry in the luaotfload fallback chain.
+
+    Attributes:
+        name: Font name for ``\\directlua`` (e.g. ``"Ezra SIL"``).
+        script_tag: OpenType script tag (e.g. ``"hebr"``, ``"latn"`` for base fonts).
+        options: luaotfload feature options after ``mode=node;``
+            (e.g. ``"script=hebr"``).
+    """
+
+    name: str
+    script_tag: str
+    options: str = ""
+
+
+FONT_REGISTRY: tuple[FallbackFont, ...] = (
+    # Latin, Greek, Cyrillic -- SIL fonts with excellent coverage
+    FallbackFont("Gentium Plus", "latn"),
+    FallbackFont("Charis SIL", "latn"),
+    FallbackFont("Noto Serif", "latn"),
+    # Hebrew
+    FallbackFont("Ezra SIL", "hebr", "script=hebr"),
+    FallbackFont("Noto Serif Hebrew", "hebr", "script=hebr"),
+    # Arabic
+    FallbackFont("Scheherazade", "arab", "script=arab"),
+    FallbackFont("Noto Naskh Arabic", "arab", "script=arab"),
+    # Devanagari -- Hindi, Sanskrit, Marathi
+    FallbackFont("Annapurna SIL", "deva", "script=deva"),
+    FallbackFont("Noto Serif Devanagari", "deva", "script=deva"),
+    # Bengali, Assamese
+    FallbackFont("Noto Serif Bengali", "beng", "script=beng"),
+    # Tamil
+    FallbackFont("Noto Serif Tamil", "taml", "script=taml"),
+    # Thai
+    FallbackFont("Noto Serif Thai", "thai", "script=thai"),
+    # Georgian
+    FallbackFont("Noto Serif Georgian", "geor", "script=geor"),
+    # Armenian
+    FallbackFont("Noto Serif Armenian", "armn", "script=armn"),
+    # Ethiopic
+    FallbackFont("Abyssinica SIL", "ethi", "script=ethi"),
+    FallbackFont("Noto Serif Ethiopic", "ethi", "script=ethi"),
+    # Khmer
+    FallbackFont("Khmer Mondulkiri", "khmr", "script=khmr"),
+    FallbackFont("Noto Serif Khmer", "khmr", "script=khmr"),
+    # Lao
+    FallbackFont("Noto Serif Lao", "lao", "script=lao"),
+    # Myanmar
+    FallbackFont("Padauk", "mymr", "script=mymr"),
+    FallbackFont("Noto Serif Myanmar", "mymr", "script=mymr"),
+    # Sinhala (Sri Lankan)
+    FallbackFont("Noto Serif Sinhala", "sinh", "script=sinh"),
+    # Tai Viet
+    FallbackFont("Tai Heritage Pro", "tavt"),
+    # Nubian/Coptic
+    FallbackFont("Sophia Nubian", "copt"),
+    # Yi
+    FallbackFont("Nuosu SIL", "yiii"),
+    # Greek polytonic (backup)
+    FallbackFont("Galatia SIL", "grek", "script=grek"),
+    # Historic/rare scripts (for BLNS coverage)
+    FallbackFont("Noto Sans Deseret", "dsrt"),
+    FallbackFont("Noto Sans Osage", "osge"),
+    FallbackFont("Noto Sans Shavian", "shaw"),
+    # Symbols and math (last resort for missing glyphs)
+    FallbackFont("Noto Sans Symbols", "zsym"),
+    FallbackFont("Noto Sans Symbols2", "zsym"),
+    FallbackFont("Noto Sans Math", "zmth"),
+)
+
+SCRIPT_TAG_RANGES: dict[str, list[tuple[int, int]]] = {
+    "hebr": [(0x0590, 0x05FF), (0xFB1D, 0xFB4F)],
+    "arab": [
+        (0x0600, 0x06FF),
+        (0x0750, 0x077F),
+        (0x08A0, 0x08FF),
+        (0xFB50, 0xFDFF),
+        (0xFE70, 0xFEFF),
+    ],
+    "deva": [(0x0900, 0x097F), (0xA8E0, 0xA8FF)],
+    "beng": [(0x0980, 0x09FF)],
+    "taml": [(0x0B80, 0x0BFF)],
+    "thai": [(0x0E00, 0x0E7F)],
+    "geor": [(0x10A0, 0x10FF), (0x2D00, 0x2D2F)],
+    "armn": [(0x0530, 0x058F), (0xFB00, 0xFB06)],
+    "ethi": [(0x1200, 0x137F), (0x1380, 0x139F), (0x2D80, 0x2DDF), (0xAB00, 0xAB2F)],
+    "khmr": [(0x1780, 0x17FF), (0x19E0, 0x19FF)],
+    "lao": [(0x0E80, 0x0EFF)],
+    "mymr": [(0x1000, 0x109F), (0xAA60, 0xAA7F)],
+    "sinh": [(0x0D80, 0x0DFF)],
+    "cjk": [
+        (0x2E80, 0x2EFF),
+        (0x3000, 0x303F),
+        (0x3040, 0x309F),
+        (0x30A0, 0x30FF),
+        (0x31F0, 0x31FF),
+        (0x3400, 0x4DBF),
+        (0x4E00, 0x9FFF),
+        (0xAC00, 0xD7AF),
+        (0xF900, 0xFAFF),
+        (0x20000, 0x2A6DF),
+    ],
+    "grek": [(0x0370, 0x03FF), (0x1F00, 0x1FFF)],
+    "cyrl": [(0x0400, 0x04FF), (0x0500, 0x052F), (0x2DE0, 0x2DFF), (0xA640, 0xA69F)],
+    "tavt": [(0xAA80, 0xAADF)],
+    "copt": [(0x2C80, 0x2CFF)],
+    "yiii": [(0xA000, 0xA48F), (0xA490, 0xA4CF)],
+    "dsrt": [(0x10400, 0x1044F)],
+    "osge": [(0x104B0, 0x104FF)],
+    "shaw": [(0x10450, 0x1047F)],
+    "zsym": [
+        (0x2600, 0x26FF),
+        (0x2700, 0x27BF),
+        (0x1F300, 0x1F5FF),
+        (0x1F680, 0x1F6FF),
+    ],
+    "zmth": [(0x2200, 0x22FF), (0x27C0, 0x27EF), (0x2980, 0x29FF), (0x1D400, 0x1D7FF)],
+}
+
+_REQUIRED_SCRIPTS: frozenset[str] = frozenset(
+    f.script_tag for f in FONT_REGISTRY if f.script_tag != "latn"
+)
 
 
 @functools.cache

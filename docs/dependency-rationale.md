@@ -56,17 +56,22 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Why not alternatives:** Pydantic is the standard Python validation library. SQLModel requires it. The explicit listing provides a minimum version floor tighter than SQLModel's own pydantic requirement.
 
-**Classification:** Hard core (via SQLModel coupling). No advanced pydantic features (model_validator, field_validator, computed fields) are used — only Field constraints.
+**Classification:** Hard core (via SQLModel coupling and pydantic-settings). Now also used directly for `BaseModel` sub-models, `SecretStr`, and `@model_validator` in `src/promptgrimoire/config.py`.
 
-### python-dotenv >= 1.0
+**Revised:** 2026-02-13 — pydantic-settings migration adds direct usage of advanced pydantic features (BaseModel, SecretStr, model_validator) beyond SQLModel's Field re-export.
 
-**Claim:** Loads `.env` files into `os.environ` for local development configuration.
+### pydantic-settings >= 2.8
 
-**Evidence:** 14 files reference `os.environ.get()` for config. `alembic/env.py` directly calls `load_dotenv()`. `src/promptgrimoire/__init__.py` loads dotenv at startup.
+**Added:** 2026-02-13
+**Design plan:** docs/design-plans/2026-02-13-130-pydantic-settings.md
+**Claim:** Typed configuration from environment variables and `.env` files. Replaces scattered `os.environ.get()` calls with a single validated `Settings(BaseSettings)` class.
+**Evidence:** `src/promptgrimoire/config.py` (Settings class, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config.
+**Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
+**Classification:** Hard core. All application configuration flows through it.
 
-**Why not alternatives:** Standard, minimal library for env file loading. No meaningful alternative exists in the stdlib.
+### ~~python-dotenv >= 1.0~~ (SUPERSEDED)
 
-**Classification:** Protective belt. Could be replaced by any env-loading mechanism or removed in production (where env vars are set by the deployment platform).
+Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-130-pydantic-settings.md`.
 
 ### asyncpg >= 0.30
 

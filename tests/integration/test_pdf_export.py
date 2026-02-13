@@ -543,3 +543,114 @@ class TestCriticalPathIsolation:
         assert r"\highLight" in tex_content or r"\underLine" in tex_content, (
             r"Short document with highlight must produce \highLight or \underLine"
         )
+
+
+@pytest.mark.order("first")
+@requires_pandoc
+@requires_latexmk
+class TestDynamicFontLoading:
+    """Integration tests for dynamic font loading (Phase 3).
+
+    AC3.5: English-only compile time < 2s (simple single-document, not mega-doc).
+    AC3.8: cjktext pass-through when luatexja-fontspec is not loaded.
+    """
+
+    @pytest.mark.asyncio
+    async def test_english_compile_time_ac3_5(self, tmp_path: Path) -> None:
+        """AC3.5: English-only document compiles in under 2 seconds.
+
+        Uses a simple single-document compile (not mega-doc) to measure
+        the Latin-only compile time fairly. The body text is ASCII-only,
+        so detect_scripts() returns empty -> minimal fallback chain ->
+        no luaotfload overhead.
+
+        NOTE: If this exceeds 2s, it may indicate that fontspec itself
+        has overhead even without luaotfload. The plan notes this as a
+        possible finding.
+        """
+        import time
+
+        html = "<p>The quick brown fox jumps over the lazy dog.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 3,
+                "tag": "jurisdiction",
+                "text": "The quick brown",
+                "author": "Tester",
+                "created_at": "2026-01-26T14:30:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        # Generate .tex via production pipeline
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Verify the .tex uses Latin-only fonts (no luatexja-fontspec)
+        tex_content = tex_path.read_text()
+        assert "luatexja-fontspec" not in tex_content, (
+            "English-only document should not load luatexja-fontspec"
+        )
+
+        # Time compilation only (not Pandoc conversion)
+        start = time.monotonic()
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+        elapsed = time.monotonic() - start
+
+        assert pdf_path.exists(), "PDF must be created"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF"
+
+        # AC3.5: English-only compile < 2s
+        assert elapsed < 2.0, (
+            f"English-only compile took {elapsed:.2f}s (target: <2s). "
+            "fontspec may have overhead even without luaotfload."
+        )
+
+    @pytest.mark.asyncio
+    async def test_cjktext_passthrough_ac3_8(self, tmp_path: Path) -> None:
+        r"""AC3.8: \cjktext{} works as pass-through when CJK fonts not loaded.
+
+        The .sty provides \providecommand{\cjktext}[1]{#1} (pass-through).
+        When build_font_preamble(frozenset()) is used (Latin-only), no
+        \renewcommand{\cjktext} is emitted. The command must still work
+        without error, passing its argument through unchanged.
+        """
+        html = "<p>English text only.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        # Generate .tex via production pipeline (Latin-only)
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Inject \cjktext{hello} before \end{document}
+        tex_content = tex_path.read_text()
+        assert "luatexja-fontspec" not in tex_content, (
+            "Latin-only document should not load luatexja-fontspec"
+        )
+        tex_content = tex_content.replace(
+            r"\end{document}",
+            "\\cjktext{hello}\n\\end{document}",
+        )
+        tex_path.write_text(tex_content)
+
+        # Compile -- must not raise LaTeXCompilationError
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+
+        assert pdf_path.exists(), "PDF must be created with cjktext pass-through"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF"

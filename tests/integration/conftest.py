@@ -163,9 +163,6 @@ async def compile_mega_document(
     for seg in segments:
         all_tag_colours.update(seg.tag_colours)
 
-    # Build shared preamble
-    preamble = build_annotation_preamble(all_tag_colours)
-
     # Process each segment through the pipeline
     segment_tex: dict[str, str] = {}
     subfile_paths: dict[str, Path] = {}
@@ -205,6 +202,10 @@ async def compile_mega_document(
         subfile_path = output_dir / f"{seg.name}.tex"
         subfile_path.write_text(subfile_content)
         subfile_paths[seg.name] = subfile_path
+
+    # Build shared preamble with dynamic font loading from combined body text
+    combined_body = "\n".join(segment_tex.values())
+    preamble = build_annotation_preamble(all_tag_colours, body_text=combined_body)
 
     # Build main document
     body_parts: list[str] = []

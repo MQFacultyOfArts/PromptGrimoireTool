@@ -498,3 +498,76 @@ function updateRemoteCursorPositions(container) {
         cursor.style.height = rect.height + 'px';
     }
 }
+
+// ============================================================================
+// Remote Presence: Selections
+// ============================================================================
+
+/**
+ * Render a remote user's text selection via the CSS Custom Highlight API.
+ *
+ * Creates a Highlight object with priority -1 (below annotation highlights
+ * at priority 0+) and registers it as 'hl-sel-{clientId}'. A companion
+ * <style> element provides the ::highlight() rule with a translucent
+ * background colour.
+ *
+ * @param {string} clientId - Unique ID for the remote client
+ * @param {number} startChar - Start character offset (inclusive)
+ * @param {number} endChar - End character offset (exclusive)
+ * @param {string} name - Display name (reserved for future label use)
+ * @param {string} color - CSS colour for the selection background
+ */
+function renderRemoteSelection(clientId, startChar, endChar, name, color) {
+    // Remove any previous selection for this client
+    removeRemoteSelection(clientId);
+
+    const container = document.getElementById('doc-container');
+    if (!container) return;
+
+    const textNodes = window._textNodes || walkTextNodes(container);
+    const range = charOffsetToRange(textNodes, startChar, endChar);
+    if (!range) return;
+
+    const hl = new Highlight(range);
+    hl.priority = -1;  // Below annotation highlights
+    CSS.highlights.set('hl-sel-' + clientId, hl);
+
+    // Inject a <style> for the ::highlight() pseudo-element
+    const styleId = 'remote-sel-style-' + clientId;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = '::highlight(hl-sel-' + clientId + ') { background-color: ' + color + '30; }';
+    document.head.appendChild(style);
+}
+
+/**
+ * Remove a remote user's selection highlight and its style element.
+ *
+ * @param {string} clientId - The client whose selection to remove
+ */
+function removeRemoteSelection(clientId) {
+    CSS.highlights.delete('hl-sel-' + clientId);
+    const style = document.getElementById('remote-sel-style-' + clientId);
+    if (style) style.remove();
+}
+
+/**
+ * Remove all remote presence indicators (cursors and selections).
+ *
+ * Cleans up all remote cursor DOM elements, all CSS Highlight API entries
+ * for remote selections, and all companion style elements.
+ */
+function removeAllRemotePresence() {
+    // Remove all cursor elements
+    const cursors = document.querySelectorAll('.remote-cursor');
+    for (const cursor of cursors) cursor.remove();
+
+    // Remove all remote selection highlights from CSS.highlights
+    for (const name of Array.from(CSS.highlights.keys())) {
+        if (name.startsWith('hl-sel-')) CSS.highlights.delete(name);
+    }
+
+    // Remove all remote selection style elements
+    const styles = document.querySelectorAll('[id^="remote-sel-style-"]');
+    for (const style of styles) style.remove();
+}

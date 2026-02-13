@@ -100,6 +100,41 @@ Hello, world!
         assert header == b"%PDF"
 
     @pytest.mark.asyncio
+    async def test_sty_compiles_standalone(self, tmp_path: Path) -> None:
+        """AC2.1: promptgrimoire-export.sty compiles in a minimal document."""
+        from pathlib import Path as RealPath
+
+        sty_source = (
+            RealPath(__file__).parent.parent.parent
+            / "src"
+            / "promptgrimoire"
+            / "export"
+            / "promptgrimoire-export.sty"
+        )
+        assert sty_source.exists(), f".sty not found at {sty_source}"
+
+        # Copy .sty to temp directory so latexmk can find it
+        shutil.copy2(sty_source, tmp_path / "promptgrimoire-export.sty")
+
+        tex_content = r"""
+\documentclass{article}
+\usepackage{promptgrimoire-export}
+\begin{document}
+Test
+\end{document}
+"""
+        tex_path = tmp_path / "test_sty.tex"
+        tex_path.write_text(tex_content)
+
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+
+        assert pdf_path.exists()
+        assert pdf_path.suffix == ".pdf"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF"
+
+    @pytest.mark.asyncio
     async def test_compile_failure_raises(self, tmp_path: Path) -> None:
         """Compilation failure raises LaTeXCompilationError."""
         tex_content = r"""

@@ -120,7 +120,17 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
     content_input.fill(content)
     page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
-    page.wait_for_selector("[data-char-index]")
+
+    # Confirm the content type dialog that appears after adding content
+    confirm_btn = page.get_by_role("button", name=re.compile("confirm", re.IGNORECASE))
+    confirm_btn.wait_for(state="visible", timeout=5000)
+    confirm_btn.click()
+
+    # Wait for the text walker to initialise (CSS Highlight API replaces char spans)
+    page.wait_for_function(
+        "() => window._textNodes && window._textNodes.length > 0",
+        timeout=10000,
+    )
     page.wait_for_timeout(200)
 
 

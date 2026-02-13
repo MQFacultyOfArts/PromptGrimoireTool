@@ -12,7 +12,7 @@ out of scope for the migration.
 
 from __future__ import annotations
 
-from promptgrimoire.export.highlight_spans import format_annot_latex
+from promptgrimoire.export.latex_format import format_annot_latex
 from promptgrimoire.export.preamble import generate_tag_colour_definitions
 
 

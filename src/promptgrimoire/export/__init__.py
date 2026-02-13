@@ -4,6 +4,7 @@ This module provides HTML-to-PDF export for annotated legal documents,
 rendering annotations as numbered margin notes.
 """
 
+from promptgrimoire.export.latex_format import format_annot_latex
 from promptgrimoire.export.latex_render import (
     NoEscape,
     escape_latex,
@@ -26,6 +27,7 @@ __all__ = [
     "convert_html_with_annotations",
     "escape_latex",
     "export_annotation_pdf",
+    "format_annot_latex",
     "generate_tex_only",
     "latex_cmd",
     "render_latex",

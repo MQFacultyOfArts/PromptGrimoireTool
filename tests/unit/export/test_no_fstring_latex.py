@@ -5,7 +5,7 @@ use ``latex_cmd()`` / ``render_latex()`` / ``NoEscape`` instead of f-string
 LaTeX command construction:
 
 - ``preamble.generate_tag_colour_definitions()``
-- ``highlight_spans.format_annot_latex()``
+- ``latex_format.format_annot_latex()``
 - ``unicode_latex.escape_unicode_latex()`` (via ``_format_emoji_for_latex``)
 
 This test scans those files for f-string patterns containing LaTeX command
@@ -27,7 +27,7 @@ _EXPORT_DIR = (
 # Files that were migrated in Phase 4
 _MIGRATED_FILES = (
     "preamble.py",
-    "highlight_spans.py",
+    "latex_format.py",
     "unicode_latex.py",
 )
 
@@ -40,7 +40,7 @@ _ALLOWED_FUNCTIONS: dict[str, set[str]] = {
     # format_annot_latex() retains f-string \\par{\\scriptsize ...} wrappers
     # because the interpolated values are already NoEscape-wrapped.
     # build_font_preamble() uses f-strings for \\directlua blocks.
-    "highlight_spans.py": {"format_annot_latex"},
+    "latex_format.py": {"format_annot_latex"},
     "unicode_latex.py": {"build_font_preamble"},
 }
 

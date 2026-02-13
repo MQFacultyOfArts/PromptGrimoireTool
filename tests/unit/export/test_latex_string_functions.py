@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from promptgrimoire.export.highlight_spans import format_annot_latex
+from promptgrimoire.export.latex_format import format_annot_latex
 from promptgrimoire.export.preamble import (
     _format_timestamp,
     generate_tag_colour_definitions,

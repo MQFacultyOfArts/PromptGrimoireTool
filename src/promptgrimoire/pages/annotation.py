@@ -1405,6 +1405,21 @@ def _update_user_count(state: PageState) -> None:
     state.user_count_badge.set_text(label)
 
 
+async def _broadcast_js_to_others(
+    workspace_key: str, exclude_client_id: str, js: str
+) -> None:
+    """Send a JS snippet to every other client in the workspace.
+
+    Skips clients without a ``nicegui_client`` reference and suppresses
+    individual send failures so one broken connection cannot block others.
+    """
+    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+        if cid == exclude_client_id or presence.nicegui_client is None:
+            continue
+        with contextlib.suppress(Exception):
+            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+
+
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
     """Fire-and-forget notification to other clients in workspace."""
     for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
@@ -1438,55 +1453,41 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     state.broadcast_update = broadcast_update
 
-    # Create broadcast function for cursor updates — JS-targeted
+    # Create broadcast function for cursor updates — JS-targeted (AC3.4)
     async def broadcast_cursor(char_index: int | None) -> None:
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
             clients[client_id].cursor_char = char_index
-        for cid, presence in clients.items():
-            if cid == client_id:
-                continue  # AC3.4: don't render own cursor
-            if presence.nicegui_client is None:
-                continue
-            with contextlib.suppress(Exception):
-                if char_index is not None:
-                    name = state.user_name
-                    color = state.user_color
-                    js = _render_js(
-                        t"renderRemoteCursor("
-                        t"document.getElementById('doc-container')"
-                        t", {client_id}, {char_index}"
-                        t", {name}, {color})"
-                    )
-                else:
-                    js = _render_js(t"removeRemoteCursor({client_id})")
-                await presence.nicegui_client.run_javascript(js, timeout=2.0)
+        if char_index is not None:
+            name = state.user_name
+            color = state.user_color
+            js = _render_js(
+                t"renderRemoteCursor("
+                t"document.getElementById('doc-container')"
+                t", {client_id}, {char_index}"
+                t", {name}, {color})"
+            )
+        else:
+            js = _render_js(t"removeRemoteCursor({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
 
     state.broadcast_cursor = broadcast_cursor
 
-    # Create broadcast function for selection updates — JS-targeted
+    # Create broadcast function for selection updates — JS-targeted (AC3.4)
     async def broadcast_selection(start: int | None, end: int | None) -> None:
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
             clients[client_id].selection_start = start
             clients[client_id].selection_end = end
-        for cid, presence in clients.items():
-            if cid == client_id:
-                continue  # AC3.4: don't render own selection
-            if presence.nicegui_client is None:
-                continue
-            with contextlib.suppress(Exception):
-                if start is not None and end is not None:
-                    name = state.user_name
-                    color = state.user_color
-                    js = _render_js(
-                        t"renderRemoteSelection("
-                        t"{client_id}, {start}, {end}"
-                        t", {name}, {color})"
-                    )
-                else:
-                    js = _render_js(t"removeRemoteSelection({client_id})")
-                await presence.nicegui_client.run_javascript(js, timeout=2.0)
+        if start is not None and end is not None:
+            name = state.user_name
+            color = state.user_color
+            js = _render_js(
+                t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
+            )
+        else:
+            js = _render_js(t"removeRemoteSelection({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
 
     state.broadcast_selection = broadcast_selection
 
@@ -1552,18 +1553,16 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     async def on_disconnect() -> None:
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
-            # Broadcast removal of this client's cursor/selection to all remaining
+            # Remove this client's cursor/selection and refresh UI for all remaining
+            removal_js = _render_js(
+                t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
+            )
             for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
-                if presence.nicegui_client is None:
-                    continue
-                with contextlib.suppress(Exception):
-                    js = _render_js(
-                        t"removeRemoteCursor({client_id});"
-                        t"removeRemoteSelection({client_id})"
-                    )
-                    await presence.nicegui_client.run_javascript(js, timeout=2.0)
-            # Broadcast UI updates (user count, etc.)
-            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+                if presence.nicegui_client is not None:
+                    with contextlib.suppress(Exception):
+                        await presence.nicegui_client.run_javascript(
+                            removal_js, timeout=2.0
+                        )
                 if presence.callback:
                     with contextlib.suppress(Exception):
                         await presence.callback()

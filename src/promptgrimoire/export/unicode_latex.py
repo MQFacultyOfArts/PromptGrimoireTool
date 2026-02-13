@@ -10,6 +10,8 @@ from pathlib import Path
 
 import emoji as emoji_lib
 
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd
+
 # Note: UNICODE_PREAMBLE has been removed. All static LaTeX preamble content
 # (font setup, fallback chain, CJK/emoji configuration) now lives in
 # promptgrimoire-export.sty. See src/promptgrimoire/export/promptgrimoire-export.sty.
@@ -294,10 +296,10 @@ def _format_emoji_for_latex(emoji_name: str) -> str:
     valid_names = _load_latex_emoji_names()
 
     if emoji_name in valid_names:
-        return f"\\emoji{{{emoji_name}}}"
+        return str(latex_cmd("emoji", emoji_name))
 
     # Fallback: show name as placeholder (raw emoji can't render in PDF)
-    return f"\\emojifallbackchar{{{emoji_name}}}"
+    return str(latex_cmd("emojifallbackchar", emoji_name))
 
 
 def is_cjk(char: str) -> bool:
@@ -489,8 +491,8 @@ def escape_unicode_latex(text: str) -> str:
     def flush_cjk() -> None:
         """Flush accumulated CJK characters as wrapped command."""
         if cjk_buffer:
-            escaped = _escape_ascii_special("".join(cjk_buffer))
-            result.append(f"\\cjktext{{{escaped}}}")
+            escaped = NoEscape(_escape_ascii_special("".join(cjk_buffer)))
+            result.append(str(latex_cmd("cjktext", escaped)))
             cjk_buffer.clear()
 
     while i < len(text):

@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scripts
+
 # Note: Static LaTeX preamble content (packages, commands, environments,
 # macros, fonts) is now in promptgrimoire-export.sty. The .sty is copied
 # to the output directory by pdf_export._ensure_sty_in_dir().
@@ -54,21 +56,26 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     return "\n".join(definitions)
 
 
-def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
-    """Build complete annotation preamble with tag colour definitions.
+def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") -> str:
+    """Build complete annotation preamble with dynamic font loading.
 
     The .sty file handles all static content (packages, commands, environments,
-    macros, fonts, speaker colours). This function emits only the .sty loading
-    and per-document dynamic tag colour definitions.
+    macros, fonts, speaker colours). This function emits the .sty loading,
+    dynamic font preamble based on detected scripts, and per-document tag
+    colour definitions.
 
     Args:
         tag_colours: Dict of tag_name -> hex colour.
+        body_text: Document body text for Unicode script detection.
+            Empty string = Latin-only fonts (fast compilation).
 
     Returns:
         Complete LaTeX preamble string.
     """
+    scripts = detect_scripts(body_text)
+    font_preamble = build_font_preamble(scripts)
     colour_defs = generate_tag_colour_definitions(tag_colours)
-    return f"\\usepackage{{promptgrimoire-export}}\n{colour_defs}"
+    return f"\\usepackage{{promptgrimoire-export}}\n{font_preamble}\n{colour_defs}"
 
 
 def _format_timestamp(iso_timestamp: str) -> str:

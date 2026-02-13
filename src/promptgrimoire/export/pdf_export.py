@@ -328,8 +328,8 @@ async def generate_tex_only(
         word_to_legal_para=word_to_legal_para,
     )
 
-    # Build preamble with tag colours
-    preamble = build_annotation_preamble(tag_colours)
+    # Build preamble with tag colours and dynamic font loading
+    preamble = build_annotation_preamble(tag_colours, body_text=latex_body)
 
     # Build general notes section
     notes_section = _build_general_notes_section(

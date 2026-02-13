@@ -178,7 +178,7 @@ src/promptgrimoire/
 ├── models/              # Data models (Character, Session, Turn, LorebookEntry)
 ├── parsers/             # SillyTavern character card parser
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
-├── input_pipeline/      # HTML input processing (detection, conversion, char spans)
+├── input_pipeline/      # HTML input processing (detection, conversion, text extraction)
 ├── pages/               # NiceGUI page routes
 │   ├── annotation.py    # Main annotation page (HTML input, char-level highlighting)
 │   ├── auth.py          # Login/logout pages
@@ -328,7 +328,6 @@ The input pipeline (`src/promptgrimoire/input_pipeline/`) processes pasted or up
 4. **Platform preprocessing** -- `preprocess_for_export()` strips chatbot chrome and injects speaker labels (with double-injection guard)
 5. **Attribute stripping** -- Removes heavy inline styles, `data-*` attributes (except `data-speaker`), and class attributes to reduce size
 6. **Empty element removal** -- Strips empty `<p>`/`<div>` elements (common in Office-pasted HTML)
-7. **Text extraction** -- `extract_text_from_html()` builds a character list from clean HTML for highlight coordinate mapping. Highlight rendering and text selection use the CSS Custom Highlight API and JS text walker on the client side.
 
 ### Key Design Decision: CSS Custom Highlight API
 
@@ -354,7 +353,7 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 - **Week** - Week within a course with visibility controls
 - **Activity** - Assignment within a Week; owns a template Workspace (RESTRICT delete). `week_id` FK with CASCADE delete, `template_workspace_id` FK with RESTRICT delete (unique). `copy_protection: bool | None` -- tri-state: `None`=inherit from course, `True`=on, `False`=off.
 - **Workspace** - Container for documents and CRDT state (unit of collaboration). Placement fields: `activity_id` (SET NULL), `course_id` (SET NULL), `enable_save_as_draft`. Mutual exclusivity: a workspace can be in an Activity OR a Course, never both (Pydantic validator + DB CHECK constraint `ck_workspace_placement_exclusivity`).
-- **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (HTML with char spans), `source_type` ("html", "rtf", "docx", "pdf", "text")
+- **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (clean HTML), `source_type` ("html", "rtf", "docx", "pdf", "text")
 
 ### Workspace Architecture
 

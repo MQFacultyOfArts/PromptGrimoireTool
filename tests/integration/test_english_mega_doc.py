@@ -20,8 +20,9 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from tests.conftest import TAG_COLOURS, load_conversation_fixture, requires_latexmk
+from tests.conftest import load_conversation_fixture, requires_latexmk
 from tests.integration.conftest import (
+    TAG_COLOURS,
     MegaDocResult,
     MegaDocSegment,
     compile_mega_document,

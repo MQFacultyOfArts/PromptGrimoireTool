@@ -1,16 +1,19 @@
 """Integration test configuration.
 
-Provides fixtures specific to database integration tests and mega-document
-infrastructure for LaTeX compile-reduction tests.
+Provides fixtures specific to database integration tests, mega-document
+infrastructure for LaTeX compile-reduction tests, and the pdf_exporter
+factory fixture for PDF export integration tests.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pymupdf
+import pytest
 import pytest_asyncio
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
@@ -20,10 +23,121 @@ from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-    from pathlib import Path
+    from collections.abc import AsyncGenerator, Callable, Coroutine
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# PDF Export Test Fixtures
+# =============================================================================
+
+# Standard tag colours used across the application
+TAG_COLOURS: dict[str, str] = {
+    "jurisdiction": "#1f77b4",
+    "procedural_history": "#ff7f0e",
+    "legally_relevant_facts": "#2ca02c",
+    "legal_issues": "#d62728",
+    "reasons": "#9467bd",
+    "courts_reasoning": "#8c564b",
+    "decision": "#e377c2",
+    "order": "#7f7f7f",
+    "domestic_sources": "#bcbd22",
+    "reflection": "#17becf",
+}
+
+# Shared output directory for test artifacts (gitignored)
+PDF_TEST_OUTPUT_DIR = Path("output/test_output")
+
+
+@dataclass
+class PdfExportResult:
+    """Result from PDF export containing paths for inspection."""
+
+    pdf_path: Path
+    tex_path: Path
+    output_dir: Path
+
+
+@pytest.fixture
+def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
+    """Factory fixture for exporting PDFs using the production pipeline.
+
+    Uses export_annotation_pdf which goes through the full workflow:
+    - HTML normalisation
+    - Pandoc with libreoffice.lua filter
+    - Full preamble with proper settings
+    - LuaLaTeX compilation via latexmk
+
+    Usage:
+        @pytest.mark.asyncio
+        async def test_something(pdf_exporter, parsed_rtf):
+            result = await pdf_exporter(
+                html=parsed_rtf.html,
+                highlights=[...],
+                test_name="my_test",
+            )
+            assert result.pdf_path.exists()
+    """
+    from promptgrimoire.export.pdf_export import export_annotation_pdf
+
+    async def _export(
+        html: str,
+        highlights: list[dict[str, Any]],
+        test_name: str,
+        general_notes: str = "",
+        acceptance_criteria: str = "",
+    ) -> PdfExportResult:
+        """Export PDF using production pipeline.
+
+        Args:
+            html: HTML content to convert.
+            highlights: List of highlight dicts.
+            test_name: Name for output files (e.g., "cross_env_test").
+            general_notes: Optional HTML content for general notes section.
+            acceptance_criteria: Optional text prepended to general notes
+                describing what the test validates.
+
+        Returns:
+            PdfExportResult with paths to generated files.
+        """
+        # Combine acceptance criteria with general notes
+        if acceptance_criteria:
+            notes_content = (
+                f"<p><b>TEST ACCEPTANCE CRITERIA</b></p><p>{acceptance_criteria}</p>"
+            )
+            if general_notes:
+                notes_content += general_notes
+        else:
+            notes_content = general_notes
+
+        # Create output directory (purge first for clean state)
+        output_dir = PDF_TEST_OUTPUT_DIR / test_name
+        if output_dir.exists():
+            import shutil
+
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Await the async export directly
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=TAG_COLOURS,
+            general_notes=notes_content,
+            output_dir=output_dir,
+            filename=test_name,
+        )
+
+        tex_path = output_dir / f"{test_name}.tex"
+
+        return PdfExportResult(
+            pdf_path=pdf_path,
+            tex_path=tex_path,
+            output_dir=output_dir,
+        )
+
+    return _export
+
 
 # =============================================================================
 # Database Fixtures

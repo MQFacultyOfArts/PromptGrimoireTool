@@ -38,7 +38,7 @@ library references during development.
 ## lualatex
 
 - [LuaLaTeX package for underlines, strikethrough, and highlighting](lualatex/lua-ul-reference.md)
-- [subfiles package for multi-file projects with standalone compilation](lualatex/subfiles-reference.md)
+- [LaTeX package for multi-file projects with standalone compilation](lualatex/subfiles-reference.md)
 - [Why LaTeX export tests use AST parsing instead of string matching](lualatex/test-ast-validation.md)
 
 ## nicegui

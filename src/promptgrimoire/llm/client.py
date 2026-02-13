@@ -89,7 +89,7 @@ class ClaudeClient:
             raise ValueError("Empty response from Claude API")
 
         first_block = response.content[0]
-        if first_block.type != "text":
+        if not isinstance(first_block, anthropic.types.TextBlock):
             raise ValueError(f"Unexpected response type: {first_block.type}")
 
         # Type guard: we've verified it's a text block above

@@ -146,6 +146,11 @@ def setup_workspace_with_content_highlight_api(
     content_input.fill(content)
     page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
 
+    # Confirm the content type dialog that appears after adding content
+    confirm_btn = page.get_by_role("button", name=re.compile("confirm", re.IGNORECASE))
+    confirm_btn.wait_for(state="visible", timeout=5000)
+    confirm_btn.click()
+
     # Wait for the text walker to initialise (replaces waiting for char spans)
     page.wait_for_function(
         "() => window._textNodes && window._textNodes.length > 0",

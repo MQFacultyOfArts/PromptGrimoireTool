@@ -1,0 +1,230 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{promptgrimoire-export}[2026/02/12 PromptGrimoire annotation export]
+
+% =============================================================================
+% Package dependencies (converted from \usepackage to \RequirePackage)
+% =============================================================================
+
+\RequirePackage{xcolor}
+
+% Unicode support for CJK and Emoji (from unicode_latex.py UNICODE_PREAMBLE)
+% Note: [match] option removed - caused font identifier errors in sectioning
+\RequirePackage{luatexja-fontspec}
+\RequirePackage{emoji}
+
+% From ANNOTATION_PREAMBLE_BASE
+% fontspec and \setmainfont are in UNICODE_PREAMBLE (with fallback chain)
+\RequirePackage{amsmath}           % Math extensions (\text{} in math mode)
+\RequirePackage{microtype}         % Better typography (kerning, protrusion)
+\RequirePackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
+\RequirePackage{longtable}
+\RequirePackage{booktabs}
+\RequirePackage{array}
+\RequirePackage{calc}
+\RequirePackage[hidelinks]{hyperref}
+\RequirePackage{changepage}
+\RequirePackage{luacolor}  % Required by lua-ul for coloured highlights
+\RequirePackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
+\RequirePackage{luabidi}   % Bidirectional text support for LuaLaTeX
+\RequirePackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
+\RequirePackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
+\RequirePackage[framemethod=tikz]{mdframed}  % For speaker turn borders
+
+% =============================================================================
+% Fixed commands
+% =============================================================================
+
+% Stub for \includegraphics - Pandoc converts <img> tags to this.
+% hyperref loads graphicx which defines \includegraphics, so we must
+% \renewcommand AFTER all \usepackage calls to survive.
+\renewcommand{\includegraphics}[2][]{[image]}
+
+% Pandoc compatibility
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% Fallback for emoji not in LaTeX emoji package
+% Can't use Noto Color Emoji directly (CBDT format not supported by LuaLaTeX)
+% Just show placeholder text for unknown emoji
+\newcommand{\emojifallbackchar}[1]{[#1]}
+
+% =============================================================================
+% No-op otherlanguage environment
+% =============================================================================
+
+% No-op otherlanguage environment - Pandoc generates \begin{otherlanguage}{X}
+% for non-English content but we handle multilingual via luatexja + font fallbacks.
+% babel (loaded by hyperref/luabidi chain) may define it, so override safely.
+\makeatletter
+\@ifundefined{otherlanguage}%
+  {\newenvironment{otherlanguage}[1]{}{}}%
+  {\renewenvironment{otherlanguage}[1]{}{}}
+\makeatother
+
+% =============================================================================
+% Paragraph formatting
+% =============================================================================
+
+% Paragraph formatting for chatbot exports (no indent, paragraph spacing)
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5\baselineskip}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{-\maxdimen}  % no section numbering
+
+% =============================================================================
+% Static colour definitions
+% =============================================================================
+
+% Speaker colours for chatbot turn markers
+\definecolor{usercolor}{HTML}{4A90D9}
+\definecolor{assistantcolor}{HTML}{7B68EE}
+
+% =============================================================================
+% Speaker turn environments
+% =============================================================================
+
+% Speaker turn environments with left border
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=usercolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{userturn}
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=assistantcolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{assistantturn}
+
+% =============================================================================
+% Annotation counter and macro
+% =============================================================================
+
+% Usage: \annot{colour-name}{margin content}
+% Uses footnotesize for compact margin notes
+% marginalia auto-stacks overlapping notes with ysep spacing
+\newcounter{annotnum}
+\newcommand{\annot}[2]{%
+  \stepcounter{annotnum}%
+  \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+  \marginalia[ysep=3pt]{%
+    \fcolorbox{#1}{#1!20}{%
+      \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
+    }%
+  }%
+}
+
+% =============================================================================
+% Font setup (from unicode_latex.py UNICODE_PREAMBLE)
+% =============================================================================
+
+% luatexja range 2 (U+0370-U+04FF: Greek + basic Cyrillic) defaults to +2 (JAchar),
+% routing these characters to the CJK font which lacks accented Greek (U+03AC)
+% and extended Cyrillic (U+0457). Set -2 to route through main font fallback.
+\ltjsetparameter{jacharrange={-2}}
+
+% Define comprehensive font fallback chain BEFORE loading fonts
+% Fonts are tried in order until one has the glyph
+% SIL fonts first (higher quality for their target scripts), then Noto as backup
+\directlua{
+  luaotfload.add_fallback("mainfallback", {
+    % Latin, Greek, Cyrillic — SIL fonts with excellent coverage
+    "Gentium Plus:mode=node;",
+    "Charis SIL:mode=node;",
+    "Noto Serif:mode=node;",
+    % Hebrew
+    "Ezra SIL:mode=node;script=hebr;",
+    "Noto Serif Hebrew:mode=node;script=hebr;",
+    % Arabic
+    "Scheherazade:mode=node;script=arab;",
+    "Noto Naskh Arabic:mode=node;script=arab;",
+    % Devanagari (Hindi, Sanskrit, Marathi)
+    "Annapurna SIL:mode=node;script=deva;",
+    "Noto Serif Devanagari:mode=node;script=deva;",
+    % Bengali, Assamese
+    "Noto Serif Bengali:mode=node;script=beng;",
+    % Tamil
+    "Noto Serif Tamil:mode=node;script=taml;",
+    % Thai
+    "Noto Serif Thai:mode=node;script=thai;",
+    % Georgian
+    "Noto Serif Georgian:mode=node;script=geor;",
+    % Armenian
+    "Noto Serif Armenian:mode=node;script=armn;",
+    % Ethiopic
+    "Abyssinica SIL:mode=node;script=ethi;",
+    "Noto Serif Ethiopic:mode=node;script=ethi;",
+    % Khmer (Cambodian)
+    "Khmer Mondulkiri:mode=node;script=khmr;",
+    "Noto Serif Khmer:mode=node;script=khmr;",
+    % Lao
+    "Noto Serif Lao:mode=node;script=lao;",
+    % Myanmar (Burmese)
+    "Padauk:mode=node;script=mymr;",
+    "Noto Serif Myanmar:mode=node;script=mymr;",
+    % Sinhala (Sri Lankan)
+    "Noto Serif Sinhala:mode=node;script=sinh;",
+    % Tai Viet
+    "Tai Heritage Pro:mode=node;",
+    % Nubian/Coptic
+    "Sophia Nubian:mode=node;",
+    % Yi
+    "Nuosu SIL:mode=node;",
+    % Greek polytonic (backup)
+    "Galatia SIL:mode=node;script=grek;",
+    % Historic/rare scripts (for BLNS coverage)
+    "Noto Sans Deseret:mode=node;",
+    "Noto Sans Osage:mode=node;",
+    "Noto Sans Shavian:mode=node;",
+    % Symbols and math (last resort for missing glyphs)
+    "Noto Sans Symbols:mode=node;",
+    "Noto Sans Symbols2:mode=node;",
+    "Noto Sans Math:mode=node;",
+  })
+}
+
+% CJK font setup - Noto Serif CJK for serif consistency with TNR
+% Set as default Japanese fonts so [match] option uses them for all CJK
+% SC variant has broadest coverage (Simplified Chinese + JP/KR compatibility)
+% Must specify all font faces explicitly for luatexja compatibility
+\setmainjfont{Noto Serif CJK SC}[
+  UprightFont = *,
+  BoldFont = * Bold,
+  ItalicFont = *,        % CJK has no italic - use upright
+  BoldItalicFont = * Bold,
+]
+\setsansjfont{Noto Sans CJK SC}[
+  UprightFont = *,
+  BoldFont = * Bold,
+  ItalicFont = *,        % CJK has no italic - use upright
+  BoldItalicFont = * Bold,
+]
+
+% Also define as command for explicit wrapping if needed
+\newjfontfamily\notocjk{Noto Serif CJK SC}
+
+% Command for wrapping CJK text (used by escape_unicode_latex)
+\newcommand{\cjktext}[1]{{\notocjk #1}}
+
+% Emoji font setup
+\setemojifont{Noto Color Emoji}
+
+% Main font: TeX Gyre Termes (TNR equivalent) with fallback chain
+\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]
+
+\endinput

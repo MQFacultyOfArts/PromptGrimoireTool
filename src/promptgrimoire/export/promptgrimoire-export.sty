@@ -7,9 +7,8 @@
 
 \RequirePackage{xcolor}
 
-% Unicode support for CJK and Emoji
-% Note: [match] option removed - caused font identifier errors in sectioning
-\RequirePackage{luatexja-fontspec}
+% Unicode support for Emoji (fontspec always needed, luatexja-fontspec conditional)
+\RequirePackage{fontspec}
 \RequirePackage{emoji}
 
 % Static preamble content
@@ -129,101 +128,14 @@
 }
 
 % =============================================================================
-% Font setup
+% Font setup (static portion -- dynamic font chain built by build_font_preamble())
 % =============================================================================
-
-% luatexja range 2 (U+0370-U+04FF: Greek + basic Cyrillic) defaults to +2 (JAchar),
-% routing these characters to the CJK font which lacks accented Greek (U+03AC)
-% and extended Cyrillic (U+0457). Set -2 to route through main font fallback.
-\ltjsetparameter{jacharrange={-2}}
-
-% Define comprehensive font fallback chain BEFORE loading fonts
-% Fonts are tried in order until one has the glyph
-% SIL fonts first (higher quality for their target scripts), then Noto as backup
-\directlua{
-  luaotfload.add_fallback("mainfallback", {
-    % Latin, Greek, Cyrillic — SIL fonts with excellent coverage
-    "Gentium Plus:mode=node;",
-    "Charis SIL:mode=node;",
-    "Noto Serif:mode=node;",
-    % Hebrew
-    "Ezra SIL:mode=node;script=hebr;",
-    "Noto Serif Hebrew:mode=node;script=hebr;",
-    % Arabic
-    "Scheherazade:mode=node;script=arab;",
-    "Noto Naskh Arabic:mode=node;script=arab;",
-    % Devanagari (Hindi, Sanskrit, Marathi)
-    "Annapurna SIL:mode=node;script=deva;",
-    "Noto Serif Devanagari:mode=node;script=deva;",
-    % Bengali, Assamese
-    "Noto Serif Bengali:mode=node;script=beng;",
-    % Tamil
-    "Noto Serif Tamil:mode=node;script=taml;",
-    % Thai
-    "Noto Serif Thai:mode=node;script=thai;",
-    % Georgian
-    "Noto Serif Georgian:mode=node;script=geor;",
-    % Armenian
-    "Noto Serif Armenian:mode=node;script=armn;",
-    % Ethiopic
-    "Abyssinica SIL:mode=node;script=ethi;",
-    "Noto Serif Ethiopic:mode=node;script=ethi;",
-    % Khmer (Cambodian)
-    "Khmer Mondulkiri:mode=node;script=khmr;",
-    "Noto Serif Khmer:mode=node;script=khmr;",
-    % Lao
-    "Noto Serif Lao:mode=node;script=lao;",
-    % Myanmar (Burmese)
-    "Padauk:mode=node;script=mymr;",
-    "Noto Serif Myanmar:mode=node;script=mymr;",
-    % Sinhala (Sri Lankan)
-    "Noto Serif Sinhala:mode=node;script=sinh;",
-    % Tai Viet
-    "Tai Heritage Pro:mode=node;",
-    % Nubian/Coptic
-    "Sophia Nubian:mode=node;",
-    % Yi
-    "Nuosu SIL:mode=node;",
-    % Greek polytonic (backup)
-    "Galatia SIL:mode=node;script=grek;",
-    % Historic/rare scripts (for BLNS coverage)
-    "Noto Sans Deseret:mode=node;",
-    "Noto Sans Osage:mode=node;",
-    "Noto Sans Shavian:mode=node;",
-    % Symbols and math (last resort for missing glyphs)
-    "Noto Sans Symbols:mode=node;",
-    "Noto Sans Symbols2:mode=node;",
-    "Noto Sans Math:mode=node;",
-  })
-}
-
-% CJK font setup - Noto Serif CJK for serif consistency with TNR
-% Set as default Japanese fonts so [match] option uses them for all CJK
-% SC variant has broadest coverage (Simplified Chinese + JP/KR compatibility)
-% Must specify all font faces explicitly for luatexja compatibility
-\setmainjfont{Noto Serif CJK SC}[
-  UprightFont = *,
-  BoldFont = * Bold,
-  ItalicFont = *,        % CJK has no italic - use upright
-  BoldItalicFont = * Bold,
-]
-\setsansjfont{Noto Sans CJK SC}[
-  UprightFont = *,
-  BoldFont = * Bold,
-  ItalicFont = *,        % CJK has no italic - use upright
-  BoldItalicFont = * Bold,
-]
-
-% Also define as command for explicit wrapping if needed
-\newjfontfamily\notocjk{Noto Serif CJK SC}
-
-% Command for wrapping CJK text (used by escape_unicode_latex)
-\newcommand{\cjktext}[1]{{\notocjk #1}}
 
 % Emoji font setup
 \setemojifont{Noto Color Emoji}
 
-% Main font: TeX Gyre Termes (TNR equivalent) with fallback chain
-\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]
+% Safe pass-through default for \cjktext -- overridden by build_font_preamble()
+% when CJK text is detected (\renewcommand with \notocjk)
+\providecommand{\cjktext}[1]{#1}
 
 \endinput

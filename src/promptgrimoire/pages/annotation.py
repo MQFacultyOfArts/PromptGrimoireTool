@@ -7,6 +7,8 @@ This page provides the new workspace-based annotation flow:
 4. All state persists via workspace CRDT
 
 Route: /annotation
+
+Pattern: Mixed (needs refactoring)
 """
 
 from __future__ import annotations
@@ -80,8 +82,12 @@ class _RemotePresence:
 
     name: str
     color: str
-    nicegui_client: Any  # NiceGUI Client for JS relay
-    callback: Any  # Async callback for annotation/UI updates
+    nicegui_client: (
+        Any  # NiceGUI Client not publicly exported; revisit when type stubs added
+    )
+    callback: (
+        Any  # Callable[[], Awaitable[None]] — ty cannot validate closure signatures
+    )
     cursor_char: int | None = None
     selection_start: int | None = None
     selection_end: int | None = None
@@ -1421,14 +1427,16 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 continue
             with contextlib.suppress(Exception):
                 if char_index is not None:
+                    safe_name = json.dumps(state.user_name)
+                    safe_color = json.dumps(state.user_color)
                     js = (
                         f"renderRemoteCursor("
                         f"document.getElementById('doc-container'), "
-                        f"'{client_id}', {char_index}, "
-                        f"'{state.user_name}', '{state.user_color}')"
+                        f"{json.dumps(client_id)}, {char_index}, "
+                        f"{safe_name}, {safe_color})"
                     )
                 else:
-                    js = f"removeRemoteCursor('{client_id}')"
+                    js = f"removeRemoteCursor({json.dumps(client_id)})"
                 await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_cursor = broadcast_cursor
@@ -1446,13 +1454,15 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 continue
             with contextlib.suppress(Exception):
                 if start is not None and end is not None:
+                    safe_name = json.dumps(state.user_name)
+                    safe_color = json.dumps(state.user_color)
                     js = (
                         f"renderRemoteSelection("
-                        f"'{client_id}', {start}, {end}, "
-                        f"'{state.user_name}', '{state.user_color}')"
+                        f"{json.dumps(client_id)}, {start}, {end}, "
+                        f"{safe_name}, {safe_color})"
                     )
                 else:
-                    js = f"removeRemoteSelection('{client_id}')"
+                    js = f"removeRemoteSelection({json.dumps(client_id)})"
                 await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_selection = broadcast_selection
@@ -1495,18 +1505,22 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         if cid == client_id:
             continue
         if presence.cursor_char is not None:
+            safe_name = json.dumps(presence.name)
+            safe_color = json.dumps(presence.color)
             js = (
                 f"renderRemoteCursor("
                 f"document.getElementById('doc-container'), "
-                f"'{cid}', {presence.cursor_char}, "
-                f"'{presence.name}', '{presence.color}')"
+                f"{json.dumps(cid)}, {presence.cursor_char}, "
+                f"{safe_name}, {safe_color})"
             )
             ui.run_javascript(js)
         if presence.selection_start is not None and presence.selection_end is not None:
+            safe_name = json.dumps(presence.name)
+            safe_color = json.dumps(presence.color)
             js = (
                 f"renderRemoteSelection("
-                f"'{cid}', {presence.selection_start}, {presence.selection_end}, "
-                f"'{presence.name}', '{presence.color}')"
+                f"{json.dumps(cid)}, {presence.selection_start}, "
+                f"{presence.selection_end}, {safe_name}, {safe_color})"
             )
             ui.run_javascript(js)
 
@@ -1519,9 +1533,10 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 if presence.nicegui_client is None:
                     continue
                 with contextlib.suppress(Exception):
+                    safe_client_id = json.dumps(client_id)
                     js = (
-                        f"removeRemoteCursor('{client_id}');"
-                        f"removeRemoteSelection('{client_id}')"
+                        f"removeRemoteCursor({safe_client_id});"
+                        f"removeRemoteSelection({safe_client_id})"
                     )
                     await presence.nicegui_client.run_javascript(js, timeout=2.0)
             # Broadcast UI updates (user count, etc.)

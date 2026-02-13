@@ -70,7 +70,6 @@ def _setup_two_contexts(
         "() => window._textNodes && window._textNodes.length > 0",
         timeout=10000,
     )
-    page2.wait_for_timeout(500)
 
     return page1, page2, workspace_id, user1_email, user2_email
 
@@ -98,8 +97,16 @@ class TestRemotePresenceSmoke:
             # User A selects text via mouseup (triggers selection_made event)
             select_text_range(page1, "defendant")
 
-            # Give broadcast time to propagate
-            page2.wait_for_timeout(2000)
+            # Wait for broadcast to propagate to user B
+            page2.wait_for_function(
+                """() => {
+                    for (const name of CSS.highlights.keys()) {
+                        if (name.startsWith('hl-sel-')) return true;
+                    }
+                    return false;
+                }""",
+                timeout=5000,
+            )
 
             # User B should see a remote selection CSS highlight
             # The highlight name is hl-sel-{client_id} where client_id is
@@ -146,7 +153,6 @@ class TestRemotePresenceSmoke:
         try:
             # User A selects text
             select_text_range(page1, "defendant")
-            page1.wait_for_timeout(1000)
 
             # User A should NOT have any hl-sel-* entries (those are for
             # remote users only -- the local selection uses browser native selection)
@@ -191,18 +197,29 @@ class TestRemotePresenceSmoke:
         try:
             # User A selects text so there's something to clean up
             select_text_range(page1, "defendant")
-            page2.wait_for_timeout(2000)
 
-            # Check if broadcast worked (not required for
-            # disconnect cleanup validation below)
-            page2.evaluate(
+            # Wait for broadcast to propagate to user B
+            page2.wait_for_function(
                 """() => {
                     for (const name of CSS.highlights.keys()) {
-                        if (name.startsWith('hl-sel-'))
-                            return true;
+                        if (name.startsWith('hl-sel-')) return true;
+                    }
+                    return false;
+                }""",
+                timeout=5000,
+            )
+
+            # Verify intermediate state: remote selection exists before disconnect
+            has_selection = page2.evaluate(
+                """() => {
+                    for (const name of CSS.highlights.keys()) {
+                        if (name.startsWith('hl-sel-')) return true;
                     }
                     return false;
                 }"""
+            )
+            assert has_selection, (
+                "Expected remote selection before testing disconnect cleanup"
             )
 
             # Close user A's browser context (simulates disconnect)
@@ -253,8 +270,11 @@ class TestRemotePresenceSmoke:
             # Emit cursor_move event from user A
             page1.evaluate("() => emitEvent('cursor_move', {char: 15})")
 
-            # Give broadcast time to propagate
-            page2.wait_for_timeout(2000)
+            # Wait for remote cursor to appear in user B's view
+            page2.wait_for_function(
+                "() => document.querySelectorAll('.remote-cursor').length > 0",
+                timeout=5000,
+            )
 
             # User B should see a remote cursor element
             remote_cursors = page2.locator(".remote-cursor")
@@ -302,7 +322,6 @@ class TestRemotePresenceSmoke:
         try:
             # User A emits cursor position BEFORE user B joins
             page1.evaluate("() => emitEvent('cursor_move', {char: 10})")
-            page1.wait_for_timeout(500)
 
             # Now user B joins
             context2 = browser.new_context()
@@ -316,7 +335,6 @@ class TestRemotePresenceSmoke:
                 "() => window._textNodes && window._textNodes.length > 0",
                 timeout=10000,
             )
-            page2.wait_for_timeout(1000)
 
             # User B should see user A's cursor (sent on late-join sync)
             remote_cursors = page2.locator(".remote-cursor")

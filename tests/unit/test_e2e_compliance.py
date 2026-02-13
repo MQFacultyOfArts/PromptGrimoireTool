@@ -32,6 +32,15 @@ ALLOWED_JS_FILES = {
     # to locate text node bounding rects for mouse selection and to
     # introspect CSS.highlights entries (no Playwright API for either).
     "test_annotation_highlight_api.py",
+    # Remote presence rendering tests: CSS.highlights introspection has no
+    # Playwright native API. Custom JS functions (renderRemoteCursor,
+    # renderRemoteSelection, removeAllRemotePresence) can only be invoked
+    # via page.evaluate() — no Playwright equivalent exists.
+    "test_remote_presence_rendering.py",
+    # Remote presence E2E smoke test: CSS.highlights.has() and DOM element
+    # inspection for remote presence indicators require page.evaluate() — no
+    # Playwright native API exists for CSS Custom Highlight API introspection.
+    "test_remote_presence_e2e.py",
 }
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 from promptgrimoire.export.preamble import _format_timestamp, _strip_test_uuid
 from promptgrimoire.export.unicode_latex import escape_unicode_latex
 from promptgrimoire.input_pipeline.html_input import (
@@ -130,22 +131,28 @@ def format_annot_latex(
     comments = highlight.get("comments", [])
     created_at = highlight.get("created_at", "")
 
-    # Tag colour name (matches \definecolor name)
-    colour_name = f"tag-{tag.replace('_', '-')}"
+    # Tag colour name (matches \definecolor name).
+    # NoEscape: colour names may contain '#' (pre-existing bug, see AC4.4).
+    colour_name = NoEscape(f"tag-{tag.replace('_', '-')}")
 
     # Build margin content
     tag_display = tag.replace("_", " ").title()
     timestamp = _format_timestamp(created_at)
 
+    # escape_unicode_latex() already escapes LaTeX specials, so its output
+    # is trusted LaTeX (NoEscape).  Do NOT layer escape_latex() on top.
+    tag_esc = NoEscape(escape_unicode_latex(tag_display))
+
     # Line 1: **Tag** [para]
+    tag_bold = latex_cmd("textbf", tag_esc)
     if para_ref:
-        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}} {para_ref}"]
+        margin_parts: list[str] = [f"{tag_bold} {para_ref}"]
     else:
-        margin_parts = [f"\\textbf{{{escape_unicode_latex(tag_display)}}}"]
+        margin_parts = [str(tag_bold)]
 
     # Line 2: name, date (scriptsize)
-    author_esc = escape_unicode_latex(author)
-    byline = f"{author_esc}, {timestamp}" if timestamp else author_esc
+    author_esc = NoEscape(escape_unicode_latex(author))
+    byline = f"{author_esc}, {timestamp}" if timestamp else str(author_esc)
     margin_parts.append(f"\\par{{\\scriptsize {byline}}}")
 
     # Separator and comments if present
@@ -155,17 +162,19 @@ def format_annot_latex(
             c_author = _strip_test_uuid(comment.get("author", "Unknown"))
             c_text = comment.get("text", "")
             c_timestamp = _format_timestamp(comment.get("created_at", ""))
-            c_author_esc = escape_unicode_latex(c_author)
-            c_text_esc = escape_unicode_latex(c_text)
+            c_author_esc = NoEscape(escape_unicode_latex(c_author))
+            c_text_esc = NoEscape(escape_unicode_latex(c_text))
             if c_timestamp:
-                attribution = f"\\textbf{{{c_author_esc}}}, {c_timestamp}:"
+                c_bold = latex_cmd("textbf", c_author_esc)
+                attribution = f"{c_bold}, {c_timestamp}:"
             else:
-                attribution = f"\\textbf{{{c_author_esc}:}}"
+                c_bold = latex_cmd("textbf", NoEscape(f"{c_author_esc}:"))
+                attribution = str(c_bold)
             margin_parts.append(f"\\par{{\\scriptsize {attribution}}} {c_text_esc}")
 
-    margin_content = "".join(margin_parts)
+    margin_content = NoEscape("".join(margin_parts))
 
-    return f"\\annot{{{colour_name}}}{{{margin_content}}}"
+    return str(latex_cmd("annot", colour_name, margin_content))
 
 
 # ---------------------------------------------------------------------------

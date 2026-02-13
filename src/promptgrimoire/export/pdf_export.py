@@ -31,10 +31,11 @@ _STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
 
 
 def _ensure_sty_in_dir(output_dir: Path) -> None:
-    """Copy promptgrimoire-export.sty to the output directory for latexmk."""
-    dest = output_dir / "promptgrimoire-export.sty"
-    if not dest.exists():
-        shutil.copy2(_STY_SOURCE, dest)
+    """Copy promptgrimoire-export.sty to the output directory for latexmk.
+
+    Always overwrites to ensure the .sty matches the current package version.
+    """
+    shutil.copy2(_STY_SOURCE, output_dir / "promptgrimoire-export.sty")
 
 
 # LaTeX document template

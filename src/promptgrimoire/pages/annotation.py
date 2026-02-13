@@ -309,8 +309,6 @@ class PageState:
     user_color: str = "#666"  # Client color for cursor display
     # UI elements set during page build
     highlight_style: ui.element | None = None
-    cursor_style: ui.element | None = None  # CSS for remote cursors
-    selection_style: ui.element | None = None  # CSS for remote selections
     highlight_menu: ui.element | None = None
     save_status: ui.label | None = None
     user_count_badge: ui.label | None = None  # Shows connected user count
@@ -529,75 +527,6 @@ def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
     )
 
     return "\n".join(css_rules)
-
-
-def _build_remote_cursor_css(
-    cursors: dict[str, dict[str, Any]], exclude_client_id: str
-) -> str:
-    """Build CSS rules for remote users' cursors."""
-    rules = []
-    for cid, cursor in cursors.items():
-        if cid == exclude_client_id:
-            continue
-        char_idx = cursor.get("char")
-        color = cursor.get("color", "#2196f3")
-        name = cursor.get("name", "User")
-        if char_idx is None:
-            continue
-        # Cursor indicator using box-shadow (no layout shift)
-        rules.append(
-            f'[data-char-index="{char_idx}"] {{ '
-            f"position: relative; "
-            f"box-shadow: inset 2px 0 0 0 {color}; }}"
-        )
-        # Floating name label
-        rules.append(
-            f'[data-char-index="{char_idx}"]::before {{ '
-            f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
-            f"font-size: 0.6rem; background: {color}; color: white; "
-            f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
-            f"z-index: 20; pointer-events: none; }}"
-        )
-    return "\n".join(rules)
-
-
-def _build_remote_selection_css(
-    selections: dict[str, dict[str, Any]], exclude_client_id: str
-) -> str:
-    """Build CSS rules for remote users' selections."""
-    rules = []
-    for cid, sel in selections.items():
-        if cid == exclude_client_id:
-            continue
-        start = sel.get("start_char")
-        end = sel.get("end_char")
-        color = sel.get("color", "#ffeb3b")
-        name = sel.get("name", "User")
-        if start is None or end is None:
-            continue
-        if start > end:
-            start, end = end, start
-        # Selection highlight for all characters in range
-        selectors = [f'[data-char-index="{i}"]' for i in range(start, end + 1)]
-        if selectors:
-            selector_str = ", ".join(selectors)
-            rules.append(
-                f"{selector_str} {{ background-color: {color}30 !important; "
-                f"box-shadow: 0.3em 0 0 {color}30; }}"
-            )
-            rules.append(
-                f'[data-char-index="{end}"] {{ box-shadow: none !important; }}'
-            )
-            # Name label on first character
-            rules.append(f'[data-char-index="{start}"] {{ position: relative; }}')
-            rules.append(
-                f'[data-char-index="{start}"]::before {{ '
-                f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
-                f"font-size: 0.65rem; background: {color}; color: white; "
-                f"padding: 1px 4px; border-radius: 2px; white-space: nowrap; "
-                f"z-index: 10; pointer-events: none; }}"
-            )
-    return "\n".join(rules)
 
 
 def _setup_page_styles() -> None:
@@ -1206,12 +1135,6 @@ async def _render_document_with_highlights(
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
 
-    # Dynamic style elements for remote cursors and selections
-    state.cursor_style = ui.element("style")
-    state.cursor_style._props["innerHTML"] = ""
-    state.selection_style = ui.element("style")
-    state.selection_style._props["innerHTML"] = ""
-
     # Tag toolbar handler
     async def handle_tag_click(tag: BriefTag) -> None:
         await _add_highlight(state, tag)
@@ -1437,41 +1360,6 @@ def _get_user_color(user_name: str) -> str:
     return colors[hash_val % len(colors)]
 
 
-def _update_cursor_css(state: PageState) -> None:
-    """Update cursor CSS for remote users."""
-    if state.cursor_style is None:
-        return
-    workspace_key = str(state.workspace_id)
-    clients = _workspace_presence.get(workspace_key, {})
-    cursors = {
-        cid: {"char": cs.cursor_char, "name": cs.name, "color": cs.color}
-        for cid, cs in clients.items()
-    }
-    css = _build_remote_cursor_css(cursors, state.client_id)
-    state.cursor_style._props["innerHTML"] = css
-    state.cursor_style.update()
-
-
-def _update_selection_css(state: PageState) -> None:
-    """Update selection CSS for remote users."""
-    if state.selection_style is None:
-        return
-    workspace_key = str(state.workspace_id)
-    clients = _workspace_presence.get(workspace_key, {})
-    selections = {
-        cid: {
-            "start_char": cs.selection_start,
-            "end_char": cs.selection_end,
-            "name": cs.name,
-            "color": cs.color,
-        }
-        for cid, cs in clients.items()
-    }
-    css = _build_remote_selection_css(selections, state.client_id)
-    state.selection_style._props["innerHTML"] = css
-    state.selection_style.update()
-
-
 def _update_user_count(state: PageState) -> None:
     """Update user count badge."""
     if state.user_count_badge is None:
@@ -1521,38 +1409,57 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     state.broadcast_update = broadcast_update
 
-    # Create broadcast function for cursor updates
-    async def broadcast_cursor(word_index: int | None) -> None:
+    # Create broadcast function for cursor updates — JS-targeted
+    async def broadcast_cursor(char_index: int | None) -> None:
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
-            clients[client_id].cursor_char = word_index
-        # Notify other clients to refresh cursor CSS
-        for cid, cstate in clients.items():
-            if cid != client_id and cstate.callback:
-                with contextlib.suppress(Exception):
-                    await cstate.callback()
+            clients[client_id].cursor_char = char_index
+        for cid, presence in clients.items():
+            if cid == client_id:
+                continue  # AC3.4: don't render own cursor
+            if presence.nicegui_client is None:
+                continue
+            with contextlib.suppress(Exception):
+                if char_index is not None:
+                    js = (
+                        f"renderRemoteCursor("
+                        f"document.getElementById('doc-container'), "
+                        f"'{client_id}', {char_index}, "
+                        f"'{state.user_name}', '{state.user_color}')"
+                    )
+                else:
+                    js = f"removeRemoteCursor('{client_id}')"
+                await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_cursor = broadcast_cursor
 
-    # Create broadcast function for selection updates
+    # Create broadcast function for selection updates — JS-targeted
     async def broadcast_selection(start: int | None, end: int | None) -> None:
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
             clients[client_id].selection_start = start
             clients[client_id].selection_end = end
-        # Notify other clients to refresh selection CSS
-        for cid, cstate in clients.items():
-            if cid != client_id and cstate.callback:
-                with contextlib.suppress(Exception):
-                    await cstate.callback()
+        for cid, presence in clients.items():
+            if cid == client_id:
+                continue  # AC3.4: don't render own selection
+            if presence.nicegui_client is None:
+                continue
+            with contextlib.suppress(Exception):
+                if start is not None and end is not None:
+                    js = (
+                        f"renderRemoteSelection("
+                        f"'{client_id}', {start}, {end}, "
+                        f"'{state.user_name}', '{state.user_color}')"
+                    )
+                else:
+                    js = f"removeRemoteSelection('{client_id}')"
+                await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_selection = broadcast_selection
 
     # Callback for receiving updates from other clients
     async def handle_update_from_other() -> None:
         _update_highlight_css(state)
-        _update_cursor_css(state)
-        _update_selection_css(state)
         _update_user_count(state)
         if state.refresh_annotations:
             state.refresh_annotations()
@@ -1582,6 +1489,26 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     # Update own user count and notify others
     _update_user_count(state)
     _notify_other_clients(workspace_key, client_id)
+
+    # Send existing remote cursors/selections to newly connected client
+    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+        if cid == client_id:
+            continue
+        if presence.cursor_char is not None:
+            js = (
+                f"renderRemoteCursor("
+                f"document.getElementById('doc-container'), "
+                f"'{cid}', {presence.cursor_char}, "
+                f"'{presence.name}', '{presence.color}')"
+            )
+            ui.run_javascript(js)
+        if presence.selection_start is not None and presence.selection_end is not None:
+            js = (
+                f"renderRemoteSelection("
+                f"'{cid}', {presence.selection_start}, {presence.selection_end}, "
+                f"'{presence.name}', '{presence.color}')"
+            )
+            ui.run_javascript(js)
 
     # Disconnect handler
     async def on_disconnect() -> None:

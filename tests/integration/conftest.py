@@ -7,6 +7,7 @@ infrastructure for LaTeX compile-reduction tests.
 from __future__ import annotations
 
 import logging
+import shutil
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,7 @@ import pytest_asyncio
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
+from promptgrimoire.export.pdf_export import _STY_SOURCE
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
 
@@ -115,14 +117,12 @@ class MegaDocResult:
     """Mapping of segment name to subfile .tex path."""
 
 
-def _extract_pdf_text_pymupdf(pdf_path: Path) -> str:
+def extract_pdf_text_pymupdf(pdf_path: Path) -> str:
     """Extract full text from PDF using pymupdf."""
     doc = pymupdf.open(str(pdf_path))
-    pages = []
-    for page in doc:
-        pages.append(page.get_text())
+    text = "\n".join(page.get_text() for page in doc)
     doc.close()
-    return "\n".join(pages)
+    return text
 
 
 def _escape_latex_name(name: str) -> str:
@@ -132,6 +132,13 @@ def _escape_latex_name(name: str) -> str:
     in LaTeX.
     """
     return name.replace("_", r"\_")
+
+
+def _ensure_sty_in_dir(output_dir: Path) -> None:
+    """Copy promptgrimoire-export.sty to the output directory for latexmk."""
+    sty_dest = output_dir / "promptgrimoire-export.sty"
+    if not sty_dest.exists():
+        shutil.copy2(_STY_SOURCE, sty_dest)
 
 
 async def compile_mega_document(
@@ -156,6 +163,9 @@ async def compile_mega_document(
         LaTeXCompilationError: If compilation fails (with per-subfile
             isolation report appended to the error message).
     """
+    # Copy .sty to output directory so latexmk can find it
+    _ensure_sty_in_dir(output_dir)
+
     # Union all tag colours across segments for the shared preamble
     all_tag_colours: dict[str, str] = {}
     for seg in segments:
@@ -259,7 +269,7 @@ async def compile_mega_document(
         ) from None
 
     # Extract PDF text
-    pdf_text = _extract_pdf_text_pymupdf(pdf_path)
+    pdf_text = extract_pdf_text_pymupdf(pdf_path)
 
     return MegaDocResult(
         pdf_path=pdf_path,

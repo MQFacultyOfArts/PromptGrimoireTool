@@ -22,7 +22,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-import pymupdf
 import pytest
 import pytest_asyncio
 
@@ -32,6 +31,7 @@ from promptgrimoire.export.pdf_export import (
 )
 from promptgrimoire.models.case import TAG_COLORS
 from tests.conftest import requires_latexmk
+from tests.integration.conftest import extract_pdf_text_pymupdf
 
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures"
 
@@ -66,16 +66,6 @@ def _extract_pdf_text(pdf_path: Path) -> str:
         check=True,
     )
     return result.stdout
-
-
-def _extract_pdf_text_pymupdf(pdf_path: Path) -> str:
-    """Extract full text from PDF using pymupdf."""
-    doc = pymupdf.open(str(pdf_path))
-    pages = []
-    for page in doc:
-        pages.append(page.get_text())
-    doc.close()
-    return "\n".join(pages)
 
 
 _HYPHEN_NL = re.compile(r"-\n")
@@ -151,7 +141,7 @@ async def lawlis_no_draft_result(tmp_path_factory) -> WorkspaceExportResult:
 
     tex_path = output_dir / "annotated_document.tex"
     tex_content = tex_path.read_text()
-    raw_pymupdf = _extract_pdf_text_pymupdf(pdf_path)
+    raw_pymupdf = extract_pdf_text_pymupdf(pdf_path)
     normalized_pymupdf = _normalize_pdf_text(raw_pymupdf)
     poppler_text = _extract_pdf_text(pdf_path)
 
@@ -192,7 +182,7 @@ async def lawlis_with_draft_result(tmp_path_factory) -> WorkspaceExportResult:
 
     tex_path = output_dir / "annotated_document.tex"
     tex_content = tex_path.read_text()
-    raw_pymupdf = _extract_pdf_text_pymupdf(pdf_path)
+    raw_pymupdf = extract_pdf_text_pymupdf(pdf_path)
     normalized_pymupdf = _normalize_pdf_text(raw_pymupdf)
     poppler_text = _extract_pdf_text(pdf_path)
 

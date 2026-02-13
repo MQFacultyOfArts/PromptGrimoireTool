@@ -16,9 +16,6 @@ from promptgrimoire.export.pandoc import convert_html_to_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from tests.conftest import load_conversation_fixture
 
-# Fixture directory
-FIXTURES_DIR = Path(__file__).parents[1] / "fixtures" / "conversations"
-
 # All chatbot fixtures
 CHATBOT_FIXTURES = [
     # Claude

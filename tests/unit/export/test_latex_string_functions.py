@@ -15,7 +15,6 @@ import pytest
 
 from promptgrimoire.export.highlight_spans import format_annot_latex
 from promptgrimoire.export.preamble import (
-    ANNOTATION_PREAMBLE_BASE,
     _format_timestamp,
     generate_tag_colour_definitions,
 )
@@ -330,12 +329,23 @@ class TestCompilationValidation:
             }
         )
 
-        # Build complete document
+        # Copy .sty to output directory so latexmk can find it
+        import shutil as shutil_copy
+
+        sty_source = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "promptgrimoire"
+            / "export"
+            / "promptgrimoire-export.sty"
+        )
+        shutil_copy.copy2(sty_source, output_dir / "promptgrimoire-export.sty")
+
+        # Build complete document using .sty for static preamble content
         tex_content = rf"""
 \documentclass[a4paper]{{article}}
-\usepackage{{xcolor}}
+\usepackage{{promptgrimoire-export}}
 {colour_defs}
-{ANNOTATION_PREAMBLE_BASE}
 
 \begin{{document}}
 

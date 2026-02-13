@@ -26,6 +26,17 @@ from promptgrimoire.export.preamble import build_annotation_preamble
 
 logger = logging.getLogger(__name__)
 
+# Path to the .sty file that contains all static LaTeX preamble content
+_STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
+
+
+def _ensure_sty_in_dir(output_dir: Path) -> None:
+    """Copy promptgrimoire-export.sty to the output directory for latexmk."""
+    dest = output_dir / "promptgrimoire-export.sty"
+    if not dest.exists():
+        shutil.copy2(_STY_SOURCE, dest)
+
+
 # LaTeX document template
 _DOCUMENT_TEMPLATE = r"""
 \documentclass[a4paper,12pt]{{article}}
@@ -299,6 +310,9 @@ async def generate_tex_only(
             "Cannot insert annotation markers into empty content. "
             "Provide document content or remove highlights."
         )
+
+    # Ensure .sty is in the output directory before writing .tex
+    _ensure_sty_in_dir(output_dir)
 
     # Preprocess HTML: detect platform, remove chrome, inject speaker labels
     processed_html = preprocess_for_export(html_content) if html_content else ""

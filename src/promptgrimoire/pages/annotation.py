@@ -19,6 +19,7 @@ import html
 import json
 import logging
 from dataclasses import dataclass
+from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
@@ -97,6 +98,28 @@ class _RemotePresence:
 # Track connected clients per workspace for broadcasting
 # workspace_id -> {client_id -> _RemotePresence}
 _workspace_presence: dict[str, dict[str, _RemotePresence]] = {}
+
+
+def _render_js(template: Template) -> str:
+    """Render a t-string as JavaScript, escaping interpolated values.
+
+    Strings are JSON-encoded (handles quotes, backslashes, unicode).
+    Numbers pass through as literals. None becomes ``null``.
+    """
+    parts: list[str] = []
+    for item in template:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, Interpolation):
+            val = item.value
+            if isinstance(val, int | float):
+                parts.append(str(val))
+            elif val is None:
+                parts.append("null")
+            else:
+                parts.append(json.dumps(str(val)))
+    return "".join(parts)
+
 
 # Background tasks set - prevents garbage collection of fire-and-forget tasks
 _background_tasks: set[asyncio.Task[None]] = set()
@@ -1427,16 +1450,16 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 continue
             with contextlib.suppress(Exception):
                 if char_index is not None:
-                    safe_name = json.dumps(state.user_name)
-                    safe_color = json.dumps(state.user_color)
-                    js = (
-                        f"renderRemoteCursor("
-                        f"document.getElementById('doc-container'), "
-                        f"{json.dumps(client_id)}, {char_index}, "
-                        f"{safe_name}, {safe_color})"
+                    name = state.user_name
+                    color = state.user_color
+                    js = _render_js(
+                        t"renderRemoteCursor("
+                        t"document.getElementById('doc-container')"
+                        t", {client_id}, {char_index}"
+                        t", {name}, {color})"
                     )
                 else:
-                    js = f"removeRemoteCursor({json.dumps(client_id)})"
+                    js = _render_js(t"removeRemoteCursor({client_id})")
                 await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_cursor = broadcast_cursor
@@ -1454,15 +1477,15 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 continue
             with contextlib.suppress(Exception):
                 if start is not None and end is not None:
-                    safe_name = json.dumps(state.user_name)
-                    safe_color = json.dumps(state.user_color)
-                    js = (
-                        f"renderRemoteSelection("
-                        f"{json.dumps(client_id)}, {start}, {end}, "
-                        f"{safe_name}, {safe_color})"
+                    name = state.user_name
+                    color = state.user_color
+                    js = _render_js(
+                        t"renderRemoteSelection("
+                        t"{client_id}, {start}, {end}"
+                        t", {name}, {color})"
                     )
                 else:
-                    js = f"removeRemoteSelection({json.dumps(client_id)})"
+                    js = _render_js(t"removeRemoteSelection({client_id})")
                 await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_selection = broadcast_selection
@@ -1505,22 +1528,23 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         if cid == client_id:
             continue
         if presence.cursor_char is not None:
-            safe_name = json.dumps(presence.name)
-            safe_color = json.dumps(presence.color)
-            js = (
-                f"renderRemoteCursor("
-                f"document.getElementById('doc-container'), "
-                f"{json.dumps(cid)}, {presence.cursor_char}, "
-                f"{safe_name}, {safe_color})"
+            char = presence.cursor_char
+            name = presence.name
+            color = presence.color
+            js = _render_js(
+                t"renderRemoteCursor("
+                t"document.getElementById('doc-container')"
+                t", {cid}, {char}"
+                t", {name}, {color})"
             )
             ui.run_javascript(js)
         if presence.selection_start is not None and presence.selection_end is not None:
-            safe_name = json.dumps(presence.name)
-            safe_color = json.dumps(presence.color)
-            js = (
-                f"renderRemoteSelection("
-                f"{json.dumps(cid)}, {presence.selection_start}, "
-                f"{presence.selection_end}, {safe_name}, {safe_color})"
+            s_start = presence.selection_start
+            s_end = presence.selection_end
+            name = presence.name
+            color = presence.color
+            js = _render_js(
+                t"renderRemoteSelection({cid}, {s_start}, {s_end}, {name}, {color})"
             )
             ui.run_javascript(js)
 
@@ -1533,10 +1557,9 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 if presence.nicegui_client is None:
                     continue
                 with contextlib.suppress(Exception):
-                    safe_client_id = json.dumps(client_id)
-                    js = (
-                        f"removeRemoteCursor({safe_client_id});"
-                        f"removeRemoteSelection({safe_client_id})"
+                    js = _render_js(
+                        t"removeRemoteCursor({client_id});"
+                        t"removeRemoteSelection({client_id})"
                     )
                     await presence.nicegui_client.run_javascript(js, timeout=2.0)
             # Broadcast UI updates (user count, etc.)

@@ -89,7 +89,6 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
 
     # Perform mouse-based selection (real user interaction)
     page.mouse.click(coords["startX"], coords["startY"])
-    page.mouse.move(coords["startX"], coords["startY"])
     page.mouse.down()
     page.mouse.move(coords["endX"], coords["endY"])
     page.mouse.up()

@@ -32,6 +32,7 @@ logs/
 # Test output logs
 test-failures.log
 test-all.log
+test-e2e.log
 
 # E2E test screenshots (debug artifacts)
 tests/e2e/screenshots/

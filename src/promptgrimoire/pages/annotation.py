@@ -378,8 +378,6 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         start_char: First character index of the highlight range.
         end_char: Last character index (exclusive) of the highlight range.
     """
-    # TODO(phase-4): Rewrite to use CSS Custom Highlight API — currently broken
-    # (char spans removed in Phase 3)
     # 1. Switch tab to Annotate
     if state.tab_panels is not None:
         state.tab_panels.set_value("Annotate")
@@ -393,31 +391,21 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         state.refresh_annotations()
     _update_highlight_css(state)
 
-    # 4. Scroll to highlight and flash it (after a short delay for tab switch
-    #    and char span injection to complete)
-    # fmt: off
+    # 4. Scroll to highlight and throb it. Refreshes _textNodes inline
+    #    to guarantee fresh DOM references after tab switch + re-render.
+    #    After scrolling, explicitly trigger positionCards via rAF to ensure
+    #    annotation sidebar cards become visible (MutationObserver fires
+    #    before the scroll, hiding cards that aren't yet in viewport).
     js = (
-        f"setTimeout(function(){{"
-        f"const sc={start_char},ec={end_char};"
-        f"const chars=[];"
-        f"for(var i=sc;i<ec;i++){{"
-        f"var c=document.querySelector("
-        f"'[data-char-index=\"'+i+'\"]');"
-        f"if(c)chars.push(c);"
-        f"}}"
-        f"if(chars.length===0)return;"
-        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-        f"var origColors=chars.map(function(c){{return c.style.backgroundColor;}});"
-        f"chars.forEach(function(c){{"
-        f"c.style.transition='background-color 0.2s';"
-        f"c.style.backgroundColor='#FFD700';"
-        f"}});"
-        f"setTimeout(function(){{"
-        f"chars.forEach(function(c,i){{c.style.backgroundColor=origColors[i];}});"
-        f"}},800);"
-        f"}},200)"
+        f"(function(){{"
+        f"  var c = document.getElementById('doc-container');"
+        f"  if (!c) return;"
+        f"  window._textNodes = walkTextNodes(c);"
+        f"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
+        f"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
+        f"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
+        f"}})()"
     )
-    # fmt: on
     await ui.run_javascript(js)
 
 
@@ -534,6 +522,14 @@ def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
             f"    text-decoration-color: {hex_color};\n"
             f"}}"
         )
+
+    # Hover and throb highlights for card interaction (Phase 4)
+    css_rules.append(
+        "::highlight(hl-hover) {\n    background-color: rgba(255, 215, 0, 0.3);\n}"
+    )
+    css_rules.append(
+        "::highlight(hl-throb) {\n    background-color: rgba(255, 215, 0, 0.6);\n}"
+    )
 
     return "\n".join(css_rules)
 
@@ -935,34 +931,14 @@ def _build_annotation_card(
             )
 
             with ui.row().classes("gap-1"):
-                # Go-to-highlight button - scrolls to highlight and flashes it
+                # Go-to-highlight button - scrolls to highlight and throbs it
                 async def goto_highlight(
                     sc: int = start_char, ec: int = end_char
                 ) -> None:
-                    # fmt: off
-                    # Flash ALL chars in the highlight range, not just start
                     js = (
-                        f"(function(){{"
-                        f"const sc={sc},ec={ec};"
-                        f"const chars=[];"
-                        f"for(let i=sc;i<ec;i++){{"
-                        f"const c=document.querySelector("
-                        f"'[data-char-index=\"'+i+'\"]');"
-                        f"if(c)chars.push(c);"
-                        f"}}"
-                        f"if(chars.length===0)return;"
-                        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-                        f"const origColors=chars.map(c=>c.style.backgroundColor);"
-                        f"chars.forEach(c=>{{"
-                        f"c.style.transition='background-color 0.2s';"
-                        f"c.style.backgroundColor='#FFD700';"
-                        f"}});"
-                        f"setTimeout(()=>{{"
-                        f"chars.forEach((c,i)=>{{c.style.backgroundColor=origColors[i];}});"
-                        f"}},800);"
-                        f"}})()"
+                        f"scrollToCharOffset(window._textNodes, {sc}, {ec});"
+                        f"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
                     )
-                    # fmt: on
                     await ui.run_javascript(js)
 
                 ui.button(icon="my_location", on_click=goto_highlight).props(
@@ -1296,7 +1272,7 @@ async def _render_document_with_highlights(
             "  if (!c) return;"
             "  window._textNodes = walkTextNodes(c);"
             f"  applyHighlights(c, {highlight_json});"
-            "  setupAnnotationSelection(c, function(sel) {"
+            "  setupAnnotationSelection('doc-container', function(sel) {"
             "    emitEvent('selection_made', sel);"
             "  });"
             "}, 100);"
@@ -1324,91 +1300,121 @@ async def _render_document_with_highlights(
     # Set up selection detection
     _setup_selection_handlers(state)
 
-    # Set up scroll-synced card positioning
+    # Set up scroll-synced card positioning and hover interaction
+    # Uses charOffsetToRect() from annotation-highlight.js (Phase 4)
     # fmt: off
+    # All DOM lookups are dynamic (getElementById on every call) because
+    # NiceGUI/Vue can REPLACE the entire Annotate tab panel DOM when
+    # another tab initialises (e.g. Respond tab's Milkdown editor).
+    # Closured DOM references become dead after replacement.
     scroll_sync_js = (
         "(function() {\n"
-        "  const docC = document.getElementById('doc-container');\n"
-        "  const annC = document.getElementById('annotations-container');\n"
-        "  if (!docC || !annC) return;\n"
-        "  const MIN_GAP = 8;\n"
+        "  var MIN_GAP = 8;\n"
+        "  var _obs = null;\n"
+        "  var _lastAnnC = null;\n"
+        "  function tn() {\n"
+        "    var dc = document.getElementById('doc-container');\n"
+        "    var t = window._textNodes;\n"
+        "    if (!dc || !t || !t.length) return null;\n"
+        "    if (!dc.contains(t[0].node)) {\n"
+        "      t = walkTextNodes(dc);\n"
+        "      window._textNodes = t;\n"
+        "    }\n"
+        "    return t;\n"
+        "  }\n"
         "  function positionCards() {\n"
-        "    const cards = Array.from(annC.querySelectorAll('[data-start-char]'));\n"
-        "    if (cards.length === 0) return;\n"
-        "    const docRect = docC.getBoundingClientRect();\n"
-        "    const annRect = annC.getBoundingClientRect();\n"
-        "    const containerOffset = annRect.top - docRect.top;\n"
-        "    const cardInfos = cards.map(card => {\n"
-        "      const sc = parseInt(card.dataset.startChar);\n"
-        "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
-        "      if (!cs) return null;\n"
-        "      const cr = cs.getBoundingClientRect();\n"
-        "      return { card, startChar: sc, height: card.offsetHeight,\n"
-        "               targetY: (cr.top-docRect.top)-containerOffset };\n"
+        "    var nodes = tn();\n"
+        "    if (!nodes || !nodes.length) return;\n"
+        "    var dc = document.getElementById('doc-container');\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!dc || !ac) return;\n"
+        "    var cards = Array.from("
+        "ac.querySelectorAll('[data-start-char]'));\n"
+        "    if (!cards.length) return;\n"
+        "    var docRect = dc.getBoundingClientRect();\n"
+        "    var annRect = ac.getBoundingClientRect();\n"
+        "    var cOff = annRect.top - docRect.top;\n"
+        "    var cardInfos = cards.map(function(card) {\n"
+        "      var sc = parseInt(card.dataset.startChar);\n"
+        "      var cr = charOffsetToRect(nodes, sc);\n"
+        "      if (cr.width === 0 && cr.height === 0) return null;\n"
+        "      return {card: card, startChar: sc,\n"
+        "        height: card.offsetHeight,\n"
+        "        targetY: (cr.top - docRect.top) - cOff};\n"
         "    }).filter(Boolean);\n"
-        "    cardInfos.sort((a, b) => a.startChar - b.startChar);\n"
-        "    const headerHeight = 60;\n"
-        "    const viewportTop = headerHeight;\n"
-        "    const viewportBottom = window.innerHeight;\n"
-        "    let minY = 0;\n"
-        "    for (const info of cardInfos) {\n"
-        "      const sc = info.startChar;\n"
-        "      const ec = parseInt(info.card.dataset.endChar) || sc;\n"
-        "      var qs='[data-char-index=\"'+sc+'\"]';\n"
-        "      const startCS = docC.querySelector(qs);\n"
-        "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
-        "      const endCS = docC.querySelector(qe)||startCS;\n"
-        "      if (!startCS || !endCS) continue;\n"
-        "      const sr = startCS.getBoundingClientRect();\n"
-        "      const er = endCS.getBoundingClientRect();\n"
-        "      const inView = er.bottom > viewportTop && sr.top < viewportBottom;\n"
+        "    cardInfos.sort(function(a,b) {"
+        " return a.startChar - b.startChar; });\n"
+        "    var hH = 60, vT = hH, vB = window.innerHeight;\n"
+        "    var minY = 0;\n"
+        "    for (var i = 0; i < cardInfos.length; i++) {\n"
+        "      var info = cardInfos[i];\n"
+        "      var sc2 = info.startChar;\n"
+        "      var ec2 = parseInt("
+        "info.card.dataset.endChar) || sc2;\n"
+        "      var sr = charOffsetToRect(nodes, sc2);\n"
+        "      var er = charOffsetToRect("
+        "nodes, Math.max(ec2-1, sc2));\n"
+        "      var inView = er.bottom > vT && sr.top < vB;\n"
         "      info.card.style.position = 'absolute';\n"
-        "      if (!inView) { info.card.style.display = 'none'; continue; }\n"
+        "      if (!inView) {"
+        " info.card.style.display = 'none'; continue; }\n"
         "      info.card.style.display = '';\n"
-        "      const y = Math.max(info.targetY, minY);\n"
+        "      var y = Math.max(info.targetY, minY);\n"
         "      info.card.style.top = y + 'px';\n"
         "      minY = y + info.height + MIN_GAP;\n"
         "    }\n"
         "  }\n"
-        "  let ticking = false;\n"
+        "  var ticking = false;\n"
         "  function onScroll() {\n"
         "    if (!ticking) {\n"
-        "      requestAnimationFrame(() => { positionCards(); ticking = false; });\n"
+        "      requestAnimationFrame(function() {"
+        " positionCards(); ticking = false; });\n"
         "      ticking = true;\n"
         "    }\n"
         "  }\n"
-        "  window.addEventListener('scroll', onScroll, { passive: true });\n"
-        "  requestAnimationFrame(positionCards);\n"
-        "  var rePos = () => requestAnimationFrame(positionCards);\n"
-        "  const obs = new MutationObserver(rePos);\n"
-        "  obs.observe(annC, { childList: true, subtree: true });\n"
-        "  // Card hover -> highlight corresponding chars\n"
-        "  let hoveredCard = null;\n"
-        "  function clearHover() {\n"
-        "    if (!hoveredCard) return;\n"
-        "    const sc = parseInt(hoveredCard.dataset.startChar);\n"
-        "    const ec = parseInt(hoveredCard.dataset.endChar) || sc;\n"
-        "    for (let i = sc; i < ec; i++) {\n"
-        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
-        "      if (c) c.classList.remove('card-hover-highlight');\n"
+        "  window._positionCards = positionCards;\n"
+        "  window.addEventListener('scroll', onScroll,"
+        " {passive: true});\n"
+        "  // Re-attach MutationObserver on each highlights-ready\n"
+        "  // because the annotations-container DOM element may have\n"
+        "  // been replaced by Vue re-rendering.\n"
+        "  document.addEventListener("
+        "'highlights-ready', function() {\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!ac) return;\n"
+        "    if (ac !== _lastAnnC) {\n"
+        "      if (_obs) _obs.disconnect();\n"
+        "      _obs = new MutationObserver(function() {"
+        " requestAnimationFrame(positionCards); });\n"
+        "      _obs.observe(ac,"
+        " {childList: true, subtree: true});\n"
+        "      _lastAnnC = ac;\n"
         "    }\n"
-        "    hoveredCard = null;\n"
-        "  }\n"
-        "  annC.addEventListener('mouseover', function(e) {\n"
-        "    const card = e.target.closest('[data-start-char]');\n"
+        "    requestAnimationFrame(positionCards);\n"
+        "  });\n"
+        "  // Card hover via event delegation on document\n"
+        "  // (survives DOM replacement)\n"
+        "  var hoveredCard = null;\n"
+        "  document.addEventListener('mouseover', function(e) {\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!ac || !ac.contains(e.target)) {\n"
+        "      if (hoveredCard) {"
+        " clearHoverHighlight(); hoveredCard = null; }\n"
+        "      return;\n"
+        "    }\n"
+        "    var card = e.target.closest('[data-start-char]');\n"
         "    if (card === hoveredCard) return;\n"
-        "    clearHover();\n"
+        "    clearHoverHighlight();\n"
+        "    hoveredCard = null;\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sc = parseInt(card.dataset.startChar);\n"
-        "    const ec = parseInt(card.dataset.endChar) || sc;\n"
-        "    for (let i = sc; i < ec; i++) {\n"
-        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
-        "      if (c) c.classList.add('card-hover-highlight');\n"
-        "    }\n"
-        "  });\n"
-        "  annC.addEventListener('mouseleave', function() {\n"
-        "    clearHover();\n"
+        "    var sc = parseInt(card.dataset.startChar);\n"
+        "    var ec = parseInt(card.dataset.endChar) || sc;\n"
+        "    var nodes = tn();\n"
+        "    if (nodes) showHoverHighlight(nodes, sc, ec);\n"
         "  });\n"
         "})();"
     )
@@ -2938,9 +2944,17 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
-        # Sync markdown to CRDT when leaving the Respond tab (Phase 7)
+        # Sync markdown to CRDT when leaving the Respond tab (Phase 7).
+        # Wrapped in try/except: sync failure must not block tab switch,
+        # otherwise the Annotate refresh never runs and cards disappear.
         if prev_tab == "Respond" and state.sync_respond_markdown:
-            await state.sync_respond_markdown()
+            try:
+                await state.sync_respond_markdown()
+            except Exception:
+                logger.debug(
+                    "RESPOND_MD_SYNC failed on tab leave, continuing",
+                    exc_info=True,
+                )
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             # Always re-render Organise tab to show current highlights

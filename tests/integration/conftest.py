@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pymupdf
 import pytest_asyncio
@@ -76,7 +76,7 @@ class MegaDocSegment:
     html: str
     """HTML content (raw, before preprocessing)."""
 
-    highlights: list[dict] = field(default_factory=list)
+    highlights: list[dict[str, Any]] = field(default_factory=list)
     """Highlight annotations (empty list for no highlights)."""
 
     tag_colours: dict[str, str] = field(default_factory=dict)

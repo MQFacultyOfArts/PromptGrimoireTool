@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import anthropic
 
@@ -92,7 +92,8 @@ class ClaudeClient:
         if first_block.type != "text":
             raise ValueError(f"Unexpected response type: {first_block.type}")
 
-        response_text = first_block.text
+        # Type guard: we've verified it's a text block above
+        response_text = cast("str", first_block.text)  # type: ignore[attr-defined]
 
         # Add assistant turn to session
         session.add_turn(

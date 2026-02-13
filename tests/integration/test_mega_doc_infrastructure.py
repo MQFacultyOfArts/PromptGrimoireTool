@@ -74,13 +74,19 @@ class TestMegaDocInfrastructure:
             assert path.stat().st_size > 0, f"Subfile {name} is empty"
 
     @pytest.mark.asyncio(loop_scope="module")
-    async def test_subfiles_independently_compilable(self, mega_result):
-        """AC1.5: Each subfile compiles independently via subfiles package."""
+    async def test_subfiles_independently_compilable(self, mega_result, subtests):
+        """AC1.5: Each subfile compiles independently via subfiles package.
+
+        Split into per-subfile subtests so each stays under 5s AC1.3 limit.
+        """
         for name, sf_path in mega_result.subfile_paths.items():
-            # Compile each subfile standalone -- it should load the main
-            # document's preamble via \documentclass[mega_test.tex]{subfiles}
-            pdf_path = await compile_latex(sf_path, mega_result.output_dir)
-            assert pdf_path.exists(), f"Subfile {name} failed to compile independently"
+            with subtests.test(msg=name):
+                # Compile each subfile standalone -- it should load the main
+                # document's preamble via \documentclass[mega_test.tex]{subfiles}
+                pdf_path = await compile_latex(sf_path, mega_result.output_dir)
+                assert pdf_path.exists(), (
+                    f"Subfile {name} failed to compile independently"
+                )
 
     @pytest.mark.asyncio(loop_scope="module")
     async def test_pdf_text_contains_both_segments(self, mega_result):

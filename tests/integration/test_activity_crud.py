@@ -133,7 +133,7 @@ class TestCreateActivity:
         with pytest.raises(IntegrityError):
             async with get_session() as session:
                 activity = Activity(
-                    week_id=None,
+                    week_id=None,  # type: ignore[assignment]
                     template_workspace_id=template.id,
                     title="Should Fail",
                 )

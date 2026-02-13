@@ -296,6 +296,27 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
+    /* Remote cursor indicators */
+    .remote-cursor {
+        position: absolute;
+        width: 2px;
+        pointer-events: none;
+        z-index: 20;
+        transition: left 0.15s ease, top 0.15s ease;
+    }
+    .remote-cursor-label {
+        position: absolute;
+        top: -1.4em;
+        left: -2px;
+        font-size: 0.6rem;
+        color: white;
+        padding: 1px 4px;
+        border-radius: 2px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0.9;
+    }
+
 """
 
 

@@ -6,7 +6,7 @@ Uses parameterized fixtures derived from BLNS corpus for comprehensive coverage.
 import emoji as emoji_lib
 import pytest
 
-from tests.conftest import (
+from tests.unit.conftest import (
     ASCII_TEST_STRINGS,
     BLNS_BY_CATEGORY,
     CJK_TEST_CHARS,
@@ -316,7 +316,7 @@ class TestStyFileContent:
 
 def _generate_blns_test_cases() -> list[tuple[str, str]]:
     """Generate (category, line) tuples for parameterized BLNS testing."""
-    from tests.conftest import BLNS_BY_CATEGORY
+    from tests.unit.conftest import BLNS_BY_CATEGORY
 
     cases = []
     for category, lines in BLNS_BY_CATEGORY.items():

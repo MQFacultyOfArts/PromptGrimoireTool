@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.conftest import CJK_TEST_CHARS
 from tests.e2e.annotation_helpers import select_chars, setup_workspace_with_content
+from tests.unit.conftest import CJK_TEST_CHARS
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

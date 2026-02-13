@@ -168,6 +168,73 @@ def detect_scripts(text: str) -> frozenset[str]:
     return frozenset(found)
 
 
+def build_font_preamble(scripts: frozenset[str]) -> str:
+    """Build LaTeX font preamble with only fonts needed for detected scripts.
+
+    Args:
+        scripts: Script tags from ``detect_scripts()``. Empty = Latin-only.
+
+    Returns:
+        LaTeX string for insertion between ``\\usepackage{promptgrimoire-export}``
+        and colour definitions in the document preamble.
+    """
+    lines: list[str] = []
+
+    # Step 1: CJK package loading (must come before \directlua)
+    has_cjk = "cjk" in scripts
+    if has_cjk:
+        lines.append(r"\usepackage{luatexja-fontspec}")
+        lines.append(r"\ltjsetparameter{jacharrange={-2}}")
+        lines.append("")
+
+    # Step 2: Filter fonts -- always include latn, plus matched script tags
+    selected = [
+        f for f in FONT_REGISTRY if f.script_tag == "latn" or f.script_tag in scripts
+    ]
+
+    # Step 3: Build \directlua fallback chain
+    entries: list[str] = []
+    for font in selected:
+        if font.options:
+            entry = f'    "{font.name}:mode=node;{font.options};",'
+        else:
+            entry = f'    "{font.name}:mode=node;",'
+        entries.append(entry)
+
+    lines.append(r"\directlua{")
+    lines.append(r'  luaotfload.add_fallback("mainfallback", {')
+    lines.extend(entries)
+    lines.append("  })")
+    lines.append("}")
+    lines.append("")
+
+    # Step 4: CJK font setup (after \directlua, before \setmainfont)
+    if has_cjk:
+        lines.append(r"\setmainjfont{Noto Serif CJK SC}[")
+        lines.append("  UprightFont = *,")
+        lines.append("  BoldFont = * Bold,")
+        lines.append("  ItalicFont = *,")
+        lines.append("  BoldItalicFont = * Bold,")
+        lines.append("]")
+        lines.append(r"\setsansjfont{Noto Sans CJK SC}[")
+        lines.append("  UprightFont = *,")
+        lines.append("  BoldFont = * Bold,")
+        lines.append("  ItalicFont = *,")
+        lines.append("  BoldItalicFont = * Bold,")
+        lines.append("]")
+        lines.append(r"\newjfontfamily\notocjk{Noto Serif CJK SC}")
+        lines.append("")
+
+    # Step 5: Main font with fallback (always)
+    lines.append(r"\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]")
+
+    # Step 6: CJK text command override (after \notocjk is defined)
+    if has_cjk:
+        lines.append(r"\renewcommand{\cjktext}[1]{{\notocjk #1}}")
+
+    return "\n".join(lines)
+
+
 @functools.cache
 def _load_latex_emoji_names() -> frozenset[str]:
     """Load valid emoji names from LaTeX emoji package.

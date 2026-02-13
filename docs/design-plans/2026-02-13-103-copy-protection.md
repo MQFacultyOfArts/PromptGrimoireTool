@@ -267,7 +267,7 @@ Investigation found these relevant patterns:
 - Browser print renders message instead of content when protection active
 - Ctrl+P/Cmd+P intercepted and prevented
 - Print works normally when protection is off
-- Covers: 103-copy-protection.AC4.6, 103-copy-protection.AC4.7
+- Covers: 103-copy-protection.AC4.6
 <!-- END_PHASE_5 -->
 
 <!-- START_PHASE_6 -->

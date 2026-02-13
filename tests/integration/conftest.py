@@ -7,7 +7,6 @@ infrastructure for LaTeX compile-reduction tests.
 from __future__ import annotations
 
 import logging
-import shutil
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +15,7 @@ import pytest_asyncio
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
-from promptgrimoire.export.pdf_export import _STY_SOURCE
+from promptgrimoire.export.pdf_export import _ensure_sty_in_dir
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
 
@@ -132,13 +131,6 @@ def _escape_latex_name(name: str) -> str:
     in LaTeX.
     """
     return name.replace("_", r"\_")
-
-
-def _ensure_sty_in_dir(output_dir: Path) -> None:
-    """Copy promptgrimoire-export.sty to the output directory for latexmk."""
-    sty_dest = output_dir / "promptgrimoire-export.sty"
-    if not sty_dest.exists():
-        shutil.copy2(_STY_SOURCE, sty_dest)
 
 
 async def compile_mega_document(

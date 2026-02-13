@@ -16,21 +16,13 @@ from __future__ import annotations
 
 import pytest
 
+from promptgrimoire.export.pdf_export import _STY_SOURCE
 from promptgrimoire.export.preamble import build_annotation_preamble
 
 
 def _read_sty_content() -> str:
     """Read the promptgrimoire-export.sty file content."""
-    from pathlib import Path
-
-    sty_path = (
-        Path(__file__).parent.parent.parent
-        / "src"
-        / "promptgrimoire"
-        / "export"
-        / "promptgrimoire-export.sty"
-    )
-    return sty_path.read_text()
+    return _STY_SOURCE.read_text()
 
 
 class TestIncludegraphicsStub:

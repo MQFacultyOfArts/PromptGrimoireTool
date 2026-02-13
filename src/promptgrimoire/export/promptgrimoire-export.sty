@@ -7,13 +7,12 @@
 
 \RequirePackage{xcolor}
 
-% Unicode support for CJK and Emoji (from unicode_latex.py UNICODE_PREAMBLE)
+% Unicode support for CJK and Emoji
 % Note: [match] option removed - caused font identifier errors in sectioning
 \RequirePackage{luatexja-fontspec}
 \RequirePackage{emoji}
 
-% From ANNOTATION_PREAMBLE_BASE
-% fontspec and \setmainfont are in UNICODE_PREAMBLE (with fallback chain)
+% Static preamble content
 \RequirePackage{amsmath}           % Math extensions (\text{} in math mode)
 \RequirePackage{microtype}         % Better typography (kerning, protrusion)
 \RequirePackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
@@ -130,7 +129,7 @@
 }
 
 % =============================================================================
-% Font setup (from unicode_latex.py UNICODE_PREAMBLE)
+% Font setup
 % =============================================================================
 
 % luatexja range 2 (U+0370-U+04FF: Greek + basic Cyrillic) defaults to +2 (JAchar),

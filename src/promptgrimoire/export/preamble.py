@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scripts
 
 # Note: Static LaTeX preamble content (packages, commands, environments,
@@ -40,14 +41,40 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     for tag, colour in tag_colours.items():
         hex_code = colour.lstrip("#")
         safe_name = tag.replace("_", "-")  # LaTeX-safe name
+        # Note: safe_name may still contain '#' (e.g. "C#-notes") which is
+        # invalid in LaTeX colour names -- pre-existing bug, preserved for
+        # AC4.4 output identity.  All colour name args are NoEscape to avoid
+        # changing current output.
+        colour_base = NoEscape(f"tag-{safe_name}")
+
         # Full colour for borders and text
-        definitions.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
+        definitions.append(
+            str(
+                latex_cmd(
+                    "definecolor", colour_base, NoEscape("HTML"), NoEscape(hex_code)
+                )
+            )
+        )
         # Light colour (30% strength) for highlight backgrounds
-        # Using xcolor's mixing: 30% of tag colour + 70% white
-        definitions.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
+        # xcolor mixing syntax is trusted LaTeX
+        definitions.append(
+            str(
+                latex_cmd(
+                    "colorlet",
+                    NoEscape(f"tag-{safe_name}-light"),
+                    NoEscape(f"tag-{safe_name}!30"),
+                )
+            )
+        )
         # Dark variant for underlines (70% base, 30% black)
         definitions.append(
-            f"\\colorlet{{tag-{safe_name}-dark}}{{tag-{safe_name}!70!black}}"
+            str(
+                latex_cmd(
+                    "colorlet",
+                    NoEscape(f"tag-{safe_name}-dark"),
+                    NoEscape(f"tag-{safe_name}!70!black"),
+                )
+            )
         )
 
     # many-dark colour for 3+ overlapping highlights

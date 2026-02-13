@@ -1514,11 +1514,21 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     async def on_disconnect() -> None:
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
-            # Broadcast to update cursors/selections (remove this client's)
-            for _cid, cstate in _workspace_presence.get(workspace_key, {}).items():
-                if cstate.callback:
+            # Broadcast removal of this client's cursor/selection to all remaining
+            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+                if presence.nicegui_client is None:
+                    continue
+                with contextlib.suppress(Exception):
+                    js = (
+                        f"removeRemoteCursor('{client_id}');"
+                        f"removeRemoteSelection('{client_id}')"
+                    )
+                    await presence.nicegui_client.run_javascript(js, timeout=2.0)
+            # Broadcast UI updates (user count, etc.)
+            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+                if presence.callback:
                     with contextlib.suppress(Exception):
-                        await cstate.callback()
+                        await presence.callback()
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 

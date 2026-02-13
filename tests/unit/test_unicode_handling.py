@@ -282,9 +282,9 @@ class TestStyFileContent:
     @pytest.fixture
     def sty_content(self) -> str:
         """Read the .sty file content for assertions."""
-        from promptgrimoire.export.pdf_export import _STY_SOURCE
+        from promptgrimoire.export.pdf_export import STY_SOURCE
 
-        return _STY_SOURCE.read_text(encoding="utf-8")
+        return STY_SOURCE.read_text(encoding="utf-8")
 
     def test_sty_includes_fontspec(self, sty_content: str) -> None:
         """The .sty file includes fontspec (always needed)."""

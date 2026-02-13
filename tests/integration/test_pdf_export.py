@@ -102,12 +102,12 @@ Hello, world!
     @pytest.mark.asyncio
     async def test_sty_compiles_standalone(self, tmp_path: Path) -> None:
         """AC2.1: promptgrimoire-export.sty compiles in a minimal document."""
-        from promptgrimoire.export.pdf_export import _STY_SOURCE
+        from promptgrimoire.export.pdf_export import STY_SOURCE
 
-        assert _STY_SOURCE.exists(), f".sty not found at {_STY_SOURCE}"
+        assert STY_SOURCE.exists(), f".sty not found at {STY_SOURCE}"
 
         # Copy .sty to temp directory so latexmk can find it
-        shutil.copy2(_STY_SOURCE, tmp_path / "promptgrimoire-export.sty")
+        shutil.copy2(STY_SOURCE, tmp_path / "promptgrimoire-export.sty")
 
         tex_content = r"""
 \documentclass{article}

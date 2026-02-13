@@ -18,7 +18,7 @@ import pytest_asyncio
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
-from promptgrimoire.export.pdf_export import _ensure_sty_in_dir
+from promptgrimoire.export.pdf_export import ensure_sty_in_dir
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
 
@@ -270,7 +270,7 @@ async def compile_mega_document(
             isolation report appended to the error message).
     """
     # Copy .sty to output directory so latexmk can find it
-    _ensure_sty_in_dir(output_dir)
+    ensure_sty_in_dir(output_dir)
 
     # Union all tag colours across segments for the shared preamble
     all_tag_colours: dict[str, str] = {}
@@ -296,9 +296,9 @@ async def compile_mega_document(
         if seg.notes_latex:
             latex_body += f"\n\\section*{{General Notes}}\n{seg.notes_latex}\n"
         elif seg.general_notes:
-            from promptgrimoire.export.pdf_export import _html_to_latex_notes
+            from promptgrimoire.export.pdf_export import html_to_latex_notes
 
-            notes_content = _html_to_latex_notes(seg.general_notes)
+            notes_content = html_to_latex_notes(seg.general_notes)
             if notes_content:
                 latex_body += f"\n\\section*{{General Notes}}\n{notes_content}\n"
 
@@ -367,7 +367,10 @@ async def compile_mega_document(
             report_lines.append(f"  {name}: {result}")
         isolation_report = "\n".join(report_lines)
 
-        # Re-read the original error's log for the enhanced message
+        # Suppress the original traceback (`from None`) because the
+        # isolation report above is more useful for debugging than the
+        # raw LaTeXCompilationError — it shows which subfiles compiled
+        # and which failed, plus the log path for the full output.
         log_path = output_dir / "mega_test.log"
         raise LaTeXCompilationError(
             f"Mega-document compilation failed.\n{isolation_report}",

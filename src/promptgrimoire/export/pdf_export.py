@@ -27,15 +27,15 @@ from promptgrimoire.export.preamble import build_annotation_preamble
 logger = logging.getLogger(__name__)
 
 # Path to the .sty file that contains all static LaTeX preamble content
-_STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
+STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
 
 
-def _ensure_sty_in_dir(output_dir: Path) -> None:
+def ensure_sty_in_dir(output_dir: Path) -> None:
     """Copy promptgrimoire-export.sty to the output directory for latexmk.
 
     Always overwrites to ensure the .sty matches the current package version.
     """
-    shutil.copy2(_STY_SOURCE, output_dir / "promptgrimoire-export.sty")
+    shutil.copy2(STY_SOURCE, output_dir / "promptgrimoire-export.sty")
 
 
 # LaTeX document template
@@ -104,7 +104,7 @@ def _plain_text_to_html(text: str | None, escape: bool = True) -> str:
     return "\n".join(html_parts)
 
 
-def _html_to_latex_notes(html_content: str) -> str:
+def html_to_latex_notes(html_content: str) -> str:
     """Convert HTML notes content to LaTeX.
 
     Simple conversion for WYSIWYG editor output.
@@ -221,7 +221,7 @@ def _build_general_notes_section(
 
     Supports two input paths:
     - **HTML path** (existing): ``general_notes`` contains HTML from the
-      WYSIWYG editor, converted via ``_html_to_latex_notes()``.
+      WYSIWYG editor, converted via ``html_to_latex_notes()``.
     - **LaTeX path** (Phase 7): ``latex_content`` contains pre-converted
       LaTeX (e.g., from Pandoc markdown conversion). When provided, this
       takes precedence over the HTML path.
@@ -241,7 +241,7 @@ def _build_general_notes_section(
     if not general_notes or not general_notes.strip():
         return ""
 
-    converted = _html_to_latex_notes(general_notes)
+    converted = html_to_latex_notes(general_notes)
     if not converted:
         return ""
 
@@ -313,7 +313,7 @@ async def generate_tex_only(
         )
 
     # Ensure .sty is in the output directory before writing .tex
-    _ensure_sty_in_dir(output_dir)
+    ensure_sty_in_dir(output_dir)
 
     # Preprocess HTML: detect platform, remove chrome, inject speaker labels
     processed_html = preprocess_for_export(html_content) if html_content else ""

@@ -264,7 +264,7 @@ The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave e
 
 - `src/promptgrimoire/export/pdf.py` - `get_latexmk_path()` resolves latexmk location, `compile_latex()` compiles .tex to PDF (async)
 - `src/promptgrimoire/export/pdf_export.py` - `export_annotation_pdf()` full pipeline, `generate_tex_only()` for .tex without compilation (used by tests)
-- `src/promptgrimoire/export/promptgrimoire-export.sty` - Static LaTeX preamble (packages, commands, environments, macros). Copied to output dir by `_ensure_sty_in_dir()` before compilation
+- `src/promptgrimoire/export/promptgrimoire-export.sty` - Static LaTeX preamble (packages, commands, environments, macros). Copied to output dir by `ensure_sty_in_dir()` before compilation
 - `scripts/setup_latex.py` - installs TinyTeX and packages
 - Does NOT fall back to system PATH - TinyTeX only for consistency
 

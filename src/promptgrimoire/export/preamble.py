@@ -20,7 +20,7 @@ from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scri
 
 # Note: Static LaTeX preamble content (packages, commands, environments,
 # macros, fonts) is now in promptgrimoire-export.sty. The .sty is copied
-# to the output directory by pdf_export._ensure_sty_in_dir().
+# to the output directory by pdf_export.ensure_sty_in_dir().
 
 
 def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:

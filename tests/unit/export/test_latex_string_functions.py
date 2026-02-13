@@ -332,9 +332,9 @@ class TestCompilationValidation:
         # Copy .sty to output directory so latexmk can find it
         import shutil
 
-        from promptgrimoire.export.pdf_export import _STY_SOURCE
+        from promptgrimoire.export.pdf_export import STY_SOURCE
 
-        shutil.copy2(_STY_SOURCE, output_dir / "promptgrimoire-export.sty")
+        shutil.copy2(STY_SOURCE, output_dir / "promptgrimoire-export.sty")
 
         # Build complete document using .sty for static preamble content
         tex_content = rf"""

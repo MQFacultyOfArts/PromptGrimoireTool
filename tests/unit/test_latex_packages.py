@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from promptgrimoire.export.pdf import compile_latex
-from promptgrimoire.export.pdf_export import _ensure_sty_in_dir
+from promptgrimoire.export.pdf_export import ensure_sty_in_dir
 from promptgrimoire.export.preamble import build_annotation_preamble
 
 # Required packages for unicode support (fonts come from system via fontspec)
@@ -117,7 +117,7 @@ class TestLaTeXPackages:
         cjk_text = "日本語"
 
         # Copy .sty to tmp_path so latexmk can find it
-        _ensure_sty_in_dir(tmp_path)
+        ensure_sty_in_dir(tmp_path)
 
         # Build preamble via the production path (loads .sty + dynamic fonts)
         # Pass CJK body text so dynamic font loading includes CJK fonts

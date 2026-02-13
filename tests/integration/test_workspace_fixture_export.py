@@ -566,7 +566,7 @@ class TestUnicodeRendering:
 
     The response draft contains link text in Armenian, Arabic, Chinese,
     Georgian, Greek, Hebrew, Hindi, Thai, and other scripts. The PDF
-    must render all of these using the UNICODE_PREAMBLE font fallback
+    must render all of these using the .sty font fallback
     chain -- no replacement characters (U+FFFD) or missing glyphs.
     """
 

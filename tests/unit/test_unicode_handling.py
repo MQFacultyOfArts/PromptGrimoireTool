@@ -276,32 +276,31 @@ class TestEmojiValidation:
             assert "us" in names  # alias
 
 
-class TestUnicodePreamble:
-    """Test LaTeX preamble for unicode support."""
+class TestStyFileContent:
+    """Test that promptgrimoire-export.sty contains required unicode support."""
 
-    def test_preamble_includes_luatexja(self) -> None:
-        """Preamble includes luatexja-fontspec."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    @pytest.fixture
+    def sty_content(self) -> str:
+        """Read the .sty file content for assertions."""
+        from promptgrimoire.export.pdf_export import _STY_SOURCE
 
-        assert "luatexja-fontspec" in UNICODE_PREAMBLE
+        return _STY_SOURCE.read_text(encoding="utf-8")
 
-    def test_preamble_includes_emoji_package(self) -> None:
-        """Preamble includes emoji package."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    def test_sty_includes_luatexja(self, sty_content: str) -> None:
+        """The .sty file includes luatexja-fontspec."""
+        assert "luatexja-fontspec" in sty_content
 
-        assert "\\usepackage{emoji}" in UNICODE_PREAMBLE
+    def test_sty_includes_emoji_package(self, sty_content: str) -> None:
+        """The .sty file includes emoji package."""
+        assert "RequirePackage{emoji}" in sty_content
 
-    def test_preamble_defines_cjktext_command(self) -> None:
-        """Preamble defines \\cjktext command."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    def test_sty_defines_cjktext_command(self, sty_content: str) -> None:
+        """The .sty file defines \\cjktext command."""
+        assert "\\newcommand{\\cjktext}" in sty_content
 
-        assert "\\newcommand{\\cjktext}" in UNICODE_PREAMBLE
-
-    def test_preamble_sets_cjk_font(self) -> None:
-        """Preamble sets CJK font (Noto)."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
-
-        assert "Noto" in UNICODE_PREAMBLE
+    def test_sty_sets_cjk_font(self, sty_content: str) -> None:
+        """The .sty file sets CJK font (Noto)."""
+        assert "Noto" in sty_content
 
 
 def _generate_blns_test_cases() -> list[tuple[str, str]]:

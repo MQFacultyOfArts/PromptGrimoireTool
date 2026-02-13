@@ -119,8 +119,9 @@ class TestLaTeXPackages:
         # Copy .sty to tmp_path so latexmk can find it
         _ensure_sty_in_dir(tmp_path)
 
-        # Build preamble via the production path (loads .sty + tag colours)
-        preamble = build_annotation_preamble({})
+        # Build preamble via the production path (loads .sty + dynamic fonts)
+        # Pass CJK body text so dynamic font loading includes CJK fonts
+        preamble = build_annotation_preamble({}, body_text=cjk_text)
 
         # Create minimal document using production preamble
         tex_content = (

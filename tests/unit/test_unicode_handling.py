@@ -286,21 +286,32 @@ class TestStyFileContent:
 
         return _STY_SOURCE.read_text(encoding="utf-8")
 
-    def test_sty_includes_luatexja(self, sty_content: str) -> None:
-        """The .sty file includes luatexja-fontspec."""
-        assert "luatexja-fontspec" in sty_content
+    def test_sty_includes_fontspec(self, sty_content: str) -> None:
+        """The .sty file includes fontspec (always needed)."""
+        assert "RequirePackage{fontspec}" in sty_content
+
+    def test_sty_does_not_load_luatexja(self, sty_content: str) -> None:
+        """luatexja-fontspec is conditional via build_font_preamble()."""
+        assert "RequirePackage{luatexja-fontspec}" not in sty_content
 
     def test_sty_includes_emoji_package(self, sty_content: str) -> None:
         """The .sty file includes emoji package."""
         assert "RequirePackage{emoji}" in sty_content
 
-    def test_sty_defines_cjktext_command(self, sty_content: str) -> None:
-        """The .sty file defines \\cjktext command."""
-        assert "\\newcommand{\\cjktext}" in sty_content
+    def test_sty_provides_cjktext_passthrough(self, sty_content: str) -> None:
+        """The .sty provides \\cjktext as pass-through default.
 
-    def test_sty_sets_cjk_font(self, sty_content: str) -> None:
-        """The .sty file sets CJK font (Noto)."""
-        assert "Noto" in sty_content
+        build_font_preamble() overrides with \\renewcommand when CJK is detected.
+        """
+        assert "\\providecommand{\\cjktext}[1]{#1}" in sty_content
+
+    def test_sty_does_not_contain_directlua(self, sty_content: str) -> None:
+        """Font fallback chain is now dynamic via build_font_preamble(), not in .sty."""
+        assert "\\directlua" not in sty_content
+
+    def test_sty_sets_emoji_font(self, sty_content: str) -> None:
+        """The .sty file sets emoji font (Noto Color Emoji)."""
+        assert "Noto Color Emoji" in sty_content
 
 
 def _generate_blns_test_cases() -> list[tuple[str, str]]:

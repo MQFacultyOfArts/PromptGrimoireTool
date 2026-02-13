@@ -328,13 +328,16 @@ async def generate_tex_only(
         word_to_legal_para=word_to_legal_para,
     )
 
-    # Build preamble with tag colours and dynamic font loading
-    preamble = build_annotation_preamble(tag_colours, body_text=latex_body)
-
-    # Build general notes section
+    # Build general notes section (before preamble so notes text is
+    # included in script detection for dynamic font loading)
     notes_section = _build_general_notes_section(
         general_notes, latex_content=notes_latex
     )
+
+    # Build preamble with tag colours and dynamic font loading.
+    # Include both body and notes for complete script detection.
+    full_text = f"{latex_body}\n{notes_section}" if notes_section else latex_body
+    preamble = build_annotation_preamble(tag_colours, body_text=full_text)
 
     # Assemble complete document
     document = _DOCUMENT_TEMPLATE.format(

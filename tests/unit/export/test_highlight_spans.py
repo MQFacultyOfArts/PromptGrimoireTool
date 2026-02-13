@@ -18,8 +18,8 @@ from selectolax.lexbor import LexborHTMLParser
 from promptgrimoire.export.highlight_spans import (
     PANDOC_BLOCK_ELEMENTS,
     compute_highlight_spans,
-    format_annot_latex,
 )
+from promptgrimoire.export.latex_format import format_annot_latex
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 
 # ---------------------------------------------------------------------------

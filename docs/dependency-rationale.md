@@ -187,9 +187,11 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 ### pytest-subtests >= 0.15.0
 
-**Claim:** Subtest support for sharing expensive fixtures across related assertions in E2E tests.
+**Claim:** Subtest support for sharing expensive fixtures across related assertions in E2E and integration tests.
 
-**Evidence:** Extensively used in `tests/e2e/` — `test_annotation_cards.py`, `test_annotation_sync.py`, `test_auth_pages.py`, `test_annotation_basics.py`, `test_annotation_highlights.py`.
+**Evidence:** Extensively used in `tests/e2e/` — `test_annotation_cards.py`, `test_annotation_sync.py`, `test_auth_pages.py`, `test_annotation_basics.py`, `test_annotation_highlights.py`. Also used in LaTeX integration tests for mega-document compile-once patterns where multiple assertions share a single expensive compile.
+
+**Revised:** 2026-02-12 — expanded from E2E-only to integration test usage per `docs/design-plans/2026-02-12-latex-test-optimization.md`.
 
 ### pytest-order >= 1.3.0
 

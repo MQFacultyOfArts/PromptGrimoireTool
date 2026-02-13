@@ -75,7 +75,7 @@ they reveal where the test suite is redundant or incomplete.
 **Verifies:** Correct behaviour under non-trivial HTML content
 
 ### format_annot_latex produces correct annotation strings
-**File:** tests/unit/export/test_highlight_spans.py::TestFormatAnnotLatex
+**File:** tests/unit/export/test_highlight_spans.py::TestFormatAnnotLatex (function now in latex_format.py)
 1. Basic: tag + author produces \annot{tag-jurisdiction}{\textbf{Jurisdiction}...Alice Jones}
 2. Underscore tags: "key_issue" becomes "tag-key-issue" colour name and "Key Issue" display
 3. Para ref "[45]" is included in margin content
@@ -197,9 +197,9 @@ they reveal where the test suite is redundant or incomplete.
 ### _format_annot replaced by format_annot_latex
 **File:** tests/unit/export/test_pipeline_cleanup.py::TestAC4_6_FormatAnnotRemoved
 1. Assert _format_annot not importable from export, preamble, or pandoc
-2. Assert format_annot_latex IS importable from highlight_spans
+2. Assert format_annot_latex IS importable from latex_format (moved from highlight_spans)
 
-**Verifies:** Annotation formatting function renamed and relocated
+**Verifies:** Annotation formatting function renamed and relocated to latex_format.py
 
 ### Integration test file exists and resolves
 **File:** tests/unit/export/test_pipeline_cleanup.py::TestAC5_3_IntegrationTestsExist
@@ -239,18 +239,26 @@ they reveal where the test suite is redundant or incomplete.
 
 ## Export Resilience
 
-### \includegraphics stub after hyperref
-**File:** tests/unit/test_export_image_stripping.py::TestIncludegraphicsStub
+### Preamble loads .sty package
+**File:** tests/unit/test_export_image_stripping.py::TestIncludegraphicsStub::test_preamble_loads_sty
 1. Generate preamble with build_annotation_preamble
-2. Assert \renewcommand{\includegraphics} appears after all \usepackage calls
-3. Assert the stub is NOT in UNICODE_PREAMBLE (too early)
+2. Assert \usepackage{promptgrimoire-export} appears in output
 
-**Verifies:** Image references cannot crash PDF compilation (corrupt-PDF regression)
+**Verifies:** The preamble correctly references the .sty package
 
-### otherlanguage environment defined
+### \includegraphics stub after hyperref in .sty
+**File:** tests/unit/test_export_image_stripping.py::TestIncludegraphicsStub::test_stub_defined_after_hyperref_in_sty
+1. Read promptgrimoire-export.sty content
+2. Find last \RequirePackage position
+3. Find \renewcommand{\includegraphics} position
+4. Assert stub position is after last \RequirePackage
+
+**Verifies:** Image references cannot crash PDF compilation (corrupt-PDF regression); stub survives hyperref/graphicx loading
+
+### otherlanguage environment defined in .sty
 **File:** tests/unit/test_export_image_stripping.py::TestOtherlanguageEnvironment
-1. Generate preamble
-2. Assert "otherlanguage" and "newenvironment" appear in preamble
+1. Read promptgrimoire-export.sty content
+2. Assert "otherlanguage" and "newenvironment" appear in .sty
 
 **Verifies:** Pandoc's language markup for non-English content does not crash compilation
 
@@ -262,6 +270,186 @@ they reveal where the test suite is redundant or incomplete.
 4. Verify empty/whitespace markdown returns empty string
 
 **Verifies:** Image syntax in response drafts cannot produce \includegraphics in LaTeX
+
+## LaTeX Rendering Utilities
+
+### NoEscape marker
+**File:** tests/unit/export/test_latex_render.py::TestNoEscape
+1. Assert NoEscape("x") is a str subclass
+2. Concatenate two NoEscape values; assert result is "xy"
+3. Pass NoEscape to escape_latex; assert returned object is the same instance (identity)
+
+**Verifies:** NoEscape is a transparent str wrapper; escape_latex passes it through unchanged
+
+### escape_latex special characters (AC4.3)
+**File:** tests/unit/export/test_latex_render.py::TestEscapeLatex
+1. Parametrize over all 10 LaTeX specials (#, $, %, &, _, {, }, ~, ^, \)
+2. Assert each maps to its correct escape sequence
+3. Normal text without specials passes through unchanged
+4. Combined specials ("Cost: $30 & 50%") all escaped in one string
+5. Tag names with specials (AC4.5): "C#_notes" becomes "C\#\_notes"
+6. Assert return type is NoEscape
+
+**Verifies:** All 10 LaTeX special characters are correctly escaped; result is trusted (NoEscape)
+
+### latex_cmd command builder
+**File:** tests/unit/export/test_latex_render.py::TestLatexCmd
+1. Single arg: latex_cmd("textbf", "hello") produces \textbf{hello}
+2. Multi arg: latex_cmd("definecolor", "mycolor", "HTML", "FF0000") produces \definecolor{mycolor}{HTML}{FF0000}
+3. String args auto-escaped: "C#_notes" becomes "C\#\_notes" inside braces
+4. NoEscape arg: passed through without re-escaping
+5. Return type is NoEscape
+
+**Verifies:** Programmatic LaTeX command construction with auto-escaping
+
+### render_latex t-string renderer
+**File:** tests/unit/export/test_latex_render.py::TestRenderLatex
+1. Static t-string with no interpolation passes through verbatim
+2. Interpolated value "C#" is auto-escaped to "C\#"
+3. NoEscape interpolation is not re-escaped
+4. Complex template with braces and interpolation produces correct output
+
+**Verifies:** t-string rendering auto-escapes interpolated values while preserving static LaTeX
+
+## Font Detection and Registry
+
+### detect_scripts returns correct tags (AC3.1)
+**File:** tests/unit/export/test_font_detection.py::TestDetectScriptsAC31
+1. Parametrize over ASCII, Hebrew, Arabic, CJK, Devanagari, Greek, mixed, empty
+2. For each: call detect_scripts(text) and assert correct frozenset of script tags
+
+**Verifies:** Script detection correctly identifies Unicode script families from text
+
+### Every required script is detectable (AC3.2 Guard 2)
+**File:** tests/unit/export/test_font_detection.py::TestGuard2ScriptDetectability
+1. Parametrize over all tags in _REQUIRED_SCRIPTS
+2. For each: construct single character from first codepoint of first range
+3. Call detect_scripts; assert the tag is in result
+
+**Verifies:** No dead entries in FONT_REGISTRY -- every registered script can actually be detected
+
+### Font registry and detection ranges consistent (AC3.7 Guard 4)
+**File:** tests/unit/export/test_font_detection.py::TestGuard4DataConsistency
+1. Assert _REQUIRED_SCRIPTS is a subset of SCRIPT_TAG_RANGES keys
+2. Assert every non-latn font tag has a detection range
+3. Combine one char from each required script; detect_scripts returns all of them
+
+**Verifies:** FONT_REGISTRY, SCRIPT_TAG_RANGES, and _REQUIRED_SCRIPTS are mutually consistent
+
+## Font Preamble Output
+
+### Latin-only preamble (AC3.3)
+**File:** tests/unit/export/test_font_preamble.py::TestLatinOnlyPreambleAC33
+1. Call build_font_preamble(frozenset())
+2. Assert base fonts present (Gentium Plus, Charis SIL, Noto Serif)
+3. Assert \setmainfont{TeX Gyre Termes} present
+4. Assert NO luatexja-fontspec, \setmainjfont, \renewcommand{\cjktext}
+5. Assert NO non-base fonts (Ezra SIL, Scheherazade, etc.)
+
+**Verifies:** Empty script set produces minimal Latin-only font preamble
+
+### CJK preamble (AC3.4)
+**File:** tests/unit/export/test_font_preamble.py::TestCJKPreambleAC34
+1. Call build_font_preamble(frozenset({"cjk"}))
+2. Assert luatexja-fontspec, ltjsetparameter, setmainjfont, setsansjfont present
+3. Assert newjfontfamily\notocjk and renewcommand{\cjktext} present
+4. Assert base fonts still present alongside CJK
+
+**Verifies:** CJK script tag triggers full CJK font setup
+
+### Mixed scripts (Hebrew + Arabic)
+**File:** tests/unit/export/test_font_preamble.py::TestMixedScriptsPreamble
+1. Call build_font_preamble(frozenset({"hebr", "arab"}))
+2. Assert Hebrew fonts present (Ezra SIL, Noto Serif Hebrew)
+3. Assert Arabic fonts present (Scheherazade, Noto Naskh Arabic)
+4. Assert NO CJK setup
+5. Assert base fonts present
+
+**Verifies:** Selective font loading includes only fonts for detected scripts
+
+### Full chain (all scripts)
+**File:** tests/unit/export/test_font_preamble.py::TestFullChainGuard
+1. Call build_font_preamble(_REQUIRED_SCRIPTS)
+2. For every font in FONT_REGISTRY, assert its name appears in output
+
+**Verifies:** All-scripts preamble contains every registered font
+
+## LaTeX Migration Snapshots (AC4.4)
+
+### generate_tag_colour_definitions output identity
+**File:** tests/unit/export/test_latex_migration_snapshots.py::TestGenerateTagColourDefinitionsSnapshot
+1. Call generate_tag_colour_definitions with 3 tags (including "C#_notes")
+2. Assert exact string match against pre-migration baseline
+3. Includes definecolor, colorlet -light, colorlet -dark for each tag, plus many-dark
+
+**Verifies:** AC4.4 output identity -- post-migration output is byte-identical to pre-migration
+
+### format_annot_latex output identity
+**File:** tests/unit/export/test_latex_migration_snapshots.py::TestFormatAnnotLatexSnapshot
+1. Basic with comments: author "Alice Jones ABC123" (UUID stripped), timestamp formatted, comment with "$damages" escaped
+2. Special chars in author/comments: "C#_notes" tag, "O'Brien & Associates" author, tilde and percent in comment
+3. With paragraph reference: "[45]" appears after tag name
+4. No timestamp/no comments: minimal output
+
+**Verifies:** AC4.4 output identity for annotation formatting across all edge cases
+
+## f-string LaTeX Guard
+
+### No f-string LaTeX in migrated files (AC4.1, AC4.2)
+**File:** tests/unit/export/test_no_fstring_latex.py::test_no_fstring_latex_in_migrated_files
+1. For each migrated file (preamble.py, latex_format.py, unicode_latex.py):
+2. Parse AST, find f-strings with backslash in static parts
+3. Check if enclosing function is in allowlist
+4. Assert no violations remain
+
+**Verifies:** Migrated files use latex_cmd/render_latex/NoEscape, not f-string LaTeX commands
+
+### Migrated files import latex_render
+**File:** tests/unit/export/test_no_fstring_latex.py::test_migrated_files_import_latex_render
+1. For each migrated file: read source text
+2. Assert "from promptgrimoire.export.latex_render import" present
+
+**Verifies:** Migration is not circumvented by removing the import
+
+## Mega-Document Infrastructure
+
+### Mega-document compilation and subfiles
+**File:** tests/integration/test_mega_doc_infrastructure.py::TestMegaDocInfrastructure
+1. Compile 2-segment mega-document (alpha, beta)
+2. Assert PDF created, non-empty, valid magic bytes
+3. Assert segment_tex dict has entries for both segments
+4. Assert subfile .tex paths exist on disk
+5. Compile each subfile independently (AC1.5); assert PDF created
+6. Assert PDF text contains content from both segments
+7. Assert main .tex has \usepackage{subfiles}, \subfile{...}, \clearpage
+8. Assert subfiles have \documentclass[mega_test.tex]{subfiles}
+9. Subtests wrapper verifies independent execution (AC1.6)
+
+**Verifies:** Mega-document builder works with subfiles package; each segment independently compilable
+
+## English Mega-Document (Consolidated LaTeX Tests)
+
+### 13 chatbot fixtures + pipeline tests in one compilation
+**File:** tests/integration/test_english_mega_doc.py
+1. Build segments from 13 English chatbot fixtures (claude_cooking through austlii)
+2. Add pipeline segments: basic highlights, overlapping highlights, multi-paragraph, cross-env highlights
+3. Compile all as one mega-document (AC1.1: 1 compile replaces ~38)
+4. Per-fixture subtests: assert PDF text contains expected characters
+5. Per-pipeline subtests: assert highlights, underlines, annotations present in LaTeX
+6. Cross-env highlights: assert LibreOffice table HTML compiles successfully
+
+**Verifies:** All English-only LaTeX compile tests pass in consolidated form
+
+## i18n Mega-Document (CJK + Multilingual)
+
+### 4 CJK/multilingual fixtures in one compilation
+**File:** tests/integration/test_i18n_mega_doc.py
+1. Load clean fixtures: chinese_wikipedia, japanese, korean, spanish
+2. Compile as mega-document with CJK font support
+3. Per-fixture subtests: assert expected CJK/Unicode characters in PDF text
+4. Assert cjktext command present in CJK fixture LaTeX
+
+**Verifies:** CJK and multilingual content compiles correctly in consolidated mega-document
 
 ## Workspace Placement Validation (Unit)
 

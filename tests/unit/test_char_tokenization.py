@@ -3,7 +3,7 @@
 import pytest
 
 from promptgrimoire.pages.annotation import _process_text_to_char_spans
-from tests.conftest import CJK_TEST_CHARS
+from tests.unit.conftest import CJK_TEST_CHARS
 
 
 class TestProcessTextToCharSpans:

@@ -6,7 +6,7 @@ Uses parameterized fixtures derived from BLNS corpus for comprehensive coverage.
 import emoji as emoji_lib
 import pytest
 
-from tests.conftest import (
+from tests.unit.conftest import (
     ASCII_TEST_STRINGS,
     BLNS_BY_CATEGORY,
     CJK_TEST_CHARS,
@@ -276,37 +276,47 @@ class TestEmojiValidation:
             assert "us" in names  # alias
 
 
-class TestUnicodePreamble:
-    """Test LaTeX preamble for unicode support."""
+class TestStyFileContent:
+    """Test that promptgrimoire-export.sty contains required unicode support."""
 
-    def test_preamble_includes_luatexja(self) -> None:
-        """Preamble includes luatexja-fontspec."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    @pytest.fixture
+    def sty_content(self) -> str:
+        """Read the .sty file content for assertions."""
+        from promptgrimoire.export.pdf_export import STY_SOURCE
 
-        assert "luatexja-fontspec" in UNICODE_PREAMBLE
+        return STY_SOURCE.read_text(encoding="utf-8")
 
-    def test_preamble_includes_emoji_package(self) -> None:
-        """Preamble includes emoji package."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    def test_sty_includes_fontspec(self, sty_content: str) -> None:
+        """The .sty file includes fontspec (always needed)."""
+        assert "RequirePackage{fontspec}" in sty_content
 
-        assert "\\usepackage{emoji}" in UNICODE_PREAMBLE
+    def test_sty_does_not_load_luatexja(self, sty_content: str) -> None:
+        """luatexja-fontspec is conditional via build_font_preamble()."""
+        assert "RequirePackage{luatexja-fontspec}" not in sty_content
 
-    def test_preamble_defines_cjktext_command(self) -> None:
-        """Preamble defines \\cjktext command."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+    def test_sty_includes_emoji_package(self, sty_content: str) -> None:
+        """The .sty file includes emoji package."""
+        assert "RequirePackage{emoji}" in sty_content
 
-        assert "\\newcommand{\\cjktext}" in UNICODE_PREAMBLE
+    def test_sty_provides_cjktext_passthrough(self, sty_content: str) -> None:
+        """The .sty provides \\cjktext as pass-through default.
 
-    def test_preamble_sets_cjk_font(self) -> None:
-        """Preamble sets CJK font (Noto)."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+        build_font_preamble() overrides with \\renewcommand when CJK is detected.
+        """
+        assert "\\providecommand{\\cjktext}[1]{#1}" in sty_content
 
-        assert "Noto" in UNICODE_PREAMBLE
+    def test_sty_does_not_contain_directlua(self, sty_content: str) -> None:
+        """Font fallback chain is now dynamic via build_font_preamble(), not in .sty."""
+        assert "\\directlua" not in sty_content
+
+    def test_sty_sets_emoji_font(self, sty_content: str) -> None:
+        """The .sty file sets emoji font (Noto Color Emoji)."""
+        assert "Noto Color Emoji" in sty_content
 
 
 def _generate_blns_test_cases() -> list[tuple[str, str]]:
     """Generate (category, line) tuples for parameterized BLNS testing."""
-    from tests.conftest import BLNS_BY_CATEGORY
+    from tests.unit.conftest import BLNS_BY_CATEGORY
 
     cases = []
     for category, lines in BLNS_BY_CATEGORY.items():

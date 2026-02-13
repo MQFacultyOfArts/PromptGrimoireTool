@@ -8,13 +8,11 @@ import subprocess
 import sys
 import time
 from collections.abc import Generator
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import emoji as emoji_lib
 import pytest
 import pytest_asyncio
 from dotenv import load_dotenv
@@ -42,133 +40,8 @@ def pytest_configure(config: pytest.Config) -> None:
 # If this row disappears during a test run, the database was rebuilt
 _DB_CANARY_ID = uuid4()
 
-# =============================================================================
-# BLNS Corpus Parsing
-# =============================================================================
-
-type BLNSCorpus = dict[str, list[str]]
-
-
-def _parse_blns_by_category(blns_path: Path) -> BLNSCorpus:
-    """Parse blns.txt into {category: [strings]}.
-
-    Category headers are lines starting with '#\t' followed by title-case text
-    after a blank line. Explanatory comments (containing 'which') are skipped.
-    """
-    categories: BLNSCorpus = {}
-    current_category = "Uncategorized"
-    prev_blank = True
-
-    for line in blns_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-
-        # Track blank lines
-        if not stripped:
-            prev_blank = True
-            continue
-
-        # Check for category header: #\t followed by title-case, after blank
-        if line.startswith("#\t") and prev_blank:
-            header_text = line[2:].strip()
-            # Category names are Title Case, not explanations
-            if (
-                header_text
-                and header_text[0].isupper()
-                and "which" not in header_text.lower()
-            ):
-                current_category = header_text
-                categories.setdefault(current_category, [])
-        elif not line.startswith("#"):
-            # Non-comment line is a test string
-            categories.setdefault(current_category, []).append(line)
-
-        prev_blank = False
-
-    return categories
-
-
-# Load BLNS corpus at module level (once per test session)
-_FIXTURES_DIR = Path(__file__).parent / "fixtures"
-BLNS_BY_CATEGORY: BLNSCorpus = _parse_blns_by_category(_FIXTURES_DIR / "blns.txt")
-
-# Injection-related categories for always-run subset
-INJECTION_CATEGORIES = [
-    "Script Injection",
-    "SQL Injection",
-    "Server Code Injection",
-    "Command Injection (Unix)",
-    "Command Injection (Windows)",
-    "Command Injection (Ruby)",
-    "XXE Injection (XML)",
-    "Unwanted Interpolation",
-    "File Inclusion",
-    "jinja2 injection",
-]
-
-BLNS_INJECTION_SUBSET: list[str] = [
-    s for cat in INJECTION_CATEGORIES for s in BLNS_BY_CATEGORY.get(cat, [])
-]
-
-# =============================================================================
-# Unicode Test Fixtures (derived from BLNS corpus)
-# =============================================================================
-
-
-def _is_cjk_codepoint(cp: int) -> bool:
-    """Check if codepoint is in a CJK range."""
-    return (
-        # CJK Unified Ideographs
-        (0x4E00 <= cp <= 0x9FFF)
-        # Hiragana
-        or (0x3040 <= cp <= 0x309F)
-        # Katakana
-        or (0x30A0 <= cp <= 0x30FF)
-        # Hangul Syllables
-        or (0xAC00 <= cp <= 0xD7AF)
-        # CJK Unified Ideographs Extension A
-        or (0x3400 <= cp <= 0x4DBF)
-    )
-
-
-def _extract_cjk_chars_from_blns() -> list[str]:
-    """Extract individual CJK characters from BLNS Two-Byte Characters category.
-
-    Returns unique CJK characters for parameterized testing.
-    """
-    cjk_chars: set[str] = set()
-    for s in BLNS_BY_CATEGORY.get("Two-Byte Characters", []):
-        for char in s:
-            if _is_cjk_codepoint(ord(char)):
-                cjk_chars.add(char)
-    return sorted(cjk_chars)
-
-
-def _extract_emoji_from_blns() -> list[str]:
-    """Extract individual emoji from BLNS Emoji category.
-
-    Returns unique emoji strings (including ZWJ sequences) for parameterized testing.
-    """
-    emoji_set: set[str] = set()
-    for s in BLNS_BY_CATEGORY.get("Emoji", []):
-        # Use emoji library to find all emoji in the string
-        for match in emoji_lib.emoji_list(s):
-            emoji_set.add(match["emoji"])
-    return sorted(emoji_set)
-
-
-# Extracted test data from BLNS corpus
-CJK_TEST_CHARS: list[str] = _extract_cjk_chars_from_blns()
-EMOJI_TEST_STRINGS: list[str] = _extract_emoji_from_blns()
-
-# ASCII strings for negative testing (from BLNS Reserved Strings)
-ASCII_TEST_STRINGS: list[str] = [
-    s
-    for s in BLNS_BY_CATEGORY.get("Reserved Strings", [])
-    if s.isascii() and len(s) > 0
-][:10]  # Take first 10
-
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Coroutine, Generator
+    from collections.abc import AsyncIterator, Callable, Generator
 
     from playwright.sync_api import Browser, BrowserContext
 
@@ -265,118 +138,6 @@ def load_conversation_fixture(name: str) -> str:
 
     msg = f"Fixture not found: {base_name} (tried .html.gz and .html)"
     raise FileNotFoundError(msg)
-
-
-# =============================================================================
-# PDF Export Test Fixtures
-# =============================================================================
-
-# Standard tag colours used across the application
-TAG_COLOURS: dict[str, str] = {
-    "jurisdiction": "#1f77b4",
-    "procedural_history": "#ff7f0e",
-    "legally_relevant_facts": "#2ca02c",
-    "legal_issues": "#d62728",
-    "reasons": "#9467bd",
-    "courts_reasoning": "#8c564b",
-    "decision": "#e377c2",
-    "order": "#7f7f7f",
-    "domestic_sources": "#bcbd22",
-    "reflection": "#17becf",
-}
-
-# Shared output directory for test artifacts (gitignored)
-PDF_TEST_OUTPUT_DIR = Path("output/test_output")
-
-
-@dataclass
-class PdfExportResult:
-    """Result from PDF export containing paths for inspection."""
-
-    pdf_path: Path
-    tex_path: Path
-    output_dir: Path
-
-
-@pytest.fixture
-def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
-    """Factory fixture for exporting PDFs using the production pipeline.
-
-    Uses export_annotation_pdf which goes through the full workflow:
-    - HTML normalisation
-    - Pandoc with libreoffice.lua filter
-    - Full preamble with proper settings
-    - LuaLaTeX compilation via latexmk
-
-    Usage:
-        @pytest.mark.asyncio
-        async def test_something(pdf_exporter, parsed_rtf):
-            result = await pdf_exporter(
-                html=parsed_rtf.html,
-                highlights=[...],
-                test_name="my_test",
-            )
-            assert result.pdf_path.exists()
-    """
-    from promptgrimoire.export.pdf_export import export_annotation_pdf
-
-    async def _export(
-        html: str,
-        highlights: list[dict[str, Any]],
-        test_name: str,
-        general_notes: str = "",
-        acceptance_criteria: str = "",
-    ) -> PdfExportResult:
-        """Export PDF using production pipeline.
-
-        Args:
-            html: HTML content to convert.
-            highlights: List of highlight dicts.
-            test_name: Name for output files (e.g., "cross_env_test").
-            general_notes: Optional HTML content for general notes section.
-            acceptance_criteria: Optional text prepended to general notes
-                describing what the test validates.
-
-        Returns:
-            PdfExportResult with paths to generated files.
-        """
-        # Combine acceptance criteria with general notes
-        if acceptance_criteria:
-            notes_content = (
-                f"<p><b>TEST ACCEPTANCE CRITERIA</b></p><p>{acceptance_criteria}</p>"
-            )
-            if general_notes:
-                notes_content += general_notes
-        else:
-            notes_content = general_notes
-
-        # Create output directory (purge first for clean state)
-        output_dir = PDF_TEST_OUTPUT_DIR / test_name
-        if output_dir.exists():
-            import shutil
-
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Await the async export directly
-        pdf_path = await export_annotation_pdf(
-            html_content=html,
-            highlights=highlights,
-            tag_colours=TAG_COLOURS,
-            general_notes=notes_content,
-            output_dir=output_dir,
-            filename=test_name,
-        )
-
-        tex_path = output_dir / f"{test_name}.tex"
-
-        return PdfExportResult(
-            pdf_path=pdf_path,
-            tex_path=tex_path,
-            output_dir=output_dir,
-        )
-
-    return _export
 
 
 TEST_STORAGE_SECRET = "test-secret-for-e2e"

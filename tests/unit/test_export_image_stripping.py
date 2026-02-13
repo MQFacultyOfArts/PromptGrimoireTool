@@ -16,57 +16,65 @@ from __future__ import annotations
 
 import pytest
 
+from promptgrimoire.export.pdf_export import STY_SOURCE
 from promptgrimoire.export.preamble import build_annotation_preamble
-from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+
+
+def _read_sty_content() -> str:
+    """Read the promptgrimoire-export.sty file content."""
+    return STY_SOURCE.read_text()
 
 
 class TestIncludegraphicsStub:
-    """The \\includegraphics stub must appear AFTER hyperref loads graphicx."""
+    """The \\includegraphics stub must appear AFTER hyperref loads graphicx.
 
-    def test_stub_defined_after_hyperref(self) -> None:
-        """\\renewcommand{\\includegraphics} must come after \\usepackage{hyperref}.
+    Post-.sty extraction: these invariants are verified against the .sty file,
+    which contains all static preamble content. The preamble string returned by
+    build_annotation_preamble() now only contains \\usepackage{promptgrimoire-export}
+    plus dynamic tag colour definitions.
+    """
+
+    def test_preamble_loads_sty(self) -> None:
+        """build_annotation_preamble() must load promptgrimoire-export.sty."""
+        preamble = build_annotation_preamble({"test_tag": "#ff0000"})
+        assert r"\usepackage{promptgrimoire-export}" in preamble
+
+    def test_stub_defined_after_hyperref_in_sty(self) -> None:
+        """\\renewcommand{\\includegraphics} must come after hyperref in .sty.
 
         hyperref loads graphicx which defines \\includegraphics via
         \\DeclareRobustCommand. Our no-op stub must use \\renewcommand
         and appear after hyperref to survive.
         """
-        preamble = build_annotation_preamble({"test_tag": "#ff0000"})
+        sty = _read_sty_content()
 
-        # Find the last \usepackage to ensure stub is after ALL packages
-        last_usepackage = preamble.rfind(r"\usepackage")
+        # Find the last \RequirePackage to ensure stub is after ALL packages
+        last_require = sty.rfind(r"\RequirePackage")
 
-        stub_pos = preamble.find(r"\renewcommand{\includegraphics}")
+        stub_pos = sty.find(r"\renewcommand{\includegraphics}")
         assert stub_pos != -1, (
-            "Preamble must contain \\renewcommand{\\includegraphics} "
+            ".sty must contain \\renewcommand{\\includegraphics} "
             "(not \\newcommand, which gets clobbered by hyperref/graphicx)"
         )
-        assert stub_pos > last_usepackage, (
+        assert stub_pos > last_require, (
             "\\renewcommand{\\includegraphics} must appear AFTER all "
-            "\\usepackage calls (hyperref loads graphicx which redefines it)"
-        )
-
-    def test_stub_not_in_unicode_preamble(self) -> None:
-        """The stub should NOT be in UNICODE_PREAMBLE (too early, before hyperref)."""
-        assert r"\newcommand{\includegraphics}" not in UNICODE_PREAMBLE, (
-            "\\includegraphics stub in UNICODE_PREAMBLE is clobbered by "
-            "hyperref loading graphicx. Move to ANNOTATION_PREAMBLE_BASE."
+            "\\RequirePackage calls (hyperref loads graphicx which redefines it)"
         )
 
 
 class TestOtherlanguageEnvironment:
     """Pandoc generates \\begin{otherlanguage}{X} for non-English content."""
 
-    def test_otherlanguage_defined_in_preamble(self) -> None:
-        """Preamble must define otherlanguage environment as no-op.
+    def test_otherlanguage_defined_in_sty(self) -> None:
+        """The .sty must define otherlanguage environment as no-op.
 
         Pandoc detects non-English content (e.g. Chinese Wikipedia) and emits
         \\begin{otherlanguage}{chinese}. Without a definition, LaTeX crashes.
         We handle multilingual via luatexja + font fallbacks, not babel.
         """
-        preamble = build_annotation_preamble({"test_tag": "#ff0000"})
-        # Uses @ifundefined to handle both cases (babel loaded or not)
-        assert r"otherlanguage" in preamble and "newenvironment" in preamble, (
-            "Preamble must define otherlanguage environment (no-op) so Pandoc's "
+        sty = _read_sty_content()
+        assert r"otherlanguage" in sty and "newenvironment" in sty, (
+            ".sty must define otherlanguage environment (no-op) so Pandoc's "
             "language markup doesn't crash compilation."
         )
 

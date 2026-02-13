@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from promptgrimoire.export.pdf import compile_latex
+from promptgrimoire.export.pdf_export import ensure_sty_in_dir
+from promptgrimoire.export.preamble import build_annotation_preamble
 
 # Required packages for unicode support (fonts come from system via fontspec)
 UNICODE_PACKAGES = ["emoji", "luatexja"]
@@ -101,9 +103,7 @@ class TestLaTeXPackages:
 
     @pytest.mark.asyncio
     async def test_unicode_preamble_compiles_without_tofu(self, tmp_path: Path) -> None:
-        """Verify UNICODE_PREAMBLE compiles and renders CJK without tofu."""
-        from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
-
+        """Verify production preamble (.sty) compiles and renders CJK without tofu."""
         pdftotext = get_pdftotext_path()
         assert pdftotext is not None, (
             "pdftotext not installed. Install poppler-utils:\n"
@@ -116,13 +116,22 @@ class TestLaTeXPackages:
         # Test content - CJK text that must render correctly
         cjk_text = "日本語"
 
-        # Create minimal document with UNICODE_PREAMBLE
-        tex_content = rf"""\documentclass{{article}}
-{UNICODE_PREAMBLE}
-\begin{{document}}
-Hello World. CJK: \cjktext{{{cjk_text}}} Emoji: \emoji{{party-popper}}
-\end{{document}}
-"""
+        # Copy .sty to tmp_path so latexmk can find it
+        ensure_sty_in_dir(tmp_path)
+
+        # Build preamble via the production path (loads .sty + dynamic fonts)
+        # Pass CJK body text so dynamic font loading includes CJK fonts
+        preamble = build_annotation_preamble({}, body_text=cjk_text)
+
+        # Create minimal document using production preamble
+        tex_content = (
+            "\\documentclass{article}\n"
+            f"{preamble}\n"
+            "\\begin{document}\n"
+            f"Hello World. CJK: \\cjktext{{{cjk_text}}} "
+            "Emoji: \\emoji{party-popper}\n"
+            "\\end{document}\n"
+        )
         tex_file = tmp_path / "test_unicode.tex"
         tex_file.write_text(tex_content, encoding="utf-8")
 

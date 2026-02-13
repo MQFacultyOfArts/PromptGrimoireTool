@@ -58,6 +58,7 @@ REQUIRED_PACKAGES = [
     "todonotes",  # Margin notes (used in tests)
     # Build tools
     "latexmk",  # Build automation
+    "subfiles",  # Compile document segments independently (mega-doc tests)
     # Bidirectional text
     "luabidi",  # Bidirectional text for LuaLaTeX (for dir="ltr" HTML elements)
     # Code blocks

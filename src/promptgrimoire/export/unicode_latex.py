@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import re
 import subprocess
@@ -9,112 +10,228 @@ from pathlib import Path
 
 import emoji as emoji_lib
 
-UNICODE_PREAMBLE = r"""
-% Unicode support for CJK and Emoji (added by unicode_latex.py)
-% Note: [match] option removed - caused font identifier errors in sectioning
-\usepackage{luatexja-fontspec}
-\usepackage{emoji}
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 
-% luatexja range 2 (U+0370-U+04FF: Greek + basic Cyrillic) defaults to +2 (JAchar),
-% routing these characters to the CJK font which lacks accented Greek (ά U+03AC)
-% and extended Cyrillic (ї U+0457). Set -2 to route through main font fallback.
-\ltjsetparameter{jacharrange={-2}}
+# Static LaTeX preamble content lives in promptgrimoire-export.sty.
 
-% Define comprehensive font fallback chain BEFORE loading fonts
-% Fonts are tried in order until one has the glyph
-% SIL fonts first (higher quality for their target scripts), then Noto as backup
-\directlua{
-  luaotfload.add_fallback("mainfallback", {
-    % Latin, Greek, Cyrillic — SIL fonts with excellent coverage
-    "Gentium Plus:mode=node;",
-    "Charis SIL:mode=node;",
-    "Noto Serif:mode=node;",
-    % Hebrew
-    "Ezra SIL:mode=node;script=hebr;",
-    "Noto Serif Hebrew:mode=node;script=hebr;",
-    % Arabic
-    "Scheherazade:mode=node;script=arab;",
-    "Noto Naskh Arabic:mode=node;script=arab;",
-    % Devanagari (Hindi, Sanskrit, Marathi)
-    "Annapurna SIL:mode=node;script=deva;",
-    "Noto Serif Devanagari:mode=node;script=deva;",
-    % Bengali, Assamese
-    "Noto Serif Bengali:mode=node;script=beng;",
-    % Tamil
-    "Noto Serif Tamil:mode=node;script=taml;",
-    % Thai
-    "Noto Serif Thai:mode=node;script=thai;",
-    % Georgian
-    "Noto Serif Georgian:mode=node;script=geor;",
-    % Armenian
-    "Noto Serif Armenian:mode=node;script=armn;",
-    % Ethiopic
-    "Abyssinica SIL:mode=node;script=ethi;",
-    "Noto Serif Ethiopic:mode=node;script=ethi;",
-    % Khmer (Cambodian)
-    "Khmer Mondulkiri:mode=node;script=khmr;",
-    "Noto Serif Khmer:mode=node;script=khmr;",
-    % Lao
-    "Noto Serif Lao:mode=node;script=lao;",
-    % Myanmar (Burmese)
-    "Padauk:mode=node;script=mymr;",
-    "Noto Serif Myanmar:mode=node;script=mymr;",
-    % Sinhala (Sri Lankan)
-    "Noto Serif Sinhala:mode=node;script=sinh;",
-    % Tai Viet
-    "Tai Heritage Pro:mode=node;",
-    % Nubian/Coptic
-    "Sophia Nubian:mode=node;",
-    % Yi
-    "Nuosu SIL:mode=node;",
-    % Greek polytonic (backup)
-    "Galatia SIL:mode=node;script=grek;",
-    % Historic/rare scripts (for BLNS coverage)
-    "Noto Sans Deseret:mode=node;",
-    "Noto Sans Osage:mode=node;",
-    "Noto Sans Shavian:mode=node;",
-    % Symbols and math (last resort for missing glyphs)
-    "Noto Sans Symbols:mode=node;",
-    "Noto Sans Symbols2:mode=node;",
-    "Noto Sans Math:mode=node;",
-  })
+# =============================================================================
+# Font registry for dynamic font loading
+# =============================================================================
+
+
+@dataclasses.dataclass(frozen=True)
+class FallbackFont:
+    """A font entry in the luaotfload fallback chain.
+
+    Attributes:
+        name: Font name for ``\\directlua`` (e.g. ``"Ezra SIL"``).
+        script_tag: OpenType script tag (e.g. ``"hebr"``, ``"latn"`` for base fonts).
+        options: luaotfload feature options after ``mode=node;``
+            (e.g. ``"script=hebr"``).
+    """
+
+    name: str
+    script_tag: str
+    options: str = ""
+
+
+FONT_REGISTRY: tuple[FallbackFont, ...] = (
+    # Latin, Greek, Cyrillic -- SIL fonts with excellent coverage
+    FallbackFont("Gentium Plus", "latn"),
+    FallbackFont("Charis SIL", "latn"),
+    FallbackFont("Noto Serif", "latn"),
+    # Hebrew
+    FallbackFont("Ezra SIL", "hebr", "script=hebr"),
+    FallbackFont("Noto Serif Hebrew", "hebr", "script=hebr"),
+    # Arabic
+    FallbackFont("Scheherazade", "arab", "script=arab"),
+    FallbackFont("Noto Naskh Arabic", "arab", "script=arab"),
+    # Devanagari -- Hindi, Sanskrit, Marathi
+    FallbackFont("Annapurna SIL", "deva", "script=deva"),
+    FallbackFont("Noto Serif Devanagari", "deva", "script=deva"),
+    # Bengali, Assamese
+    FallbackFont("Noto Serif Bengali", "beng", "script=beng"),
+    # Tamil
+    FallbackFont("Noto Serif Tamil", "taml", "script=taml"),
+    # Thai
+    FallbackFont("Noto Serif Thai", "thai", "script=thai"),
+    # Georgian
+    FallbackFont("Noto Serif Georgian", "geor", "script=geor"),
+    # Armenian
+    FallbackFont("Noto Serif Armenian", "armn", "script=armn"),
+    # Ethiopic
+    FallbackFont("Abyssinica SIL", "ethi", "script=ethi"),
+    FallbackFont("Noto Serif Ethiopic", "ethi", "script=ethi"),
+    # Khmer
+    FallbackFont("Khmer Mondulkiri", "khmr", "script=khmr"),
+    FallbackFont("Noto Serif Khmer", "khmr", "script=khmr"),
+    # Lao
+    FallbackFont("Noto Serif Lao", "lao", "script=lao"),
+    # Myanmar
+    FallbackFont("Padauk", "mymr", "script=mymr"),
+    FallbackFont("Noto Serif Myanmar", "mymr", "script=mymr"),
+    # Sinhala (Sri Lankan)
+    FallbackFont("Noto Serif Sinhala", "sinh", "script=sinh"),
+    # Tai Viet
+    FallbackFont("Tai Heritage Pro", "tavt"),
+    # Nubian/Coptic
+    FallbackFont("Sophia Nubian", "copt"),
+    # Yi
+    FallbackFont("Nuosu SIL", "yiii"),
+    # Greek polytonic (backup)
+    FallbackFont("Galatia SIL", "grek", "script=grek"),
+    # Historic/rare scripts (for BLNS coverage)
+    FallbackFont("Noto Sans Deseret", "dsrt"),
+    FallbackFont("Noto Sans Osage", "osge"),
+    FallbackFont("Noto Sans Shavian", "shaw"),
+    # Symbols and math (last resort for missing glyphs)
+    FallbackFont("Noto Sans Symbols", "zsym"),
+    FallbackFont("Noto Sans Symbols2", "zsym"),
+    FallbackFont("Noto Sans Math", "zmth"),
+)
+
+SCRIPT_TAG_RANGES: dict[str, list[tuple[int, int]]] = {
+    "hebr": [(0x0590, 0x05FF), (0xFB1D, 0xFB4F)],
+    "arab": [
+        (0x0600, 0x06FF),
+        (0x0750, 0x077F),
+        (0x08A0, 0x08FF),
+        (0xFB50, 0xFDFF),
+        (0xFE70, 0xFEFF),
+    ],
+    "deva": [(0x0900, 0x097F), (0xA8E0, 0xA8FF)],
+    "beng": [(0x0980, 0x09FF)],
+    "taml": [(0x0B80, 0x0BFF)],
+    "thai": [(0x0E00, 0x0E7F)],
+    "geor": [(0x10A0, 0x10FF), (0x2D00, 0x2D2F)],
+    "armn": [(0x0530, 0x058F), (0xFB00, 0xFB06)],
+    "ethi": [(0x1200, 0x137F), (0x1380, 0x139F), (0x2D80, 0x2DDF), (0xAB00, 0xAB2F)],
+    "khmr": [(0x1780, 0x17FF), (0x19E0, 0x19FF)],
+    "lao": [(0x0E80, 0x0EFF)],
+    "mymr": [(0x1000, 0x109F), (0xAA60, 0xAA7F)],
+    "sinh": [(0x0D80, 0x0DFF)],
+    "cjk": [
+        (0x2E80, 0x2EFF),
+        (0x3000, 0x303F),
+        (0x3040, 0x309F),
+        (0x30A0, 0x30FF),
+        (0x31F0, 0x31FF),
+        (0x3400, 0x4DBF),
+        (0x4E00, 0x9FFF),
+        (0xAC00, 0xD7AF),
+        (0xF900, 0xFAFF),
+        (0x20000, 0x2A6DF),
+    ],
+    "grek": [(0x0370, 0x03FF), (0x1F00, 0x1FFF)],
+    "cyrl": [(0x0400, 0x04FF), (0x0500, 0x052F), (0x2DE0, 0x2DFF), (0xA640, 0xA69F)],
+    "tavt": [(0xAA80, 0xAADF)],
+    "copt": [(0x2C80, 0x2CFF)],
+    "yiii": [(0xA000, 0xA48F), (0xA490, 0xA4CF)],
+    "dsrt": [(0x10400, 0x1044F)],
+    "osge": [(0x104B0, 0x104FF)],
+    "shaw": [(0x10450, 0x1047F)],
+    "zsym": [
+        (0x2600, 0x26FF),
+        (0x2700, 0x27BF),
+        (0x1F300, 0x1F5FF),
+        (0x1F680, 0x1F6FF),
+    ],
+    "zmth": [(0x2200, 0x22FF), (0x27C0, 0x27EF), (0x2980, 0x29FF), (0x1D400, 0x1D7FF)],
 }
 
-% CJK font setup - Noto Serif CJK for serif consistency with TNR
-% Set as default Japanese fonts so [match] option uses them for all CJK
-% SC variant has broadest coverage (Simplified Chinese + JP/KR compatibility)
-% Must specify all font faces explicitly for luatexja compatibility
-\setmainjfont{Noto Serif CJK SC}[
-  UprightFont = *,
-  BoldFont = * Bold,
-  ItalicFont = *,        % CJK has no italic - use upright
-  BoldItalicFont = * Bold,
-]
-\setsansjfont{Noto Sans CJK SC}[
-  UprightFont = *,
-  BoldFont = * Bold,
-  ItalicFont = *,        % CJK has no italic - use upright
-  BoldItalicFont = * Bold,
-]
+_REQUIRED_SCRIPTS: frozenset[str] = frozenset(
+    f.script_tag for f in FONT_REGISTRY if f.script_tag != "latn"
+)
 
-% Also define as command for explicit wrapping if needed
-\newjfontfamily\notocjk{Noto Serif CJK SC}
 
-% Command for wrapping CJK text (used by escape_unicode_latex)
-\newcommand{\cjktext}[1]{{\notocjk #1}}
+def detect_scripts(text: str) -> frozenset[str]:
+    """Scan text and return OpenType script tags for detected non-Latin scripts.
 
-% Emoji font setup
-\setemojifont{Noto Color Emoji}
+    Latin/ASCII is always assumed present and not included in the result.
+    An empty frozenset means only Latin base fonts are needed.
+    """
+    found: set[str] = set()
+    for ch in text:
+        cp = ord(ch)
+        if cp < 0x0370:  # ASCII + Latin Extended -- fast skip
+            continue
+        for tag, ranges in SCRIPT_TAG_RANGES.items():
+            if tag in found:
+                continue  # Already detected this script
+            for start, end in ranges:
+                if start <= cp <= end:
+                    found.add(tag)
+                    break
+        if found >= _REQUIRED_SCRIPTS:
+            break  # All registry-covered scripts detected, stop scanning
+    return frozenset(found)
 
-% Main font: TeX Gyre Termes (TNR equivalent) with fallback chain
-\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]
 
-% Fallback for emoji not in LaTeX emoji package
-% Can't use Noto Color Emoji directly (CBDT format not supported by LuaLaTeX)
-% Just show placeholder text for unknown emoji
-\newcommand{\emojifallbackchar}[1]{[#1]}
+def build_font_preamble(scripts: frozenset[str]) -> str:
+    """Build LaTeX font preamble with only fonts needed for detected scripts.
 
-"""
+    Args:
+        scripts: Script tags from ``detect_scripts()``. Empty = Latin-only.
+
+    Returns:
+        LaTeX string for insertion between ``\\usepackage{promptgrimoire-export}``
+        and colour definitions in the document preamble.
+    """
+    lines: list[str] = []
+
+    # Step 1: CJK package loading (must come before \directlua)
+    has_cjk = "cjk" in scripts
+    if has_cjk:
+        lines.append(r"\usepackage{luatexja-fontspec}")
+        lines.append(r"\ltjsetparameter{jacharrange={-2}}")
+        lines.append("")
+
+    # Step 2: Filter fonts -- always include latn, plus matched script tags
+    selected = [
+        f for f in FONT_REGISTRY if f.script_tag == "latn" or f.script_tag in scripts
+    ]
+
+    # Step 3: Build \directlua fallback chain
+    entries: list[str] = []
+    for font in selected:
+        if font.options:
+            entry = f'    "{font.name}:mode=node;{font.options};",'
+        else:
+            entry = f'    "{font.name}:mode=node;",'
+        entries.append(entry)
+
+    lines.append(r"\directlua{")
+    lines.append(r'  luaotfload.add_fallback("mainfallback", {')
+    lines.extend(entries)
+    lines.append("  })")
+    lines.append("}")
+    lines.append("")
+
+    # Step 4: CJK font setup (after \directlua, before \setmainfont)
+    if has_cjk:
+        lines.append(r"\setmainjfont{Noto Serif CJK SC}[")
+        lines.append("  UprightFont = *,")
+        lines.append("  BoldFont = * Bold,")
+        lines.append("  ItalicFont = *,")
+        lines.append("  BoldItalicFont = * Bold,")
+        lines.append("]")
+        lines.append(r"\setsansjfont{Noto Sans CJK SC}[")
+        lines.append("  UprightFont = *,")
+        lines.append("  BoldFont = * Bold,")
+        lines.append("  ItalicFont = *,")
+        lines.append("  BoldItalicFont = * Bold,")
+        lines.append("]")
+        lines.append(r"\newjfontfamily\notocjk{Noto Serif CJK SC}")
+        lines.append("")
+
+    # Step 5: Main font with fallback (always)
+    lines.append(r"\setmainfont{TeX Gyre Termes}[RawFeature={fallback=mainfallback}]")
+
+    # Step 6: CJK text command override (after \notocjk is defined)
+    if has_cjk:
+        lines.append(r"\renewcommand{\cjktext}[1]{{\notocjk #1}}")
+
+    return "\n".join(lines)
 
 
 @functools.cache
@@ -176,10 +293,10 @@ def _format_emoji_for_latex(emoji_name: str) -> str:
     valid_names = _load_latex_emoji_names()
 
     if emoji_name in valid_names:
-        return f"\\emoji{{{emoji_name}}}"
+        return str(latex_cmd("emoji", emoji_name))
 
     # Fallback: show name as placeholder (raw emoji can't render in PDF)
-    return f"\\emojifallbackchar{{{emoji_name}}}"
+    return str(latex_cmd("emojifallbackchar", emoji_name))
 
 
 def is_cjk(char: str) -> bool:
@@ -248,7 +365,9 @@ def get_emoji_spans(text: str) -> list[tuple[int, int, str]]:
     return [(m["match_start"], m["match_end"], m["emoji"]) for m in matches]
 
 
-# ASCII special characters for LaTeX escaping
+# The same 10 LaTeX specials are defined as _LATEX_SPECIALS in
+# latex_render.py (dict for char-by-char escape_latex()).  This list
+# serves _escape_ascii_special() via chained str.replace.  Keep in sync.
 _LATEX_SPECIAL_CHARS = [
     ("\\", r"\textbackslash{}"),
     ("&", r"\&"),
@@ -371,8 +490,8 @@ def escape_unicode_latex(text: str) -> str:
     def flush_cjk() -> None:
         """Flush accumulated CJK characters as wrapped command."""
         if cjk_buffer:
-            escaped = _escape_ascii_special("".join(cjk_buffer))
-            result.append(f"\\cjktext{{{escaped}}}")
+            escaped = NoEscape(_escape_ascii_special("".join(cjk_buffer)))
+            result.append(str(latex_cmd("cjktext", escaped)))
             cjk_buffer.clear()
 
     while i < len(text):

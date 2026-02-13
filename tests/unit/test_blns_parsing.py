@@ -1,6 +1,6 @@
 """Tests for BLNS corpus parsing."""
 
-from tests.conftest import BLNS_BY_CATEGORY, BLNS_INJECTION_SUBSET
+from tests.unit.conftest import BLNS_BY_CATEGORY, BLNS_INJECTION_SUBSET
 
 
 class TestBLNSParsing:

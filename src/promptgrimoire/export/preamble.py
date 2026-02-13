@@ -15,98 +15,12 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from promptgrimoire.export.unicode_latex import UNICODE_PREAMBLE
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd
+from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scripts
 
-# Base LaTeX preamble for LuaLaTeX with marginalia+lua-ul annotation approach
-# Note: The \annot command takes 2 parameters: colour name and margin content.
-# It places a superscript number at the insertion point with a coloured margin note.
-# Highlighting uses lua-ul's \highLight for robust cross-line-break backgrounds.
-# marginalia package auto-stacks overlapping margin notes (requires 2+ lualatex runs).
-ANNOTATION_PREAMBLE_BASE = r"""
-% fontspec and \setmainfont are in UNICODE_PREAMBLE (with fallback chain)
-\usepackage{amsmath}           % Math extensions (\text{} in math mode)
-\usepackage{microtype}         % Better typography (kerning, protrusion)
-\usepackage{marginalia}        % Auto-stacking margin notes for LuaLaTeX
-\usepackage{longtable}
-\usepackage{booktabs}
-\usepackage{array}
-\usepackage{calc}
-\usepackage[hidelinks]{hyperref}
-\usepackage{changepage}
-\usepackage{luacolor}  % Required by lua-ul for coloured highlights
-\usepackage{lua-ul}    % LuaLaTeX highlighting (robust across line breaks)
-\usepackage{luabidi}   % Bidirectional text support for LuaLaTeX
-\usepackage{fancyvrb}  % Verbatim/code blocks from Pandoc syntax highlighting
-\usepackage[a4paper,left=2.5cm,right=6cm,top=2.5cm,bottom=2.5cm]{geometry}
-\usepackage[framemethod=tikz]{mdframed}  % For speaker turn borders
-
-% Stub for \includegraphics - Pandoc converts <img> tags to this.
-% hyperref loads graphicx which defines \includegraphics, so we must
-% \renewcommand AFTER all \usepackage calls to survive.
-\renewcommand{\includegraphics}[2][]{[image]}
-
-% No-op otherlanguage environment - Pandoc generates \begin{otherlanguage}{X}
-% for non-English content but we handle multilingual via luatexja + font fallbacks.
-% babel (loaded by hyperref/luabidi chain) may define it, so override safely.
-\makeatletter
-\@ifundefined{otherlanguage}%
-  {\newenvironment{otherlanguage}[1]{}{}}%
-  {\renewenvironment{otherlanguage}[1]{}{}}
-\makeatother
-
-% Paragraph formatting for chatbot exports (no indent, paragraph spacing)
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{0.5\baselineskip}
-
-% Speaker turn environments with left border
-\newmdenv[
-  topline=false,
-  bottomline=false,
-  rightline=false,
-  linewidth=3pt,
-  linecolor=usercolor,
-  innerleftmargin=1em,
-  innerrightmargin=0pt,
-  innertopmargin=0pt,
-  innerbottommargin=0pt,
-  skipabove=0pt,
-  skipbelow=0pt
-]{userturn}
-\newmdenv[
-  topline=false,
-  bottomline=false,
-  rightline=false,
-  linewidth=3pt,
-  linecolor=assistantcolor,
-  innerleftmargin=1em,
-  innerrightmargin=0pt,
-  innertopmargin=0pt,
-  innerbottommargin=0pt,
-  skipabove=0pt,
-  skipbelow=0pt
-]{assistantturn}
-
-% Pandoc compatibility
-\providecommand{\tightlist}{%
-  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\setlength{\emergencystretch}{3em}  % prevent overfull lines
-\setcounter{secnumdepth}{-\maxdimen}  % no section numbering
-
-% Annotation counter and macro
-% Usage: \annot{colour-name}{margin content}
-% Uses footnotesize for compact margin notes
-% marginalia auto-stacks overlapping notes with ysep spacing
-\newcounter{annotnum}
-\newcommand{\annot}[2]{%
-  \stepcounter{annotnum}%
-  \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
-  \marginalia[ysep=3pt]{%
-    \fcolorbox{#1}{#1!20}{%
-      \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
-    }%
-  }%
-}
-"""
+# Note: Static LaTeX preamble content (packages, commands, environments,
+# macros, fonts) is now in promptgrimoire-export.sty. The .sty is copied
+# to the output directory by pdf_export.ensure_sty_in_dir().
 
 
 def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
@@ -127,14 +41,40 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     for tag, colour in tag_colours.items():
         hex_code = colour.lstrip("#")
         safe_name = tag.replace("_", "-")  # LaTeX-safe name
+        # Note: safe_name may still contain '#' (e.g. "C#-notes") which is
+        # invalid in LaTeX colour names -- pre-existing bug, preserved for
+        # AC4.4 output identity.  All colour name args are NoEscape to avoid
+        # changing current output.
+        colour_base = NoEscape(f"tag-{safe_name}")
+
         # Full colour for borders and text
-        definitions.append(f"\\definecolor{{tag-{safe_name}}}{{HTML}}{{{hex_code}}}")
+        definitions.append(
+            str(
+                latex_cmd(
+                    "definecolor", colour_base, NoEscape("HTML"), NoEscape(hex_code)
+                )
+            )
+        )
         # Light colour (30% strength) for highlight backgrounds
-        # Using xcolor's mixing: 30% of tag colour + 70% white
-        definitions.append(f"\\colorlet{{tag-{safe_name}-light}}{{tag-{safe_name}!30}}")
+        # xcolor mixing syntax is trusted LaTeX
+        definitions.append(
+            str(
+                latex_cmd(
+                    "colorlet",
+                    NoEscape(f"tag-{safe_name}-light"),
+                    NoEscape(f"tag-{safe_name}!30"),
+                )
+            )
+        )
         # Dark variant for underlines (70% base, 30% black)
         definitions.append(
-            f"\\colorlet{{tag-{safe_name}-dark}}{{tag-{safe_name}!70!black}}"
+            str(
+                latex_cmd(
+                    "colorlet",
+                    NoEscape(f"tag-{safe_name}-dark"),
+                    NoEscape(f"tag-{safe_name}!70!black"),
+                )
+            )
         )
 
     # many-dark colour for 3+ overlapping highlights
@@ -143,26 +83,26 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     return "\n".join(definitions)
 
 
-def build_annotation_preamble(tag_colours: dict[str, str]) -> str:
-    """Build complete annotation preamble with tag colour definitions.
+def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") -> str:
+    """Build complete annotation preamble with dynamic font loading.
+
+    The .sty file handles all static content (packages, commands, environments,
+    macros, fonts, speaker colours). This function emits the .sty loading,
+    dynamic font preamble based on detected scripts, and per-document tag
+    colour definitions.
 
     Args:
         tag_colours: Dict of tag_name -> hex colour.
+        body_text: Document body text for Unicode script detection.
+            Empty string = Latin-only fonts (fast compilation).
 
     Returns:
         Complete LaTeX preamble string.
     """
+    scripts = detect_scripts(body_text)
+    font_preamble = build_font_preamble(scripts)
     colour_defs = generate_tag_colour_definitions(tag_colours)
-    # Speaker colours for chatbot turn distinction
-    speaker_colours = r"""
-% Speaker colours for chatbot turn markers
-\definecolor{usercolor}{HTML}{4A90D9}
-\definecolor{assistantcolor}{HTML}{7B68EE}
-"""
-    return (
-        f"\\usepackage{{xcolor}}\n{colour_defs}\n"
-        f"{speaker_colours}\n{UNICODE_PREAMBLE}\n{ANNOTATION_PREAMBLE_BASE}"
-    )
+    return f"\\usepackage{{promptgrimoire-export}}\n{font_preamble}\n{colour_defs}"
 
 
 def _format_timestamp(iso_timestamp: str) -> str:

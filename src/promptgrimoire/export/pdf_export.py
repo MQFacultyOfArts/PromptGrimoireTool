@@ -26,6 +26,18 @@ from promptgrimoire.export.preamble import build_annotation_preamble
 
 logger = logging.getLogger(__name__)
 
+# Path to the .sty file that contains all static LaTeX preamble content
+STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
+
+
+def ensure_sty_in_dir(output_dir: Path) -> None:
+    """Copy promptgrimoire-export.sty to the output directory for latexmk.
+
+    Always overwrites to ensure the .sty matches the current package version.
+    """
+    shutil.copy2(STY_SOURCE, output_dir / "promptgrimoire-export.sty")
+
+
 # LaTeX document template
 _DOCUMENT_TEMPLATE = r"""
 \documentclass[a4paper,12pt]{{article}}
@@ -92,7 +104,7 @@ def _plain_text_to_html(text: str | None, escape: bool = True) -> str:
     return "\n".join(html_parts)
 
 
-def _html_to_latex_notes(html_content: str) -> str:
+def html_to_latex_notes(html_content: str) -> str:
     """Convert HTML notes content to LaTeX.
 
     Simple conversion for WYSIWYG editor output.
@@ -209,7 +221,7 @@ def _build_general_notes_section(
 
     Supports two input paths:
     - **HTML path** (existing): ``general_notes`` contains HTML from the
-      WYSIWYG editor, converted via ``_html_to_latex_notes()``.
+      WYSIWYG editor, converted via ``html_to_latex_notes()``.
     - **LaTeX path** (Phase 7): ``latex_content`` contains pre-converted
       LaTeX (e.g., from Pandoc markdown conversion). When provided, this
       takes precedence over the HTML path.
@@ -229,7 +241,7 @@ def _build_general_notes_section(
     if not general_notes or not general_notes.strip():
         return ""
 
-    converted = _html_to_latex_notes(general_notes)
+    converted = html_to_latex_notes(general_notes)
     if not converted:
         return ""
 
@@ -259,6 +271,87 @@ def _get_export_dir(user_id: str) -> Path:
     return export_dir
 
 
+async def generate_tex_only(
+    html_content: str,
+    highlights: list[dict[str, Any]],
+    tag_colours: dict[str, str],
+    output_dir: Path,
+    general_notes: str = "",
+    notes_latex: str = "",
+    word_to_legal_para: dict[int, int | None] | None = None,
+    filename: str = "annotated_document",
+) -> Path:
+    """Generate a .tex file from HTML + annotations without compiling to PDF.
+
+    Runs the full export pipeline (preprocess, convert, assemble) up to
+    writing the .tex file but does NOT invoke ``compile_latex()``. This
+    enables fast assertions on LaTeX content in tests without paying
+    the 5-10s compilation cost.
+
+    Args:
+        html_content: HTML content to export (from ``doc.content``).
+        highlights: List of highlight dicts from CRDT doc.
+        tag_colours: Mapping of tag names to hex colours.
+        output_dir: Directory where the .tex file will be written.
+        general_notes: HTML content from general notes editor.
+        notes_latex: Pre-converted LaTeX for the notes section (e.g.,
+            from Pandoc markdown conversion). Takes precedence over
+            ``general_notes`` when non-empty.
+        word_to_legal_para: Optional mapping for paragraph references.
+        filename: Base name for the output file (without extension).
+
+    Returns:
+        Path to the generated .tex file.
+
+    Raises:
+        ValueError: If highlights are provided but content is empty.
+    """
+    if highlights and (not html_content or not html_content.strip()):
+        raise ValueError(
+            "Cannot insert annotation markers into empty content. "
+            "Provide document content or remove highlights."
+        )
+
+    # Ensure .sty is in the output directory before writing .tex
+    ensure_sty_in_dir(output_dir)
+
+    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
+    processed_html = preprocess_for_export(html_content) if html_content else ""
+
+    # Convert HTML to LaTeX body with annotations
+    # Use libreoffice.lua filter for proper table handling
+    latex_body = await convert_html_with_annotations(
+        html=processed_html,
+        highlights=highlights,
+        tag_colours=tag_colours,
+        filter_paths=[_LIBREOFFICE_FILTER],
+        word_to_legal_para=word_to_legal_para,
+    )
+
+    # Build general notes section (before preamble so notes text is
+    # included in script detection for dynamic font loading)
+    notes_section = _build_general_notes_section(
+        general_notes, latex_content=notes_latex
+    )
+
+    # Build preamble with tag colours and dynamic font loading.
+    # Include both body and notes for complete script detection.
+    full_text = f"{latex_body}\n{notes_section}" if notes_section else latex_body
+    preamble = build_annotation_preamble(tag_colours, body_text=full_text)
+
+    # Assemble complete document
+    document = _DOCUMENT_TEMPLATE.format(
+        preamble=preamble,
+        body=latex_body,
+        general_notes_section=notes_section,
+    )
+
+    tex_path = output_dir / f"{filename}.tex"
+    tex_path.write_text(document)
+
+    return tex_path
+
+
 async def export_annotation_pdf(
     html_content: str,
     highlights: list[dict[str, Any]],
@@ -273,10 +366,8 @@ async def export_annotation_pdf(
     """Generate PDF with annotations from live annotation data.
 
     This is the main entry point for PDF export. It orchestrates:
-    1. HTML -> LaTeX conversion with annotation markers
-    2. Complete document assembly with preamble
-    3. General notes section
-    4. PDF compilation via latexmk
+    1. HTML -> LaTeX conversion with annotation markers (via ``generate_tex_only``)
+    2. PDF compilation via latexmk
 
     Args:
         html_content: HTML content to export (from ``doc.content``).
@@ -299,49 +390,24 @@ async def export_annotation_pdf(
         ValueError: If highlights are provided but content is empty.
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
-    if highlights and (not html_content or not html_content.strip()):
-        raise ValueError(
-            "Cannot insert annotation markers into empty content. "
-            "Provide document content or remove highlights."
-        )
-
-    # Preprocess HTML: detect platform, remove chrome, inject speaker labels
-    processed_html = preprocess_for_export(html_content) if html_content else ""
-
-    # Convert HTML to LaTeX body with annotations
-    # Use libreoffice.lua filter for proper table handling
-    latex_body = await convert_html_with_annotations(
-        html=processed_html,
-        highlights=highlights,
-        tag_colours=tag_colours,
-        filter_paths=[_LIBREOFFICE_FILTER],
-        word_to_legal_para=word_to_legal_para,
-    )
-
-    # Build preamble with tag colours
-    preamble = build_annotation_preamble(tag_colours)
-
-    # Build general notes section
-    notes_section = _build_general_notes_section(
-        general_notes, latex_content=notes_latex
-    )
-
-    # Assemble complete document
-    document = _DOCUMENT_TEMPLATE.format(
-        preamble=preamble,
-        body=latex_body,
-        general_notes_section=notes_section,
-    )
-
-    # Write to temp file and compile
+    # Resolve output directory
     if output_dir is None:
         if user_id:
             output_dir = _get_export_dir(user_id)
         else:
             output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
 
-    tex_path = output_dir / f"{filename}.tex"
-    tex_path.write_text(document)
+    # Generate .tex file via the shared pipeline
+    tex_path = await generate_tex_only(
+        html_content=html_content,
+        highlights=highlights,
+        tag_colours=tag_colours,
+        output_dir=output_dir,
+        general_notes=general_notes,
+        notes_latex=notes_latex,
+        word_to_legal_para=word_to_legal_para,
+        filename=filename,
+    )
 
     # Compile to PDF
     pdf_path = await compile_latex(tex_path, output_dir)

@@ -8,23 +8,22 @@ To skip these tests (e.g., in CI without LaTeX):
 
 from __future__ import annotations
 
-import re
 import shutil
-from pathlib import Path as RealPath
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import pytest
 
 from promptgrimoire.export.pandoc import convert_html_to_latex
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
-from promptgrimoire.export.pdf_export import export_annotation_pdf
-from tests.conftest import PDF_TEST_OUTPUT_DIR, requires_latexmk
+from promptgrimoire.export.pdf_export import (
+    export_annotation_pdf,
+    generate_tex_only,
+    markdown_to_latex_notes,
+)
+from tests.conftest import requires_latexmk
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-# Fixture paths for i18n tests - use clean fixtures (article content only)
-FIXTURES_DIR = RealPath(__file__).parent.parent / "fixtures" / "conversations" / "clean"
 
 
 def _has_pandoc() -> bool:
@@ -101,6 +100,34 @@ Hello, world!
         assert header == b"%PDF"
 
     @pytest.mark.asyncio
+    async def test_sty_compiles_standalone(self, tmp_path: Path) -> None:
+        """AC2.1: promptgrimoire-export.sty compiles in a minimal document."""
+        from promptgrimoire.export.pdf_export import STY_SOURCE
+
+        assert STY_SOURCE.exists(), f".sty not found at {STY_SOURCE}"
+
+        # Copy .sty to temp directory so latexmk can find it
+        shutil.copy2(STY_SOURCE, tmp_path / "promptgrimoire-export.sty")
+
+        tex_content = r"""
+\documentclass{article}
+\usepackage{promptgrimoire-export}
+\begin{document}
+Test
+\end{document}
+"""
+        tex_path = tmp_path / "test_sty.tex"
+        tex_path.write_text(tex_content)
+
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+
+        assert pdf_path.exists()
+        assert pdf_path.suffix == ".pdf"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF"
+
+    @pytest.mark.asyncio
     async def test_compile_failure_raises(self, tmp_path: Path) -> None:
         """Compilation failure raises LaTeXCompilationError."""
         tex_content = r"""
@@ -116,72 +143,50 @@ This has an \undefined command.
             await compile_latex(tex_path, output_dir=tmp_path)
 
     @pytest.mark.asyncio
-    async def test_output_dir_defaults_to_tex_parent(self, tmp_path: Path) -> None:
-        """Output directory defaults to tex file's parent."""
-        subdir = tmp_path / "subdir"
-        subdir.mkdir()
+    async def test_missing_sty_raises_error(self, tmp_path: Path) -> None:
+        """AC2.4: Missing .sty causes LaTeXCompilationError, not silent fallback.
 
+        When the .sty is not in the output directory, latexmk must fail
+        because \\usepackage{promptgrimoire-export} cannot be resolved.
+        """
         tex_content = r"""
 \documentclass{article}
+\usepackage{promptgrimoire-export}
 \begin{document}
-Test.
+This should fail because the .sty is missing.
 \end{document}
 """
-        tex_path = subdir / "test.tex"
+        tex_path = tmp_path / "missing_sty.tex"
         tex_path.write_text(tex_content)
 
-        pdf_path = await compile_latex(tex_path)
-
-        assert pdf_path.parent == subdir
+        # Do NOT copy .sty to tmp_path -- that's the point of this test
+        with pytest.raises(LaTeXCompilationError):
+            await compile_latex(tex_path, output_dir=tmp_path)
 
 
 @pytest.mark.order("first")
 @requires_pandoc
-@requires_latexmk
-class TestMarginnoteExportPipeline:
-    """Tests for the marginalia+lua-ul export pipeline."""
+class TestMarginnoteTexOnly:
+    """Tex-only tests for the marginalia+lua-ul export pipeline.
 
-    @pytest.mark.asyncio
-    async def test_export_annotation_pdf_basic(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should produce a valid PDF."""
-        html = "<p>This is a test document with highlighted text.</p>"
-        highlights = [
-            {
-                "id": "h1",
-                "start_char": 3,
-                "end_char": 5,
-                "tag": "jurisdiction",
-                "text": "test document",
-                "author": "Tester",
-                "created_at": "2026-01-26T14:30:00+00:00",
-                "comments": [],
-            }
-        ]
-        tag_colours = {"jurisdiction": "#1f77b4"}
+    These tests use generate_tex_only() to verify .tex content without
+    paying the 5-10s compilation cost. No latexmk required.
 
-        pdf_path = await export_annotation_pdf(
-            html_content=html,
-            highlights=highlights,
-            tag_colours=tag_colours,
-            output_dir=tmp_path,
-        )
+    Migrated from TestMarginnoteExportPipeline (Task 13).
+    """
 
-        assert pdf_path.exists()
-        assert pdf_path.suffix == ".pdf"
-        # Check it's actually a PDF
-        with pdf_path.open("rb") as f:
-            header = f.read(4)
-        assert header == b"%PDF"
+    # test_export_annotation_pdf_basic removed -- migrated to
+    # test_english_mega_doc.py::TestBasicPipeline
 
     @pytest.mark.asyncio
     async def test_export_with_general_notes(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should include general notes section."""
+        """export pipeline should include general notes section in .tex."""
         html = "<p>Document text here.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
         general_notes = "<p>These are <strong>general notes</strong> for document.</p>"
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -189,15 +194,13 @@ class TestMarginnoteExportPipeline:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
         # Check the tex file was created with notes section
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
 
     @pytest.mark.asyncio
     async def test_export_with_comments(self, tmp_path: Path) -> None:
-        """export_annotation_pdf should include comment threads."""
+        """export pipeline should include comment threads in .tex."""
         html = "<p>The court held that the defendant was liable.</p>"
         highlights = [
             {
@@ -216,203 +219,41 @@ class TestMarginnoteExportPipeline:
         ]
         tag_colours = {"decision": "#e377c2"}
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
         # Check the tex file includes comments
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "Bob" in tex_content
         assert "Good catch" in tex_content
 
 
-@pytest.mark.order("first")
-@requires_pandoc
-@requires_latexmk
-class TestI18nPdfExport:
-    """Integration tests for multilingual PDF export (Issue #101).
-
-    Output saved to: output/test_output/i18n_exports/
-
-    Tests verify:
-    - PDF is created and valid
-    - LaTeX log has no font substitution errors
-    - TEX file contains expected i18n characters
-    """
-
-    # Persistent output directory for visual inspection
-    _OUTPUT_DIR = PDF_TEST_OUTPUT_DIR / "i18n_exports"
-
-    # Expected characters per fixture (for content verification)
-    # Must match actual content in first 2000 chars of fixture
-    _EXPECTED_CHARS: ClassVar[dict[str, list[str]]] = {
-        "chinese_wikipedia": ["维基百科", "示例内容"],  # from clean fixture
-        "translation_japanese_sample": ["家庭法令", "離婚判決謄本", "オーストラリア"],
-        "translation_korean_sample": [
-            "법은",
-            "차이를",
-            "조정하는",
-        ],  # "Law" "differences" "coordinating"
-        "translation_spanish_sample": ["vehículo", "búsqueda"],  # "vehicle" "search"
-    }
-
-    @staticmethod
-    def _check_log_for_font_errors(log_path: RealPath) -> list[str]:
-        """Check LaTeX log for font-related errors.
-
-        Returns list of error lines found (empty if clean).
-        """
-        if not log_path.exists():
-            return ["Log file not found"]
-
-        errors = []
-        log_content = log_path.read_text(encoding="utf-8", errors="replace")
-
-        # Patterns indicating font problems
-        error_patterns = [
-            "Font .* not found",
-            "Missing character:",
-            "! Font \\\\",
-            "kpathsea: Running mktextfm",  # Font generation = missing font
-        ]
-
-        for line in log_content.split("\n"):
-            for pattern in error_patterns:
-                if re.search(pattern, line, re.IGNORECASE):
-                    errors.append(line.strip())
-                    break
-
-        return errors
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "fixture_name",
-        [
-            "chinese_wikipedia",
-            "translation_japanese_sample",
-            "translation_korean_sample",
-            "translation_spanish_sample",
-        ],
-    )
-    async def test_export_i18n_fixture(self, fixture_name: str) -> None:
-        """Export multilingual fixture to PDF without errors.
-
-        Verifies:
-        1. PDF is created with valid header
-        2. TEX file contains expected i18n characters
-        3. LaTeX log has no font substitution errors
-        """
-        fixture_path = FIXTURES_DIR / f"{fixture_name}.html"
-        if not fixture_path.exists():
-            pytest.skip(f"Fixture {fixture_name}.html not found")
-
-        # Pass raw HTML to export - production pipeline handles script stripping
-        html_content = fixture_path.read_text(encoding="utf-8")
-
-        # Use persistent output directory for inspection (purge first for clean state)
-        output_dir = self._OUTPUT_DIR / fixture_name
-        if output_dir.exists():
-            import shutil
-
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        pdf_path = await export_annotation_pdf(
-            html_content=html_content,
-            highlights=[],
-            tag_colours={},
-            output_dir=output_dir,
-            filename=fixture_name,
-        )
-
-        # 1. Verify PDF is created and valid
-        assert pdf_path.exists(), f"PDF not created for {fixture_name}"
-        assert pdf_path.stat().st_size > 0, f"PDF is empty for {fixture_name}"
-        with pdf_path.open("rb") as f:
-            header = f.read(4)
-        assert header == b"%PDF", f"Invalid PDF header for {fixture_name}"
-
-        # 2. Verify TEX file contains expected i18n characters
-        tex_path = output_dir / f"{fixture_name}.tex"
-        assert tex_path.exists(), f"TEX file not found for {fixture_name}"
-        tex_content = tex_path.read_text(encoding="utf-8")
-
-        expected_chars = self._EXPECTED_CHARS.get(fixture_name, [])
-        for expected in expected_chars:
-            assert expected in tex_content, (
-                f"Expected '{expected}' not found in TEX for {fixture_name}"
-            )
-
-        # 3. Verify LaTeX log has no font errors
-        log_path = output_dir / f"{fixture_name}.log"
-        font_errors = self._check_log_for_font_errors(log_path)
-        assert not font_errors, f"Font errors in {fixture_name}:\n" + "\n".join(
-            font_errors[:5]
-        )
-
-    @pytest.mark.asyncio
-    async def test_export_cjk_with_highlight(self) -> None:
-        """Export CJK content with highlight annotation."""
-        html = "这是中文测试文本。日本語のテスト。한국어 테스트."
-        highlights = [
-            {
-                "id": "h1",
-                "start_char": 0,
-                "end_char": 1,
-                "tag": "jurisdiction",
-                "text": "这是中文",
-                "author": "Tester",
-                "created_at": "2026-01-26T14:30:00+00:00",
-                "comments": [],
-            }
-        ]
-        tag_colours = {"jurisdiction": "#1f77b4"}
-
-        # Use persistent output directory for inspection (purge first for clean state)
-        output_dir = self._OUTPUT_DIR / "cjk_highlight_test"
-        if output_dir.exists():
-            import shutil
-
-            shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        pdf_path = await export_annotation_pdf(
-            html_content=html,
-            highlights=highlights,
-            tag_colours=tag_colours,
-            output_dir=output_dir,
-            filename="cjk_highlight_test",
-        )
-
-        assert pdf_path.exists()
-        assert pdf_path.stat().st_size > 0
+# TestI18nPdfExport removed -- migrated to test_i18n_mega_doc.py (Task 12).
+# test_export_cjk_with_highlight removed -- redundant coverage (Task 15).
 
 
 @pytest.mark.order("first")
 @requires_pandoc
-@requires_latexmk
-class TestResponseDraftExport:
-    """Integration tests for PDF export with response draft markdown (Phase 7).
+class TestResponseDraftTexOnly:
+    """Tex-only tests for PDF export with response draft markdown (Phase 7).
 
-    Tests AC6.1 (response draft in PDF), AC6.2 (empty draft = no section),
-    AC6.3 (CRDT fallback). These test the export pipeline directly, not
-    the UI layer.
+    Tests AC6.1 (response draft in PDF), AC6.2 (empty draft = no section).
+    These use generate_tex_only() to verify .tex content without compilation.
+
+    Migrated from TestResponseDraftExport (Task 13).
     """
 
     @pytest.mark.asyncio
-    async def test_export_with_markdown_notes_ac6_1(self, tmp_path: RealPath) -> None:
-        """AC6.1: Export PDF includes response draft content.
+    async def test_export_with_markdown_notes_ac6_1(self, tmp_path: Path) -> None:
+        """AC6.1: Export includes response draft content in .tex.
 
         Converts markdown to LaTeX via Pandoc and includes it in the
         General Notes section.
         """
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
-
         html = "<p>Document text for annotation.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
@@ -421,7 +262,7 @@ class TestResponseDraftExport:
         markdown = "# My Response\n\nThis is my **analysis** of the document."
         notes_latex = await markdown_to_latex_notes(markdown)
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -429,23 +270,19 @@ class TestResponseDraftExport:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" in tex_content
         assert "My Response" in tex_content
         assert "analysis" in tex_content
 
     @pytest.mark.asyncio
-    async def test_export_empty_draft_no_section_ac6_2(
-        self, tmp_path: RealPath
-    ) -> None:
-        """AC6.2: Empty response draft produces no extra section in PDF."""
+    async def test_export_empty_draft_no_section_ac6_2(self, tmp_path: Path) -> None:
+        """AC6.2: Empty response draft produces no extra section in .tex."""
         html = "<p>Document text for annotation.</p>"
         highlights: list[dict] = []
         tag_colours = {"jurisdiction": "#1f77b4"}
 
-        pdf_path = await export_annotation_pdf(
+        tex_path = await generate_tex_only(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
@@ -453,16 +290,50 @@ class TestResponseDraftExport:
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
-        tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
         assert "General Notes" not in tex_content
 
     @pytest.mark.asyncio
-    async def test_export_with_rich_markdown_ac6_1(self, tmp_path: RealPath) -> None:
-        """AC6.1: Rich markdown (lists, bold, italic) survives export."""
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
+    async def test_notes_latex_takes_precedence_over_general_notes(
+        self, tmp_path: Path
+    ) -> None:
+        """notes_latex takes precedence over general_notes HTML."""
+        html = "<p>Document text.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
 
+        # Both paths provided -- LaTeX should win
+        general_notes_html = "<p>HTML notes content</p>"
+        markdown = "Markdown response draft content"
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            general_notes=general_notes_html,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert "Markdown response draft content" in tex_content
+
+
+@pytest.mark.order("first")
+@requires_pandoc
+@requires_latexmk
+class TestResponseDraftCompile:
+    """Compile test for rich markdown response draft (Phase 7).
+
+    Kept as a compile test because rich markdown (lists, bold, italic)
+    is the most complex notes path and must be verified to actually compile.
+    """
+
+    @pytest.mark.asyncio
+    async def test_export_with_rich_markdown_ac6_1(self, tmp_path: Path) -> None:
+        """AC6.1: Rich markdown (lists, bold, italic) survives export."""
         html = "<p>Source document.</p>"
         highlights: list[dict] = []
         tag_colours: dict[str, str] = {}
@@ -492,33 +363,300 @@ class TestResponseDraftExport:
         assert r"\begin{itemize}" in tex_content
         assert "overall conclusion" in tex_content
 
+
+@requires_pandoc
+class TestGenerateTexOnly:
+    """Tests for generate_tex_only() -- AC1.4.
+
+    generate_tex_only() runs the full export pipeline up to .tex file creation
+    but does NOT invoke compile_latex(). This enables fast assertions on LaTeX
+    content without paying the 5-10s compilation cost.
+    """
+
     @pytest.mark.asyncio
-    async def test_notes_latex_takes_precedence_over_general_notes(
-        self, tmp_path: RealPath
-    ) -> None:
-        """notes_latex takes precedence over general_notes HTML."""
-        from promptgrimoire.export.pdf_export import markdown_to_latex_notes
+    async def test_returns_tex_path_without_compilation(self, tmp_path: Path) -> None:
+        """AC1.4: generate_tex_only() returns .tex path, no PDF created."""
+        html = "<p>This is a test document with highlighted text.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 3,
+                "end_char": 5,
+                "tag": "jurisdiction",
+                "text": "test document",
+                "author": "Tester",
+                "created_at": "2026-01-26T14:30:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"jurisdiction": "#1f77b4"}
 
-        html = "<p>Document text.</p>"
-        highlights: list[dict] = []
-        tag_colours: dict[str, str] = {}
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
 
-        # Both paths provided — LaTeX should win
-        general_notes_html = "<p>HTML notes content</p>"
-        markdown = "Markdown response draft content"
-        notes_latex = await markdown_to_latex_notes(markdown)
+        # Returns a Path to a .tex file that exists
+        assert tex_path.exists(), "generate_tex_only() must create the .tex file"
+        assert tex_path.suffix == ".tex"
+
+        # .tex file contains expected LaTeX structure
+        tex_content = tex_path.read_text()
+        assert r"\documentclass" in tex_content
+        assert r"\begin{document}" in tex_content
+
+        # .tex file contains highlight commands (from the annotation pipeline)
+        assert r"\highLight" in tex_content or r"\underLine" in tex_content
+
+        # No PDF file exists -- compile_latex was NOT called
+        pdf_files = list(tmp_path.glob("*.pdf"))
+        assert pdf_files == [], (
+            f"generate_tex_only() must NOT produce a PDF, found: {pdf_files}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_with_general_notes(self, tmp_path: Path) -> None:
+        """generate_tex_only() includes General Notes section when provided."""
+        html = "<p>Document text here.</p>"
+        general_notes = "<p>These are <strong>general notes</strong> for document.</p>"
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours={"jurisdiction": "#1f77b4"},
+            output_dir=tmp_path,
+            general_notes=general_notes,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+
+    @pytest.mark.asyncio
+    async def test_with_notes_latex(self, tmp_path: Path) -> None:
+        """generate_tex_only() includes pre-converted LaTeX notes."""
+        html = "<p>Document text here.</p>"
+        notes_latex = r"This is \textbf{pre-converted} LaTeX notes content."
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours={"jurisdiction": "#1f77b4"},
+            output_dir=tmp_path,
+            notes_latex=notes_latex,
+        )
+
+        tex_content = tex_path.read_text()
+        assert "General Notes" in tex_content
+        assert r"pre-converted" in tex_content
+
+
+@requires_pandoc
+@requires_latexmk
+class TestCriticalPathIsolation:
+    """Fast standalone compile tests for critical paths -- AC1.8.
+
+    These intentionally minimal documents (~1 paragraph) compile in ~1s each.
+    They verify concerns that mega-documents might mask:
+    - Margin notes are sensitive to page context and must be verified in
+      short documents, not just mega-doc sections.
+    - Highlight boundary precision can be obscured by surrounding content.
+    """
+
+    @pytest.mark.asyncio
+    async def test_margin_note_alignment(self, tmp_path: Path) -> None:
+        r"""Compile a short document with a comment to verify margin note placement.
+
+        Margin notes use \annot commands that contain \par, which is
+        sensitive to LaTeX context (e.g., inside \section{} arguments).
+        A short document isolates this from mega-doc interference.
+        """
+        html = "<p>The court held that the defendant was liable for damages.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 14,
+                "tag": "holding",
+                "text": "The court held",
+                "author": "Alice",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                "comments": [
+                    {"author": "Bob", "text": "Key finding by the court."},
+                ],
+            }
+        ]
+        tag_colours = {"holding": "#2ca02c"}
 
         pdf_path = await export_annotation_pdf(
             html_content=html,
             highlights=highlights,
             tag_colours=tag_colours,
-            general_notes=general_notes_html,
-            notes_latex=notes_latex,
             output_dir=tmp_path,
         )
 
-        assert pdf_path.exists()
+        assert pdf_path.exists(), "PDF must be created for margin note test"
+
+        # Verify .tex contains the \annot command for the comment
         tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
-        assert "Markdown response draft content" in tex_content
+        assert r"\annot" in tex_content, (
+            r"Short document with comment must produce \annot command"
+        )
+
+    @pytest.mark.asyncio
+    async def test_highlight_boundary_precision(self, tmp_path: Path) -> None:
+        r"""Compile a short document with a 2-word highlight for boundary precision.
+
+        Verifies that \highLight wraps exactly the targeted words without
+        bleeding into surrounding text. Short documents make boundary
+        issues obvious that might be hidden in mega-doc sections.
+        """
+        html = "<p>The quick brown fox jumps over the lazy dog.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 4,
+                "end_char": 9,
+                "tag": "target",
+                "text": "quick brown",
+                "author": "Tester",
+                "created_at": "2026-01-26T10:00:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"target": "#ff7f0e"}
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists(), "PDF must be created for highlight boundary test"
+
+        # Verify .tex contains \highLight wrapping the target words
+        tex_path = tmp_path / "annotated_document.tex"
+        tex_content = tex_path.read_text()
+        assert r"\highLight" in tex_content or r"\underLine" in tex_content, (
+            r"Short document with highlight must produce \highLight or \underLine"
+        )
+
+
+@pytest.mark.order("first")
+@requires_pandoc
+@requires_latexmk
+class TestDynamicFontLoading:
+    """Integration tests for dynamic font loading (Phase 3).
+
+    AC3.5: English-only compile time < 2s (simple single-document, not mega-doc).
+    AC3.8: cjktext pass-through when luatexja-fontspec is not loaded.
+    """
+
+    @pytest.mark.asyncio
+    async def test_english_compile_time_ac3_5(self, tmp_path: Path) -> None:
+        """AC3.5: English-only document compiles significantly faster than full-font.
+
+        Uses a simple single-document compile (not mega-doc) to measure
+        the Latin-only compile time fairly. The body text is ASCII-only,
+        so detect_scripts() returns empty -> minimal fallback chain ->
+        no luaotfload overhead.
+
+        Timing baseline:
+        - Isolation: ~1.5s (Latin-only) vs ~5s (full font chain)
+        - Under xdist (24 workers, full suite): ~2-3s due to I/O contention
+
+        Threshold is 5s to prevent flaky failures under heavy parallel
+        load while still catching regressions vs full-font compile (~8-11s
+        under same contention). The structural assertion (no luatexja-fontspec)
+        is the primary correctness check; timing is a secondary guard.
+        """
+        import time
+
+        html = "<p>The quick brown fox jumps over the lazy dog.</p>"
+        highlights = [
+            {
+                "id": "h1",
+                "start_char": 0,
+                "end_char": 3,
+                "tag": "jurisdiction",
+                "text": "The quick brown",
+                "author": "Tester",
+                "created_at": "2026-01-26T14:30:00+00:00",
+                "comments": [],
+            }
+        ]
+        tag_colours = {"jurisdiction": "#1f77b4"}
+
+        # Generate .tex via production pipeline
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Primary correctness check: Latin-only fonts, no CJK loading
+        tex_content = tex_path.read_text()
+        assert "luatexja-fontspec" not in tex_content, (
+            "English-only document should not load luatexja-fontspec"
+        )
+
+        # Time compilation only (not Pandoc conversion)
+        start = time.monotonic()
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+        elapsed = time.monotonic() - start
+
+        assert pdf_path.exists(), "PDF must be created"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF"
+
+        # Secondary timing guard: under 5s even with xdist contention
+        # (~1.5s isolation, ~2-3s under 24-worker xdist, vs ~8-11s full-font)
+        assert elapsed < 5.0, (
+            f"English-only compile took {elapsed:.2f}s (target: <5s). "
+            "This suggests luaotfload overhead was not eliminated."
+        )
+
+    @pytest.mark.asyncio
+    async def test_cjktext_passthrough_ac3_8(self, tmp_path: Path) -> None:
+        r"""AC3.8: \cjktext{} works as pass-through when CJK fonts not loaded.
+
+        The .sty provides \providecommand{\cjktext}[1]{#1} (pass-through).
+        When build_font_preamble(frozenset()) is used (Latin-only), no
+        \renewcommand{\cjktext} is emitted. The command must still work
+        without error, passing its argument through unchanged.
+        """
+        html = "<p>English text only.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        # Generate .tex via production pipeline (Latin-only)
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Inject \cjktext{hello} before \end{document}
+        tex_content = tex_path.read_text()
+        assert "luatexja-fontspec" not in tex_content, (
+            "Latin-only document should not load luatexja-fontspec"
+        )
+        tex_content = tex_content.replace(
+            r"\end{document}",
+            "\\cjktext{hello}\n\\end{document}",
+        )
+        tex_path.write_text(tex_content)
+
+        # Compile -- must not raise LaTeXCompilationError
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+
+        assert pdf_path.exists(), "PDF must be created with cjktext pass-through"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF"

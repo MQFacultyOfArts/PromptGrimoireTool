@@ -3,9 +3,52 @@
 **Feature:** CSS Custom Highlight API Migration
 **Branch:** css-highlight-api
 **Worktree:** .worktrees/css-highlight-api
-**Last updated:** 2026-02-12
+**Last updated:** 2026-02-13
 
-## Progress
+## Execution Progress
+
+| Phase | Status | UAT | Notes |
+|-------|--------|-----|-------|
+| 1. Browser Feature Gate | COMPLETE | Confirmed | |
+| 2. JS Text Walker Module | COMPLETE | Confirmed | Parity tests pass |
+| 3. Highlight Rendering Swap | COMPLETE | Confirmed | 3 bugfixes post-review |
+| 4. Scroll-Sync and Card Interaction | COMPLETE | Confirmed | DOM replacement resilience fix |
+| 5. Remote Presence | COMPLETE | Confirmed (AC3.1 deferred #149) | 3 review cycles, t-string refactor |
+| 6. Cleanup and Verification | IN PROGRESS | | Subcomponents A-B done, C interrupted |
+
+### Phase 6 Execution Notes (WIP)
+
+Subcomponent A (Task 1): Complete — deleted `_process_text_to_char_spans` + test file.
+Subcomponent B (Tasks 2-3): Complete — verification only, all char-span CSS/JS already removed by earlier phases.
+Subcomponent C (Task 4): Partially done — `test_char_tokenization.py` already deleted in Task 1, `test_process_input.py` comment updates staged. Task 5 (E2E helper rewrite) not started.
+Subcomponent D (Tasks 6-7): Not started.
+Task 8 (final sweep): Not started.
+
+**Resume point:** Phase 6, Subcomponent C, Tasks 4-5.
+
+### Phase 5 Execution Notes
+
+All 9 tasks implemented across 4 subcomponents. Key additions beyond plan:
+- `_render_js()` t-string function for safe JS interpolation (replaces json.dumps pattern)
+- `_broadcast_js_to_others()` helper extracted during refactor step
+- 21 adversarial security tests for `_render_js`
+- AC3.1 (remote cursors) deferred to #149 — broadcast infra works but cursor events not emitted from clicks
+
+Rebased onto main (2 commits: test optimisation, Serena removal). 2 trivial conflicts resolved.
+
+### Phase 4 Execution Notes
+
+All 5 tasks implemented. Key deviation from plan: discovered NiceGUI/Vue replaces the
+entire Annotate tab panel DOM when the Respond tab initialises its Milkdown editor.
+This required rewriting scroll-sync JS with dynamic `getElementById` lookups (no closured
+DOM references), persistent `highlights-ready` event listener for MutationObserver
+re-attachment, and document-level event delegation for card hover.
+
+Planned E2E test files (`test_scroll_sync.py`, `test_card_interaction.py`) not created
+as separate files — verified via diagnostic Playwright test + manual UAT. E2E test audit
+doc move deferred to Phase 6.
+
+## Planning Progress
 
 | Phase | Design Read | Codebase Investigated | External Research | Plan Written | User Approved |
 |-------|:-----------:|:---------------------:|:-----------------:|:------------:|:-------------:|

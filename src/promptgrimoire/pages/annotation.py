@@ -74,47 +74,23 @@ logger = logging.getLogger(__name__)
 _workspace_registry = AnnotationDocumentRegistry()
 
 
-class _ClientState:
-    """State for a connected client."""
+@dataclass
+class _RemotePresence:
+    """Lightweight presence state for a connected client."""
 
-    def __init__(
-        self, callback: Any, color: str, name: str, nicegui_client: Any = None
-    ) -> None:
-        self.callback = callback
-        self.color = color
-        self.name = name
-        self.nicegui_client = nicegui_client  # NiceGUI Client for JS relay
-        self.cursor_char: int | None = None
-        self.selection_start: int | None = None
-        self.selection_end: int | None = None
-        self.has_milkdown_editor: bool = False  # Set True when Tab 3 editor initialised
-
-    def set_cursor(self, char_index: int | None) -> None:
-        """Update cursor position."""
-        self.cursor_char = char_index
-
-    def set_selection(self, start: int | None, end: int | None) -> None:
-        """Update selection range."""
-        self.selection_start = start
-        self.selection_end = end
-
-    def to_cursor_dict(self) -> dict[str, Any]:
-        """Get cursor as dict for CSS generation."""
-        return {"char": self.cursor_char, "name": self.name, "color": self.color}
-
-    def to_selection_dict(self) -> dict[str, Any]:
-        """Get selection as dict for CSS generation."""
-        return {
-            "start_char": self.selection_start,
-            "end_char": self.selection_end,
-            "name": self.name,
-            "color": self.color,
-        }
+    name: str
+    color: str
+    nicegui_client: Any  # NiceGUI Client for JS relay
+    callback: Any  # Async callback for annotation/UI updates
+    cursor_char: int | None = None
+    selection_start: int | None = None
+    selection_end: int | None = None
+    has_milkdown_editor: bool = False
 
 
 # Track connected clients per workspace for broadcasting
-# workspace_id -> {client_id -> _ClientState}
-_connected_clients: dict[str, dict[str, _ClientState]] = {}
+# workspace_id -> {client_id -> _RemotePresence}
+_workspace_presence: dict[str, dict[str, _RemotePresence]] = {}
 
 # Background tasks set - prevents garbage collection of fire-and-forget tasks
 _background_tasks: set[asyncio.Task[None]] = set()
@@ -707,7 +683,7 @@ def _push_highlights_to_client(state: PageState) -> None:
     re-register all ``CSS.highlights`` entries. Called after any highlight
     mutation (add, delete, tag change) and on tab switch back to Annotate.
 
-    Looks up the NiceGUI client from ``_connected_clients`` to use
+    Looks up the NiceGUI client from ``_workspace_presence`` to use
     ``client.run_javascript()`` — this avoids slot-stack errors when called
     from background contexts (CRDT sync callbacks).
     """
@@ -723,7 +699,7 @@ def _push_highlights_to_client(state: PageState) -> None:
     # sync callbacks) where ui.run_javascript() would crash with a
     # slot-stack RuntimeError.
     workspace_key = str(state.workspace_id)
-    client_state = _connected_clients.get(workspace_key, {}).get(state.client_id)
+    client_state = _workspace_presence.get(workspace_key, {}).get(state.client_id)
     if client_state and client_state.nicegui_client:
         client_state.nicegui_client.run_javascript(js)
     else:
@@ -1466,8 +1442,11 @@ def _update_cursor_css(state: PageState) -> None:
     if state.cursor_style is None:
         return
     workspace_key = str(state.workspace_id)
-    clients = _connected_clients.get(workspace_key, {})
-    cursors = {cid: cs.to_cursor_dict() for cid, cs in clients.items()}
+    clients = _workspace_presence.get(workspace_key, {})
+    cursors = {
+        cid: {"char": cs.cursor_char, "name": cs.name, "color": cs.color}
+        for cid, cs in clients.items()
+    }
     css = _build_remote_cursor_css(cursors, state.client_id)
     state.cursor_style._props["innerHTML"] = css
     state.cursor_style.update()
@@ -1478,8 +1457,16 @@ def _update_selection_css(state: PageState) -> None:
     if state.selection_style is None:
         return
     workspace_key = str(state.workspace_id)
-    clients = _connected_clients.get(workspace_key, {})
-    selections = {cid: cs.to_selection_dict() for cid, cs in clients.items()}
+    clients = _workspace_presence.get(workspace_key, {})
+    selections = {
+        cid: {
+            "start_char": cs.selection_start,
+            "end_char": cs.selection_end,
+            "name": cs.name,
+            "color": cs.color,
+        }
+        for cid, cs in clients.items()
+    }
     css = _build_remote_selection_css(selections, state.client_id)
     state.selection_style._props["innerHTML"] = css
     state.selection_style.update()
@@ -1490,12 +1477,12 @@ def _update_user_count(state: PageState) -> None:
     if state.user_count_badge is None:
         return
     workspace_key = str(state.workspace_id)
-    count = len(_connected_clients.get(workspace_key, {}))
+    count = len(_workspace_presence.get(workspace_key, {}))
     logger.debug(
         "USER_COUNT: ws=%s count=%d keys=%s",
         workspace_key,
         count,
-        list(_connected_clients.keys()),
+        list(_workspace_presence.keys()),
     )
     label = "1 user" if count == 1 else f"{count} users"
     state.user_count_badge.set_text(label)
@@ -1503,7 +1490,7 @@ def _update_user_count(state: PageState) -> None:
 
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
     """Fire-and-forget notification to other clients in workspace."""
-    for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+    for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
         if cid != exclude_client_id and cstate.callback:
             with contextlib.suppress(Exception):
                 task = asyncio.create_task(cstate.callback())
@@ -1527,7 +1514,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Create broadcast function for annotation updates
     async def broadcast_update() -> None:
-        for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+        for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
             if cid != client_id and cstate.callback:
                 with contextlib.suppress(Exception):
                     await cstate.callback()
@@ -1536,9 +1523,9 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Create broadcast function for cursor updates
     async def broadcast_cursor(word_index: int | None) -> None:
-        clients = _connected_clients.get(workspace_key, {})
+        clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
-            clients[client_id].set_cursor(word_index)
+            clients[client_id].cursor_char = word_index
         # Notify other clients to refresh cursor CSS
         for cid, cstate in clients.items():
             if cid != client_id and cstate.callback:
@@ -1549,9 +1536,10 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Create broadcast function for selection updates
     async def broadcast_selection(start: int | None, end: int | None) -> None:
-        clients = _connected_clients.get(workspace_key, {})
+        clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
-            clients[client_id].set_selection(start, end)
+            clients[client_id].selection_start = start
+            clients[client_id].selection_end = end
         # Notify other clients to refresh selection CSS
         for cid, cstate in clients.items():
             if cid != client_id and cstate.callback:
@@ -1576,19 +1564,19 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             state.refresh_respond_references()
 
     # Register this client
-    if workspace_key not in _connected_clients:
-        _connected_clients[workspace_key] = {}
-    _connected_clients[workspace_key][client_id] = _ClientState(
-        callback=handle_update_from_other,
-        color=state.user_color,
+    if workspace_key not in _workspace_presence:
+        _workspace_presence[workspace_key] = {}
+    _workspace_presence[workspace_key][client_id] = _RemotePresence(
         name=state.user_name,
+        color=state.user_color,
         nicegui_client=client,
+        callback=handle_update_from_other,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
         workspace_key,
         client_id[:8],
-        len(_connected_clients[workspace_key]),
+        len(_workspace_presence[workspace_key]),
     )
 
     # Update own user count and notify others
@@ -1597,10 +1585,10 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Disconnect handler
     async def on_disconnect() -> None:
-        if workspace_key in _connected_clients:
-            _connected_clients[workspace_key].pop(client_id, None)
+        if workspace_key in _workspace_presence:
+            _workspace_presence[workspace_key].pop(client_id, None)
             # Broadcast to update cursors/selections (remove this client's)
-            for _cid, cstate in _connected_clients.get(workspace_key, {}).items():
+            for _cid, cstate in _workspace_presence.get(workspace_key, {}).items():
                 if cstate.callback:
                     with contextlib.suppress(Exception):
                         await cstate.callback()
@@ -2785,7 +2773,7 @@ def _broadcast_yjs_update(
     that has initialised the Milkdown editor, except the originating client.
     """
     ws_key = str(workspace_id)
-    for cid, cstate in _connected_clients.get(ws_key, {}).items():
+    for cid, cstate in _workspace_presence.get(ws_key, {}).items():
         if cid == origin_client_id:
             continue
         if cstate.has_milkdown_editor and cstate.nicegui_client:
@@ -2833,7 +2821,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     state.has_milkdown_editor = True
     # Mark this client as having a Milkdown editor for Yjs relay
     ws_key = str(workspace_id)
-    clients = _connected_clients.get(ws_key, {})
+    clients = _workspace_presence.get(ws_key, {})
     if state.client_id in clients:
         clients[state.client_id].has_milkdown_editor = True
 

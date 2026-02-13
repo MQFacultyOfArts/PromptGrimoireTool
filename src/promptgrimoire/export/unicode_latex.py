@@ -145,6 +145,29 @@ _REQUIRED_SCRIPTS: frozenset[str] = frozenset(
 )
 
 
+def detect_scripts(text: str) -> frozenset[str]:
+    """Scan text and return OpenType script tags for detected non-Latin scripts.
+
+    Latin/ASCII is always assumed present and not included in the result.
+    An empty frozenset means only Latin base fonts are needed.
+    """
+    found: set[str] = set()
+    for ch in text:
+        cp = ord(ch)
+        if cp < 0x0370:  # ASCII + Latin Extended -- fast skip
+            continue
+        for tag, ranges in SCRIPT_TAG_RANGES.items():
+            if tag in found:
+                continue  # Already detected this script
+            for start, end in ranges:
+                if start <= cp <= end:
+                    found.add(tag)
+                    break
+        if found >= _REQUIRED_SCRIPTS:
+            break  # All possible scripts found, stop scanning
+    return frozenset(found)
+
+
 @functools.cache
 def _load_latex_emoji_names() -> frozenset[str]:
     """Load valid emoji names from LaTeX emoji package.

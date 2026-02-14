@@ -76,10 +76,10 @@ def _setup_logging() -> None:
 
 def main() -> None:
     """Entry point for the PromptGrimoire application."""
-    from dotenv import load_dotenv
     from nicegui import app, ui
 
-    load_dotenv()
+    from promptgrimoire.config import get_settings
+
     _setup_logging()
 
     # Serve static JS/CSS assets (e.g. annotation-highlight.js)
@@ -88,8 +88,10 @@ def main() -> None:
 
     import promptgrimoire.pages  # noqa: F401 - registers routes
 
-    # Database lifecycle hooks (only if DATABASE_URL is configured)
-    if os.environ.get("DATABASE_URL"):
+    settings = get_settings()
+
+    # Database lifecycle hooks (only if DATABASE__URL is configured)
+    if settings.database.url:
         from promptgrimoire.crdt.persistence import get_persistence_manager
         from promptgrimoire.db import close_db, get_engine, init_db, verify_schema
 
@@ -105,8 +107,8 @@ def main() -> None:
             await get_persistence_manager().persist_all_dirty_workspaces()
             await close_db()
 
-    port = int(os.environ.get("PROMPTGRIMOIRE_PORT", "8080"))
-    storage_secret = os.environ.get("STORAGE_SECRET", "dev-secret-change-me")
+    port = settings.app.port
+    storage_secret = settings.app.storage_secret.get_secret_value()
 
     print(f"PromptGrimoire v{get_version_string()}")
     print(f"Starting application on http://0.0.0.0:{port}")

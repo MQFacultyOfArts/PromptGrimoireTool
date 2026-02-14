@@ -2924,14 +2924,13 @@ _COPY_PROTECTION_JS = """
     }, true);
   });
 
-  var editor = document.querySelector('#milkdown-respond-editor');
-  if (editor) {
-    editor.addEventListener('paste', function(e) {
+  document.addEventListener('paste', function(e) {
+    if (e.target.closest && e.target.closest('#milkdown-respond-editor')) {
       e.preventDefault();
       e.stopImmediatePropagation();
       showToast();
-    }, true);
-  }
+    }
+  }, true);
 
   // Ctrl+P / Cmd+P print intercept
   document.addEventListener('keydown', function(e) {

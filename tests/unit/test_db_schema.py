@@ -6,6 +6,12 @@ and that bootstrap functions work as expected.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import pytest
+
+from promptgrimoire.config import DatabaseConfig, Settings
+
 
 def test_all_models_registered() -> None:
     """All SQLModel table classes are registered in metadata.
@@ -53,42 +59,69 @@ def test_get_expected_tables_returns_all_tables() -> None:
     assert "workspace_document" in tables
 
 
-def test_is_db_configured_returns_false_when_unset(monkeypatch) -> None:
-    """is_db_configured() returns False when DATABASE_URL is not set."""
+def test_is_db_configured_returns_false_when_unset() -> None:
+    """is_db_configured() returns False when database.url is not set."""
     from promptgrimoire.db import is_db_configured
 
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    settings_no_db = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    with patch(
+        "promptgrimoire.db.bootstrap.get_settings",
+        return_value=settings_no_db,
+    ):
+        assert is_db_configured() is False
 
-    assert is_db_configured() is False
 
-
-def test_is_db_configured_returns_true_when_set(monkeypatch) -> None:
-    """is_db_configured() returns True when DATABASE_URL is set."""
+def test_is_db_configured_returns_true_when_set() -> None:
+    """is_db_configured() returns True when database.url is set."""
     from promptgrimoire.db import is_db_configured
 
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
+    settings_with_db = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database=DatabaseConfig(
+            url="postgresql+asyncpg://test:test@localhost/test",
+        ),
+    )
+    with patch(
+        "promptgrimoire.db.bootstrap.get_settings",
+        return_value=settings_with_db,
+    ):
+        assert is_db_configured() is True
 
-    assert is_db_configured() is True
 
-
-def test_is_db_configured_returns_false_for_empty_string(monkeypatch) -> None:
-    """is_db_configured() returns False when DATABASE_URL is empty."""
+def test_is_db_configured_returns_false_for_empty_string() -> None:
+    """is_db_configured() returns False when database.url is empty."""
     from promptgrimoire.db import is_db_configured
 
-    monkeypatch.setenv("DATABASE_URL", "")
+    settings_empty_db = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database=DatabaseConfig(url=""),
+    )
+    with patch(
+        "promptgrimoire.db.bootstrap.get_settings",
+        return_value=settings_empty_db,
+    ):
+        assert is_db_configured() is False
 
-    assert is_db_configured() is False
 
-
-def test_run_alembic_upgrade_fails_without_database_url(monkeypatch) -> None:
-    """run_alembic_upgrade() raises RuntimeError without DATABASE_URL."""
-    import pytest
-
+def test_run_alembic_upgrade_fails_without_database_url() -> None:
+    """run_alembic_upgrade() raises RuntimeError without database.url."""
     from promptgrimoire.db import run_alembic_upgrade
 
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-
-    with pytest.raises(RuntimeError, match="DATABASE_URL not set"):
+    settings_no_db = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    with (
+        patch(
+            "promptgrimoire.db.bootstrap.get_settings",
+            return_value=settings_no_db,
+        ),
+        pytest.raises(
+            RuntimeError,
+            match="DATABASE__URL not configured",
+        ),
+    ):
         run_alembic_upgrade()
 
 

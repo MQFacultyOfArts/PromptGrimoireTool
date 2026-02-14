@@ -80,6 +80,37 @@ def _pre_test_db_cleanup() -> None:
     engine.dispose()
 
 
+def _build_test_header(
+    title: str,
+    branch: str | None,
+    db_name: str,
+    start_time: datetime,
+    command_str: str,
+) -> tuple[Text, str]:
+    """Build Rich Text panel content and plain-text log header for test runs.
+
+    Returns:
+        (rich_text, log_header) tuple.
+    """
+    header_text = Text()
+    header_text.append(f"{title}\n", style="bold")
+    header_text.append(f"Branch: {branch or 'detached/unknown'}\n", style="dim")
+    header_text.append(f"Test DB: {db_name}\n", style="dim")
+    header_text.append(f"Started: {start_time.strftime('%H:%M:%S')}\n", style="dim")
+    header_text.append(f"Command: {command_str}", style="cyan")
+
+    log_header = f"""{"=" * 60}
+{title}
+Branch: {branch or "detached/unknown"}
+Test DB: {db_name}
+Started: {start_time.isoformat()}
+Command: {command_str}
+{"=" * 60}
+
+"""
+    return header_text, log_header
+
+
 def _run_pytest(
     title: str,
     log_path: Path,
@@ -88,26 +119,25 @@ def _run_pytest(
     """Run pytest with Rich formatting and logging."""
     _pre_test_db_cleanup()
 
+    from promptgrimoire.config import get_current_branch, get_settings
+
+    branch = get_current_branch()
+    test_db_url = get_settings().dev.test_database_url or ""
+    db_name = (
+        test_db_url.split("?")[0].rsplit("/", 1)[-1]
+        if test_db_url
+        else "not configured"
+    )
+
     start_time = datetime.now()
     user_args = sys.argv[1:]
     all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
-    # Header panel
-    header_text = Text()
-    header_text.append(f"{title}\n", style="bold")
-    header_text.append(f"Started: {start_time.strftime('%H:%M:%S')}\n", style="dim")
-    header_text.append(f"Command: {command_str}", style="cyan")
+    header_text, log_header = _build_test_header(
+        title, branch, db_name, start_time, command_str
+    )
     console.print(Panel(header_text, border_style="blue"))
-
-    # Plain text header for log file
-    log_header = f"""{"=" * 60}
-{title}
-Started: {start_time.isoformat()}
-Command: {command_str}
-{"=" * 60}
-
-"""
 
     with log_path.open("w") as log_file:
         log_file.write(log_header)

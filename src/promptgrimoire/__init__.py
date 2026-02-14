@@ -90,6 +90,31 @@ def main() -> None:
 
     settings = get_settings()
 
+    # Auto-create branch database, run migrations, seed if new.
+    # Note: run_alembic_upgrade() internally calls ensure_database_exists() again,
+    # but that second call is idempotent (DB already exists, returns False).
+    # We call ensure_database_exists() separately here to capture the "created"
+    # bool for conditional seeding.
+    if settings.database.url:
+        from promptgrimoire.config import get_current_branch
+        from promptgrimoire.db.bootstrap import (
+            ensure_database_exists,
+            run_alembic_upgrade,
+        )
+
+        created = ensure_database_exists(settings.database.url)
+        run_alembic_upgrade()  # idempotent — ensures schema is current
+
+        if created:
+            print("Created database — seeding development data...")
+            subprocess.run(["uv", "run", "seed-data"], check=False)
+
+        # Print branch + DB info for feature branches
+        branch = get_current_branch()
+        if branch and branch not in ("main", "master"):
+            db_name = settings.database.url.split("?")[0].rsplit("/", 1)[-1]
+            print(f"Branch: {branch} | Database: {db_name}")
+
     # Database lifecycle hooks (only if DATABASE__URL is configured)
     if settings.database.url:
         from promptgrimoire.crdt.persistence import get_persistence_manager

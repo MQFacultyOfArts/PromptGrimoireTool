@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 
-def ensure_database_exists(url: str | None) -> None:
+def ensure_database_exists(url: str | None) -> bool:
     """Create the target database if it doesn't exist.
 
     Connects to the ``postgres`` maintenance database using sync psycopg
@@ -39,19 +39,23 @@ def ensure_database_exists(url: str | None) -> None:
     Args:
         url: PostgreSQL connection string. If None or empty, no-op.
 
+    Returns:
+        True if a new database was created, False otherwise (including
+        when the URL is None/empty or the database already exists).
+
     Raises:
         ValueError: If the database name contains invalid characters.
     """
     if not url:
-        return
+        return False
 
     # Extract database name from URL (last path segment, before query params)
     base = url.split("?")[0]
     if "/" not in base:
-        return
+        return False
     db_name = base.rsplit("/", 1)[1]
     if not db_name:
-        return
+        return False
 
     # Belt-and-suspenders: validate db_name characters
     if not re.match(r"^[a-zA-Z0-9_]+$", db_name):
@@ -77,6 +81,9 @@ def ensure_database_exists(url: str | None) -> None:
                 psycopg.sql.Identifier(db_name)
             )
             conn.execute(stmt)
+            return True
+
+    return False
 
 
 def is_db_configured() -> bool:

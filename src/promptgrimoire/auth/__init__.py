@@ -29,6 +29,25 @@ from promptgrimoire.auth.models import (
 )
 from promptgrimoire.auth.protocol import AuthClientProtocol
 
+_PRIVILEGED_ROLES = frozenset({"instructor", "stytch_admin"})
+
+
+def is_privileged_user(auth_user: dict[str, object] | None) -> bool:
+    """Check if user has instructor or admin privileges.
+
+    Returns True if the user is an org-level admin or has an instructor/stytch_admin
+    role. Returns False for students, tutors, unauthenticated users, or missing data.
+    """
+    if auth_user is None:
+        return False
+    if auth_user.get("is_admin") is True:
+        return True
+    roles = auth_user.get("roles")
+    if not isinstance(roles, list):
+        return False
+    return bool(_PRIVILEGED_ROLES & set(roles))
+
+
 __all__ = [
     "AuthClientProtocol",
     "AuthConfig",
@@ -39,4 +58,5 @@ __all__ = [
     "clear_config_cache",
     "get_auth_client",
     "get_config",
+    "is_privileged_user",
 ]

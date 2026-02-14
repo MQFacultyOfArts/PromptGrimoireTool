@@ -86,6 +86,8 @@ class Course(SQLModel, table=True):
         name: Course name (e.g., "Contracts").
         semester: Semester identifier (e.g., "2025-S1").
         is_archived: Whether course is archived and read-only.
+        default_copy_protection: Course-level default for copy protection
+            (inherited by activities with copy_protection=NULL).
         created_at: Timestamp when course was created.
     """
 
@@ -94,6 +96,11 @@ class Course(SQLModel, table=True):
     name: str = Field(max_length=200)
     semester: str = Field(max_length=20, index=True)
     is_archived: bool = Field(default=False)
+    default_copy_protection: bool = Field(default=False)
+    """Course-level default for copy protection.
+
+    Inherited by activities with copy_protection=NULL.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -174,6 +181,8 @@ class Activity(SQLModel, table=True):
         template_workspace_id: Foreign key to Workspace (RESTRICT DELETE).
         title: Activity title (e.g., "Annotate Becky Bennett Interview").
         description: Optional markdown description of the activity.
+        copy_protection: Tri-state copy protection
+            (None=inherit from course, True=on, False=off).
         created_at: Timestamp when activity was created.
         updated_at: Timestamp when activity was last modified.
     """
@@ -192,6 +201,11 @@ class Activity(SQLModel, table=True):
     description: str | None = Field(
         default=None, sa_column=Column(sa.Text(), nullable=True)
     )
+    copy_protection: bool | None = Field(default=None)
+    """Tri-state copy protection.
+
+    None=inherit from course, True=on, False=off.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

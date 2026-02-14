@@ -569,3 +569,83 @@ class TestWeekVisibility:
         weeks = await get_visible_weeks(course_id=course.id, user_id=user.id)
 
         assert len(weeks) == 0
+
+
+class TestUpdateCourse:
+    """Tests for update_course."""
+
+    @pytest.mark.asyncio
+    async def test_update_default_copy_protection_false_to_true(self) -> None:
+        """Update default_copy_protection from False to True and verify round-trip."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            get_course_by_id,
+            update_course,
+        )
+
+        course = await create_course(
+            code="LAWS9001", name="CP Test 1", semester="2025-S1"
+        )
+        assert course.default_copy_protection is False
+
+        updated = await update_course(course.id, default_copy_protection=True)
+        assert updated is not None
+        assert updated.default_copy_protection is True
+
+        refetched = await get_course_by_id(course.id)
+        assert refetched is not None
+        assert refetched.default_copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_update_default_copy_protection_true_to_false(self) -> None:
+        """Update default_copy_protection from True to False and verify round-trip."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            get_course_by_id,
+            update_course,
+        )
+
+        course = await create_course(
+            code="LAWS9002", name="CP Test 2", semester="2025-S1"
+        )
+        # Set to True first
+        await update_course(course.id, default_copy_protection=True)
+
+        updated = await update_course(course.id, default_copy_protection=False)
+        assert updated is not None
+        assert updated.default_copy_protection is False
+
+        refetched = await get_course_by_id(course.id)
+        assert refetched is not None
+        assert refetched.default_copy_protection is False
+
+    @pytest.mark.asyncio
+    async def test_update_name_only_preserves_default_copy_protection(self) -> None:
+        """Updating only name does not change default_copy_protection."""
+        from promptgrimoire.db.courses import (
+            create_course,
+            get_course_by_id,
+            update_course,
+        )
+
+        course = await create_course(
+            code="LAWS9003", name="CP Test 3", semester="2025-S1"
+        )
+        await update_course(course.id, default_copy_protection=True)
+
+        updated = await update_course(course.id, name="Renamed Course")
+        assert updated is not None
+        assert updated.name == "Renamed Course"
+        assert updated.default_copy_protection is True
+
+        refetched = await get_course_by_id(course.id)
+        assert refetched is not None
+        assert refetched.default_copy_protection is True
+
+    @pytest.mark.asyncio
+    async def test_update_nonexistent_course_returns_none(self) -> None:
+        """Updating a non-existent course returns None."""
+        from promptgrimoire.db.courses import update_course
+
+        result = await update_course(uuid4(), name="Nope")
+        assert result is None

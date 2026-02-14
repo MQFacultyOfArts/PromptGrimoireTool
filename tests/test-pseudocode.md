@@ -7,8 +7,9 @@ Overlapping tests and coverage gaps are documented intentionally --
 they reveal where the test suite is redundant or incomplete.
 
 > **Scope:** This file covers tests added or modified on the
-> 134-lua-highlight and 94-hierarchy-placement branches. Existing tests
-> from before these branches are not yet documented here.
+> 134-lua-highlight, 94-hierarchy-placement, and 103-copy-protection
+> branches. Existing tests from before these branches are not yet
+> documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -502,6 +503,16 @@ they reveal where the test suite is redundant or incomplete.
 
 **Verifies:** Full Activity CRUD lifecycle, template workspace lifecycle, sentinel-based description clearing
 
+### Activity copy_protection CRUD
+**File:** tests/integration/test_activity_crud.py::TestActivityCRUD (copy_protection tests)
+1. create_activity with copy_protection=True -- persists and round-trips
+2. create_activity without copy_protection -- defaults to None (inherit)
+3. update_activity copy_protection None to True -- persists
+4. update_activity copy_protection True to None -- resets to inherit
+5. update_activity with only title -- preserves existing copy_protection value (Ellipsis sentinel)
+
+**Verifies:** copy_protection tri-state persists through create/update lifecycle; Ellipsis sentinel pattern leaves field unchanged when not explicitly provided
+
 ### List activities by week and course
 **File:** tests/integration/test_activity_crud.py::TestListActivities
 1. Create 3 activities in one week -- list_activities_for_week returns them ordered by created_at
@@ -577,3 +588,147 @@ they reveal where the test suite is redundant or incomplete.
 8. Template with highlights referencing 2 different docs -- each highlight's document_id remapped to correct cloned doc
 
 **Verifies:** CRDT replay correctly remaps document IDs, preserves highlight fields and comments, excludes client metadata, handles null state, and clones general notes
+
+## Copy Protection Resolution (Integration)
+
+### Activity copy_protection field round-trip (AC1.1-AC1.4)
+**File:** tests/integration/test_workspace_placement.py::TestCopyProtectionResolution
+1. Create activity with copy_protection=True -- fetch, assert True
+2. Create activity with copy_protection=False -- fetch, assert False
+3. Create activity with copy_protection=None -- fetch, assert None
+4. Create activity without specifying copy_protection -- fetch, assert None (default)
+
+**Verifies:** Activity.copy_protection tri-state stores and retrieves all three values correctly
+
+### PlacementContext copy_protection resolution (AC2.1-AC2.4)
+**File:** tests/integration/test_workspace_placement.py::TestCopyProtectionResolution
+1. Workspace in activity with copy_protection=True -- PlacementContext.copy_protection is True
+2. Workspace in activity with copy_protection=False -- PlacementContext.copy_protection is False
+3. Loose workspace -- PlacementContext.copy_protection is False
+4. Course-placed workspace -- PlacementContext.copy_protection is False
+
+**Verifies:** PlacementContext resolves copy_protection from activity; loose/course workspaces always False
+
+### Nullable fallback inheritance (AC3.1-AC3.7)
+**File:** tests/integration/test_workspace_placement.py::TestCopyProtectionResolution
+1. Activity cp=None, course default=True -- resolves True (inherits)
+2. Activity cp=None, course default=False -- resolves False (inherits)
+3. Activity cp=True, course default=False -- resolves True (explicit wins)
+4. Activity cp=False, course default=True -- resolves False (explicit wins)
+5. Change course default from False to True -- activity with cp=None now resolves True (dynamic inheritance)
+6. Change course default -- activity with explicit cp=True is unaffected
+7. New activity defaults to cp=None
+
+**Verifies:** Tri-state resolution: explicit activity value wins, None inherits from course default, dynamic changes propagate to inheriting activities but not explicit ones
+
+## Course Update (Integration)
+
+### update_course default_copy_protection
+**File:** tests/integration/test_course_service.py::TestUpdateCourse
+1. Update default_copy_protection False to True -- round-trips via get_course_by_id
+2. Update default_copy_protection True to False -- round-trips
+3. Update name only -- preserves existing default_copy_protection (Ellipsis sentinel)
+4. Update non-existent course -- returns None
+
+**Verifies:** update_course correctly persists default_copy_protection changes; Ellipsis sentinel pattern leaves field unchanged when not provided
+
+## Auth Role Check (Unit)
+
+### is_privileged_user role classification (AC5.1-AC5.6)
+**File:** tests/unit/test_auth_roles.py::TestIsPrivilegedUser
+1. Org-level admin (is_admin=True) -- returns True
+2. User with "instructor" role -- returns True
+3. User with "stytch_admin" role -- returns True
+4. Student (no privileged roles) -- returns False
+5. Tutor role -- returns False (not privileged)
+6. Unauthenticated (None) -- returns False
+7. Empty dict (missing keys) -- returns False
+8. roles=None (not a list) -- returns False
+
+**Verifies:** is_privileged_user correctly classifies admins and instructors as privileged, all others as unprivileged
+
+## Copy Protection Client-Side (Unit)
+
+### Protection flag computation (AC4.12, AC4.13)
+**File:** tests/unit/test_copy_protection_js.py::TestCopyProtectionInactiveStates
+1. Activity with copy_protection=False, student user -- protect is False
+2. Loose workspace (no activity) -- PlacementContext.copy_protection is False, protect is False
+3. Activity with copy_protection=True, student user -- protect is True
+4. Activity with copy_protection=True, instructor user -- protect is False (bypassed)
+5. Activity with copy_protection=True, org admin -- protect is False (bypassed)
+6. Activity with copy_protection=True, unauthenticated (None) -- protect is True
+7. Course-placed workspace -- copy_protection defaults False, protect is False
+
+**Verifies:** protect flag is True only when copy_protection is active AND user is not privileged; privileged users always bypass
+
+### _inject_copy_protection function signature
+**File:** tests/unit/test_copy_protection_js.py::TestInjectCopyProtectionFunction
+1. Assert function is synchronous (not async)
+2. Assert function takes no parameters
+
+**Verifies:** Fire-and-forget JS injection function has correct signature
+
+### _render_workspace_header protect parameter
+**File:** tests/unit/test_copy_protection_js.py::TestRenderWorkspaceHeaderSignature
+1. Assert "protect" parameter exists in signature
+2. Assert protect defaults to False (backward compatible)
+
+**Verifies:** Workspace header accepts protect flag for conditional lock icon rendering
+
+### Copy protection JS content (AC4.1-AC4.6)
+**File:** tests/unit/test_copy_protection_js.py::TestCopyProtectionJsContent
+1. JS targets #doc-container selector
+2. JS targets organise-columns test ID
+3. JS targets respond-reference-panel test ID
+4. JS registers copy event listener
+5. JS registers cut event listener
+6. JS registers contextmenu event listener
+7. JS registers dragstart event listener
+8. JS targets milkdown-respond-editor for paste
+9. JS uses Quasar.Notify.create for toast
+10. JS uses "copy-protection" group key for toast debounce
+11. JS calls stopImmediatePropagation on paste (blocks ProseMirror)
+12. JS registers keydown listener checking e.key === 'p' (Ctrl+P intercept)
+
+**Verifies:** JS block contains all required event interception, correct selectors, Quasar toast notification, and print shortcut intercept
+
+### Print suppression injection (AC4.6)
+**File:** tests/unit/test_copy_protection_js.py::TestPrintSuppressionInjection
+1. Mock NiceGUI UI calls, call _inject_copy_protection -- ui.add_css called with @media print and .q-tab-panels
+2. Mock UI calls, call _inject_copy_protection -- ui.html called with copy-protection-print-message div
+3. When _inject_copy_protection is NOT called (protect=False) -- no CSS/HTML injection occurs
+
+**Verifies:** Print suppression CSS and hidden message div are conditionally injected only when protection is active
+
+## Copy Protection UI Mapping (Unit)
+
+### _model_to_ui conversion
+**File:** tests/unit/test_copy_protection_ui.py::TestModelToUi
+1. None maps to "inherit"
+2. True maps to "on"
+3. False maps to "off"
+
+**Verifies:** Model tri-state correctly converts to UI select key
+
+### _ui_to_model conversion
+**File:** tests/unit/test_copy_protection_ui.py::TestUiToModel
+1. "inherit" maps to None
+2. "on" maps to True
+3. "off" maps to False
+
+**Verifies:** UI select key correctly converts to model tri-state
+
+### _COPY_PROTECTION_OPTIONS dictionary
+**File:** tests/unit/test_copy_protection_ui.py::TestCopyProtectionOptions
+1. Has exactly three entries
+2. Keys are "inherit", "on", "off"
+3. "inherit" label mentions "course"
+
+**Verifies:** Options dictionary has correct structure for NiceGUI select widget
+
+### Round-trip conversions
+**File:** tests/unit/test_copy_protection_ui.py::TestRoundTrip
+1. Parametrize model values (None, True, False) -- model->UI->model preserves identity
+2. Parametrize UI values ("inherit", "on", "off") -- UI->model->UI preserves identity
+
+**Verifies:** Bidirectional conversion is lossless for all valid values

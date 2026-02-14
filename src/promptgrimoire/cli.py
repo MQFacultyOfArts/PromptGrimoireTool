@@ -342,7 +342,11 @@ async def _seed_user_and_course() -> tuple:
 async def _seed_enrolment_and_weeks(course, user) -> None:
     """Enrol user and create weeks with activities."""
     from promptgrimoire.db.activities import create_activity
-    from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user
+    from promptgrimoire.db.courses import (
+        DuplicateEnrollmentError,
+        enroll_user,
+        update_course,
+    )
     from promptgrimoire.db.models import CourseRole
     from promptgrimoire.db.weeks import create_week
 
@@ -380,8 +384,12 @@ async def _seed_enrolment_and_weeks(course, user) -> None:
         week_id=week1.id,
         title="Annotate Becky Bennett Interview",
         description=desc,
+        copy_protection=True,
     )
     console.print(f"[green]Created activity:[/] {activity.title} (id={activity.id})")
+
+    await update_course(course.id, default_copy_protection=True)
+    console.print("[green]Enabled:[/] default copy protection on course")
 
 
 def seed_data() -> None:

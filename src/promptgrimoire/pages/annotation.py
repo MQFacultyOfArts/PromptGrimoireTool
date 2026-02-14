@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 from nicegui import app, events, ui
 
+from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocument,
     AnnotationDocumentRegistry,
@@ -2610,7 +2611,11 @@ async def _show_placement_dialog(
     dialog.open()
 
 
-async def _render_workspace_header(state: PageState, workspace_id: UUID) -> None:
+async def _render_workspace_header(
+    state: PageState,
+    workspace_id: UUID,
+    protect: bool = False,
+) -> None:
     """Render the header row with save status, user count, and export button.
 
     Extracted from _render_workspace_view to keep statement count manageable.
@@ -2618,6 +2623,7 @@ async def _render_workspace_header(state: PageState, workspace_id: UUID) -> None
     Args:
         state: Page state to populate with header element references.
         workspace_id: Workspace UUID for export.
+        protect: Whether copy protection is active for this workspace.
     """
     with ui.row().classes("gap-4 items-center"):
         # Save status indicator (for E2E test observability)
@@ -2680,6 +2686,17 @@ async def _render_workspace_header(state: PageState, workspace_id: UUID) -> None
                 chip.tooltip("Log in to change placement")
 
         await placement_chip()
+
+        # Copy protection lock icon chip (Phase 4)
+        if protect:
+            ui.chip(
+                "Protected",
+                icon="lock",
+                color="amber-7",
+                text_color="white",
+            ).props(
+                'dense aria-label="Copy protection is enabled for this activity"'
+            ).tooltip("Copy protection is enabled for this activity")
 
 
 def _parse_sort_end_args(
@@ -2878,6 +2895,84 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         clients[state.client_id].has_milkdown_editor = True
 
 
+# -- Copy protection JS injection (Phase 4) ----------------------------------
+
+_COPY_PROTECTION_JS = """
+(function() {
+  var PROTECTED = '#doc-container, ' +
+    '[data-testid="organise-columns"], ' +
+    '[data-testid="respond-reference-panel"]';
+
+  function isProtected(e) {
+    return e.target.closest && e.target.closest(PROTECTED);
+  }
+
+  function showToast() {
+    Quasar.Notify.create({
+      message: 'Copying is disabled for this activity.',
+      type: 'warning',
+      position: 'top-right',
+      timeout: 3000,
+      icon: 'content_copy',
+      group: 'copy-protection'
+    });
+  }
+
+  ['copy', 'cut', 'contextmenu', 'dragstart'].forEach(function(evt) {
+    document.addEventListener(evt, function(e) {
+      if (isProtected(e)) { e.preventDefault(); showToast(); }
+    }, true);
+  });
+
+  document.addEventListener('paste', function(e) {
+    if (e.target.closest && e.target.closest('#milkdown-respond-editor')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showToast();
+    }
+  }, true);
+
+  // Ctrl+P / Cmd+P print intercept
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+      e.preventDefault();
+      showToast();
+    }
+  }, true);
+})();
+""".strip()
+
+
+_COPY_PROTECTION_PRINT_CSS = """
+@media print {
+  .q-tab-panels { display: none !important; }
+  .copy-protection-print-message { display: block !important; }
+}
+.copy-protection-print-message { display: none; }
+""".strip()
+
+_COPY_PROTECTION_PRINT_MESSAGE = (
+    '<div class="copy-protection-print-message" '
+    'style="display:none; padding: 2rem; text-align: center; font-size: 1.5rem;">'
+    "Printing is disabled for this activity.</div>"
+)
+
+
+def _inject_copy_protection() -> None:
+    """Inject client-side JS and CSS to block copy/cut/paste/drag/print.
+
+    Called once during page construction when ``protect=True``. Uses event
+    delegation from protected selectors so Milkdown copy (student's own
+    writing) is unaffected. Paste is blocked on the Milkdown editor in
+    capture phase before ProseMirror sees the event. Ctrl+P/Cmd+P is
+    intercepted via keydown handler. CSS ``@media print`` hides tab panels
+    and shows a "Printing is disabled" message instead.
+    """
+    ui.run_javascript(_COPY_PROTECTION_JS)
+    ui.add_css(_COPY_PROTECTION_PRINT_CSS)
+    ui.html(_COPY_PROTECTION_PRINT_MESSAGE, sanitize=False)
+
+
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 — extract tab setup into helpers
     """Render the workspace content view with documents or add content form."""
     workspace = await get_workspace(workspace_id)
@@ -2886,6 +2981,11 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         ui.label("Workspace not found").classes("text-red-500")
         ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
         return
+
+    # Compute copy protection flag (Phase 3 — consumed by Phase 4 JS injection)
+    auth_user = app.storage.user.get("auth_user")
+    ctx = await get_placement_context(workspace_id)
+    protect = ctx.copy_protection and not is_privileged_user(auth_user)
 
     # Create page state
     state = PageState(
@@ -2897,7 +2997,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     _setup_client_sync(workspace_id, client, state)
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
-    await _render_workspace_header(state, workspace_id)
+    await _render_workspace_header(state, workspace_id, protect=protect)
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
     # is first visited. Must be added during page construction — dynamically
@@ -2984,6 +3084,10 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         with ui.tab_panel("Respond") as respond_panel:
             state.respond_panel = respond_panel
             ui.label("Respond tab content will appear here.").classes("text-gray-400")
+
+    # Inject copy protection JS after tab container is built (Phase 4)
+    if protect:
+        _inject_copy_protection()
 
 
 @page_route(

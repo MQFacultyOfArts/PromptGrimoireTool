@@ -210,6 +210,7 @@ src/promptgrimoire/
 ├── db/                  # Database models, engine, CRUD operations
 │   ├── models.py        # SQLModel table classes (User, Course, ..., Activity, Workspace, WorkspaceDocument)
 │   ├── activities.py    # Activity CRUD (create with template workspace, list by week/course)
+│   ├── courses.py       # Course CRUD (create, list, update, archive, enrollment)
 │   ├── workspaces.py    # Workspace CRUD, placement, cloning, PlacementContext query
 │   └── workspace_documents.py  # Document CRUD, workspaces_with_documents batch query
 └── crdt/                # pycrdt collaboration logic
@@ -349,10 +350,10 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 ### Tables (7 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
-- **Course** - Course/unit of study with weeks and enrolled members
+- **Course** - Course/unit of study with weeks and enrolled members. `default_copy_protection: bool` (default `False`) -- course-level default inherited by activities with `copy_protection=None`.
 - **CourseEnrollment** - Maps users to courses with course-level roles
 - **Week** - Week within a course with visibility controls
-- **Activity** - Assignment within a Week; owns a template Workspace (RESTRICT delete). `week_id` FK with CASCADE delete, `template_workspace_id` FK with RESTRICT delete (unique).
+- **Activity** - Assignment within a Week; owns a template Workspace (RESTRICT delete). `week_id` FK with CASCADE delete, `template_workspace_id` FK with RESTRICT delete (unique). `copy_protection: bool | None` -- tri-state: `None`=inherit from course, `True`=on, `False`=off.
 - **Workspace** - Container for documents and CRDT state (unit of collaboration). Placement fields: `activity_id` (SET NULL), `course_id` (SET NULL), `enable_save_as_draft`. Mutual exclusivity: a workspace can be in an Activity OR a Course, never both (Pydantic validator + DB CHECK constraint `ck_workspace_placement_exclusivity`).
 - **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (HTML with char spans), `source_type` ("html", "rtf", "docx", "pdf", "text")
 
@@ -375,6 +376,7 @@ The content hierarchy is: Course contains Weeks, Weeks contain Activities, Activ
 - **Workspace placement** is optional: `activity_id` OR `course_id` (mutually exclusive via Pydantic validator + DB CHECK). A workspace with neither is "loose".
 - **`PlacementContext`** (frozen dataclass) resolves the full hierarchy chain (Activity -> Week -> Course) for UI display. `display_label` provides a human-readable string like "Annotate Becky in Week 1 for LAWS1100".
 - **Template detection**: `is_template` flag on PlacementContext is True when the workspace is an Activity's `template_workspace_id`.
+- **Copy protection resolution**: `copy_protection: bool` on PlacementContext is resolved during placement query. Activity's explicit value wins; if `None`, inherits from `Course.default_copy_protection`. Loose and course-placed workspaces always resolve to `False`.
 
 ### Workspace Cloning
 
@@ -414,6 +416,34 @@ Stytch handles:
 - Passkey authentication
 - RBAC (admin/instructor/student roles)
 - Class invitations
+
+### Privilege Check
+
+`is_privileged_user(auth_user)` in `auth/__init__.py` determines whether a user bypasses copy protection. Returns `True` for org-level admins (`is_admin=True`) and users with `instructor` or `stytch_admin` roles. Returns `False` for students, tutors, unauthenticated (`None`), and missing data.
+
+## Copy Protection
+
+Per-activity copy protection prevents students from copying, cutting, dragging, or printing annotated content. Instructors and admins bypass it.
+
+### Resolution Chain
+
+1. `Activity.copy_protection` (tri-state: `None`/`True`/`False`)
+2. If `None`, inherit from `Course.default_copy_protection` (bool, default `False`)
+3. Resolved in `PlacementContext.copy_protection` during workspace placement query
+4. Loose and course-placed workspaces always resolve to `False`
+
+### Client-Side Enforcement
+
+When `protect=True` and user is not privileged:
+
+- **JS injection** (`_inject_copy_protection()` in `annotation.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
+- **CSS print suppression**: `@media print` hides `.q-tab-panels`, shows "Printing is disabled" message.
+- **Lock icon chip**: Amber "Protected" chip with lock icon in workspace header.
+
+### UI Controls (Courses Page)
+
+- **Course settings dialog** (`open_course_settings()`): Toggle `default_copy_protection` on/off.
+- **Per-activity tri-state select**: "Inherit from course" / "On" / "Off". Pure mapping functions `_model_to_ui()` and `_ui_to_model()` convert between model `bool | None` and UI string keys.
 
 ## Environment Variables
 

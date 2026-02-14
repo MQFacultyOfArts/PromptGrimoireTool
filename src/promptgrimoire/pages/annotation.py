@@ -419,15 +419,15 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
     #    After scrolling, explicitly trigger positionCards via rAF to ensure
     #    annotation sidebar cards become visible (MutationObserver fires
     #    before the scroll, hiding cards that aren't yet in viewport).
-    js = (
-        f"(function(){{"
-        f"  var c = document.getElementById('doc-container');"
-        f"  if (!c) return;"
-        f"  window._textNodes = walkTextNodes(c);"
-        f"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
-        f"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
-        f"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
-        f"}})()"
+    js = _render_js(
+        t"(function(){{"
+        t"  var c = document.getElementById('doc-container');"
+        t"  if (!c) return;"
+        t"  window._textNodes = walkTextNodes(c);"
+        t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
+        t"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
+        t"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
+        t"}})()"
     )
     await ui.run_javascript(js)
 
@@ -843,9 +843,9 @@ def _build_annotation_card(
                 async def goto_highlight(
                     sc: int = start_char, ec: int = end_char
                 ) -> None:
-                    js = (
-                        f"scrollToCharOffset(window._textNodes, {sc}, {ec});"
-                        f"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
+                    js = _render_js(
+                        t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
+                        t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
                     )
                     await ui.run_javascript(js)
 

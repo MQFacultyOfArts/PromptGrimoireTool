@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -122,8 +123,21 @@ class TestTypeValidation:
         with pytest.raises(ValidationError):
             AppConfig(port="not-a-number")  # type: ignore[arg-type]
 
-    def test_missing_env_file_uses_defaults(self) -> None:
-        """AC1.5: Settings with no env file uses defaults without error."""
+    def test_missing_env_file_uses_defaults(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC1.5: Settings with no env file and no env vars uses defaults."""
+        # Clear any env vars that pydantic-settings would read
+        # (_env_file=None suppresses .env, but os.environ is still read)
+        for key in list(os.environ):
+            if "__" in key and key.split("__")[0] in (
+                "STYTCH",
+                "DATABASE",
+                "LLM",
+                "APP",
+                "DEV",
+            ):
+                monkeypatch.delenv(key, raising=False)
         s = Settings(_env_file=None)  # type: ignore[call-arg]
         assert s.app.port == 8080
         assert s.app.base_url == "http://localhost:8080"
@@ -459,3 +473,105 @@ class TestEnsureDatabaseExists:
 
         with pytest.raises(ValueError, match="Invalid database name"):
             ensure_database_exists("postgresql://u:p@h/my-invalid-db!")
+
+
+# ---------------------------------------------------------------------------
+# AC10.1, AC10.2: Integration tests for ensure_database_exists
+# ---------------------------------------------------------------------------
+def _get_test_db_url() -> str | None:
+    """Get a PostgreSQL URL for integration tests."""
+    url = os.environ.get("DEV__TEST_DATABASE_URL") or os.environ.get(
+        "TEST_DATABASE_URL"
+    )
+    return url
+
+
+_skip_no_pg = pytest.mark.skipif(
+    not _get_test_db_url(),
+    reason="No test PostgreSQL configured",
+)
+
+
+@_skip_no_pg
+class TestEnsureDatabaseExistsIntegration:
+    """AC10.1, AC10.2: Real PostgreSQL integration tests."""
+
+    def test_creates_missing_database(self) -> None:
+        """AC10.1: Creates a database that doesn't exist."""
+        import uuid
+
+        import psycopg
+        import psycopg.sql
+
+        from promptgrimoire.db.bootstrap import ensure_database_exists
+
+        base_url = _get_test_db_url()
+        assert base_url is not None
+        db_name = f"test_ensure_{uuid.uuid4().hex[:12]}"
+        # Build URL with unique db name
+        base = base_url.split("?")[0]
+        prefix = base.rsplit("/", 1)[0]
+        query = "?" + base_url.split("?", 1)[1] if "?" in base_url else ""
+        test_url = f"{prefix}/{db_name}{query}"
+
+        try:
+            ensure_database_exists(test_url)
+
+            # Verify: connect to postgres and check pg_database
+            maint_url = (
+                prefix.replace("postgresql+asyncpg://", "postgresql://")
+                + "/postgres"
+                + query
+            )
+            with psycopg.connect(maint_url, autocommit=True) as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM pg_database WHERE datname = %s",
+                    (db_name,),
+                ).fetchone()
+                assert row is not None, f"Database {db_name} was not created"
+        finally:
+            # Cleanup: drop the test database
+            maint_url = (
+                prefix.replace("postgresql+asyncpg://", "postgresql://")
+                + "/postgres"
+                + query
+            )
+            with psycopg.connect(maint_url, autocommit=True) as conn:
+                conn.execute(
+                    psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                        psycopg.sql.Identifier(db_name)
+                    )
+                )
+
+    def test_idempotent_no_error_on_existing(self) -> None:
+        """AC10.2: Calling twice on same DB doesn't error."""
+        import uuid
+
+        import psycopg
+        import psycopg.sql
+
+        from promptgrimoire.db.bootstrap import ensure_database_exists
+
+        base_url = _get_test_db_url()
+        assert base_url is not None
+        db_name = f"test_idem_{uuid.uuid4().hex[:12]}"
+        base = base_url.split("?")[0]
+        prefix = base.rsplit("/", 1)[0]
+        query = "?" + base_url.split("?", 1)[1] if "?" in base_url else ""
+        test_url = f"{prefix}/{db_name}{query}"
+
+        try:
+            ensure_database_exists(test_url)
+            ensure_database_exists(test_url)  # second call — no error
+        finally:
+            maint_url = (
+                prefix.replace("postgresql+asyncpg://", "postgresql://")
+                + "/postgres"
+                + query
+            )
+            with psycopg.connect(maint_url, autocommit=True) as conn:
+                conn.execute(
+                    psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                        psycopg.sql.Identifier(db_name)
+                    )
+                )

@@ -26,19 +26,32 @@ def _pre_test_db_cleanup() -> None:
     This runs once in the CLI process before pytest is spawned,
     avoiding deadlocks when xdist workers try to truncate simultaneously.
 
-    Uses TEST_DATABASE_URL (not DATABASE_URL) to prevent accidentally
-    truncating production or development databases.
+    Uses Settings.dev.test_database_url (not database.url) to prevent
+    accidentally truncating production or development databases.
     """
     from dotenv import load_dotenv
 
+    from promptgrimoire.config import get_settings
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    # Transitional: load .env for old-format names during migration
     load_dotenv()
 
-    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    test_database_url = get_settings().dev.test_database_url
+    # Transitional fallback: old-format name from os.environ
+    if not test_database_url:
+        test_database_url = os.environ.get("TEST_DATABASE_URL")
     if not test_database_url:
         return  # No test database configured — skip
 
-    # Override DATABASE_URL so Alembic migrations target the test database
+    # Auto-create the branch-specific database if it doesn't exist
+    ensure_database_exists(test_database_url)
+
+    # Set BOTH env vars for bridge: DATABASE__URL (for Settings) and
+    # DATABASE_URL (for Alembic — alembic/env.py still uses old name)
+    os.environ["DATABASE__URL"] = test_database_url
     os.environ["DATABASE_URL"] = test_database_url
+    get_settings.cache_clear()
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
@@ -56,9 +69,7 @@ def _pre_test_db_cleanup() -> None:
     # Truncate all tables (sync connection, single process — no race)
     from sqlalchemy import create_engine, text
 
-    sync_url = test_database_url.replace(
-        "postgresql+asyncpg://", "postgresql+psycopg://"
-    )
+    sync_url = test_database_url.replace("postgresql+asyncpg://", "postgresql://")
     engine = create_engine(sync_url)
     with engine.begin() as conn:
         table_query = conn.execute(

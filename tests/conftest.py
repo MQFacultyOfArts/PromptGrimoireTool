@@ -286,7 +286,7 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-# Script to run NiceGUI server
+# Script to run NiceGUI server — near-duplicate of _E2E_SERVER_SCRIPT in cli.py.
 # Note: We clear PYTEST env vars to prevent NiceGUI from entering test mode
 _SERVER_SCRIPT = f"""
 import os

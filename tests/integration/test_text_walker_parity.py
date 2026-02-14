@@ -72,6 +72,9 @@ _JS_CHAR_COUNT = """
 # Mirrors walkTextNodes algorithm but builds the collapsed text string.
 # Must stay in sync with walkTextNodes in annotation-highlight.js and
 # extract_text_from_html in input_pipeline/html_input.py.
+# COUPLING NOTE: The whitespace collapsing logic (SKIP/BLOCK sets, newline→space,
+# collapse runs) is duplicated from walkTextNodes. If the walker's whitespace
+# rules change, this script must be updated to match.
 _JS_EXTRACT_TEXT = """
 (() => {
     const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE']);

@@ -252,6 +252,7 @@ def test_all_fixtures() -> None:
     )
 
 
+# Near-duplicate of _SERVER_SCRIPT in tests/conftest.py — keep in sync.
 _E2E_SERVER_SCRIPT = """\
 import os
 import sys

@@ -675,23 +675,6 @@ they reveal where the test suite is redundant or incomplete.
 
 **Verifies:** Workspace header accepts protect flag for conditional lock icon rendering
 
-### Copy protection JS content (AC4.1-AC4.6)
-**File:** tests/unit/test_copy_protection_js.py::TestCopyProtectionJsContent
-1. JS targets #doc-container selector
-2. JS targets organise-columns test ID
-3. JS targets respond-reference-panel test ID
-4. JS registers copy event listener
-5. JS registers cut event listener
-6. JS registers contextmenu event listener
-7. JS registers dragstart event listener
-8. JS targets milkdown-respond-editor for paste
-9. JS uses Quasar.Notify.create for toast
-10. JS uses "copy-protection" group key for toast debounce
-11. JS calls stopImmediatePropagation on paste (blocks ProseMirror)
-12. JS registers keydown listener checking e.key === 'p' (Ctrl+P intercept)
-
-**Verifies:** JS block contains all required event interception, correct selectors, Quasar toast notification, and print shortcut intercept
-
 ### Print suppression injection (AC4.6)
 **File:** tests/unit/test_copy_protection_js.py::TestPrintSuppressionInjection
 1. Mock NiceGUI UI calls, call _inject_copy_protection -- ui.add_css called with @media print and .q-tab-panels
@@ -1226,3 +1209,116 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Assert neither function was called
 
 **Verifies:** Bootstrap is entirely skipped when no database is configured (e.g. non-DB pages)
+
+## Annotation Package Structure Guards (Unit)
+
+### Package directory exists
+**File:** tests/unit/test_annotation_package_structure.py::test_annotation_is_package_directory
+1. Assert pages/annotation/ is a directory
+
+**Verifies:** Annotation module is a package directory, not a file
+
+### Package has __init__.py
+**File:** tests/unit/test_annotation_package_structure.py::test_annotation_init_exists
+1. Assert pages/annotation/__init__.py is a file
+
+**Verifies:** Python package has required init module
+
+### Monolith annotation.py does not exist
+**File:** tests/unit/test_annotation_package_structure.py::test_monolith_annotation_py_does_not_exist
+1. Assert pages/annotation.py does NOT exist as a file
+
+**Verifies:** Old monolith file removed; a file here would shadow the package and break all imports
+
+### All 12 authored modules present
+**File:** tests/unit/test_annotation_package_structure.py::test_all_authored_modules_exist
+1. Check __init__, broadcast, cards, content_form, css, document, highlights, organise, pdf_export, respond, tags, workspace
+2. Assert all 12 .py files exist in pages/annotation/
+
+**Verifies:** No modules accidentally deleted during split
+
+### No satellite files at pages/ level
+**File:** tests/unit/test_annotation_package_structure.py::test_no_satellite_files_at_pages_level
+1. Assert annotation_organise.py does NOT exist at pages/ level
+2. Assert annotation_respond.py does NOT exist at pages/ level
+3. Assert annotation_tags.py does NOT exist at pages/ level
+
+**Verifies:** Phase 3 git-mv completed; old satellite files not re-introduced
+
+### No imports from old satellite paths
+**File:** tests/unit/test_annotation_package_structure.py::test_no_imports_from_old_satellite_paths
+1. Scan all .py files in src/ and tests/
+2. Regex match imports from promptgrimoire.pages.annotation_organise, annotation_respond, annotation_tags
+3. Assert no matches
+
+**Verifies:** All imports updated to new pages.annotation.{organise,respond,tags} paths
+
+### No PLC0415 per-file-ignores for annotation package
+**File:** tests/unit/test_annotation_package_structure.py::test_no_plc0415_ignores_for_annotation_package
+1. Read pyproject.toml
+2. Check for lines containing both "pages/annotation" and "PLC0415"
+3. Assert no matches
+
+**Verifies:** Annotation package uses definition-before-import ordering, not lint suppression
+
+### Package is importable (smoke test)
+**File:** tests/unit/test_annotation_package_structure.py::test_annotation_package_imports_succeed
+1. Import PageState and annotation_page from promptgrimoire.pages.annotation
+2. Assert both are not None
+
+**Verifies:** Package resolves without import errors; key public names accessible
+
+## JS Extraction Guards (Unit)
+
+### annotation-card-sync.js exists and exposes setupCardPositioning
+**File:** tests/unit/test_annotation_js_extraction.py::TestCardSyncJsExists
+1. Assert static/annotation-card-sync.js exists
+2. Assert file contains "function setupCardPositioning" declaration
+
+**Verifies:** Card sync JS extracted from Python string constant to static file
+
+### annotation-copy-protection.js exists and exposes setupCopyProtection
+**File:** tests/unit/test_annotation_js_extraction.py::TestCopyProtectionJsExists
+1. Assert static/annotation-copy-protection.js exists
+2. Assert file contains "function setupCopyProtection" declaration
+
+**Verifies:** Copy protection JS extracted from Python string constant to static file
+
+### _COPY_PROTECTION_JS constant removed from Python source
+**File:** tests/unit/test_annotation_js_extraction.py::TestNoCopyProtectionJsConstant
+1. Scan all .py files in src/promptgrimoire/
+2. Skip comments
+3. Assert no line assigns _COPY_PROTECTION_JS
+
+**Verifies:** Old Python string constant not re-introduced after extraction to static JS
+
+## Annotation Page Structural Guards (Unit)
+
+### No querySelector data-char-index in annotation package
+**File:** tests/unit/test_no_char_span_queries.py::test_no_char_index_queries_in_annotation_py
+1. Read all .py files in pages/annotation/ package
+2. Assert "data-char-index" not in concatenated source
+
+**Verifies:** Old char-span DOM queries removed after CSS Highlight API migration
+
+### No data-char-index queries in annotation-highlight.js
+**File:** tests/unit/test_no_char_span_queries.py::test_no_char_index_queries_in_annotation_highlight_js
+1. Read static/annotation-highlight.js
+2. Assert "querySelector" not combined with "data-char-index" or "char-span"
+
+**Verifies:** Client-side JS also free of char-span queries
+
+### Old presence symbols removed from annotation package
+**File:** tests/unit/test_no_char_span_queries.py::test_no_old_presence_symbols_in_annotation_py
+1. Read all .py files in pages/annotation/ package
+2. Assert _connected_clients, _ClientState, _build_remote_cursor_css, _build_remote_selection_css not in source
+
+**Verifies:** Old CSS-injection presence symbols fully excised
+
+### hl-throb CSS rule uses only background-color
+**File:** tests/unit/test_no_char_span_queries.py::test_hl_throb_css_rule_uses_only_background_color
+1. Read all .py files in pages/annotation/ package
+2. Find ::highlight(hl-throb) CSS rule via regex
+3. Assert only background-color property present (CSS Highlight API limitation)
+
+**Verifies:** Highlight throb animation uses only CSS Highlight API-compatible properties

@@ -117,6 +117,11 @@ def _current_branch() -> str | None:
     return None  # detached HEAD
 
 
+def get_current_branch() -> str | None:
+    """Return the current git branch name, or None for detached HEAD."""
+    return _current_branch()
+
+
 def _branch_db_suffix(branch: str | None) -> str:
     """Derive a database name suffix from the branch name.
 

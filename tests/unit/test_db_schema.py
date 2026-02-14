@@ -145,3 +145,71 @@ def test_mask_password_in_error_messages() -> None:
     url_special = "postgresql+asyncpg://user:p@ss:word@localhost/db"
     masked_special = _mask_password(url_special)
     assert "p@ss:word" not in masked_special
+
+
+# --- ensure_database_exists() return value tests ---
+
+
+def test_ensure_database_exists_returns_false_for_none_url() -> None:
+    """ensure_database_exists(None) returns False without connecting."""
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    assert ensure_database_exists(None) is False
+
+
+def test_ensure_database_exists_returns_false_for_empty_url() -> None:
+    """ensure_database_exists('') returns False without connecting."""
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    assert ensure_database_exists("") is False
+
+
+def test_ensure_database_exists_returns_false_for_url_without_db_name() -> None:
+    """ensure_database_exists returns False when URL has no database name."""
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    assert ensure_database_exists("postgresql://host/") is False
+
+
+def test_ensure_database_exists_returns_true_when_created() -> None:
+    """ensure_database_exists returns True when it creates a new database."""
+    from unittest.mock import MagicMock
+
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = None  # DB does not exist
+
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value = mock_cursor
+    mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    with patch("promptgrimoire.db.bootstrap.psycopg.connect", return_value=mock_conn):
+        result = ensure_database_exists("postgresql://user:pass@localhost/testdb")
+
+    assert result is True
+    # Called twice: SELECT pg_database + CREATE DATABASE
+    assert mock_conn.execute.call_count == 2
+
+
+def test_ensure_database_exists_returns_false_when_exists() -> None:
+    """ensure_database_exists returns False when the database already exists."""
+    from unittest.mock import MagicMock
+
+    from promptgrimoire.db.bootstrap import ensure_database_exists
+
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = (1,)  # DB already exists
+
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value = mock_cursor
+    mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    with patch("promptgrimoire.db.bootstrap.psycopg.connect", return_value=mock_conn):
+        result = ensure_database_exists("postgresql://user:pass@localhost/testdb")
+
+    assert result is False
+    # Called once: SELECT pg_database only
+    assert mock_conn.execute.call_count == 1

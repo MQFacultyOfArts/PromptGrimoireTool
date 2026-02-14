@@ -173,8 +173,12 @@ def db_schema_guard() -> Generator[None]:
         )
         return  # Unreachable, but helps type checker
 
-    # Bridge: set DATABASE_URL for un-migrated code (db/engine.py, Alembic, etc.)
-    os.environ["DATABASE_URL"] = test_url
+    # Bridge: set env vars so both migrated and un-migrated code reads the test URL
+    os.environ["DATABASE__URL"] = test_url  # For migrated code via Settings
+    os.environ["DATABASE_URL"] = (
+        test_url  # Bridge for un-migrated code (alembic/env.py)
+    )
+    get_settings.cache_clear()  # Force Settings to re-read with new env var
 
     # Run migrations (sync - Alembic uses subprocess)
     try:
@@ -184,7 +188,9 @@ def db_schema_guard() -> Generator[None]:
 
     yield
 
-    # Reset singleton so subsequent sessions get fresh settings
+    # Teardown: remove bridge env vars and clear Settings cache
+    os.environ.pop("DATABASE__URL", None)
+    os.environ.pop("DATABASE_URL", None)
     get_settings.cache_clear()
 
 

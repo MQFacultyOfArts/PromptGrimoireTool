@@ -85,6 +85,39 @@ async def list_courses(
         return list(result.all())
 
 
+async def update_course(
+    course_id: UUID,
+    name: str | None = None,
+    default_copy_protection: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
+) -> Course | None:
+    """Update a course's mutable fields.
+
+    Uses Ellipsis sentinel to distinguish 'not provided' from explicit values.
+    Pass default_copy_protection=True/False to change, or omit to leave unchanged.
+
+    Args:
+        course_id: The course UUID.
+        name: New course name, or None to leave unchanged.
+        default_copy_protection: New default copy protection value,
+            or omit (Ellipsis) to leave unchanged.
+
+    Returns:
+        The updated Course, or None if not found.
+    """
+    async with get_session() as session:
+        course = await session.get(Course, course_id)
+        if course is None:
+            return None
+        if name is not None:
+            course.name = name
+        if default_copy_protection is not ...:
+            course.default_copy_protection = default_copy_protection
+        session.add(course)
+        await session.flush()
+        await session.refresh(course)
+        return course
+
+
 async def archive_course(course_id: UUID) -> bool:
     """Archive a course (soft delete).
 

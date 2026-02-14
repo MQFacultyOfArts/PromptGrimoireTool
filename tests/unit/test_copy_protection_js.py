@@ -1,8 +1,8 @@
 """Unit tests for client-side copy protection injection and lock icon chip.
 
-Tests verify the conditional logic: JS is injected and lock chip rendered
-when protect=True, and neither is present when protect=False. Does NOT test
-JS string content directly (brittle).
+Tests verify conditional injection logic (protect flag computation, function
+signatures) and that the JS block contains expected selectors and event
+handlers via substring checks (not exact string matching).
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_04.md

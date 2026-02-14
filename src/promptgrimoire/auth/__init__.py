@@ -6,7 +6,7 @@ Provides Stytch B2B authentication with support for:
 - Mock client for testing
 
 Usage:
-    from promptgrimoire.auth import get_auth_client, get_config
+    from promptgrimoire.auth import get_auth_client
 
     # Get the configured auth client
     client = get_auth_client()
@@ -19,8 +19,7 @@ Usage:
     )
 """
 
-from promptgrimoire.auth.config import AuthConfig
-from promptgrimoire.auth.factory import clear_config_cache, get_auth_client, get_config
+from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
 from promptgrimoire.auth.models import (
     AuthResult,
     SendResult,
@@ -50,13 +49,11 @@ def is_privileged_user(auth_user: dict[str, object] | None) -> bool:
 
 __all__ = [
     "AuthClientProtocol",
-    "AuthConfig",
     "AuthResult",
     "SSOStartResult",
     "SendResult",
     "SessionResult",
     "clear_config_cache",
     "get_auth_client",
-    "get_config",
     "is_privileged_user",
 ]

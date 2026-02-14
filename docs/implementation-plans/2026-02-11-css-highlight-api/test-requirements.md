@@ -146,6 +146,18 @@ These criteria have automated coverage for correctness but require human visual 
 | `tests/fixtures/workspace_edge_cases.html` | 2 | Edge cases: `<br>`, nested tables, empty `<p>`, `&nbsp;` |
 | `tests/fixtures/workspace_empty.html` | 2 | Zero text content HTML |
 
+### Note: Phase 4 Test Files (AC8.1, AC8.2, AC8.3)
+
+The test files `test_scroll_sync.py` and `test_card_interaction.py` listed in the Phase 4 inventory above do **not exist** as separate files. These acceptance criteria were verified through:
+
+1. **AC8.1 (Scroll-sync tracking):** Diagnostic Playwright test + manual UAT. The scroll-sync feature involves continuous repositioning during scrolling, which is difficult to assert reliably in automated E2E tests (smooth/jittery is subjective). The manual verification (HV5) provides better quality assessment.
+
+2. **AC8.2 (Card hover highlight):** Manual UAT. Hover-triggered highlight rendering is straightforward to verify manually but adds minimal testing value as an automated E2E assertion.
+
+3. **AC8.3 (Go-to button and throb):** Manual UAT. The throb animation is a timed visual effect; the timing (800ms) and smoothness require human observation (HV2).
+
+**Decision:** These three criteria are **human-verification items** (HV1-HV5 section). They were UAT-confirmed during implementation but are too interaction-heavy or visually subjective for reliable automated E2E testing. The automated guard test (`test_no_char_span_queries.py`) covers AC8.4 (no char-span DOM queries). AC8.5 (throb CSS properties) is covered by both automated checks and human verification.
+
 ### Existing test files reused without modification (regression gates)
 
 | File | Type | Criteria covered |

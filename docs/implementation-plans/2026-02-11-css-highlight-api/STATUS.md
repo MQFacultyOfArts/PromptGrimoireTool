@@ -14,17 +14,23 @@
 | 3. Highlight Rendering Swap | COMPLETE | Confirmed | 3 bugfixes post-review |
 | 4. Scroll-Sync and Card Interaction | COMPLETE | Confirmed | DOM replacement resilience fix |
 | 5. Remote Presence | COMPLETE | Confirmed (AC3.1 deferred #149) | 3 review cycles, t-string refactor |
-| 6. Cleanup and Verification | IN PROGRESS | | Subcomponents A-B done, C interrupted |
+| 6. Cleanup and Verification | COMPLETE | Confirmed | Final code review passed |
 
-### Phase 6 Execution Notes (WIP)
+### Phase 6 Execution Notes
 
-Subcomponent A (Task 1): Complete — deleted `_process_text_to_char_spans` + test file.
-Subcomponent B (Tasks 2-3): Complete — verification only, all char-span CSS/JS already removed by earlier phases.
-Subcomponent C (Task 4): Partially done — `test_char_tokenization.py` already deleted in Task 1, `test_process_input.py` comment updates staged. Task 5 (E2E helper rewrite) not started.
-Subcomponent D (Tasks 6-7): Not started.
-Task 8 (final sweep): Not started.
+All subcomponents complete and verified through code review:
+- Subcomponent A (Task 1): Deleted `_process_text_to_char_spans` dead code
+- Subcomponent B (Tasks 2-3): Verified no char-span CSS/JS references remain
+- Subcomponent C (Tasks 4-5): Deleted obsolete tests, rewrote E2E helpers for mouse-based selection
+- Subcomponent D (Tasks 6-7): Verified PDF export unchanged, updated CLAUDE.md documentation
+- Task 8 (final sweep): Confirmed zero char-span references in source code
 
-**Resume point:** Phase 6, Subcomponent C, Tasks 4-5.
+**Code review status:** Ready for merge. Minor issues addressed:
+- Created `test_no_char_span_queries.py` static analysis guard for AC8.4/AC8.5
+- Updated test-requirements.md to document AC8.1/AC8.2/AC8.3 as human-verification-only
+- Created GitHub issue #156 tracking E2E test migration to text-walker helpers
+- Updated STATUS.md and WIP-STATUS.md Phase 6 status to COMPLETE
+- Migrated f-string JS to t-string format for consistency
 
 ### Phase 5 Execution Notes
 

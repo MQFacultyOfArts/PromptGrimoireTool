@@ -401,6 +401,17 @@ The content hierarchy is: Course contains Weeks, Weeks contain Activities, Activ
 
 **Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
 
+### App Startup Database Bootstrap
+
+When `DATABASE__URL` is configured, `main()` automatically bootstraps the database before starting the server:
+
+1. **`ensure_database_exists(url) -> bool`** -- Creates the PostgreSQL database if it does not exist. Returns `True` if a new database was created, `False` otherwise (including `None`/empty URL or database already exists).
+2. **`run_alembic_upgrade()`** -- Runs Alembic migrations to head (idempotent). Internally calls `ensure_database_exists()` again (harmless -- already exists, returns `False`).
+3. **Conditional seeding** -- If `ensure_database_exists()` returned `True` (new DB), runs `uv run seed-data` to populate development data.
+4. **Branch info** -- On feature branches (not main/master), prints `Branch: <name> | Database: <db_name>` to stdout.
+
+This means `uv run python -m promptgrimoire` on a new feature branch automatically creates the branch-specific database, migrates it, and seeds it. No manual setup needed.
+
 ### Database Rules
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations themselves
@@ -462,6 +473,7 @@ When `protect=True` and user is not privileged:
 All configuration is managed through `src/promptgrimoire/config.py` using pydantic-settings. Environment variables use double-underscore nesting: `DATABASE__URL`, `LLM__API_KEY`, `STYTCH__PROJECT_ID`, etc.
 
 - **Access:** Call `get_settings()` for a cached, validated Settings instance
+- **Branch detection:** Call `get_current_branch()` for the current git branch name (or `None` for detached HEAD). Reads `.git/HEAD` directly (no subprocess).
 - **Testing:** Construct `Settings(_env_file=None, ...)` directly for isolation; call `get_settings.cache_clear()` to reset the singleton
 - **`.env` files:** pydantic-settings reads `.env` natively — no `load_dotenv()` calls anywhere
 - **Secrets:** Use `SecretStr` fields; call `.get_secret_value()` at the point of use

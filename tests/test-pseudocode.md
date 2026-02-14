@@ -7,9 +7,9 @@ Overlapping tests and coverage gaps are documented intentionally --
 they reveal where the test suite is redundant or incomplete.
 
 > **Scope:** This file covers tests added or modified on the
-> 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection, and
-> css-highlight-api branches. Existing tests from before these branches
-> are not yet documented here.
+> 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
+> css-highlight-api, and 165-auto-create-branch-db branches. Existing
+> tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -1099,3 +1099,130 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert none of them are async def (must use @pytest_asyncio.fixture instead)
 
 **Verifies:** No async fixtures use the sync decorator (prevents xdist event loop errors)
+
+## Database Bootstrap (ensure_database_exists return value)
+
+### Returns False for None/empty/malformed URLs
+**File:** tests/unit/test_db_schema.py::test_ensure_database_exists_returns_false_for_none_url, test_ensure_database_exists_returns_false_for_empty_url, test_ensure_database_exists_returns_false_for_url_without_db_name
+1. Call ensure_database_exists(None) -- assert returns False
+2. Call ensure_database_exists("") -- assert returns False
+3. Call ensure_database_exists("postgresql://host/") -- assert returns False (no db name after slash)
+
+**Verifies:** No-op cases return False without attempting a connection
+
+### Returns True when database is created
+**File:** tests/unit/test_db_schema.py::test_ensure_database_exists_returns_true_when_created
+1. Mock psycopg.connect; mock cursor.fetchone returns None (DB does not exist)
+2. Call ensure_database_exists with valid PostgreSQL URL
+3. Assert returns True
+4. Assert connection.execute called twice (SELECT pg_database + CREATE DATABASE)
+
+**Verifies:** Function reports True when it actually creates the database
+
+### Returns False when database already exists
+**File:** tests/unit/test_db_schema.py::test_ensure_database_exists_returns_false_when_exists
+1. Mock psycopg.connect; mock cursor.fetchone returns (1,) (DB exists)
+2. Call ensure_database_exists with valid PostgreSQL URL
+3. Assert returns False
+4. Assert connection.execute called once (only SELECT, no CREATE)
+
+**Verifies:** Function reports False for pre-existing databases without issuing CREATE
+
+## Test Runner Header (CLI)
+
+### Branch name appears in header
+**File:** tests/unit/test_cli_header.py::TestBuildTestHeaderBranch
+1. Call _build_test_header with branch="165-auto-create-branch-db"
+2. Assert branch name appears in Rich Text output (plain text)
+3. Assert branch name appears in plain-text log header
+
+**Verifies:** Test runner header displays current branch name in both Rich panel and log file
+
+### Database name appears in header
+**File:** tests/unit/test_cli_header.py::TestBuildTestHeaderDbName
+1. Call _build_test_header with db_name="promptgrimoire_test_165"
+2. Assert DB name appears in Rich Text output
+3. Assert DB name appears in plain-text log header
+
+**Verifies:** Test runner header displays resolved test database name
+
+### Detached HEAD handled gracefully
+**File:** tests/unit/test_cli_header.py::TestBuildTestHeaderDetachedHead
+1. Call _build_test_header with branch=None
+2. Assert "detached/unknown" appears in Rich Text output
+3. Assert "detached/unknown" appears in log header
+
+**Verifies:** No crash on detached HEAD; fallback label displayed
+
+### No database configured handled gracefully
+**File:** tests/unit/test_cli_header.py::TestBuildTestHeaderNoDb
+1. Call _build_test_header with db_name="not configured"
+2. Assert "not configured" appears in both outputs
+
+**Verifies:** Missing test DB URL produces informative message rather than crash
+
+### Return type is (Rich Text, str) tuple
+**File:** tests/unit/test_cli_header.py::TestBuildTestHeaderReturnTypes
+1. Call _build_test_header with minimal args
+2. Assert result is 2-tuple
+3. Assert first element is rich.text.Text
+4. Assert second element is str
+
+**Verifies:** Function contract: returns (Text, str) for panel display and log file respectively
+
+## App Startup Bootstrap (main)
+
+### Bootstrap functions called when DB configured
+**File:** tests/unit/test_main_startup.py::TestBootstrapCalledWithDbUrl
+1. Configure Settings with database_url set
+2. Mock ensure_database_exists (returns False) and run_alembic_upgrade
+3. Call main()
+4. Assert ensure_database_exists called once with the configured URL
+5. Assert run_alembic_upgrade called once
+
+**Verifies:** App startup invokes database creation and migration when DATABASE__URL is configured
+
+### Seed data invoked when new database created
+**File:** tests/unit/test_main_startup.py::TestSeedOnCreation
+1. Mock ensure_database_exists to return True (new DB)
+2. Mock subprocess.run
+3. Call main()
+4. Assert subprocess.run called with ["uv", "run", "seed-data"]
+
+**Verifies:** Conditional seeding -- only runs seed-data when ensure_database_exists reports a newly created database
+
+### Seed data NOT invoked for existing database
+**File:** tests/unit/test_main_startup.py::TestNoSeedOnExistingDb
+1. Mock ensure_database_exists to return False (existing DB)
+2. Mock subprocess.run
+3. Call main()
+4. Assert no subprocess.run call with ["uv", "run", "seed-data"]
+
+**Verifies:** Existing databases are not re-seeded on every startup
+
+### Branch info printed for feature branches
+**File:** tests/unit/test_main_startup.py::TestBranchInfoPrintedForFeatureBranch
+1. Mock get_current_branch to return "165-auto-create-branch-db"
+2. Configure database URL with db name "pg_branch_165"
+3. Call main(), capture stdout
+4. Assert "Branch: 165-auto-create-branch-db" in output
+5. Assert "pg_branch_165" in output
+
+**Verifies:** Feature branches print branch and database name to stdout for developer orientation
+
+### Branch info NOT printed for main
+**File:** tests/unit/test_main_startup.py::TestBranchInfoNotPrintedForMain
+1. Mock get_current_branch to return "main"
+2. Call main(), capture stdout
+3. Assert "Branch:" not in output
+
+**Verifies:** Main branch does not clutter output with branch info
+
+### No bootstrap without database URL
+**File:** tests/unit/test_main_startup.py::TestNoBootstrapWithoutDbUrl
+1. Configure Settings with database_url=None
+2. Mock ensure_database_exists and run_alembic_upgrade
+3. Call main()
+4. Assert neither function was called
+
+**Verifies:** Bootstrap is entirely skipped when no database is configured (e.g. non-DB pages)

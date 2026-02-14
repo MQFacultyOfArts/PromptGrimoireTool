@@ -252,6 +252,142 @@ def test_all_fixtures() -> None:
     )
 
 
+# Near-duplicate of _SERVER_SCRIPT in tests/conftest.py — keep in sync.
+_E2E_SERVER_SCRIPT = """\
+import os
+import sys
+from pathlib import Path
+
+for key in list(os.environ.keys()):
+    if 'PYTEST' in key or 'NICEGUI' in key:
+        del os.environ[key]
+
+os.environ['AUTH_MOCK'] = 'true'
+os.environ['STORAGE_SECRET'] = 'test-secret-for-e2e'
+os.environ.setdefault('STYTCH_SSO_CONNECTION_ID', 'test-sso-connection-id')
+os.environ.setdefault('STYTCH_PUBLIC_TOKEN', 'test-public-token')
+
+port = int(sys.argv[1])
+
+from nicegui import app, ui
+import promptgrimoire.pages  # noqa: F401
+
+import promptgrimoire
+_static_dir = Path(promptgrimoire.__file__).parent / "static"
+app.add_static_files("/static", str(_static_dir))
+
+ui.run(port=port, reload=False, show=False, storage_secret='test-secret-for-e2e')
+"""
+
+
+def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
+    """Start a NiceGUI server subprocess for E2E tests.
+
+    Returns the Popen handle. Blocks until the server accepts connections
+    or fails with ``sys.exit(1)`` on timeout/crash.
+    """
+    import socket
+    import time
+
+    clean_env = {
+        k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
+    }
+
+    console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
+    process = subprocess.Popen(
+        [sys.executable, "-c", _E2E_SERVER_SCRIPT, str(port)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=clean_env,
+    )
+
+    max_wait = 15
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        if process.poll() is not None:
+            out = process.stdout.read() if process.stdout else b""
+            err = process.stderr.read() if process.stderr else b""
+            console.print(
+                f"[red]Server died (exit {process.returncode}):[/]\n"
+                f"{err.decode()}\n{out.decode()}"
+            )
+            sys.exit(1)
+        try:
+            with socket.create_connection(("localhost", port), timeout=1):
+                return process
+        except OSError:
+            time.sleep(0.1)
+
+    process.terminate()
+    console.print(f"[red]Server failed to start within {max_wait}s[/]")
+    sys.exit(1)
+
+
+def _stop_e2e_server(process: subprocess.Popen[bytes]) -> None:
+    """Terminate a server subprocess gracefully."""
+    console.print("[dim]Stopping server...[/]")
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+def test_e2e() -> None:
+    """Start a NiceGUI server and run Playwright E2E tests against it.
+
+    Manages the full E2E lifecycle:
+    1. Run Alembic migrations and truncate test database
+    2. Start NiceGUI server on a random port (single instance)
+    3. Run ``pytest -m e2e`` with xdist -- all workers share one server
+    4. Shut down the server when tests complete
+
+    The server URL is passed via ``E2E_BASE_URL`` env var. The
+    ``app_server`` fixture checks this and yields it directly instead
+    of starting its own server per xdist worker.
+
+    Extra arguments forwarded to pytest (e.g. ``uv run test-e2e -k browser``).
+
+    Output saved to: test-e2e.log
+    """
+    import socket
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    _pre_test_db_cleanup()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
+
+    # All xdist workers inherit this and skip starting their own server
+    os.environ["E2E_BASE_URL"] = url
+
+    try:
+        _run_pytest(
+            title=f"E2E Test Suite (Playwright) — server {url}",
+            log_path=Path("test-e2e.log"),
+            default_args=[
+                "-m",
+                "e2e",
+                "-n",
+                "auto",
+                "--dist=loadfile",
+                "--durations=10",
+                "--tb=short",
+                "-v",
+            ],
+        )
+    finally:
+        _stop_e2e_server(server_process)
+
+
 def set_admin() -> None:
     """Set a user as admin by email.
 

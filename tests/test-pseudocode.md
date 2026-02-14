@@ -7,9 +7,9 @@ Overlapping tests and coverage gaps are documented intentionally --
 they reveal where the test suite is redundant or incomplete.
 
 > **Scope:** This file covers tests added or modified on the
-> 134-lua-highlight, 94-hierarchy-placement, and 103-copy-protection
-> branches. Existing tests from before these branches are not yet
-> documented here.
+> 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection, and
+> css-highlight-api branches. Existing tests from before these branches
+> are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -732,3 +732,370 @@ they reveal where the test suite is redundant or incomplete.
 2. Parametrize UI values ("inherit", "on", "off") -- UI->model->UI preserves identity
 
 **Verifies:** Bidirectional conversion is lossless for all valid values
+
+## Browser Feature Gate (E2E)
+
+### Supported browser sees annotation page
+**File:** tests/e2e/test_browser_gate.py::test_supported_browser_sees_annotation
+1. Navigate to login page
+2. Verify feature gate element exists (checks CSS.highlights API)
+3. If gate passes, navigate to annotation page
+4. Assert annotation page loads with document container
+
+**Verifies:** Browsers with CSS Custom Highlight API support reach the annotation page
+
+### Unsupported browser sees warning
+**File:** tests/e2e/test_browser_gate.py::test_unsupported_browser_sees_warning
+1. Navigate to login page
+2. Inject JS override to simulate missing CSS.highlights
+3. Assert warning banner appears about unsupported browser
+
+**Verifies:** Browsers without CSS Custom Highlight API get a clear message instead of silent failure
+
+## Text Walker Parity (Integration)
+
+### Python and JS text extraction produce identical results
+**File:** tests/integration/test_text_walker_parity.py::test_text_walker_parity
+1. For each HTML fixture (chatbot conversations, edge cases):
+2. Run Python extract_text_from_html() on the HTML
+3. Render HTML in Playwright browser, run JS textWalker.buildNodeMap()
+4. Extract text from JS node map
+5. Assert Python char list == JS char list (character-for-character)
+
+**Verifies:** Server-side highlight coordinates map correctly to client-side text nodes
+
+**Overlap note:** This test bridges the server (Python) and client (JS) text extraction.
+It catches any divergence that would cause highlights to render at wrong positions.
+
+### Edge case HTML produces matching results
+**File:** tests/integration/test_text_walker_parity.py::test_edge_case_parity
+1. Test empty HTML, whitespace-only, nested inline elements, entities
+2. For each: compare Python extract vs JS textWalker
+3. Assert identical character sequences
+
+**Verifies:** Text walker parity holds for degenerate and complex HTML structures
+
+## CSS Highlight API Rendering (E2E)
+
+### Single highlight renders with correct colour
+**File:** tests/e2e/test_highlight_rendering.py::test_single_highlight_renders
+1. Load document with one highlight (chars 10-20, tag "jurisdiction")
+2. Wait for CSS.highlights to contain "hl-0" highlight
+3. Query computed styles on highlighted range
+4. Assert background colour matches jurisdiction tag colour
+
+**Verifies:** CSS Custom Highlight API applies correct tag colour to highlighted text
+
+### Overlapping highlights render all layers
+**File:** tests/e2e/test_highlight_rendering.py::test_overlapping_highlights
+1. Load document with 2 overlapping highlights
+2. Wait for CSS.highlights to contain both "hl-0" and "hl-1"
+3. Assert both highlight registrations exist
+4. Assert overlap region has both highlights applied
+
+**Verifies:** Multiple overlapping highlights coexist without destroying each other
+
+### Highlight persists after scroll
+**File:** tests/e2e/test_highlight_rendering.py::test_highlight_persists_after_scroll
+1. Load document with highlight in a long document
+2. Scroll away from highlighted region
+3. Scroll back to highlighted region
+4. Assert highlight is still rendered
+
+**Verifies:** CSS highlights survive DOM scroll events (no re-rendering needed)
+
+### Empty document shows no highlights
+**File:** tests/e2e/test_highlight_rendering.py::test_empty_document_no_highlights
+1. Load empty document (no highlights)
+2. Assert CSS.highlights registry is empty or has zero entries
+
+**Verifies:** No phantom highlights appear on documents without annotations
+
+### Highlight removal clears rendering
+**File:** tests/e2e/test_highlight_rendering.py::test_highlight_removal
+1. Load document with one highlight
+2. Assert highlight renders
+3. Remove highlight via API
+4. Assert CSS.highlights no longer contains the highlight
+
+**Verifies:** Highlight deletion propagates to CSS Custom Highlight API cleanup
+
+## Text Selection Detection (E2E)
+
+### Selection produces correct char offsets
+**File:** tests/e2e/test_text_selection.py::test_selection_char_offsets
+1. Load document with known text content
+2. Simulate mouse selection across a word
+3. Wait for selection_made event from JS
+4. Assert start_char and end_char match expected character indices
+
+**Verifies:** Browser selection ranges convert correctly to document character offsets via text walker
+
+### Selection across inline elements
+**File:** tests/e2e/test_text_selection.py::test_selection_across_inline
+1. Load document with bold/italic inline formatting
+2. Select text spanning across formatting boundary
+3. Assert char offsets are contiguous (inline elements don't break offset counting)
+
+**Verifies:** Text walker correctly skips element boundaries when computing offsets
+
+### Empty selection produces no event
+**File:** tests/e2e/test_text_selection.py::test_empty_selection_no_event
+1. Load document
+2. Click without selecting (collapsed selection)
+3. Assert no selection_made event fires
+
+**Verifies:** Collapsed selections (clicks) are filtered out, preventing ghost highlights
+
+### Selection at document boundaries
+**File:** tests/e2e/test_text_selection.py::test_selection_at_boundaries
+1. Select from start of document to middle
+2. Assert start_char == 0
+3. Select from middle to end of document
+4. Assert end_char == last character index
+
+**Verifies:** Boundary selections don't produce off-by-one errors
+
+## Annotation Integration (E2E)
+
+### Full highlight creation flow
+**File:** tests/e2e/test_annotation_highlight_api.py::test_full_highlight_flow
+1. Load annotation page with document
+2. Select text range
+3. Choose tag from dialog
+4. Assert highlight appears in CSS.highlights
+5. Assert highlight card appears in sidebar
+6. Assert CRDT state updated with highlight data
+
+**Verifies:** End-to-end highlight creation from selection through rendering to persistence
+
+### Multiple highlights on same document
+**File:** tests/e2e/test_annotation_highlight_api.py::test_multiple_highlights
+1. Create first highlight (chars 0-10, tag A)
+2. Create second highlight (chars 20-30, tag B)
+3. Assert both highlights render independently
+4. Assert both highlight cards appear in sidebar
+
+**Verifies:** Multiple non-overlapping highlights coexist on the same document
+
+## Remote Presence Rendering (E2E -- JS Functions)
+
+### renderRemoteCursor places cursor at correct position
+**File:** tests/e2e/test_remote_presence_rendering.py::test_cursor_position
+1. Load document, build text node map
+2. Call renderRemoteCursor(clientId, name, charIndex, color) via JS
+3. Assert cursor element exists at correct text node position
+4. Assert cursor shows user name label
+5. Assert cursor colour matches provided color
+
+**Verifies:** Remote cursor rendering maps character index to correct DOM position
+
+### renderRemoteCursor with out-of-range index
+**File:** tests/e2e/test_remote_presence_rendering.py::test_cursor_out_of_range
+1. Call renderRemoteCursor with charIndex > document length
+2. Assert no crash
+3. Assert cursor is placed at document end or not rendered
+
+**Verifies:** Graceful handling of stale cursor positions from disconnected clients
+
+### renderRemoteSelection highlights correct range
+**File:** tests/e2e/test_remote_presence_rendering.py::test_selection_range
+1. Load document, build text node map
+2. Call renderRemoteSelection(clientId, startChar, endChar, color) via JS
+3. Assert CSS highlight registered for the selection range
+4. Assert highlight colour matches provided color
+
+**Verifies:** Remote selection rendering uses CSS Custom Highlight API correctly
+
+### removeRemotePresence cleans up cursor and selection
+**File:** tests/e2e/test_remote_presence_rendering.py::test_remove_presence
+1. Render cursor and selection for a client
+2. Call removeRemotePresence(clientId)
+3. Assert cursor element removed from DOM
+4. Assert CSS highlight deregistered
+
+**Verifies:** Disconnect cleanup removes all visual artifacts for a client
+
+### Multiple remote users render independently
+**File:** tests/e2e/test_remote_presence_rendering.py::test_multiple_users
+1. Render cursors for user A and user B at different positions
+2. Assert both cursor elements exist with correct colours
+3. Remove user A
+4. Assert user B cursor still exists
+
+**Verifies:** Per-client presence tracking is independent
+
+### renderRemoteCursor updates position on repeated calls
+**File:** tests/e2e/test_remote_presence_rendering.py::test_cursor_update
+1. Render cursor at position 10
+2. Render same client cursor at position 20
+3. Assert only one cursor element exists (not two)
+4. Assert cursor is at new position 20
+
+**Verifies:** Cursor updates replace previous position rather than accumulating
+
+## Remote Presence Multi-Context (E2E)
+
+### Remote cursor appears in second browser
+**File:** tests/e2e/test_remote_presence_e2e.py::test_remote_cursor_appears
+1. Open same workspace in two browser contexts
+2. Move cursor in browser A
+3. Assert remote cursor element appears in browser B
+4. Assert cursor shows browser A's user name
+
+**Verifies:** Cursor broadcast via WebSocket reaches other clients
+
+### Remote selection appears in second browser
+**File:** tests/e2e/test_remote_presence_e2e.py::test_remote_selection_appears
+1. Open same workspace in two browsers
+2. Select text range in browser A
+3. Assert selection highlight appears in browser B via CSS Custom Highlight API
+
+**Verifies:** Selection broadcast renders as CSS highlight in remote browsers
+
+### Disconnect removes presence
+**File:** tests/e2e/test_remote_presence_e2e.py::test_disconnect_removes_presence
+1. Open workspace in two browsers
+2. Move cursor in browser A
+3. Close browser A
+4. Assert remote cursor disappears from browser B
+
+**Verifies:** Server broadcasts disconnect to remaining clients, triggering cleanup
+
+### Presence does not leak between workspaces
+**File:** tests/e2e/test_remote_presence_e2e.py::test_no_cross_workspace_leak
+1. Open workspace 1 in browser A
+2. Open workspace 2 in browser B
+3. Move cursor in browser A
+4. Assert no remote cursor appears in browser B
+
+**Verifies:** Workspace isolation prevents presence cross-contamination
+
+### Three users see each other
+**File:** tests/e2e/test_remote_presence_e2e.py::test_three_users
+1. Open same workspace in three browsers
+2. Each moves cursor to different position
+3. Each browser sees exactly 2 remote cursors
+4. Assert each remote cursor has correct colour and name
+
+**Verifies:** Presence scales to N users with correct per-client rendering
+
+## Server-Side Presence Refactor (Unit)
+
+### Old CSS-injection symbols removed (AC3.5)
+**File:** tests/unit/test_remote_presence_refactor.py::TestDeletedSymbolsAC35
+1. Read annotation.py source text
+2. Parse AST, collect all names (function defs, class defs, identifiers, attributes)
+3. Assert _connected_clients not in source text
+4. Assert _ClientState class does not exist (not in module, not in AST names)
+5. Assert _build_remote_cursor_css, _build_remote_selection_css, _update_cursor_css, _update_selection_css do not exist
+6. Assert PageState has no cursor_style or selection_style fields
+
+**Verifies:** Old CSS-injection presence mechanism completely excised from codebase
+
+### _RemotePresence dataclass replaces _ClientState
+**File:** tests/unit/test_remote_presence_refactor.py::TestRemotePresenceDataclass
+1. Assert _RemotePresence exists in annotation module
+2. Assert it is a dataclass (dataclasses.is_dataclass)
+3. Assert fields: name, color, nicegui_client, callback, cursor_char, selection_start, selection_end, has_milkdown_editor
+4. Assert _workspace_presence dict exists at module level
+
+**Verifies:** New presence data model is correctly structured with all required fields
+
+## JS Interpolation Security (_render_js)
+
+### String escaping (JSON-safe)
+**File:** tests/unit/test_render_js.py::TestStringEscaping
+1. Single quotes: "O'Brien" rendered as JSON string (escaped within double quotes)
+2. Double quotes: 'say "hello"' rendered with escaped double quotes
+3. Backslashes: path with backslashes rendered with doubled backslashes
+4. Newlines: literal newline becomes \n escape (no raw newline in output)
+
+**Verifies:** All string values are JSON-encoded, preventing JS string context escapes
+
+### XSS prevention
+**File:** tests/unit/test_render_js.py::TestXssPrevention
+1. Script tag injection: "</script><script>alert(1)</script>" neutralised inside JSON string
+2. Event handler injection: '");alert(document.cookie);//' - closing quote escaped
+3. Template literal injection: backtick ${alert(1)} neutralised inside JSON string
+
+**Verifies:** Adversarial inputs cannot escape the JSON string context to execute JS
+
+### Unicode passthrough
+**File:** tests/unit/test_render_js.py::TestUnicode
+1. Emoji in display names survives round-trip through JSON encoding
+2. CJK characters preserved
+3. RTL (Arabic) text preserved
+4. Null bytes escaped (not passed raw)
+
+**Verifies:** Non-Latin characters pass through _render_js correctly
+
+### Numeric and None handling
+**File:** tests/unit/test_render_js.py::TestNumericPassthrough + TestNoneAndBool
+1. Integers become bare JS numbers (42, -1, 0)
+2. Floats become bare JS numbers (3.14)
+3. None becomes JS null literal
+4. Bool edge case: True/False render as Python str (documented, not used in practice)
+
+**Verifies:** Non-string types pass through as appropriate JS literals
+
+### Static template portions
+**File:** tests/unit/test_render_js.py::TestStaticPortions
+1. Template with no interpolation returns literal string
+2. Multiple interpolations in one template: f("alice", 10, null)
+3. Adjacent interpolations with no separator: "12"
+
+**Verifies:** Static JS code in templates passes through unchanged alongside interpolated values
+
+## Input Pipeline Public API (Unit)
+
+### inject_char_spans and strip_char_spans removed
+**File:** tests/unit/input_pipeline/test_public_api.py::test_removed_functions
+1. Assert inject_char_spans not importable from input_pipeline
+2. Assert strip_char_spans not importable from input_pipeline
+
+**Verifies:** Old char-span injection functions removed from public API after CSS Highlight API migration
+
+### extract_text_from_html added to public API
+**File:** tests/unit/input_pipeline/test_public_api.py::test_extract_text_from_html_public
+1. Import extract_text_from_html from input_pipeline
+2. Call with simple HTML
+3. Assert returns list of characters matching visible text
+
+**Verifies:** New text extraction function is part of the public API
+
+## Text Extraction (Unit)
+
+### Basic HTML text extraction
+**File:** tests/unit/input_pipeline/test_text_extraction.py::test_basic_extraction
+1. Pass simple <p>Hello world</p> HTML
+2. Assert returns ["H", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
+
+**Verifies:** Text extraction produces character-by-character list from HTML content
+
+### Nested elements and entities
+**File:** tests/unit/input_pipeline/test_text_extraction.py::test_nested_and_entities
+1. Pass HTML with nested bold/italic: <p><b>He<em>ll</em>o</b></p>
+2. Assert inline elements don't break character sequence
+3. Pass HTML with entity: <p>A &amp; B</p>
+4. Assert entity decoded to single "&" character
+
+**Verifies:** Text extraction handles HTML structure and entities correctly
+
+## E2E Test Infrastructure
+
+### E2E compliance guard
+**File:** tests/unit/test_e2e_compliance.py
+1. Scan all E2E test files for JS file references
+2. Assert all referenced JS files are in ALLOWED_JS_FILES allowlist
+3. Assert all allowed JS files exist on disk
+
+**Verifies:** E2E tests only reference registered static JS files; no orphaned file references
+
+### Async fixture safety guard
+**File:** tests/unit/test_async_fixture_safety.py
+1. Parse all test files' AST
+2. Find all functions decorated with @pytest.fixture
+3. Assert none of them are async def (must use @pytest_asyncio.fixture instead)
+
+**Verifies:** No async fixtures use the sync decorator (prevents xdist event loop errors)

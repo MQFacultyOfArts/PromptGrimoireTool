@@ -1,8 +1,7 @@
 """Tests for process_input() orchestration.
 
-Note: process_input() returns clean HTML without char spans.
-Char spans are injected client-side (in JavaScript) to avoid websocket
-message size limits.
+Note: process_input() returns clean HTML. Highlighting uses the CSS
+Custom Highlight API on the client side — no char spans are produced.
 """
 
 import pytest
@@ -25,7 +24,7 @@ class TestProcessInput:
         result = await process_input("Hello world", source_type="text")
         assert "<p>" in result
         assert "Hello world" in result
-        # No char spans - injected client-side
+        # No char spans — highlighting uses CSS Highlight API
         assert "data-char-index" not in result
 
     @pytest.mark.asyncio
@@ -33,7 +32,7 @@ class TestProcessInput:
         """HTML content goes through preprocessing (no span injection)."""
         result = await process_input("<p>Test</p>", source_type="html")
         assert "Test" in result
-        # No char spans - injected client-side
+        # No char spans — highlighting uses CSS Highlight API
         assert "data-char-index" not in result
 
     @pytest.mark.asyncio
@@ -48,7 +47,7 @@ class TestProcessInput:
         """Bytes input is decoded and processed."""
         result = await process_input(b"<p>Test</p>", source_type="html")
         assert "Test" in result
-        # No char spans - injected client-side
+        # No char spans — highlighting uses CSS Highlight API
         assert "data-char-index" not in result
 
     @pytest.mark.asyncio
@@ -59,9 +58,9 @@ class TestProcessInput:
 
     @pytest.mark.asyncio
     async def test_returns_clean_html(self) -> None:
-        """Output is clean HTML ready for client-side span injection."""
+        """Output is clean HTML without char-span markup."""
         result = await process_input("<p>Hello</p>", source_type="html")
         assert "Hello" in result
-        # Clean HTML - no char spans (they're injected client-side)
+        # Clean HTML — no char spans (highlighting uses CSS Highlight API)
         assert "data-char-index" not in result
         assert '<span class="char"' not in result

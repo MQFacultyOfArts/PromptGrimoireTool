@@ -7,15 +7,18 @@ This page provides the new workspace-based annotation flow:
 4. All state persists via workspace CRDT
 
 Route: /annotation
+
+Pattern: Mixed (needs refactoring)
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import html
+import json
 import logging
 from dataclasses import dataclass
+from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
@@ -73,47 +76,71 @@ logger = logging.getLogger(__name__)
 _workspace_registry = AnnotationDocumentRegistry()
 
 
-class _ClientState:
-    """State for a connected client."""
+@dataclass
+class _RemotePresence:
+    """Lightweight presence state for a connected client."""
 
-    def __init__(
-        self, callback: Any, color: str, name: str, nicegui_client: Any = None
-    ) -> None:
-        self.callback = callback
-        self.color = color
-        self.name = name
-        self.nicegui_client = nicegui_client  # NiceGUI Client for JS relay
-        self.cursor_char: int | None = None
-        self.selection_start: int | None = None
-        self.selection_end: int | None = None
-        self.has_milkdown_editor: bool = False  # Set True when Tab 3 editor initialised
-
-    def set_cursor(self, char_index: int | None) -> None:
-        """Update cursor position."""
-        self.cursor_char = char_index
-
-    def set_selection(self, start: int | None, end: int | None) -> None:
-        """Update selection range."""
-        self.selection_start = start
-        self.selection_end = end
-
-    def to_cursor_dict(self) -> dict[str, Any]:
-        """Get cursor as dict for CSS generation."""
-        return {"char": self.cursor_char, "name": self.name, "color": self.color}
-
-    def to_selection_dict(self) -> dict[str, Any]:
-        """Get selection as dict for CSS generation."""
-        return {
-            "start_char": self.selection_start,
-            "end_char": self.selection_end,
-            "name": self.name,
-            "color": self.color,
-        }
+    name: str
+    color: str
+    nicegui_client: (
+        Any  # NiceGUI Client not publicly exported; revisit when type stubs added
+    )
+    callback: (
+        Any  # Callable[[], Awaitable[None]] — ty cannot validate closure signatures
+    )
+    cursor_char: int | None = None
+    selection_start: int | None = None
+    selection_end: int | None = None
+    has_milkdown_editor: bool = False
 
 
 # Track connected clients per workspace for broadcasting
-# workspace_id -> {client_id -> _ClientState}
-_connected_clients: dict[str, dict[str, _ClientState]] = {}
+# workspace_id -> {client_id -> _RemotePresence}
+_workspace_presence: dict[str, dict[str, _RemotePresence]] = {}
+
+
+class _RawJS:
+    """Pre-serialised JavaScript literal — bypasses ``_render_js`` escaping.
+
+    Use for values already serialised by ``json.dumps()`` that must appear
+    as-is in the JS output (e.g. JSON objects passed to ``applyHighlights()``).
+    """
+
+    __slots__ = ("_js",)
+
+    def __init__(self, js: str) -> None:
+        self._js = js
+
+    def __str__(self) -> str:
+        return self._js
+
+
+def _render_js(template: Template) -> str:
+    """Render a t-string as JavaScript, escaping interpolated values.
+
+    Strings are JSON-encoded (handles quotes, backslashes, unicode).
+    Numbers pass through as literals. None becomes ``null``.
+    Booleans become ``true`` / ``false``.
+    ``_RawJS`` values pass through without encoding (pre-serialised JSON).
+    """
+    parts: list[str] = []
+    for item in template:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, Interpolation):
+            val = item.value
+            if isinstance(val, _RawJS):
+                parts.append(val._js)
+            elif isinstance(val, bool):
+                parts.append("true" if val else "false")
+            elif isinstance(val, int | float):
+                parts.append(str(val))
+            elif val is None:
+                parts.append("null")
+            else:
+                parts.append(json.dumps(str(val)))
+    return "".join(parts)
+
 
 # Background tasks set - prevents garbage collection of fire-and-forget tasks
 _background_tasks: set[asyncio.Task[None]] = set()
@@ -252,16 +279,6 @@ _PAGE_CSS = """
         font-size: 0.9em;
     }
 
-    /* Character spans - inline to flow naturally */
-    .doc-container .char {
-        /* Keep characters flowing inline */
-        display: inline;
-        /* Preserve spaces (not using &nbsp;) while allowing word wrap */
-        white-space: pre-wrap;
-        /* Override any bad line-height from pasted content (e.g., 1.5px) */
-        line-height: 1.6 !important;
-    }
-
     /* Plain text documents use monospace */
     .doc-container.source-text {
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -305,15 +322,27 @@ _PAGE_CSS = """
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    /* Character spans for selection */
-    .char {
-        cursor: text;
+    /* Remote cursor indicators */
+    .remote-cursor {
+        position: absolute;
+        width: 2px;
+        pointer-events: none;
+        z-index: 20;
+        transition: left 0.15s ease, top 0.15s ease;
+    }
+    .remote-cursor-label {
+        position: absolute;
+        top: -1.4em;
+        left: -2px;
+        font-size: 0.6rem;
+        color: white;
+        padding: 1px 4px;
+        border-radius: 2px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0.9;
     }
 
-    /* Hover highlight effect when card is hovered */
-    .char.card-hover-highlight {
-        box-shadow: inset 0 2px 0 #FFD700, inset 0 -2px 0 #FFD700 !important;
-    }
 """
 
 
@@ -330,8 +359,6 @@ class PageState:
     user_color: str = "#666"  # Client color for cursor display
     # UI elements set during page build
     highlight_style: ui.element | None = None
-    cursor_style: ui.element | None = None  # CSS for remote cursors
-    selection_style: ui.element | None = None  # CSS for remote selections
     highlight_menu: ui.element | None = None
     save_status: ui.label | None = None
     user_count_badge: ui.label | None = None  # Shows connected user count
@@ -401,39 +428,28 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         state.tab_panels.set_value("Annotate")
     state.active_tab = "Annotate"
 
-    # 2. Re-inject char spans (idempotent — no-op if already present)
-    ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
-
-    # 3. Refresh Tab 1 annotations and highlight CSS
+    # 2. Refresh Tab 1 annotations and highlight CSS.
+    # _update_highlight_css() pushes highlight ranges to the client internally,
+    # so no separate _push_highlights_to_client() call is needed.
     if state.refresh_annotations:
         state.refresh_annotations()
     _update_highlight_css(state)
 
-    # 4. Scroll to highlight and flash it (after a short delay for tab switch
-    #    and char span injection to complete)
-    # fmt: off
-    js = (
-        f"setTimeout(function(){{"
-        f"const sc={start_char},ec={end_char};"
-        f"const chars=[];"
-        f"for(var i=sc;i<ec;i++){{"
-        f"var c=document.querySelector("
-        f"'[data-char-index=\"'+i+'\"]');"
-        f"if(c)chars.push(c);"
-        f"}}"
-        f"if(chars.length===0)return;"
-        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-        f"var origColors=chars.map(function(c){{return c.style.backgroundColor;}});"
-        f"chars.forEach(function(c){{"
-        f"c.style.transition='background-color 0.2s';"
-        f"c.style.backgroundColor='#FFD700';"
-        f"}});"
-        f"setTimeout(function(){{"
-        f"chars.forEach(function(c,i){{c.style.backgroundColor=origColors[i];}});"
-        f"}},800);"
-        f"}},200)"
+    # 4. Scroll to highlight and throb it. Refreshes _textNodes inline
+    #    to guarantee fresh DOM references after tab switch + re-render.
+    #    After scrolling, explicitly trigger positionCards via rAF to ensure
+    #    annotation sidebar cards become visible (MutationObserver fires
+    #    before the scroll, hiding cards that aren't yet in viewport).
+    js = _render_js(
+        t"(function(){{"
+        t"  var c = document.getElementById('doc-container');"
+        t"  if (!c) return;"
+        t"  window._textNodes = walkTextNodes(c);"
+        t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
+        t"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
+        t"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
+        t"}})()"
     )
-    # fmt: on
     await ui.run_javascript(js)
 
 
@@ -457,51 +473,6 @@ async def _create_workspace_and_redirect() -> None:
         ui.notify("Failed to create workspace", type="negative")
 
 
-def _process_text_to_char_spans(text: str) -> tuple[str, list[str]]:
-    """DEPRECATED: Use input_pipeline.html_input.inject_char_spans() instead.
-
-    This function remains for backward compatibility but will be removed.
-
-    Convert plain text to HTML with character-level spans.
-
-    Each character (including whitespace) gets a span with data-char-index
-    attribute for annotation targeting. Newlines create paragraph breaks
-    but do not get indices.
-
-    Args:
-        text: Plain text to process.
-
-    Returns:
-        Tuple of (html_string, char_list) where char_list contains
-        all indexed characters in order.
-    """
-    if not text:
-        return "", []
-
-    lines = text.split("\n")
-    html_parts: list[str] = []
-    chars: list[str] = []
-    char_index = 0
-
-    for line_num, line in enumerate(lines):
-        if line:  # Non-empty line
-            line_spans: list[str] = []
-            for char in line:
-                escaped = html.escape(char)
-                span = (
-                    f'<span class="char" data-char-index="{char_index}">'
-                    f"{escaped}</span>"
-                )
-                line_spans.append(span)
-                chars.append(char)
-                char_index += 1
-            html_parts.append(f'<p data-para="{line_num}">{"".join(line_spans)}</p>')
-        else:  # Empty line
-            html_parts.append(f'<p data-para="{line_num}">&nbsp;</p>')
-
-    return "\n".join(html_parts), chars
-
-
 def _get_tag_color(tag_str: str) -> str:
     """Get hex color for a tag string."""
     try:
@@ -511,128 +482,54 @@ def _get_tag_color(tag_str: str) -> str:
         return "#FFEB3B"
 
 
-def _build_highlight_css(highlights: list[dict[str, Any]]) -> str:
-    """Generate CSS rules for highlighting characters with tag-specific colors.
+def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
+    """Generate ::highlight() pseudo-element CSS rules for annotation tags.
 
-    Uses stacked underlines to show overlapping highlights (matching latex.py):
-    - 1 highlight: background + 1pt underline
-    - 2 highlights: blended background + 2pt outer + 1pt inner underlines
-    - 3+ highlights: blended background + 4pt thick underline
+    Uses the CSS Custom Highlight API: each tag gets a ``::highlight(hl-<tag>)``
+    rule with a semi-transparent background and underline in the tag's colour.
+    The JS ``applyHighlights()`` function registers the actual highlight ranges
+    in ``CSS.highlights``; this CSS just defines the visual style.
+
+    Note: ``::highlight()`` supports only ``background-color``, ``color``,
+    ``text-decoration``, and ``text-shadow``. Properties like
+    ``text-decoration-thickness`` and ``text-underline-offset`` are NOT
+    supported inside ``::highlight()`` rules.
 
     Args:
-        highlights: List of highlight dicts with start_word, end_word, tag.
+        tags: Optional set of tag strings to generate rules for.
+              If None, generates rules for all BriefTag values.
 
     Returns:
-        CSS string with background-color and underline rules.
+        CSS string with ``::highlight()`` rules.
     """
-    # Build char -> list of (highlight_index, tag_color) mapping
-    char_highlights: dict[int, list[str]] = {}
-    for hl in highlights:
-        start = int(hl.get("start_char", 0))
-        end = int(hl.get("end_char", 0))
-        hex_color = _get_tag_color(hl.get("tag", "highlight"))
-        for i in range(start, end):
-            if i not in char_highlights:
-                char_highlights[i] = []
-            char_highlights[i].append(hex_color)
+    tag_strings = [t.value for t in BriefTag] if tags is None else sorted(tags)
 
     css_rules: list[str] = []
-    for char_idx, colors in char_highlights.items():
-        # Background: use first highlight's color with transparency
-        first_color = colors[0]
+    for tag_str in tag_strings:
+        hex_color = _get_tag_color(tag_str)
         r, g, b = (
-            int(first_color[1:3], 16),
-            int(first_color[3:5], 16),
-            int(first_color[5:7], 16),
+            int(hex_color[1:3], 16),
+            int(hex_color[3:5], 16),
+            int(hex_color[5:7], 16),
         )
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
-
-        overlap_count = len(colors)
-        underline_color = first_color if overlap_count < 3 else "#333"
-        thickness = f"{min(overlap_count, 3)}px"
-
-        # Main character styling
         css_rules.append(
-            f'[data-char-index="{char_idx}"] {{ '
-            f"background-color: {bg_rgba}; "
-            f"text-decoration: underline; "
-            f"text-decoration-color: {underline_color}; "
-            f"text-decoration-thickness: {thickness}; "
-            f"text-underline-offset: 2px; }}"
+            f"::highlight(hl-{tag_str}) {{\n"
+            f"    background-color: {bg_rgba};\n"
+            f"    text-decoration: underline;\n"
+            f"    text-decoration-color: {hex_color};\n"
+            f"}}"
         )
-        # Note: No ::after pseudo-element needed for character-based tokenization.
-        # Spaces are now individual character spans that get their own highlighting.
+
+    # Hover and throb highlights for card interaction (Phase 4)
+    css_rules.append(
+        "::highlight(hl-hover) {\n    background-color: rgba(255, 215, 0, 0.3);\n}"
+    )
+    css_rules.append(
+        "::highlight(hl-throb) {\n    background-color: rgba(255, 215, 0, 0.6);\n}"
+    )
 
     return "\n".join(css_rules)
-
-
-def _build_remote_cursor_css(
-    cursors: dict[str, dict[str, Any]], exclude_client_id: str
-) -> str:
-    """Build CSS rules for remote users' cursors."""
-    rules = []
-    for cid, cursor in cursors.items():
-        if cid == exclude_client_id:
-            continue
-        char_idx = cursor.get("char")
-        color = cursor.get("color", "#2196f3")
-        name = cursor.get("name", "User")
-        if char_idx is None:
-            continue
-        # Cursor indicator using box-shadow (no layout shift)
-        rules.append(
-            f'[data-char-index="{char_idx}"] {{ '
-            f"position: relative; "
-            f"box-shadow: inset 2px 0 0 0 {color}; }}"
-        )
-        # Floating name label
-        rules.append(
-            f'[data-char-index="{char_idx}"]::before {{ '
-            f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
-            f"font-size: 0.6rem; background: {color}; color: white; "
-            f"padding: 1px 3px; border-radius: 2px; white-space: nowrap; "
-            f"z-index: 20; pointer-events: none; }}"
-        )
-    return "\n".join(rules)
-
-
-def _build_remote_selection_css(
-    selections: dict[str, dict[str, Any]], exclude_client_id: str
-) -> str:
-    """Build CSS rules for remote users' selections."""
-    rules = []
-    for cid, sel in selections.items():
-        if cid == exclude_client_id:
-            continue
-        start = sel.get("start_char")
-        end = sel.get("end_char")
-        color = sel.get("color", "#ffeb3b")
-        name = sel.get("name", "User")
-        if start is None or end is None:
-            continue
-        if start > end:
-            start, end = end, start
-        # Selection highlight for all characters in range
-        selectors = [f'[data-char-index="{i}"]' for i in range(start, end + 1)]
-        if selectors:
-            selector_str = ", ".join(selectors)
-            rules.append(
-                f"{selector_str} {{ background-color: {color}30 !important; "
-                f"box-shadow: 0.3em 0 0 {color}30; }}"
-            )
-            rules.append(
-                f'[data-char-index="{end}"] {{ box-shadow: none !important; }}'
-            )
-            # Name label on first character
-            rules.append(f'[data-char-index="{start}"] {{ position: relative; }}')
-            rules.append(
-                f'[data-char-index="{start}"]::before {{ '
-                f'content: "{name}"; position: absolute; top: -1.2em; left: 0; '
-                f"font-size: 0.65rem; background: {color}; color: white; "
-                f"padding: 1px 4px; border-radius: 2px; white-space: nowrap; "
-                f"z-index: 10; pointer-events: none; }}"
-            )
-    return "\n".join(rules)
 
 
 def _setup_page_styles() -> None:
@@ -680,19 +577,87 @@ def _build_tag_toolbar(
             )
 
 
-def _update_highlight_css(state: PageState) -> None:
-    """Update the highlight CSS based on current CRDT state."""
-    if state.highlight_style is None or state.crdt_doc is None:
-        return
+def _build_highlight_json(state: PageState) -> str:
+    """Build JSON highlight data from CRDT state for ``applyHighlights()``.
+
+    Groups highlights by tag into the format expected by the JS function:
+    ``{tag: [{start_char, end_char, id}, ...], ...}``
+
+    Returns:
+        JSON string ready for injection into ``applyHighlights()`` call.
+    """
+    if state.crdt_doc is None:
+        return "{}"
 
     if state.document_id is not None:
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
     else:
         highlights = state.crdt_doc.get_all_highlights()
 
-    css = _build_highlight_css(highlights)
+    # Group by tag
+    by_tag: dict[str, list[dict[str, Any]]] = {}
+    for hl in highlights:
+        tag = hl.get("tag", "highlight")
+        entry = {
+            "start_char": hl.get("start_char", 0),
+            "end_char": hl.get("end_char", 0),
+            "id": hl.get("id", ""),
+        }
+        by_tag.setdefault(tag, []).append(entry)
+
+    return json.dumps(by_tag)
+
+
+def _push_highlights_to_client(state: PageState) -> None:
+    """Push current highlight state to the client via ``applyHighlights()``.
+
+    Rebuilds the highlight JSON from CRDT and calls the JS function to
+    re-register all ``CSS.highlights`` entries. Called after any highlight
+    mutation (add, delete, tag change) and on tab switch back to Annotate.
+
+    Looks up the NiceGUI client from ``_workspace_presence`` to use
+    ``client.run_javascript()`` — this avoids slot-stack errors when called
+    from background contexts (CRDT sync callbacks).
+    """
+    highlight_json = _RawJS(_build_highlight_json(state))
+    js = _render_js(
+        t"(function() {{"
+        t"  const c = document.getElementById('doc-container');"
+        t"  if (c) applyHighlights(c, {highlight_json});"
+        t"}})()"
+    )
+    # Look up the NiceGUI client from the connected clients registry.
+    # Using client.run_javascript() is safe in background contexts (CRDT
+    # sync callbacks) where ui.run_javascript() would crash with a
+    # slot-stack RuntimeError.
+    workspace_key = str(state.workspace_id)
+    client_state = _workspace_presence.get(workspace_key, {}).get(state.client_id)
+    if client_state and client_state.nicegui_client:
+        client_state.nicegui_client.run_javascript(js)
+    else:
+        ui.run_javascript(js)
+
+
+def _update_highlight_css(state: PageState) -> None:
+    """Update highlight CSS and push highlight ranges to the client.
+
+    With the CSS Custom Highlight API, the ``::highlight()`` pseudo-element
+    rules are static (one rule per tag). The actual highlight ranges are
+    registered in ``CSS.highlights`` by JS ``applyHighlights()``. This
+    function ensures both the CSS and the JS highlight state are current.
+    """
+    if state.highlight_style is None or state.crdt_doc is None:
+        return
+
+    # CSS is invariant (fixed TAG_COLORS palette) but cheap to regenerate.
+    # Re-setting it here keeps this function as a single "sync everything"
+    # call site, which is simpler than caching the string.
+    css = _build_highlight_pseudo_css()
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
+
+    # Push updated highlight ranges to the client
+    _push_highlights_to_client(state)
 
 
 async def _delete_highlight(
@@ -898,34 +863,14 @@ def _build_annotation_card(
             )
 
             with ui.row().classes("gap-1"):
-                # Go-to-highlight button - scrolls to highlight and flashes it
+                # Go-to-highlight button - scrolls to highlight and throbs it
                 async def goto_highlight(
                     sc: int = start_char, ec: int = end_char
                 ) -> None:
-                    # fmt: off
-                    # Flash ALL chars in the highlight range, not just start
-                    js = (
-                        f"(function(){{"
-                        f"const sc={sc},ec={ec};"
-                        f"const chars=[];"
-                        f"for(let i=sc;i<ec;i++){{"
-                        f"const c=document.querySelector("
-                        f"'[data-char-index=\"'+i+'\"]');"
-                        f"if(c)chars.push(c);"
-                        f"}}"
-                        f"if(chars.length===0)return;"
-                        f"chars[0].scrollIntoView({{behavior:'smooth',block:'center'}});"
-                        f"const origColors=chars.map(c=>c.style.backgroundColor);"
-                        f"chars.forEach(c=>{{"
-                        f"c.style.transition='background-color 0.2s';"
-                        f"c.style.backgroundColor='#FFD700';"
-                        f"}});"
-                        f"setTimeout(()=>{{"
-                        f"chars.forEach((c,i)=>{{c.style.backgroundColor=origColors[i];}});"
-                        f"}},800);"
-                        f"}})()"
+                    js = _render_js(
+                        t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
+                        t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
                     )
-                    # fmt: on
                     await ui.run_javascript(js)
 
                 ui.button(icon="my_location", on_click=goto_highlight).props(
@@ -1026,68 +971,72 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         ui.notify("CRDT not initialized", type="warning")
         return
 
-    # Update status to show saving
-    if state.save_status:
-        state.save_status.text = "Saving..."
+    try:
+        # Update status to show saving
+        if state.save_status:
+            state.save_status.text = "Saving..."
 
-    # Add highlight to CRDT (end_char is exclusive)
-    start = min(state.selection_start, state.selection_end)
-    end = max(state.selection_start, state.selection_end) + 1
+        # Add highlight to CRDT (end_char is exclusive).
+        # The JS text walker's setupAnnotationSelection() already returns
+        # exclusive end_char (per Range API semantics), so no +1 needed.
+        start = min(state.selection_start, state.selection_end)
+        end = max(state.selection_start, state.selection_end)
 
-    # Use tag value if provided, otherwise default to "highlight"
-    tag_value = tag.value if tag else "highlight"
+        # Use tag value if provided, otherwise default to "highlight"
+        tag_value = tag.value if tag else "highlight"
 
-    # Extract highlighted text from document characters
-    highlighted_text = ""
-    if state.document_chars:
-        chars_slice = state.document_chars[start:end]
-        highlighted_text = "".join(chars_slice)
+        # Extract highlighted text from document characters
+        highlighted_text = ""
+        if state.document_chars:
+            chars_slice = state.document_chars[start:end]
+            highlighted_text = "".join(chars_slice)
 
-    state.crdt_doc.add_highlight(
-        start_char=start,
-        end_char=end,
-        tag=tag_value,
-        text=highlighted_text,
-        author=state.user_name,
-        document_id=str(state.document_id),
-    )
+        state.crdt_doc.add_highlight(
+            start_char=start,
+            end_char=end,
+            tag=tag_value,
+            text=highlighted_text,
+            author=state.user_name,
+            document_id=str(state.document_id),
+        )
 
-    # Schedule persistence
-    pm = get_persistence_manager()
-    pm.mark_dirty_workspace(
-        state.workspace_id,
-        state.crdt_doc.doc_id,
-        last_editor=state.user_name,
-    )
+        # Schedule persistence
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
 
-    # Force immediate save for test observability
-    await pm.force_persist_workspace(state.workspace_id)
+        # Force immediate save for test observability
+        await pm.force_persist_workspace(state.workspace_id)
 
-    if state.save_status:
-        state.save_status.text = "Saved"
+        if state.save_status:
+            state.save_status.text = "Saved"
 
-    # Update CSS to show new highlight
-    _update_highlight_css(state)
+        # Update CSS to show new highlight
+        _update_highlight_css(state)
 
-    # Refresh annotation cards to show new highlight
-    if state.refresh_annotations:
-        state.refresh_annotations()
+        # Refresh annotation cards to show new highlight
+        if state.refresh_annotations:
+            state.refresh_annotations()
 
-    # Broadcast to other clients
-    if state.broadcast_update:
-        await state.broadcast_update()
+        # Broadcast to other clients
+        if state.broadcast_update:
+            await state.broadcast_update()
 
-    # Clear browser selection first to prevent re-triggering on next mouseup
-    await ui.run_javascript("window.getSelection().removeAllRanges();")
+        # Clear browser selection first to prevent re-triggering on next mouseup
+        await ui.run_javascript("window.getSelection().removeAllRanges();")
 
-    # Clear selection state and hide menu
-    state.selection_start = None
-    state.selection_end = None
-    if state.highlight_menu:
-        state.highlight_menu.set_visibility(False)
-
-    # Release processing lock
-    state.processing_highlight = False
+        # Clear selection state and hide menu
+        state.selection_start = None
+        state.selection_end = None
+        if state.highlight_menu:
+            state.highlight_menu.set_visibility(False)
+    finally:
+        # Always release processing lock — prevents permanent lockout if any
+        # step above raises (e.g. JS relay failure, persistence error).
+        state.processing_highlight = False
 
 
 def _setup_selection_handlers(state: PageState) -> None:
@@ -1101,8 +1050,8 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     async def on_selection(e: Any) -> None:
         """Handle selection event from JavaScript."""
-        state.selection_start = e.args.get("start")
-        state.selection_end = e.args.get("end")
+        state.selection_start = e.args.get("start_char")
+        state.selection_end = e.args.get("end_char")
         if state.highlight_menu:
             state.highlight_menu.set_visibility(True)
         # Broadcast selection to other clients
@@ -1139,103 +1088,33 @@ def _setup_selection_handlers(state: PageState) -> None:
 
     ui.on("keydown", on_keydown)
 
-    # JavaScript to detect text selection via selectionchange and mouseup
-    # Wrapped in setTimeout to ensure DOM is ready and emitEvent is available
-    js_code = """
-    setTimeout(function() {
-        function processSelection() {
-            const selection = window.getSelection();
-            if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-                return;
-            }
-
-            const range = selection.getRangeAt(0);
-
-            // Find all char spans that intersect with the selection
-            // This is more robust than checking start/end containers
-            const allCharSpans = document.querySelectorAll('[data-char-index]');
-            let minChar = Infinity;
-            let maxChar = -Infinity;
-
-            for (const span of allCharSpans) {
-                if (range.intersectsNode(span)) {
-                    const charIdx = parseInt(span.dataset.charIndex);
-                    minChar = Math.min(minChar, charIdx);
-                    maxChar = Math.max(maxChar, charIdx);
-                }
-            }
-
-            if (minChar !== Infinity && maxChar !== -Infinity) {
-                emitEvent('selection_made', {
-                    start: minChar,
-                    end: maxChar
-                });
-            }
-        }
-
-        // Listen for selectionchange (handles click+shift+click)
-        document.addEventListener('selectionchange', function() {
-            const selection = window.getSelection();
-            if (selection && !selection.isCollapsed) {
-                processSelection();
-            }
-        });
-
-        // Also listen for mouseup (handles drag selection)
-        document.addEventListener('mouseup', function() {
-            setTimeout(processSelection, 10);
-        });
-
-        // Clear selection on click (but not on toolbar)
-        document.addEventListener('click', function(e) {
-            // Don't clear selection when clicking toolbar buttons
-            if (e.target.closest('[data-testid="tag-toolbar"]')) {
-                return;
-            }
-            // Small delay to check if selection was cleared by this click
-            setTimeout(function() {
-                const selection = window.getSelection();
-                if (!selection || selection.isCollapsed) {
-                    emitEvent('selection_cleared', {});
-                }
-            }, 50);
-        });
-
-        // Keyboard shortcuts (1-0 keys for tags)
-        // Debounce to prevent duplicate events
-        let lastKeyTime = 0;
-        document.addEventListener('keydown', function(e) {
-            // Ignore held keys and rapid repeats
-            if (e.repeat) return;
-            const now = Date.now();
-            if (now - lastKeyTime < 300) return;
-            lastKeyTime = now;
-            if (['1','2','3','4','5','6','7','8','9','0'].includes(e.key)) {
-                emitEvent('keydown', { key: e.key });
-            }
-        });
-
-        // Track cursor position over char spans for remote cursor display
-        let lastCursorChar = null;
-        const docC = document.getElementById('doc-container');
-        if (docC) {
-            docC.addEventListener('mouseover', function(e) {
-                const charEl = e.target.closest('[data-char-index]');
-                const charIdx = charEl ? parseInt(charEl.dataset.charIndex) : null;
-                if (charIdx !== lastCursorChar) {
-                    lastCursorChar = charIdx;
-                    emitEvent('cursor_move', { char: charIdx });
-                }
-            });
-            docC.addEventListener('mouseleave', function() {
-                if (lastCursorChar !== null) {
-                    lastCursorChar = null;
-                    emitEvent('cursor_move', { char: null });
-                }
-            });
-        }
-    }, 100);
-    """
+    # Selection detection is handled by setupAnnotationSelection() in the
+    # init JS (loaded in _render_document_with_highlights). This remaining
+    # JS handles: selection clearing on click and keyboard shortcuts.
+    # Remote cursor tracking (Phase 5) will use the text walker.
+    # fmt: off
+    js_code = (
+        "setTimeout(function() {"
+        "  document.addEventListener('click', function(e) {"
+        "    if (e.target.closest('[data-testid=\"tag-toolbar\"]')) return;"
+        "    setTimeout(function() {"
+        "      var s = window.getSelection();"
+        "      if (!s || s.isCollapsed) emitEvent('selection_cleared', {});"
+        "    }, 50);"
+        "  });"
+        "  var lastKeyTime = 0;"
+        "  document.addEventListener('keydown', function(e) {"
+        "    if (e.repeat) return;"
+        "    var now = Date.now();"
+        "    if (now - lastKeyTime < 300) return;"
+        "    lastKeyTime = now;"
+        "    if ('1234567890'.indexOf(e.key) >= 0) {"
+        "      emitEvent('keydown', {key: e.key});"
+        "    }"
+        "  });"
+        "}, 100);"
+    )
+    # fmt: on
     ui.run_javascript(js_code)
 
 
@@ -1254,19 +1133,13 @@ async def _render_document_with_highlights(
     if doc.content:
         state.document_chars = extract_text_from_html(doc.content)
 
-    # Load existing highlights and build initial CSS
-    highlights = crdt_doc.get_highlights_for_document(str(doc.id))
-    initial_css = _build_highlight_css(highlights)
+    # Static ::highlight() CSS for all tags — actual highlight ranges are
+    # registered in CSS.highlights by JS applyHighlights()
+    initial_css = _build_highlight_pseudo_css()
 
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
-
-    # Dynamic style elements for remote cursors and selections
-    state.cursor_style = ui.element("style")
-    state.cursor_style._props["innerHTML"] = ""
-    state.selection_style = ui.element("style")
-    state.selection_style._props["innerHTML"] = ""
 
     # Tag toolbar handler
     async def handle_tag_click(tag: BriefTag) -> None:
@@ -1310,82 +1183,27 @@ async def _render_document_with_highlights(
         with doc_container:
             ui.html(doc.content, sanitize=False)
 
-        # Inject char spans client-side (avoids websocket size limits)
-        # This wraps each text character in <span class="char" data-char-index="N">
-        # Defined as a named global so it can be re-invoked if NiceGUI re-renders
-        # the HTML element (e.g. after Tab 3 initialisation triggers "Event listeners
-        # changed" — see _on_tab_change Annotate handler).
-        # fmt: off
-        inject_spans_js = (
-            "window._injectCharSpans = function() {\n"
-            "  const container = document.getElementById('doc-container');\n"
-            "  if (!container) return;\n"
-            "  // Guard: skip if char spans already exist (idempotent)\n"
-            "  if (container.querySelector('[data-char-index]')) return;\n"
-            "  let charIndex = 0;\n"
-            "  // Block elements where whitespace-only text nodes should be skipped\n"
-            "  const blockTags = new Set(['table','tbody','thead','tr','td','th',\n"
-            "    'ul','ol','li','dl','dt','dd','div','section','article','aside',\n"
-            "    'header','footer','nav','main','figure','figcaption','blockquote']);\n"
-            "  \n"
-            "  function processNode(node) {\n"
-            "    if (node.nodeType === Node.TEXT_NODE) {\n"
-            "      let text = node.textContent;\n"
-            "      if (!text) return;\n"
-            "      // Skip whitespace-only text nodes inside block containers\n"
-            "      // These are just formatting (indentation) between HTML tags\n"
-            "      const parent = node.parentNode;\n"
-            "      if (parent && blockTags.has(parent.tagName.toLowerCase())) {\n"
-            "        if (/^[\\s]*$/.test(text)) {\n"
-            "          node.remove();\n"
-            "          return;\n"
-            "        }\n"
-            "      }\n"
-            "      // Normalize whitespace: collapse runs to single space (like HTML)\n"
-            "      text = text.replace(/[\\s]+/g, ' ');\n"
-            "      const frag = document.createDocumentFragment();\n"
-            "      for (const char of text) {\n"
-            "        const span = document.createElement('span');\n"
-            "        span.className = 'char';\n"
-            "        span.dataset.charIndex = charIndex++;\n"
-            "        span.textContent = char;\n"
-            "        frag.appendChild(span);\n"
-            "      }\n"
-            "      node.parentNode.replaceChild(frag, node);\n"
-            "    } else if (node.nodeType === Node.ELEMENT_NODE) {\n"
-            "      const tagName = node.tagName.toLowerCase();\n"
-            "      const skip = ['script','style','noscript','template'];\n"
-            "      if (skip.includes(tagName)) {\n"
-            "        return;\n"
-            "      }\n"
-            "      // Handle <br> as newline character\n"
-            "      if (tagName === 'br') {\n"
-            "        const span = document.createElement('span');\n"
-            "        span.className = 'char';\n"
-            "        span.dataset.charIndex = charIndex++;\n"
-            "        span.textContent = '\\n';\n"
-            "        node.parentNode.insertBefore(span, node);\n"
-            "        node.parentNode.removeChild(node);\n"
-            "        return;\n"
-            "      }\n"
-            "      // Process children (copy - modified during iteration)\n"
-            "      const children = Array.from(node.childNodes);\n"
-            "      for (const child of children) {\n"
-            "        processNode(child);\n"
-            "      }\n"
-            "    }\n"
-            "  }\n"
-            "  \n"
-            "  // Process the container's children\n"
-            "  const children = Array.from(container.childNodes);\n"
-            "  for (const child of children) {\n"
-            "    processNode(child);\n"
-            "  }\n"
-            "};\n"
-            "window._injectCharSpans();"
+        # Load annotation-highlight.js for CSS Custom Highlight API support.
+        # This script provides walkTextNodes(), applyHighlights(),
+        # clearHighlights(), and setupAnnotationSelection().
+        ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
+
+        # Initialise text walker, apply highlights, and set up selection
+        # detection after DOM is ready. Uses setTimeout to ensure the script
+        # has loaded and the HTML element is rendered.
+        highlight_json = _RawJS(_build_highlight_json(state))
+        init_js = _render_js(
+            t"setTimeout(function() {{"
+            t"  const c = document.getElementById('doc-container');"
+            t"  if (!c) return;"
+            t"  window._textNodes = walkTextNodes(c);"
+            t"  applyHighlights(c, {highlight_json});"
+            t"  setupAnnotationSelection('doc-container', function(sel) {{"
+            t"    emitEvent('selection_made', sel);"
+            t"  }});"
+            t"}}, 100);"
         )
-        # fmt: on
-        ui.run_javascript(inject_spans_js)
+        ui.run_javascript(init_js)
 
         # Annotations sidebar (~35% of layout)
         # Needs ID for scroll-sync JavaScript positioning
@@ -1408,91 +1226,121 @@ async def _render_document_with_highlights(
     # Set up selection detection
     _setup_selection_handlers(state)
 
-    # Set up scroll-synced card positioning
+    # Set up scroll-synced card positioning and hover interaction
+    # Uses charOffsetToRect() from annotation-highlight.js (Phase 4)
     # fmt: off
+    # All DOM lookups are dynamic (getElementById on every call) because
+    # NiceGUI/Vue can REPLACE the entire Annotate tab panel DOM when
+    # another tab initialises (e.g. Respond tab's Milkdown editor).
+    # Closured DOM references become dead after replacement.
     scroll_sync_js = (
         "(function() {\n"
-        "  const docC = document.getElementById('doc-container');\n"
-        "  const annC = document.getElementById('annotations-container');\n"
-        "  if (!docC || !annC) return;\n"
-        "  const MIN_GAP = 8;\n"
+        "  var MIN_GAP = 8;\n"
+        "  var _obs = null;\n"
+        "  var _lastAnnC = null;\n"
+        "  function tn() {\n"
+        "    var dc = document.getElementById('doc-container');\n"
+        "    var t = window._textNodes;\n"
+        "    if (!dc || !t || !t.length) return null;\n"
+        "    if (!dc.contains(t[0].node)) {\n"
+        "      t = walkTextNodes(dc);\n"
+        "      window._textNodes = t;\n"
+        "    }\n"
+        "    return t;\n"
+        "  }\n"
         "  function positionCards() {\n"
-        "    const cards = Array.from(annC.querySelectorAll('[data-start-char]'));\n"
-        "    if (cards.length === 0) return;\n"
-        "    const docRect = docC.getBoundingClientRect();\n"
-        "    const annRect = annC.getBoundingClientRect();\n"
-        "    const containerOffset = annRect.top - docRect.top;\n"
-        "    const cardInfos = cards.map(card => {\n"
-        "      const sc = parseInt(card.dataset.startChar);\n"
-        "      const cs = docC.querySelector('[data-char-index=\"'+sc+'\"]');\n"
-        "      if (!cs) return null;\n"
-        "      const cr = cs.getBoundingClientRect();\n"
-        "      return { card, startChar: sc, height: card.offsetHeight,\n"
-        "               targetY: (cr.top-docRect.top)-containerOffset };\n"
+        "    var nodes = tn();\n"
+        "    if (!nodes || !nodes.length) return;\n"
+        "    var dc = document.getElementById('doc-container');\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!dc || !ac) return;\n"
+        "    var cards = Array.from("
+        "ac.querySelectorAll('[data-start-char]'));\n"
+        "    if (!cards.length) return;\n"
+        "    var docRect = dc.getBoundingClientRect();\n"
+        "    var annRect = ac.getBoundingClientRect();\n"
+        "    var cOff = annRect.top - docRect.top;\n"
+        "    var cardInfos = cards.map(function(card) {\n"
+        "      var sc = parseInt(card.dataset.startChar);\n"
+        "      var cr = charOffsetToRect(nodes, sc);\n"
+        "      if (cr.width === 0 && cr.height === 0) return null;\n"
+        "      return {card: card, startChar: sc,\n"
+        "        height: card.offsetHeight,\n"
+        "        targetY: (cr.top - docRect.top) - cOff};\n"
         "    }).filter(Boolean);\n"
-        "    cardInfos.sort((a, b) => a.startChar - b.startChar);\n"
-        "    const headerHeight = 60;\n"
-        "    const viewportTop = headerHeight;\n"
-        "    const viewportBottom = window.innerHeight;\n"
-        "    let minY = 0;\n"
-        "    for (const info of cardInfos) {\n"
-        "      const sc = info.startChar;\n"
-        "      const ec = parseInt(info.card.dataset.endChar) || sc;\n"
-        "      var qs='[data-char-index=\"'+sc+'\"]';\n"
-        "      const startCS = docC.querySelector(qs);\n"
-        "      var qe='[data-char-index=\"'+(ec-1)+'\"]';\n"
-        "      const endCS = docC.querySelector(qe)||startCS;\n"
-        "      if (!startCS || !endCS) continue;\n"
-        "      const sr = startCS.getBoundingClientRect();\n"
-        "      const er = endCS.getBoundingClientRect();\n"
-        "      const inView = er.bottom > viewportTop && sr.top < viewportBottom;\n"
+        "    cardInfos.sort(function(a,b) {"
+        " return a.startChar - b.startChar; });\n"
+        "    var hH = 60, vT = hH, vB = window.innerHeight;\n"
+        "    var minY = 0;\n"
+        "    for (var i = 0; i < cardInfos.length; i++) {\n"
+        "      var info = cardInfos[i];\n"
+        "      var sc2 = info.startChar;\n"
+        "      var ec2 = parseInt("
+        "info.card.dataset.endChar) || sc2;\n"
+        "      var sr = charOffsetToRect(nodes, sc2);\n"
+        "      var er = charOffsetToRect("
+        "nodes, Math.max(ec2-1, sc2));\n"
+        "      var inView = er.bottom > vT && sr.top < vB;\n"
         "      info.card.style.position = 'absolute';\n"
-        "      if (!inView) { info.card.style.display = 'none'; continue; }\n"
+        "      if (!inView) {"
+        " info.card.style.display = 'none'; continue; }\n"
         "      info.card.style.display = '';\n"
-        "      const y = Math.max(info.targetY, minY);\n"
+        "      var y = Math.max(info.targetY, minY);\n"
         "      info.card.style.top = y + 'px';\n"
         "      minY = y + info.height + MIN_GAP;\n"
         "    }\n"
         "  }\n"
-        "  let ticking = false;\n"
+        "  var ticking = false;\n"
         "  function onScroll() {\n"
         "    if (!ticking) {\n"
-        "      requestAnimationFrame(() => { positionCards(); ticking = false; });\n"
+        "      requestAnimationFrame(function() {"
+        " positionCards(); ticking = false; });\n"
         "      ticking = true;\n"
         "    }\n"
         "  }\n"
-        "  window.addEventListener('scroll', onScroll, { passive: true });\n"
-        "  requestAnimationFrame(positionCards);\n"
-        "  var rePos = () => requestAnimationFrame(positionCards);\n"
-        "  const obs = new MutationObserver(rePos);\n"
-        "  obs.observe(annC, { childList: true, subtree: true });\n"
-        "  // Card hover -> highlight corresponding chars\n"
-        "  let hoveredCard = null;\n"
-        "  function clearHover() {\n"
-        "    if (!hoveredCard) return;\n"
-        "    const sc = parseInt(hoveredCard.dataset.startChar);\n"
-        "    const ec = parseInt(hoveredCard.dataset.endChar) || sc;\n"
-        "    for (let i = sc; i < ec; i++) {\n"
-        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
-        "      if (c) c.classList.remove('card-hover-highlight');\n"
+        "  window._positionCards = positionCards;\n"
+        "  window.addEventListener('scroll', onScroll,"
+        " {passive: true});\n"
+        "  // Re-attach MutationObserver on each highlights-ready\n"
+        "  // because the annotations-container DOM element may have\n"
+        "  // been replaced by Vue re-rendering.\n"
+        "  document.addEventListener("
+        "'highlights-ready', function() {\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!ac) return;\n"
+        "    if (ac !== _lastAnnC) {\n"
+        "      if (_obs) _obs.disconnect();\n"
+        "      _obs = new MutationObserver(function() {"
+        " requestAnimationFrame(positionCards); });\n"
+        "      _obs.observe(ac,"
+        " {childList: true, subtree: true});\n"
+        "      _lastAnnC = ac;\n"
         "    }\n"
-        "    hoveredCard = null;\n"
-        "  }\n"
-        "  annC.addEventListener('mouseover', function(e) {\n"
-        "    const card = e.target.closest('[data-start-char]');\n"
+        "    requestAnimationFrame(positionCards);\n"
+        "  });\n"
+        "  // Card hover via event delegation on document\n"
+        "  // (survives DOM replacement)\n"
+        "  var hoveredCard = null;\n"
+        "  document.addEventListener('mouseover', function(e) {\n"
+        "    var ac = document.getElementById("
+        "'annotations-container');\n"
+        "    if (!ac || !ac.contains(e.target)) {\n"
+        "      if (hoveredCard) {"
+        " clearHoverHighlight(); hoveredCard = null; }\n"
+        "      return;\n"
+        "    }\n"
+        "    var card = e.target.closest('[data-start-char]');\n"
         "    if (card === hoveredCard) return;\n"
-        "    clearHover();\n"
+        "    clearHoverHighlight();\n"
+        "    hoveredCard = null;\n"
         "    if (!card) return;\n"
         "    hoveredCard = card;\n"
-        "    const sc = parseInt(card.dataset.startChar);\n"
-        "    const ec = parseInt(card.dataset.endChar) || sc;\n"
-        "    for (let i = sc; i < ec; i++) {\n"
-        "      const c = docC.querySelector('[data-char-index=\"'+i+'\"]');\n"
-        "      if (c) c.classList.add('card-hover-highlight');\n"
-        "    }\n"
-        "  });\n"
-        "  annC.addEventListener('mouseleave', function() {\n"
-        "    clearHover();\n"
+        "    var sc = parseInt(card.dataset.startChar);\n"
+        "    var ec = parseInt(card.dataset.endChar) || sc;\n"
+        "    var nodes = tn();\n"
+        "    if (nodes) showHoverHighlight(nodes, sc, ec);\n"
         "  });\n"
         "})();"
     )
@@ -1518,49 +1366,40 @@ def _get_user_color(user_name: str) -> str:
     return colors[hash_val % len(colors)]
 
 
-def _update_cursor_css(state: PageState) -> None:
-    """Update cursor CSS for remote users."""
-    if state.cursor_style is None:
-        return
-    workspace_key = str(state.workspace_id)
-    clients = _connected_clients.get(workspace_key, {})
-    cursors = {cid: cs.to_cursor_dict() for cid, cs in clients.items()}
-    css = _build_remote_cursor_css(cursors, state.client_id)
-    state.cursor_style._props["innerHTML"] = css
-    state.cursor_style.update()
-
-
-def _update_selection_css(state: PageState) -> None:
-    """Update selection CSS for remote users."""
-    if state.selection_style is None:
-        return
-    workspace_key = str(state.workspace_id)
-    clients = _connected_clients.get(workspace_key, {})
-    selections = {cid: cs.to_selection_dict() for cid, cs in clients.items()}
-    css = _build_remote_selection_css(selections, state.client_id)
-    state.selection_style._props["innerHTML"] = css
-    state.selection_style.update()
-
-
 def _update_user_count(state: PageState) -> None:
     """Update user count badge."""
     if state.user_count_badge is None:
         return
     workspace_key = str(state.workspace_id)
-    count = len(_connected_clients.get(workspace_key, {}))
+    count = len(_workspace_presence.get(workspace_key, {}))
     logger.debug(
         "USER_COUNT: ws=%s count=%d keys=%s",
         workspace_key,
         count,
-        list(_connected_clients.keys()),
+        list(_workspace_presence.keys()),
     )
     label = "1 user" if count == 1 else f"{count} users"
     state.user_count_badge.set_text(label)
 
 
+async def _broadcast_js_to_others(
+    workspace_key: str, exclude_client_id: str, js: str
+) -> None:
+    """Send a JS snippet to every other client in the workspace.
+
+    Skips clients without a ``nicegui_client`` reference and suppresses
+    individual send failures so one broken connection cannot block others.
+    """
+    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+        if cid == exclude_client_id or presence.nicegui_client is None:
+            continue
+        with contextlib.suppress(Exception):
+            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+
+
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
     """Fire-and-forget notification to other clients in workspace."""
-    for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+    for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
         if cid != exclude_client_id and cstate.callback:
             with contextlib.suppress(Exception):
                 task = asyncio.create_task(cstate.callback())
@@ -1584,44 +1423,54 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Create broadcast function for annotation updates
     async def broadcast_update() -> None:
-        for cid, cstate in _connected_clients.get(workspace_key, {}).items():
+        for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
             if cid != client_id and cstate.callback:
                 with contextlib.suppress(Exception):
                     await cstate.callback()
 
     state.broadcast_update = broadcast_update
 
-    # Create broadcast function for cursor updates
-    async def broadcast_cursor(word_index: int | None) -> None:
-        clients = _connected_clients.get(workspace_key, {})
+    # Create broadcast function for cursor updates — JS-targeted (AC3.4)
+    async def broadcast_cursor(char_index: int | None) -> None:
+        clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
-            clients[client_id].set_cursor(word_index)
-        # Notify other clients to refresh cursor CSS
-        for cid, cstate in clients.items():
-            if cid != client_id and cstate.callback:
-                with contextlib.suppress(Exception):
-                    await cstate.callback()
+            clients[client_id].cursor_char = char_index
+        if char_index is not None:
+            name = state.user_name
+            color = state.user_color
+            js = _render_js(
+                t"renderRemoteCursor("
+                t"document.getElementById('doc-container')"
+                t", {client_id}, {char_index}"
+                t", {name}, {color})"
+            )
+        else:
+            js = _render_js(t"removeRemoteCursor({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
 
     state.broadcast_cursor = broadcast_cursor
 
-    # Create broadcast function for selection updates
+    # Create broadcast function for selection updates — JS-targeted (AC3.4)
     async def broadcast_selection(start: int | None, end: int | None) -> None:
-        clients = _connected_clients.get(workspace_key, {})
+        clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
-            clients[client_id].set_selection(start, end)
-        # Notify other clients to refresh selection CSS
-        for cid, cstate in clients.items():
-            if cid != client_id and cstate.callback:
-                with contextlib.suppress(Exception):
-                    await cstate.callback()
+            clients[client_id].selection_start = start
+            clients[client_id].selection_end = end
+        if start is not None and end is not None:
+            name = state.user_name
+            color = state.user_color
+            js = _render_js(
+                t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
+            )
+        else:
+            js = _render_js(t"removeRemoteSelection({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
 
     state.broadcast_selection = broadcast_selection
 
     # Callback for receiving updates from other clients
     async def handle_update_from_other() -> None:
         _update_highlight_css(state)
-        _update_cursor_css(state)
-        _update_selection_css(state)
         _update_user_count(state)
         if state.refresh_annotations:
             state.refresh_annotations()
@@ -1633,34 +1482,70 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             state.refresh_respond_references()
 
     # Register this client
-    if workspace_key not in _connected_clients:
-        _connected_clients[workspace_key] = {}
-    _connected_clients[workspace_key][client_id] = _ClientState(
-        callback=handle_update_from_other,
-        color=state.user_color,
+    if workspace_key not in _workspace_presence:
+        _workspace_presence[workspace_key] = {}
+    _workspace_presence[workspace_key][client_id] = _RemotePresence(
         name=state.user_name,
+        color=state.user_color,
         nicegui_client=client,
+        callback=handle_update_from_other,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
         workspace_key,
         client_id[:8],
-        len(_connected_clients[workspace_key]),
+        len(_workspace_presence[workspace_key]),
     )
 
     # Update own user count and notify others
     _update_user_count(state)
     _notify_other_clients(workspace_key, client_id)
 
+    # Send existing remote cursors/selections to newly connected client
+    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+        if cid == client_id:
+            continue
+        if presence.cursor_char is not None:
+            char = presence.cursor_char
+            name = presence.name
+            color = presence.color
+            js = _render_js(
+                t"renderRemoteCursor("
+                t"document.getElementById('doc-container')"
+                t", {cid}, {char}"
+                t", {name}, {color})"
+            )
+            ui.run_javascript(js)
+        if presence.selection_start is not None and presence.selection_end is not None:
+            s_start = presence.selection_start
+            s_end = presence.selection_end
+            name = presence.name
+            color = presence.color
+            js = _render_js(
+                t"renderRemoteSelection({cid}, {s_start}, {s_end}, {name}, {color})"
+            )
+            ui.run_javascript(js)
+
     # Disconnect handler
     async def on_disconnect() -> None:
-        if workspace_key in _connected_clients:
-            _connected_clients[workspace_key].pop(client_id, None)
-            # Broadcast to update cursors/selections (remove this client's)
-            for _cid, cstate in _connected_clients.get(workspace_key, {}).items():
-                if cstate.callback:
+        if workspace_key in _workspace_presence:
+            _workspace_presence[workspace_key].pop(client_id, None)
+            # Clean up empty workspace dict to prevent slow memory leak
+            if not _workspace_presence[workspace_key]:
+                del _workspace_presence[workspace_key]
+            # Remove this client's cursor/selection and refresh UI for all remaining
+            removal_js = _render_js(
+                t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
+            )
+            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+                if presence.nicegui_client is not None:
                     with contextlib.suppress(Exception):
-                        await cstate.callback()
+                        await presence.nicegui_client.run_javascript(
+                            removal_js, timeout=2.0
+                        )
+                if presence.callback:
+                    with contextlib.suppress(Exception):
+                        await presence.callback()
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 
@@ -2842,7 +2727,7 @@ def _broadcast_yjs_update(
     that has initialised the Milkdown editor, except the originating client.
     """
     ws_key = str(workspace_id)
-    for cid, cstate in _connected_clients.get(ws_key, {}).items():
+    for cid, cstate in _workspace_presence.get(ws_key, {}).items():
         if cid == origin_client_id:
             continue
         if cstate.has_milkdown_editor and cstate.nicegui_client:
@@ -2890,7 +2775,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     state.has_milkdown_editor = True
     # Mark this client as having a Milkdown editor for Yjs relay
     ws_key = str(workspace_id)
-    clients = _connected_clients.get(ws_key, {})
+    clients = _workspace_presence.get(ws_key, {})
     if state.client_id in clients:
         clients[state.client_id].has_milkdown_editor = True
 
@@ -3022,9 +2907,17 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
-        # Sync markdown to CRDT when leaving the Respond tab (Phase 7)
+        # Sync markdown to CRDT when leaving the Respond tab (Phase 7).
+        # Wrapped in try/except: sync failure must not block tab switch,
+        # otherwise the Annotate refresh never runs and cards disappear.
         if prev_tab == "Respond" and state.sync_respond_markdown:
-            await state.sync_respond_markdown()
+            try:
+                await state.sync_respond_markdown()
+            except Exception:
+                logger.debug(
+                    "RESPOND_MD_SYNC failed on tab leave, continuing",
+                    exc_info=True,
+                )
 
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             # Always re-render Organise tab to show current highlights
@@ -3034,11 +2927,10 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
             return
 
         if tab_name == "Annotate":
-            # Re-inject char spans if NiceGUI re-rendered the HTML element
-            # (Tab 3 init triggers "Event listeners changed" which can destroy
-            # the JS-injected char spans). The function is idempotent — it's a
-            # no-op if spans already exist.
-            ui.run_javascript("if (window._injectCharSpans) window._injectCharSpans();")
+            # Rebuild text node map and re-apply highlights. The text walker
+            # does not modify the DOM (unlike char span injection) so this
+            # is safe to call on every tab switch.
+            _push_highlights_to_client(state)
             if state.refresh_annotations:
                 state.refresh_annotations()
             _update_highlight_css(state)

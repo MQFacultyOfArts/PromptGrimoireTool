@@ -13,6 +13,34 @@ ALLOWED_JS_FILES = {
     # Fixture screenshot tests use clipboard paste simulation (same as above)
     # and DOM introspection (data-speaker element counts, scroll positions).
     "test_fixture_screenshots.py",
+    # Browser feature gate test: Playwright only ships supported browsers
+    # (Chromium, Firefox, WebKit all support CSS.highlights). Simulating an
+    # unsupported browser requires deleting CSS.highlights via evaluate().
+    "test_browser_gate.py",
+    # Highlight rendering tests: AC1.4 validates JS error handling (invalid
+    # offsets logged as warning, no crash) by calling applyHighlights()
+    # directly with crafted inputs — no user action produces these inputs.
+    # Other tests use evaluate() for CSS.highlights introspection and
+    # text selection simulation (no Playwright API for CSS.highlights).
+    "test_highlight_rendering.py",
+    # Text selection tests: AC2.1 uses evaluate() to locate text node
+    # bounding rects for precise mouse selection. AC2.2 uses evaluate()
+    # to emit synthetic selection events spanning block boundaries.
+    # CSS.highlights introspection requires evaluate() (no Playwright API).
+    "test_text_selection.py",
+    # Integration test for full CSS Highlight API flow: uses evaluate()
+    # to locate text node bounding rects for mouse selection and to
+    # introspect CSS.highlights entries (no Playwright API for either).
+    "test_annotation_highlight_api.py",
+    # Remote presence rendering tests: CSS.highlights introspection has no
+    # Playwright native API. Custom JS functions (renderRemoteCursor,
+    # renderRemoteSelection, removeAllRemotePresence) can only be invoked
+    # via page.evaluate() — no Playwright equivalent exists.
+    "test_remote_presence_rendering.py",
+    # Remote presence E2E smoke test: CSS.highlights.has() and DOM element
+    # inspection for remote presence indicators require page.evaluate() — no
+    # Playwright native API exists for CSS Custom Highlight API introspection.
+    "test_remote_presence_e2e.py",
 }
 
 

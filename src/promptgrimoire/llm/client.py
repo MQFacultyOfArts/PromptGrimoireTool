@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import anthropic
 
@@ -89,11 +89,10 @@ class ClaudeClient:
             raise ValueError("Empty response from Claude API")
 
         first_block = response.content[0]
-        if first_block.type != "text":
+        if not hasattr(first_block, "text") or first_block.type != "text":
             raise ValueError(f"Unexpected response type: {first_block.type}")
 
-        # Type guard: we've verified it's a text block above
-        response_text = cast("str", first_block.text)  # type: ignore[attr-defined]
+        response_text = str(first_block.text)
 
         # Add assistant turn to session
         session.add_turn(

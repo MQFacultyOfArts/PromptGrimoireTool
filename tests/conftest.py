@@ -286,11 +286,12 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-# Script to run NiceGUI server
+# Script to run NiceGUI server — near-duplicate of _E2E_SERVER_SCRIPT in cli.py.
 # Note: We clear PYTEST env vars to prevent NiceGUI from entering test mode
 _SERVER_SCRIPT = f"""
 import os
 import sys
+from pathlib import Path
 
 # Clear pytest-related environment variables that NiceGUI checks
 for key in list(os.environ.keys()):
@@ -308,8 +309,13 @@ os.environ.setdefault('STYTCH_PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 
-from nicegui import ui
+from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401 - registers routes
+
+# Serve static JS/CSS assets (mirrors main() in promptgrimoire/__init__.py)
+import promptgrimoire
+_static_dir = Path(promptgrimoire.__file__).parent / "static"
+app.add_static_files("/static", str(_static_dir))
 
 ui.run(port=port, reload=False, show=False, storage_secret='{TEST_STORAGE_SECRET}')
 """
@@ -317,14 +323,20 @@ ui.run(port=port, reload=False, show=False, storage_secret='{TEST_STORAGE_SECRET
 
 @pytest.fixture(scope="session")
 def app_server() -> Generator[str]:
-    """Start the NiceGUI app server for E2E tests.
+    """Provide the base URL of the NiceGUI app server for E2E tests.
 
-    Returns the base URL of the running server.
-    Automatically starts before tests and stops after.
+    If ``E2E_BASE_URL`` is set (by the ``test-e2e`` CLI command), yields that
+    URL directly — all xdist workers share the single external server.
 
-    Note: NiceGUI detects pytest and enters test mode, expecting special
-    environment variables. We clear these in the subprocess to run normally.
+    Otherwise, starts a NiceGUI server in a subprocess on a random port
+    (one per session, which means one per xdist worker — wasteful but
+    backwards-compatible for direct ``pytest -m e2e`` invocations).
     """
+    external_url = os.environ.get("E2E_BASE_URL")
+    if external_url:
+        yield external_url
+        return
+
     port = _find_free_port()
     url = f"http://localhost:{port}"
 

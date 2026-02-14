@@ -26,6 +26,73 @@ logger = logging.getLogger(__name__)
 # Time to display error message before redirecting (seconds)
 _ERROR_DISPLAY_SECONDS = 0.5
 
+# Browser feature gate: blocks unsupported browsers before any annotation code runs.
+# Checks for CSS Custom Highlight API support ('highlights' in CSS).
+# On unsupported browsers, creates a full-page overlay covering the login UI.
+# Exposes window.__checkBrowserGate() for testability (E2E can re-invoke after
+# deleting CSS.highlights to simulate an unsupported browser).
+_BROWSER_GATE_JS = """
+<script>
+(function() {
+    function checkBrowserGate() {
+        if (document.getElementById('browser-gate-overlay')) return;
+        if (!('highlights' in CSS)) {
+            var overlay = document.createElement('div');
+            overlay.id = 'browser-gate-overlay';
+            overlay.style.cssText = [
+                'position: fixed',
+                'top: 0',
+                'left: 0',
+                'width: 100%',
+                'height: 100%',
+                'background: #fff',
+                'z-index: 99999',
+                'display: flex',
+                'flex-direction: column',
+                'align-items: center',
+                'justify-content: center',
+                'font-family: system-ui, sans-serif',
+                'text-align: center',
+                'padding: 2rem'
+            ].join('; ');
+
+            var heading = document.createElement('h1');
+            heading.style.cssText = 'margin-bottom: 1rem; font-size: 1.875rem;';
+            heading.textContent = 'Browser Not Supported';
+
+            var msg = document.createElement('p');
+            msg.style.cssText = 'max-width: 500px; line-height: 1.6; color: #333;';
+            msg.textContent = 'Your browser does not support features required '
+                + 'by PromptGrimoire. Please upgrade to Chrome 105+, Firefox 140+, '
+                + 'Safari 17.2+, or Edge 105+.';
+
+            var link = document.createElement('a');
+            link.href = '/';
+            link.textContent = 'Go Home';
+            link.style.cssText = [
+                'margin-top: 1.5rem',
+                'padding: 0.75rem 2rem',
+                'background: #1976d2',
+                'color: #fff',
+                'text-decoration: none',
+                'border-radius: 4px',
+                'font-size: 1rem'
+            ].join('; ');
+
+            overlay.appendChild(heading);
+            overlay.appendChild(msg);
+            overlay.appendChild(link);
+            document.body.appendChild(overlay);
+        }
+    }
+    // Expose for E2E testability
+    window.__checkBrowserGate = checkBrowserGate;
+    // Run immediately
+    checkBrowserGate();
+})();
+</script>
+"""
+
 
 def _get_session_user() -> dict | None:
     """Get the current user from session storage.
@@ -330,6 +397,9 @@ async def login_page() -> None:
     if user:
         ui.navigate.to("/")
         return
+
+    # Inject before login UI so the overlay covers the form immediately.
+    ui.add_body_html(_BROWSER_GATE_JS)
 
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
 

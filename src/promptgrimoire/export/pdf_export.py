@@ -66,7 +66,7 @@ def _plain_text_to_html(text: str | None, escape: bool = True) -> str:
     Plain text newlines are collapsed by Pandoc when passed as HTML,
     so we need to wrap lines in paragraph tags.
 
-    IMPORTANT: Must match UI's _process_text_to_char_spans() behavior exactly
+    IMPORTANT: Must match the input pipeline's extract_text_from_html() behavior
     for character indexing alignment (Issue #111). Both use `if line:` to detect
     empty lines, NOT `if line.strip():`. Whitespace-only lines (including '\r'
     from CRLF) must be preserved so PDF marker indices match UI indices.

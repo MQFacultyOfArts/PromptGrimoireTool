@@ -82,6 +82,10 @@ def main() -> None:
     load_dotenv()
     _setup_logging()
 
+    # Serve static JS/CSS assets (e.g. annotation-highlight.js)
+    _static_dir = Path(__file__).parent / "static"
+    app.add_static_files("/static", str(_static_dir))
+
     import promptgrimoire.pages  # noqa: F401 - registers routes
 
     # Database lifecycle hooks (only if DATABASE_URL is configured)

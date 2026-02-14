@@ -79,7 +79,9 @@ function walkTextNodes(root) {
  * Clear all hl-* entries from CSS.highlights.
  */
 function clearHighlights() {
-    for (const name of CSS.highlights.keys()) {
+    // Snapshot keys before iterating — deleting during iteration is
+    // undefined behaviour on Map-like registries (may skip entries).
+    for (const name of Array.from(CSS.highlights.keys())) {
         if (name.startsWith('hl-')) CSS.highlights.delete(name);
     }
 }
@@ -279,6 +281,9 @@ function throbHighlight(textNodes, startChar, endChar, durationMs) {
  * Demo page selection handler — emits hl_demo_selection via NiceGUI emitEvent.
  */
 function setupSelection(container) {
+    // Guard against duplicate listeners on re-render
+    if (window._demoSelectionBound) return;
+    window._demoSelectionBound = true;
     document.addEventListener('mouseup', () => {
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.rangeCount) return;
@@ -309,6 +314,10 @@ function setupSelection(container) {
  * @param {Function} emitCallback - called with {start_char, end_char} on valid selection
  */
 function setupAnnotationSelection(containerId, emitCallback) {
+    // Guard against duplicate listeners on re-render (NiceGUI may call
+    // setupAnnotationSelection multiple times if the Annotate tab is rebuilt).
+    if (window._annotSelectionBound) return;
+    window._annotSelectionBound = true;
     document.addEventListener('mouseup', () => {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -536,6 +545,8 @@ function renderRemoteSelection(clientId, startChar, endChar, name, color) {
     const styleId = 'remote-sel-style-' + clientId;
     const style = document.createElement('style');
     style.id = styleId;
+    // Append '30' for ~19% alpha. Assumes `color` is a 6-digit hex string
+    // (e.g. '#4CAF50') — server controls the palette in annotation_tags.py.
     style.textContent = '::highlight(hl-sel-' + clientId + ') { background-color: ' + color + '30; }';
     document.head.appendChild(style);
 }

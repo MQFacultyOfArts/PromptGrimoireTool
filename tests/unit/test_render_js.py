@@ -11,14 +11,15 @@ Tests cover:
 - Unicode (emoji, CJK, RTL)
 - Numeric passthrough (int, float)
 - None -> null
-- Bool edge case (Python bool is a subclass of int)
+- Bool -> true/false (checked before int since bool is a subclass of int)
+- _RawJS passthrough (pre-serialised JSON)
 """
 
 from __future__ import annotations
 
 import json
 
-from promptgrimoire.pages.annotation import _render_js
+from promptgrimoire.pages.annotation import _RawJS, _render_js
 
 
 class TestStringEscaping:
@@ -152,25 +153,40 @@ class TestNoneAndBool:
         result = _render_js(t"f({val})")
         assert result == "f(null)"
 
-    def test_bool_true_is_int_subclass(self) -> None:
-        """Python True is isinstance(int), so _render_js renders it as str(True).
-
-        This means True becomes the JS identifier ``True`` (not ``true``).
-        Since _render_js is currently only used with int/str/None values in
-        the presence broadcast code, this edge case is documented but not
-        a bug in practice -- booleans are never passed to _render_js.
-        """
+    def test_bool_true_renders_as_js_true(self) -> None:
+        """Python True becomes JS ``true`` (lowercase)."""
         val = True
         result = _render_js(t"f({val})")
-        # bool is a subclass of int, so isinstance(True, int) is True.
-        # str(True) == "True" -- this is the JS identifier True, not "true".
-        assert result == "f(True)"
+        assert result == "f(true)"
 
-    def test_bool_false_is_int_subclass(self) -> None:
-        """Python False becomes JS ``False`` (not ``false``) — same edge case."""
+    def test_bool_false_renders_as_js_false(self) -> None:
+        """Python False becomes JS ``false`` (lowercase)."""
         val = False
         result = _render_js(t"f({val})")
-        assert result == "f(False)"
+        assert result == "f(false)"
+
+
+class TestRawJS:
+    """_RawJS values pass through without encoding (pre-serialised JSON)."""
+
+    def test_raw_json_object(self) -> None:
+        """Pre-serialised JSON object passes through unmodified."""
+        data = _RawJS('{"tag":[{"start_char":0,"end_char":5}]}')
+        result = _render_js(t"applyHighlights(c, {data})")
+        assert result == 'applyHighlights(c, {"tag":[{"start_char":0,"end_char":5}]})'
+
+    def test_raw_empty_object(self) -> None:
+        """Empty JSON object passes through."""
+        data = _RawJS("{}")
+        result = _render_js(t"f({data})")
+        assert result == "f({})"
+
+    def test_raw_with_other_interpolations(self) -> None:
+        """_RawJS works alongside normal string interpolation."""
+        name = "test"
+        data = _RawJS("[1,2,3]")
+        result = _render_js(t"f({name}, {data})")
+        assert result == 'f("test", [1,2,3])'
 
 
 class TestStaticPortions:

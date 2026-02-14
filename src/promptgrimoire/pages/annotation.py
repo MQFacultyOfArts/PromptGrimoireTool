@@ -99,11 +99,29 @@ class _RemotePresence:
 _workspace_presence: dict[str, dict[str, _RemotePresence]] = {}
 
 
+class _RawJS:
+    """Pre-serialised JavaScript literal — bypasses ``_render_js`` escaping.
+
+    Use for values already serialised by ``json.dumps()`` that must appear
+    as-is in the JS output (e.g. JSON objects passed to ``applyHighlights()``).
+    """
+
+    __slots__ = ("_js",)
+
+    def __init__(self, js: str) -> None:
+        self._js = js
+
+    def __str__(self) -> str:
+        return self._js
+
+
 def _render_js(template: Template) -> str:
     """Render a t-string as JavaScript, escaping interpolated values.
 
     Strings are JSON-encoded (handles quotes, backslashes, unicode).
     Numbers pass through as literals. None becomes ``null``.
+    Booleans become ``true`` / ``false``.
+    ``_RawJS`` values pass through without encoding (pre-serialised JSON).
     """
     parts: list[str] = []
     for item in template:
@@ -111,7 +129,11 @@ def _render_js(template: Template) -> str:
             parts.append(item)
         elif isinstance(item, Interpolation):
             val = item.value
-            if isinstance(val, int | float):
+            if isinstance(val, _RawJS):
+                parts.append(val._js)
+            elif isinstance(val, bool):
+                parts.append("true" if val else "false")
+            elif isinstance(val, int | float):
                 parts.append(str(val))
             elif val is None:
                 parts.append("null")
@@ -406,10 +428,9 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         state.tab_panels.set_value("Annotate")
     state.active_tab = "Annotate"
 
-    # 2. Re-apply highlights (idempotent — rebuilds text walker and CSS.highlights)
-    _push_highlights_to_client(state)
-
-    # 3. Refresh Tab 1 annotations and highlight CSS
+    # 2. Refresh Tab 1 annotations and highlight CSS.
+    # _update_highlight_css() pushes highlight ranges to the client internally,
+    # so no separate _push_highlights_to_client() call is needed.
     if state.refresh_annotations:
         state.refresh_annotations()
     _update_highlight_css(state)
@@ -598,12 +619,12 @@ def _push_highlights_to_client(state: PageState) -> None:
     ``client.run_javascript()`` — this avoids slot-stack errors when called
     from background contexts (CRDT sync callbacks).
     """
-    highlight_json = _build_highlight_json(state)
-    js = (
-        f"(function() {{"
-        f"  const c = document.getElementById('doc-container');"
-        f"  if (c) applyHighlights(c, {highlight_json});"
-        f"}})()"
+    highlight_json = _RawJS(_build_highlight_json(state))
+    js = _render_js(
+        t"(function() {{"
+        t"  const c = document.getElementById('doc-container');"
+        t"  if (c) applyHighlights(c, {highlight_json});"
+        t"}})()"
     )
     # Look up the NiceGUI client from the connected clients registry.
     # Using client.run_javascript() is safe in background contexts (CRDT
@@ -628,6 +649,9 @@ def _update_highlight_css(state: PageState) -> None:
     if state.highlight_style is None or state.crdt_doc is None:
         return
 
+    # CSS is invariant (fixed TAG_COLORS palette) but cheap to regenerate.
+    # Re-setting it here keeps this function as a single "sync everything"
+    # call site, which is simpler than caching the string.
     css = _build_highlight_pseudo_css()
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
@@ -1167,17 +1191,17 @@ async def _render_document_with_highlights(
         # Initialise text walker, apply highlights, and set up selection
         # detection after DOM is ready. Uses setTimeout to ensure the script
         # has loaded and the HTML element is rendered.
-        highlight_json = _build_highlight_json(state)
-        init_js = (
-            "setTimeout(function() {"
-            "  const c = document.getElementById('doc-container');"
-            "  if (!c) return;"
-            "  window._textNodes = walkTextNodes(c);"
-            f"  applyHighlights(c, {highlight_json});"
-            "  setupAnnotationSelection('doc-container', function(sel) {"
-            "    emitEvent('selection_made', sel);"
-            "  });"
-            "}, 100);"
+        highlight_json = _RawJS(_build_highlight_json(state))
+        init_js = _render_js(
+            t"setTimeout(function() {{"
+            t"  const c = document.getElementById('doc-container');"
+            t"  if (!c) return;"
+            t"  window._textNodes = walkTextNodes(c);"
+            t"  applyHighlights(c, {highlight_json});"
+            t"  setupAnnotationSelection('doc-container', function(sel) {{"
+            t"    emitEvent('selection_made', sel);"
+            t"  }});"
+            t"}}, 100);"
         )
         ui.run_javascript(init_js)
 
@@ -1506,6 +1530,9 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     async def on_disconnect() -> None:
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
+            # Clean up empty workspace dict to prevent slow memory leak
+            if not _workspace_presence[workspace_key]:
+                del _workspace_presence[workspace_key]
             # Remove this client's cursor/selection and refresh UI for all remaining
             removal_js = _render_js(
                 t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"

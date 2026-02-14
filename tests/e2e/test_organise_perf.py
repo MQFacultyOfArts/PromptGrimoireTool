@@ -9,13 +9,13 @@ Run with: uv run pytest tests/e2e/test_organise_perf.py -v -s
 
 from __future__ import annotations
 
-import os
 import time
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
+from promptgrimoire.config import get_settings
 from tests.e2e.annotation_helpers import (
     create_highlight_with_tag,
     setup_workspace_with_content,
@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.skipif(
-        not os.environ.get("TEST_DATABASE_URL"),
-        reason="TEST_DATABASE_URL not set",
+        not get_settings().dev.test_database_url,
+        reason="DEV__TEST_DATABASE_URL not configured",
     ),
 ]
 

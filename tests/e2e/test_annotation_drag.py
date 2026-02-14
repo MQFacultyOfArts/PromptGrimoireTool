@@ -11,12 +11,12 @@ Traceability:
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
+from promptgrimoire.config import get_settings
 from tests.e2e.annotation_helpers import (
     create_highlight,
     create_highlight_with_tag,
@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 
 # Skip if no database configured
 pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

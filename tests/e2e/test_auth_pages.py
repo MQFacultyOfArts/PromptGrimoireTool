@@ -14,7 +14,6 @@ Traceability:
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -24,14 +23,15 @@ from promptgrimoire.auth.mock import (
     MOCK_VALID_MAGIC_TOKEN,
     MOCK_VALID_SSO_TOKEN,
 )
+from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

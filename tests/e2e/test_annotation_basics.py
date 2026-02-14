@@ -27,13 +27,14 @@ input which will change to HTML clipboard paste. Reimplement after #106.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 import pytest
 from playwright.sync_api import expect
+
+from promptgrimoire.config import get_settings
 
 # Skip all tests in this module pending #106 HTML input redesign
 pytestmark = pytest.mark.skip(reason="Pending #106 HTML input redesign")
@@ -43,8 +44,8 @@ if TYPE_CHECKING:
 
 # Skip marker for tests requiring database
 pytestmark_db = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

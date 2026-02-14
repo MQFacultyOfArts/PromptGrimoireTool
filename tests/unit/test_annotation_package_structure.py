@@ -5,11 +5,15 @@ After the annotation.py monolith was split into pages/annotation/ package
 
 - The package directory must exist with __init__.py (AC1.1)
 - The monolith annotation.py must NOT exist as a file (AC1.2, AC1.6)
-- All 9 authored modules must be present (AC1.3)
+- All 12 authored modules must be present (AC1.3, AC1.4)
+- Satellite modules (organise, respond, tags) are inside the package (AC1.4)
+- No satellite files at pages/ level (AC1.5)
+- No imports from old annotation_organise/respond/tags paths (AC3.1)
 - No PLC0415 per-file-ignores for the annotation package (AC3.3)
 - The package must be importable (smoke test)
 
 See: docs/implementation-plans/2026-02-14-120-annotation-split/phase_02.md
+See: docs/implementation-plans/2026-02-14-120-annotation-split/phase_03.md
 """
 
 from pathlib import Path
@@ -28,8 +32,19 @@ _AUTHORED_MODULES = (
     "css.py",
     "document.py",
     "highlights.py",
+    "organise.py",
     "pdf_export.py",
+    "respond.py",
+    "tags.py",
     "workspace.py",
+)
+
+# Satellite files that must NOT exist at the pages/ level (AC1.5).
+# These were moved into the annotation package in Phase 3.
+_LEGACY_SATELLITE_FILES = (
+    "annotation_organise.py",
+    "annotation_respond.py",
+    "annotation_tags.py",
 )
 
 
@@ -64,7 +79,7 @@ def test_monolith_annotation_py_does_not_exist() -> None:
 
 
 def test_all_authored_modules_exist() -> None:
-    """AC1.3: All 9 authored modules must be present in the package."""
+    """AC1.3, AC1.4: All 12 authored modules must be present in the package."""
     missing = [
         name for name in _AUTHORED_MODULES if not (_ANNOTATION_PKG / name).is_file()
     ]
@@ -73,6 +88,54 @@ def test_all_authored_modules_exist() -> None:
         + "\n".join(f"  {m}" for m in missing)
         + "\n\nExpected modules: "
         + ", ".join(_AUTHORED_MODULES)
+    )
+
+
+def test_no_satellite_files_at_pages_level() -> None:
+    """AC1.5: No annotation_organise/respond/tags.py at pages/ level.
+
+    These files were moved into the annotation package in Phase 3.
+    If they reappear at the pages/ level, imports would be ambiguous.
+    """
+    found = [name for name in _LEGACY_SATELLITE_FILES if (_PAGES_DIR / name).exists()]
+    assert not found, (
+        "Found legacy satellite files at pages/ level:\n"
+        + "\n".join(f"  {f}" for f in found)
+        + "\n\nThese were moved into pages/annotation/ in Phase 3. "
+        + "Remove the pages/-level copies."
+    )
+
+
+def test_no_imports_from_old_satellite_paths() -> None:
+    """AC3.1: No source or test file imports from old satellite module paths.
+
+    After Phase 3, all imports must use the new paths:
+      promptgrimoire.pages.annotation.organise (not annotation_organise)
+      promptgrimoire.pages.annotation.respond  (not annotation_respond)
+      promptgrimoire.pages.annotation.tags     (not annotation_tags)
+    """
+    import re
+
+    src_root = _PAGES_DIR.parent.parent  # src/
+    test_root = _PAGES_DIR.parent.parent.parent / "tests"
+
+    old_pattern = re.compile(
+        r"^\s*(from|import)\s+promptgrimoire\.pages\.annotation_(organise|respond|tags)\b"
+    )
+
+    violations: list[str] = []
+    for root in (src_root, test_root):
+        for py_file in sorted(root.rglob("*.py")):
+            for i, line in enumerate(py_file.read_text().splitlines(), 1):
+                if old_pattern.match(line):
+                    violations.append(
+                        f"  {py_file.relative_to(root.parent)}:{i}: {line.strip()}"
+                    )
+
+    assert not violations, (
+        "Found imports using old satellite module paths:\n"
+        + "\n".join(violations)
+        + "\n\nUse promptgrimoire.pages.annotation.{organise,respond,tags} instead."
     )
 
 

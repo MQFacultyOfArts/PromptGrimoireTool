@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 from nicegui import app, events, ui
 
+from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.crdt.annotation_doc import (
     AnnotationDocument,
     AnnotationDocumentRegistry,
@@ -2886,6 +2887,11 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         ui.label("Workspace not found").classes("text-red-500")
         ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
         return
+
+    # Compute copy protection flag (Phase 3 — consumed by Phase 4 JS injection)
+    auth_user = app.storage.user.get("auth_user")
+    ctx = await get_placement_context(workspace_id)
+    protect = ctx.copy_protection and not is_privileged_user(auth_user)  # noqa: F841  # consumed by Phase 4 JS injection
 
     # Create page state
     state = PageState(

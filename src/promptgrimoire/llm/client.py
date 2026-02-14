@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 import anthropic
@@ -27,26 +26,33 @@ class ClaudeClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
+        api_key: str,
         model: str = "claude-sonnet-4-20250514",
         thinking_budget: int = 0,
+        lorebook_budget: int = 0,
     ) -> None:
         """Initialize the Claude client.
 
         Args:
-            api_key: Anthropic API key. If not provided, reads from ANTHROPIC_API_KEY.
+            api_key: Anthropic API key (required).
             model: Model identifier to use.
             thinking_budget: Token budget for extended thinking. 0 disables thinking.
+            lorebook_budget: Max tokens for lorebook entries. 0 = unlimited.
 
         Raises:
-            ValueError: If no API key is available.
+            ValueError: If api_key is empty.
         """
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("API key required. Set ANTHROPIC_API_KEY or pass api_key.")
+        if not api_key:
+            msg = (
+                "API key is required. "
+                "Configure LLM__API_KEY in .env or pass api_key parameter."
+            )
+            raise ValueError(msg)
 
+        self.api_key = api_key
         self.model = model
         self.thinking_budget = thinking_budget
+        self.lorebook_budget = lorebook_budget
         self._client = anthropic.AsyncAnthropic(api_key=self.api_key)
 
     async def send_message(self, session: Session, user_message: str) -> str:
@@ -70,7 +76,10 @@ class ClaudeClient:
 
         # Build system prompt with lorebook injection
         system_prompt = build_system_prompt(
-            session.character, activated, user_name=session.user_name
+            session.character,
+            activated,
+            user_name=session.user_name,
+            lorebook_budget=self.lorebook_budget,
         )
 
         # Build messages array
@@ -123,7 +132,10 @@ class ClaudeClient:
 
         # Build prompts
         system_prompt = build_system_prompt(
-            session.character, activated, user_name=session.user_name
+            session.character,
+            activated,
+            user_name=session.user_name,
+            lorebook_budget=self.lorebook_budget,
         )
         messages = build_messages(session.turns)
 
@@ -163,7 +175,10 @@ class ClaudeClient:
 
         # Build prompts
         system_prompt = build_system_prompt(
-            session.character, activated, user_name=session.user_name
+            session.character,
+            activated,
+            user_name=session.user_name,
+            lorebook_budget=self.lorebook_budget,
         )
         messages = build_messages(session.turns)
 

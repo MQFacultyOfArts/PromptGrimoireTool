@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from typing import TYPE_CHECKING, Literal, TypedDict
 
@@ -10,11 +9,6 @@ if TYPE_CHECKING:
     from anthropic.types import MessageParam
 
     from promptgrimoire.models import Character, LorebookEntry, Turn
-
-
-# Token budget for lorebook entries (0 = unlimited)
-# Can be absolute (e.g., 2000) or percentage of context (e.g., 25%)
-LOREBOOK_TOKEN_BUDGET = int(os.environ.get("LOREBOOK_TOKEN_BUDGET", "0"))
 
 
 class MessageDict(TypedDict):
@@ -85,7 +79,7 @@ def build_system_prompt(
     Returns:
         Complete system prompt string.
     """
-    budget = lorebook_budget or LOREBOOK_TOKEN_BUDGET
+    budget = lorebook_budget
     parts: list[str] = []
 
     # 1. Lorebook entries (already sorted by caller, but ensure order)

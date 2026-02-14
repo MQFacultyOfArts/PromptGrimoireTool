@@ -6,8 +6,9 @@ Uses LuaLaTeX for better font support (fontspec) and highlighting (lua-ul).
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
+
+from promptgrimoire.config import get_settings
 
 
 class LaTeXCompilationError(Exception):
@@ -32,7 +33,7 @@ def get_latexmk_path() -> str:
     """Resolve path to latexmk executable.
 
     Resolution order:
-    1. LATEXMK_PATH env var (explicit override)
+    1. APP__LATEXMK_PATH (via Settings)
     2. TinyTeX installation (~/.TinyTeX/bin/x86_64-linux/latexmk)
 
     Does NOT fall back to system PATH - use TinyTeX only for consistency.
@@ -43,13 +44,13 @@ def get_latexmk_path() -> str:
     Raises:
         FileNotFoundError: If latexmk cannot be found.
     """
-    # Check env var override first
-    env_path = os.environ.get("LATEXMK_PATH")
+    # Check Settings override first
+    env_path = get_settings().app.latexmk_path
     if env_path:
         path = Path(env_path)
         if path.exists():
             return str(path)
-        msg = f"LATEXMK_PATH set to '{env_path}' but file does not exist"
+        msg = f"APP__LATEXMK_PATH set to '{env_path}' but file does not exist"
         raise FileNotFoundError(msg)
 
     # Check TinyTeX installation

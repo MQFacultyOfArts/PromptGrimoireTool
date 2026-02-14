@@ -1204,6 +1204,10 @@ async def _render_document_with_highlights(
         # This script provides walkTextNodes(), applyHighlights(),
         # clearHighlights(), and setupAnnotationSelection().
         ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
+        ui.add_body_html('<script src="/static/annotation-card-sync.js"></script>')
+        ui.add_body_html(
+            '<script src="/static/annotation-copy-protection.js"></script>'
+        )
 
         # Initialise text walker, apply highlights, and set up selection
         # detection after DOM is ready. Uses setTimeout to ensure the script
@@ -1244,125 +1248,10 @@ async def _render_document_with_highlights(
     _setup_selection_handlers(state)
 
     # Set up scroll-synced card positioning and hover interaction
-    # Uses charOffsetToRect() from annotation-highlight.js (Phase 4)
-    # fmt: off
-    # All DOM lookups are dynamic (getElementById on every call) because
-    # NiceGUI/Vue can REPLACE the entire Annotate tab panel DOM when
-    # another tab initialises (e.g. Respond tab's Milkdown editor).
-    # Closured DOM references become dead after replacement.
-    scroll_sync_js = (
-        "(function() {\n"
-        "  var MIN_GAP = 8;\n"
-        "  var _obs = null;\n"
-        "  var _lastAnnC = null;\n"
-        "  function tn() {\n"
-        "    var dc = document.getElementById('doc-container');\n"
-        "    var t = window._textNodes;\n"
-        "    if (!dc || !t || !t.length) return null;\n"
-        "    if (!dc.contains(t[0].node)) {\n"
-        "      t = walkTextNodes(dc);\n"
-        "      window._textNodes = t;\n"
-        "    }\n"
-        "    return t;\n"
-        "  }\n"
-        "  function positionCards() {\n"
-        "    var nodes = tn();\n"
-        "    if (!nodes || !nodes.length) return;\n"
-        "    var dc = document.getElementById('doc-container');\n"
-        "    var ac = document.getElementById("
-        "'annotations-container');\n"
-        "    if (!dc || !ac) return;\n"
-        "    var cards = Array.from("
-        "ac.querySelectorAll('[data-start-char]'));\n"
-        "    if (!cards.length) return;\n"
-        "    var docRect = dc.getBoundingClientRect();\n"
-        "    var annRect = ac.getBoundingClientRect();\n"
-        "    var cOff = annRect.top - docRect.top;\n"
-        "    var cardInfos = cards.map(function(card) {\n"
-        "      var sc = parseInt(card.dataset.startChar);\n"
-        "      var cr = charOffsetToRect(nodes, sc);\n"
-        "      if (cr.width === 0 && cr.height === 0) return null;\n"
-        "      return {card: card, startChar: sc,\n"
-        "        height: card.offsetHeight,\n"
-        "        targetY: (cr.top - docRect.top) - cOff};\n"
-        "    }).filter(Boolean);\n"
-        "    cardInfos.sort(function(a,b) {"
-        " return a.startChar - b.startChar; });\n"
-        "    var hH = 60, vT = hH, vB = window.innerHeight;\n"
-        "    var minY = 0;\n"
-        "    for (var i = 0; i < cardInfos.length; i++) {\n"
-        "      var info = cardInfos[i];\n"
-        "      var sc2 = info.startChar;\n"
-        "      var ec2 = parseInt("
-        "info.card.dataset.endChar) || sc2;\n"
-        "      var sr = charOffsetToRect(nodes, sc2);\n"
-        "      var er = charOffsetToRect("
-        "nodes, Math.max(ec2-1, sc2));\n"
-        "      var inView = er.bottom > vT && sr.top < vB;\n"
-        "      info.card.style.position = 'absolute';\n"
-        "      if (!inView) {"
-        " info.card.style.display = 'none'; continue; }\n"
-        "      info.card.style.display = '';\n"
-        "      var y = Math.max(info.targetY, minY);\n"
-        "      info.card.style.top = y + 'px';\n"
-        "      minY = y + info.height + MIN_GAP;\n"
-        "    }\n"
-        "  }\n"
-        "  var ticking = false;\n"
-        "  function onScroll() {\n"
-        "    if (!ticking) {\n"
-        "      requestAnimationFrame(function() {"
-        " positionCards(); ticking = false; });\n"
-        "      ticking = true;\n"
-        "    }\n"
-        "  }\n"
-        "  window._positionCards = positionCards;\n"
-        "  window.addEventListener('scroll', onScroll,"
-        " {passive: true});\n"
-        "  // Re-attach MutationObserver on each highlights-ready\n"
-        "  // because the annotations-container DOM element may have\n"
-        "  // been replaced by Vue re-rendering.\n"
-        "  document.addEventListener("
-        "'highlights-ready', function() {\n"
-        "    var ac = document.getElementById("
-        "'annotations-container');\n"
-        "    if (!ac) return;\n"
-        "    if (ac !== _lastAnnC) {\n"
-        "      if (_obs) _obs.disconnect();\n"
-        "      _obs = new MutationObserver(function() {"
-        " requestAnimationFrame(positionCards); });\n"
-        "      _obs.observe(ac,"
-        " {childList: true, subtree: true});\n"
-        "      _lastAnnC = ac;\n"
-        "    }\n"
-        "    requestAnimationFrame(positionCards);\n"
-        "  });\n"
-        "  // Card hover via event delegation on document\n"
-        "  // (survives DOM replacement)\n"
-        "  var hoveredCard = null;\n"
-        "  document.addEventListener('mouseover', function(e) {\n"
-        "    var ac = document.getElementById("
-        "'annotations-container');\n"
-        "    if (!ac || !ac.contains(e.target)) {\n"
-        "      if (hoveredCard) {"
-        " clearHoverHighlight(); hoveredCard = null; }\n"
-        "      return;\n"
-        "    }\n"
-        "    var card = e.target.closest('[data-start-char]');\n"
-        "    if (card === hoveredCard) return;\n"
-        "    clearHoverHighlight();\n"
-        "    hoveredCard = null;\n"
-        "    if (!card) return;\n"
-        "    hoveredCard = card;\n"
-        "    var sc = parseInt(card.dataset.startChar);\n"
-        "    var ec = parseInt(card.dataset.endChar) || sc;\n"
-        "    var nodes = tn();\n"
-        "    if (nodes) showHoverHighlight(nodes, sc, ec);\n"
-        "  });\n"
-        "})();"
+    # (loaded from static/annotation-card-sync.js)
+    ui.run_javascript(
+        "setupCardPositioning('doc-container', 'annotations-container', 8)"
     )
-    # fmt: on
-    ui.run_javascript(scroll_sync_js)
 
 
 def _get_user_color(user_name: str) -> str:
@@ -2799,55 +2688,6 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
 
 # -- Copy protection JS injection (Phase 4) ----------------------------------
 
-_COPY_PROTECTION_JS = """
-(function() {
-  // Protected areas: copy/cut/contextmenu/dragstart blocked here.
-  // #doc-container = Tab 1 (Annotate) — rendered content
-  // respond-reference-panel = Tab 3 (Respond) — reference cards
-  // organise-columns deliberately EXCLUDED (#164) — SortableJS needs dragstart
-  var PROTECTED = '#doc-container, ' +
-    '[data-testid="respond-reference-panel"]';
-
-  function isProtected(e) {
-    return e.target.closest && e.target.closest(PROTECTED);
-  }
-
-  function showToast() {
-    Quasar.Notify.create({
-      message: 'Copying is disabled for this activity.',
-      type: 'warning',
-      position: 'top-right',
-      timeout: 3000,
-      icon: 'content_copy',
-      group: 'copy-protection'
-    });
-  }
-
-  ['copy', 'cut', 'contextmenu', 'dragstart'].forEach(function(evt) {
-    document.addEventListener(evt, function(e) {
-      if (isProtected(e)) { e.preventDefault(); showToast(); }
-    }, true);
-  });
-
-  document.addEventListener('paste', function(e) {
-    if (e.target.closest && e.target.closest('#milkdown-respond-editor')) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      showToast();
-    }
-  }, true);
-
-  // Ctrl+P / Cmd+P print intercept
-  document.addEventListener('keydown', function(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-      e.preventDefault();
-      showToast();
-    }
-  }, true);
-})();
-""".strip()
-
-
 _COPY_PROTECTION_PRINT_CSS = """
 @media print {
   .q-tab-panels { display: none !important; }
@@ -2873,7 +2713,8 @@ def _inject_copy_protection() -> None:
     intercepted via keydown handler. CSS ``@media print`` hides tab panels
     and shows a "Printing is disabled" message instead.
     """
-    ui.run_javascript(_COPY_PROTECTION_JS)
+    _selectors = '#doc-container, [data-testid="respond-reference-panel"]'
+    ui.run_javascript(f"setupCopyProtection({_selectors!r})")
     ui.add_css(_COPY_PROTECTION_PRINT_CSS)
     ui.html(_COPY_PROTECTION_PRINT_MESSAGE, sanitize=False)
 

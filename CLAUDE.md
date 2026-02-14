@@ -190,7 +190,19 @@ src/promptgrimoire/
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
 ├── input_pipeline/      # HTML input processing (detection, conversion, text extraction)
 ├── pages/               # NiceGUI page routes
-│   ├── annotation.py    # Main annotation page (CSS Highlight API rendering)
+│   ├── annotation/      # Main annotation page (CSS Highlight API rendering)
+│   │   ├── __init__.py  # Core types (PageState, _RemotePresence), route
+│   │   ├── broadcast.py # Multi-client sync, remote presence
+│   │   ├── cards.py     # Annotation card UI
+│   │   ├── content_form.py # Content paste/upload form
+│   │   ├── css.py       # CSS constants, tag toolbar
+│   │   ├── document.py  # Document rendering, selection wiring
+│   │   ├── highlights.py # Highlight CRUD, JSON, push-to-client
+│   │   ├── organise.py  # Tab 2 — organise highlights by tag
+│   │   ├── pdf_export.py # PDF export orchestration
+│   │   ├── respond.py   # Tab 3 — respond with references
+│   │   ├── tags.py      # Tag abstractions (TagInfo)
+│   │   └── workspace.py # Workspace view, header, copy protection
 │   ├── auth.py          # Login/logout pages (browser feature gate)
 │   ├── courses.py       # Course management
 │   ├── dialogs.py       # Reusable dialog components
@@ -217,7 +229,9 @@ src/promptgrimoire/
 │   ├── platforms/       # Platform-specific HTML preprocessing
 │   └── filters/         # Pandoc Lua filters (highlight.lua, legal.lua)
 ├── static/              # Static assets (JS, CSS)
-│   └── annotation-highlight.js # Text walker, highlight rendering, remote presence
+│   ├── annotation-highlight.js # Text walker, highlight rendering, remote presence
+│   ├── annotation-card-sync.js # Scroll-sync card positioning
+│   └── annotation-copy-protection.js # Copy/cut/drag/print blocking
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
 │   ├── models.py        # SQLModel table classes (User, Course, ..., Activity, Workspace, WorkspaceDocument)
@@ -459,7 +473,7 @@ Per-activity copy protection prevents students from copying, cutting, dragging, 
 
 When `protect=True` and user is not privileged:
 
-- **JS injection** (`_inject_copy_protection()` in `annotation.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
+- **JS injection** (`_inject_copy_protection()` in `annotation/workspace.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
 - **CSS print suppression**: `@media print` hides `.q-tab-panels`, shows "Printing is disabled" message.
 - **Lock icon chip**: Amber "Protected" chip with lock icon in workspace header.
 

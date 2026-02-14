@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 
 from promptgrimoire.models.case import TAG_COLORS, BriefTag
-from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
 
 
 class TestBriefTagsToTagInfo:

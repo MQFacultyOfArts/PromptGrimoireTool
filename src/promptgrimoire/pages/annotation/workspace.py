@@ -47,10 +47,10 @@ from promptgrimoire.pages.annotation.highlights import (
     _update_highlight_css,
     _warp_to_highlight,
 )
+from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
-from promptgrimoire.pages.annotation_organise import render_organise_tab
-from promptgrimoire.pages.annotation_respond import render_respond_tab
-from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.respond import render_respond_tab
+from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
 
 if TYPE_CHECKING:
     from nicegui import Client

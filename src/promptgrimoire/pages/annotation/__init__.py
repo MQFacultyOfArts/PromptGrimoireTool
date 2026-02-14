@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
     from nicegui import Client
 
-    from promptgrimoire.pages.annotation_tags import TagInfo
+    from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = logging.getLogger(__name__)
 

@@ -14,11 +14,11 @@ from __future__ import annotations
 import inspect
 
 from promptgrimoire.pages.annotation.highlights import _warp_to_highlight
-from promptgrimoire.pages.annotation_organise import (
+from promptgrimoire.pages.annotation.organise import (
     _build_highlight_card,
     render_organise_tab,
 )
-from promptgrimoire.pages.annotation_respond import (
+from promptgrimoire.pages.annotation.respond import (
     _build_reference_card,
     _build_reference_panel,
     render_respond_tab,

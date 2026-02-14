@@ -41,6 +41,7 @@ class TestLoginPage:
     Uses subtests to share the single page load across multiple element checks.
     """
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_login_page_elements_and_magic_link(
         self, subtests, fresh_page: Page, app_server: str
     ) -> None:

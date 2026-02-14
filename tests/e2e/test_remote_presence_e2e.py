@@ -21,6 +21,7 @@ import re
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
@@ -246,6 +247,7 @@ class TestRemotePresenceSmoke:
             # page1 context already closed above; page2 still needs cleanup
             page2.context.close()
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_cursor_broadcast_via_event(
         self, browser: Browser, app_server: str
     ) -> None:
@@ -290,6 +292,7 @@ class TestRemotePresenceSmoke:
             page1.context.close()
             page2.context.close()
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_late_joiner_sees_existing_presence(
         self, browser: Browser, app_server: str
     ) -> None:

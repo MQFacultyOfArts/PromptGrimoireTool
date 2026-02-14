@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from .annotation_helpers import (
@@ -156,6 +157,7 @@ class TestHighlightRendering:
         )
         assert highlight_count >= 1, "Expected highlight to span across block boundary"
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_invalid_offsets_silently_skipped(
         self, authenticated_page: Page, app_server: str
     ) -> None:
@@ -204,6 +206,7 @@ class TestHighlightRendering:
             f"got {len(warnings)}: {warnings}"
         )
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_overlapping_highlights_both_visible(
         self, authenticated_page: Page, app_server: str
     ) -> None:

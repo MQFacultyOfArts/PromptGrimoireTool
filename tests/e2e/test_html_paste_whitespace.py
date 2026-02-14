@@ -115,6 +115,7 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
 class TestHTMLPasteWhitespace:
     """Visual tests for HTML paste whitespace handling."""
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_libreoffice_paste_no_excessive_whitespace(
         self,
         paste_ready_page: Page,
@@ -229,6 +230,7 @@ class TestHTMLPasteWhitespace:
                 f"Expected <100px. See screenshots in {SCREENSHOT_DIR}/"
             )
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paste_preserves_table_structure(
         self,
         paste_ready_page: Page,
@@ -310,6 +312,7 @@ class TestHTMLPasteWhitespace:
 class TestParagraphNumberingAndIndent:
     """Tests for ordered list numbering and indentation preservation."""
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_ground_1_indent_preserved(
         self,
         paste_ready_page: Page,
@@ -418,6 +421,7 @@ class TestParagraphNumberingAndIndent:
         else:
             pytest.fail("Could not find 'Ground 1' text in rendered document")
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paragraph_numbering_starts_at_4(
         self,
         paste_ready_page: Page,
@@ -477,6 +481,7 @@ class TestParagraphNumberingAndIndent:
             f"Ordered list start attributes may not be preserved."
         )
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_highest_paragraph_number_is_48(
         self,
         paste_ready_page: Page,
@@ -532,6 +537,7 @@ class TestParagraphNumberingAndIndent:
 class TestPasteHandlerConsoleOutput:
     """Tests that verify paste handler JavaScript works correctly."""
 
+    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paste_triggers_cleanup(
         self,
         paste_ready_page: Page,

@@ -23,6 +23,8 @@ import psycopg.sql
 from sqlalchemy import inspect
 from sqlmodel import SQLModel
 
+from promptgrimoire.config import get_settings
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -78,12 +80,12 @@ def ensure_database_exists(url: str | None) -> None:
 
 
 def is_db_configured() -> bool:
-    """Check if DATABASE_URL environment variable is set.
+    """Check if database URL is configured in Settings.
 
     Returns:
-        True if DATABASE_URL is set and non-empty.
+        True if database.url is set and non-empty.
     """
-    return bool(os.environ.get("DATABASE_URL"))
+    return bool(get_settings().database.url)
 
 
 def run_alembic_upgrade() -> None:
@@ -93,10 +95,14 @@ def run_alembic_upgrade() -> None:
     Never use SQLModel.metadata.create_all() outside of Alembic migrations.
 
     Raises:
-        RuntimeError: If DATABASE_URL is not set or migrations fail.
+        RuntimeError: If DATABASE__URL is not configured or migrations fail.
     """
     if not is_db_configured():
-        raise RuntimeError("DATABASE_URL not set - cannot run migrations")
+        msg = "DATABASE__URL not configured — cannot run migrations"
+        raise RuntimeError(msg)
+
+    # Auto-create the database if it doesn't exist (e.g., branch-specific DB)
+    ensure_database_exists(get_settings().database.url)
 
     # Find project root (where alembic.ini lives)
     project_root = Path(__file__).parent.parent.parent.parent
@@ -157,13 +163,13 @@ async def verify_schema(engine: AsyncEngine | None) -> None:
 
     missing_tables = expected_tables - existing_tables
     if missing_tables:
-        database_url = os.environ.get("DATABASE_URL", "<unset>")
+        database_url = get_settings().database.url or "<unset>"
         # Mask password in URL for logging
         masked_url = _mask_password(database_url)
         missing = ", ".join(sorted(missing_tables))
         raise RuntimeError(
             f"Database schema is missing required tables: {missing}. "
-            f"DATABASE_URL={masked_url}. "
+            f"DATABASE__URL={masked_url}. "
             f"Run 'alembic upgrade head' to create tables."
         )
 

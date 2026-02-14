@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from sqlalchemy import inspect
 from sqlmodel import SQLModel
+
+from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -43,9 +44,9 @@ async def verify_db_schema(
 
     missing_tables = expected_tables - existing_tables
     if missing_tables:
-        database_url = os.environ.get("DATABASE_URL", "<unset>")
+        database_url = get_settings().database.url or "<unset>"
         missing = ", ".join(sorted(missing_tables))
         raise RuntimeError(
             "Database schema is missing required tables: "
-            f"{missing}. DATABASE_URL={database_url}"
+            f"{missing}. DATABASE__URL={database_url}"
         )

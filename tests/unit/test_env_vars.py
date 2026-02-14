@@ -21,6 +21,12 @@ from promptgrimoire.config import Settings
 # Root of the project
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
+# Env vars documented in .env.example but managed outside pydantic-settings
+# (e.g. runtime coordination vars set programmatically by CLI commands).
+_NON_SETTINGS_ENV_VARS = {
+    "E2E_BASE_URL",  # Set by `test-e2e` CLI, read by conftest fixture
+}
+
 
 def _derive_env_var_names(settings_cls: type[Settings]) -> set[str]:
     """Derive expected env var names from Settings schema.
@@ -120,7 +126,7 @@ class TestSettingsEnvVarsSync:
         schema_vars = _derive_env_var_names(Settings)
         example_vars = _extract_env_vars_from_env_example()
 
-        extra = example_vars - schema_vars
+        extra = example_vars - schema_vars - _NON_SETTINGS_ENV_VARS
         assert not extra, (
             f"Variables in .env.example but not in Settings schema:\n"
             f"{sorted(extra)}\n\n"

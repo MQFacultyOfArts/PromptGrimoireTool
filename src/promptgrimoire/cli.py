@@ -355,9 +355,10 @@ def test_e2e() -> None:
     """
     import socket
 
-    from dotenv import load_dotenv
+    # Eagerly load settings so .env is read before subprocess spawning.
+    from promptgrimoire.config import get_settings
 
-    load_dotenv()
+    get_settings()
 
     _pre_test_db_cleanup()
 

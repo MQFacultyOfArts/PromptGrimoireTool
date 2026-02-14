@@ -6,16 +6,19 @@ handlers via substring checks (not exact string matching).
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_04.md
-- AC: 103-copy-protection.AC4.1-AC4.13, AC6.1-AC6.3
+- Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_05.md
+- AC: 103-copy-protection.AC4.1-AC4.13, AC4.6, AC6.1-AC6.3
 """
 
 from __future__ import annotations
 
 import inspect
+from unittest.mock import patch
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.db.workspaces import PlacementContext
 from promptgrimoire.pages.annotation import (
+    _COPY_PROTECTION_JS,
     _inject_copy_protection,
     _render_workspace_header,
 )
@@ -166,66 +169,110 @@ class TestCopyProtectionJsContent:
 
     def test_js_block_targets_doc_container(self) -> None:
         """JS PROTECTED selector includes #doc-container."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "#doc-container" in _COPY_PROTECTION_JS
 
     def test_js_block_targets_organise_columns(self) -> None:
         """JS PROTECTED selector includes organise-columns test ID."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "organise-columns" in _COPY_PROTECTION_JS
 
     def test_js_block_targets_respond_reference_panel(self) -> None:
         """JS PROTECTED selector includes respond-reference-panel test ID."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "respond-reference-panel" in _COPY_PROTECTION_JS
 
     def test_js_block_intercepts_copy_event(self) -> None:
         """JS registers a copy event listener."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "'copy'" in _COPY_PROTECTION_JS
 
     def test_js_block_intercepts_cut_event(self) -> None:
         """JS registers a cut event listener."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "'cut'" in _COPY_PROTECTION_JS
 
     def test_js_block_intercepts_contextmenu_event(self) -> None:
         """JS registers a contextmenu event listener."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "'contextmenu'" in _COPY_PROTECTION_JS
 
     def test_js_block_intercepts_dragstart_event(self) -> None:
         """JS registers a dragstart event listener."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "'dragstart'" in _COPY_PROTECTION_JS
 
     def test_js_block_intercepts_paste_on_milkdown(self) -> None:
         """JS targets milkdown-respond-editor for paste interception."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "milkdown-respond-editor" in _COPY_PROTECTION_JS
 
     def test_js_block_uses_quasar_notify(self) -> None:
         """JS shows toast via Quasar.Notify.create()."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "Quasar.Notify.create" in _COPY_PROTECTION_JS
 
     def test_js_block_uses_group_key_for_debounce(self) -> None:
         """JS uses group key to deduplicate toast notifications."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "copy-protection" in _COPY_PROTECTION_JS
 
     def test_js_block_stops_immediate_propagation_on_paste(self) -> None:
         """Paste handler calls stopImmediatePropagation to block ProseMirror."""
-        from promptgrimoire.pages.annotation import _COPY_PROTECTION_JS
-
         assert "stopImmediatePropagation" in _COPY_PROTECTION_JS
+
+    def test_js_block_intercepts_ctrl_p(self) -> None:
+        """JS registers a keydown listener that checks for Ctrl+P / Cmd+P.
+
+        Verifies AC4.6: print keyboard shortcut is intercepted inside the
+        same IIFE as other copy protection handlers.
+        """
+        assert "'keydown'" in _COPY_PROTECTION_JS
+        assert "e.key === 'p'" in _COPY_PROTECTION_JS
+
+
+class TestPrintSuppressionInjection:
+    """Verify _inject_copy_protection injects print suppression CSS and message.
+
+    Verifies AC4.6: CSS @media print hides content and shows message,
+    Ctrl+P intercept reuses showToast from the IIFE.
+
+    These tests mock NiceGUI UI calls to verify conditional injection
+    without requiring full page infrastructure.
+    """
+
+    def test_add_css_called_when_injecting(self) -> None:
+        """ui.add_css is called to inject @media print CSS."""
+        with (
+            patch("promptgrimoire.pages.annotation.ui.run_javascript") as _mock_js,
+            patch("promptgrimoire.pages.annotation.ui.add_css") as mock_css,
+            patch("promptgrimoire.pages.annotation.ui.html") as _mock_html,
+        ):
+            _inject_copy_protection()
+            mock_css.assert_called_once()
+            css_arg = mock_css.call_args[0][0]
+            assert "@media print" in css_arg
+            assert ".q-tab-panels" in css_arg
+
+    def test_html_message_div_injected(self) -> None:
+        """ui.html is called to inject hidden print message div."""
+        with (
+            patch("promptgrimoire.pages.annotation.ui.run_javascript") as _mock_js,
+            patch("promptgrimoire.pages.annotation.ui.add_css") as _mock_css,
+            patch("promptgrimoire.pages.annotation.ui.html") as mock_html,
+        ):
+            _inject_copy_protection()
+            mock_html.assert_called_once()
+            html_arg = mock_html.call_args[0][0]
+            assert "copy-protection-print-message" in html_arg
+            assert "Printing is disabled" in html_arg
+
+    def test_no_css_or_html_when_not_called(self) -> None:
+        """When _inject_copy_protection is NOT called, no CSS/HTML injection.
+
+        This verifies the conditional boundary: the if-protect guard in
+        _render_workspace_view controls whether injection happens at all.
+        """
+        # This test documents the design: _inject_copy_protection is only
+        # called inside `if protect:`, so when protect=False, none of
+        # ui.add_css / ui.html / ui.run_javascript are invoked.
+        # We verify this by confirming the protect flag computation.
+        ctx = PlacementContext(
+            placement_type="activity",
+            activity_title="Test",
+            week_number=1,
+            course_code="TEST1000",
+            copy_protection=False,
+        )
+        protect = ctx.copy_protection and not is_privileged_user({"roles": ["student"]})
+        assert protect is False

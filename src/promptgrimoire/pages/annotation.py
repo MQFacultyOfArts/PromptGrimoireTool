@@ -2694,9 +2694,9 @@ async def _render_workspace_header(
                 icon="lock",
                 color="amber-7",
                 text_color="white",
-            ).props("dense").tooltip(
-                "Copy protection is enabled for this activity"
-            ).props('aria-label="Copy protection is enabled for this activity"')
+            ).props(
+                'dense aria-label="Copy protection is enabled for this activity"'
+            ).tooltip("Copy protection is enabled for this activity")
 
 
 def _parse_sort_end_args(
@@ -2939,19 +2939,46 @@ _COPY_PROTECTION_JS = """
       showToast();
     }, true);
   }
+
+  // Ctrl+P / Cmd+P print intercept
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+      e.preventDefault();
+      showToast();
+    }
+  }, true);
 })();
 """.strip()
 
 
+_COPY_PROTECTION_PRINT_CSS = """
+@media print {
+  .q-tab-panels { display: none !important; }
+  .copy-protection-print-message { display: block !important; }
+}
+.copy-protection-print-message { display: none; }
+""".strip()
+
+_COPY_PROTECTION_PRINT_MESSAGE = (
+    '<div class="copy-protection-print-message" '
+    'style="display:none; padding: 2rem; text-align: center; font-size: 1.5rem;">'
+    "Printing is disabled for this activity.</div>"
+)
+
+
 def _inject_copy_protection() -> None:
-    """Inject client-side JS to block copy/cut/paste/drag on protected areas.
+    """Inject client-side JS and CSS to block copy/cut/paste/drag/print.
 
     Called once during page construction when ``protect=True``. Uses event
     delegation from protected selectors so Milkdown copy (student's own
     writing) is unaffected. Paste is blocked on the Milkdown editor in
-    capture phase before ProseMirror sees the event.
+    capture phase before ProseMirror sees the event. Ctrl+P/Cmd+P is
+    intercepted via keydown handler. CSS ``@media print`` hides tab panels
+    and shows a "Printing is disabled" message instead.
     """
     ui.run_javascript(_COPY_PROTECTION_JS)
+    ui.add_css(_COPY_PROTECTION_PRINT_CSS)
+    ui.html(_COPY_PROTECTION_PRINT_MESSAGE, sanitize=False)
 
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 — extract tab setup into helpers

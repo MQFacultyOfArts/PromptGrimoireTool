@@ -93,6 +93,20 @@ class _RemotePresence:
     selection_end: int | None = None
     has_milkdown_editor: bool = False
 
+    async def invoke_callback(self) -> None:
+        """Run the callback inside this client's NiceGUI slot context.
+
+        Callers MUST use this method instead of calling ``callback()``
+        directly.  It enters the client's context manager so that
+        ``ui.run_javascript()`` and element creation resolve to the
+        correct browser tab.  If the client has disconnected (weakref
+        dead), the ``with`` block raises and the caller's
+        ``contextlib.suppress(Exception)`` handles it.
+        """
+        if self.callback and self.nicegui_client:
+            with self.nicegui_client:
+                await self.callback()
+
 
 # Track connected clients per workspace for broadcasting
 # workspace_id -> {client_id -> _RemotePresence}
@@ -635,7 +649,10 @@ def _push_highlights_to_client(state: PageState) -> None:
     if client_state and client_state.nicegui_client:
         client_state.nicegui_client.run_javascript(js)
     else:
-        ui.run_javascript(js)
+        logger.warning(
+            "PUSH_HIGHLIGHTS: no client ref for client_id=%s — skipping JS push",
+            state.client_id[:8] if state.client_id else "?",
+        )
 
 
 def _update_highlight_css(state: PageState) -> None:
@@ -1402,7 +1419,7 @@ def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
     for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
         if cid != exclude_client_id and cstate.callback:
             with contextlib.suppress(Exception):
-                task = asyncio.create_task(cstate.callback())
+                task = asyncio.create_task(cstate.invoke_callback())
                 _background_tasks.add(task)
                 task.add_done_callback(_background_tasks.discard)
 
@@ -1426,7 +1443,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
             if cid != client_id and cstate.callback:
                 with contextlib.suppress(Exception):
-                    await cstate.callback()
+                    await cstate.invoke_callback()
 
     state.broadcast_update = broadcast_update
 
@@ -1545,7 +1562,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                         )
                 if presence.callback:
                     with contextlib.suppress(Exception):
-                        await presence.callback()
+                        await presence.invoke_callback()
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 

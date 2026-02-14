@@ -30,9 +30,10 @@ from promptgrimoire.db.courses import (
     list_courses,
     list_user_enrollments,
     unenroll_user,
+    update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.models import Activity, CourseRole
+from promptgrimoire.db.models import Activity, Course, CourseRole
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -69,6 +70,33 @@ def _broadcast_weeks_refresh(
             except Exception:
                 # Client may have disconnected
                 _course_clients[course_id].pop(client_id, None)
+
+
+async def open_course_settings(course: Course) -> None:
+    """Open a dialog to edit course settings (e.g. default copy protection).
+
+    Follows the awaitable dialog pattern from dialogs.py.
+    """
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Course Settings").classes("text-lg font-bold")
+
+        switch = ui.switch(
+            "Default copy protection",
+            value=course.default_copy_protection,
+        )
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+
+            async def save() -> None:
+                await update_course(course.id, default_copy_protection=switch.value)
+                course.default_copy_protection = switch.value
+                dialog.close()
+                ui.notify("Course settings saved", type="positive")
+
+            ui.button("Save", on_click=save).props("color=primary")
+
+    dialog.open()
 
 
 def _get_current_user() -> dict | None:
@@ -273,6 +301,11 @@ async def course_detail_page(course_id: str) -> None:
         )
         ui.label(f"{course.code} - {course.name}").classes("text-2xl font-bold")
         ui.badge(enrollment.role.value)
+        if can_manage:
+            ui.button(
+                icon="settings",
+                on_click=lambda: open_course_settings(course),
+            ).props("flat round").tooltip("Course settings")
 
     ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 

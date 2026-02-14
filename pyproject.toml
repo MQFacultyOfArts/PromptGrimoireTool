@@ -135,6 +135,9 @@ markers = [
 [tool.ty.src]
 exclude = ["alembic/"]
 
+[tool.bandit]
+  skips = ["B101", "B404"]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",

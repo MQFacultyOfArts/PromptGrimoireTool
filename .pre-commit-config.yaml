@@ -1,7 +1,7 @@
 repos:
   # Ruff: lint with autofix, then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
+    rev: v0.15.1
     hooks:
       # Run the linter with autofix
       - id: ruff-check
@@ -28,6 +28,12 @@ repos:
         language: system
         files: ^docs/.*\.md$
         pass_filenames: false
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.3
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
 
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

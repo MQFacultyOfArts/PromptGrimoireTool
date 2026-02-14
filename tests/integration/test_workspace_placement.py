@@ -1,6 +1,6 @@
 """Tests for workspace placement and listing operations.
 
-These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL.
+These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
 Tests verify placing workspaces in Activities/Courses, making them loose,
 listing by Activity/Course, and error handling for non-existent entities.
@@ -8,16 +8,16 @@ listing by Activity/Course, and error handling for non-existent entities.
 
 from __future__ import annotations
 
-import os
 from uuid import uuid4
 
 import pytest
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.models import Activity, Course, Week
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

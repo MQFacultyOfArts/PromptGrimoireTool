@@ -1,6 +1,6 @@
 """Tests for Activity model, schema constraints, FK behaviors, and CRUD operations.
 
-These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL.
+These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
 Tests verify the Activity table schema, FK relationships, cascade/set-null
 behaviors at the database level, and CRUD function correctness.
@@ -8,17 +8,17 @@ behaviors at the database level, and CRUD function correctness.
 
 from __future__ import annotations
 
-import os
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.models import Activity, Course, Week, Workspace
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

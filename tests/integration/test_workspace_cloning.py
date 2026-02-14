@@ -1,6 +1,6 @@
 """Tests for workspace cloning (clone_workspace_from_activity).
 
-These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL.
+These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
 Tests verify document cloning: field preservation, UUID independence,
 template immutability, and edge cases. Also verifies CRDT state cloning
@@ -9,18 +9,19 @@ with document ID remapping, comment preservation, and client metadata exclusion.
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
 
+from promptgrimoire.config import get_settings
+
 if TYPE_CHECKING:
     from promptgrimoire.db.models import Activity, Course, Week
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

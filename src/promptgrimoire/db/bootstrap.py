@@ -12,16 +12,69 @@ Key principles:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import psycopg
+import psycopg.sql
 from sqlalchemy import inspect
 from sqlmodel import SQLModel
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+
+def ensure_database_exists(url: str | None) -> None:
+    """Create the target database if it doesn't exist.
+
+    Connects to the ``postgres`` maintenance database using sync psycopg
+    with AUTOCOMMIT isolation (CREATE DATABASE cannot run inside a
+    transaction).
+
+    Args:
+        url: PostgreSQL connection string. If None or empty, no-op.
+
+    Raises:
+        ValueError: If the database name contains invalid characters.
+    """
+    if not url:
+        return
+
+    # Extract database name from URL (last path segment, before query params)
+    base = url.split("?")[0]
+    if "/" not in base:
+        return
+    db_name = base.rsplit("/", 1)[1]
+    if not db_name:
+        return
+
+    # Belt-and-suspenders: validate db_name characters
+    if not re.match(r"^[a-zA-Z0-9_]+$", db_name):
+        msg = f"Invalid database name: {db_name!r}"
+        raise ValueError(msg)
+
+    # Build maintenance URL: replace db name with "postgres" and use
+    # sync psycopg driver
+    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
+    # Strip SQLAlchemy driver suffix — psycopg accepts bare postgresql://
+    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
+    # Restore query params if present
+    if "?" in url:
+        maintenance_url += "?" + url.split("?", 1)[1]
+
+    with psycopg.connect(maintenance_url, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,)
+        ).fetchone()
+        if row is None:
+            # Use psycopg.sql for safe identifier quoting
+            stmt = psycopg.sql.SQL("CREATE DATABASE {}").format(
+                psycopg.sql.Identifier(db_name)
+            )
+            conn.execute(stmt)
 
 
 def is_db_configured() -> bool:

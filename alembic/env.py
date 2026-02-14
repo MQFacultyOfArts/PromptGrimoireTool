@@ -6,25 +6,19 @@ Configures async PostgreSQL migrations with SQLModel.
 from __future__ import annotations
 
 import asyncio
-import os
 from logging.config import fileConfig
 from typing import TYPE_CHECKING
 
-from dotenv import load_dotenv
-
-# Load .env file before reading DATABASE_URL
-load_dotenv()
-
-from alembic import context  # noqa: E402
-from sqlalchemy import pool  # noqa: E402
-from sqlalchemy.ext.asyncio import async_engine_from_config  # noqa: E402
-from sqlmodel import SQLModel  # noqa: E402
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlmodel import SQLModel
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
 # Import all models to register them with SQLModel.metadata
-from promptgrimoire.db.models import (  # noqa: E402, F401
+from promptgrimoire.db.models import (  # noqa: F401
     Activity,
     Course,
     CourseEnrollment,
@@ -38,8 +32,10 @@ from promptgrimoire.db.models import (  # noqa: E402, F401
 # access to the values within the .ini file in use.
 config = context.config
 
-# Set the database URL from environment variable
-database_url = os.environ.get("DATABASE_URL")
+# Set the database URL from Settings
+from promptgrimoire.config import get_settings  # noqa: E402
+
+database_url = get_settings().database.url
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 

@@ -1,19 +1,19 @@
 """Authentication pages for PromptGrimoire.
 
 Provides login, callback, and protected pages using NiceGUI.
-Uses either real Stytch or MockAuthClient based on AUTH_MOCK env var.
+Uses either real Stytch or MockAuthClient based on DEV__AUTH_MOCK setting.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from nicegui import app, ui
 
-from promptgrimoire.auth import get_auth_client, get_config
+from promptgrimoire.auth import get_auth_client
+from promptgrimoire.config import get_settings
 from promptgrimoire.db import init_db, upsert_user_on_login
 
 if TYPE_CHECKING:
@@ -157,8 +157,8 @@ async def _upsert_local_user(
     Returns:
         Tuple of (user_id, is_admin) or (None, False) if DB not configured.
     """
-    if not os.environ.get("DATABASE_URL"):
-        logger.debug("DATABASE_URL not configured, skipping user upsert")
+    if not get_settings().database.url:
+        logger.debug("DATABASE__URL not configured, skipping user upsert")
         return None, False
 
     # Check if user has admin role from Stytch
@@ -243,19 +243,19 @@ def _build_magic_link_section() -> None:
             logger.info("Magic link requested for email=%s", email)
 
             auth_client = get_auth_client()
-            config = get_config()
+            settings = get_settings()
 
-            if not config.default_org_id:
-                logger.error("STYTCH_DEFAULT_ORG_ID not configured")
+            if not settings.stytch.default_org_id:
+                logger.error("STYTCH__DEFAULT_ORG_ID not configured")
                 ui.notify("Organization not configured", type="negative")
                 return
 
-            callback_url = f"{config.base_url}/auth/callback"
+            callback_url = f"{settings.app.base_url}/auth/callback"
             logger.debug("Magic link callback_url=%s", callback_url)
 
             result = await auth_client.send_magic_link(
                 email=email,
-                organization_id=config.default_org_id,
+                organization_id=settings.stytch.default_org_id,
                 callback_url=callback_url,
             )
 
@@ -280,26 +280,26 @@ def _build_sso_section() -> None:
         def start_sso() -> None:
             logger.info("SSO login button clicked (AAF)")
             auth_client = get_auth_client()
-            config = get_config()
+            settings = get_settings()
 
-            if not config.sso_connection_id:
-                logger.error("STYTCH_SSO_CONNECTION_ID not configured")
+            if not settings.stytch.sso_connection_id:
+                logger.error("STYTCH__SSO_CONNECTION_ID not configured")
                 ui.notify("SSO not configured", type="negative")
                 return
 
-            if not config.public_token:
-                logger.error("STYTCH_PUBLIC_TOKEN not configured")
+            if not settings.stytch.public_token:
+                logger.error("STYTCH__PUBLIC_TOKEN not configured")
                 ui.notify("SSO not configured", type="negative")
                 return
 
             logger.info(
                 "Starting SSO flow: connection_id=%s",
-                config.sso_connection_id,
+                settings.stytch.sso_connection_id,
             )
 
             result = auth_client.get_sso_start_url(
-                connection_id=config.sso_connection_id,
-                public_token=config.public_token,
+                connection_id=settings.stytch.sso_connection_id,
+                public_token=settings.stytch.public_token,
             )
 
             if result.success and result.redirect_url:
@@ -323,29 +323,29 @@ def _build_github_oauth_section() -> None:
         def start_github_oauth() -> None:
             logger.info("GitHub OAuth login button clicked")
             auth_client = get_auth_client()
-            config = get_config()
+            settings = get_settings()
 
-            if not config.public_token:
-                logger.error("STYTCH_PUBLIC_TOKEN not configured")
+            if not settings.stytch.public_token:
+                logger.error("STYTCH__PUBLIC_TOKEN not configured")
                 ui.notify("GitHub login not configured", type="negative")
                 return
 
-            if not config.default_org_id:
-                logger.error("STYTCH_DEFAULT_ORG_ID not configured")
+            if not settings.stytch.default_org_id:
+                logger.error("STYTCH__DEFAULT_ORG_ID not configured")
                 ui.notify("GitHub login not configured", type="negative")
                 return
 
-            callback_url = f"{config.base_url}/auth/oauth/callback"
+            callback_url = f"{settings.app.base_url}/auth/oauth/callback"
             logger.info(
                 "Starting GitHub OAuth: org_id=%s, callback=%s",
-                config.default_org_id,
+                settings.stytch.default_org_id,
                 callback_url,
             )
 
             result = auth_client.get_oauth_start_url(
                 provider="github",
-                public_token=config.public_token,
-                organization_id=config.default_org_id,
+                public_token=settings.stytch.public_token,
+                organization_id=settings.stytch.default_org_id,
                 login_redirect_url=callback_url,
             )
 
@@ -363,7 +363,7 @@ def _build_github_oauth_section() -> None:
 
 
 def _build_mock_login_section() -> None:
-    """Build mock login section for testing (only when AUTH_MOCK=true)."""
+    """Build mock login section for testing (only when DEV__AUTH_MOCK=true)."""
     with ui.card().classes("w-96 p-4 bg-yellow-50 border-yellow-200"):
         ui.label("Mock Login (Testing Only)").classes(
             "text-lg font-semibold mb-2 text-yellow-800"
@@ -404,7 +404,7 @@ async def login_page() -> None:
     ui.label("Login to PromptGrimoire").classes("text-2xl font-bold mb-4")
 
     # Show mock login section when in test mode
-    if os.environ.get("AUTH_MOCK") == "true":
+    if get_settings().dev.auth_mock:
         _build_mock_login_section()
         ui.label("— or —").classes("my-4")
 

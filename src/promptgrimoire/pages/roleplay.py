@@ -8,12 +8,12 @@ Route: /roleplay
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nicegui import app, ui
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
@@ -24,15 +24,6 @@ from promptgrimoire.parsers.sillytavern import parse_character_card
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.scroll_area import ScrollArea
-
-# Default log directory
-LOG_DIR = Path(os.environ.get("ROLEPLAY_LOG_DIR", "logs/sessions"))
-
-# Claude model configuration
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
-
-# Extended thinking budget (0 = disabled, 1024 = minimal, 10000+ = thorough)
-THINKING_BUDGET = int(os.environ.get("CLAUDE_THINKING_BUDGET", "1024"))
 
 
 def _get_default_user_name() -> str:
@@ -155,8 +146,10 @@ def _setup_session(
         )
         session.add_turn(first_msg, is_user=False)
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOG_DIR / generate_log_filename(session)
+    settings = get_settings()
+    log_dir = settings.app.log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / generate_log_filename(session)
 
     with log_path.open("w") as f:
         logger = JSONLLogger(f)
@@ -164,7 +157,12 @@ def _setup_session(
         for turn in session.turns:
             logger.write_turn(turn)
 
-    client = ClaudeClient(model=CLAUDE_MODEL, thinking_budget=THINKING_BUDGET)
+    client = ClaudeClient(
+        api_key=settings.llm.api_key.get_secret_value(),
+        model=settings.llm.model,
+        thinking_budget=settings.llm.thinking_budget,
+        lorebook_budget=settings.llm.lorebook_token_budget,
+    )
     return session, client, log_path
 
 

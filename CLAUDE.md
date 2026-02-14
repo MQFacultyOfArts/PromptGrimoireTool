@@ -271,7 +271,7 @@ This installs TinyTeX to `~/.TinyTeX` and the required packages:
 
 ### Configuration
 
-The `LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave empty to use TinyTeX.
+The `APP__LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Leave empty to use TinyTeX.
 
 ### Architecture
 
@@ -405,7 +405,7 @@ The content hierarchy is: Course contains Weeks, Weeks contain Activities, Activ
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations themselves
 2. **All models must be imported before schema operations** - The `promptgrimoire.db.models` module must be imported to register tables with SQLModel.metadata
-3. **Pages requiring DB must check availability** - Use `os.environ.get("DATABASE_URL")` and show a helpful error if not configured
+3. **Pages requiring DB must check availability** - Use `get_settings().database.url` and show a helpful error if not configured
 4. **Use `verify_schema()` at startup** - Fail fast if tables are missing
 
 ### Page Database Dependencies
@@ -457,7 +457,26 @@ When `protect=True` and user is not privileged:
 - **Course settings dialog** (`open_course_settings()`): Toggle `default_copy_protection` on/off.
 - **Per-activity tri-state select**: "Inherit from course" / "On" / "Off". Pure mapping functions `_model_to_ui()` and `_ui_to_model()` convert between model `bool | None` and UI string keys.
 
-## Environment Variables
+## Configuration (pydantic-settings)
+
+All configuration is managed through `src/promptgrimoire/config.py` using pydantic-settings. Environment variables use double-underscore nesting: `DATABASE__URL`, `LLM__API_KEY`, `STYTCH__PROJECT_ID`, etc.
+
+- **Access:** Call `get_settings()` for a cached, validated Settings instance
+- **Testing:** Construct `Settings(_env_file=None, ...)` directly for isolation; call `get_settings.cache_clear()` to reset the singleton
+- **`.env` files:** pydantic-settings reads `.env` natively — no `load_dotenv()` calls anywhere
+- **Secrets:** Use `SecretStr` fields; call `.get_secret_value()` at the point of use
+
+### Sub-models
+
+| Prefix | Model | Key fields |
+|--------|-------|------------|
+| `DATABASE__` | `DatabaseConfig` | `url` |
+| `LLM__` | `LlmConfig` | `api_key`, `model`, `thinking_budget`, `lorebook_token_budget` |
+| `APP__` | `AppConfig` | `port`, `storage_secret`, `log_dir`, `latexmk_path`, `base_url` |
+| `DEV__` | `DevConfig` | `auth_mock`, `enable_demo_pages`, `database_echo`, `test_database_url`, `branch_db_suffix` |
+| `STYTCH__` | `StytchConfig` | `project_id`, `secret`, `public_token`, `default_org_id`, `sso_connection_id` |
+
+### Environment Variables
 
 **Source of truth:** `.env.example`
 

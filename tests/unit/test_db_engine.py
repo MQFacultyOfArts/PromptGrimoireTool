@@ -4,12 +4,25 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from promptgrimoire.config import DatabaseConfig, DevConfig, Settings
+
 if TYPE_CHECKING:
     from pytest import LogCaptureFixture
+
+
+def _settings_with_db(
+    url: str = "postgresql+asyncpg://test:test@localhost/testdb",
+) -> Settings:
+    """Create a Settings instance with a database URL for testing."""
+    return Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database=DatabaseConfig(url=url),
+        dev=DevConfig(database_echo=False, branch_db_suffix=False),
+    )
 
 
 class TestGetSession:
@@ -63,13 +76,18 @@ class TestGetSession:
         _state.engine = None
 
         try:
-            # get_session should lazily call init_db
-            async with get_session() as session:
-                # Should have initialized the engine and factory
-                assert _state.engine is not None
-                assert _state.session_factory is not None
-                # Session should be usable
-                assert session is not None
+            # Patch get_settings to provide a database URL
+            with patch(
+                "promptgrimoire.db.engine.get_settings",
+                return_value=_settings_with_db(),
+            ):
+                # get_session should lazily call init_db
+                async with get_session() as session:
+                    # Should have initialized the engine and factory
+                    assert _state.engine is not None
+                    assert _state.session_factory is not None
+                    # Session should be usable
+                    assert session is not None
         finally:
             # Clean up the lazily-created engine
             await close_db()

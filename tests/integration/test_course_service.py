@@ -1,23 +1,23 @@
 """Tests for course CRUD operations.
 
-These tests require a running PostgreSQL instance. Set TEST_DATABASE_URL
+These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL
 environment variable to point to a test database.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.models import CourseRole
 
 # Skip all tests if no test database URL is configured
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("TEST_DATABASE_URL"),
-    reason="TEST_DATABASE_URL not set - skipping database integration tests",
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
 )
 
 

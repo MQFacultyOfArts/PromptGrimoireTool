@@ -13,13 +13,13 @@ Route: /courses
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 from uuid import UUID
 
 from nicegui import app, ui
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.activities import (
     create_activity,
     list_activities_for_week,
@@ -182,7 +182,7 @@ def _is_admin() -> bool:
 
 def _is_db_available() -> bool:
     """Check if database is configured."""
-    return bool(os.environ.get("DATABASE_URL"))
+    return bool(get_settings().database.url)
 
 
 async def _check_auth() -> bool:

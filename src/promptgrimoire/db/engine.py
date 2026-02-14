@@ -6,13 +6,14 @@ Provides async PostgreSQL connections via SQLModel and asyncpg.
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -35,17 +36,20 @@ _state = _DatabaseState()
 
 
 def get_database_url() -> str:
-    """Get database URL from environment.
+    """Get database URL from Settings.
 
     Returns:
         PostgreSQL connection string with asyncpg driver.
 
     Raises:
-        ValueError: If DATABASE_URL is not set.
+        ValueError: If DATABASE__URL is not configured.
     """
-    url = os.environ.get("DATABASE_URL")
+    url = get_settings().database.url
     if not url:
-        msg = "DATABASE_URL environment variable is required"
+        msg = (
+            "DATABASE__URL is not configured. "
+            "Set it in your .env file or as an environment variable."
+        )
         raise ValueError(msg)
     return url
 
@@ -69,7 +73,7 @@ async def init_db() -> None:
     """
     _state.engine = create_async_engine(
         get_database_url(),
-        echo=bool(os.environ.get("DATABASE_ECHO", "")),
+        echo=get_settings().dev.database_echo,
         pool_size=5,
         max_overflow=10,
         pool_pre_ping=True,
@@ -118,7 +122,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         AsyncSession: Database session for executing queries.
 
     Raises:
-        ValueError: If DATABASE_URL is not set.
+        ValueError: If DATABASE__URL is not configured.
     """
     # Lazy init: create engine in the current event loop if not yet created
     if _state.session_factory is None:

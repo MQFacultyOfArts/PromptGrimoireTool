@@ -15,14 +15,12 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db import run_alembic_upgrade
 from promptgrimoire.export.pdf import get_latexmk_path
-
-load_dotenv()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -148,7 +146,7 @@ def db_schema_guard() -> Generator[None]:
     """Set up database schema once at session start.
 
     This fixture:
-    1. Sets DATABASE_URL from TEST_DATABASE_URL for test isolation
+    1. Sets DATABASE__URL from DEV__TEST_DATABASE_URL for test isolation
     2. Runs Alembic migrations to ensure schema exists
 
     The database engine is initialized lazily on first use within each
@@ -158,16 +156,17 @@ def db_schema_guard() -> Generator[None]:
     Note: Not autouse - only tests that need the DB should depend on this
     (typically via their db_engine fixture).
     """
-    test_url = os.environ.get("TEST_DATABASE_URL")
+    test_url = get_settings().dev.test_database_url
     if not test_url:
         pytest.fail(
-            "TEST_DATABASE_URL environment variable is required for tests. "
+            "DEV__TEST_DATABASE_URL is required for tests. "
             "Set it to point to a test database (not production!)."
         )
         return  # Unreachable, but helps type checker
 
-    # Set DATABASE_URL from TEST_DATABASE_URL for test isolation
-    os.environ["DATABASE_URL"] = test_url
+    # Override DATABASE__URL so Settings resolves to the test database
+    os.environ["DATABASE__URL"] = test_url
+    get_settings.cache_clear()  # Force Settings to re-read with new env var
 
     # Run migrations (sync - Alembic uses subprocess)
     try:
@@ -176,6 +175,10 @@ def db_schema_guard() -> Generator[None]:
         pytest.fail(str(e))
 
     yield
+
+    # Teardown: remove override and clear Settings cache
+    os.environ.pop("DATABASE__URL", None)
+    get_settings.cache_clear()
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -192,9 +195,11 @@ async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG00
     from promptgrimoire.db import User
 
     canary_email = f"canary-{_DB_CANARY_ID}@test.local"
+    db_url = get_settings().database.url
+    assert db_url is not None  # Guaranteed by db_schema_guard
 
     engine = create_async_engine(
-        os.environ["DATABASE_URL"],
+        db_url,
         poolclass=NullPool,
         connect_args={"timeout": 10, "command_timeout": 30},
     )
@@ -212,7 +217,7 @@ async def db_canary(db_schema_guard: None) -> AsyncIterator[str]:  # noqa: ARG00
     from sqlmodel import delete
 
     cleanup_engine = create_async_engine(
-        os.environ["DATABASE_URL"],
+        db_url,
         poolclass=NullPool,
         connect_args={"timeout": 10, "command_timeout": 30},
     )
@@ -243,8 +248,11 @@ async def db_session(db_canary: str) -> AsyncIterator[AsyncSession]:
 
     from promptgrimoire.db import User
 
+    db_url = get_settings().database.url
+    assert db_url is not None  # Guaranteed by db_schema_guard
+
     engine = create_async_engine(
-        os.environ["DATABASE_URL"],
+        db_url,
         poolclass=NullPool,
         connect_args={"timeout": 10, "command_timeout": 30},
     )
@@ -299,13 +307,13 @@ for key in list(os.environ.keys()):
         del os.environ[key]
 
 # Enable mock auth for E2E tests
-os.environ['AUTH_MOCK'] = 'true'
-os.environ['STORAGE_SECRET'] = '{TEST_STORAGE_SECRET}'
+os.environ['DEV__AUTH_MOCK'] = 'true'
+os.environ['APP__STORAGE_SECRET'] = '{TEST_STORAGE_SECRET}'
 
 # Set mock SSO config values so SSO flow can be tested
 # Without these, the SSO code returns early before generating a redirect URL
-os.environ.setdefault('STYTCH_SSO_CONNECTION_ID', 'test-sso-connection-id')
-os.environ.setdefault('STYTCH_PUBLIC_TOKEN', 'test-public-token')
+os.environ.setdefault('STYTCH__SSO_CONNECTION_ID', 'test-sso-connection-id')
+os.environ.setdefault('STYTCH__PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 

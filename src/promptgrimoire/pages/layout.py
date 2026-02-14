@@ -5,12 +5,12 @@ Provides consistent header, navigation drawer, and page structure.
 
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from nicegui import app, ui
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.pages.registry import get_pages_by_category
 
 if TYPE_CHECKING:
@@ -26,9 +26,9 @@ def demos_enabled() -> bool:
     """Check if demo pages are enabled via feature flag.
 
     Returns:
-        True if ENABLE_DEMO_PAGES env var is set to a truthy value.
+        True if DEV__ENABLE_DEMO_PAGES is set to true.
     """
-    return os.environ.get("ENABLE_DEMO_PAGES", "").lower() in ("1", "true", "yes")
+    return get_settings().dev.enable_demo_pages
 
 
 def require_demo_enabled() -> bool:
@@ -42,7 +42,7 @@ def require_demo_enabled() -> bool:
     if demos_enabled():
         return True
     ui.label("Demo pages are disabled").classes("text-h5 text-red-500")
-    ui.label("Set ENABLE_DEMO_PAGES=true in your environment to enable.").classes(
+    ui.label("Set DEV__ENABLE_DEMO_PAGES=true in your environment to enable.").classes(
         "text-body1 text-grey-7"
     )
     ui.button("Go Home", on_click=lambda: ui.navigate.to("/")).classes("mt-4")

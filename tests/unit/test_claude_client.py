@@ -37,17 +37,27 @@ class TestClaudeClient:
         client = ClaudeClient(api_key="test-key")
         assert client.api_key == "test-key"
 
-    def test_init_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Client reads API key from environment."""
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
-        client = ClaudeClient()
-        assert client.api_key == "env-key"
+    def test_init_with_all_params(self) -> None:
+        """Client stores all constructor parameters."""
+        client = ClaudeClient(
+            api_key="test-key",
+            model="test-model",
+            thinking_budget=2048,
+            lorebook_budget=500,
+        )
+        assert client.model == "test-model"
+        assert client.thinking_budget == 2048
+        assert client.lorebook_budget == 500
 
-    def test_init_no_key_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Missing API key raises ValueError."""
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        with pytest.raises(ValueError, match="API key"):
-            ClaudeClient()
+    def test_init_empty_key_raises(self) -> None:
+        """Empty API key raises ValueError."""
+        with pytest.raises(ValueError, match="API key is required"):
+            ClaudeClient(api_key="")
+
+    def test_default_lorebook_budget_is_zero(self) -> None:
+        """Default lorebook_budget is 0 (unlimited)."""
+        client = ClaudeClient(api_key="test-key")
+        assert client.lorebook_budget == 0
 
 
 class TestSendMessage:

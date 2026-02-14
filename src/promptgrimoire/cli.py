@@ -26,19 +26,22 @@ def _pre_test_db_cleanup() -> None:
     This runs once in the CLI process before pytest is spawned,
     avoiding deadlocks when xdist workers try to truncate simultaneously.
 
-    Uses TEST_DATABASE_URL (not DATABASE_URL) to prevent accidentally
-    truncating production or development databases.
+    Uses Settings.dev.test_database_url (not database.url) to prevent
+    accidentally truncating production or development databases.
     """
-    from dotenv import load_dotenv
+    from promptgrimoire.config import get_settings
+    from promptgrimoire.db.bootstrap import ensure_database_exists
 
-    load_dotenv()
-
-    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    test_database_url = get_settings().dev.test_database_url
     if not test_database_url:
         return  # No test database configured — skip
 
-    # Override DATABASE_URL so Alembic migrations target the test database
-    os.environ["DATABASE_URL"] = test_database_url
+    # Auto-create the branch-specific database if it doesn't exist
+    ensure_database_exists(test_database_url)
+
+    # Override DATABASE__URL so Settings resolves to the test database
+    os.environ["DATABASE__URL"] = test_database_url
+    get_settings.cache_clear()
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
@@ -352,9 +355,10 @@ def test_e2e() -> None:
     """
     import socket
 
-    from dotenv import load_dotenv
+    # Eagerly load settings so .env is read before subprocess spawning.
+    from promptgrimoire.config import get_settings
 
-    load_dotenv()
+    get_settings()
 
     _pre_test_db_cleanup()
 
@@ -394,9 +398,7 @@ def set_admin() -> None:
     Usage:
         uv run set-admin user@example.com
     """
-    from dotenv import load_dotenv
-
-    load_dotenv()
+    from promptgrimoire.config import get_settings
 
     if len(sys.argv) < 2:
         console.print("[red]Usage:[/] uv run set-admin <email>")
@@ -404,8 +406,8 @@ def set_admin() -> None:
 
     email = sys.argv[1]
 
-    if not os.environ.get("DATABASE_URL"):
-        console.print("[red]Error:[/] DATABASE_URL not set")
+    if not get_settings().database.url:
+        console.print("[red]Error:[/] DATABASE__URL not set")
         sys.exit(1)
 
     async def _set_admin() -> None:
@@ -537,12 +539,10 @@ def seed_data() -> None:
     Usage:
         uv run seed-data
     """
-    from dotenv import load_dotenv
+    from promptgrimoire.config import get_settings
 
-    load_dotenv()
-
-    if not os.environ.get("DATABASE_URL"):
-        console.print("[red]Error:[/] DATABASE_URL not set")
+    if not get_settings().database.url:
+        console.print("[red]Error:[/] DATABASE__URL not set")
         sys.exit(1)
 
     async def _seed() -> None:

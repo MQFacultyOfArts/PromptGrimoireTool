@@ -20,7 +20,11 @@ from uuid import UUID
 
 from nicegui import app, ui
 
-from promptgrimoire.db.activities import create_activity, list_activities_for_week
+from promptgrimoire.db.activities import (
+    create_activity,
+    list_activities_for_week,
+    update_activity,
+)
 from promptgrimoire.db.courses import (
     create_course,
     enroll_user,
@@ -54,6 +58,34 @@ logger = logging.getLogger(__name__)
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
 _course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
+
+# -- Copy protection UI mapping (tri-state: None/True/False <-> inherit/on/off) --
+
+_COPY_PROTECTION_OPTIONS: dict[str, str] = {
+    "inherit": "Inherit from course",
+    "on": "On",
+    "off": "Off",
+}
+
+
+def _model_to_ui(value: bool | None) -> str:
+    """Convert model tri-state copy_protection to UI select key.
+
+    None -> "inherit", True -> "on", False -> "off".
+    """
+    if value is None:
+        return "inherit"
+    return "on" if value else "off"
+
+
+def _ui_to_model(value: str) -> bool | None:
+    """Convert UI select key to model tri-state copy_protection.
+
+    "inherit" -> None, "on" -> True, "off" -> False.
+    """
+    if value == "inherit":
+        return None
+    return value == "on"
 
 
 def _broadcast_weeks_refresh(
@@ -93,6 +125,36 @@ async def open_course_settings(course: Course) -> None:
                 course.default_copy_protection = switch.value
                 dialog.close()
                 ui.notify("Course settings saved", type="positive")
+
+            ui.button("Save", on_click=save).props("color=primary")
+
+    dialog.open()
+
+
+async def open_activity_settings(activity: Activity) -> None:
+    """Open a dialog to edit per-activity copy protection.
+
+    Shows a tri-state select: Inherit from course / On / Off.
+    Verifies AC7.2, AC7.3, AC7.4, AC7.5.
+    """
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Activity Settings").classes("text-lg font-bold")
+
+        select = ui.select(
+            options=_COPY_PROTECTION_OPTIONS,
+            value=_model_to_ui(activity.copy_protection),
+            label="Copy protection",
+        ).classes("w-full")
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+
+            async def save() -> None:
+                new_value = _ui_to_model(select.value)
+                await update_activity(activity.id, copy_protection=new_value)
+                activity.copy_protection = new_value
+                dialog.close()
+                ui.notify("Activity settings saved", type="positive")
 
             ui.button("Save", on_click=save).props("color=primary")
 
@@ -345,6 +407,10 @@ async def course_detail_page(course_id: str) -> None:
                     icon=btn_icon,
                     on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
                 ).props("flat dense size=sm color=secondary")
+                ui.button(
+                    icon="tune",
+                    on_click=lambda a=act: open_activity_settings(a),
+                ).props("flat round dense size=sm").tooltip("Activity settings")
 
             async def start_activity(aid: UUID = act.id) -> None:
                 # TODO(Seam-D): Add workspace-level auth check here

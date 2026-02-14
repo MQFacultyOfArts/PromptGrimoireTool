@@ -10,17 +10,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
 from nicegui import ui
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.pages.registry import page_route
 
 logger = logging.getLogger(__name__)
-
-# Default log directory
-LOG_DIR = Path(os.environ.get("ROLEPLAY_LOG_DIR", "logs/sessions"))
 
 
 def parse_log_file(path: Path) -> tuple[dict | None, list[dict]]:
@@ -106,12 +103,13 @@ async def logs_page() -> None:
 
     ui.label("Session Log Viewer").classes("text-h4 mb-4")
 
+    log_dir = get_settings().app.log_dir
     state: dict = {"selected_path": None, "header": None, "turns": []}
 
     log_files: list[Path] = []
-    if LOG_DIR.exists():
+    if log_dir.exists():
         log_files = sorted(
-            LOG_DIR.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
+            log_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
         )
 
     if not log_files:
@@ -126,8 +124,8 @@ async def logs_page() -> None:
         def on_select(e) -> None:
             # CRIT-1: Path traversal protection
             requested_path = Path(e.value).resolve()
-            safe_base = LOG_DIR.resolve()
-            if not str(requested_path).startswith(str(safe_base) + os.sep):
+            safe_base = log_dir.resolve()
+            if not requested_path.is_relative_to(safe_base):
                 logger.warning("Path traversal attempt blocked: %s", e.value)
                 ui.notify("Invalid log file path", type="negative")
                 return

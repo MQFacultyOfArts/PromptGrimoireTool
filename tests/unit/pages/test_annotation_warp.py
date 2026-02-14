@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 
-from promptgrimoire.pages.annotation import _warp_to_highlight
+from promptgrimoire.pages.annotation.highlights import _warp_to_highlight
 from promptgrimoire.pages.annotation_organise import (
     _build_highlight_card,
     render_organise_tab,

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
+async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
     """Switch to the Annotate tab and scroll to a highlight range.
 
     This is the cross-tab navigation entry point: Tab 2 (Organise) and Tab 3

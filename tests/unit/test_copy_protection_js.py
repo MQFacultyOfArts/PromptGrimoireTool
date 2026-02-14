@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.db.workspaces import PlacementContext
-from promptgrimoire.pages.annotation import (
+from promptgrimoire.pages.annotation.workspace import (
     _inject_copy_protection,
     _render_workspace_header,
 )
@@ -183,9 +183,11 @@ class TestPrintSuppressionInjection:
     def _mock_ui(self) -> Iterator[dict[str, MagicMock]]:
         """Mock the three NiceGUI UI calls used by _inject_copy_protection."""
         with (
-            patch("promptgrimoire.pages.annotation.ui.run_javascript") as mock_js,
-            patch("promptgrimoire.pages.annotation.ui.add_css") as mock_css,
-            patch("promptgrimoire.pages.annotation.ui.html") as mock_html,
+            patch(
+                "promptgrimoire.pages.annotation.workspace.ui.run_javascript"
+            ) as mock_js,
+            patch("promptgrimoire.pages.annotation.workspace.ui.add_css") as mock_css,
+            patch("promptgrimoire.pages.annotation.workspace.ui.html") as mock_html,
         ):
             yield {"js": mock_js, "css": mock_css, "html": mock_html}
 

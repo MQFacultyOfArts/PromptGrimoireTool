@@ -15,7 +15,7 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation import _parse_sort_end_args
+from promptgrimoire.pages.annotation.workspace import _parse_sort_end_args
 from promptgrimoire.pages.annotation_organise import _SNIPPET_MAX_CHARS
 from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
 

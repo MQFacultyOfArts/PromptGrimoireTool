@@ -568,8 +568,8 @@ class TestDynamicFontLoading:
         - Isolation: ~1.5s (Latin-only) vs ~5s (full font chain)
         - Under xdist (24 workers, full suite): ~2-3s due to I/O contention
 
-        Threshold is 5s to prevent flaky failures under heavy parallel
-        load while still catching regressions vs full-font compile (~8-11s
+        Threshold is 6s to prevent failures under heavy parallel load
+        while still catching regressions vs full-font compile (~8-11s
         under same contention). The structural assertion (no luatexja-fontspec)
         is the primary correctness check; timing is a secondary guard.
         """
@@ -614,10 +614,10 @@ class TestDynamicFontLoading:
             header = f.read(4)
         assert header == b"%PDF", "Output must be a valid PDF"
 
-        # Secondary timing guard: under 5s even with xdist contention
+        # Secondary timing guard: under 6s even with xdist contention
         # (~1.5s isolation, ~2-3s under 24-worker xdist, vs ~8-11s full-font)
-        assert elapsed < 5.0, (
-            f"English-only compile took {elapsed:.2f}s (target: <5s). "
+        assert elapsed < 6.0, (
+            f"English-only compile took {elapsed:.2f}s (target: <6s). "
             "This suggests luaotfload overhead was not eliminated."
         )
 

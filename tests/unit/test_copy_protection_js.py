@@ -177,9 +177,20 @@ class TestCopyProtectionJsContent:
         """JS PROTECTED selector includes #doc-container."""
         assert "#doc-container" in _COPY_PROTECTION_JS
 
-    def test_js_block_targets_organise_columns(self) -> None:
-        """JS PROTECTED selector includes organise-columns test ID."""
-        assert "organise-columns" in _COPY_PROTECTION_JS
+    def test_js_block_does_not_target_organise_columns(self) -> None:
+        """JS PROTECTED selector must NOT include organise-columns (#164).
+
+        The Organise tab uses SortableJS which requires dragstart events.
+        Including organise-columns in PROTECTED kills card reordering.
+        """
+        # Check the selector assignment, not comments
+        for line in _COPY_PROTECTION_JS.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
+            assert "organise-columns" not in line, (
+                f"organise-columns found in non-comment JS line: {line!r}"
+            )
 
     def test_js_block_targets_respond_reference_panel(self) -> None:
         """JS PROTECTED selector includes respond-reference-panel test ID."""

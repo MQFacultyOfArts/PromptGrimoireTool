@@ -416,10 +416,12 @@ class TestGetAuthClientFactory:
         """AC3.3: get_auth_client() raises ValueError for empty project_id."""
         from unittest.mock import patch
 
-        from promptgrimoire.config import Settings
+        from promptgrimoire.config import DevConfig, Settings, StytchConfig
 
         settings = Settings(
             _env_file=None,  # type: ignore[call-arg]
+            stytch=StytchConfig(project_id=""),
+            dev=DevConfig(auth_mock=False),
         )
         with (
             patch(

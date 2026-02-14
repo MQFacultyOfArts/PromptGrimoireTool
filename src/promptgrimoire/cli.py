@@ -477,8 +477,8 @@ async def _seed_user_and_course() -> tuple:
     return user, course
 
 
-async def _seed_enrolment_and_weeks(course, user) -> None:
-    """Enrol user and create weeks with activities."""
+async def _seed_enrolment_and_weeks(course) -> None:
+    """Enrol mock users and create weeks with activities."""
     from promptgrimoire.db.activities import create_activity
     from promptgrimoire.db.courses import (
         DuplicateEnrollmentError,
@@ -486,17 +486,34 @@ async def _seed_enrolment_and_weeks(course, user) -> None:
         update_course,
     )
     from promptgrimoire.db.models import CourseRole
+    from promptgrimoire.db.users import find_or_create_user
     from promptgrimoire.db.weeks import create_week
 
-    try:
-        await enroll_user(
-            course_id=course.id,
-            user_id=user.id,
-            role=CourseRole.coordinator,
-        )
-        console.print("[green]Enrolled:[/] instructor@uni.edu as coordinator")
-    except DuplicateEnrollmentError:
-        console.print("[yellow]Already enrolled:[/] instructor@uni.edu")
+    # Seed all mock users and enrol them
+    mock_users = [
+        ("instructor@uni.edu", "Test Instructor", CourseRole.coordinator),
+        ("admin@example.com", "Admin User", CourseRole.coordinator),
+        ("student@uni.edu", "Test Student", CourseRole.student),
+        ("test@example.com", "Test User", CourseRole.student),
+    ]
+
+    from promptgrimoire.db.engine import get_session
+
+    for email, name, role in mock_users:
+        u, created = await find_or_create_user(email=email, display_name=name)
+        if email == "admin@example.com" and not u.is_admin:
+            u.is_admin = True
+            async with get_session() as session:
+                session.add(u)
+                await session.commit()
+        status = "[green]Created" if created else "[yellow]Exists"
+        console.print(f"{status}:[/] {email}")
+
+        try:
+            await enroll_user(course_id=course.id, user_id=u.id, role=role)
+            console.print(f"  [green]Enrolled:[/] {email} as {role.value}")
+        except DuplicateEnrollmentError:
+            console.print(f"  [yellow]Already enrolled:[/] {email}")
 
     from sqlmodel import select
 
@@ -512,6 +529,11 @@ async def _seed_enrolment_and_weeks(course, user) -> None:
         return
 
     week1 = await create_week(course_id=course.id, week_number=1, title="Introduction")
+    # Publish week 1; week 2 stays draft (is_published defaults to False)
+    week1.is_published = True
+    async with get_session() as session:
+        session.add(week1)
+        await session.commit()
     week2 = await create_week(
         course_id=course.id, week_number=2, title="Client Interviews"
     )
@@ -550,8 +572,8 @@ def seed_data() -> None:
 
         await init_db()
 
-        user, course = await _seed_user_and_course()
-        await _seed_enrolment_and_weeks(course, user)
+        _user, course = await _seed_user_and_course()
+        await _seed_enrolment_and_weeks(course)
 
         console.print()
         console.print(

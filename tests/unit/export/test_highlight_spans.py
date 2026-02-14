@@ -535,6 +535,82 @@ class TestEdgeCases:
         assert "line one" in full_text
         assert "line two" in full_text
 
+    def test_overlapping_highlights_across_br_gap_no_phantom(
+        self,
+    ) -> None:
+        """Overlapping highlights across a <br> gap must not produce a
+        phantom empty span at the document end.
+
+        Regression test for #160: <br> tags add \\n to the char stream
+        without creating a TextNodeInfo (gap at char 3).  Three
+        overlapping highlights with staggered end positions cause the
+        event sweep to create a region [3,4) covering ONLY the gap.
+        _char_to_byte_pos fell through to the end-of-document
+        fallback for that region's start, producing an empty <span>
+        with data-annots at the very end of the HTML.
+        """
+        # <br> between blocks creates a char-position gap:
+        #   TextNode 0: [0,3) "AAA"
+        #   gap: char 3 = '\n' from <br>
+        #   TextNode 1: [4,7) "BBB"
+        html = "<p>AAA</p><br><p>BBB</p>"
+
+        # Three overlapping highlights with staggered ends:
+        #   HL 0: [0,7) spans everything
+        #   HL 1: [0,3) ends at TextNode 0 boundary
+        #   HL 2: [0,4) ends in the gap
+        # Event sweep produces region [3,4) covering only gap chars.
+        highlights = [
+            _make_hl(0, 7, tag="jurisdiction", author="A"),
+            _make_hl(0, 3, tag="legally_relevant_facts", author="B"),
+            _make_hl(0, 4, tag="procedural_history", author="C"),
+        ]
+        tag_colours = {
+            "jurisdiction": "#1f77b4",
+            "legally_relevant_facts": "#2ca02c",
+            "procedural_history": "#ff7f0e",
+        }
+        result = compute_highlight_spans(html, highlights, tag_colours)
+
+        spans = _find_spans(result)
+
+        # No span should be empty (phantom)
+        empty = [s for s in spans if s["_text"] == ""]
+        assert len(empty) == 0, f"Found {len(empty)} empty phantom span(s)"
+
+    def test_gap_region_annotation_migrates_to_previous_region(self) -> None:
+        """Annotation on a gap-only region migrates to the previous
+        visible region where the same highlight was active.
+
+        HL 2 ends at char 4 (in the gap), so its annotation would be
+        assigned to the gap-only region [3,4).  After migration, the
+        annotation must appear on the previous region [0,3) which also
+        has HL 2 in its active set.
+        """
+        html = "<p>AAA</p><br><p>BBB</p>"
+        highlights = [
+            _make_hl(0, 7, tag="jurisdiction", author="A"),
+            _make_hl(0, 3, tag="legally_relevant_facts", author="B"),
+            _make_hl(0, 4, tag="procedural_history", author="C"),
+        ]
+        tag_colours = {
+            "jurisdiction": "#1f77b4",
+            "legally_relevant_facts": "#2ca02c",
+            "procedural_history": "#ff7f0e",
+        }
+        result = compute_highlight_spans(html, highlights, tag_colours)
+
+        spans = _find_spans(result)
+
+        # The span covering "AAA" should carry HL 2's annotation
+        aaa_spans = [s for s in spans if s["_text"] == "AAA"]
+        assert len(aaa_spans) == 1, f"Expected 1 span for 'AAA', got {len(aaa_spans)}"
+        aaa_span = aaa_spans[0]
+        assert "data-annots" in aaa_span, (
+            "Annotation from gap-only region should migrate to 'AAA' span"
+        )
+        assert "Procedural History" in aaa_span["data-annots"]
+
 
 # ---------------------------------------------------------------------------
 # AC4.6: format_annot_latex produces correct LaTeX annotation strings

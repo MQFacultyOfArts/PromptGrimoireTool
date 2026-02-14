@@ -234,6 +234,18 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "cli.py",
 }
 
+_TESTS_DIR = PROJECT_ROOT / "tests"
+
+# Test files that legitimately manipulate os.environ (setting, not reading config)
+_ALLOWED_TEST_OS_ENVIRON_GET = {
+    # conftest sets env vars to control Settings — legitimate infrastructure
+    _TESTS_DIR / "conftest.py",
+    # E2E conftest reads E2E_BASE_URL (set by test runner, not .env config)
+    _TESTS_DIR / "e2e" / "conftest.py",
+    # This file itself references os.environ in test assertions/comments
+    _TESTS_DIR / "unit" / "test_env_vars.py",
+}
+
 
 def _scan_python_files(*dirs: Path) -> list[Path]:
     """Collect all .py files in directories."""
@@ -288,6 +300,31 @@ class TestNoDirectEnvAccess:
         assert not violations, (
             "os.environ access found in application code. "
             "Use get_settings() instead.\n" + "\n".join(violations)
+        )
+
+    def test_no_os_environ_get_in_test_code(self) -> None:
+        """No os.environ.get() / os.getenv() for config reading in tests.
+
+        Test code should read configuration via Settings, not os.environ.
+        conftest files that SET env vars for Settings are allowlisted.
+        """
+        config_read_patterns = re.compile(r"os\.environ\.get\(|os\.getenv\(")
+        violations: list[str] = []
+
+        for py_file in _scan_python_files(_TESTS_DIR):
+            if py_file in _ALLOWED_TEST_OS_ENVIRON_GET:
+                continue
+            content = py_file.read_text()
+            for i, line in enumerate(content.splitlines(), 1):
+                if line.strip().startswith("#"):
+                    continue
+                if config_read_patterns.search(line):
+                    violations.append(f"{py_file.relative_to(PROJECT_ROOT)}:{i}")
+
+        assert not violations, (
+            "os.environ.get() / os.getenv() found in test code. "
+            "Use get_settings() or construct Settings() explicitly.\n"
+            + "\n".join(violations)
         )
 
     def test_no_direct_dotenv_imports(self) -> None:

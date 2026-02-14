@@ -65,6 +65,7 @@ def test_is_db_configured_returns_false_when_unset() -> None:
 
     settings_no_db = Settings(
         _env_file=None,  # type: ignore[call-arg]
+        database=DatabaseConfig(url=None),
     )
     with patch(
         "promptgrimoire.db.bootstrap.get_settings",
@@ -111,6 +112,7 @@ def test_run_alembic_upgrade_fails_without_database_url() -> None:
 
     settings_no_db = Settings(
         _env_file=None,  # type: ignore[call-arg]
+        database=DatabaseConfig(url=None),
     )
     with (
         patch(

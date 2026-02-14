@@ -27,6 +27,8 @@ MOCK_VALID_EMAILS = frozenset(
 
 # Admin emails get admin roles
 MOCK_ADMIN_EMAILS = frozenset({"admin@example.com"})
+# Instructor emails get instructor role
+MOCK_INSTRUCTOR_EMAILS = frozenset({"instructor@uni.edu"})
 MOCK_VALID_MAGIC_TOKEN = "mock-valid-token"
 MOCK_VALID_SSO_TOKEN = "mock-valid-sso-token"
 MOCK_VALID_OAUTH_TOKEN = "mock-valid-oauth-token"
@@ -132,11 +134,12 @@ class MockAuthClient:
         if email:
             session_token = _email_to_session_token(email)
             self._active_sessions[session_token] = email
-            roles = (
-                ["stytch_member", "stytch_admin"]
-                if email in MOCK_ADMIN_EMAILS
-                else ["stytch_member"]
-            )
+            if email in MOCK_ADMIN_EMAILS:
+                roles = ["stytch_member", "stytch_admin"]
+            elif email in MOCK_INSTRUCTOR_EMAILS:
+                roles = ["stytch_member", "instructor"]
+            else:
+                roles = ["stytch_member"]
             return AuthResult(
                 success=True,
                 session_token=session_token,
@@ -190,11 +193,12 @@ class MockAuthClient:
         # Check active sessions first (from authenticate_magic_link)
         if session_token in self._active_sessions:
             email = self._active_sessions[session_token]
-            roles = (
-                ["stytch_member", "stytch_admin"]
-                if email in MOCK_ADMIN_EMAILS
-                else ["stytch_member"]
-            )
+            if email in MOCK_ADMIN_EMAILS:
+                roles = ["stytch_member", "stytch_admin"]
+            elif email in MOCK_INSTRUCTOR_EMAILS:
+                roles = ["stytch_member", "instructor"]
+            else:
+                roles = ["stytch_member"]
             return SessionResult(
                 valid=True,
                 member_id=_email_to_member_id(email),

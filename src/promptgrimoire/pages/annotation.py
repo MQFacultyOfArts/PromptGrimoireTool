@@ -2784,8 +2784,11 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
 
 _COPY_PROTECTION_JS = """
 (function() {
+  // Protected areas: copy/cut/contextmenu/dragstart blocked here.
+  // #doc-container = Tab 1 (Annotate) — rendered content
+  // respond-reference-panel = Tab 3 (Respond) — reference cards
+  // organise-columns deliberately EXCLUDED (#164) — SortableJS needs dragstart
   var PROTECTED = '#doc-container, ' +
-    '[data-testid="organise-columns"], ' +
     '[data-testid="respond-reference-panel"]';
 
   function isProtected(e) {

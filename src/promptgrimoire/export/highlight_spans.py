@@ -142,6 +142,54 @@ def _compute_regions(
 
 
 # ---------------------------------------------------------------------------
+# Gap-only region handling (#160)
+# ---------------------------------------------------------------------------
+
+
+def _migrate_gap_annotations(
+    regions: list[_HlRegion],
+    text_nodes: list[TextNodeInfo],
+) -> list[_HlRegion]:
+    """Remove gap-only regions and migrate their annotations backward.
+
+    A gap-only region covers only inter-block characters (e.g. ``\\n`` from
+    ``<br>`` tags) with no text node overlap.  These regions have no visible
+    text, so inserting a ``<span>`` for them produces a phantom empty span.
+
+    Annotations on gap-only regions are moved to the nearest preceding
+    visible region where the same highlight is active.  If no such region
+    exists, the annotation is silently dropped (gap at document start with
+    no preceding content).
+
+    Fixes #160: phantom margin note at document end.
+    """
+    if not text_nodes:
+        return regions
+
+    def _overlaps_text(region: _HlRegion) -> bool:
+        for tn in text_nodes:
+            if tn.char_start < region.end and region.start < tn.char_end:
+                return True
+        return False
+
+    valid: list[_HlRegion] = []
+
+    for region in regions:
+        if _overlaps_text(region):
+            valid.append(region)
+        else:
+            # Gap-only: migrate each annotation to the nearest preceding
+            # valid region that contains the same highlight in its active set.
+            for annot_idx in region.annots:
+                for prev in reversed(valid):
+                    if annot_idx in prev.active:
+                        prev.annots.append(annot_idx)
+                        break
+
+    return valid
+
+
+# ---------------------------------------------------------------------------
 # Split regions at boundaries
 # ---------------------------------------------------------------------------
 
@@ -367,18 +415,28 @@ def _char_to_byte_pos(
                 )
                 return byte_offsets[i] + raw_offset
 
-    # Match char_idx at the end of the last text node
-    # (position after the final character)
-    if text_nodes and char_idx == text_nodes[-1].char_end:
-        last = text_nodes[-1]
-        last_idx = len(text_nodes) - 1
-        raw_offset = collapsed_to_html_offset(
-            last.html_text, last.decoded_text, len(last.collapsed_text)
-        )
-        return byte_offsets[last_idx] + raw_offset
+    # Match char_idx at the end of any text node.
+    # Handles both the last text node (end of document) and non-last nodes
+    # followed by a gap (e.g. from <br> tags where char_end < next.char_start).
+    # At boundaries WITHOUT gaps, check 2 above already matched char_start
+    # of the next node, so this only fires for gap positions.  Fixes #160.
+    for i, tn in enumerate(text_nodes):
+        if char_idx == tn.char_end:
+            raw_offset = collapsed_to_html_offset(
+                tn.html_text, tn.decoded_text, len(tn.collapsed_text)
+            )
+            return byte_offsets[i] + raw_offset
 
-    # Fallback: char_idx beyond all text nodes -> end of last text node
-    if text_nodes:
+    # Fallback: char_idx truly beyond all text nodes -> end of last text node.
+    # Gap positions (between text nodes, e.g. from <br>) return None so the
+    # caller can skip or migrate the region.  Fixes #160.
+    if text_nodes and char_idx > text_nodes[-1].char_end:
+        logger.warning(
+            "char_idx %d beyond last text node char_end %d; "
+            "highlight may reference out-of-range position",
+            char_idx,
+            text_nodes[-1].char_end,
+        )
         last = text_nodes[-1]
         last_idx = len(text_nodes) - 1
         raw_offset = collapsed_to_html_offset(
@@ -456,6 +514,9 @@ def compute_highlight_spans(
 
     # Split regions at boundaries
     regions = _split_regions_at_boundaries(regions, boundaries)
+
+    # Remove gap-only regions and migrate their annotations (#160)
+    regions = _migrate_gap_annotations(regions, text_nodes)
 
     # Insert spans into HTML
     return _insert_spans_into_html(

@@ -479,11 +479,15 @@ class TestEnsureDatabaseExists:
 # AC10.1, AC10.2: Integration tests for ensure_database_exists
 # ---------------------------------------------------------------------------
 def _get_test_db_url() -> str | None:
-    """Get a PostgreSQL URL for integration tests."""
-    url = os.environ.get("DEV__TEST_DATABASE_URL") or os.environ.get(
-        "TEST_DATABASE_URL"
-    )
-    return url
+    """Get a PostgreSQL URL for integration tests.
+
+    Reads from Settings (which loads .env) rather than raw os.environ,
+    since pydantic-settings doesn't export .env vars into the process
+    environment.
+    """
+    from promptgrimoire.config import get_settings
+
+    return get_settings().dev.test_database_url
 
 
 _skip_no_pg = pytest.mark.skipif(

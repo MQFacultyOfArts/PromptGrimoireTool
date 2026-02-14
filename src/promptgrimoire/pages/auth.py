@@ -376,6 +376,7 @@ def _build_mock_login_section() -> None:
             ("test@example.com", "Test User"),
             ("student@uni.edu", "Student"),
             ("instructor@uni.edu", "Instructor"),
+            ("admin@example.com", "Admin"),
         ]
 
         for email, label in test_users:

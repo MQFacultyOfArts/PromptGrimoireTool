@@ -28,6 +28,9 @@ from tests.integration.conftest import (
     compile_mega_document,
 )
 
+# Dispatch slow tests first so xdist workers aren't idle waiting for stragglers.
+pytestmark = pytest.mark.order(1)
+
 # ---------------------------------------------------------------------------
 # Fixture / segment data
 # ---------------------------------------------------------------------------

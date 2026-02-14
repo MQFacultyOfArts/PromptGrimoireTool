@@ -33,6 +33,9 @@ from promptgrimoire.models.case import TAG_COLORS
 from tests.conftest import requires_latexmk
 from tests.integration.conftest import extract_pdf_text_pymupdf
 
+# Dispatch slow tests first so xdist workers aren't idle waiting for stragglers.
+pytestmark = pytest.mark.order(1)
+
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures"
 
 # TAG_COLORS is dict[BriefTag, str]; export_annotation_pdf wants dict[str, str]

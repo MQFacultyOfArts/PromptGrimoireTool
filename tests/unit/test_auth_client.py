@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 
 class TestExtractRoles:
     """Tests for the _extract_roles helper function."""
@@ -355,72 +357,138 @@ class TestGetSSOStartUrl:
         assert "stytch.com" in result.redirect_url
 
 
-class TestAuthConfigValidation:
-    """Tests for AuthConfig startup validation."""
+class TestStytchConfigValidation:
+    """Tests for StytchConfig validation via Settings model_validator."""
 
-    def test_sso_connection_id_without_public_token_fails(self, monkeypatch):
-        """SSO connection ID without public token raises ValueError."""
-        import pytest
+    def test_sso_connection_id_without_public_token_fails(self):
+        """SSO connection ID without public token raises ValidationError."""
+        from pydantic import ValidationError
 
-        from promptgrimoire.auth.config import AuthConfig
-
-        # Set required vars
-        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
-        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
-        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
-
-        # Set SSO connection ID but NOT public token
-        monkeypatch.setenv("STYTCH_SSO_CONNECTION_ID", "sso-conn-123")
-        monkeypatch.delenv("STYTCH_PUBLIC_TOKEN", raising=False)
+        from promptgrimoire.config import StytchConfig
 
         with pytest.raises(
-            ValueError,
-            match="STYTCH_SSO_CONNECTION_ID is set but STYTCH_PUBLIC_TOKEN is empty",
+            ValidationError,
+            match="STYTCH__SSO_CONNECTION_ID requires STYTCH__PUBLIC_TOKEN",
         ):
-            AuthConfig.from_env()
+            StytchConfig(
+                sso_connection_id="sso-conn-123",
+                public_token="",
+            )
 
-    def test_sso_connection_id_with_public_token_succeeds(self, monkeypatch):
+    def test_sso_connection_id_with_public_token_succeeds(self):
         """SSO connection ID with public token validates successfully."""
-        from promptgrimoire.auth.config import AuthConfig
+        from promptgrimoire.config import StytchConfig
 
-        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
-        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
-        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
-        monkeypatch.setenv("STYTCH_SSO_CONNECTION_ID", "sso-conn-123")
-        monkeypatch.setenv("STYTCH_PUBLIC_TOKEN", "public-token-456")
-
-        config = AuthConfig.from_env()
+        config = StytchConfig(
+            sso_connection_id="sso-conn-123",
+            public_token="public-token-456",
+        )
 
         assert config.sso_connection_id == "sso-conn-123"
         assert config.public_token == "public-token-456"
 
-    def test_public_token_without_sso_connection_id_succeeds(self, monkeypatch):
+    def test_public_token_without_sso_connection_id_succeeds(self):
         """Public token alone is valid (for OAuth without SSO)."""
-        from promptgrimoire.auth.config import AuthConfig
+        from promptgrimoire.config import StytchConfig
 
-        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
-        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
-        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
-        monkeypatch.setenv("STYTCH_PUBLIC_TOKEN", "public-token-456")
-        monkeypatch.delenv("STYTCH_SSO_CONNECTION_ID", raising=False)
-
-        config = AuthConfig.from_env()
+        config = StytchConfig(
+            public_token="public-token-456",
+        )
 
         assert config.public_token == "public-token-456"
         assert config.sso_connection_id is None
 
-    def test_minimal_config_validates(self, monkeypatch):
-        """Minimal required config (no SSO) validates successfully."""
-        from promptgrimoire.auth.config import AuthConfig
+    def test_minimal_config_validates(self):
+        """Minimal config (all defaults) validates successfully."""
+        from promptgrimoire.config import StytchConfig
 
-        monkeypatch.setenv("STYTCH_PROJECT_ID", "proj-test")
-        monkeypatch.setenv("STYTCH_SECRET", "secret-test")
-        monkeypatch.setenv("STORAGE_SECRET", "storage-test")
-        monkeypatch.delenv("STYTCH_PUBLIC_TOKEN", raising=False)
-        monkeypatch.delenv("STYTCH_SSO_CONNECTION_ID", raising=False)
+        config = StytchConfig()
 
-        config = AuthConfig.from_env()
-
-        assert config.project_id == "proj-test"
-        assert config.public_token == ""  # defaults to empty string
+        assert config.project_id == ""
+        assert config.public_token == ""
         assert config.sso_connection_id is None
+
+
+class TestGetAuthClientFactory:
+    """Tests for get_auth_client() factory function with Settings."""
+
+    def test_raises_when_project_id_empty_and_mock_disabled(self):
+        """AC3.3: get_auth_client() raises ValueError for empty project_id."""
+        from unittest.mock import patch
+
+        from promptgrimoire.config import Settings
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+        )
+        with (
+            patch(
+                "promptgrimoire.auth.factory.get_settings",
+                return_value=settings,
+            ),
+            pytest.raises(ValueError, match="STYTCH__PROJECT_ID is required"),
+        ):
+            from promptgrimoire.auth.factory import get_auth_client
+
+            get_auth_client()
+
+    def test_returns_mock_client_when_auth_mock_enabled(self):
+        """AC3.2: get_auth_client() returns MockAuthClient when mock enabled."""
+        from unittest.mock import patch
+
+        from promptgrimoire.auth.factory import (
+            clear_config_cache,
+            get_auth_client,
+        )
+        from promptgrimoire.auth.mock import MockAuthClient
+        from promptgrimoire.config import DevConfig, Settings
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            dev=DevConfig(auth_mock=True),
+        )
+
+        clear_config_cache()
+        with patch(
+            "promptgrimoire.auth.factory.get_settings",
+            return_value=settings,
+        ):
+            client = get_auth_client()
+
+        assert isinstance(client, MockAuthClient)
+
+
+class TestSecretStrMasking:
+    """Tests for SecretStr masking in Settings (AC4)."""
+
+    def test_str_masks_secrets(self):
+        """AC4.1: str(settings) does not expose secret values."""
+        from pydantic import SecretStr
+
+        from promptgrimoire.config import (
+            AppConfig,
+            LlmConfig,
+            Settings,
+            StytchConfig,
+        )
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            stytch=StytchConfig(secret=SecretStr("real-stytch-secret")),
+            llm=LlmConfig(api_key=SecretStr("real-api-key")),
+            app=AppConfig(storage_secret=SecretStr("real-storage-secret")),
+        )
+
+        settings_str = str(settings)
+        assert "real-stytch-secret" not in settings_str
+        assert "real-api-key" not in settings_str
+        assert "real-storage-secret" not in settings_str
+
+    def test_get_secret_value_returns_actual_value(self):
+        """AC4.2: get_secret_value() returns the actual secret string."""
+        from pydantic import SecretStr
+
+        from promptgrimoire.config import StytchConfig
+
+        config = StytchConfig(secret=SecretStr("my-real-secret"))
+        assert config.secret.get_secret_value() == "my-real-secret"

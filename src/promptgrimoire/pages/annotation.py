@@ -2918,18 +2918,11 @@ _COPY_PROTECTION_JS = """
     });
   }
 
-  document.addEventListener('copy', function(e) {
-    if (isProtected(e)) { e.preventDefault(); showToast(); }
-  }, true);
-  document.addEventListener('cut', function(e) {
-    if (isProtected(e)) { e.preventDefault(); showToast(); }
-  }, true);
-  document.addEventListener('contextmenu', function(e) {
-    if (isProtected(e)) { e.preventDefault(); showToast(); }
-  }, true);
-  document.addEventListener('dragstart', function(e) {
-    if (isProtected(e)) { e.preventDefault(); showToast(); }
-  }, true);
+  ['copy', 'cut', 'contextmenu', 'dragstart'].forEach(function(evt) {
+    document.addEventListener(evt, function(e) {
+      if (isProtected(e)) { e.preventDefault(); showToast(); }
+    }, true);
+  });
 
   var editor = document.querySelector('#milkdown-respond-editor');
   if (editor) {

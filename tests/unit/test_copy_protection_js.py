@@ -13,7 +13,13 @@ Traceability:
 from __future__ import annotations
 
 import inspect
-from unittest.mock import patch
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.db.workspaces import PlacementContext
@@ -231,31 +237,33 @@ class TestPrintSuppressionInjection:
     without requiring full page infrastructure.
     """
 
-    def test_add_css_called_when_injecting(self) -> None:
-        """ui.add_css is called to inject @media print CSS."""
+    @pytest.fixture()
+    def _mock_ui(self) -> Iterator[dict[str, MagicMock]]:
+        """Mock the three NiceGUI UI calls used by _inject_copy_protection."""
         with (
-            patch("promptgrimoire.pages.annotation.ui.run_javascript") as _mock_js,
+            patch("promptgrimoire.pages.annotation.ui.run_javascript") as mock_js,
             patch("promptgrimoire.pages.annotation.ui.add_css") as mock_css,
-            patch("promptgrimoire.pages.annotation.ui.html") as _mock_html,
-        ):
-            _inject_copy_protection()
-            mock_css.assert_called_once()
-            css_arg = mock_css.call_args[0][0]
-            assert "@media print" in css_arg
-            assert ".q-tab-panels" in css_arg
-
-    def test_html_message_div_injected(self) -> None:
-        """ui.html is called to inject hidden print message div."""
-        with (
-            patch("promptgrimoire.pages.annotation.ui.run_javascript") as _mock_js,
-            patch("promptgrimoire.pages.annotation.ui.add_css") as _mock_css,
             patch("promptgrimoire.pages.annotation.ui.html") as mock_html,
         ):
-            _inject_copy_protection()
-            mock_html.assert_called_once()
-            html_arg = mock_html.call_args[0][0]
-            assert "copy-protection-print-message" in html_arg
-            assert "Printing is disabled" in html_arg
+            yield {"js": mock_js, "css": mock_css, "html": mock_html}
+
+    def test_add_css_called_when_injecting(
+        self, _mock_ui: dict[str, MagicMock]
+    ) -> None:
+        """ui.add_css is called to inject @media print CSS."""
+        _inject_copy_protection()
+        _mock_ui["css"].assert_called_once()
+        css_arg = _mock_ui["css"].call_args[0][0]
+        assert "@media print" in css_arg
+        assert ".q-tab-panels" in css_arg
+
+    def test_html_message_div_injected(self, _mock_ui: dict[str, MagicMock]) -> None:
+        """ui.html is called to inject hidden print message div."""
+        _inject_copy_protection()
+        _mock_ui["html"].assert_called_once()
+        html_arg = _mock_ui["html"].call_args[0][0]
+        assert "copy-protection-print-message" in html_arg
+        assert "Printing is disabled" in html_arg
 
     def test_no_css_or_html_when_not_called(self) -> None:
         """When _inject_copy_protection is NOT called, no CSS/HTML injection.
@@ -263,10 +271,6 @@ class TestPrintSuppressionInjection:
         This verifies the conditional boundary: the if-protect guard in
         _render_workspace_view controls whether injection happens at all.
         """
-        # This test documents the design: _inject_copy_protection is only
-        # called inside `if protect:`, so when protect=False, none of
-        # ui.add_css / ui.html / ui.run_javascript are invoked.
-        # We verify this by confirming the protect flag computation.
         ctx = PlacementContext(
             placement_type="activity",
             activity_title="Test",
@@ -274,5 +278,4 @@ class TestPrintSuppressionInjection:
             course_code="TEST1000",
             copy_protection=False,
         )
-        protect = ctx.copy_protection and not is_privileged_user({"roles": ["student"]})
-        assert protect is False
+        assert _compute_protect(ctx, {"roles": ["student"]}) is False

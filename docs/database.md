@@ -45,11 +45,11 @@ Maps users to courses with course-level roles.
 | `id` | UUID | PK |
 | `course_id` | UUID | FK → Course (CASCADE), NOT NULL |
 | `user_id` | UUID | FK → User (CASCADE), NOT NULL |
-| `role` | VARCHAR | NOT NULL, default "student" |
+| `role` | VARCHAR(50) | FK → course_role.name (RESTRICT), NOT NULL, default "student" |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | | | UNIQUE (course_id, user_id) |
 
-**`role`**: Currently a `CourseRole` StrEnum (`coordinator`, `instructor`, `tutor`, `student`). Will become string FK → CourseRole reference table (Phase 2 of #96).
+**`role`**: String FK to the `course_role` reference table. Valid values: `coordinator`, `instructor`, `tutor`, `student`. RESTRICT prevents deletion of referenced role rows.
 
 ### Week
 

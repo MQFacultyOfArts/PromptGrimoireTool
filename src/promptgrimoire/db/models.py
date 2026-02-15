@@ -169,7 +169,11 @@ class CourseEnrollment(SQLModel, table=True):
     user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
     role: str = Field(
         default="student",
-        sa_column=Column(String(50), ForeignKey("course_role.name"), nullable=False),
+        sa_column=Column(
+            String(50),
+            ForeignKey("course_role.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
     )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

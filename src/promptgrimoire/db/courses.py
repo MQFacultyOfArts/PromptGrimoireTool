@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Course, CourseEnrollment, CourseRole
+from promptgrimoire.db.models import Course, CourseEnrollment
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -148,7 +148,7 @@ class DuplicateEnrollmentError(Exception):
 async def enroll_user(
     course_id: UUID,
     user_id: UUID,
-    role: CourseRole = CourseRole.student,
+    role: str = "student",
 ) -> CourseEnrollment:
     """Enroll a user in a course.
 
@@ -277,7 +277,7 @@ async def unenroll_user(
 async def update_user_role(
     course_id: UUID,
     user_id: UUID,
-    role: CourseRole,
+    role: str,
 ) -> CourseEnrollment | None:
     """Update a user's role in a course.
 

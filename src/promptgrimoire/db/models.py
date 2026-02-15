@@ -331,3 +331,30 @@ class WorkspaceDocument(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
+
+
+class ACLEntry(SQLModel, table=True):
+    """Per-user, per-workspace permission grant.
+
+    One entry per (workspace, user) pair. Permission level can be updated
+    via upsert. Cascade-deletes when the Workspace or User is deleted.
+    """
+
+    __tablename__ = "acl_entry"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_acl_entry_workspace_user"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    permission: str = Field(
+        sa_column=Column(
+            String(50),
+            ForeignKey("permission.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )

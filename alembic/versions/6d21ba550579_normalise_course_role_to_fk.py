@@ -38,6 +38,7 @@ def upgrade() -> None:
         "course_role",
         ["role"],
         ["name"],
+        ondelete="RESTRICT",
     )
 
     # 3. Drop the PG enum type (no longer needed)

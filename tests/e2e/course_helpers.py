@@ -141,8 +141,11 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
         page: Authenticated Playwright page on a course detail page.
         enabled: Whether copy protection should be on or off.
     """
-    # Click the settings gear icon button (has tooltip "Course settings")
-    page.get_by_role("button", name="settings").click()
+    # Click the settings gear icon button — NiceGUI icon-only buttons have no
+    # accessible name, so locate via the Material Icon text inside the button.
+    page.locator("button").filter(
+        has=page.locator("i.q-icon", has_text="settings")
+    ).click()
 
     # Wait for the dialog to appear
     dialog_title = page.get_by_text("Course Settings", exact=True)

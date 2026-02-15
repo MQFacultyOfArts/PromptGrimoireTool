@@ -6,7 +6,6 @@ These models define the core database schema for users, classes, and conversatio
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, Self
 from uuid import UUID, uuid4
 
@@ -23,18 +22,6 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlmodel import Field, SQLModel
-
-
-class CourseRole(StrEnum):
-    """Role within a specific course enrollment.
-
-    These are course-scoped roles, separate from Stytch org-level roles.
-    """
-
-    coordinator = "coordinator"  # Course owner, full control
-    instructor = "instructor"  # Can manage content, see all student work
-    tutor = "tutor"  # Can see assigned tutorial groups
-    student = "student"  # Can access published content only
 
 
 class Permission(SQLModel, table=True):
@@ -58,10 +45,10 @@ class Permission(SQLModel, table=True):
 
 
 class CourseRoleRef(SQLModel, table=True):
-    """Reference table for course roles (will replace CourseRole StrEnum in Phase 2).
+    """Reference table for course roles.
 
     String PK — the name is the identity. Rows seeded by migration.
-    Named CourseRoleRef to avoid collision with existing CourseRole StrEnum.
+    CourseEnrollment.role is a FK to this table.
     """
 
     __tablename__ = "course_role"
@@ -180,7 +167,10 @@ class CourseEnrollment(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
     user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
-    role: CourseRole = Field(default=CourseRole.student)
+    role: str = Field(
+        default="student",
+        sa_column=Column(String(50), ForeignKey("course_role.name"), nullable=False),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

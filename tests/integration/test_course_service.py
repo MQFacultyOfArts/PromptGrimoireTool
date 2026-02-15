@@ -12,7 +12,6 @@ from uuid import uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
-from promptgrimoire.db.models import CourseRole
 
 # Skip all tests if no test database URL is configured
 pytestmark = pytest.mark.skipif(
@@ -186,12 +185,12 @@ class TestEnrollment:
         enrollment = await enroll_user(
             course_id=course.id,
             user_id=user.id,
-            role=CourseRole.student,
+            role="student",
         )
 
         assert enrollment.course_id == course.id
         assert enrollment.user_id == user.id
-        assert enrollment.role == CourseRole.student
+        assert enrollment.role == "student"
 
     @pytest.mark.asyncio
     async def test_get_enrollment(self) -> None:
@@ -239,7 +238,7 @@ class TestEnrollment:
         course2 = await create_course(code="LAWS2222", name="Two", semester=semester)
 
         await enroll_user(course_id=course1.id, user_id=user.id)
-        await enroll_user(course_id=course2.id, user_id=user.id, role=CourseRole.tutor)
+        await enroll_user(course_id=course2.id, user_id=user.id, role="tutor")
 
         enrollments = await list_user_enrollments(user.id)
 
@@ -466,9 +465,7 @@ class TestWeekVisibility:
             email=f"instructor-{uuid4().hex[:8]}@example.com",
             display_name="Instructor",
         )
-        await enroll_user(
-            course_id=course.id, user_id=user.id, role=CourseRole.instructor
-        )
+        await enroll_user(course_id=course.id, user_id=user.id, role="instructor")
 
         # Create published and unpublished weeks
         week1 = await create_week(course_id=course.id, week_number=1, title="Published")
@@ -495,7 +492,7 @@ class TestWeekVisibility:
             email=f"student-{uuid4().hex[:8]}@example.com",
             display_name="Student",
         )
-        await enroll_user(course_id=course.id, user_id=user.id, role=CourseRole.student)
+        await enroll_user(course_id=course.id, user_id=user.id, role="student")
 
         # Create published and unpublished weeks
         week1 = await create_week(course_id=course.id, week_number=1, title="Published")
@@ -528,7 +525,7 @@ class TestWeekVisibility:
             email=f"student-{uuid4().hex[:8]}@example.com",
             display_name="Student",
         )
-        await enroll_user(course_id=course.id, user_id=user.id, role=CourseRole.student)
+        await enroll_user(course_id=course.id, user_id=user.id, role="student")
 
         # Week 1: published, no schedule (visible now)
         week1 = await create_week(course_id=course.id, week_number=1, title="Now")

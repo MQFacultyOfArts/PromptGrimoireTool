@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create permission and course_role_ref tables with seed data."""
+    """Create permission and course_role tables with seed data."""
     op.create_table(
         "permission",
         sa.Column("name", sa.String(50), nullable=False),
@@ -30,7 +30,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "course_role_ref",
+        "course_role",
         sa.Column("name", sa.String(50), nullable=False),
         sa.Column("level", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("name"),
@@ -45,13 +45,13 @@ def upgrade() -> None:
     op.execute("INSERT INTO permission (name, level) VALUES ('editor', 20)")
     op.execute("INSERT INTO permission (name, level) VALUES ('viewer', 10)")
 
-    op.execute("INSERT INTO course_role_ref (name, level) VALUES ('coordinator', 40)")
-    op.execute("INSERT INTO course_role_ref (name, level) VALUES ('instructor', 30)")
-    op.execute("INSERT INTO course_role_ref (name, level) VALUES ('tutor', 20)")
-    op.execute("INSERT INTO course_role_ref (name, level) VALUES ('student', 10)")
+    op.execute("INSERT INTO course_role (name, level) VALUES ('coordinator', 40)")
+    op.execute("INSERT INTO course_role (name, level) VALUES ('instructor', 30)")
+    op.execute("INSERT INTO course_role (name, level) VALUES ('tutor', 20)")
+    op.execute("INSERT INTO course_role (name, level) VALUES ('student', 10)")
 
 
 def downgrade() -> None:
-    """Drop course_role_ref and permission tables."""
-    op.drop_table("course_role_ref")
+    """Drop course_role and permission tables."""
+    op.drop_table("course_role")
     op.drop_table("permission")

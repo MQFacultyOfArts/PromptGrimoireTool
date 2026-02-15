@@ -140,11 +140,9 @@ class TestTabStatePreservation:
         """Document content in Tab 1 survives round-trip to Tab 2 and back."""
         page = workspace_page
 
-        # Verify content is visible in Tab 1 via text walker nodes
-        initial_count = page.evaluate(
-            "() => window._textNodes ? window._textNodes.length : 0"
-        )
-        assert initial_count > 0, "Expected text nodes in Tab 1"
+        # Verify content is visible in Tab 1 via text content
+        initial_text = page.locator("#doc-container").text_content()
+        assert initial_text and len(initial_text) > 0, "Expected text content in Tab 1"
 
         # Switch to Organise tab
         page.locator("role=tab").nth(1).click()
@@ -154,14 +152,12 @@ class TestTabStatePreservation:
         page.locator("role=tab").nth(0).click()
         page.wait_for_timeout(300)
 
-        # Verify document content is still there via text walker nodes
-        after_count = page.evaluate(
-            "() => window._textNodes ? window._textNodes.length : 0"
+        # Verify document content is still there via text content
+        after_text = page.locator("#doc-container").text_content()
+        assert after_text and len(after_text) > 0, (
+            "Expected text content after tab round-trip"
         )
-        assert after_count > 0, "Expected text nodes after tab round-trip"
-        assert after_count == initial_count, (
-            f"Text node count changed: {initial_count} -> {after_count}"
-        )
+        assert after_text == initial_text, "Text content changed after tab round-trip"
 
 
 class TestOrganiseTabColumns:

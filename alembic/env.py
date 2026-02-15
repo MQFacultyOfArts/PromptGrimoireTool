@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 # Import all models to register them with SQLModel.metadata
 from promptgrimoire.db.models import (  # noqa: F401
+    ACLEntry,
     Activity,
     Course,
     CourseEnrollment,

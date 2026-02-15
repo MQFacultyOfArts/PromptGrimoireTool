@@ -520,16 +520,15 @@ async def _seed_enrolment_and_weeks(course) -> None:
         enroll_user,
         update_course,
     )
-    from promptgrimoire.db.models import CourseRole
     from promptgrimoire.db.users import find_or_create_user
     from promptgrimoire.db.weeks import create_week
 
     # Seed all mock users and enrol them
     mock_users = [
-        ("instructor@uni.edu", "Test Instructor", CourseRole.coordinator),
-        ("admin@example.com", "Admin User", CourseRole.coordinator),
-        ("student@uni.edu", "Test Student", CourseRole.student),
-        ("test@example.com", "Test User", CourseRole.student),
+        ("instructor@uni.edu", "Test Instructor", "coordinator"),
+        ("admin@example.com", "Admin User", "coordinator"),
+        ("student@uni.edu", "Test Student", "student"),
+        ("test@example.com", "Test User", "student"),
     ]
 
     from promptgrimoire.db.engine import get_session
@@ -546,7 +545,7 @@ async def _seed_enrolment_and_weeks(course) -> None:
 
         try:
             await enroll_user(course_id=course.id, user_id=u.id, role=role)
-            console.print(f"  [green]Enrolled:[/] {email} as {role.value}")
+            console.print(f"  [green]Enrolled:[/] {email} as {role}")
         except DuplicateEnrollmentError:
             console.print(f"  [yellow]Already enrolled:[/] {email}")
 

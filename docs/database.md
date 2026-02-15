@@ -173,7 +173,9 @@ Per-user, per-workspace permission grant.
 
 **Future extensibility**: When roleplay sessions or other resource types need ACL, add a nullable FK column (e.g., `roleplay_session_id`) with a CHECK constraint ensuring exactly one FK is set — same mutual exclusivity pattern as `Workspace.activity_id`/`course_id`.
 
-## Modified Tables (Issue #96)
+## Modified Tables (Issue #96) — Planned
+
+> **Not yet migrated.** These columns will be added in later phases of #96.
 
 ### Course (additions)
 

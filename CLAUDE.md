@@ -392,22 +392,25 @@ Do not reorder. Types must be defined before submodule imports to resolve circul
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
 
-### Tables (7 SQLModel classes)
+### Tables (10 SQLModel classes)
 
 - **User** - Stytch-linked user accounts
 - **Course** - Course/unit of study with weeks and enrolled members. `default_copy_protection: bool` (default `False`) -- course-level default inherited by activities with `copy_protection=None`.
-- **CourseEnrollment** - Maps users to courses with course-level roles
+- **CourseEnrollment** - Maps users to courses with course-level roles. `role` is a string FK to `course_role` reference table.
 - **Week** - Week within a course with visibility controls
 - **Activity** - Assignment within a Week; owns a template Workspace (RESTRICT delete). `week_id` FK with CASCADE delete, `template_workspace_id` FK with RESTRICT delete (unique). `copy_protection: bool | None` -- tri-state: `None`=inherit from course, `True`=on, `False`=off.
 - **Workspace** - Container for documents and CRDT state (unit of collaboration). Placement fields: `activity_id` (SET NULL), `course_id` (SET NULL), `enable_save_as_draft`. Mutual exclusivity: a workspace can be in an Activity OR a Course, never both (Pydantic validator + DB CHECK constraint `ck_workspace_placement_exclusivity`).
 - **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (clean HTML), `source_type` ("html", "rtf", "docx", "pdf", "text")
+- **Permission** - Reference table for ACL permission levels (owner/30, editor/20, viewer/10). String PK.
+- **CourseRoleRef** - Reference table for course roles (coordinator/40, instructor/30, tutor/20, student/10). String PK. Table name: `course_role`.
+- **ACLEntry** - Per-user, per-workspace permission grant. FKs: workspace (CASCADE), user (CASCADE), permission (RESTRICT). UNIQUE on (workspace_id, user_id).
 
 ### Workspace Architecture
 
 Workspaces are isolated silos identified by UUID. Key design decisions:
 
 - **No `created_by` FK** - Audit (who created) is separate from access control (who can use)
-- **Future: ACL for access control** - Seam D will add workspace-user permissions
+- **ACL for access control** - ACLEntry table links users to workspaces with permissions (owner/editor/viewer). See `db/acl.py` for CRUD operations.
 - **Future: Audit log for history** - Separate table for who-did-what tracking
 - **`create_workspace()` takes no parameters** - Just creates an empty workspace with UUID
 

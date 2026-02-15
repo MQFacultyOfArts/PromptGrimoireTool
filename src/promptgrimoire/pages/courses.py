@@ -37,7 +37,7 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.models import Activity, Course, CourseRole
+from promptgrimoire.db.models import Activity, Course
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -220,7 +220,7 @@ async def courses_list_page() -> None:
 
     # Check if user is instructor in any course (or is org admin)
     is_instructor = _is_admin() or any(
-        e.role in (CourseRole.coordinator, CourseRole.instructor) for e in enrollments
+        e.role in ("coordinator", "instructor") for e in enrollments
     )
 
     if is_instructor:
@@ -251,7 +251,7 @@ async def courses_list_page() -> None:
                             ui.label(f"Semester: {course.semester}").classes(
                                 "text-sm text-gray-500"
                             )
-                        ui.badge(enrollment.role.value).classes("ml-2")
+                        ui.badge(enrollment.role).classes("ml-2")
 
 
 @ui.page("/courses/new")
@@ -294,7 +294,7 @@ async def create_course_page() -> None:
         await enroll_user(
             course_id=course.id,
             user_id=user_id,
-            role=CourseRole.coordinator,
+            role="coordinator",
         )
 
         ui.notify(f"Created course: {course.code}", type="positive")
@@ -349,11 +349,11 @@ async def course_detail_page(course_id: str) -> None:
     # Permission levels:
     # - can_manage: create weeks, manage enrollments (coordinator/instructor only)
     # - can_view_drafts: see unpublished weeks, publish/unpublish (includes tutors)
-    can_manage = enrollment.role in (CourseRole.coordinator, CourseRole.instructor)
+    can_manage = enrollment.role in ("coordinator", "instructor")
     can_view_drafts = enrollment.role in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
-        CourseRole.tutor,
+        "coordinator",
+        "instructor",
+        "tutor",
     )
 
     # Header
@@ -362,7 +362,7 @@ async def course_detail_page(course_id: str) -> None:
             "flat round"
         )
         ui.label(f"{course.code} - {course.name}").classes("text-2xl font-bold")
-        ui.badge(enrollment.role.value)
+        ui.badge(enrollment.role)
         if can_manage:
             ui.button(
                 icon="settings",
@@ -550,8 +550,8 @@ async def create_week_page(course_id: str) -> None:
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
+        "coordinator",
+        "instructor",
     ):
         ui.label("Only instructors can add weeks").classes("text-red-500")
         return
@@ -624,8 +624,8 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
+        "coordinator",
+        "instructor",
     ):
         ui.label("Only instructors can add activities").classes("text-red-500")
         return
@@ -695,8 +695,8 @@ async def manage_enrollments_page(course_id: str) -> None:
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
+        "coordinator",
+        "instructor",
     ):
         ui.label("Only instructors can manage enrollments").classes("text-red-500")
         return
@@ -731,7 +731,7 @@ async def manage_enrollments_page(course_id: str) -> None:
                                 f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}"
                             ).classes("text-xs text-gray-400")
                         with ui.row().classes("gap-2 items-center"):
-                            ui.badge(e.role.value)
+                            ui.badge(e.role)
 
                             async def remove(uid: UUID = e.user_id) -> None:
                                 await unenroll_user(course_id=cid, user_id=uid)
@@ -751,8 +751,8 @@ async def manage_enrollments_page(course_id: str) -> None:
         with ui.row().classes("gap-2 items-end"):
             new_email = ui.input("Email Address").classes("w-64")
             new_role = ui.select(
-                options=[r.value for r in CourseRole],
-                value=CourseRole.student.value,
+                options=["coordinator", "instructor", "tutor", "student"],
+                value="student",
                 label="Role",
             ).classes("w-32")
 
@@ -771,7 +771,7 @@ async def manage_enrollments_page(course_id: str) -> None:
                     await enroll_user(
                         course_id=cid,
                         user_id=new_user.id,
-                        role=CourseRole(new_role.value),
+                        role=new_role.value,
                     )
                     msg = "Enrollment added"
                     if created:

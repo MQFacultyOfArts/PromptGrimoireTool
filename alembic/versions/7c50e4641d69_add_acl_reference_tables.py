@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(50), nullable=False),
         sa.Column("level", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("name"),
-        sa.UniqueConstraint("level"),
+        sa.UniqueConstraint("level", name="uq_permission_level"),
         sa.CheckConstraint("level BETWEEN 1 AND 100", name="ck_permission_level_range"),
     )
 
@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(50), nullable=False),
         sa.Column("level", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("name"),
-        sa.UniqueConstraint("level"),
+        sa.UniqueConstraint("level", name="uq_course_role_level"),
         sa.CheckConstraint(
             "level BETWEEN 1 AND 100", name="ck_course_role_level_range"
         ),

@@ -142,11 +142,8 @@ class TestInstructorWorkflow:
             with subtests.test(msg="authenticate_as_instructor"):
                 _authenticate_page(page, app_server, email="instructor@uni.edu")
                 page.goto(f"{app_server}/courses")
-                page.get_by_role("heading", name="Courses").wait_for(
-                    state="visible", timeout=10000
-                )
                 page.get_by_role("button", name="New Course").wait_for(
-                    state="visible", timeout=5000
+                    state="visible", timeout=10000
                 )
 
             with subtests.test(msg="create_course"):

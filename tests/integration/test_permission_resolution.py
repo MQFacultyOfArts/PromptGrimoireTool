@@ -1,0 +1,543 @@
+"""Integration tests for hybrid permission resolution.
+
+These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
+
+Acceptance Criteria:
+- AC6.1: User with explicit ACL entry gets that permission level
+- AC6.2: Instructor enrolled in course gets Course.default_instructor_permission
+- AC6.3: Coordinator enrolled in course gets access (same as instructor)
+- AC6.4: Tutor enrolled in course gets access (same as instructor)
+- AC6.5: When both explicit ACL and enrollment-derived exist, higher level wins
+- AC6.7: Student enrolled in course but without explicit ACL gets None
+- AC6.8: Unenrolled user with no ACL entry gets None
+- AC6.10: Loose workspace -- only explicit ACL grants access
+- AC6.11: Course-placed workspace -- instructor access derived from enrollment
+"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from promptgrimoire.config import get_settings
+
+pytestmark = pytest.mark.skipif(
+    not get_settings().dev.test_database_url,
+    reason="DEV__TEST_DATABASE_URL not configured",
+)
+
+
+class TestExplicitACL:
+    """AC6.1: User with explicit ACL entry gets that permission level."""
+
+    @pytest.mark.asyncio
+    async def test_explicit_viewer_acl(self) -> None:
+        """User granted explicit 'viewer' ACL gets 'viewer' from resolve_permission."""
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"resolve-explicit-{tag}@test.local",
+            display_name=f"Explicit {tag}",
+        )
+        workspace = await create_workspace()
+        await grant_permission(workspace.id, user.id, "viewer")
+
+        result = await resolve_permission(workspace.id, user.id)
+
+        assert result == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_explicit_editor_acl(self) -> None:
+        """User granted explicit 'editor' ACL gets 'editor'."""
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"resolve-editor-{tag}@test.local",
+            display_name=f"Editor {tag}",
+        )
+        workspace = await create_workspace()
+        await grant_permission(workspace.id, user.id, "editor")
+
+        result = await resolve_permission(workspace.id, user.id)
+
+        assert result == "editor"
+
+    @pytest.mark.asyncio
+    async def test_explicit_owner_acl(self) -> None:
+        """User granted explicit 'owner' ACL gets 'owner'."""
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"resolve-owner-{tag}@test.local",
+            display_name=f"Owner {tag}",
+        )
+        workspace = await create_workspace()
+        await grant_permission(workspace.id, user.id, "owner")
+
+        result = await resolve_permission(workspace.id, user.id)
+
+        assert result == "owner"
+
+
+class TestEnrollmentDerivedInstructor:
+    """AC6.2: Instructor gets Course.default_instructor_permission."""
+
+    @pytest.mark.asyncio
+    async def test_instructor_gets_default_permission(self) -> None:
+        """Instructor without explicit ACL gets default_instructor_permission."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-instr-{tag}@test.local",
+            display_name=f"Instructor {tag}",
+        )
+        course = await create_course(
+            code=f"RES{tag[:4]}",
+            name=f"Resolution Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        # Create a student workspace placed in this activity
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        # Course default_instructor_permission is "editor"
+        assert result == "editor"
+
+
+class TestEnrollmentDerivedCoordinator:
+    """AC6.3: Coordinator enrolled in course gets access."""
+
+    @pytest.mark.asyncio
+    async def test_coordinator_gets_default_permission(self) -> None:
+        """Coordinator derives 'editor' access from enrollment."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        coordinator = await create_user(
+            email=f"resolve-coord-{tag}@test.local",
+            display_name=f"Coordinator {tag}",
+        )
+        course = await create_course(
+            code=f"CRD{tag[:4]}",
+            name=f"Coord Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, coordinator.id, role="coordinator")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, coordinator.id)
+
+        assert result == "editor"
+
+
+class TestEnrollmentDerivedTutor:
+    """AC6.4: Tutor enrolled in course gets access."""
+
+    @pytest.mark.asyncio
+    async def test_tutor_gets_default_permission(self) -> None:
+        """Tutor derives 'editor' access from enrollment."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        tutor = await create_user(
+            email=f"resolve-tutor-{tag}@test.local",
+            display_name=f"Tutor {tag}",
+        )
+        course = await create_course(
+            code=f"TUT{tag[:4]}",
+            name=f"Tutor Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, tutor.id, role="tutor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, tutor.id)
+
+        assert result == "editor"
+
+
+class TestHighestWins:
+    """AC6.5: When both explicit ACL and enrollment-derived exist, higher level wins."""
+
+    @pytest.mark.asyncio
+    async def test_enrollment_derived_beats_explicit_viewer(self) -> None:
+        """Instructor with explicit 'viewer' gets 'editor' (derived wins).
+
+        Enrollment-derived 'editor' (level 20) > explicit 'viewer' (10).
+        """
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-highest1-{tag}@test.local",
+            display_name=f"Highest1 {tag}",
+        )
+        course = await create_course(
+            code=f"HI1{tag[:4]}",
+            name=f"Highest Test 1 {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        # Explicit viewer (level 10) < derived editor (level 20)
+        await grant_permission(workspace.id, instructor.id, "viewer")
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        assert result == "editor"
+
+    @pytest.mark.asyncio
+    async def test_explicit_owner_beats_enrollment_derived(self) -> None:
+        """Instructor with explicit 'owner' ACL gets 'owner' (explicit wins).
+
+        Explicit 'owner' (level 30) > enrollment-derived 'editor' (level 20).
+        """
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-highest2-{tag}@test.local",
+            display_name=f"Highest2 {tag}",
+        )
+        course = await create_course(
+            code=f"HI2{tag[:4]}",
+            name=f"Highest Test 2 {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        # Explicit owner (level 30) > derived editor (level 20)
+        await grant_permission(workspace.id, instructor.id, "owner")
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        assert result == "owner"
+
+
+class TestStudentDenial:
+    """AC6.7: Student enrolled in course but without explicit ACL gets None."""
+
+    @pytest.mark.asyncio
+    async def test_student_without_acl_gets_none(self) -> None:
+        """Student enrolled in course gets None -- no derived access for students."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"resolve-student-{tag}@test.local",
+            display_name=f"Student {tag}",
+        )
+        course = await create_course(
+            code=f"STU{tag[:4]}",
+            name=f"Student Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, student.id, role="student")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        # Another user's workspace in the same activity
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None
+
+
+class TestUnenrolledDenial:
+    """AC6.8: Unenrolled user with no ACL entry gets None."""
+
+    @pytest.mark.asyncio
+    async def test_unenrolled_user_gets_none(self) -> None:
+        """User not enrolled and without ACL gets None."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        outsider = await create_user(
+            email=f"resolve-outsider-{tag}@test.local",
+            display_name=f"Outsider {tag}",
+        )
+        course = await create_course(
+            code=f"OUT{tag[:4]}",
+            name=f"Outsider Test {tag}",
+            semester="2026-S1",
+        )
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, outsider.id)
+
+        assert result is None
+
+
+class TestLooseWorkspace:
+    """AC6.10: Loose workspace -- only explicit ACL entries grant access."""
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_no_acl_returns_none(self) -> None:
+        """Loose workspace with no ACL entry returns None (no enrollment derivation)."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"resolve-loose-none-{tag}@test.local",
+            display_name=f"Loose None {tag}",
+        )
+        workspace = await create_workspace()
+
+        result = await resolve_permission(workspace.id, user.id)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_with_acl_returns_permission(self) -> None:
+        """Loose workspace with explicit ACL returns the granted permission."""
+        from promptgrimoire.db.acl import grant_permission, resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"resolve-loose-acl-{tag}@test.local",
+            display_name=f"Loose ACL {tag}",
+        )
+        workspace = await create_workspace()
+        await grant_permission(workspace.id, user.id, "editor")
+
+        result = await resolve_permission(workspace.id, user.id)
+
+        assert result == "editor"
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_instructor_enrolled_elsewhere(self) -> None:
+        """Instructor enrolled in a course gets None on unrelated loose workspace."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-loose-instr-{tag}@test.local",
+            display_name=f"Loose Instr {tag}",
+        )
+        course = await create_course(
+            code=f"LI{tag[:5]}",
+            name=f"Loose Instr Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+
+        # Loose workspace -- not in any activity or course
+        workspace = await create_workspace()
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        assert result is None
+
+
+class TestCoursePlacedWorkspace:
+    """AC6.11: Course-placed workspace -- instructor derives access from enrollment."""
+
+    @pytest.mark.asyncio
+    async def test_instructor_on_course_placed_workspace(self) -> None:
+        """Instructor gets 'editor' on workspace placed directly in their course."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-cplace-{tag}@test.local",
+            display_name=f"Course Place {tag}",
+        )
+        course = await create_course(
+            code=f"CP{tag[:5]}",
+            name=f"Course Place Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+
+        workspace = await create_workspace()
+        await place_workspace_in_course(workspace.id, course.id)
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        assert result == "editor"
+
+    @pytest.mark.asyncio
+    async def test_student_on_course_placed_workspace_gets_none(self) -> None:
+        """Student gets None on course-placed workspace (no derived access)."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"resolve-cplace-stu-{tag}@test.local",
+            display_name=f"CPlace Student {tag}",
+        )
+        course = await create_course(
+            code=f"CS{tag[:5]}",
+            name=f"CPlace Student Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, student.id, role="student")
+
+        workspace = await create_workspace()
+        await place_workspace_in_course(workspace.id, course.id)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None
+
+
+class TestCanAccessWorkspace:
+    """Verify can_access_workspace() delegates to resolve_permission()."""
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_resolve_permission(self) -> None:
+        """can_access_workspace returns same result as resolve_permission."""
+        from promptgrimoire.db.acl import (
+            can_access_workspace,
+            grant_permission,
+            resolve_permission,
+        )
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"can-access-{tag}@test.local",
+            display_name=f"CanAccess {tag}",
+        )
+        workspace = await create_workspace()
+        await grant_permission(workspace.id, user.id, "viewer")
+
+        resolve_result = await resolve_permission(workspace.id, user.id)
+        can_access_result = await can_access_workspace(workspace.id, user.id)
+
+        assert resolve_result == can_access_result == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_access(self) -> None:
+        """can_access_workspace returns None when no ACL or enrollment."""
+        from promptgrimoire.db.acl import can_access_workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"can-access-none-{tag}@test.local",
+            display_name=f"CanAccess None {tag}",
+        )
+        workspace = await create_workspace()
+
+        result = await can_access_workspace(workspace.id, user.id)
+
+        assert result is None

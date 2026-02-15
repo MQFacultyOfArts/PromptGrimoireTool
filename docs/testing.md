@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-02-08*
+*Last updated: 2026-02-15*
 
 ## TDD is Mandatory
 
@@ -154,3 +154,38 @@ Custom markers are defined in `pyproject.toml` under `[tool.pytest.ini_options]`
 Default addopts: `-ra -q -m 'not blns and not slow'`
 
 To run a specific marker: `uv run pytest -m e2e` or `uv run pytest -m latex`.
+
+## Fixture Analysis
+
+`scripts/analyse_fixture.py` -- CLI for inspecting HTML conversation fixtures (plain or gzipped) without shell-level zcat/grep/perl.
+
+```bash
+# List all fixtures with sizes
+uv run python scripts/analyse_fixture.py list
+
+# Count/show tags matching a pattern
+uv run python scripts/analyse_fixture.py tags google_gemini_debug user-query
+
+# Regex search with context
+uv run python scripts/analyse_fixture.py search claude_cooking "Thought process"
+
+# Find text with surrounding HTML context (style attrs stripped)
+uv run python scripts/analyse_fixture.py context claude_cooking "font-claude" --chars 200
+
+# Tag counts, data-* attributes, class names
+uv run python scripts/analyse_fixture.py structure google_aistudio_image
+```
+
+Fixture names can be partial (substring match). Supports both `.html` and `.html.gz` transparently.
+
+### Visual QA Screenshots
+
+`tests/e2e/test_fixture_screenshots.py` renders all fixtures through the annotation pipeline and captures screenshots to `output/fixture_screenshots/`. Each fixture test clears its own stale screenshots (e.g. `austlii_*.png`) before regenerating -- no stale files accumulate.
+
+```bash
+# Generate all fixture screenshots (clears output first)
+uv run pytest tests/e2e/test_fixture_screenshots.py -v
+
+# Single fixture
+uv run pytest tests/e2e/test_fixture_screenshots.py -v -k austlii
+```

@@ -63,7 +63,7 @@ class CourseRoleRef(SQLModel, table=True):
     Named CourseRoleRef to avoid collision with existing CourseRole StrEnum.
     """
 
-    __tablename__ = "course_role_ref"
+    __tablename__ = "course_role"
 
     name: str = Field(
         sa_column=Column(String(50), primary_key=True, nullable=False),

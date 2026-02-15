@@ -27,7 +27,7 @@ def test_all_models_registered() -> None:
         "activity",
         "course",
         "course_enrollment",
-        "course_role_ref",
+        "course_role",
         "permission",
         "user",
         "week",
@@ -55,7 +55,7 @@ def test_get_expected_tables_returns_all_tables() -> None:
     assert "activity" in tables
     assert "course" in tables
     assert "course_enrollment" in tables
-    assert "course_role_ref" in tables
+    assert "course_role" in tables
     assert "permission" in tables
     assert "user" in tables
     assert "week" in tables

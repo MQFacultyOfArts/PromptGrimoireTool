@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import CourseEnrollment, CourseRole, Week
+from promptgrimoire.db.models import CourseEnrollment, Week
 
 
 async def create_week(
@@ -230,11 +230,7 @@ async def get_visible_weeks(
             return []
 
         # Instructors and above see all weeks
-        if enrollment.role in (
-            CourseRole.coordinator,
-            CourseRole.instructor,
-            CourseRole.tutor,
-        ):
+        if enrollment.role in ("coordinator", "instructor", "tutor"):
             result = await session.exec(
                 select(Week).where(Week.course_id == course_id).order_by("week_number")
             )
@@ -286,11 +282,7 @@ async def can_access_week(
             return False
 
         # Instructors always have access
-        if enrollment.role in (
-            CourseRole.coordinator,
-            CourseRole.instructor,
-            CourseRole.tutor,
-        ):
+        if enrollment.role in ("coordinator", "instructor", "tutor"):
             return True
 
         # Students need published + visible

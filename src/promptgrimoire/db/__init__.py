@@ -6,9 +6,11 @@ Provides async SQLModel operations with PostgreSQL.
 from __future__ import annotations
 
 from promptgrimoire.db.acl import (
+    can_access_workspace,
     grant_permission,
     list_entries_for_user,
     list_entries_for_workspace,
+    resolve_permission,
     revoke_permission,
 )
 from promptgrimoire.db.activities import (
@@ -101,6 +103,7 @@ __all__ = [
     "WorkspaceDocument",
     "add_document",
     "archive_course",
+    "can_access_workspace",
     "clone_workspace_from_activity",
     "close_db",
     "create_activity",
@@ -142,6 +145,7 @@ __all__ = [
     "place_workspace_in_activity",
     "place_workspace_in_course",
     "reorder_documents",
+    "resolve_permission",
     "revoke_permission",
     "run_alembic_upgrade",
     "save_workspace_crdt_state",

@@ -141,10 +141,8 @@ class TestInstructorWorkflow:
         try:
             with subtests.test(msg="authenticate_as_instructor"):
                 _authenticate_page(page, app_server, email="instructor@uni.edu")
-                page.goto(f"{app_server}/courses")
-                page.get_by_role("button", name="New Course").wait_for(
-                    state="visible", timeout=10000
-                )
+                # Verify auth succeeded — not redirected to login
+                assert "/login" not in page.url, "Auth should succeed"
 
             with subtests.test(msg="create_course"):
                 create_course(

@@ -151,11 +151,13 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 
-    # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component
+    # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component.
+    # Quasar manages state via Vue reactivity; the hidden checkbox's checked
+    # property is unreliable. Use aria-checked on the inner div instead.
     toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
-    toggle_input = toggle.locator("input[type='checkbox']")
+    toggle_inner = toggle.locator("div.q-toggle__inner")
 
-    is_currently_on = toggle_input.is_checked()
+    is_currently_on = toggle_inner.get_attribute("aria-checked") == "true"
     if is_currently_on != enabled:
         toggle.click()
 

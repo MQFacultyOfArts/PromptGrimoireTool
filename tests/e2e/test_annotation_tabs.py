@@ -100,8 +100,8 @@ class TestDeferredRendering:
         """
         page = workspace_page
 
-        # Tab 1 (Annotate) should have document content (char spans)
-        expect(page.locator("[data-char-index]").first).to_be_visible()
+        # Tab 1 (Annotate) should have document content
+        expect(page.locator("#doc-container")).to_contain_text("Tab test content")
 
         # Click Organise tab -- triggers deferred render of tag columns
         page.locator("role=tab").nth(1).click()
@@ -140,10 +140,11 @@ class TestTabStatePreservation:
         """Document content in Tab 1 survives round-trip to Tab 2 and back."""
         page = workspace_page
 
-        # Verify content is visible in Tab 1
-        char_spans = page.locator("[data-char-index]")
-        initial_count = char_spans.count()
-        assert initial_count > 0, "Expected char spans in Tab 1"
+        # Verify content is visible in Tab 1 via text walker nodes
+        initial_count = page.evaluate(
+            "() => window._textNodes ? window._textNodes.length : 0"
+        )
+        assert initial_count > 0, "Expected text nodes in Tab 1"
 
         # Switch to Organise tab
         page.locator("role=tab").nth(1).click()
@@ -153,11 +154,13 @@ class TestTabStatePreservation:
         page.locator("role=tab").nth(0).click()
         page.wait_for_timeout(300)
 
-        # Verify document content is still there
-        char_spans_after = page.locator("[data-char-index]")
-        expect(char_spans_after.first).to_be_visible(timeout=3000)
-        assert char_spans_after.count() == initial_count, (
-            f"Char span count changed: {initial_count} -> {char_spans_after.count()}"
+        # Verify document content is still there via text walker nodes
+        after_count = page.evaluate(
+            "() => window._textNodes ? window._textNodes.length : 0"
+        )
+        assert after_count > 0, "Expected text nodes after tab round-trip"
+        assert after_count == initial_count, (
+            f"Text node count changed: {initial_count} -> {after_count}"
         )
 
 
@@ -490,8 +493,11 @@ class TestLocateButtonFromTab2:
         annotate_tab = page.locator("role=tab").nth(0)
         expect(annotate_tab).to_have_attribute("aria-selected", "true", timeout=3000)
 
-        # Verify char spans are visible (Tab 1 content rendered)
-        expect(page.locator("[data-char-index='0']")).to_be_visible(timeout=3000)
+        # Verify Tab 1 content rendered (text walker nodes populated)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=3000,
+        )
 
 
 class TestLocateButtonFromTab3:
@@ -531,8 +537,11 @@ class TestLocateButtonFromTab3:
         annotate_tab = page.locator("role=tab").nth(0)
         expect(annotate_tab).to_have_attribute("aria-selected", "true", timeout=3000)
 
-        # Verify char spans are visible (Tab 1 content rendered)
-        expect(page.locator("[data-char-index='0']")).to_be_visible(timeout=3000)
+        # Verify Tab 1 content rendered (text walker nodes populated)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=3000,
+        )
 
 
 class TestReturnToPreviousTab:

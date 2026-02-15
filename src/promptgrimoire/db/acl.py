@@ -54,7 +54,6 @@ async def grant_permission(
         await session.execute(stmt)
         await session.flush()
 
-        # Fetch the upserted row
         entry = await session.exec(
             select(ACLEntry).where(
                 ACLEntry.workspace_id == workspace_id,
@@ -222,3 +221,16 @@ async def resolve_permission(workspace_id: UUID, user_id: UUID) -> str | None:
     """
     async with get_session() as session:
         return await _resolve_permission_with_session(session, workspace_id, user_id)
+
+
+async def can_access_workspace(workspace_id: UUID, user_id: UUID) -> str | None:
+    """Check if a user can access a workspace and return their permission level.
+
+    Delegates directly to resolve_permission(workspace_id, user_id).
+    ACLEntry links directly to Workspace via workspace_id, so no
+    separate lookup is needed.
+
+    Returns:
+        Permission name string or None if denied.
+    """
+    return await resolve_permission(workspace_id, user_id)

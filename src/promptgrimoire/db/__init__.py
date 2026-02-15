@@ -5,6 +5,12 @@ Provides async SQLModel operations with PostgreSQL.
 
 from __future__ import annotations
 
+from promptgrimoire.db.acl import (
+    grant_permission,
+    list_entries_for_user,
+    list_entries_for_workspace,
+    revoke_permission,
+)
 from promptgrimoire.db.activities import (
     create_activity,
     delete_activity,
@@ -34,6 +40,7 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.models import (
+    ACLEntry,
     Activity,
     Course,
     CourseEnrollment,
@@ -80,6 +87,7 @@ from promptgrimoire.db.workspaces import (
 )
 
 __all__ = [
+    "ACLEntry",
     "Activity",
     "Course",
     "CourseEnrollment",
@@ -114,6 +122,7 @@ __all__ = [
     "get_user_by_id",
     "get_user_by_stytch_id",
     "get_workspace",
+    "grant_permission",
     "init_db",
     "is_db_configured",
     "link_stytch_member",
@@ -123,6 +132,8 @@ __all__ = [
     "list_course_enrollments",
     "list_courses",
     "list_documents",
+    "list_entries_for_user",
+    "list_entries_for_workspace",
     "list_loose_workspaces_for_course",
     "list_user_enrollments",
     "list_users",
@@ -131,6 +142,7 @@ __all__ = [
     "place_workspace_in_activity",
     "place_workspace_in_course",
     "reorder_documents",
+    "revoke_permission",
     "run_alembic_upgrade",
     "save_workspace_crdt_state",
     "set_admin",

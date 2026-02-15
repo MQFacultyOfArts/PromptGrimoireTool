@@ -57,7 +57,11 @@ def _pre_test_db_cleanup() -> None:
         sys.exit(1)
 
     # Truncate all tables (sync connection, single process — no race)
+    # Reference tables seeded by migrations are excluded — their data
+    # is part of the schema, not transient test data.
     from sqlalchemy import create_engine, text
+
+    _REFERENCE_TABLES = frozenset({"alembic_version", "permission", "course_role"})
 
     sync_url = test_database_url.replace(
         "postgresql+asyncpg://", "postgresql+psycopg://"
@@ -68,10 +72,11 @@ def _pre_test_db_cleanup() -> None:
             text("""
                 SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
-                AND tablename != 'alembic_version'
             """)
         )
-        tables = [row[0] for row in table_query.fetchall()]
+        tables = [
+            row[0] for row in table_query.fetchall() if row[0] not in _REFERENCE_TABLES
+        ]
 
         if tables:
             quoted_tables = ", ".join(f'"{t}"' for t in tables)

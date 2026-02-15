@@ -9,13 +9,21 @@ import re
 from pathlib import Path
 
 
+def _read_annotation_package_source() -> str:
+    """Read all .py files in the annotation package and concatenate their source."""
+    parts: list[str] = []
+    for py_file in sorted(_ANNOTATION_PKG.glob("*.py")):
+        parts.append(py_file.read_text())
+    return "\n".join(parts)
+
+
 def test_no_char_index_queries_in_annotation_py() -> None:
-    """AC8.4: annotation.py contains no querySelector('[data-char-index]') calls."""
-    source = _ANNOTATION_PY.read_text()
+    """AC8.4: no querySelector('[data-char-index]') in annotation package."""
+    source = _read_annotation_package_source()
 
     # Check for both quoted forms: single and double quotes
     assert "data-char-index" not in source, (
-        "annotation.py contains 'data-char-index' reference — "
+        "annotation package contains 'data-char-index' reference — "
         "char-span DOM queries must be removed"
     )
 
@@ -37,18 +45,18 @@ def test_no_char_index_queries_in_annotation_highlight_js() -> None:
     )
 
 
-_ANNOTATION_PY = (
+_ANNOTATION_PKG = (
     Path(__file__).parent.parent.parent
     / "src"
     / "promptgrimoire"
     / "pages"
-    / "annotation.py"
+    / "annotation"
 )
 
 
 def test_no_old_presence_symbols_in_annotation_py() -> None:
-    """AC3.5: Old presence identifiers are deleted from annotation.py."""
-    source = _ANNOTATION_PY.read_text()
+    """AC3.5: Old presence identifiers are deleted from annotation package."""
+    source = _read_annotation_package_source()
 
     forbidden = [
         "_connected_clients",
@@ -58,7 +66,7 @@ def test_no_old_presence_symbols_in_annotation_py() -> None:
     ]
     for symbol in forbidden:
         assert symbol not in source, (
-            f"annotation.py still contains '{symbol}' — "
+            f"annotation package still contains '{symbol}' — "
             "old presence symbols must be removed (AC3.5)"
         )
 
@@ -69,13 +77,13 @@ def test_hl_throb_css_rule_uses_only_background_color() -> None:
     The CSS Highlight API only supports a limited set of properties.
     Since we're using ::highlight(), we must restrict to supported properties.
     """
-    source = _ANNOTATION_PY.read_text()
+    source = _read_annotation_package_source()
 
     # Find the hl-throb CSS rule
     pattern = r"::highlight\(hl-throb\)\s*\{([^}]+)\}"
     match = re.search(pattern, source)
     assert match is not None, (
-        "Could not find ::highlight(hl-throb) CSS rule in annotation.py"
+        "Could not find ::highlight(hl-throb) CSS rule in annotation package"
     )
 
     css_content = match.group(1)

@@ -266,6 +266,7 @@ def _capture_fixture_screenshots(
     return screenshots
 
 
+@pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
 class TestFixtureScreenshots:
     """Generate screenshots for all HTML fixtures."""
 

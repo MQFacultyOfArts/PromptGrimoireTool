@@ -46,6 +46,8 @@ The work is split into four phases across two pull requests. Phase 1 (separate P
 - **annotation-perf.AC4.2 Success:** All existing tests pass without modification (except import paths if needed)
 - **annotation-perf.AC4.3 Success:** No logic changes — pure mechanical move
 
+> **Addressed by:** Issue #120 (annotation-split). See `docs/design-plans/2026-02-14-120-annotation-split.md`.
+
 ## Glossary
 
 - **CRDT (Conflict-free Replicated Data Type)**: A data structure that enables multiple clients to make concurrent edits without coordination, automatically merging changes without conflicts. PromptGrimoire uses pycrdt to sync annotations in real-time across browsers.
@@ -127,14 +129,19 @@ All three optimizations follow patterns already present in the codebase. No new 
 
 **Goal:** Split the 2,302-line `annotation.py` into a `pages/annotation/` package for manageable file sizes.
 
-**Components:**
-- `src/promptgrimoire/pages/annotation/__init__.py` — route registration, `PageState` dataclass, public API
-- `src/promptgrimoire/pages/annotation/cards.py` — `_build_annotation_card()`, `_refresh_annotation_cards()`, comments section
-- `src/promptgrimoire/pages/annotation/css.py` — `_build_highlight_css()`, `_update_highlight_css()`, cursor/selection CSS helpers
-- `src/promptgrimoire/pages/annotation/highlights.py` — `_add_highlight()`, `_delete_highlight()`, tag change handlers
-- `src/promptgrimoire/pages/annotation/tabs.py` — tab rendering (Annotate, Organise, Respond)
-- `src/promptgrimoire/pages/annotation/setup.py` — page setup, JS injection, event listener registration
-- `src/promptgrimoire/pages/annotation/broadcast.py` — broadcast, cursor tracking, multi-client sync
+**Components (actual structure after #120):**
+- `src/promptgrimoire/pages/annotation/__init__.py` — Core types (PageState, _RemotePresence), globals, route entry point
+- `src/promptgrimoire/pages/annotation/broadcast.py` — Multi-client sync, remote presence, Yjs update relay
+- `src/promptgrimoire/pages/annotation/cards.py` — Annotation card UI (build, expand, comments, refresh)
+- `src/promptgrimoire/pages/annotation/content_form.py` — Content paste/upload form with platform detection
+- `src/promptgrimoire/pages/annotation/css.py` — CSS constants (_PAGE_CSS), tag toolbar, highlight pseudo-CSS
+- `src/promptgrimoire/pages/annotation/document.py` — Document rendering with CSS Highlight API, selection handlers
+- `src/promptgrimoire/pages/annotation/highlights.py` — Highlight CRUD, JSON serialisation, push-to-client, warp
+- `src/promptgrimoire/pages/annotation/organise.py` — Tab 2: organise highlights by tag (drag-and-drop columns)
+- `src/promptgrimoire/pages/annotation/pdf_export.py` — PDF export orchestration with loading notification
+- `src/promptgrimoire/pages/annotation/respond.py` — Tab 3: respond with reference panel and CRDT markdown
+- `src/promptgrimoire/pages/annotation/tags.py` — Tag abstractions (TagInfo, brief_tags_to_tag_info)
+- `src/promptgrimoire/pages/annotation/workspace.py` — Workspace view orchestrator, header, placement, copy protection
 
 **Dependencies:** None (first phase, separate PR)
 

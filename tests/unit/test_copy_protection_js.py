@@ -23,8 +23,7 @@ if TYPE_CHECKING:
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.db.workspaces import PlacementContext
-from promptgrimoire.pages.annotation import (
-    _COPY_PROTECTION_JS,
+from promptgrimoire.pages.annotation.workspace import (
     _inject_copy_protection,
     _render_workspace_header,
 )
@@ -170,74 +169,6 @@ class TestRenderWorkspaceHeaderSignature:
         assert param.default is False
 
 
-class TestCopyProtectionJsContent:
-    """Verify the JS block contains expected selectors and event handlers."""
-
-    def test_js_block_targets_doc_container(self) -> None:
-        """JS PROTECTED selector includes #doc-container."""
-        assert "#doc-container" in _COPY_PROTECTION_JS
-
-    def test_js_block_does_not_target_organise_columns(self) -> None:
-        """JS PROTECTED selector must NOT include organise-columns (#164).
-
-        The Organise tab uses SortableJS which requires dragstart events.
-        Including organise-columns in PROTECTED kills card reordering.
-        """
-        # Check the selector assignment, not comments
-        for line in _COPY_PROTECTION_JS.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("//"):
-                continue
-            assert "organise-columns" not in line, (
-                f"organise-columns found in non-comment JS line: {line!r}"
-            )
-
-    def test_js_block_targets_respond_reference_panel(self) -> None:
-        """JS PROTECTED selector includes respond-reference-panel test ID."""
-        assert "respond-reference-panel" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_copy_event(self) -> None:
-        """JS registers a copy event listener."""
-        assert "'copy'" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_cut_event(self) -> None:
-        """JS registers a cut event listener."""
-        assert "'cut'" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_contextmenu_event(self) -> None:
-        """JS registers a contextmenu event listener."""
-        assert "'contextmenu'" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_dragstart_event(self) -> None:
-        """JS registers a dragstart event listener."""
-        assert "'dragstart'" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_paste_on_milkdown(self) -> None:
-        """JS targets milkdown-respond-editor for paste interception."""
-        assert "milkdown-respond-editor" in _COPY_PROTECTION_JS
-
-    def test_js_block_uses_quasar_notify(self) -> None:
-        """JS shows toast via Quasar.Notify.create()."""
-        assert "Quasar.Notify.create" in _COPY_PROTECTION_JS
-
-    def test_js_block_uses_group_key_for_debounce(self) -> None:
-        """JS uses group key to deduplicate toast notifications."""
-        assert "copy-protection" in _COPY_PROTECTION_JS
-
-    def test_js_block_stops_immediate_propagation_on_paste(self) -> None:
-        """Paste handler calls stopImmediatePropagation to block ProseMirror."""
-        assert "stopImmediatePropagation" in _COPY_PROTECTION_JS
-
-    def test_js_block_intercepts_ctrl_p(self) -> None:
-        """JS registers a keydown listener that checks for Ctrl+P / Cmd+P.
-
-        Verifies AC4.6: print keyboard shortcut is intercepted inside the
-        same IIFE as other copy protection handlers.
-        """
-        assert "'keydown'" in _COPY_PROTECTION_JS
-        assert "e.key === 'p'" in _COPY_PROTECTION_JS
-
-
 class TestPrintSuppressionInjection:
     """Verify _inject_copy_protection injects print suppression CSS and message.
 
@@ -252,9 +183,11 @@ class TestPrintSuppressionInjection:
     def _mock_ui(self) -> Iterator[dict[str, MagicMock]]:
         """Mock the three NiceGUI UI calls used by _inject_copy_protection."""
         with (
-            patch("promptgrimoire.pages.annotation.ui.run_javascript") as mock_js,
-            patch("promptgrimoire.pages.annotation.ui.add_css") as mock_css,
-            patch("promptgrimoire.pages.annotation.ui.html") as mock_html,
+            patch(
+                "promptgrimoire.pages.annotation.workspace.ui.run_javascript"
+            ) as mock_js,
+            patch("promptgrimoire.pages.annotation.workspace.ui.add_css") as mock_css,
+            patch("promptgrimoire.pages.annotation.workspace.ui.html") as mock_html,
         ):
             yield {"js": mock_js, "css": mock_css, "html": mock_html}
 

@@ -190,7 +190,19 @@ src/promptgrimoire/
 ├── llm/                 # Claude API client, lorebook activation, prompt assembly
 ├── input_pipeline/      # HTML input processing (detection, conversion, text extraction)
 ├── pages/               # NiceGUI page routes
-│   ├── annotation.py    # Main annotation page (CSS Highlight API rendering)
+│   ├── annotation/      # Main annotation page (CSS Highlight API rendering)
+│   │   ├── __init__.py  # Core types (PageState, _RemotePresence), route
+│   │   ├── broadcast.py # Multi-client sync, remote presence
+│   │   ├── cards.py     # Annotation card UI
+│   │   ├── content_form.py # Content paste/upload form
+│   │   ├── css.py       # CSS constants, tag toolbar
+│   │   ├── document.py  # Document rendering, selection wiring
+│   │   ├── highlights.py # Highlight CRUD, JSON, push-to-client
+│   │   ├── organise.py  # Tab 2 — organise highlights by tag
+│   │   ├── pdf_export.py # PDF export orchestration
+│   │   ├── respond.py   # Tab 3 — respond with references
+│   │   ├── tags.py      # Tag abstractions (TagInfo)
+│   │   └── workspace.py # Workspace view, header, copy protection
 │   ├── auth.py          # Login/logout pages (browser feature gate)
 │   ├── courses.py       # Course management
 │   ├── dialogs.py       # Reusable dialog components
@@ -217,7 +229,9 @@ src/promptgrimoire/
 │   ├── platforms/       # Platform-specific HTML preprocessing
 │   └── filters/         # Pandoc Lua filters (highlight.lua, legal.lua)
 ├── static/              # Static assets (JS, CSS)
-│   └── annotation-highlight.js # Text walker, highlight rendering, remote presence
+│   ├── annotation-highlight.js # Text walker, highlight rendering, remote presence
+│   ├── annotation-card-sync.js # Scroll-sync card positioning
+│   └── annotation-copy-protection.js # Copy/cut/drag/print blocking
 ├── auth/                # Stytch integration
 ├── db/                  # Database models, engine, CRUD operations
 │   ├── models.py        # SQLModel table classes (User, Course, ..., Activity, Workspace, WorkspaceDocument)
@@ -354,6 +368,26 @@ The pipeline returns clean HTML from the server. Highlight rendering uses the CS
 - `ContentType` -- Literal type: `"html" | "rtf" | "docx" | "pdf" | "text"`
 - `CONTENT_TYPES` -- Tuple of all supported type strings
 
+## Annotation Page Package
+
+The annotation page (`pages/annotation/`) is a 12-module package split from a monolith. Key constraints:
+
+### Import Ordering in `__init__.py`
+
+Definition-before-import ordering is **critical** in `__init__.py`. The sequence is:
+
+1. Stdlib/third-party imports
+2. Define `PageState`, `_RemotePresence`, `_RawJS`, `_render_js()`, and module-level registries
+3. Import from submodules (`workspace.py` etc.) -- types they need already exist
+4. Define `annotation_page()` -- uses imported functions
+
+Do not reorder. Types must be defined before submodule imports to resolve circular dependencies (e.g. `workspace.py` imports `PageState` from `__init__`). No `PLC0415` lint suppression is used; the ordering makes late imports unnecessary.
+
+### Guard Tests
+
+- `test_annotation_package_structure.py` -- Prevents regression: package directory exists, monolith `.py` file absent, all 12 modules present, no satellite files at `pages/` level, no imports from old paths
+- `test_annotation_js_extraction.py` -- Prevents re-introduction of JS string constants: static JS files exist with expected functions, `_COPY_PROTECTION_JS` constant absent from Python source
+
 ## Database
 
 PostgreSQL with SQLModel. Schema migrations via Alembic.
@@ -459,7 +493,7 @@ Per-activity copy protection prevents students from copying, cutting, dragging, 
 
 When `protect=True` and user is not privileged:
 
-- **JS injection** (`_inject_copy_protection()` in `annotation.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
+- **JS injection** (`_inject_copy_protection()` in `annotation/workspace.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
 - **CSS print suppression**: `@media print` hides `.q-tab-panels`, shows "Printing is disabled" message.
 - **Lock icon chip**: Amber "Protected" chip with lock icon in workspace header.
 

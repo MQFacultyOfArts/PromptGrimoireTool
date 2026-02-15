@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-    from promptgrimoire.pages.annotation_tags import TagInfo
+    from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = logging.getLogger(__name__)
 

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-    from promptgrimoire.pages.annotation_tags import TagInfo
+    from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = logging.getLogger(__name__)
 

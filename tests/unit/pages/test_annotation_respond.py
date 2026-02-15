@@ -11,12 +11,12 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation_respond import (
+from promptgrimoire.pages.annotation.respond import (
     _SNIPPET_MAX_CHARS,
     _matches_filter,
     group_highlights_by_tag,
 )
-from promptgrimoire.pages.annotation_tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
 
 
 class TestReferenceHighlightGrouping:

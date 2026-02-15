@@ -128,6 +128,78 @@ class TestEnrollmentDerivedInstructor:
         # Course default_instructor_permission is "editor"
         assert result == "editor"
 
+    @pytest.mark.asyncio
+    async def test_instructor_gets_custom_permission(self) -> None:
+        """Instructor gets non-default permission when course overrides it."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-custom-{tag}@test.local",
+            display_name=f"Custom Perm {tag}",
+        )
+        course = await create_course(
+            code=f"CUS{tag[:4]}",
+            name=f"Custom Perm Test {tag}",
+            semester="2026-S1",
+        )
+        # Override default_instructor_permission to "viewer"
+        async with get_session() as session:
+            db_course = await session.get(Course, course.id)
+            assert db_course is not None
+            db_course.default_instructor_permission = "viewer"
+            session.add(db_course)
+            await session.flush()
+
+        await enroll_user(course.id, instructor.id, role="instructor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, instructor.id)
+
+        assert result == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_instructor_on_template_workspace(self) -> None:
+        """Instructor resolves permission on a template workspace."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"resolve-tmpl-{tag}@test.local",
+            display_name=f"Template {tag}",
+        )
+        course = await create_course(
+            code=f"TPL{tag[:4]}",
+            name=f"Template Test {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, instructor.id, role="instructor")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Test Activity")
+
+        # The template workspace is created by create_activity
+        result = await resolve_permission(activity.template_workspace_id, instructor.id)
+
+        assert result == "editor"
+
 
 class TestEnrollmentDerivedCoordinator:
     """AC6.3: Coordinator enrolled in course gets access."""

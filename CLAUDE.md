@@ -49,7 +49,7 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### E2E Test Isolation
 
-E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run test-e2e`. See [docs/testing.md](docs/testing.md).
+E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run test-e2e`, which runs in serial fail-fast mode by default (`--parallel` for xdist). See [docs/testing.md](docs/testing.md).
 
 ### Code Quality Hooks
 
@@ -77,8 +77,11 @@ uv run test-debug
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all
 
-# Run E2E tests (starts server, runs Playwright with xdist)
+# Run E2E tests (starts server, serial fail-fast by default)
 uv run test-e2e
+
+# Run E2E tests in parallel (xdist)
+uv run test-e2e --parallel
 
 # Run linting
 uv run ruff check .

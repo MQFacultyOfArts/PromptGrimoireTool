@@ -49,6 +49,8 @@ class CourseRoleRef(SQLModel, table=True):
 
     String PK — the name is the identity. Rows seeded by migration.
     CourseEnrollment.role is a FK to this table.
+    ``is_staff`` marks roles that derive instructor-level access
+    (week visibility, ACL permission resolution).
     """
 
     __tablename__ = "course_role"
@@ -58,6 +60,10 @@ class CourseRoleRef(SQLModel, table=True):
     )
     level: int = Field(
         sa_column=Column(Integer, nullable=False),
+    )
+    is_staff: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default="false"),
     )
 
     __table_args__ = (

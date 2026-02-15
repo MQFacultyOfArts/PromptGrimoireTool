@@ -32,9 +32,12 @@ Course/unit of study with weeks and enrolled members.
 | `semester` | VARCHAR(20) | NOT NULL, INDEX |
 | `is_archived` | BOOLEAN | NOT NULL, default FALSE |
 | `default_copy_protection` | BOOLEAN | NOT NULL, default FALSE |
+| `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`default_copy_protection`**: Course-level default inherited by activities with `copy_protection=NULL`.
+
+**`default_instructor_permission`**: Default permission level for instructors accessing student workspaces via enrollment-derived access. FK to `permission.name` with RESTRICT delete.
 
 ### CourseEnrollment
 
@@ -148,8 +151,11 @@ Reference table replacing the `CourseRole` StrEnum. String PK.
 |--------|------|------------|
 | `name` | VARCHAR(50) | PK |
 | `level` | INTEGER | NOT NULL, UNIQUE, CHECK (BETWEEN 1 AND 100) |
+| `is_staff` | BOOLEAN | NOT NULL, default FALSE |
 
-Seed data: `coordinator` (40), `instructor` (30), `tutor` (20), `student` (10).
+Seed data: `coordinator` (40, staff), `instructor` (30, staff), `tutor` (20, staff), `student` (10).
+
+**`is_staff`**: Marks roles that derive instructor-level access (week visibility, ACL permission resolution). Queried once at startup and cached via `get_staff_roles()` in `db/roles.py`.
 
 **Note:** The SQLModel class is named `CourseRoleRef` to avoid collision with the existing `CourseRole` StrEnum. Table name is `course_role`. After Phase 2 deletes the StrEnum, the class can be renamed.
 
@@ -182,7 +188,6 @@ Per-user, per-workspace permission grant.
 | Column | Type | Constraint |
 |--------|------|------------|
 | `default_allow_sharing` | BOOLEAN | NOT NULL, default FALSE |
-| `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
 
 ### Activity (additions)
 

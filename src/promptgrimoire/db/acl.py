@@ -22,14 +22,12 @@ from promptgrimoire.db.models import (
     Workspace,
     _utcnow,
 )
+from promptgrimoire.db.roles import get_staff_roles
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlmodel.ext.asyncio.session import AsyncSession
-
-# Roles that derive instructor-level access from course enrollment
-_STAFF_ROLES = frozenset({"coordinator", "instructor", "tutor"})
 
 
 async def grant_permission(
@@ -143,7 +141,8 @@ async def _derive_enrollment_permission(
         return None
 
     # Staff roles get derived access; students do not
-    if enrollment.role not in _STAFF_ROLES:
+    staff_roles = await get_staff_roles()
+    if enrollment.role not in staff_roles:
         return None
 
     # Return course's default instructor permission

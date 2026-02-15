@@ -402,7 +402,7 @@ PostgreSQL with SQLModel. Schema migrations via Alembic.
 - **Workspace** - Container for documents and CRDT state (unit of collaboration). Placement fields: `activity_id` (SET NULL), `course_id` (SET NULL), `enable_save_as_draft`. Mutual exclusivity: a workspace can be in an Activity OR a Course, never both (Pydantic validator + DB CHECK constraint `ck_workspace_placement_exclusivity`).
 - **WorkspaceDocument** - Document within a workspace (source, draft, AI conversation). Fields: `content` (clean HTML), `source_type` ("html", "rtf", "docx", "pdf", "text")
 - **Permission** - Reference table for ACL permission levels (owner/30, editor/20, viewer/10). String PK.
-- **CourseRoleRef** - Reference table for course roles (coordinator/40, instructor/30, tutor/20, student/10). String PK. Table name: `course_role`.
+- **CourseRoleRef** - Reference table for course roles (coordinator/40, instructor/30, tutor/20, student/10). String PK. Table name: `course_role`. `is_staff` boolean marks roles with instructor-level access; cached via `get_staff_roles()` in `db/roles.py`.
 - **ACLEntry** - Per-user, per-workspace permission grant. FKs: workspace (CASCADE), user (CASCADE), permission (RESTRICT). UNIQUE on (workspace_id, user_id).
 
 ### Workspace Architecture

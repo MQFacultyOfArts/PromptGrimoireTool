@@ -38,6 +38,7 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import init_db
 from promptgrimoire.db.models import Activity, Course
+from promptgrimoire.db.roles import get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -54,6 +55,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
+
+# -- Role sets for permission checks --
+# Roles that can create weeks, manage enrollments, edit templates
+_MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
@@ -219,9 +224,7 @@ async def courses_list_page() -> None:
     enrollment_map = {e.course_id: e for e in enrollments}
 
     # Check if user is instructor in any course (or is org admin)
-    is_instructor = _is_admin() or any(
-        e.role in ("coordinator", "instructor") for e in enrollments
-    )
+    is_instructor = _is_admin() or any(e.role in _MANAGER_ROLES for e in enrollments)
 
     if is_instructor:
         ui.button(
@@ -349,12 +352,9 @@ async def course_detail_page(course_id: str) -> None:
     # Permission levels:
     # - can_manage: create weeks, manage enrollments (coordinator/instructor only)
     # - can_view_drafts: see unpublished weeks, publish/unpublish (includes tutors)
-    can_manage = enrollment.role in ("coordinator", "instructor")
-    can_view_drafts = enrollment.role in (
-        "coordinator",
-        "instructor",
-        "tutor",
-    )
+    can_manage = enrollment.role in _MANAGER_ROLES
+    staff_roles = await get_staff_roles()
+    can_view_drafts = enrollment.role in staff_roles
 
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
@@ -549,10 +549,7 @@ async def create_week_page(course_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        "coordinator",
-        "instructor",
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can add weeks").classes("text-red-500")
         return
 
@@ -623,10 +620,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        "coordinator",
-        "instructor",
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can add activities").classes("text-red-500")
         return
 
@@ -694,10 +688,7 @@ async def manage_enrollments_page(course_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        "coordinator",
-        "instructor",
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can manage enrollments").classes("text-red-500")
         return
 

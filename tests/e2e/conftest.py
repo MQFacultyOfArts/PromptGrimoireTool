@@ -110,13 +110,23 @@ def authenticated_page(browser: Browser, app_server: str) -> Generator[Page]:
     context.close()
 
 
-def _authenticate_page(page: Page, app_server: str) -> None:
+def _authenticate_page(
+    page: Page, app_server: str, *, email: str | None = None
+) -> None:
     """Authenticate a page via mock auth.
 
     Uses mock auth tokens (AUTH_MOCK=true) to authenticate.
+
+    Args:
+        page: Playwright page to authenticate.
+        app_server: Base URL of the test server.
+        email: Optional email for role-specific auth. When ``None``,
+            a random UUID-based email is generated (student role).
+            Use ``"instructor@uni.edu"`` for instructor role.
     """
-    unique_id = uuid4().hex[:8]
-    email = f"e2e-test-{unique_id}@test.example.edu.au"
+    if email is None:
+        unique_id = uuid4().hex[:8]
+        email = f"e2e-test-{unique_id}@test.example.edu.au"
     page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
 

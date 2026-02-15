@@ -243,3 +243,54 @@ All entity tables use UUID PKs (ORM compatibility, no sequential ID leakage). Bu
 - **CASCADE**: Used when child rows are meaningless without the parent (enrollments, ACL entries, documents).
 - **RESTRICT**: Used when the child should be explicitly handled before parent deletion (Activity → template Workspace, ACLEntry → Permission).
 - **SET NULL**: Used when the child should survive parent deletion but lose the association (student Workspace → deleted Activity).
+
+## Workspace Architecture
+
+Workspaces are isolated silos identified by UUID.
+
+- **`create_workspace()` takes no parameters** - Just creates an empty workspace with UUID
+- **`PlacementContext`** (frozen dataclass) resolves the full hierarchy chain (Activity -> Week -> Course) for UI display. `display_label` provides a human-readable string like "Annotate Becky in Week 1 for LAWS1100".
+- **Template detection**: `is_template` flag on PlacementContext is True when the workspace is an Activity's `template_workspace_id`.
+- **Copy protection resolution**: `copy_protection: bool` on PlacementContext is resolved during placement query. Activity's explicit value wins; if `None`, inherits from `Course.default_copy_protection`. Loose and course-placed workspaces always resolve to `False`. See [docs/copy-protection.md](copy-protection.md).
+
+### Workspace Cloning
+
+`clone_workspace_from_activity(activity_id)` creates a student workspace from a template:
+
+1. Creates new Workspace with `activity_id` set and `enable_save_as_draft` copied
+2. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
+3. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
+4. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
+5. Entire operation is atomic (single session)
+
+**Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
+
+## App Startup Database Bootstrap
+
+When `DATABASE__URL` is configured, `main()` automatically bootstraps the database before starting the server:
+
+1. **`ensure_database_exists(url) -> bool`** -- Creates the PostgreSQL database if it does not exist. Returns `True` if a new database was created, `False` otherwise (including `None`/empty URL or database already exists).
+2. **`run_alembic_upgrade()`** -- Runs Alembic migrations to head (idempotent). Internally calls `ensure_database_exists()` again (harmless -- already exists, returns `False`).
+3. **Conditional seeding** -- If `ensure_database_exists()` returned `True` (new DB), runs `uv run seed-data` to populate development data.
+4. **Branch info** -- On feature branches (not main/master), prints `Branch: <name> | Database: <db_name>` to stdout.
+
+This means `uv run python -m promptgrimoire` on a new feature branch automatically creates the branch-specific database, migrates it, and seeds it. No manual setup needed.
+
+## Database Rules
+
+1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations themselves
+2. **All models must be imported before schema operations** - The `promptgrimoire.db.models` module must be imported to register tables with SQLModel.metadata
+3. **Pages requiring DB must check availability** - Use `get_settings().database.url` and show a helpful error if not configured
+4. **Use `verify_schema()` at startup** - Fail fast if tables are missing
+
+## Page Database Dependencies
+
+| Page | Route | DB Required |
+|------|-------|-------------|
+| annotation | `/annotation` | **Yes** |
+| courses | `/courses` | **Yes** |
+| roleplay | `/roleplay` | No |
+| logviewer | `/logs` | No |
+| highlight_api_demo | `/demo/highlight-api` | No |
+| milkdown_spike | `/demo/milkdown-spike` | No |
+| auth | `/login`, `/logout` | Optional |

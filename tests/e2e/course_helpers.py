@@ -155,9 +155,8 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     # Quasar manages state via Vue reactivity; the hidden checkbox's checked
     # property is unreliable. Use aria-checked on the inner div instead.
     toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
-    toggle_inner = toggle.locator("div.q-toggle__inner")
 
-    is_currently_on = toggle_inner.get_attribute("aria-checked") == "true"
+    is_currently_on = toggle.get_attribute("aria-checked") == "true"
     if is_currently_on != enabled:
         toggle.click()
 

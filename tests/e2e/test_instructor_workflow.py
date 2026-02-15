@@ -100,10 +100,10 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     closes the dialog via Cancel.
     """
     page.get_by_role("button", name="settings").click()
-    dialog_title = page.get_by_text("Course Settings")
+    dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 
-    switch_label = page.get_by_text("Default copy protection")
+    switch_label = page.get_by_text("Default copy protection", exact=True)
     switch_input = switch_label.locator("..").locator("input[type='checkbox']")
     assert switch_input.is_checked(), (
         "Copy protection switch should be ON after enabling"
@@ -142,7 +142,9 @@ class TestInstructorWorkflow:
             with subtests.test(msg="authenticate_as_instructor"):
                 _authenticate_page(page, app_server, email="instructor@uni.edu")
                 page.goto(f"{app_server}/courses")
-                page.get_by_text("Courses").wait_for(state="visible", timeout=10000)
+                page.get_by_role("heading", name="Courses").wait_for(
+                    state="visible", timeout=10000
+                )
                 page.get_by_role("button", name="New Course").wait_for(
                     state="visible", timeout=5000
                 )

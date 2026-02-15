@@ -145,11 +145,11 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     page.get_by_role("button", name="settings").click()
 
     # Wait for the dialog to appear
-    dialog_title = page.get_by_text("Course Settings")
+    dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 
     # The switch is a NiceGUI/Quasar switch; toggle if current state != desired
-    switch = page.get_by_text("Default copy protection")
+    switch = page.get_by_text("Default copy protection", exact=True)
     # Quasar switches use aria-checked
     switch_input = switch.locator("..").locator("input[type='checkbox']")
 

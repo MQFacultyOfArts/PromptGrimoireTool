@@ -301,7 +301,7 @@ from promptgrimoire.db.acl import (
     list_accessible_workspaces,
     list_activity_workspaces,
     list_course_workspaces,
-    list_entries_for_resource,
+    list_entries_for_workspace,
     list_entries_for_user,
     resolve_permission,
     revoke_permission,

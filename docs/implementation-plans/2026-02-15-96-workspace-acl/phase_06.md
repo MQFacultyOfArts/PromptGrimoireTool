@@ -412,7 +412,7 @@ from promptgrimoire.db.acl import (
     can_access_workspace,
     grant_permission,
     grant_share,
-    list_entries_for_resource,
+    list_entries_for_workspace,
     list_entries_for_user,
     resolve_permission,
     revoke_permission,

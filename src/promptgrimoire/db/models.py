@@ -139,6 +139,20 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with copy_protection=NULL.
     """
+    default_instructor_permission: str = Field(
+        default="editor",
+        sa_column=Column(
+            String(50),
+            ForeignKey("permission.name", ondelete="RESTRICT"),
+            nullable=False,
+            server_default="editor",
+        ),
+    )
+    """Default permission level for instructors accessing student workspaces.
+
+    Instructors (coordinator/instructor/tutor roles) get this permission
+    when accessing workspaces in the course via enrollment-derived access.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

@@ -12,7 +12,16 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from pydantic import model_validator
-from sqlalchemy import Column, DateTime, ForeignKey, UniqueConstraint, Uuid
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlmodel import Field, SQLModel
 
 
@@ -26,6 +35,46 @@ class CourseRole(StrEnum):
     instructor = "instructor"  # Can manage content, see all student work
     tutor = "tutor"  # Can see assigned tutorial groups
     student = "student"  # Can access published content only
+
+
+class Permission(SQLModel, table=True):
+    """Reference table for access permission levels.
+
+    String PK — the name is the identity. Rows seeded by migration.
+    Level is UNIQUE to prevent ambiguous "highest wins" resolution.
+    """
+
+    name: str = Field(
+        sa_column=Column(String(50), primary_key=True, nullable=False),
+    )
+    level: int = Field(
+        sa_column=Column(Integer, nullable=False, unique=True),
+    )
+
+    __table_args__ = (
+        CheckConstraint("level BETWEEN 1 AND 100", name="ck_permission_level_range"),
+    )
+
+
+class CourseRoleRef(SQLModel, table=True):
+    """Reference table for course roles (will replace CourseRole StrEnum in Phase 2).
+
+    String PK — the name is the identity. Rows seeded by migration.
+    Named CourseRoleRef to avoid collision with existing CourseRole StrEnum.
+    """
+
+    __tablename__ = "course_role_ref"
+
+    name: str = Field(
+        sa_column=Column(String(50), primary_key=True, nullable=False),
+    )
+    level: int = Field(
+        sa_column=Column(Integer, nullable=False, unique=True),
+    )
+
+    __table_args__ = (
+        CheckConstraint("level BETWEEN 1 AND 100", name="ck_course_role_level_range"),
+    )
 
 
 def _utcnow() -> datetime:

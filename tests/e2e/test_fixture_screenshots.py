@@ -203,7 +203,10 @@ def _load_fixture_via_paste(page: Page, app_server: str, html_content: str) -> N
     page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
 
     # Wait for document to render
-    page.locator("[data-char-index]").first.wait_for(state="attached", timeout=30000)
+    page.wait_for_function(
+        "() => window._textNodes && window._textNodes.length > 0",
+        timeout=30000,
+    )
     page.wait_for_timeout(500)  # Let rendering stabilize
 
     # Check for data-speaker in rendered DOM

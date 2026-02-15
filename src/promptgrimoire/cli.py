@@ -377,8 +377,11 @@ def test_e2e() -> None:
     Manages the full E2E lifecycle:
     1. Run Alembic migrations and truncate test database
     2. Start NiceGUI server on a random port (single instance)
-    3. Run ``pytest -m e2e`` with xdist -- all workers share one server
+    3. Run ``pytest -m e2e`` against the server
     4. Shut down the server when tests complete
+
+    By default, tests run single-threaded with ``-x`` (fail-fast).
+    Pass ``--parallel`` to use xdist (``-n auto --dist=loadfile``).
 
     The server URL is passed via ``E2E_BASE_URL`` env var. The
     ``app_server`` fixture checks this and yields it directly instead
@@ -389,6 +392,11 @@ def test_e2e() -> None:
     Output saved to: test-e2e.log
     """
     import socket
+
+    # Consume --parallel before _run_pytest sees sys.argv
+    parallel = "--parallel" in sys.argv
+    if parallel:
+        sys.argv.remove("--parallel")
 
     # Eagerly load settings so .env is read before subprocess spawning.
     from promptgrimoire.config import get_settings
@@ -408,16 +416,21 @@ def test_e2e() -> None:
     # All xdist workers inherit this and skip starting their own server
     os.environ["E2E_BASE_URL"] = url
 
+    if parallel:
+        mode_args: list[str] = ["-n", "auto", "--dist=loadfile"]
+        mode_label = "parallel"
+    else:
+        mode_args = ["-x"]
+        mode_label = "serial, fail-fast"
+
     try:
         _run_pytest(
-            title=f"E2E Test Suite (Playwright) — server {url}",
+            title=f"E2E Test Suite (Playwright, {mode_label}) — server {url}",
             log_path=Path("test-e2e.log"),
             default_args=[
                 "-m",
                 "e2e",
-                "-n",
-                "auto",
-                "--dist=loadfile",
+                *mode_args,
                 "--durations=10",
                 "--tb=short",
                 "-v",

@@ -105,9 +105,9 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 
-    switch_label = page.get_by_text("Default copy protection", exact=True)
-    switch_input = switch_label.locator("..").locator("input[type='checkbox']")
-    assert switch_input.is_checked(), (
+    toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
+    toggle_input = toggle.locator("input[type='checkbox']")
+    assert toggle_input.is_checked(), (
         "Copy protection switch should be ON after enabling"
     )
 

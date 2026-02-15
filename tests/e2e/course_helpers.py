@@ -151,14 +151,13 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 
-    # The switch is a NiceGUI/Quasar switch; toggle if current state != desired
-    switch = page.get_by_text("Default copy protection", exact=True)
-    # Quasar switches use aria-checked
-    switch_input = switch.locator("..").locator("input[type='checkbox']")
+    # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component
+    toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
+    toggle_input = toggle.locator("input[type='checkbox']")
 
-    is_currently_on = switch_input.is_checked()
+    is_currently_on = toggle_input.is_checked()
     if is_currently_on != enabled:
-        switch.click()
+        toggle.click()
 
     page.get_by_role("button", name="Save").click()
 

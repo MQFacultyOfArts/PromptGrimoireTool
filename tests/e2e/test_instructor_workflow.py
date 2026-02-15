@@ -99,7 +99,9 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     Opens the settings dialog, checks the switch state, then
     closes the dialog via Cancel.
     """
-    page.get_by_role("button", name="settings").click()
+    page.locator("button").filter(
+        has=page.locator("i.q-icon", has_text="settings")
+    ).click()
     dialog_title = page.get_by_text("Course Settings", exact=True)
     dialog_title.wait_for(state="visible", timeout=5000)
 

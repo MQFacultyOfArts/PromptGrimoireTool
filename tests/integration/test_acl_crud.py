@@ -76,6 +76,7 @@ class TestGrantPermission:
         second = await grant_permission(workspace.id, user.id, "editor")
 
         # Same row was updated, not a new one created
+        assert second.id == first.id
         assert second.workspace_id == first.workspace_id
         assert second.user_id == first.user_id
         assert second.permission == "editor"

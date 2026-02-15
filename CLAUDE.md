@@ -53,7 +53,7 @@ E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Pla
 
 1. Runs Alembic migrations and truncates the test database
 2. Starts a NiceGUI server on a random port (single instance)
-3. Runs `pytest -m e2e` with xdist -- all workers share one server via `E2E_BASE_URL`
+3. Runs `pytest -m e2e` in serial fail-fast mode by default (`--parallel` for xdist)
 4. Shuts down the server when tests complete
 
 See #121.
@@ -89,8 +89,11 @@ uv run test-debug
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all
 
-# Run E2E tests (starts server, runs Playwright with xdist)
+# Run E2E tests (starts server, serial fail-fast by default)
 uv run test-e2e
+
+# Run E2E tests in parallel (xdist)
+uv run test-e2e --parallel
 
 # Run linting
 uv run ruff check .

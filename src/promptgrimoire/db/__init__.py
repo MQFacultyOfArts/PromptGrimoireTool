@@ -53,6 +53,7 @@ from promptgrimoire.db.models import (
     Workspace,
     WorkspaceDocument,
 )
+from promptgrimoire.db.roles import get_staff_roles
 from promptgrimoire.db.users import (
     create_user,
     find_or_create_user,
@@ -121,6 +122,7 @@ __all__ = [
     "get_expected_tables",
     "get_placement_context",
     "get_session",
+    "get_staff_roles",
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",

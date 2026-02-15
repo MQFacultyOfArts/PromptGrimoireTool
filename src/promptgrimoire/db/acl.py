@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import ACLEntry
+from promptgrimoire.db.models import ACLEntry, _utcnow
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -31,6 +31,7 @@ async def grant_permission(
             workspace_id=workspace_id,
             user_id=user_id,
             permission=permission,
+            created_at=_utcnow(),
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_acl_entry_workspace_user",

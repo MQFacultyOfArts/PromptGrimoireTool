@@ -106,8 +106,8 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     dialog_title.wait_for(state="visible", timeout=5000)
 
     toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
-    toggle_input = toggle.locator("input[type='checkbox']")
-    assert toggle_input.is_checked(), (
+    toggle_inner = toggle.locator("div.q-toggle__inner")
+    assert toggle_inner.get_attribute("aria-checked") == "true", (
         "Copy protection switch should be ON after enabling"
     )
 

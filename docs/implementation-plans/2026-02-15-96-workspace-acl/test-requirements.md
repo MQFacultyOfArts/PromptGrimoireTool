@@ -10,11 +10,11 @@
 
 | AC | Description | Phase | Test File | Test Function Pattern |
 |----|-------------|-------|-----------|----------------------|
-| AC1.1 | Permission table seed data (owner/editor/viewer with levels) | 1 | `tests/integration/test_reference_tables.py` | `test_permission_seed_data` |
-| AC1.2 | CourseRole table seed data (coordinator/instructor/tutor/student with levels) | 1 | `tests/integration/test_reference_tables.py` | `test_course_role_seed_data` |
-| AC1.3 | Seed data created by migration, not seed-data script | 1 | `tests/integration/test_reference_tables.py` | `test_seed_from_migration` |
-| AC1.4 | Duplicate name INSERT rejected (UNIQUE) | 1 | `tests/integration/test_reference_tables.py` | `test_duplicate_name_rejected` |
-| AC1.5 | Level columns have CHECK (1-100) and UNIQUE constraints | 1 | `tests/integration/test_reference_tables.py` | `test_level_constraints` |
+| AC1.1 | Permission table seed data (owner/editor/viewer with levels) | 1 | `tests/integration/test_acl_reference_tables.py` | `test_permission_seed_data` |
+| AC1.2 | CourseRole table seed data (coordinator/instructor/tutor/student with levels) | 1 | `tests/integration/test_acl_reference_tables.py` | `test_course_role_seed_data` |
+| AC1.3 | Seed data created by migration, not seed-data script | 1 | `tests/integration/test_acl_reference_tables.py` | `test_seed_from_migration` |
+| AC1.4 | Duplicate name INSERT rejected (UNIQUE) | 1 | `tests/integration/test_acl_reference_tables.py` | `test_duplicate_name_rejected` |
+| AC1.5 | Level columns have CHECK (1-100) and UNIQUE constraints | 1 | `tests/integration/test_acl_reference_tables.py` | `test_level_constraints` |
 | AC3.1 | CourseEnrollment uses role FK to course_role table | 2 | `tests/integration/test_course_role_normalisation.py` | `test_enrollment_role_fk` |
 | AC3.2 | Week visibility unchanged after normalisation | 2 | `tests/integration/test_course_role_normalisation.py` | `test_week_visibility_after_normalisation` |
 | AC3.3 | Enrollment CRUD accepts role by reference table lookup | 2 | `tests/integration/test_course_role_normalisation.py` | `test_enrollment_crud_by_role_name` |
@@ -73,7 +73,7 @@
 
 | Test File | Phase | AC Groups | Count |
 |-----------|-------|-----------|-------|
-| `tests/integration/test_reference_tables.py` | 1 | AC1 | 5 |
+| `tests/integration/test_acl_reference_tables.py` | 1 | AC1 | 5 |
 | `tests/integration/test_course_role_normalisation.py` | 2 | AC3 | 4 |
 | `tests/integration/test_acl_crud.py` | 3 | AC4, AC5 | 9 |
 | `tests/integration/test_permission_resolution.py` | 4 | AC6 | 11 |

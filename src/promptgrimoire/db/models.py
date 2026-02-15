@@ -48,10 +48,11 @@ class Permission(SQLModel, table=True):
         sa_column=Column(String(50), primary_key=True, nullable=False),
     )
     level: int = Field(
-        sa_column=Column(Integer, nullable=False, unique=True),
+        sa_column=Column(Integer, nullable=False),
     )
 
     __table_args__ = (
+        UniqueConstraint("level", name="uq_permission_level"),
         CheckConstraint("level BETWEEN 1 AND 100", name="ck_permission_level_range"),
     )
 
@@ -69,10 +70,11 @@ class CourseRoleRef(SQLModel, table=True):
         sa_column=Column(String(50), primary_key=True, nullable=False),
     )
     level: int = Field(
-        sa_column=Column(Integer, nullable=False, unique=True),
+        sa_column=Column(Integer, nullable=False),
     )
 
     __table_args__ = (
+        UniqueConstraint("level", name="uq_course_role_level"),
         CheckConstraint("level BETWEEN 1 AND 100", name="ck_course_role_level_range"),
     )
 

@@ -145,6 +145,11 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with copy_protection=NULL.
     """
+    default_allow_sharing: bool = Field(default=False)
+    """Course-level default for workspace sharing.
+
+    Inherited by activities with allow_sharing=NULL.
+    """
     default_instructor_permission: str = Field(
         default="editor",
         sa_column=Column(
@@ -270,6 +275,11 @@ class Activity(SQLModel, table=True):
     """Tri-state copy protection.
 
     None=inherit from course, True=on, False=off.
+    """
+    allow_sharing: bool | None = Field(default=None)
+    """Tri-state sharing control.
+
+    None=inherit from course, True=allowed, False=disallowed.
     """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

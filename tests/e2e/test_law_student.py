@@ -232,13 +232,16 @@ class TestLawStudent:
                         f"PDF too small: {len(pdf_bytes)} bytes"
                     )
 
-                    # Verify comments embedded in PDF
-                    assert uuid1.encode() in pdf_bytes, (
-                        "First comment UUID not found in PDF"
-                    )
-                    assert uuid2.encode() in pdf_bytes, (
-                        "Second comment UUID not found in PDF"
-                    )
+                    # Extract text from PDF via pymupdf for content verification
+                    import pymupdf
+
+                    doc = pymupdf.open(download.path())
+                    pdf_text = "".join(page.get_text() for page in doc)
+                    doc.close()
+
+                    # Verify comment UUIDs in extracted PDF text
+                    assert uuid1 in pdf_text, "First comment UUID not found in PDF"
+                    assert uuid2 in pdf_text, "Second comment UUID not found in PDF"
 
                 except Exception as e:
                     # Skip if TinyTeX not installed or PDF generation fails

@@ -276,9 +276,22 @@ def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> 
     # processes the input and navigates back to the annotation page.
     page.get_by_role("button", name=re.compile("add document", re.IGNORECASE)).click()
 
-    # Wait for text walker readiness (15s timeout for large fixtures like AustLII).
-    # The page navigates after processing, so _textNodes signals completion.
+    # Wait for text walker readiness (large fixtures like AustLII need time).
+    wait_for_text_walker(page, timeout=30000)
+
+
+def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
+    """Wait for the text walker to initialise (readiness gate).
+
+    This is a synchronisation wait, not a test assertion. It ensures
+    the text walker has built its node map before any interactions that
+    depend on character offsets or highlight rendering.
+
+    Args:
+        page: Playwright page.
+        timeout: Maximum wait time in milliseconds.
+    """
     page.wait_for_function(
         "() => window._textNodes && window._textNodes.length > 0",
-        timeout=30000,
+        timeout=timeout,
     )

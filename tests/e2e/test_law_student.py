@@ -33,12 +33,15 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser
     from pytest_subtests import SubTests
 
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
     select_chars,
+    wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
 
@@ -187,14 +190,20 @@ class TestLawStudent:
                     page.locator("[data-testid='organise-card']").first
                 ).to_be_visible(timeout=10000)
 
+                # Verify a column heading matches a tag we used
+                expect(page.get_by_text("Procedural History").first).to_be_visible()
+
             with subtests.test(msg="respond_tab"):
                 # Click Respond tab
                 page.get_by_text("Respond", exact=True).click()
 
                 # Verify Milkdown editor loads
-                expect(
-                    page.locator("[data-testid='milkdown-editor-container']")
-                ).to_be_visible(timeout=10000)
+                editor = page.locator("[data-testid='milkdown-editor-container']")
+                expect(editor).to_be_visible(timeout=10000)
+
+                # Type into the editor to exercise input capability
+                editor.locator("[contenteditable]").first.click()
+                page.keyboard.type("Case analysis notes")
 
             with subtests.test(msg="reload_persistence"):
                 # Return to Annotate tab
@@ -204,10 +213,7 @@ class TestLawStudent:
                 page.reload()
 
                 # Wait for text walker to initialize
-                page.wait_for_function(
-                    "() => window._textNodes && window._textNodes.length > 0",
-                    timeout=15000,
-                )
+                wait_for_text_walker(page, timeout=15000)
 
                 # Verify annotations persist after reload
                 expect(
@@ -236,18 +242,18 @@ class TestLawStudent:
                     import pymupdf
 
                     doc = pymupdf.open(download.path())
-                    pdf_text = "".join(page.get_text() for page in doc)
+                    pdf_text = "".join(pdf_page.get_text() for pdf_page in doc)
                     doc.close()
 
                     # Verify comment UUIDs in extracted PDF text
                     assert uuid1 in pdf_text, "First comment UUID not found in PDF"
                     assert uuid2 in pdf_text, "Second comment UUID not found in PDF"
 
-                except Exception as e:
-                    # Skip if TinyTeX not installed or PDF generation fails
-                    if "Timeout" in str(e) or "Download" in str(e):
-                        msg = f"PDF export unavailable (TinyTeX not installed?): {e}"
-                        pytest.skip(msg)
+                except PlaywrightTimeoutError:
+                    pytest.skip("PDF export timed out (TinyTeX not installed?)")
+                except PlaywrightError as e:
+                    if "Download" in str(e):
+                        pytest.skip(f"PDF download failed: {e}")
                     raise
 
         finally:

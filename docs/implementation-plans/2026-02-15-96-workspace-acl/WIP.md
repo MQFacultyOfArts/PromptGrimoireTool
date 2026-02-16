@@ -14,22 +14,22 @@
 | 4 | Permission Resolution | Done | No human UAT needed (pure backend logic, all automated tests) |
 | 5 | Ownership at Clone | Done | Code reviewed, no issues |
 | 6 | Sharing Controls | Done | 2599 passed |
+| 7 | Listing Queries | Done | 2608 passed |
 
-## Next: Phase 7 — Listing Queries
+## Next: Phase 8 — Enforcement and Revocation
 
 ### Resume instructions
 
 ```bash
 cd .worktrees/96-workspace-acl
 git log --oneline -5  # verify HEAD
-# Read phase_07.md and begin Task 1
+# Read phase_08.md and begin Task 1
 ```
 
 ## Remaining Phases
 
 | Phase | Name | File |
 |-------|------|------|
-| 7 | Listing Queries | `phase_07.md` |
 | 8 | Enforcement and Revocation | `phase_08.md` |
 
 ## Key Design Decisions Made During Implementation

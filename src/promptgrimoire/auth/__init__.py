@@ -19,6 +19,10 @@ Usage:
     )
 """
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
 from promptgrimoire.auth.models import (
     AuthResult,
@@ -27,6 +31,7 @@ from promptgrimoire.auth.models import (
     SSOStartResult,
 )
 from promptgrimoire.auth.protocol import AuthClientProtocol
+from promptgrimoire.db.acl import can_access_workspace
 
 _PRIVILEGED_ROLES = frozenset({"instructor", "stytch_admin"})
 
@@ -47,12 +52,50 @@ def is_privileged_user(auth_user: dict[str, object] | None) -> bool:
     return bool(_PRIVILEGED_ROLES & set(roles))
 
 
+async def check_workspace_access(
+    workspace_id: UUID,
+    auth_user: dict[str, object] | None,
+) -> str | None:
+    """Check if the current user can access a workspace.
+
+    Resolution order:
+    1. No auth_user -> None (unauthenticated)
+    2. Admin (is_privileged_user) -> "owner" (bypass)
+    3. ACL resolution via can_access_workspace() -> permission or None
+
+    Parameters
+    ----------
+    workspace_id : UUID
+        The workspace UUID.
+    auth_user : dict or None
+        The auth_user dict from app.storage.user, or None.
+
+    Returns
+    -------
+    str or None
+        Permission name ("owner", "editor", "viewer") or None if denied.
+    """
+    if auth_user is None:
+        return None
+
+    if is_privileged_user(auth_user):
+        return "owner"
+
+    user_id_str = auth_user.get("user_id")
+    if not user_id_str:
+        return None
+
+    user_id = UUID(str(user_id_str))
+    return await can_access_workspace(workspace_id, user_id)
+
+
 __all__ = [
     "AuthClientProtocol",
     "AuthResult",
     "SSOStartResult",
     "SendResult",
     "SessionResult",
+    "check_workspace_access",
     "clear_config_cache",
     "get_auth_client",
     "is_privileged_user",

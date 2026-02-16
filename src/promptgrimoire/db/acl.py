@@ -25,6 +25,7 @@ from promptgrimoire.db.models import (
 from promptgrimoire.db.roles import get_staff_roles
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from uuid import UUID
 
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -61,10 +62,17 @@ async def grant_permission(
         return entry.one()
 
 
-async def revoke_permission(workspace_id: UUID, user_id: UUID) -> bool:
+async def revoke_permission(
+    workspace_id: UUID,
+    user_id: UUID,
+    *,
+    on_revoke: Callable[[UUID, UUID], Awaitable[int]] | None = None,
+) -> bool:
     """Revoke a user's permission on a workspace.
 
     Returns True if an entry was deleted, False if no entry existed.
+    If on_revoke is provided and an entry was deleted, calls
+    on_revoke(workspace_id, user_id) to notify connected clients.
     """
     async with get_session() as session:
         entry = await session.exec(
@@ -78,7 +86,11 @@ async def revoke_permission(workspace_id: UUID, user_id: UUID) -> bool:
             return False
         await session.delete(row)
         await session.flush()
-        return True
+
+    if on_revoke is not None:
+        await on_revoke(workspace_id, user_id)
+
+    return True
 
 
 async def list_entries_for_workspace(workspace_id: UUID) -> list[ACLEntry]:

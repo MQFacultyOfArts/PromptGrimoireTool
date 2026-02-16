@@ -63,13 +63,13 @@
 | AC9.5 | Resume shown when user has workspace | 7 | `tests/integration/test_listing_queries.py` | `test_owner_gets_resume` |
 | AC9.6 | Start Activity shown when no workspace | 7 | `tests/integration/test_listing_queries.py` | `test_shared_viewer_gets_start` |
 | AC9.7 | Deleted activity workspace still in my-workspaces | 7 | `tests/integration/test_listing_queries.py` | `test_orphaned_workspace_still_accessible` |
-| AC10.1 | Unauthenticated redirected to /login | 8 | `tests/integration/test_enforcement.py` | `test_unauthenticated_redirect_login` |
-| AC10.2 | Unauthorised redirected to /courses | 8 | `tests/integration/test_enforcement.py` | `test_unauthorised_redirect_courses` |
-| AC10.3 | Viewer sees read-only UI | 8 | `tests/integration/test_enforcement.py` | `test_viewer_read_only` |
-| AC10.4 | Editor/owner sees full UI | 8 | `tests/integration/test_enforcement.py` | `test_editor_owner_full_ui` |
-| AC10.5 | Revocation pushes redirect via websocket | 8 | `tests/integration/test_enforcement.py` | `test_revocation_push_redirect` |
-| AC10.6 | Revoked user sees toast notification | 8 | `tests/integration/test_enforcement.py` | `test_revocation_toast` |
-| AC10.7 | No websocket — revocation on next page load | 8 | `tests/integration/test_enforcement.py` | `test_revocation_no_websocket` |
+| AC10.1 | Unauthenticated redirected to /login | 8 | `tests/integration/test_enforcement.py` | `TestCheckWorkspaceAccessUnauthenticated::test_unauthenticated_returns_none` |
+| AC10.2 | Unauthorised redirected to /courses | 8 | `tests/integration/test_enforcement.py` | `TestCheckWorkspaceAccessUnauthorised::test_unauthorised_user_returns_none` |
+| AC10.3 | Viewer sees read-only UI | 8 | `tests/integration/test_enforcement.py` | `TestCheckWorkspaceAccessViewer::test_viewer_returns_viewer` |
+| AC10.4 | Editor/owner sees full UI | 8 | `tests/integration/test_enforcement.py` | `TestCheckWorkspaceAccessEditorOwner` (2 tests: editor, owner) |
+| AC10.5 | Revocation pushes redirect via websocket | 8 | `tests/integration/test_enforcement.py` | Deferred to E2E (websocket needed) |
+| AC10.6 | Revoked user sees toast notification | 8 | `tests/integration/test_enforcement.py` | Deferred to E2E (websocket needed) |
+| AC10.7 | No websocket — revocation on next page load | 8 | `tests/integration/test_enforcement.py` | `TestRevocationBroadcast` (2 tests: returns 0, cleans up dict) |
 
 ## Test File Summary
 
@@ -83,8 +83,8 @@
 | `tests/integration/test_clone_ownership.py` | 5 | AC7 | 6 + 1 (AC7.5) |
 | `tests/integration/test_sharing_controls.py` | 6 | AC8 | 9 |
 | `tests/integration/test_listing_queries.py` | 7 | AC9 | 7 |
-| `tests/integration/test_enforcement.py` | 8 | AC6.6, AC6.9, AC10 | 9 (not yet implemented) |
-| **Total** | | | **68** (60 existing + 8 new) |
+| `tests/integration/test_enforcement.py` | 8 | AC6.6, AC6.9, AC10 | 11 |
+| **Total** | | | **71** |
 
 ## Notes
 

@@ -15,22 +15,11 @@
 | 5 | Ownership at Clone | Done | Code reviewed, no issues |
 | 6 | Sharing Controls | Done | 2599 passed |
 | 7 | Listing Queries | Done | 2608 passed |
+| 8 | Enforcement and Revocation | Done | 2628 passed |
 
-## Next: Phase 8 — Enforcement and Revocation
+## All Phases Complete
 
-### Resume instructions
-
-```bash
-cd .worktrees/96-workspace-acl
-git log --oneline -5  # verify HEAD
-# Read phase_08.md and begin Task 1
-```
-
-## Remaining Phases
-
-| Phase | Name | File |
-|-------|------|------|
-| 8 | Enforcement and Revocation | `phase_08.md` |
+All 8 phases of the workspace ACL implementation are done. Pending: human UAT and PR.
 
 ## Key Design Decisions Made During Implementation
 

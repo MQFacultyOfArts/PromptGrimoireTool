@@ -77,7 +77,7 @@ def fresh_page(browser: Browser) -> Generator[Page]:
 def authenticated_page(browser: Browser, app_server: str) -> Generator[Page]:
     """Provide a fresh page pre-authenticated via mock auth.
 
-    Uses mock auth tokens (AUTH_MOCK=true) to authenticate.
+    Uses mock auth tokens (DEV__AUTH_MOCK=true) to authenticate.
     The mock client accepts tokens in format: mock-token-{email}
     and creates a session without requiring a real user in the database.
 
@@ -115,7 +115,7 @@ def _authenticate_page(
 ) -> None:
     """Authenticate a page via mock auth.
 
-    Uses mock auth tokens (AUTH_MOCK=true) to authenticate.
+    Uses mock auth tokens (DEV__AUTH_MOCK=true) to authenticate.
 
     Args:
         page: Playwright page to authenticate.

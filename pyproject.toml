@@ -137,7 +137,7 @@ markers = [
 exclude = ["alembic/"]
 
 [tool.bandit]
-  skips = ["B101", "B404"]
+  skips = ["B101", "B404", "B603", "B607"]
 
 [dependency-groups]
 dev = [

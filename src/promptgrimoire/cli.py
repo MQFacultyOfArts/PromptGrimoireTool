@@ -300,10 +300,10 @@ for key in list(os.environ.keys()):
     if 'PYTEST' in key or 'NICEGUI' in key:
         del os.environ[key]
 
-os.environ['AUTH_MOCK'] = 'true'
-os.environ['STORAGE_SECRET'] = 'test-secret-for-e2e'
-os.environ.setdefault('STYTCH_SSO_CONNECTION_ID', 'test-sso-connection-id')
-os.environ.setdefault('STYTCH_PUBLIC_TOKEN', 'test-public-token')
+os.environ['DEV__AUTH_MOCK'] = 'true'
+os.environ['APP__STORAGE_SECRET'] = 'test-secret-for-e2e'
+os.environ.setdefault('STYTCH__SSO_CONNECTION_ID', 'test-sso-connection-id')
+os.environ.setdefault('STYTCH__PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 

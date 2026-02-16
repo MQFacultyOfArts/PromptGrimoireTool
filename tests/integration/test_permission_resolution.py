@@ -8,8 +8,10 @@ Acceptance Criteria:
 - AC6.3: Coordinator enrolled in course gets access (same as instructor)
 - AC6.4: Tutor enrolled in course gets access (same as instructor)
 - AC6.5: When both explicit ACL and enrollment-derived exist, higher level wins
+- AC6.6: Admin (via Stytch) gets owner-level access regardless of ACL/enrollment
 - AC6.7: Student enrolled in course but without explicit ACL gets None
 - AC6.8: Unenrolled user with no ACL entry gets None
+- AC6.9: User with no auth session gets None
 - AC6.10: Loose workspace -- only explicit ACL grants access
 - AC6.11: Course-placed workspace -- instructor access derived from enrollment
 """
@@ -612,4 +614,78 @@ class TestCanAccessWorkspace:
 
         result = await can_access_workspace(workspace.id, user.id)
 
+        assert result is None
+
+
+class TestAdminBypass:
+    """AC6.6: Admin (via Stytch) gets owner-level access regardless of ACL/enrollment.
+
+    The admin bypass lives at the page layer (is_privileged_user checks Stytch
+    roles), not the DB layer (resolve_permission is pure data). These tests
+    verify the building blocks: is_privileged_user returns True for admins,
+    and resolve_permission returns None for users without ACL. The composition
+    into check_workspace_access() is tested in Phase 8 (test_enforcement.py).
+    """
+
+    def test_admin_is_privileged(self) -> None:
+        """is_privileged_user returns True for org-level admin."""
+        from promptgrimoire.auth import is_privileged_user
+
+        auth_user: dict[str, object] = {"is_admin": True, "roles": []}
+        assert is_privileged_user(auth_user) is True
+
+    def test_instructor_is_privileged(self) -> None:
+        """is_privileged_user returns True for instructor role."""
+        from promptgrimoire.auth import is_privileged_user
+
+        auth_user: dict[str, object] = {"is_admin": False, "roles": ["instructor"]}
+        assert is_privileged_user(auth_user) is True
+
+    @pytest.mark.asyncio
+    async def test_admin_without_acl_gets_none_from_db_layer(self) -> None:
+        """resolve_permission returns None for admin without ACL entry.
+
+        This confirms the DB layer does NOT handle admin bypass — that's
+        the page layer's responsibility via is_privileged_user().
+        """
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        admin = await create_user(
+            email=f"admin-bypass-{tag}@test.local",
+            display_name=f"Admin {tag}",
+        )
+        workspace = await create_workspace()
+
+        # DB layer knows nothing about Stytch roles — returns None
+        result = await resolve_permission(workspace.id, admin.id)
+        assert result is None
+
+
+class TestNoAuthDenial:
+    """AC6.9: User with no auth session gets None.
+
+    The "no auth session" check is at the page layer — resolve_permission()
+    requires a user_id UUID, which can only come from an authenticated session.
+    These tests verify the building blocks: is_privileged_user returns False
+    for None, and resolve_permission rejects unknown user IDs. The composition
+    into check_workspace_access() is tested in Phase 8 (test_enforcement.py).
+    """
+
+    def test_no_auth_user_is_not_privileged(self) -> None:
+        """is_privileged_user returns False for None (unauthenticated)."""
+        from promptgrimoire.auth import is_privileged_user
+
+        assert is_privileged_user(None) is False
+
+    @pytest.mark.asyncio
+    async def test_unknown_user_id_gets_none(self) -> None:
+        """resolve_permission returns None for a non-existent user UUID."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        result = await resolve_permission(workspace.id, uuid4())
         assert result is None

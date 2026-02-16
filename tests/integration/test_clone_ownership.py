@@ -9,7 +9,7 @@ flow.
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -177,6 +177,38 @@ class TestDuplicateDetection:
 
         found = await get_user_workspace_for_activity(data["activity"].id, student2.id)
         assert found is None
+
+
+class TestUnauthenticatedCloneRejection:
+    """AC7.5: Unauthenticated user cannot clone.
+
+    clone_workspace_from_activity() and check_clone_eligibility() both require
+    user_id: UUID — a type annotation guarantee that prevents None from being
+    passed. The page layer (_get_user_id() returning None) gates access before
+    the clone function is ever called.
+
+    This test verifies the type annotation contract: the function signature
+    declares user_id as UUID (not UUID | None), which type checkers enforce.
+    """
+
+    def test_clone_eligibility_requires_uuid_user_id(self) -> None:
+        """check_clone_eligibility declares user_id as UUID, not Optional."""
+        from typing import get_type_hints
+
+        from promptgrimoire.db.workspaces import check_clone_eligibility
+
+        hints = get_type_hints(check_clone_eligibility)
+        # Annotation should be UUID, not Optional[UUID] or UUID | None
+        assert hints["user_id"] is UUID
+
+    def test_clone_workspace_requires_uuid_user_id(self) -> None:
+        """clone_workspace_from_activity declares user_id as UUID, not Optional."""
+        from typing import get_type_hints
+
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        hints = get_type_hints(clone_workspace_from_activity)
+        assert hints["user_id"] is UUID
 
 
 class TestEligibilityGatesInCloneFlow:

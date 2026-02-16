@@ -28,6 +28,37 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+class TestSeedDataFromMigration:
+    """Verify seed data comes from Alembic migration, not seed-data script.
+
+    AC1.3: Reference table rows are created by the migration, not seed-data script.
+
+    Proof strategy: the integration test database is set up by running Alembic
+    migrations ONLY — the seed-data CLI is never invoked. If reference table
+    data exists in these tests, it came from the migration. This test makes
+    that implicit guarantee explicit by verifying the seed-data CLI source
+    code does not mention the reference table model names.
+    """
+
+    def test_seed_data_cli_does_not_touch_permission_table(self) -> None:
+        """The seed-data CLI function source doesn't reference Permission model."""
+        import inspect
+
+        from promptgrimoire.cli import seed_data
+
+        source = inspect.getsource(seed_data)
+        assert "Permission" not in source
+
+    def test_seed_data_cli_does_not_touch_course_role_table(self) -> None:
+        """The seed-data CLI function source doesn't reference CourseRoleRef model."""
+        import inspect
+
+        from promptgrimoire.cli import seed_data
+
+        source = inspect.getsource(seed_data)
+        assert "CourseRoleRef" not in source
+
+
 class TestPermissionSeedData:
     """Verify Permission table seed data from migration.
 

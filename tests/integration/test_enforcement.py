@@ -226,7 +226,7 @@ class TestRevocationBroadcast:
     """AC10.5, AC10.6, AC10.7: Revocation broadcast.
 
     AC10.5 and AC10.6 require connected NiceGUI websocket clients -- deferred
-    to E2E. AC10.7 (no websocket) is tested here.
+    to E2E (#171). AC10.7 (no websocket) is tested here.
     """
 
     @pytest.mark.asyncio

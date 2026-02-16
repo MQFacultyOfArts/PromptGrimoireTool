@@ -633,7 +633,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         ui.navigate.to("/courses")
         return
 
-    # TODO(2026-02): Thread permission=="viewer" as read_only through UI components
+    # TODO(2026-02): Thread read_only for viewer permission -- #172
     workspace = await get_workspace(workspace_id)
 
     if workspace is None:

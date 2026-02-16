@@ -33,6 +33,7 @@ from tests.e2e.course_helpers import (
     add_week,
     configure_course_copy_protection,
     create_course,
+    enrol_student,
     publish_week,
 )
 
@@ -91,6 +92,68 @@ def _fill_template_workspace(page: Page) -> None:
     assert doc_container.inner_text().strip(), (
         "Document container should have visible text"
     )
+
+
+def _extract_course_id(page: Page) -> str:
+    """Extract the course UUID from the current page URL.
+
+    Expects the page URL to contain ``/courses/{uuid}``.
+    """
+    match = re.search(r"/courses/([0-9a-f-]+)", page.url)
+    assert match, f"Expected course UUID in URL, got: {page.url}"
+    return match.group(1)
+
+
+def _student_clones_and_sees_content(
+    browser: Browser,
+    app_server: str,
+    *,
+    student_email: str,
+    course_id: str,
+    activity_title: str,
+    expected_text: str,
+) -> None:
+    """Log in as student, navigate to course, clone workspace, verify content.
+
+    Creates a separate browser context for the student. Verifies the
+    cloned workspace contains the template content.
+    """
+    student_ctx = browser.new_context()
+    student_page = student_ctx.new_page()
+    try:
+        _authenticate_page(student_page, app_server, email=student_email)
+
+        # Navigate to the course detail page
+        student_page.goto(f"{app_server}/courses/{course_id}")
+
+        # Find and click "Start Activity" for the activity
+        activity_label = student_page.get_by_text(activity_title)
+        activity_label.wait_for(state="visible", timeout=10000)
+        card = activity_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
+        card.get_by_role("button", name="Start Activity").click()
+
+        # Wait for redirect to annotation page with cloned workspace
+        student_page.wait_for_url(
+            re.compile(r"/annotation\?workspace_id="),
+            timeout=15000,
+        )
+
+        # Wait for text walker to initialise (content rendered)
+        student_page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=10000,
+        )
+
+        # Verify cloned content is visible
+        doc_container = student_page.locator("#doc-container")
+        doc_container.wait_for(state="visible", timeout=5000)
+        visible_text = doc_container.inner_text().strip()
+        assert expected_text in visible_text, (
+            f"Expected '{expected_text}' in cloned workspace, got: {visible_text!r}"
+        )
+    finally:
+        student_page.close()
+        student_ctx.close()
 
 
 def _verify_copy_protection_enabled(page: Page) -> None:
@@ -186,6 +249,23 @@ class TestInstructorWorkflow:
                 publish_week(page, "Introduction")
                 unpub_btn = page.get_by_role("button", name="Unpublish")
                 assert unpub_btn.is_visible(), "Unpublish button should be visible"
+
+            # --- Bridge: instructor-to-student handoff ---
+            student_email = f"student-{uid}@test.edu"
+            course_id = _extract_course_id(page)
+
+            with subtests.test(msg="enrol_student"):
+                enrol_student(page, email=student_email)
+
+            with subtests.test(msg="student_clones_and_sees_content"):
+                _student_clones_and_sees_content(
+                    browser,
+                    app_server,
+                    student_email=student_email,
+                    course_id=course_id,
+                    activity_title="Annotate Becky",
+                    expected_text="Becky Bennett",
+                )
 
         finally:
             page.close()

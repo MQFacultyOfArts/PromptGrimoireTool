@@ -166,6 +166,34 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     dialog_title.wait_for(state="hidden", timeout=5000)
 
 
+def enrol_student(page: Page, *, email: str) -> None:
+    """Navigate to manage enrollments and add a student.
+
+    Expects the page to be on a course detail page (``/courses/{id}``).
+    Navigates to the enrollments page, fills the email, and clicks Add.
+    Waits for the success notification before returning.
+
+    Args:
+        page: Authenticated Playwright page on a course detail page.
+        email: Student email address to enrol.
+    """
+    page.get_by_role("button", name="Manage Enrollments").click()
+    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/enrollments"), timeout=10000)
+
+    page.get_by_label("Email Address").fill(email)
+
+    page.get_by_role("button", name="Add").click()
+
+    # Wait for success notification
+    page.get_by_text(re.compile(r"Enrollment added")).wait_for(
+        state="visible", timeout=5000
+    )
+
+    # Navigate back to course detail page
+    page.get_by_role("button", name="Back to Course").click()
+    page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+
+
 def publish_week(page: Page, week_title: str) -> None:
     """Find a week card and click its Publish button.
 

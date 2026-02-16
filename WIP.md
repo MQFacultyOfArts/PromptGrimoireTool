@@ -1,6 +1,6 @@
 # WIP: E2E Test Migration (#156)
 
-**Date:** 2026-02-15
+**Date:** 2026-02-16
 **Branch:** `156-e2e-test-migration`
 
 ## Completed
@@ -25,30 +25,34 @@
 - `25bd896` — Add `email` param to `_authenticate_page()`
 - `64640e9` — Create `course_helpers.py` (5 helpers)
 - `d7eebe8` — Create `test_instructor_workflow.py` (7 subtests)
-- `b66781e` through `384e595` — Six fix commits from review cycles:
-  - Playwright strict mode violations
-  - NiceGUI `ui.label()` renders `<div>` not heading
-  - Auth mismatch (navigate to `/courses/new` directly)
-  - Icon-only button locator pattern
-  - Quasar `q-toggle` component scoping
-  - `aria-checked` on root `.q-toggle`, not `div.q-toggle__inner`
-- Code review: **NEEDS RE-REVIEW** (last fix `384e595` not yet reviewed)
+- `b66781e` through `384e595` — Six fix commits from review cycles
+- Code review: APPROVED (zero issues)
+- Proleptic challenge raised 3 items, all addressed:
+  1. Fixed `_E2E_SERVER_SCRIPT` env var prefixes (`AUTH_MOCK` → `DEV__AUTH_MOCK`, etc.)
+  2. Added bridge subtests: `enrol_student` + `student_clones_and_sees_content` (9 subtests total)
+  3. Ran fixture analysis on AustLII fixtures (structure documented below)
 
 ### Cherry-picks from 96-workspace-acl
-- `bf9ae95` — docs: extract subsystem documentation into dedicated docs files
-- `4bd6609` — refactor: reduce CLAUDE.md from 555 to 172 lines
+- Rebased onto main (2026-02-16): annotation split refactor, workspace ACL docs merged cleanly
 
 ## Resume Point
 
-**Phase 3 code review needs to run.** The aria-checked fix (`384e595`) hasn't been reviewed yet. After approval, continue with Phase 4.
+**Ready for Phase 4.** All prior phases reviewed and approved. Bridge test confirms instructor→student handoff works.
 
 ### Next Steps (in order)
-1. Run Phase 3 code review (all files: `conftest.py`, `course_helpers.py`, `test_instructor_workflow.py`)
-2. Phase 4: Law Student Test (`test_law_student.py`) — plan at `docs/implementation-plans/.../phase_04.md`
-3. Phase 5: Translation Student Test
-4. Phase 6: History Tutorial Group Test
-5. Phase 7: Naughty Student Test
-6. Phase 8: Delete Obsolete Files
+1. Phase 4: Law Student Test (`test_law_student.py`) — plan at `docs/implementation-plans/.../phase_04.md`
+2. Phase 5: Translation Student Test
+3. Phase 6: History Tutorial Group Test
+4. Phase 7: Naughty Student Test
+5. Phase 8: Delete Obsolete Files
+
+### AustLII Fixture Analysis (for Phase 4)
+
+Two AustLII fixtures available:
+- **`austlii`** — 113K chars, 151 spans, 109 list items, 103 links. Full page with chrome (header, search, nav).
+- **`lawlis_v_r_austlii`** — 39K chars, cleaner structure. Has `<article>`, `<h1>`, `<footer>`. Better for law student narrative (smaller, real case judgment).
+
+Recommend `lawlis_v_r_austlii` for Phase 4 — smaller, semantic HTML, represents a real case.
 
 ## Key Learnings (NiceGUI/Quasar/Playwright)
 
@@ -61,12 +65,14 @@ These patterns were discovered through review cycles and are critical for remain
 - **Course creation**: Navigate directly to `/courses/new` (not via `/courses` page, which requires DB enrollment for "New Course" button).
 - **E2E compliance guard**: `tests/unit/test_e2e_compliance.py::test_no_js_injection_in_e2e_tests` forbids `page.evaluate()` in test files not listed in `ALLOWED_JS_FILES`.
 - **`_textNodes` readiness**: Use `page.wait_for_function("() => window._textNodes && window._textNodes.length > 0", timeout=N)` instead of `data-char-index` selectors.
+- **Env var prefixes**: pydantic-settings uses double-underscore prefixes: `DEV__AUTH_MOCK`, `APP__STORAGE_SECRET`, `STYTCH__SSO_CONNECTION_ID`, `STYTCH__PUBLIC_TOKEN`. The `_E2E_SERVER_SCRIPT` in `cli.py` had wrong prefixes (fixed).
+- **Student workspace cloning**: "Start Activity" button clones template workspace. Student must be enrolled in course to see the course page. Activities are visible once week is published.
 
 ## Constraints
 
 - **Do NOT run `test-e2e`** without `--parallel` awareness. User was worried about forkbomb with 12+ concurrent E2E tests. Default is now serial fail-fast.
-- **docs/database.md** was cherry-picked from `96-workspace-acl` with ACL tables. Keep as-is — those tables are landing soon (Phase 4 of #96 is complete and tested).
+- **docs/database.md** was cherry-picked from `96-workspace-acl` with ACL tables. Keep as-is — those tables are landing soon.
 
 ## Task List State
 
-Phases 1-3 tasks are completed. Pending tasks start at Phase 4 (#11, #12, #13) through Phase 8 (#23, #24, #25).
+Phases 1-3 tasks are completed. Pending tasks start at Phase 4.

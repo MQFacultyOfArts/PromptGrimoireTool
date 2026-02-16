@@ -12,38 +12,23 @@
 | 2 | CourseRole Normalisation | Done | Confirmed |
 | 3 | ACL Model (ACLEntry) | Done | Confirmed |
 | 4 | Permission Resolution | Done | No human UAT needed (pure backend logic, all automated tests) |
+| 5 | Ownership at Clone | Done | Code reviewed, no issues |
+| 6 | Sharing Controls | Done | 2599 passed |
 
-## In Progress: Phase 5 — Ownership at Clone
-
-**Subcomponent A (Tasks 1-2): COMMITTED** (`488f7cd`)
-- `get_user_workspace_for_activity()` added to `db/workspaces.py`
-- `clone_workspace_from_activity()` updated with `user_id` param + atomic owner ACLEntry
-- All existing clone tests updated to pass `user_id`
-
-**Subcomponent B (Tasks 3-4): WIP COMMITTED** (`ab1c2a2`)
-- `check_clone_eligibility()` added to `db/workspaces.py` — validates enrollment + week visibility
-- `start_activity()` updated with full auth/enrollment/duplicate detection flow
-- `tests/integration/test_clone_eligibility.py` created
-- **Not yet reviewed.** Pre-commit hooks pass (ruff + ty). Integration tests not run (no test DB in this env).
-
-**Subcomponent C (Tasks 5-6): DONE**
-- Task 5: `db/__init__.py` exports updated (`check_clone_eligibility`, `get_user_workspace_for_activity`)
-- Task 6: `tests/integration/test_clone_ownership.py` created (AC7.1, AC7.4, AC7.6 + eligibility gates)
+## Next: Phase 7 — Listing Queries
 
 ### Resume instructions
 
 ```bash
 cd .worktrees/96-workspace-acl
 git log --oneline -5  # verify HEAD
-# Phase 5 complete — run code review, then proceed to Phase 6
+# Read phase_07.md and begin Task 1
 ```
 
 ## Remaining Phases
 
 | Phase | Name | File |
 |-------|------|------|
-| 5 | Ownership at Clone (in progress) | `phase_05.md` |
-| 6 | Sharing Controls | `phase_06.md` |
 | 7 | Listing Queries | `phase_07.md` |
 | 8 | Enforcement and Revocation | `phase_08.md` |
 

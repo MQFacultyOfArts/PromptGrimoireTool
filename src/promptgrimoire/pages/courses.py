@@ -77,6 +77,12 @@ _COPY_PROTECTION_OPTIONS: dict[str, str] = {
     "off": "Off",
 }
 
+_SHARING_OPTIONS: dict[str, str] = {
+    "inherit": "Inherit from course",
+    "on": "Allowed",
+    "off": "Not allowed",
+}
+
 
 def _model_to_ui(value: bool | None) -> str:
     """Convert model tri-state copy_protection to UI select key.
@@ -115,24 +121,33 @@ def _broadcast_weeks_refresh(
 
 
 async def open_course_settings(course: Course) -> None:
-    """Open a dialog to edit course settings (e.g. default copy protection).
+    """Open a dialog to edit course settings.
 
     Follows the awaitable dialog pattern from dialogs.py.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Course Settings").classes("text-lg font-bold")
 
-        switch = ui.switch(
+        cp_switch = ui.switch(
             "Default copy protection",
             value=course.default_copy_protection,
+        )
+        sharing_switch = ui.switch(
+            "Default allow sharing",
+            value=course.default_allow_sharing,
         )
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                await update_course(course.id, default_copy_protection=switch.value)
-                course.default_copy_protection = switch.value
+                await update_course(
+                    course.id,
+                    default_copy_protection=cp_switch.value,
+                    default_allow_sharing=sharing_switch.value,
+                )
+                course.default_copy_protection = cp_switch.value
+                course.default_allow_sharing = sharing_switch.value
                 dialog.close()
                 ui.notify("Course settings saved", type="positive")
 
@@ -142,27 +157,38 @@ async def open_course_settings(course: Course) -> None:
 
 
 async def open_activity_settings(activity: Activity) -> None:
-    """Open a dialog to edit per-activity copy protection.
+    """Open a dialog to edit per-activity settings.
 
-    Shows a tri-state select: Inherit from course / On / Off.
-    Verifies AC7.2, AC7.3, AC7.4, AC7.5.
+    Shows tri-state selects for copy protection and sharing.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Activity Settings").classes("text-lg font-bold")
 
-        select = ui.select(
+        cp_select = ui.select(
             options=_COPY_PROTECTION_OPTIONS,
             value=_model_to_ui(activity.copy_protection),
             label="Copy protection",
+        ).classes("w-full")
+
+        sharing_select = ui.select(
+            options=_SHARING_OPTIONS,
+            value=_model_to_ui(activity.allow_sharing),
+            label="Allow sharing",
         ).classes("w-full")
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                new_value = _ui_to_model(select.value)
-                await update_activity(activity.id, copy_protection=new_value)
-                activity.copy_protection = new_value
+                new_cp = _ui_to_model(cp_select.value)
+                new_sharing = _ui_to_model(sharing_select.value)
+                await update_activity(
+                    activity.id,
+                    copy_protection=new_cp,
+                    allow_sharing=new_sharing,
+                )
+                activity.copy_protection = new_cp
+                activity.allow_sharing = new_sharing
                 dialog.close()
                 ui.notify("Activity settings saved", type="positive")
 

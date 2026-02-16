@@ -14,6 +14,7 @@ from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import (
+    ACLEntry,
     Activity,
     Course,
     Week,
@@ -23,6 +24,33 @@ from promptgrimoire.db.models import (
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
+
+
+async def get_user_workspace_for_activity(
+    activity_id: UUID, user_id: UUID
+) -> Workspace | None:
+    """Find an existing workspace owned by the user in an activity.
+
+    Looks for a non-template workspace placed in this activity where the user
+    has an owner ACL entry. Returns the first match, or None if the user has
+    no owned workspace for this activity.
+
+    Filters by permission == "owner" to exclude shared workspaces -- a viewer
+    of someone else's workspace should not be treated as having their own
+    workspace for this activity (which would suppress the "Start Activity"
+    button and show "Resume" instead).
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        return result.first()
 
 
 @dataclass(frozen=True)
@@ -429,6 +457,7 @@ def _replay_crdt_state(
 
 async def clone_workspace_from_activity(
     activity_id: UUID,
+    user_id: UUID,
 ) -> tuple[Workspace, dict[UUID, UUID]]:
     """Clone an Activity's template workspace into a new student workspace.
 
@@ -438,8 +467,11 @@ async def clone_workspace_from_activity(
     comments, general notes) with remapped document IDs. Client metadata
     is NOT cloned -- the fresh workspace starts with empty client state.
 
+    Also creates an ACLEntry granting owner permission to the cloning user.
+
     Args:
         activity_id: The Activity UUID whose template workspace to clone.
+        user_id: The user UUID who will own the cloned workspace.
 
     Returns:
         Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
@@ -464,6 +496,15 @@ async def clone_workspace_from_activity(
             enable_save_as_draft=template.enable_save_as_draft,
         )
         session.add(clone)
+        await session.flush()
+
+        # Grant owner permission to cloning user
+        acl_entry = ACLEntry(
+            workspace_id=clone.id,
+            user_id=user_id,
+            permission="owner",
+        )
+        session.add(acl_entry)
         await session.flush()
 
         # Fetch all template documents ordered by order_index

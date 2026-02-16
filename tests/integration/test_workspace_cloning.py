@@ -17,12 +17,23 @@ import pytest
 from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
-    from promptgrimoire.db.models import Activity, Course, Week
+    from promptgrimoire.db.models import Activity, Course, User, Week
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
     reason="DEV__TEST_DATABASE_URL not configured",
 )
+
+
+async def _make_clone_user() -> User:
+    """Create a unique user for clone ownership tests."""
+    from promptgrimoire.db.users import create_user
+
+    tag = uuid4().hex[:8]
+    return await create_user(
+        email=f"clone-test-{tag}@test.local",
+        display_name=f"Clone Tester {tag}",
+    )
 
 
 async def _make_activity_with_docs(
@@ -65,6 +76,7 @@ class TestCloneDocuments:
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
 
         # Set enable_save_as_draft=True on the template workspace
         async with get_session() as session:
@@ -74,7 +86,7 @@ class TestCloneDocuments:
             session.add(template)
             await session.flush()
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.activity_id == activity.id
         assert clone.enable_save_as_draft is True
@@ -90,6 +102,7 @@ class TestCloneDocuments:
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         _, _, activity = await _make_activity_with_docs(num_docs=0)
+        user = await _make_clone_user()
 
         # Add 2 documents with distinct field values
         await add_document(
@@ -107,7 +120,7 @@ class TestCloneDocuments:
             title="Beta Draft",
         )
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
         cloned_docs = await list_documents(clone.id)
 
         assert len(cloned_docs) == 2
@@ -136,9 +149,10 @@ class TestCloneDocuments:
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         _, _, activity = await _make_activity_with_docs(num_docs=2)
+        user = await _make_clone_user()
 
         template_docs = await list_documents(activity.template_workspace_id)
-        clone, doc_id_map = await clone_workspace_from_activity(activity.id)
+        clone, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
         cloned_docs = await list_documents(clone.id)
 
         # All cloned doc IDs differ from template doc IDs
@@ -165,6 +179,7 @@ class TestCloneDocuments:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=2)
+        user = await _make_clone_user()
 
         # Record pre-clone state
         template_before = await get_workspace(activity.template_workspace_id)
@@ -177,7 +192,7 @@ class TestCloneDocuments:
         ]
 
         # Clone
-        await clone_workspace_from_activity(activity.id)
+        await clone_workspace_from_activity(activity.id, user.id)
 
         # Verify template workspace unchanged
         template_after = await get_workspace(activity.template_workspace_id)
@@ -206,8 +221,9 @@ class TestCloneDocuments:
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         _, _, activity = await _make_activity_with_docs(num_docs=0)
+        user = await _make_clone_user()
 
-        clone, doc_id_map = await clone_workspace_from_activity(activity.id)
+        clone, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.activity_id == activity.id
         assert doc_id_map == {}
@@ -219,8 +235,10 @@ class TestCloneDocuments:
         """Cloning a non-existent activity raises ValueError."""
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
+        user = await _make_clone_user()
+
         with pytest.raises(ValueError, match="not found"):
-            await clone_workspace_from_activity(uuid4())
+            await clone_workspace_from_activity(uuid4(), user.id)
 
 
 class TestCloneCRDT:
@@ -245,6 +263,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=2)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Set up CRDT state on template with highlight referencing doc 0
@@ -262,7 +281,7 @@ class TestCloneCRDT:
         )
 
         # Clone
-        clone, doc_id_map = await clone_workspace_from_activity(activity.id)
+        clone, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
 
         # Load clone CRDT state
         assert clone.crdt_state is not None
@@ -291,6 +310,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Add highlight with specific field values
@@ -308,7 +328,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is not None
         clone_doc = AnnotationDocument("verify")
@@ -338,6 +358,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Add highlight with 2 comments
@@ -356,7 +377,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is not None
         clone_doc = AnnotationDocument("verify")
@@ -385,6 +406,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Register a client (writes to client_meta map)
@@ -402,7 +424,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is not None
         clone_doc = AnnotationDocument("verify")
@@ -420,9 +442,10 @@ class TestCloneCRDT:
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
         # Do NOT set any CRDT state -- template crdt_state is None
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is None
 
@@ -441,6 +464,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=2)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Add 2 highlights
@@ -465,7 +489,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, _doc_id_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
 
         # Verify all parts are present
         ws = await get_workspace(clone.id)
@@ -493,6 +517,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
 
         # Set general notes on template
         doc = AnnotationDocument("setup")
@@ -501,7 +526,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, _doc_map = await clone_workspace_from_activity(activity.id)
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is not None
         clone_doc = AnnotationDocument("verify")
@@ -522,6 +547,7 @@ class TestCloneCRDT:
         )
 
         _, _, activity = await _make_activity_with_docs(num_docs=2)
+        user = await _make_clone_user()
         template_docs = await list_documents(activity.template_workspace_id)
 
         # Add 1 highlight per document
@@ -546,7 +572,7 @@ class TestCloneCRDT:
             activity.template_workspace_id, doc.get_full_state()
         )
 
-        clone, doc_id_map = await clone_workspace_from_activity(activity.id)
+        clone, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
 
         assert clone.crdt_state is not None
         clone_doc = AnnotationDocument("verify")

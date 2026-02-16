@@ -37,7 +37,6 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.models import Activity, Course
 from promptgrimoire.db.roles import get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
@@ -53,6 +52,8 @@ from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from promptgrimoire.db.models import Activity, Course
 
 logger = logging.getLogger(__name__)
 
@@ -413,8 +414,12 @@ async def course_detail_page(course_id: str) -> None:
                 ).props("flat round dense size=sm").tooltip("Activity settings")
 
             async def start_activity(aid: UUID = act.id) -> None:
-                # TODO(Seam-D): Add workspace-level auth check here
-                clone, _doc_map = await clone_workspace_from_activity(aid)
+                # TODO(Phase5-B): Full auth/enrollment/duplicate checks (Task 4)
+                uid = _get_user_id()
+                if uid is None:
+                    ui.notify("Please log in to start an activity", type="warning")
+                    return
+                clone, _doc_map = await clone_workspace_from_activity(aid, uid)
                 qs = urlencode({"workspace_id": str(clone.id)})
                 ui.navigate.to(f"/annotation?{qs}")
 

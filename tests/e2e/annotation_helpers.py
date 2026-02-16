@@ -271,16 +271,14 @@ def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> 
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)
 
-    # Click Add/Submit button
-    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+    # Click "Add Document" button. For pasted HTML, the content type dialog
+    # is skipped (content_form.py auto-detects paste as HTML). The app
+    # processes the input and navigates back to the annotation page.
+    page.get_by_role("button", name=re.compile("add document", re.IGNORECASE)).click()
 
-    # Handle content type confirmation dialog
-    confirm_btn = page.get_by_role("button", name=re.compile("confirm", re.IGNORECASE))
-    confirm_btn.wait_for(state="visible", timeout=5000)
-    confirm_btn.click()
-
-    # Wait for text walker readiness (15s timeout for large fixtures like AustLII)
+    # Wait for text walker readiness (15s timeout for large fixtures like AustLII).
+    # The page navigates after processing, so _textNodes signals completion.
     page.wait_for_function(
         "() => window._textNodes && window._textNodes.length > 0",
-        timeout=15000,
+        timeout=30000,
     )

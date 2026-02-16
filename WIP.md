@@ -1,6 +1,6 @@
 # WIP: E2E Test Migration (#156)
 
-**Date:** 2026-02-16
+**Date:** 2026-02-17
 **Branch:** `156-e2e-test-migration`
 
 ## Completed
@@ -41,19 +41,23 @@
 - `5cd4571` — Fix: remove stale confirm dialog wait (pasted HTML skips dialog)
 - `237f8db` — Add `test-e2e-debug` command (--lf last-failed re-run)
 - `367b059` — Fix: use pymupdf for PDF text extraction (FlateDecode compression)
-- Subtests 1-10 pass; subtest 11 (PDF export UUID check) awaiting re-run
-- `uv run test-e2e-debug` will re-run only the last-failed test
+- Code review (2026-02-17): 2 Important + 2 Minor issues found, all fixed:
+  1. Fixed pymupdf `page` variable shadowing Playwright `page` (renamed to `pdf_page`)
+  2. Extracted `wait_for_text_walker()` helper to keep AC4.2 compliance clean
+  3. Replaced broad `except Exception` with specific `PlaywrightTimeoutError`/`PlaywrightError`
+  4. Added organise tab column heading assertion + respond tab text input
+- All 11 subtests pass after fixes
+- Code review: APPROVED (post-fix)
 
 ## Resume Point
 
-**Phase 4 debug loop in progress.** Subtests 1-10 pass. Subtest 11 (PDF export + UUID verification via pymupdf) has a fix committed but not yet verified. Run `uv run test-e2e-debug` to check.
+**Phase 4 complete. Ready for Phase 5.**
 
 ### Next Steps (in order)
-1. Phase 4: Verify PDF subtest passes, then code review
-2. Phase 5: Translation Student Test
-3. Phase 6: History Tutorial Group Test
-4. Phase 7: Naughty Student Test
-5. Phase 8: Delete Obsolete Files
+1. Phase 5: Translation Student Test
+2. Phase 6: History Tutorial Group Test
+3. Phase 7: Naughty Student Test
+4. Phase 8: Delete Obsolete Files
 
 ### AustLII Fixture Analysis (for Phase 4)
 
@@ -73,9 +77,11 @@ These patterns were discovered through review cycles and are critical for remain
 - **Mock auth roles**: `instructor@uni.edu` gets `["stytch_member", "instructor"]` via `MOCK_INSTRUCTOR_EMAILS`.
 - **Course creation**: Navigate directly to `/courses/new` (not via `/courses` page, which requires DB enrollment for "New Course" button).
 - **E2E compliance guard**: `tests/unit/test_e2e_compliance.py::test_no_js_injection_in_e2e_tests` forbids `page.evaluate()` in test files not listed in `ALLOWED_JS_FILES`.
-- **`_textNodes` readiness**: Use `page.wait_for_function("() => window._textNodes && window._textNodes.length > 0", timeout=N)` instead of `data-char-index` selectors.
+- **`_textNodes` readiness**: Use `wait_for_text_walker(page, timeout=N)` from `annotation_helpers.py` (wraps `window._textNodes` check).
 - **Env var prefixes**: pydantic-settings uses double-underscore prefixes: `DEV__AUTH_MOCK`, `APP__STORAGE_SECRET`, `STYTCH__SSO_CONNECTION_ID`, `STYTCH__PUBLIC_TOKEN`. The `_E2E_SERVER_SCRIPT` in `cli.py` had wrong prefixes (fixed).
 - **Student workspace cloning**: "Start Activity" button clones template workspace. Student must be enrolled in course to see the course page. Activities are visible once week is published.
+- **Strict mode**: `get_by_text()` resolves to multiple elements when tag names appear in both column headers and cards. Use `.first` or scope to a specific container.
+- **Playwright exception types**: Import `TimeoutError as PlaywrightTimeoutError` and `Error as PlaywrightError` from `playwright.sync_api` for specific exception handling.
 
 ## Constraints
 
@@ -84,4 +90,4 @@ These patterns were discovered through review cycles and are critical for remain
 
 ## Task List State
 
-Phases 1-4 code complete. Phase 4 needs E2E run + code review.
+Phases 1-4 code complete and reviewed. Ready for Phase 5.

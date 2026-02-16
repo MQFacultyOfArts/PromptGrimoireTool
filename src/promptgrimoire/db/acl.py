@@ -97,6 +97,114 @@ async def list_entries_for_user(user_id: UUID) -> list[ACLEntry]:
         return list(result.all())
 
 
+async def list_accessible_workspaces(
+    user_id: UUID,
+) -> list[tuple[Workspace, str]]:
+    """List all workspaces a user can access, with their permission level.
+
+    Returns workspaces where the user has an explicit ACL entry. This covers:
+    - Owned workspaces (permission="owner")
+    - Shared workspaces (permission="editor" or "viewer")
+    - Workspaces whose activity was deleted (activity_id SET NULL) —
+      still returned because the ACLEntry persists.
+
+    Returns
+    -------
+    list[tuple[Workspace, str]]
+        (Workspace, permission_name) tuples, ordered by workspace.created_at.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace, ACLEntry.permission)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
+            .where(ACLEntry.user_id == user_id)
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        return list(result.all())
+
+
+async def list_course_workspaces(
+    course_id: UUID,
+) -> list[Workspace]:
+    """List all non-template workspaces in a course (instructor view).
+
+    Finds workspaces via two paths:
+    1. Activity-placed: Workspace.activity_id -> Activity.week_id -> Week.course_id
+    2. Loose: Workspace.course_id = course_id (directly placed in course)
+
+    Excludes template workspaces (those referenced by Activity.template_workspace_id).
+
+    Returns
+    -------
+    list[Workspace]
+        Non-template workspaces ordered by created_at.
+    """
+    async with get_session() as session:
+        # Collect template workspace IDs to exclude
+        template_result = await session.exec(
+            select(Activity.template_workspace_id)
+            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
+            .where(Week.course_id == course_id)
+        )
+        template_ids = set(template_result.all())
+
+        # Activity-placed workspaces: via Activity -> Week -> Course
+        activity_result = await session.exec(
+            select(Workspace)
+            .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]
+            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
+            .where(Week.course_id == course_id)
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+        )
+        activity_workspaces = list(activity_result.all())
+
+        # Loose workspaces: directly placed in course
+        loose_result = await session.exec(
+            select(Workspace)
+            .where(Workspace.course_id == course_id)
+            .where(Workspace.activity_id == None)  # noqa: E711
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+        )
+        loose_workspaces = list(loose_result.all())
+
+        # Combine and exclude templates
+        all_workspaces = activity_workspaces + loose_workspaces
+        return [ws for ws in all_workspaces if ws.id not in template_ids]
+
+
+async def list_activity_workspaces(
+    activity_id: UUID,
+) -> list[tuple[Workspace, str, UUID]]:
+    """List all non-template workspaces for an activity with owner info.
+
+    Returns workspaces placed in this activity that have an ACL entry
+    with "owner" permission. This is the per-activity instructor view
+    showing who has cloned the activity.
+
+    Returns
+    -------
+    list[tuple[Workspace, str, UUID]]
+        (Workspace, permission, user_id) tuples, ordered by workspace.created_at.
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        if activity is None:
+            return []
+        template_id = activity.template_workspace_id
+
+        result = await session.exec(
+            select(Workspace, ACLEntry.permission, ACLEntry.user_id)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.permission == "owner",
+            )
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+        )
+        rows = list(result.all())
+        return [(ws, perm, uid) for ws, perm, uid in rows if ws.id != template_id]
+
+
 async def _derive_enrollment_permission(
     session: AsyncSession, workspace_id: UUID, user_id: UUID
 ) -> str | None:

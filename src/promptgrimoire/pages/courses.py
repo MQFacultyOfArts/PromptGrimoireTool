@@ -47,7 +47,11 @@ from promptgrimoire.db.weeks import (
     unpublish_week,
 )
 from promptgrimoire.db.workspace_documents import workspaces_with_documents
-from promptgrimoire.db.workspaces import clone_workspace_from_activity
+from promptgrimoire.db.workspaces import (
+    check_clone_eligibility,
+    clone_workspace_from_activity,
+    get_user_workspace_for_activity,
+)
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -414,12 +418,25 @@ async def course_detail_page(course_id: str) -> None:
                 ).props("flat round dense size=sm").tooltip("Activity settings")
 
             async def start_activity(aid: UUID = act.id) -> None:
-                # TODO(Phase5-B): Full auth/enrollment/duplicate checks (Task 4)
-                uid = _get_user_id()
-                if uid is None:
+                user_id = _get_user_id()
+                if user_id is None:
                     ui.notify("Please log in to start an activity", type="warning")
                     return
-                clone, _doc_map = await clone_workspace_from_activity(aid, uid)
+
+                # Check for existing workspace (duplicate detection)
+                existing = await get_user_workspace_for_activity(aid, user_id)
+                if existing is not None:
+                    qs = urlencode({"workspace_id": str(existing.id)})
+                    ui.navigate.to(f"/annotation?{qs}")
+                    return
+
+                # Check enrollment and week visibility
+                error = await check_clone_eligibility(aid, user_id)
+                if error is not None:
+                    ui.notify(error, type="negative")
+                    return
+
+                clone, _doc_map = await clone_workspace_from_activity(aid, user_id)
                 qs = urlencode({"workspace_id": str(clone.id)})
                 ui.navigate.to(f"/annotation?{qs}")
 

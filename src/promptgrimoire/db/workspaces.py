@@ -17,10 +17,12 @@ from promptgrimoire.db.models import (
     ACLEntry,
     Activity,
     Course,
+    CourseEnrollment,
     Week,
     Workspace,
     WorkspaceDocument,
 )
+from promptgrimoire.db.roles import get_staff_roles
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -51,6 +53,53 @@ async def get_user_workspace_for_activity(
             )
         )
         return result.first()
+
+
+async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | None:
+    """Check if a user is eligible to clone a workspace from an activity.
+
+    Validates:
+    1. Activity exists
+    2. User is enrolled in the activity's course
+    3. Activity's week is visible to the user (staff bypass)
+
+    Returns:
+        None if eligible, or an error message string explaining why not.
+    """
+    staff_roles = await get_staff_roles()
+
+    async with get_session() as session:
+        # 1. Activity must exist
+        activity = await session.get(Activity, activity_id)
+        if activity is None:
+            return "Activity not found"
+
+        # 2. Resolve course via Week
+        week = await session.get(Week, activity.week_id)
+        if week is None:
+            return "Week not found"
+
+        # 3. User must be enrolled in the course
+        enrollment_result = await session.exec(
+            select(CourseEnrollment).where(
+                CourseEnrollment.course_id == week.course_id,
+                CourseEnrollment.user_id == user_id,
+            )
+        )
+        enrollment = enrollment_result.one_or_none()
+        if enrollment is None:
+            return "User is not enrolled in this course"
+
+        # 4. Week must be visible to the user
+        # Staff always have access regardless of publish state
+        if enrollment.role not in staff_roles:
+            # Students need published + visible week
+            if not week.is_published:
+                return "Week is not published"
+            if week.visible_from and week.visible_from > datetime.now(UTC):
+                return "Week is not yet visible"
+
+        return None
 
 
 @dataclass(frozen=True)

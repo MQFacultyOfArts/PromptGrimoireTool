@@ -47,8 +47,7 @@ async def _make_sharing_data(
     await publish_week(week.id)
 
     activity = await create_activity(week_id=week.id, title="Shared Activity")
-    if activity_sharing is not ...:
-        await update_activity(activity.id, allow_sharing=activity_sharing)
+    await update_activity(activity.id, allow_sharing=activity_sharing)
 
     owner = await create_user(
         email=f"owner-{tag}@test.local", display_name=f"Owner {tag}"

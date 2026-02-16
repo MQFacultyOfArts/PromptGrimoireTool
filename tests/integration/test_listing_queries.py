@@ -191,6 +191,56 @@ class TestListCourseWorkspaces:
         assert data["loose"].id in ws_ids
 
 
+class TestListActivityWorkspaces:
+    """Tests for list_activity_workspaces() — per-activity instructor view."""
+
+    @pytest.mark.asyncio
+    async def test_returns_student_clone(self) -> None:
+        """Student's cloned workspace appears with owner permission.
+
+        Verifies AC9.3 (per-activity view).
+        """
+        from promptgrimoire.db.acl import list_activity_workspaces
+
+        data = await _make_listing_data()
+        results = await list_activity_workspaces(data["activity"].id)
+        ws_ids = {ws.id for ws, _perm, _uid in results}
+        assert data["clone"].id in ws_ids
+
+        # Verify the tuple contains correct owner info
+        clone_row = [
+            (ws, perm, uid) for ws, perm, uid in results if ws.id == data["clone"].id
+        ]
+        assert len(clone_row) == 1
+        _, perm, uid = clone_row[0]
+        assert perm == "owner"
+        assert uid == data["student_a"].id
+
+    @pytest.mark.asyncio
+    async def test_excludes_template(self) -> None:
+        """Template workspace is excluded from per-activity view.
+
+        Verifies AC9.3 (template exclusion).
+        """
+        from promptgrimoire.db.acl import list_activity_workspaces
+        from promptgrimoire.db.activities import get_activity
+
+        data = await _make_listing_data()
+        activity = await get_activity(data["activity"].id)
+        assert activity is not None
+        results = await list_activity_workspaces(data["activity"].id)
+        ws_ids = {ws.id for ws, _perm, _uid in results}
+        assert activity.template_workspace_id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_activity_returns_empty(self) -> None:
+        """Nonexistent activity returns empty list."""
+        from promptgrimoire.db.acl import list_activity_workspaces
+
+        results = await list_activity_workspaces(uuid4())
+        assert results == []
+
+
 class TestResumeDetection:
     """Tests for get_user_workspace_for_activity() Resume vs Start."""
 

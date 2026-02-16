@@ -93,6 +93,7 @@ class _RemotePresence:
     selection_start: int | None = None
     selection_end: int | None = None
     has_milkdown_editor: bool = False
+    user_id: str | None = None
 
     async def invoke_callback(self) -> None:
         """Run the callback inside this client's NiceGUI slot context.

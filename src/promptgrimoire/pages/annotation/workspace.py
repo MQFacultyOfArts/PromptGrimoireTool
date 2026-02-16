@@ -13,7 +13,7 @@ from uuid import UUID
 
 from nicegui import app, events, ui
 
-from promptgrimoire.auth import is_privileged_user
+from promptgrimoire.auth import check_workspace_access, is_privileged_user
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.activities import list_activities_for_week
 from promptgrimoire.db.courses import list_courses, list_user_enrollments
@@ -620,6 +620,20 @@ def _inject_copy_protection() -> None:
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
     """Render the workspace content view with documents or add content form."""
+    # --- ACL enforcement guard ---
+    auth_user = app.storage.user.get("auth_user")
+    permission = await check_workspace_access(workspace_id, auth_user)
+
+    if auth_user is None:
+        ui.navigate.to("/login")
+        return
+
+    if permission is None:
+        ui.notify("You do not have access to this workspace", type="negative")
+        ui.navigate.to("/courses")
+        return
+
+    # TODO(2026-02): Thread permission=="viewer" as read_only through UI components
     workspace = await get_workspace(workspace_id)
 
     if workspace is None:
@@ -628,7 +642,6 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         return
 
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
-    auth_user = app.storage.user.get("auth_user")
     ctx = await get_placement_context(workspace_id)
     protect = ctx.copy_protection and not is_privileged_user(auth_user)
 

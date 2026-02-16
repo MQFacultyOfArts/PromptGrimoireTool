@@ -171,6 +171,12 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
     """Roleplay chat page."""
     await ui.context.client.connected()
 
+    # Auth guard -- require login
+    auth_user = app.storage.user.get("auth_user")
+    if auth_user is None:
+        ui.navigate.to("/login")
+        return
+
     state: dict = {"session": None, "client": None, "log_path": None}
 
     ui.label("SillyTavern Roleplay").classes("text-h4 mb-4")

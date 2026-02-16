@@ -149,13 +149,14 @@ async def list_course_workspaces(
     Returns
     -------
     list[Workspace]
-        Non-template workspaces ordered by created_at.
+        Non-template workspaces. Activity-placed workspaces first, then
+        loose workspaces, each group ordered by created_at.
     """
     async with get_session() as session:
         # Collect template workspace IDs to exclude
         template_result = await session.exec(
             select(Activity.template_workspace_id)
-            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
+            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
             .where(Week.course_id == course_id)
         )
         template_ids = set(template_result.all())
@@ -163,10 +164,10 @@ async def list_course_workspaces(
         # Activity-placed workspaces: via Activity -> Week -> Course
         activity_result = await session.exec(
             select(Workspace)
-            .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]
-            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
+            .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
+            .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
             .where(Week.course_id == course_id)
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
         )
         activity_workspaces = list(activity_result.all())
 
@@ -175,7 +176,7 @@ async def list_course_workspaces(
             select(Workspace)
             .where(Workspace.course_id == course_id)
             .where(Workspace.activity_id == None)  # noqa: E711
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
         )
         loose_workspaces = list(loose_result.all())
 
@@ -206,12 +207,12 @@ async def list_activity_workspaces(
 
         result = await session.exec(
             select(Workspace, ACLEntry.permission, ACLEntry.user_id)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
             .where(
                 Workspace.activity_id == activity_id,
                 ACLEntry.permission == "owner",
             )
-            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
         )
         rows = list(result.all())
         return [(ws, perm, uid) for ws, perm, uid in rows if ws.id != template_id]
@@ -371,8 +372,9 @@ async def grant_share(
     2. Grantor must be the workspace owner OR grantor_is_staff.
     3. If not staff, sharing must be allowed (sharing_allowed=True).
 
-    The ownership check and grant happen in a single session to prevent
-    TOCTOU races.
+    The ownership check and grant happen in a single session to mitigate
+    TOCTOU races. The grantor's ACLEntry is locked with SELECT ... FOR UPDATE
+    to prevent concurrent revocation between the check and the grant.
 
     Parameters
     ----------
@@ -405,10 +407,12 @@ async def grant_share(
     async with get_session() as session:
         if not grantor_is_staff:
             entry = await session.exec(
-                select(ACLEntry).where(
+                select(ACLEntry)
+                .where(
                     ACLEntry.workspace_id == workspace_id,
                     ACLEntry.user_id == grantor_id,
                 )
+                .with_for_update()
             )
             grantor_entry = entry.one_or_none()
             if grantor_entry is None or grantor_entry.permission != "owner":

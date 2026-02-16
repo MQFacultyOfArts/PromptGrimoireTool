@@ -85,9 +85,10 @@ _SHARING_OPTIONS: dict[str, str] = {
 
 
 def _model_to_ui(value: bool | None) -> str:
-    """Convert model tri-state copy_protection to UI select key.
+    """Convert model tri-state value to UI select key.
 
     None -> "inherit", True -> "on", False -> "off".
+    Used for both copy_protection and allow_sharing.
     """
     if value is None:
         return "inherit"
@@ -95,9 +96,10 @@ def _model_to_ui(value: bool | None) -> str:
 
 
 def _ui_to_model(value: str) -> bool | None:
-    """Convert UI select key to model tri-state copy_protection.
+    """Convert UI select key to model tri-state value.
 
     "inherit" -> None, "on" -> True, "off" -> False.
+    Used for both copy_protection and allow_sharing.
     """
     if value == "inherit":
         return None
@@ -420,7 +422,10 @@ async def course_detail_page(course_id: str) -> None:
     async def _build_user_workspace_map(
         activities: list[Activity], uid: UUID | None
     ) -> dict[UUID, Workspace]:
-        """Build activity_id -> owned Workspace map for Resume detection."""
+        """Build activity_id -> owned Workspace map for Resume detection.
+
+        # TODO: Batch into single query if activity count per week grows
+        """
         result: dict[UUID, Workspace] = {}
         if uid is None:
             return result

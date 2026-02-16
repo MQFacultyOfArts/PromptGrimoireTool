@@ -89,6 +89,9 @@ uvx ty check
 # Seed development data (idempotent)
 uv run seed-data
 
+# Manage users, roles, and course enrollments
+uv run manage-users list|show|admin|enroll|unenroll|role
+
 # Run the app
 uv run python -m promptgrimoire
 

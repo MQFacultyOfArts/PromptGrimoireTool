@@ -440,6 +440,54 @@ def test_e2e() -> None:
         _stop_e2e_server(server_process)
 
 
+def test_e2e_debug() -> None:
+    """Re-run last-failed E2E tests, or all if none failed previously.
+
+    Same server lifecycle as ``test-e2e`` but optimised for iterating on
+    failures: runs only previously-failed tests (``--lf``), stops on first
+    failure (``-x``), and shows full tracebacks (``--tb=long``).
+
+    If no prior failures exist, falls back to running all E2E tests.
+
+    Extra arguments forwarded to pytest (e.g. ``uv run test-e2e-debug -k law``).
+
+    Output saved to: test-e2e.log
+    """
+    import socket
+
+    from promptgrimoire.config import get_settings
+
+    get_settings()
+    _pre_test_db_cleanup()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
+
+    os.environ["E2E_BASE_URL"] = url
+
+    try:
+        _run_pytest(
+            title=f"E2E Debug (last-failed) — server {url}",
+            log_path=Path("test-e2e.log"),
+            default_args=[
+                "-m",
+                "e2e",
+                "--lf",
+                "-x",
+                "--durations=10",
+                "--tb=long",
+                "-v",
+            ],
+        )
+    finally:
+        _stop_e2e_server(server_process)
+
+
 # ---------------------------------------------------------------------------
 # manage-users CLI
 # ---------------------------------------------------------------------------

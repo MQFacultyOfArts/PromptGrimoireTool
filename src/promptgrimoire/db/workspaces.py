@@ -118,6 +118,11 @@ class PlacementContext:
 
     True = protection active.
     """
+    allow_sharing: bool = False
+    """Resolved sharing permission for this workspace.
+
+    True = owner can share with other students.
+    """
 
     @property
     def display_label(self) -> str:
@@ -199,6 +204,12 @@ async def _resolve_activity_placement(
     else:
         resolved_cp = course.default_copy_protection
 
+    # Resolve tri-state allow_sharing: explicit wins, else course default
+    if activity.allow_sharing is not None:
+        resolved_sharing = activity.allow_sharing
+    else:
+        resolved_sharing = course.default_allow_sharing
+
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -207,6 +218,7 @@ async def _resolve_activity_placement(
         course_code=course.code,
         course_name=course.name,
         copy_protection=resolved_cp,
+        allow_sharing=resolved_sharing,
     )
 
 

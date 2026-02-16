@@ -233,3 +233,86 @@ async def can_access_workspace(workspace_id: UUID, user_id: UUID) -> str | None:
         Permission name string or None if denied.
     """
     return await resolve_permission(workspace_id, user_id)
+
+
+async def grant_share(
+    workspace_id: UUID,
+    grantor_id: UUID,
+    recipient_id: UUID,
+    permission: str,
+    *,
+    sharing_allowed: bool,
+    grantor_is_staff: bool = False,
+) -> ACLEntry:
+    """Share a workspace with another user.
+
+    Validates sharing rules before creating the ACLEntry:
+    1. Permission must be "editor" or "viewer" (never "owner").
+    2. Grantor must be the workspace owner OR grantor_is_staff.
+    3. If not staff, sharing must be allowed (sharing_allowed=True).
+
+    The ownership check and grant happen in a single session to prevent
+    TOCTOU races.
+
+    Parameters
+    ----------
+    workspace_id : UUID
+        The Workspace UUID.
+    grantor_id : UUID
+        The user UUID granting the share.
+    recipient_id : UUID
+        The user UUID receiving the share.
+    permission : str
+        Permission level to grant ("editor" or "viewer").
+    sharing_allowed : bool
+        Whether sharing is enabled for this workspace's context.
+    grantor_is_staff : bool
+        Whether the grantor is an instructor/coordinator/tutor.
+
+    Returns
+    -------
+    ACLEntry
+        The created or updated ACLEntry.
+
+    Raises
+    ------
+    PermissionError
+        If sharing rules are violated.
+    """
+    if permission == "owner":
+        raise PermissionError("cannot grant owner permission via sharing")
+
+    async with get_session() as session:
+        if not grantor_is_staff:
+            entry = await session.exec(
+                select(ACLEntry).where(
+                    ACLEntry.workspace_id == workspace_id,
+                    ACLEntry.user_id == grantor_id,
+                )
+            )
+            grantor_entry = entry.one_or_none()
+            if grantor_entry is None or grantor_entry.permission != "owner":
+                raise PermissionError("only workspace owners can share")
+
+            if not sharing_allowed:
+                raise PermissionError("sharing is not allowed for this workspace")
+
+        existing = await session.exec(
+            select(ACLEntry).where(
+                ACLEntry.workspace_id == workspace_id,
+                ACLEntry.user_id == recipient_id,
+            )
+        )
+        acl_entry = existing.one_or_none()
+        if acl_entry is not None:
+            acl_entry.permission = permission
+        else:
+            acl_entry = ACLEntry(
+                workspace_id=workspace_id,
+                user_id=recipient_id,
+                permission=permission,
+            )
+            session.add(acl_entry)
+        await session.flush()
+        await session.refresh(acl_entry)
+        return acl_entry

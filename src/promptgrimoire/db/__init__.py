@@ -8,6 +8,7 @@ from __future__ import annotations
 from promptgrimoire.db.acl import (
     can_access_workspace,
     grant_permission,
+    grant_share,
     list_entries_for_user,
     list_entries_for_workspace,
     resolve_permission,
@@ -132,6 +133,7 @@ __all__ = [
     "get_user_workspace_for_activity",
     "get_workspace",
     "grant_permission",
+    "grant_share",
     "init_db",
     "is_db_configured",
     "link_stytch_member",

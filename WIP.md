@@ -35,12 +35,21 @@
 ### Cherry-picks from 96-workspace-acl
 - Rebased onto main (2026-02-16): annotation split refactor, workspace ACL docs merged cleanly
 
+### Phase 4: Law Student Test
+- `449da23` — Add `_load_fixture_via_paste()` helper to `annotation_helpers.py`
+- `158a267` — Create `test_law_student.py` (11 subtests)
+- `5cd4571` — Fix: remove stale confirm dialog wait (pasted HTML skips dialog)
+- `237f8db` — Add `test-e2e-debug` command (--lf last-failed re-run)
+- `367b059` — Fix: use pymupdf for PDF text extraction (FlateDecode compression)
+- Subtests 1-10 pass; subtest 11 (PDF export UUID check) awaiting re-run
+- `uv run test-e2e-debug` will re-run only the last-failed test
+
 ## Resume Point
 
-**Ready for Phase 4.** All prior phases reviewed and approved. Bridge test confirms instructor→student handoff works.
+**Phase 4 debug loop in progress.** Subtests 1-10 pass. Subtest 11 (PDF export + UUID verification via pymupdf) has a fix committed but not yet verified. Run `uv run test-e2e-debug` to check.
 
 ### Next Steps (in order)
-1. Phase 4: Law Student Test (`test_law_student.py`) — plan at `docs/implementation-plans/.../phase_04.md`
+1. Phase 4: Verify PDF subtest passes, then code review
 2. Phase 5: Translation Student Test
 3. Phase 6: History Tutorial Group Test
 4. Phase 7: Naughty Student Test
@@ -75,4 +84,4 @@ These patterns were discovered through review cycles and are critical for remain
 
 ## Task List State
 
-Phases 1-3 tasks are completed. Pending tasks start at Phase 4.
+Phases 1-4 code complete. Phase 4 needs E2E run + code review.

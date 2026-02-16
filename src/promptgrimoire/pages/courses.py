@@ -57,7 +57,7 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from promptgrimoire.db.models import Activity, Course
+    from promptgrimoire.db.models import Activity, Course, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -417,13 +417,27 @@ async def course_detail_page(course_id: str) -> None:
     # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
+    async def _build_user_workspace_map(
+        activities: list[Activity], uid: UUID | None
+    ) -> dict[UUID, Workspace]:
+        """Build activity_id -> owned Workspace map for Resume detection."""
+        result: dict[UUID, Workspace] = {}
+        if uid is None:
+            return result
+        for act in activities:
+            existing = await get_user_workspace_for_activity(act.id, uid)
+            if existing is not None:
+                result[act.id] = existing
+        return result
+
     def _render_activity_row(
         act: Activity,
         *,
         can_manage: bool,
         populated_templates: set[UUID],
+        user_workspace_map: dict[UUID, Workspace],
     ) -> None:
-        """Render a single Activity row with template/start buttons."""
+        """Render a single Activity row with template/start or resume buttons."""
         with ui.row().classes("items-center gap-2"):
             ui.icon("assignment").classes("text-gray-400")
             ui.label(act.title).classes("text-sm font-medium")
@@ -443,32 +457,41 @@ async def course_detail_page(course_id: str) -> None:
                     on_click=lambda a=act: open_activity_settings(a),
                 ).props("flat round dense size=sm").tooltip("Activity settings")
 
-            async def start_activity(aid: UUID = act.id) -> None:
-                user_id = _get_user_id()
-                if user_id is None:
-                    ui.notify("Please log in to start an activity", type="warning")
-                    return
+            if act.id in user_workspace_map:
+                # User already has a workspace — show Resume
+                ws = user_workspace_map[act.id]
+                qs = urlencode({"workspace_id": str(ws.id)})
+                ui.button(
+                    "Resume",
+                    icon="play_arrow",
+                    on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
+                ).props("flat dense size=sm color=primary")
+            else:
+                # No workspace yet — show Start Activity
+                async def start_activity(aid: UUID = act.id) -> None:
+                    uid = _get_user_id()
+                    if uid is None:
+                        ui.notify("Please log in to start an activity", type="warning")
+                        return
 
-                # Check for existing workspace (duplicate detection)
-                existing = await get_user_workspace_for_activity(aid, user_id)
-                if existing is not None:
-                    qs = urlencode({"workspace_id": str(existing.id)})
+                    existing = await get_user_workspace_for_activity(aid, uid)
+                    if existing is not None:
+                        qs = urlencode({"workspace_id": str(existing.id)})
+                        ui.navigate.to(f"/annotation?{qs}")
+                        return
+
+                    error = await check_clone_eligibility(aid, uid)
+                    if error is not None:
+                        ui.notify(error, type="negative")
+                        return
+
+                    clone, _doc_map = await clone_workspace_from_activity(aid, uid)
+                    qs = urlencode({"workspace_id": str(clone.id)})
                     ui.navigate.to(f"/annotation?{qs}")
-                    return
 
-                # Check enrollment and week visibility
-                error = await check_clone_eligibility(aid, user_id)
-                if error is not None:
-                    ui.notify(error, type="negative")
-                    return
-
-                clone, _doc_map = await clone_workspace_from_activity(aid, user_id)
-                qs = urlencode({"workspace_id": str(clone.id)})
-                ui.navigate.to(f"/annotation?{qs}")
-
-            ui.button("Start Activity", on_click=start_activity).props(
-                "flat dense size=sm color=primary"
-            )
+                ui.button("Start Activity", on_click=start_activity).props(
+                    "flat dense size=sm color=primary"
+                )
 
     @ui.refreshable
     async def weeks_list() -> None:
@@ -528,12 +551,14 @@ async def course_detail_page(course_id: str) -> None:
                             if can_manage
                             else set()
                         )
+                        ws_map = await _build_user_workspace_map(activities, user_id)
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
                                 _render_activity_row(
                                     act,
                                     can_manage=can_manage,
                                     populated_templates=populated,
+                                    user_workspace_map=ws_map,
                                 )
                     elif can_manage:
                         ui.label("No activities yet").classes(

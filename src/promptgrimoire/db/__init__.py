@@ -76,10 +76,12 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import (
     PlacementContext,
+    check_clone_eligibility,
     clone_workspace_from_activity,
     create_workspace,
     delete_workspace,
     get_placement_context,
+    get_user_workspace_for_activity,
     get_workspace,
     list_loose_workspaces_for_course,
     list_workspaces_for_activity,
@@ -105,6 +107,7 @@ __all__ = [
     "add_document",
     "archive_course",
     "can_access_workspace",
+    "check_clone_eligibility",
     "clone_workspace_from_activity",
     "close_db",
     "create_activity",
@@ -126,6 +129,7 @@ __all__ = [
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",
+    "get_user_workspace_for_activity",
     "get_workspace",
     "grant_permission",
     "init_db",

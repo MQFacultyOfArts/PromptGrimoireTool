@@ -26,17 +26,16 @@
 - `tests/integration/test_clone_eligibility.py` created
 - **Not yet reviewed.** Pre-commit hooks pass (ruff + ty). Integration tests not run (no test DB in this env).
 
-**Subcomponent C (Tasks 5-6): NOT STARTED**
-- Task 5: Update `db/__init__.py` exports
-- Task 6: Integration tests for clone ownership (AC7.1-AC7.6)
+**Subcomponent C (Tasks 5-6): DONE**
+- Task 5: `db/__init__.py` exports updated (`check_clone_eligibility`, `get_user_workspace_for_activity`)
+- Task 6: `tests/integration/test_clone_ownership.py` created (AC7.1, AC7.4, AC7.6 + eligibility gates)
 
 ### Resume instructions
 
 ```bash
 cd .worktrees/96-workspace-acl
 git log --oneline -5  # verify HEAD
-# Review the WIP commit (ab1c2a2) — may need adjustments
-# Then: "Continue with Phase 5 Subcomponent C, then code review"
+# Phase 5 complete — run code review, then proceed to Phase 6
 ```
 
 ## Remaining Phases

@@ -156,4 +156,5 @@ dev = [
     "pytest-xdist[psutil]>=3.8.0",
     "ast-grep-cli>=0.40.5",
     "ruff>=0.14.11",
+    "pytest-randomly>=4.0.1",
 ]

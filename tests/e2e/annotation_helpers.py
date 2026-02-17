@@ -293,7 +293,9 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=timeout,
         )
-    except TimeoutError:
+    except Exception as exc:
+        if "Timeout" not in type(exc).__name__:
+            raise
         # Capture diagnostic state for debugging
         url = page.url
         doc_html = page.evaluate(
@@ -303,4 +305,4 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
         msg = (
             f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
         )
-        raise TimeoutError(msg) from None
+        raise type(exc)(msg) from None

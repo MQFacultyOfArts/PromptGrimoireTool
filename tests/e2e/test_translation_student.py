@@ -32,7 +32,7 @@ from uuid import uuid4
 import pytest
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser
+    from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests
 
 from playwright.sync_api import Error as PlaywrightError
@@ -45,6 +45,41 @@ from tests.e2e.annotation_helpers import (
     setup_workspace_with_content,
 )
 from tests.e2e.conftest import _authenticate_page
+
+# ---------------------------------------------------------------------------
+# Local helpers -- reduce repeated setup/verify/highlight/comment sequences
+# ---------------------------------------------------------------------------
+
+ANNOTATION_CARD = "[data-testid='annotation-card']"
+
+
+def _setup_and_highlight(
+    page: Page,
+    app_server: str,
+    content: str,
+    verify_snippet: str,
+    start_char: int,
+    end_char: int,
+) -> None:
+    """Create workspace, verify snippet rendered, highlight, verify card."""
+    setup_workspace_with_content(page, app_server, content)
+    expect(page.locator("#doc-container")).to_contain_text(
+        verify_snippet, timeout=15000
+    )
+    create_highlight_with_tag(page, start_char, end_char, tag_index=0)
+    expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
+
+
+def _post_comment_on_first_card(page: Page) -> str:
+    """Click first annotation card, post a UUID comment, return the UUID."""
+    comment_uuid = uuid4().hex
+    card = page.locator(ANNOTATION_CARD).first
+    card.click()
+    page.get_by_placeholder("Add comment").first.fill(comment_uuid)
+    card.get_by_text("Post").click()
+    expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+    return comment_uuid
+
 
 # --- Test content strings ---
 # Reused from test_annotation_cjk.py (deleted Phase 8)
@@ -103,54 +138,33 @@ class TestTranslationStudent:
 
             with subtests.test(msg="authenticate_and_create_workspace"):
                 setup_workspace_with_content(page, app_server, CHINESE_TEXT)
-
-                # Verify Chinese content rendered
                 expect(page.locator("#doc-container")).to_contain_text(
                     "\u4f60\u597d\u4e16\u754c", timeout=15000
                 )
 
             with subtests.test(msg="highlight_chinese_text"):
-                # Highlight a range within the Chinese text
                 create_highlight_with_tag(page, 0, 3, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
+                expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
             with subtests.test(msg="add_japanese_content"):
-                # Create new workspace with Japanese text
-                setup_workspace_with_content(page, app_server, JAPANESE_TEXT)
-
-                # Verify Japanese content rendered
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c", timeout=15000
+                _setup_and_highlight(
+                    page,
+                    app_server,
+                    JAPANESE_TEXT,
+                    "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c",
+                    0,
+                    5,
                 )
-
-                # Highlight a range
-                create_highlight_with_tag(page, 0, 5, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="add_korean_content"):
-                # Create new workspace with Korean text
-                setup_workspace_with_content(page, app_server, KOREAN_TEXT)
-
-                # Verify Korean content rendered
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\uc548\ub155\ud558\uc138\uc694", timeout=15000
+                _setup_and_highlight(
+                    page,
+                    app_server,
+                    KOREAN_TEXT,
+                    "\uc548\ub155\ud558\uc138\uc694",
+                    0,
+                    4,
                 )
-
-                # Highlight a range
-                create_highlight_with_tag(page, 0, 4, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
 
         finally:
             page.close()
@@ -174,37 +188,24 @@ class TestTranslationStudent:
             _authenticate_page(page, app_server)
 
             with subtests.test(msg="arabic_content"):
-                setup_workspace_with_content(page, app_server, ARABIC_TEXT)
-
-                # Verify Arabic content rendered
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\u0645\u0631\u062d\u0628\u0627", timeout=15000
+                _setup_and_highlight(
+                    page,
+                    app_server,
+                    ARABIC_TEXT,
+                    "\u0645\u0631\u062d\u0628\u0627",
+                    0,
+                    5,
                 )
-
-                # Highlight a range
-                create_highlight_with_tag(page, 0, 5, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="hebrew_content"):
-                # Create new workspace with Hebrew text
-                setup_workspace_with_content(page, app_server, HEBREW_TEXT)
-
-                # Verify Hebrew content rendered
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\u05e9\u05dc\u05d5\u05dd", timeout=15000
+                _setup_and_highlight(
+                    page,
+                    app_server,
+                    HEBREW_TEXT,
+                    "\u05e9\u05dc\u05d5\u05dd",
+                    0,
+                    3,
                 )
-
-                # Highlight a range
-                create_highlight_with_tag(page, 0, 3, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
 
         finally:
             page.close()
@@ -221,9 +222,6 @@ class TestTranslationStudent:
         Narrative: Translation student works with a document containing
         multiple scripts (Latin, CJK, Arabic).
         """
-        # Store UUID across subtests for verification
-        comment_uuid = ""
-
         context = browser.new_context()
         page = context.new_page()
 
@@ -233,42 +231,17 @@ class TestTranslationStudent:
             with subtests.test(msg="paste_mixed_content"):
                 setup_workspace_with_content(page, app_server, MIXED_TEXT)
 
-                # Verify both Latin and CJK content rendered
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "Hello", timeout=15000
-                )
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\u4e16\u754c", timeout=5000
-                )
+                doc = page.locator("#doc-container")
+                expect(doc).to_contain_text("Hello", timeout=15000)
+                expect(doc).to_contain_text("\u4e16\u754c", timeout=5000)
 
             with subtests.test(msg="highlight_across_scripts"):
-                # Select a range spanning Latin and CJK characters
                 # "Hello \u4e16\u754c" = chars 0-7
                 create_highlight_with_tag(page, 0, 7, tag_index=0)
-
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
+                expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
             with subtests.test(msg="add_comment_with_uuid"):
-                # Generate UUID for later PDF verification
-                comment_uuid = uuid4().hex
-
-                # Click annotation card to ensure comment input visible
-                page.locator("[data-testid='annotation-card']").first.click()
-
-                # Add comment
-                comment_input = page.get_by_placeholder("Add comment").first
-                comment_input.fill(comment_uuid)
-
-                # Post comment
-                page.locator("[data-testid='annotation-card']").first.get_by_text(
-                    "Post"
-                ).click()
-
-                # Verify comment appears
-                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+                _post_comment_on_first_card(page)
 
         finally:
             page.close()
@@ -286,10 +259,8 @@ class TestTranslationStudent:
         Chinese Wikipedia fixture, annotates it, and exports PDF to verify
         i18n content survives the full pipeline.
         """
-        # Store UUID across subtests
         comment_uuid = ""
 
-        # Clipboard permissions needed for fixture paste
         context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
         page = context.new_page()
 
@@ -305,36 +276,15 @@ class TestTranslationStudent:
 
             with subtests.test(msg="paste_cjk_fixture"):
                 _load_fixture_via_paste(page, app_server, fixture_path)
-
-                # Verify fixture content loaded
                 expect(page.locator("#doc-container")).to_contain_text(
                     "\u7ef4\u57fa\u767e\u79d1", timeout=15000
                 )
 
             with subtests.test(msg="highlight_and_comment"):
-                # Highlight a text range
                 create_highlight_with_tag(page, 10, 40, tag_index=0)
+                expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
-                # Verify annotation card appears
-                expect(
-                    page.locator("[data-testid='annotation-card']").first
-                ).to_be_visible(timeout=10000)
-
-                # Generate UUID comment
-                comment_uuid = uuid4().hex
-
-                # Click card, add comment
-                page.locator("[data-testid='annotation-card']").first.click()
-                comment_input = page.get_by_placeholder("Add comment").first
-                comment_input.fill(comment_uuid)
-
-                # Post comment
-                page.locator("[data-testid='annotation-card']").first.get_by_text(
-                    "Post"
-                ).click()
-
-                # Verify comment appears
-                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+                comment_uuid = _post_comment_on_first_card(page)
 
             with subtests.test(msg="export_pdf"):
                 try:

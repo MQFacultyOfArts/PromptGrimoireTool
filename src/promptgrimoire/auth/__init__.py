@@ -31,7 +31,7 @@ from promptgrimoire.auth.models import (
     SSOStartResult,
 )
 from promptgrimoire.auth.protocol import AuthClientProtocol
-from promptgrimoire.db.acl import can_access_workspace
+from promptgrimoire.db.acl import resolve_permission
 
 _PRIVILEGED_ROLES = frozenset({"instructor", "stytch_admin"})
 
@@ -61,7 +61,7 @@ async def check_workspace_access(
     Resolution order:
     1. No auth_user -> None (unauthenticated)
     2. Admin (is_privileged_user) -> "owner" (bypass)
-    3. ACL resolution via can_access_workspace() -> permission or None
+    3. ACL resolution via resolve_permission() -> permission or None
 
     Parameters
     ----------
@@ -86,7 +86,7 @@ async def check_workspace_access(
         return None
 
     user_id = UUID(str(user_id_str))
-    return await can_access_workspace(workspace_id, user_id)
+    return await resolve_permission(workspace_id, user_id)
 
 
 __all__ = [

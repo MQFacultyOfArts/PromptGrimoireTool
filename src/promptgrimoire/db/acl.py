@@ -6,6 +6,7 @@ for per-user, per-workspace permission entries.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -20,7 +21,6 @@ from promptgrimoire.db.models import (
     Permission,
     Week,
     Workspace,
-    _utcnow,
 )
 from promptgrimoire.db.roles import get_staff_roles
 
@@ -44,7 +44,7 @@ async def grant_permission(
             workspace_id=workspace_id,
             user_id=user_id,
             permission=permission,
-            created_at=_utcnow(),
+            created_at=datetime.now(UTC),
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_acl_entry_workspace_user",
@@ -343,19 +343,6 @@ async def resolve_permission(workspace_id: UUID, user_id: UUID) -> str | None:
         return await _resolve_permission_with_session(session, workspace_id, user_id)
 
 
-async def can_access_workspace(workspace_id: UUID, user_id: UUID) -> str | None:
-    """Check if a user can access a workspace and return their permission level.
-
-    Delegates directly to resolve_permission(workspace_id, user_id).
-    ACLEntry links directly to Workspace via workspace_id, so no
-    separate lookup is needed.
-
-    Returns:
-        Permission name string or None if denied.
-    """
-    return await resolve_permission(workspace_id, user_id)
-
-
 async def grant_share(
     workspace_id: UUID,
     grantor_id: UUID,
@@ -429,6 +416,8 @@ async def grant_share(
         )
         acl_entry = existing.one_or_none()
         if acl_entry is not None:
+            if acl_entry.permission == "owner":
+                raise PermissionError("cannot modify owner permission via sharing")
             acl_entry.permission = permission
         else:
             acl_entry = ACLEntry(

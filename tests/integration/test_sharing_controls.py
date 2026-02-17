@@ -231,6 +231,45 @@ class TestGrantShareRejection:
                 sharing_allowed=True,
             )
 
+    @pytest.mark.asyncio
+    async def test_cannot_downgrade_owner_via_sharing(self) -> None:
+        """Sharing cannot overwrite an existing owner ACLEntry.
+
+        Owner shares to themselves (or staff shares to the owner)
+        with a lower permission — must be rejected.
+        """
+        from promptgrimoire.db.acl import grant_share
+
+        data = await _make_sharing_data()
+        with pytest.raises(
+            PermissionError, match="cannot modify owner permission via sharing"
+        ):
+            await grant_share(
+                data["workspace_id"],
+                data["owner"].id,
+                data["owner"].id,
+                "viewer",
+                sharing_allowed=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_staff_cannot_downgrade_owner_via_sharing(self) -> None:
+        """Staff bypass does not allow downgrading an owner."""
+        from promptgrimoire.db.acl import grant_share
+
+        data = await _make_sharing_data()
+        with pytest.raises(
+            PermissionError, match="cannot modify owner permission via sharing"
+        ):
+            await grant_share(
+                data["workspace_id"],
+                data["staff"].id,
+                data["owner"].id,
+                "editor",
+                sharing_allowed=True,
+                grantor_is_staff=True,
+            )
+
 
 class TestSharingInheritance:
     """Tests for allow_sharing tri-state resolution in PlacementContext."""

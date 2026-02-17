@@ -571,52 +571,6 @@ class TestCoursePlacedWorkspace:
         assert result is None
 
 
-class TestCanAccessWorkspace:
-    """Verify can_access_workspace() delegates to resolve_permission()."""
-
-    @pytest.mark.asyncio
-    async def test_delegates_to_resolve_permission(self) -> None:
-        """can_access_workspace returns same result as resolve_permission."""
-        from promptgrimoire.db.acl import (
-            can_access_workspace,
-            grant_permission,
-            resolve_permission,
-        )
-        from promptgrimoire.db.users import create_user
-        from promptgrimoire.db.workspaces import create_workspace
-
-        tag = uuid4().hex[:8]
-        user = await create_user(
-            email=f"can-access-{tag}@test.local",
-            display_name=f"CanAccess {tag}",
-        )
-        workspace = await create_workspace()
-        await grant_permission(workspace.id, user.id, "viewer")
-
-        resolve_result = await resolve_permission(workspace.id, user.id)
-        can_access_result = await can_access_workspace(workspace.id, user.id)
-
-        assert resolve_result == can_access_result == "viewer"
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_access(self) -> None:
-        """can_access_workspace returns None when no ACL or enrollment."""
-        from promptgrimoire.db.acl import can_access_workspace
-        from promptgrimoire.db.users import create_user
-        from promptgrimoire.db.workspaces import create_workspace
-
-        tag = uuid4().hex[:8]
-        user = await create_user(
-            email=f"can-access-none-{tag}@test.local",
-            display_name=f"CanAccess None {tag}",
-        )
-        workspace = await create_workspace()
-
-        result = await can_access_workspace(workspace.id, user.id)
-
-        assert result is None
-
-
 class TestAdminBypass:
     """AC6.6: Admin (via Stytch) gets owner-level access regardless of ACL/enrollment.
 

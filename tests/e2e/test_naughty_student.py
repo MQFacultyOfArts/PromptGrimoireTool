@@ -361,12 +361,13 @@ class TestNaughtyStudent:
                     semester="2026-S1",
                 )
 
-                # Enable copy protection
-                configure_course_copy_protection(instructor_page, enabled=True)
-
-                # Add week and activity
+                # Add week and activity (before copy protection — matches
+                # test_instructor_workflow ordering that avoids dialog→nav race)
                 add_week(instructor_page, title="Protected Content")
                 add_activity(instructor_page, title="Protected Activity")
+
+                # Enable copy protection (after week/activity creation)
+                configure_course_copy_protection(instructor_page, enabled=True)
 
                 # Fill template workspace with content
                 instructor_page.get_by_role(

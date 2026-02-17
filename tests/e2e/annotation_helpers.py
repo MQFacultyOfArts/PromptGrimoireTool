@@ -161,10 +161,7 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     confirm_btn.click()
 
     # Wait for the text walker to initialise
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
+    wait_for_text_walker(page, timeout=15000)
     page.wait_for_timeout(200)
 
 

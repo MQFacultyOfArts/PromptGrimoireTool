@@ -21,6 +21,7 @@ from promptgrimoire.pages.annotation import (
     _RemotePresence,
     _render_js,
     _workspace_presence,
+    _workspace_registry,
 )
 from promptgrimoire.pages.annotation.highlights import _update_highlight_css
 
@@ -218,11 +219,13 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Disconnect handler
     async def on_disconnect() -> None:
+        last_client = False
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
             # Clean up empty workspace dict to prevent slow memory leak
             if not _workspace_presence[workspace_key]:
                 del _workspace_presence[workspace_key]
+                last_client = True
             # Remove this client's cursor/selection and refresh UI for all remaining
             removal_js = _render_js(
                 t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
@@ -238,6 +241,17 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                         await presence.invoke_callback()
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
+
+        # Evict CRDT doc from registries when last client leaves.
+        # This prevents unbounded memory growth from accumulated pycrdt
+        # documents. The doc is re-loaded from DB on the next visit.
+        if last_client:
+            doc_id = f"ws-{workspace_id}"
+            pm.evict_workspace(workspace_id, doc_id)
+            _workspace_registry.remove(doc_id)
+            logger.info(
+                "Last client left workspace %s — evicted CRDT doc", workspace_id
+            )
 
     client.on_disconnect(on_disconnect)
 

@@ -162,6 +162,38 @@ class PersistenceManager:
         for workspace_id in workspace_ids:
             await self.force_persist_workspace(workspace_id)
 
+    def evict_workspace(self, workspace_id: UUID, doc_id: str) -> None:
+        """Remove all state for a workspace after its last client disconnects.
+
+        Cleans up:
+        - Document from ``_doc_registry``
+        - Dirty marker from ``_workspace_dirty``
+        - Pending save task from ``_workspace_pending_saves`` (cancelled)
+        - Last editor from ``_workspace_last_editors``
+
+        Call this AFTER ``force_persist_workspace`` has saved any pending state.
+
+        Args:
+            workspace_id: The workspace UUID.
+            doc_id: The document ID in the registry.
+        """
+        from uuid import UUID as UUIDType
+
+        if isinstance(workspace_id, str):
+            workspace_id = UUIDType(workspace_id)
+
+        self.unregister_document(doc_id)
+        self._workspace_dirty.pop(workspace_id, None)
+        self._workspace_last_editors.pop(workspace_id, None)
+        # Cancel and remove any pending save task (should already be done
+        # by force_persist_workspace, but be defensive)
+        task = self._workspace_pending_saves.pop(workspace_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+        logger.info(
+            "Evicted workspace %s (doc %s) from persistence", workspace_id, doc_id
+        )
+
 
 # Global singleton instance
 _persistence_manager: PersistenceManager | None = None

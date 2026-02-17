@@ -117,13 +117,6 @@ library references during development.
 
 ## Project Documents
 
-- [Annotation Architecture](annotation-architecture.md)
-- [Architecture](ARCHITECTURE.md)
-- [Configuration](configuration.md)
-- [Copy Protection](copy-protection.md)
-- [Database Schema & Architecture](database.md)
-- [Dependency Rationale](dependency-rationale.md)
-- [HTML Input Pipeline](input-pipeline.md)
-- [PDF Export / LaTeX](export.md)
 - [Testing Guidelines](testing.md)
-- [Git Worktrees](worktrees.md)
+- [Architecture](ARCHITECTURE.md)
+- [Dependency Rationale](dependency-rationale.md)

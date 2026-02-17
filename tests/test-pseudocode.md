@@ -8,8 +8,9 @@ they reveal where the test suite is redundant or incomplete.
 
 > **Scope:** This file covers tests added or modified on the
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
-> css-highlight-api, and 165-auto-create-branch-db branches. Existing
-> tests from before these branches are not yet documented here.
+> css-highlight-api, 165-auto-create-branch-db, and 96-workspace-acl
+> branches. Existing tests from before these branches are not yet
+> documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -980,7 +981,7 @@ It catches any divergence that would cause highlights to render at wrong positio
 **File:** tests/unit/test_remote_presence_refactor.py::TestRemotePresenceDataclass
 1. Assert _RemotePresence exists in annotation module
 2. Assert it is a dataclass (dataclasses.is_dataclass)
-3. Assert fields: name, color, nicegui_client, callback, cursor_char, selection_start, selection_end, has_milkdown_editor
+3. Assert fields: name, color, nicegui_client, callback, cursor_char, selection_start, selection_end, has_milkdown_editor, user_id
 4. Assert _workspace_presence dict exists at module level
 
 **Verifies:** New presence data model is correctly structured with all required fields
@@ -1322,3 +1323,408 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert only background-color property present (CSS Highlight API limitation)
 
 **Verifies:** Highlight throb animation uses only CSS Highlight API-compatible properties
+
+## ACL Reference Tables (Integration)
+
+### Permission seed data from migration
+**File:** tests/integration/test_acl_reference_tables.py::TestPermissionSeedData
+1. Query Permission table -- assert exactly 3 rows
+2. Assert owner exists with level 30
+3. Assert editor exists with level 20
+4. Assert viewer exists with level 10
+
+**Verifies:** Alembic migration seeds Permission reference table with correct name/level pairs
+
+### CourseRoleRef seed data from migration
+**File:** tests/integration/test_acl_reference_tables.py::TestCourseRoleRefSeedData
+1. Query CourseRoleRef table -- assert exactly 4 rows
+2. Assert coordinator exists with level 40
+3. Assert instructor exists with level 30
+4. Assert tutor exists with level 20
+5. Assert student exists with level 10
+
+**Verifies:** Alembic migration seeds CourseRoleRef table with correct name/level pairs
+
+### Seed data comes from migration, not seed-data script
+**File:** tests/integration/test_acl_reference_tables.py::TestSeedDataFromMigration
+1. Inspect seed_data() function source code
+2. Assert "Permission" not in source
+3. Assert "CourseRoleRef" not in source
+
+**Verifies:** Reference tables are populated by migration, not the seed-data CLI (integration test DB never runs seed-data)
+
+### PK and constraint enforcement
+**File:** tests/integration/test_acl_reference_tables.py::TestPermissionDuplicateNameRejected, TestCourseRoleRefDuplicateNameRejected, TestPermissionLevelConstraints, TestCourseRoleRefLevelConstraints
+1. INSERT duplicate "owner" name -- assert IntegrityError (PK constraint)
+2. INSERT duplicate "student" name -- assert IntegrityError (PK constraint)
+3. Permission with level 0 -- assert IntegrityError (CHECK constraint, below range)
+4. Permission with level 101 -- assert IntegrityError (CHECK constraint, above range)
+5. Permission with level 30 (=owner) -- assert IntegrityError (UNIQUE constraint)
+6. Same pattern for CourseRoleRef
+
+**Verifies:** CHECK (1-100) and UNIQUE constraints on level column; PK on name column
+
+## ACL CRUD (Integration)
+
+### grant_permission creates and upserts ACL entries
+**File:** tests/integration/test_acl_crud.py::TestGrantPermission
+1. Create user and workspace, grant "viewer" -- assert entry has correct workspace_id, user_id, permission, id, created_at
+2. Grant again with "editor" to same pair -- assert same row id (upsert), permission updated to "editor"
+
+**Verifies:** grant_permission creates entries and upserts on conflict
+
+### revoke_permission deletes entries
+**File:** tests/integration/test_acl_crud.py::TestRevokePermission
+1. Grant then revoke -- returns True
+2. Revoke when no entry exists -- returns False
+3. Revoke twice -- first True, second False
+
+**Verifies:** revoke_permission returns correct boolean and actually deletes the row
+
+### list_entries_for_workspace
+**File:** tests/integration/test_acl_crud.py::TestListEntriesForWorkspace
+1. Grant 2 users on same workspace -- list returns 2 entries with correct user_ids
+2. Workspace with no entries -- returns empty list
+
+**Verifies:** Workspace-scoped listing returns all entries and handles empty case
+
+### list_entries_for_user
+**File:** tests/integration/test_acl_crud.py::TestListEntriesForUser
+1. Grant user on 2 workspaces -- list returns 2 entries with correct workspace_ids
+2. User with no entries -- returns empty list
+
+**Verifies:** User-scoped listing returns all entries and handles empty case
+
+### CASCADE delete from Workspace
+**File:** tests/integration/test_acl_crud.py::TestCascadeDeleteWorkspace
+1. Grant permission on workspace, delete workspace -- list_entries returns empty
+
+**Verifies:** Deleting workspace cascades to ACLEntry rows
+
+### CASCADE delete from User
+**File:** tests/integration/test_acl_crud.py::TestCascadeDeleteUser
+1. Grant permission, delete user via session -- query ACLEntry for deleted user_id returns 0 rows
+
+**Verifies:** Deleting user cascades to ACLEntry rows
+
+### UNIQUE constraint on (workspace_id, user_id)
+**File:** tests/integration/test_acl_crud.py::TestDuplicateConstraint
+1. Insert ACLEntry directly, insert duplicate pair -- assert IntegrityError
+
+**Verifies:** Direct INSERT (not upsert) of duplicate pair raises IntegrityError
+
+## Course Role Normalisation (Integration)
+
+### Role FK constraint
+**File:** tests/integration/test_course_role_normalisation.py::TestRoleFKConstraint
+1. Enroll user with role "student" -- succeeds, role string round-trips
+2. Enroll user with invalid role "invalid_role" -- IntegrityError (FK constraint)
+
+**Verifies:** CourseEnrollment.role is a FK to course_role reference table
+
+### Enrollment CRUD with string roles
+**File:** tests/integration/test_course_role_normalisation.py::TestEnrollmentCRUDWithStringRoles
+1. Enroll with role="instructor" -- enrollment.role is "instructor"
+2. Update role from "student" to "tutor" -- role string updated
+3. Enroll without specifying role -- defaults to "student"
+
+**Verifies:** All enrollment operations work with string role values
+
+### Week visibility after normalisation
+**File:** tests/integration/test_course_role_normalisation.py::TestWeekVisibilityAfterNormalisation
+1. Create published and unpublished weeks, enroll instructor -- instructor sees both weeks
+2. Enroll student -- student sees only published week
+
+**Verifies:** Week visibility logic works identically after CourseRole StrEnum removal
+
+## Permission Resolution (Integration)
+
+### Explicit ACL resolution
+**File:** tests/integration/test_permission_resolution.py::TestExplicitACL
+1. Grant "viewer" to user on workspace -- resolve_permission returns "viewer"
+2. Grant "editor" -- returns "editor"
+3. Grant "owner" -- returns "owner"
+
+**Verifies:** Explicit ACL entries are returned directly
+
+### Enrollment-derived instructor access
+**File:** tests/integration/test_permission_resolution.py::TestEnrollmentDerivedInstructor
+1. Create activity-placed workspace, enroll instructor, no explicit ACL -- resolve_permission returns Course.default_instructor_permission ("editor")
+2. Set default_instructor_permission to "viewer" -- resolve_permission returns "viewer"
+3. Instructor on template workspace -- same enrollment-derived access applies
+
+**Verifies:** Staff roles derive access from course enrollment; permission level follows Course.default_instructor_permission
+
+### Enrollment-derived coordinator and tutor access
+**File:** tests/integration/test_permission_resolution.py::TestEnrollmentDerivedCoordinator, TestEnrollmentDerivedTutor
+1. Enroll as coordinator/tutor, no explicit ACL -- resolve_permission returns default_instructor_permission
+
+**Verifies:** Coordinator and tutor roles also derive access (all staff roles treated equally)
+
+### Highest wins when both exist
+**File:** tests/integration/test_permission_resolution.py::TestHighestWins
+1. Explicit "viewer" + enrollment-derived "editor" -- returns "editor" (derived wins)
+2. Explicit "owner" + enrollment-derived "editor" -- returns "owner" (explicit wins)
+
+**Verifies:** When both explicit ACL and enrollment-derived access exist, higher Permission.level wins
+
+### Student without ACL denied
+**File:** tests/integration/test_permission_resolution.py::TestStudentDenial
+1. Enroll student in course, no explicit ACL on activity workspace -- resolve_permission returns None
+
+**Verifies:** Students do not get enrollment-derived access (only staff roles do)
+
+### Unenrolled user denied
+**File:** tests/integration/test_permission_resolution.py::TestUnenrolledDenial
+1. User not enrolled, no explicit ACL -- resolve_permission returns None
+
+**Verifies:** Default deny for users with no access path
+
+### Loose workspace access
+**File:** tests/integration/test_permission_resolution.py::TestLooseWorkspace
+1. Loose workspace, no ACL -- returns None
+2. Loose workspace, explicit ACL "editor" -- returns "editor"
+3. Instructor enrolled in a course, loose workspace -- returns None (no enrollment derivation for loose)
+
+**Verifies:** Loose workspaces only support explicit ACL, no enrollment derivation
+
+### Course-placed workspace access
+**File:** tests/integration/test_permission_resolution.py::TestCoursePlacedWorkspace
+1. Course-placed workspace, instructor enrolled in course -- returns default_instructor_permission
+2. Course-placed workspace, student enrolled -- returns None
+
+**Verifies:** Course-placed workspaces support enrollment-derived staff access
+
+### can_access_workspace delegates correctly
+**File:** tests/integration/test_permission_resolution.py::TestCanAccessWorkspace
+1. User with ACL -- can_access_workspace returns same as resolve_permission
+2. User without ACL or enrollment -- returns None
+
+**Verifies:** can_access_workspace is a thin wrapper around resolve_permission
+
+### Admin bypass and no-auth denial (unit-level)
+**File:** tests/integration/test_permission_resolution.py::TestAdminBypass, TestNoAuthDenial
+1. Admin is_admin=True -- is_privileged_user returns True
+2. Instructor role -- is_privileged_user returns True
+3. Admin without ACL -- resolve_permission returns None (admin bypass is page-level)
+4. None auth_user -- is_privileged_user returns False
+5. Unknown user_id -- resolve_permission returns None
+
+**Verifies:** Admin bypass is NOT in the DB layer; is_privileged_user only checks auth_user dict
+
+## Clone Eligibility (Integration)
+
+### Enrolled student eligible
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. Create hierarchy (course, published week, activity), enroll student -- check_clone_eligibility returns None (eligible)
+
+**Verifies:** Enrolled student with published week passes eligibility check
+
+### Unenrolled user rejected
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. User not enrolled in course -- returns error containing "not enrolled"
+
+**Verifies:** Unenrolled users cannot clone
+
+### Non-existent activity rejected
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. Random UUID as activity_id -- returns error containing "not found"
+
+**Verifies:** Invalid activity IDs are caught
+
+### Unpublished week blocks student
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. Create unpublished week + activity, student enrolled -- returns error "not published"
+
+**Verifies:** Students cannot clone activities in unpublished weeks
+
+### Future visible_from blocks student
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. Published week with visible_from 7 days in future -- returns error "not yet visible"
+
+**Verifies:** Students cannot clone activities in not-yet-visible weeks
+
+### Staff bypasses week visibility
+**File:** tests/integration/test_clone_eligibility.py::TestCheckCloneEligibility
+1. Instructor on unpublished week -- returns None (eligible)
+2. Instructor on future-visible week -- returns None (eligible)
+
+**Verifies:** Staff roles (via is_staff on CourseRoleRef) bypass week visibility checks
+
+## Clone Ownership (Integration)
+
+### Clone creates owner ACL entry
+**File:** tests/integration/test_clone_ownership.py::TestCloneOwnership
+1. Clone workspace from activity with user_id -- list ACL entries returns 1 entry with permission="owner" and correct user_id
+2. Second student clones -- their entry has their user_id
+
+**Verifies:** clone_workspace_from_activity creates an owner ACLEntry for the cloning user
+
+### Duplicate detection
+**File:** tests/integration/test_clone_ownership.py::TestDuplicateDetection
+1. No cloned workspace yet -- get_user_workspace_for_activity returns None
+2. After cloning -- returns the clone
+3. Different user's clone not returned for another user
+
+**Verifies:** get_user_workspace_for_activity correctly detects existing owned workspaces
+
+### Type annotation guards unauthenticated access
+**File:** tests/integration/test_clone_ownership.py::TestUnauthenticatedCloneRejection
+1. Inspect type hints on check_clone_eligibility -- user_id is UUID (not Optional)
+2. Inspect type hints on clone_workspace_from_activity -- user_id is UUID (not Optional)
+
+**Verifies:** Type system prevents None from being passed as user_id
+
+## Workspace Access Enforcement (Integration)
+
+### Admin bypass via check_workspace_access
+**File:** tests/integration/test_enforcement.py::TestCheckWorkspaceAccessAdminBypass
+1. Admin auth_user (is_admin=True) with no ACL -- returns "owner"
+2. Instructor role auth_user -- returns "owner"
+
+**Verifies:** Admins and instructors bypass ACL via is_privileged_user
+
+### No auth returns None
+**File:** tests/integration/test_enforcement.py::TestCheckWorkspaceAccessNoAuth, TestCheckWorkspaceAccessUnauthenticated
+1. None auth_user -- returns None
+2. Auth_user with empty/missing user_id -- returns None
+
+**Verifies:** Unauthenticated users are denied
+
+### Permission levels returned correctly
+**File:** tests/integration/test_enforcement.py::TestCheckWorkspaceAccessViewer, TestCheckWorkspaceAccessEditorOwner
+1. User with "viewer" ACL -- returns "viewer"
+2. User with "editor" ACL -- returns "editor"
+3. User with "owner" ACL -- returns "owner"
+
+**Verifies:** check_workspace_access returns the correct permission string
+
+### Unauthorised user denied
+**File:** tests/integration/test_enforcement.py::TestCheckWorkspaceAccessUnauthorised
+1. User with no ACL and no enrollment -- returns None
+
+**Verifies:** Default deny for users without access
+
+### Revocation broadcast
+**File:** tests/integration/test_enforcement.py::TestRevocationBroadcast
+1. Revoke with no connected clients -- revoke_and_redirect returns 0
+2. After revocation, workspace_presence dict is cleaned up
+
+**Verifies:** Revocation handles empty presence gracefully and cleans up state
+
+## Workspace Listing Queries (Integration)
+
+### list_accessible_workspaces
+**File:** tests/integration/test_listing_queries.py::TestListAccessibleWorkspaces
+1. Owner sees cloned workspace with "owner" permission
+2. Owner sees loose workspace with "owner" permission
+3. Shared viewer sees workspace with "viewer" permission
+4. Orphaned workspace (activity deleted) still accessible via persistent ACLEntry
+
+**Verifies:** Student workspace listing returns all workspaces with explicit ACL entries
+
+### list_course_workspaces (instructor view)
+**File:** tests/integration/test_listing_queries.py::TestListCourseWorkspaces
+1. Student clone included in results
+2. Template workspace excluded
+3. Loose workspace (course-placed) included
+
+**Verifies:** Instructor course view shows student clones and loose workspaces but not templates
+
+### list_activity_workspaces
+**File:** tests/integration/test_listing_queries.py::TestListActivityWorkspaces
+1. Student clone returned with owner user_id
+2. Template workspace excluded
+3. Non-existent activity returns empty list
+
+**Verifies:** Per-activity view shows student clones with ownership info
+
+### Resume vs Start detection
+**File:** tests/integration/test_listing_queries.py::TestResumeDetection
+1. Owner of cloned workspace -- get_user_workspace_for_activity returns the clone (resume)
+2. Shared viewer -- returns None (start new, not resume shared workspace)
+
+**Verifies:** Only owner ACL entries trigger resume; shared access does not count as "has workspace"
+
+## Sharing Controls (Integration)
+
+### grant_share success cases
+**File:** tests/integration/test_sharing_controls.py::TestGrantShareSuccess
+1. Owner shares as editor -- ACLEntry created with "editor" permission
+2. Owner shares as viewer -- ACLEntry created with "viewer"
+3. Staff bypasses sharing_allowed=False -- share succeeds
+4. Share updates existing entry -- permission changed, same row
+
+**Verifies:** Owners can share when allowed; staff always share; upsert works
+
+### grant_share rejection cases
+**File:** tests/integration/test_sharing_controls.py::TestGrantShareRejection
+1. Non-owner tries to share -- PermissionError "only workspace owners can share"
+2. Owner with sharing disabled -- PermissionError "sharing is not allowed"
+3. Any user tries to grant "owner" -- PermissionError "cannot grant owner"
+
+**Verifies:** Sharing rules enforced: owner-only, sharing-enabled, never owner permission
+
+### Sharing tri-state inheritance
+**File:** tests/integration/test_sharing_controls.py::TestSharingInheritance
+1. Activity allow_sharing=None, course default=True -- PlacementContext.allow_sharing is True
+2. Activity allow_sharing=None, course default=False -- PlacementContext.allow_sharing is False
+3. Activity allow_sharing=True, course default=False -- PlacementContext.allow_sharing is True (explicit wins)
+4. Activity allow_sharing=False, course default=True -- PlacementContext.allow_sharing is False (explicit wins)
+
+**Verifies:** Same tri-state resolution pattern as copy_protection
+
+## manage-users CLI (Unit)
+
+### Argument parser
+**File:** tests/unit/test_manage_users.py::TestUserParserSubcommands
+1. "list" parses with no args
+2. "list --all" sets include_all flag
+3. "show" requires email positional
+4. "admin" parses email and optional --remove flag
+5. "enroll" parses email, code, semester, optional --role
+6. "unenroll" parses email, code, semester
+7. "role" parses email, code, semester, new_role
+8. No subcommand raises SystemExit
+
+**Verifies:** Argparse parser structure matches CLI contract
+
+### _format_last_login
+**File:** tests/unit/test_manage_users.py::TestFormatLastLogin
+1. None returns "Never"
+2. Datetime returns "YYYY-MM-DD HH:MM" formatted string
+
+**Verifies:** Login timestamp formatting for CLI output
+
+### Command output (mocked DB)
+**File:** tests/unit/test_manage_users.py::TestCmdList, TestCmdShow, TestCmdAdmin, TestCmdEnroll
+1. _cmd_list with users -- table shows emails, names, admin status, last login
+2. _cmd_list empty -- prints "No users found"
+3. _cmd_show with unknown email -- prints error and exits
+4. _cmd_show with enrollments -- displays user details + enrollment table
+5. _cmd_admin with unknown email -- prints error and exits
+6. _cmd_admin set -- calls set_admin(True), prints confirmation
+7. _cmd_admin remove -- calls set_admin(False), prints confirmation
+8. _cmd_enroll with unknown course -- prints error and exits
+9. _cmd_enroll success -- calls enroll_user, prints confirmation
+
+**Verifies:** CLI subcommands produce correct output and handle error cases
+
+## Course Update with Sharing (Integration)
+
+### update_course default_allow_sharing
+**File:** tests/integration/test_course_service.py::TestUpdateCourse (modified)
+1. Update default_allow_sharing False to True -- round-trips via get_course_by_id
+2. Update name only -- preserves existing default_allow_sharing (Ellipsis sentinel)
+
+**Verifies:** update_course correctly persists default_allow_sharing changes
+
+**Overlap note:** Extends existing TestUpdateCourse tests that cover default_copy_protection.
+
+## DB Schema Guards (Unit -- modified)
+
+### Expected tables list updated
+**File:** tests/unit/test_db_schema.py (modified)
+1. get_expected_tables() now returns 10 tables including permission, course_role, acl_entry
+
+**Verifies:** Schema verification function knows about all ACL tables

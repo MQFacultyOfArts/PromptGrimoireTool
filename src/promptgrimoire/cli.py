@@ -45,7 +45,7 @@ def _pre_test_db_cleanup() -> None:
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
-    result = subprocess.run(
+    result = subprocess.run(  # nosec: B603, B607
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=project_root,
         capture_output=True,
@@ -57,7 +57,11 @@ def _pre_test_db_cleanup() -> None:
         sys.exit(1)
 
     # Truncate all tables (sync connection, single process — no race)
+    # Reference tables seeded by migrations are excluded — their data
+    # is part of the schema, not transient test data.
     from sqlalchemy import create_engine, text
+
+    _REFERENCE_TABLES = frozenset({"alembic_version", "permission", "course_role"})
 
     sync_url = test_database_url.replace(
         "postgresql+asyncpg://", "postgresql+psycopg://"
@@ -68,10 +72,11 @@ def _pre_test_db_cleanup() -> None:
             text("""
                 SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
-                AND tablename != 'alembic_version'
             """)
         )
-        tables = [row[0] for row in table_query.fetchall()]
+        tables = [
+            row[0] for row in table_query.fetchall() if row[0] not in _REFERENCE_TABLES
+        ]
 
         if tables:
             quoted_tables = ", ".join(f'"{t}"' for t in tables)
@@ -143,7 +148,7 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603 — args from trusted CLI config
             all_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -327,7 +332,7 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     }
 
     console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # nosec B603 — hardcoded test server command
         [sys.executable, "-c", _E2E_SERVER_SCRIPT, str(port)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -422,8 +427,349 @@ def test_e2e() -> None:
         _stop_e2e_server(server_process)
 
 
+# ---------------------------------------------------------------------------
+# manage-users CLI
+# ---------------------------------------------------------------------------
+
+
+def _format_last_login(dt: datetime | None) -> str:
+    """Format a last_login timestamp for display."""
+    if dt is None:
+        return "Never"
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _build_user_parser():
+    """Build argparse parser for manage-users subcommands."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="manage-users",
+        description="Manage users, roles, and course enrollments.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # list
+    list_p = sub.add_parser("list", help="List all users")
+    list_p.add_argument(
+        "--all", action="store_true", help="Include users who haven't logged in"
+    )
+
+    # show
+    show_p = sub.add_parser("show", help="Show user details and enrollments")
+    show_p.add_argument("email", help="User email address")
+
+    # admin
+    admin_p = sub.add_parser("admin", help="Set or remove admin status")
+    admin_p.add_argument("email", help="User email address")
+    admin_p.add_argument("--remove", action="store_true", help="Remove admin status")
+
+    # enroll
+    enroll_p = sub.add_parser("enroll", help="Enroll user in a course")
+    enroll_p.add_argument("email", help="User email address")
+    enroll_p.add_argument("code", help="Course code (e.g. LAWS1100)")
+    enroll_p.add_argument("semester", help="Semester (e.g. 2026-S1)")
+    enroll_p.add_argument("--role", default="student", help="Role (default: student)")
+
+    # unenroll
+    unenroll_p = sub.add_parser("unenroll", help="Remove user from a course")
+    unenroll_p.add_argument("email", help="User email address")
+    unenroll_p.add_argument("code", help="Course code")
+    unenroll_p.add_argument("semester", help="Semester")
+
+    # role
+    role_p = sub.add_parser("role", help="Change user's role in a course")
+    role_p.add_argument("email", help="User email address")
+    role_p.add_argument("code", help="Course code")
+    role_p.add_argument("semester", help="Semester")
+    role_p.add_argument("new_role", help="New role")
+
+    # create
+    create_p = sub.add_parser("create", help="Create a new user")
+    create_p.add_argument("email", help="User email address")
+    create_p.add_argument(
+        "--name", default=None, help="Display name (default: derived from email)"
+    )
+
+    return parser
+
+
+async def _find_course(code: str, semester: str):
+    """Look up a course by code + semester. Returns None if not found."""
+    from sqlmodel import select
+
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Course
+
+    async with get_session() as session:
+        result = await session.exec(
+            select(Course).where(Course.code == code).where(Course.semester == semester)
+        )
+        return result.first()
+
+
+async def _require_user(email: str, con: Console):
+    """Look up user by email or exit with error."""
+    from promptgrimoire.db.users import get_user_by_email
+
+    user = await get_user_by_email(email)
+    if user is None:
+        con.print(f"[red]Error:[/] no user found with email '{email}'")
+        con.print("[dim]User must log in at least once.[/]")
+        sys.exit(1)
+    return user
+
+
+async def _require_course(code: str, semester: str, con: Console):
+    """Look up course by code+semester or exit with error."""
+    course = await _find_course(code, semester)
+    if course is None:
+        con.print(f"[red]Error:[/] no course found: {code} {semester}")
+        sys.exit(1)
+    return course
+
+
+async def _cmd_list(
+    *,
+    include_all: bool = False,
+    console: Console | None = None,
+) -> None:
+    """List users as a Rich table."""
+    from rich.table import Table
+
+    from promptgrimoire.db.users import list_all_users, list_users
+
+    con = console or globals()["console"]
+    users = await list_all_users() if include_all else await list_users()
+
+    if not users:
+        con.print("[yellow]No users found.[/]")
+        return
+
+    table = Table(title="Users")
+    table.add_column("Email", style="cyan")
+    table.add_column("Name")
+    table.add_column("Admin")
+    table.add_column("Last Login")
+
+    for u in users:
+        table.add_row(
+            u.email,
+            u.display_name,
+            "[green]Yes[/]" if u.is_admin else "No",
+            _format_last_login(u.last_login),
+        )
+
+    con.print(table)
+
+
+async def _cmd_create(
+    email: str,
+    *,
+    name: str | None = None,
+    console: Console | None = None,
+) -> None:
+    """Create a new user."""
+    from promptgrimoire.db.users import find_or_create_user
+
+    con = console or globals()["console"]
+    display_name = name or email.split("@", maxsplit=1)[0].replace(".", " ").title()
+    user, created = await find_or_create_user(email=email, display_name=display_name)
+    if created:
+        con.print(f"[green]Created[/] user '{email}' ({display_name}, id={user.id})")
+    else:
+        con.print(f"[yellow]Already exists:[/] '{email}' (id={user.id})")
+
+
+async def _cmd_show(
+    email: str,
+    *,
+    console: Console | None = None,
+) -> None:
+    """Show a single user's details and course enrollments."""
+    from rich.table import Table
+
+    from promptgrimoire.db.courses import get_course_by_id, list_user_enrollments
+
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+
+    con.print(f"\n[bold]{user.display_name}[/] ({user.email})")
+    con.print(f"  Admin: {'[green]Yes[/]' if user.is_admin else 'No'}")
+    con.print(f"  Last login: {_format_last_login(user.last_login)}")
+    con.print(f"  ID: [dim]{user.id}[/]")
+
+    enrollments = await list_user_enrollments(user.id)
+    if not enrollments:
+        con.print("\n  [dim]No course enrollments.[/]")
+        return
+
+    table = Table(title="Enrollments")
+    table.add_column("Course")
+    table.add_column("Semester")
+    table.add_column("Role")
+
+    for e in enrollments:
+        course = await get_course_by_id(e.course_id)
+        if course:
+            table.add_row(course.code, course.semester, e.role)
+        else:
+            table.add_row(f"[dim]{e.course_id}[/]", "?", e.role)
+
+    con.print(table)
+
+
+async def _cmd_admin(
+    email: str,
+    *,
+    remove: bool = False,
+    console: Console | None = None,
+) -> None:
+    """Set or remove admin status for a user."""
+    from promptgrimoire.db.users import set_admin as db_set_admin
+
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+
+    if remove:
+        await db_set_admin(user.id, False)
+        con.print(f"[green]Removed[/] admin from '{email}'.")
+    else:
+        await db_set_admin(user.id, True)
+        con.print(f"[green]Granted[/] admin to '{email}'.")
+
+
+async def _cmd_enroll(
+    email: str,
+    code: str,
+    semester: str,
+    *,
+    role: str = "student",
+    console: Console | None = None,
+) -> None:
+    """Enroll a user in a course."""
+    from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user
+
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+    course = await _require_course(code, semester, con)
+
+    try:
+        await enroll_user(course_id=course.id, user_id=user.id, role=role)
+        con.print(f"[green]Enrolled[/] '{email}' in {code} {semester} as {role}.")
+    except DuplicateEnrollmentError:
+        con.print(f"[yellow]Already enrolled:[/] '{email}' in {code} {semester}.")
+
+
+async def _cmd_unenroll(
+    email: str,
+    code: str,
+    semester: str,
+    *,
+    console: Console | None = None,
+) -> None:
+    """Remove a user from a course."""
+    from promptgrimoire.db.courses import unenroll_user
+
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+    course = await _require_course(code, semester, con)
+
+    removed = await unenroll_user(course_id=course.id, user_id=user.id)
+    if removed:
+        con.print(f"[green]Removed[/] '{email}' from {code} {semester}.")
+    else:
+        con.print(f"[yellow]Not enrolled:[/] '{email}' in {code} {semester}.")
+
+
+async def _cmd_role(
+    email: str,
+    code: str,
+    semester: str,
+    new_role: str,
+    *,
+    console: Console | None = None,
+) -> None:
+    """Change a user's role in a course."""
+    from promptgrimoire.db.courses import update_user_role
+
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+    course = await _require_course(code, semester, con)
+
+    result = await update_user_role(
+        course_id=course.id,
+        user_id=user.id,
+        role=new_role,
+    )
+    if result:
+        con.print(
+            f"[green]Updated[/] '{email}' role to {new_role} in {code} {semester}."
+        )
+    else:
+        con.print(f"[yellow]Not enrolled:[/] '{email}' in {code} {semester}.")
+
+
+def manage_users() -> None:
+    """Manage users, roles, and course enrollments.
+
+    Usage:
+        uv run manage-users <command> [options]
+
+    Commands:
+        list              List all users
+        show <email>      Show user details and enrollments
+        create <email>    Create a new user (--name for display name)
+        admin <email>     Set user as admin (--remove to unset)
+        enroll <email> <code> <semester>  Enroll user in course
+        unenroll <email> <code> <semester>  Remove from course
+        role <email> <code> <semester> <role>  Change role
+    """
+    from promptgrimoire.config import get_settings
+
+    parser = _build_user_parser()
+    args = parser.parse_args(sys.argv[1:])
+
+    if not get_settings().database.url:
+        console.print("[red]Error:[/] DATABASE__URL not set")
+        sys.exit(1)
+
+    async def _run() -> None:
+        from promptgrimoire.db.engine import init_db
+
+        await init_db()
+
+        match args.command:
+            case "list":
+                await _cmd_list(include_all=args.all)
+            case "show":
+                await _cmd_show(args.email)
+            case "admin":
+                await _cmd_admin(args.email, remove=args.remove)
+            case "enroll":
+                await _cmd_enroll(
+                    args.email,
+                    args.code,
+                    args.semester,
+                    role=args.role,
+                )
+            case "unenroll":
+                await _cmd_unenroll(args.email, args.code, args.semester)
+            case "role":
+                await _cmd_role(
+                    args.email,
+                    args.code,
+                    args.semester,
+                    args.new_role,
+                )
+            case "create":
+                await _cmd_create(args.email, name=args.name)
+
+    asyncio.run(_run())
+
+
 def set_admin() -> None:
-    """Set a user as admin by email.
+    """Set a user as admin by email (legacy — delegates to manage-users admin).
 
     Usage:
         uv run set-admin user@example.com
@@ -432,6 +778,7 @@ def set_admin() -> None:
 
     if len(sys.argv) < 2:
         console.print("[red]Usage:[/] uv run set-admin <email>")
+        console.print("[dim]Consider using: uv run manage-users admin <email>[/]")
         sys.exit(1)
 
     email = sys.argv[1]
@@ -440,36 +787,14 @@ def set_admin() -> None:
         console.print("[red]Error:[/] DATABASE__URL not set")
         sys.exit(1)
 
-    async def _set_admin() -> None:
-        from sqlmodel import select
-
-        from promptgrimoire.db.engine import get_session, init_db
-        from promptgrimoire.db.models import User
+    async def _run() -> None:
+        from promptgrimoire.db.engine import init_db
 
         await init_db()
+        await _cmd_admin(email)
 
-        async with get_session() as session:
-            result = await session.exec(select(User).where(User.email == email))
-            user = result.one_or_none()
-
-            if user is None:
-                console.print(f"[red]Error:[/] No user found with email '{email}'")
-                console.print(
-                    "[dim]User must log in at least once before being set as admin.[/]"
-                )
-                sys.exit(1)
-                return  # unreachable, but helps type checker
-
-            if user.is_admin:
-                console.print(f"[yellow]User '{email}' is already an admin.[/]")
-                return
-
-            user.is_admin = True
-            session.add(user)
-            await session.commit()
-            console.print(f"[green]Success:[/] '{email}' is now an admin.")
-
-    asyncio.run(_set_admin())
+    console.print("[dim]Tip: use 'uv run manage-users admin' instead.[/]")
+    asyncio.run(_run())
 
 
 async def _seed_user_and_course() -> tuple:
@@ -515,16 +840,15 @@ async def _seed_enrolment_and_weeks(course) -> None:
         enroll_user,
         update_course,
     )
-    from promptgrimoire.db.models import CourseRole
     from promptgrimoire.db.users import find_or_create_user
     from promptgrimoire.db.weeks import create_week
 
     # Seed all mock users and enrol them
     mock_users = [
-        ("instructor@uni.edu", "Test Instructor", CourseRole.coordinator),
-        ("admin@example.com", "Admin User", CourseRole.coordinator),
-        ("student@uni.edu", "Test Student", CourseRole.student),
-        ("test@example.com", "Test User", CourseRole.student),
+        ("instructor@uni.edu", "Test Instructor", "coordinator"),
+        ("admin@example.com", "Admin User", "coordinator"),
+        ("student@uni.edu", "Test Student", "student"),
+        ("test@example.com", "Test User", "student"),
     ]
 
     from promptgrimoire.db.engine import get_session
@@ -541,7 +865,7 @@ async def _seed_enrolment_and_weeks(course) -> None:
 
         try:
             await enroll_user(course_id=course.id, user_id=u.id, role=role)
-            console.print(f"  [green]Enrolled:[/] {email} as {role.value}")
+            console.print(f"  [green]Enrolled:[/] {email} as {role}")
         except DuplicateEnrollmentError:
             console.print(f"  [yellow]Already enrolled:[/] {email}")
 

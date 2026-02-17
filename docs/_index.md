@@ -62,6 +62,13 @@ library references during development.
 - [Browser class API for multi-context testing](playwright/browser-api.md)
 - [Playwright Python E2E testing with pytest](playwright/e2e-testing.md)
 
+## prds
+
+- [Case Brief Tool - Product Requirements Document](prds/2026-01-19-case-brief-tool-prd.md)
+- [Translation Annotation & Iteration Tool - Product Requirements Document](prds/2026-01-28-translation-annotation-tool-prd.md)
+- [Ancient History AI Annotation Tool - Product Requirements Document](prds/2026-01-30-ancient-history-annotation-tool-prd.md)
+- [LLM Playground Design](prds/2026-02-10-llm-playground.md)
+
 ## pycrdt
 
 - [Complete API reference for pycrdt CRDT library - Text, Doc, StickyIndex, sync functions](pycrdt/api-reference.md)
@@ -99,6 +106,11 @@ library references during development.
 ## test-plans
 
 - [Human Test Plan: 134-lua-highlight](test-plans/2026-02-09-134-lua-highlight.md)
+- [Human Test Plan: CSS Custom Highlight API Migration](test-plans/2026-02-11-css-highlight-api.md)
+- [Human Test Plan: Per-Activity Copy Protection (103-copy-protection)](test-plans/2026-02-13-103-copy-protection.md)
+- [Test Plan: Annotation Module Split (#120)](test-plans/2026-02-14-120-annotation-split.md)
+- [Human Test Plan: Auto-create Branch Databases (#165)](test-plans/2026-02-14-165-auto-create-branch-db.md)
+- [Mega UAT: CSS Highlight API + Copy Protection + Pydantic-Settings](test-plans/2026-02-14-mega-uat.md)
 
 ---
 

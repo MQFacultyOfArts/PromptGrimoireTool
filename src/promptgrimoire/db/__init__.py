@@ -5,6 +5,17 @@ Provides async SQLModel operations with PostgreSQL.
 
 from __future__ import annotations
 
+from promptgrimoire.db.acl import (
+    grant_permission,
+    grant_share,
+    list_accessible_workspaces,
+    list_activity_workspaces,
+    list_course_workspaces,
+    list_entries_for_user,
+    list_entries_for_workspace,
+    resolve_permission,
+    revoke_permission,
+)
 from promptgrimoire.db.activities import (
     create_activity,
     delete_activity,
@@ -34,15 +45,18 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.models import (
+    ACLEntry,
     Activity,
     Course,
     CourseEnrollment,
-    CourseRole,
+    CourseRoleRef,
+    Permission,
     User,
     Week,
     Workspace,
     WorkspaceDocument,
 )
+from promptgrimoire.db.roles import get_staff_roles
 from promptgrimoire.db.users import (
     create_user,
     find_or_create_user,
@@ -65,10 +79,12 @@ from promptgrimoire.db.workspace_documents import (
 )
 from promptgrimoire.db.workspaces import (
     PlacementContext,
+    check_clone_eligibility,
     clone_workspace_from_activity,
     create_workspace,
     delete_workspace,
     get_placement_context,
+    get_user_workspace_for_activity,
     get_workspace,
     list_loose_workspaces_for_course,
     list_workspaces_for_activity,
@@ -79,11 +95,13 @@ from promptgrimoire.db.workspaces import (
 )
 
 __all__ = [
+    "ACLEntry",
     "Activity",
     "Course",
     "CourseEnrollment",
-    "CourseRole",
+    "CourseRoleRef",
     "DuplicateEnrollmentError",
+    "Permission",
     "PlacementContext",
     "User",
     "Week",
@@ -91,6 +109,7 @@ __all__ = [
     "WorkspaceDocument",
     "add_document",
     "archive_course",
+    "check_clone_eligibility",
     "clone_workspace_from_activity",
     "close_db",
     "create_activity",
@@ -108,19 +127,28 @@ __all__ = [
     "get_expected_tables",
     "get_placement_context",
     "get_session",
+    "get_staff_roles",
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",
+    "get_user_workspace_for_activity",
     "get_workspace",
+    "grant_permission",
+    "grant_share",
     "init_db",
     "is_db_configured",
     "link_stytch_member",
+    "list_accessible_workspaces",
     "list_activities_for_course",
     "list_activities_for_week",
+    "list_activity_workspaces",
     "list_all_users",
     "list_course_enrollments",
+    "list_course_workspaces",
     "list_courses",
     "list_documents",
+    "list_entries_for_user",
+    "list_entries_for_workspace",
     "list_loose_workspaces_for_course",
     "list_user_enrollments",
     "list_users",
@@ -129,6 +157,8 @@ __all__ = [
     "place_workspace_in_activity",
     "place_workspace_in_course",
     "reorder_documents",
+    "resolve_permission",
+    "revoke_permission",
     "run_alembic_upgrade",
     "save_workspace_crdt_state",
     "set_admin",

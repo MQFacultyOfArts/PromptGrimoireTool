@@ -6,26 +6,70 @@ These models define the core database schema for users, classes, and conversatio
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, Self
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from pydantic import model_validator
-from sqlalchemy import Column, DateTime, ForeignKey, UniqueConstraint, Uuid
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlmodel import Field, SQLModel
 
 
-class CourseRole(StrEnum):
-    """Role within a specific course enrollment.
+class Permission(SQLModel, table=True):
+    """Reference table for access permission levels.
 
-    These are course-scoped roles, separate from Stytch org-level roles.
+    String PK — the name is the identity. Rows seeded by migration.
+    Level is UNIQUE to prevent ambiguous "highest wins" resolution.
     """
 
-    coordinator = "coordinator"  # Course owner, full control
-    instructor = "instructor"  # Can manage content, see all student work
-    tutor = "tutor"  # Can see assigned tutorial groups
-    student = "student"  # Can access published content only
+    name: str = Field(
+        sa_column=Column(String(50), primary_key=True, nullable=False),
+    )
+    level: int = Field(
+        sa_column=Column(Integer, nullable=False),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("level", name="uq_permission_level"),
+        CheckConstraint("level BETWEEN 1 AND 100", name="ck_permission_level_range"),
+    )
+
+
+class CourseRoleRef(SQLModel, table=True):
+    """Reference table for course roles.
+
+    String PK — the name is the identity. Rows seeded by migration.
+    CourseEnrollment.role is a FK to this table.
+    ``is_staff`` marks roles that derive instructor-level access
+    (week visibility, ACL permission resolution).
+    """
+
+    __tablename__ = "course_role"
+
+    name: str = Field(
+        sa_column=Column(String(50), primary_key=True, nullable=False),
+    )
+    level: int = Field(
+        sa_column=Column(Integer, nullable=False),
+    )
+    is_staff: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default="false"),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("level", name="uq_course_role_level"),
+        CheckConstraint("level BETWEEN 1 AND 100", name="ck_course_role_level_range"),
+    )
 
 
 def _utcnow() -> datetime:
@@ -101,6 +145,25 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with copy_protection=NULL.
     """
+    default_allow_sharing: bool = Field(default=False)
+    """Course-level default for workspace sharing.
+
+    Inherited by activities with allow_sharing=NULL.
+    """
+    default_instructor_permission: str = Field(
+        default="editor",
+        sa_column=Column(
+            String(50),
+            ForeignKey("permission.name", ondelete="RESTRICT"),
+            nullable=False,
+            server_default="editor",
+        ),
+    )
+    """Default permission level for instructors accessing student workspaces.
+
+    Instructors (coordinator/instructor/tutor roles) get this permission
+    when accessing workspaces in the course via enrollment-derived access.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -129,7 +192,14 @@ class CourseEnrollment(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
     user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
-    role: CourseRole = Field(default=CourseRole.student)
+    role: str = Field(
+        default="student",
+        sa_column=Column(
+            String(50),
+            ForeignKey("course_role.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -205,6 +275,11 @@ class Activity(SQLModel, table=True):
     """Tri-state copy protection.
 
     None=inherit from course, True=on, False=off.
+    """
+    allow_sharing: bool | None = Field(default=None)
+    """Tri-state sharing control.
+
+    None=inherit from course, True=allowed, False=disallowed.
     """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
@@ -283,6 +358,33 @@ class WorkspaceDocument(SQLModel, table=True):
     source_type: str = Field(max_length=20)  # "html", "rtf", "docx", "pdf", "text"
     order_index: int = Field(default=0)
     title: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class ACLEntry(SQLModel, table=True):
+    """Per-user, per-workspace permission grant.
+
+    One entry per (workspace, user) pair. Permission level can be updated
+    via upsert. Cascade-deletes when the Workspace or User is deleted.
+    """
+
+    __tablename__ = "acl_entry"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_acl_entry_workspace_user"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    permission: str = Field(
+        sa_column=Column(
+            String(50),
+            ForeignKey("permission.name", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Course, CourseEnrollment, CourseRole
+from promptgrimoire.db.models import Course, CourseEnrollment
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -89,16 +89,20 @@ async def update_course(
     course_id: UUID,
     name: str | None = None,
     default_copy_protection: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
+    default_allow_sharing: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
 ) -> Course | None:
     """Update a course's mutable fields.
 
     Uses Ellipsis sentinel to distinguish 'not provided' from explicit values.
     Pass default_copy_protection=True/False to change, or omit to leave unchanged.
+    Pass default_allow_sharing=True/False to change, or omit to leave unchanged.
 
     Args:
         course_id: The course UUID.
         name: New course name, or None to leave unchanged.
         default_copy_protection: New default copy protection value,
+            or omit (Ellipsis) to leave unchanged.
+        default_allow_sharing: New default sharing value,
             or omit (Ellipsis) to leave unchanged.
 
     Returns:
@@ -112,6 +116,8 @@ async def update_course(
             course.name = name
         if default_copy_protection is not ...:
             course.default_copy_protection = default_copy_protection
+        if default_allow_sharing is not ...:
+            course.default_allow_sharing = default_allow_sharing
         session.add(course)
         await session.flush()
         await session.refresh(course)
@@ -148,7 +154,7 @@ class DuplicateEnrollmentError(Exception):
 async def enroll_user(
     course_id: UUID,
     user_id: UUID,
-    role: CourseRole = CourseRole.student,
+    role: str = "student",
 ) -> CourseEnrollment:
     """Enroll a user in a course.
 
@@ -277,7 +283,7 @@ async def unenroll_user(
 async def update_user_role(
     course_id: UUID,
     user_id: UUID,
-    role: CourseRole,
+    role: str,
 ) -> CourseEnrollment | None:
     """Update a user's role in a course.
 

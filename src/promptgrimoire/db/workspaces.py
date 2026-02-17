@@ -14,15 +14,92 @@ from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import (
+    ACLEntry,
     Activity,
     Course,
+    CourseEnrollment,
     Week,
     Workspace,
     WorkspaceDocument,
 )
+from promptgrimoire.db.roles import get_staff_roles
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
+
+
+async def get_user_workspace_for_activity(
+    activity_id: UUID, user_id: UUID
+) -> Workspace | None:
+    """Find an existing workspace owned by the user in an activity.
+
+    Looks for a non-template workspace placed in this activity where the user
+    has an owner ACL entry. Returns the first match, or None if the user has
+    no owned workspace for this activity.
+
+    Filters by permission == "owner" to exclude shared workspaces -- a viewer
+    of someone else's workspace should not be treated as having their own
+    workspace for this activity (which would suppress the "Start Activity"
+    button and show "Resume" instead).
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        return result.first()
+
+
+async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | None:
+    """Check if a user is eligible to clone a workspace from an activity.
+
+    Validates:
+    1. Activity exists
+    2. User is enrolled in the activity's course
+    3. Activity's week is visible to the user (staff bypass)
+
+    Returns:
+        None if eligible, or an error message string explaining why not.
+    """
+    staff_roles = await get_staff_roles()
+
+    async with get_session() as session:
+        # 1. Activity must exist
+        activity = await session.get(Activity, activity_id)
+        if activity is None:
+            return "Activity not found"
+
+        # 2. Resolve course via Week
+        week = await session.get(Week, activity.week_id)
+        if week is None:
+            return "Week not found"
+
+        # 3. User must be enrolled in the course
+        enrollment_result = await session.exec(
+            select(CourseEnrollment).where(
+                CourseEnrollment.course_id == week.course_id,
+                CourseEnrollment.user_id == user_id,
+            )
+        )
+        enrollment = enrollment_result.one_or_none()
+        if enrollment is None:
+            return "User is not enrolled in this course"
+
+        # 4. Week must be visible to the user
+        # Staff always have access regardless of publish state
+        if enrollment.role not in staff_roles:
+            # Students need published + visible week
+            if not week.is_published:
+                return "Week is not published"
+            if week.visible_from and week.visible_from > datetime.now(UTC):
+                return "Week is not yet visible"
+
+        return None
 
 
 @dataclass(frozen=True)
@@ -40,6 +117,11 @@ class PlacementContext:
     """Resolved copy protection for this workspace.
 
     True = protection active.
+    """
+    allow_sharing: bool = False
+    """Resolved sharing permission for this workspace.
+
+    True = owner can share with other students.
     """
 
     @property
@@ -122,6 +204,12 @@ async def _resolve_activity_placement(
     else:
         resolved_cp = course.default_copy_protection
 
+    # Resolve tri-state allow_sharing: explicit wins, else course default
+    if activity.allow_sharing is not None:
+        resolved_sharing = activity.allow_sharing
+    else:
+        resolved_sharing = course.default_allow_sharing
+
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -130,6 +218,7 @@ async def _resolve_activity_placement(
         course_code=course.code,
         course_name=course.name,
         copy_protection=resolved_cp,
+        allow_sharing=resolved_sharing,
     )
 
 
@@ -429,6 +518,7 @@ def _replay_crdt_state(
 
 async def clone_workspace_from_activity(
     activity_id: UUID,
+    user_id: UUID,
 ) -> tuple[Workspace, dict[UUID, UUID]]:
     """Clone an Activity's template workspace into a new student workspace.
 
@@ -438,8 +528,11 @@ async def clone_workspace_from_activity(
     comments, general notes) with remapped document IDs. Client metadata
     is NOT cloned -- the fresh workspace starts with empty client state.
 
+    Also creates an ACLEntry granting owner permission to the cloning user.
+
     Args:
         activity_id: The Activity UUID whose template workspace to clone.
+        user_id: The user UUID who will own the cloned workspace.
 
     Returns:
         Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
@@ -464,6 +557,15 @@ async def clone_workspace_from_activity(
             enable_save_as_draft=template.enable_save_as_draft,
         )
         session.add(clone)
+        await session.flush()
+
+        # Grant owner permission to cloning user
+        acl_entry = ACLEntry(
+            workspace_id=clone.id,
+            user_id=user_id,
+            permission="owner",
+        )
+        session.add(acl_entry)
         await session.flush()
 
         # Fetch all template documents ordered by order_index

@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from nicegui import ui
+from nicegui import app, ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import (
@@ -168,11 +168,17 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     # Register this client
     if workspace_key not in _workspace_presence:
         _workspace_presence[workspace_key] = {}
+
+    # Resolve user_id for revocation lookup
+    auth_user = app.storage.user.get("auth_user")
+    client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
+
     _workspace_presence[workspace_key][client_id] = _RemotePresence(
         name=state.user_name,
         color=state.user_color,
         nicegui_client=client,
         callback=handle_update_from_other,
+        user_id=client_user_id,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
@@ -258,3 +264,60 @@ def _broadcast_yjs_update(
                 origin_client_id[:8],
                 cid[:8],
             )
+
+
+async def revoke_and_redirect(workspace_id: UUID, user_id: UUID) -> int:
+    """Revoke access and redirect the user if they are connected.
+
+    Finds all connected clients for this user in this workspace's presence
+    registry, sends a toast notification and redirect via run_javascript()
+    on the remote client.
+
+    Note: run_javascript() is necessary here because we are pushing to a
+    different client (the revoked user), not the current client. NiceGUI's
+    ui.notify()/ui.navigate.to() only work in the current client context.
+
+    Parameters
+    ----------
+    workspace_id : UUID
+        The workspace UUID.
+    user_id : UUID
+        The user UUID whose access was revoked.
+
+    Returns
+    -------
+    int
+        Number of connected clients that were notified.
+    """
+    workspace_key = str(workspace_id)
+    notified = 0
+
+    if workspace_key not in _workspace_presence:
+        return 0
+
+    # Find clients belonging to this user
+    clients_to_remove: list[str] = []
+    for client_id, presence in _workspace_presence[workspace_key].items():
+        if presence.user_id == str(user_id):
+            clients_to_remove.append(client_id)
+
+    for client_id in clients_to_remove:
+        presence = _workspace_presence[workspace_key].get(client_id)
+        if presence and presence.nicegui_client is not None:
+            with contextlib.suppress(Exception):
+                await presence.nicegui_client.run_javascript(
+                    'Quasar.Notify.create({type: "negative", '
+                    'message: "Your access has been revoked"}); '
+                    'window.location.href = "/courses";',
+                    timeout=2.0,
+                )
+                notified += 1
+
+        # Remove from registry
+        _workspace_presence[workspace_key].pop(client_id, None)
+
+    # Clean up empty workspace dict
+    if workspace_key in _workspace_presence and not _workspace_presence[workspace_key]:
+        del _workspace_presence[workspace_key]
+
+    return notified

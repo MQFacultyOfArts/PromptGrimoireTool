@@ -37,7 +37,7 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.models import Activity, Course, CourseRole
+from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -47,13 +47,23 @@ from promptgrimoire.db.weeks import (
     unpublish_week,
 )
 from promptgrimoire.db.workspace_documents import workspaces_with_documents
-from promptgrimoire.db.workspaces import clone_workspace_from_activity
+from promptgrimoire.db.workspaces import (
+    check_clone_eligibility,
+    clone_workspace_from_activity,
+    get_user_workspace_for_activity,
+)
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from promptgrimoire.db.models import Activity, Course, Workspace
+
 logger = logging.getLogger(__name__)
+
+# -- Role sets for permission checks --
+# Roles that can create weeks, manage enrollments, edit templates
+_MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
@@ -67,11 +77,18 @@ _COPY_PROTECTION_OPTIONS: dict[str, str] = {
     "off": "Off",
 }
 
+_SHARING_OPTIONS: dict[str, str] = {
+    "inherit": "Inherit from course",
+    "on": "Allowed",
+    "off": "Not allowed",
+}
+
 
 def _model_to_ui(value: bool | None) -> str:
-    """Convert model tri-state copy_protection to UI select key.
+    """Convert model tri-state value to UI select key.
 
     None -> "inherit", True -> "on", False -> "off".
+    Used for both copy_protection and allow_sharing.
     """
     if value is None:
         return "inherit"
@@ -79,9 +96,10 @@ def _model_to_ui(value: bool | None) -> str:
 
 
 def _ui_to_model(value: str) -> bool | None:
-    """Convert UI select key to model tri-state copy_protection.
+    """Convert UI select key to model tri-state value.
 
     "inherit" -> None, "on" -> True, "off" -> False.
+    Used for both copy_protection and allow_sharing.
     """
     if value == "inherit":
         return None
@@ -105,24 +123,33 @@ def _broadcast_weeks_refresh(
 
 
 async def open_course_settings(course: Course) -> None:
-    """Open a dialog to edit course settings (e.g. default copy protection).
+    """Open a dialog to edit course settings.
 
     Follows the awaitable dialog pattern from dialogs.py.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Course Settings").classes("text-lg font-bold")
 
-        switch = ui.switch(
+        cp_switch = ui.switch(
             "Default copy protection",
             value=course.default_copy_protection,
+        )
+        sharing_switch = ui.switch(
+            "Default allow sharing",
+            value=course.default_allow_sharing,
         )
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                await update_course(course.id, default_copy_protection=switch.value)
-                course.default_copy_protection = switch.value
+                await update_course(
+                    course.id,
+                    default_copy_protection=cp_switch.value,
+                    default_allow_sharing=sharing_switch.value,
+                )
+                course.default_copy_protection = cp_switch.value
+                course.default_allow_sharing = sharing_switch.value
                 dialog.close()
                 ui.notify("Course settings saved", type="positive")
 
@@ -132,27 +159,38 @@ async def open_course_settings(course: Course) -> None:
 
 
 async def open_activity_settings(activity: Activity) -> None:
-    """Open a dialog to edit per-activity copy protection.
+    """Open a dialog to edit per-activity settings.
 
-    Shows a tri-state select: Inherit from course / On / Off.
-    Verifies AC7.2, AC7.3, AC7.4, AC7.5.
+    Shows tri-state selects for copy protection and sharing.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Activity Settings").classes("text-lg font-bold")
 
-        select = ui.select(
+        cp_select = ui.select(
             options=_COPY_PROTECTION_OPTIONS,
             value=_model_to_ui(activity.copy_protection),
             label="Copy protection",
+        ).classes("w-full")
+
+        sharing_select = ui.select(
+            options=_SHARING_OPTIONS,
+            value=_model_to_ui(activity.allow_sharing),
+            label="Allow sharing",
         ).classes("w-full")
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                new_value = _ui_to_model(select.value)
-                await update_activity(activity.id, copy_protection=new_value)
-                activity.copy_protection = new_value
+                new_cp = _ui_to_model(cp_select.value)
+                new_sharing = _ui_to_model(sharing_select.value)
+                await update_activity(
+                    activity.id,
+                    copy_protection=new_cp,
+                    allow_sharing=new_sharing,
+                )
+                activity.copy_protection = new_cp
+                activity.allow_sharing = new_sharing
                 dialog.close()
                 ui.notify("Activity settings saved", type="positive")
 
@@ -219,9 +257,7 @@ async def courses_list_page() -> None:
     enrollment_map = {e.course_id: e for e in enrollments}
 
     # Check if user is instructor in any course (or is org admin)
-    is_instructor = _is_admin() or any(
-        e.role in (CourseRole.coordinator, CourseRole.instructor) for e in enrollments
-    )
+    is_instructor = _is_admin() or any(e.role in _MANAGER_ROLES for e in enrollments)
 
     if is_instructor:
         ui.button(
@@ -251,7 +287,7 @@ async def courses_list_page() -> None:
                             ui.label(f"Semester: {course.semester}").classes(
                                 "text-sm text-gray-500"
                             )
-                        ui.badge(enrollment.role.value).classes("ml-2")
+                        ui.badge(enrollment.role).classes("ml-2")
 
 
 @ui.page("/courses/new")
@@ -294,7 +330,7 @@ async def create_course_page() -> None:
         await enroll_user(
             course_id=course.id,
             user_id=user_id,
-            role=CourseRole.coordinator,
+            role="coordinator",
         )
 
         ui.notify(f"Created course: {course.code}", type="positive")
@@ -349,12 +385,9 @@ async def course_detail_page(course_id: str) -> None:
     # Permission levels:
     # - can_manage: create weeks, manage enrollments (coordinator/instructor only)
     # - can_view_drafts: see unpublished weeks, publish/unpublish (includes tutors)
-    can_manage = enrollment.role in (CourseRole.coordinator, CourseRole.instructor)
-    can_view_drafts = enrollment.role in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
-        CourseRole.tutor,
-    )
+    can_manage = enrollment.role in _MANAGER_ROLES
+    staff_roles = await get_staff_roles()
+    can_view_drafts = enrollment.role in staff_roles
 
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
@@ -362,7 +395,7 @@ async def course_detail_page(course_id: str) -> None:
             "flat round"
         )
         ui.label(f"{course.code} - {course.name}").classes("text-2xl font-bold")
-        ui.badge(enrollment.role.value)
+        ui.badge(enrollment.role)
         if can_manage:
             ui.button(
                 icon="settings",
@@ -386,13 +419,30 @@ async def course_detail_page(course_id: str) -> None:
     # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
+    async def _build_user_workspace_map(
+        activities: list[Activity], uid: UUID | None
+    ) -> dict[UUID, Workspace]:
+        """Build activity_id -> owned Workspace map for Resume detection.
+
+        # TODO: Batch into single query if activity count per week grows
+        """
+        result: dict[UUID, Workspace] = {}
+        if uid is None:
+            return result
+        for act in activities:
+            existing = await get_user_workspace_for_activity(act.id, uid)
+            if existing is not None:
+                result[act.id] = existing
+        return result
+
     def _render_activity_row(
         act: Activity,
         *,
         can_manage: bool,
         populated_templates: set[UUID],
+        user_workspace_map: dict[UUID, Workspace],
     ) -> None:
-        """Render a single Activity row with template/start buttons."""
+        """Render a single Activity row with template/start or resume buttons."""
         with ui.row().classes("items-center gap-2"):
             ui.icon("assignment").classes("text-gray-400")
             ui.label(act.title).classes("text-sm font-medium")
@@ -412,15 +462,41 @@ async def course_detail_page(course_id: str) -> None:
                     on_click=lambda a=act: open_activity_settings(a),
                 ).props("flat round dense size=sm").tooltip("Activity settings")
 
-            async def start_activity(aid: UUID = act.id) -> None:
-                # TODO(Seam-D): Add workspace-level auth check here
-                clone, _doc_map = await clone_workspace_from_activity(aid)
-                qs = urlencode({"workspace_id": str(clone.id)})
-                ui.navigate.to(f"/annotation?{qs}")
+            if act.id in user_workspace_map:
+                # User already has a workspace — show Resume
+                ws = user_workspace_map[act.id]
+                qs = urlencode({"workspace_id": str(ws.id)})
+                ui.button(
+                    "Resume",
+                    icon="play_arrow",
+                    on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
+                ).props("flat dense size=sm color=primary")
+            else:
+                # No workspace yet — show Start Activity
+                async def start_activity(aid: UUID = act.id) -> None:
+                    uid = _get_user_id()
+                    if uid is None:
+                        ui.notify("Please log in to start an activity", type="warning")
+                        return
 
-            ui.button("Start Activity", on_click=start_activity).props(
-                "flat dense size=sm color=primary"
-            )
+                    existing = await get_user_workspace_for_activity(aid, uid)
+                    if existing is not None:
+                        qs = urlencode({"workspace_id": str(existing.id)})
+                        ui.navigate.to(f"/annotation?{qs}")
+                        return
+
+                    error = await check_clone_eligibility(aid, uid)
+                    if error is not None:
+                        ui.notify(error, type="negative")
+                        return
+
+                    clone, _doc_map = await clone_workspace_from_activity(aid, uid)
+                    qs = urlencode({"workspace_id": str(clone.id)})
+                    ui.navigate.to(f"/annotation?{qs}")
+
+                ui.button("Start Activity", on_click=start_activity).props(
+                    "flat dense size=sm color=primary"
+                )
 
     @ui.refreshable
     async def weeks_list() -> None:
@@ -480,12 +556,14 @@ async def course_detail_page(course_id: str) -> None:
                             if can_manage
                             else set()
                         )
+                        ws_map = await _build_user_workspace_map(activities, user_id)
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
                                 _render_activity_row(
                                     act,
                                     can_manage=can_manage,
                                     populated_templates=populated,
+                                    user_workspace_map=ws_map,
                                 )
                     elif can_manage:
                         ui.label("No activities yet").classes(
@@ -549,10 +627,7 @@ async def create_week_page(course_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can add weeks").classes("text-red-500")
         return
 
@@ -623,10 +698,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can add activities").classes("text-red-500")
         return
 
@@ -694,10 +766,7 @@ async def manage_enrollments_page(course_id: str) -> None:
 
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
-    if not enrollment or enrollment.role not in (
-        CourseRole.coordinator,
-        CourseRole.instructor,
-    ):
+    if not enrollment or enrollment.role not in _MANAGER_ROLES:
         ui.label("Only instructors can manage enrollments").classes("text-red-500")
         return
 
@@ -731,7 +800,7 @@ async def manage_enrollments_page(course_id: str) -> None:
                                 f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}"
                             ).classes("text-xs text-gray-400")
                         with ui.row().classes("gap-2 items-center"):
-                            ui.badge(e.role.value)
+                            ui.badge(e.role)
 
                             async def remove(uid: UUID = e.user_id) -> None:
                                 await unenroll_user(course_id=cid, user_id=uid)
@@ -748,11 +817,12 @@ async def manage_enrollments_page(course_id: str) -> None:
         ui.label(
             "Enter email address. User will be created if they don't exist yet."
         ).classes("text-sm text-gray-500 mb-2")
+        all_roles = list(await get_all_roles())
         with ui.row().classes("gap-2 items-end"):
             new_email = ui.input("Email Address").classes("w-64")
             new_role = ui.select(
-                options=[r.value for r in CourseRole],
-                value=CourseRole.student.value,
+                options=all_roles,
+                value="student",
                 label="Role",
             ).classes("w-32")
 
@@ -771,7 +841,7 @@ async def manage_enrollments_page(course_id: str) -> None:
                     await enroll_user(
                         course_id=cid,
                         user_id=new_user.id,
-                        role=CourseRole(new_role.value),
+                        role=new_role.value,
                     )
                     msg = "Enrollment added"
                     if created:

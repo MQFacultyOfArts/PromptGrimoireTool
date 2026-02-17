@@ -1,7 +1,7 @@
 # NiceGUI User Fixture Tests Design
 
 **Status:** WIP — spike needed before implementation planning
-**GitHub Issue:** None
+**GitHub Issue:** #175
 
 ## Summary
 

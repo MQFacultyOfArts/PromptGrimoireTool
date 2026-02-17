@@ -37,7 +37,7 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.roles import get_staff_roles
+from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
@@ -817,10 +817,11 @@ async def manage_enrollments_page(course_id: str) -> None:
         ui.label(
             "Enter email address. User will be created if they don't exist yet."
         ).classes("text-sm text-gray-500 mb-2")
+        all_roles = list(await get_all_roles())
         with ui.row().classes("gap-2 items-end"):
             new_email = ui.input("Email Address").classes("w-64")
             new_role = ui.select(
-                options=["coordinator", "instructor", "tutor", "student"],
+                options=all_roles,
                 value="student",
                 label="Role",
             ).classes("w-32")

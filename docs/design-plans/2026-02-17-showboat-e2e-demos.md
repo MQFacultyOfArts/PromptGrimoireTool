@@ -1,6 +1,6 @@
 # Showboat E2E Demo Documents Design
 
-**GitHub Issue:** #156
+**GitHub Issue:** #174
 
 ## Summary
 

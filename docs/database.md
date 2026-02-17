@@ -34,6 +34,7 @@ Course/unit of study with weeks and enrolled members.
 | `default_copy_protection` | BOOLEAN | NOT NULL, default FALSE |
 | `default_allow_sharing` | BOOLEAN | NOT NULL, default FALSE |
 | `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
+| `default_allow_tag_creation` | BOOLEAN | NOT NULL, default TRUE |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`default_copy_protection`**: Course-level default inherited by activities with `copy_protection=NULL`.
@@ -41,6 +42,8 @@ Course/unit of study with weeks and enrolled members.
 **`default_allow_sharing`**: Course-level default inherited by activities with `allow_sharing=NULL`. Controls whether workspace owners can share with other students.
 
 **`default_instructor_permission`**: Default permission level for instructors accessing student workspaces via enrollment-derived access. FK to `permission.name` with RESTRICT delete.
+
+**`default_allow_tag_creation`**: Course-level default inherited by activities with `allow_tag_creation=NULL`. Controls whether students can create new tags and groups.
 
 ### CourseEnrollment
 
@@ -87,12 +90,15 @@ Assignment within a Week. Owns a template Workspace.
 | `description` | TEXT | nullable |
 | `copy_protection` | BOOLEAN | nullable (tri-state) |
 | `allow_sharing` | BOOLEAN | nullable (tri-state) |
+| `allow_tag_creation` | BOOLEAN | nullable (tri-state) |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 
 **`copy_protection`**: Tri-state — `NULL`=inherit from course, `TRUE`=on, `FALSE`=off. Resolved in `PlacementContext`.
 
 **`allow_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=disallowed. Mirrors `copy_protection` pattern. Resolved in `PlacementContext`.
+
+**`allow_tag_creation`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=not allowed. Controls whether students can create new tags and groups in workspaces for this activity. Resolved in `PlacementContext`.
 
 **`template_workspace_id`**: 1:1 relationship. RESTRICT prevents orphaning the activity's template. Created atomically with the activity via `create_activity()`.
 
@@ -133,6 +139,46 @@ Document within a workspace.
 **`type`**: Domain string — "source", "draft", "ai_conversation".
 
 **`source_type`**: Content format — "html", "rtf", "docx", "pdf", "text".
+
+## Annotation Tag Tables
+
+Configurable annotation tags, scoped per-workspace (snapshot copies).
+
+### TagGroup
+
+Visual container for grouping tags within a workspace. Presentation-level only — no editability semantics.
+
+| Column | Type | Constraint |
+|--------|------|------------|
+| `id` | UUID | PK |
+| `workspace_id` | UUID | FK → Workspace (CASCADE), NOT NULL |
+| `name` | VARCHAR(100) | NOT NULL |
+| `order_index` | INTEGER | NOT NULL, default 0 |
+| `created_at` | TIMESTAMPTZ | NOT NULL |
+
+**CASCADE on workspace**: Groups are workspace-local. Deleting a workspace removes all its groups.
+
+### Tag
+
+Per-workspace annotation tag definition. Each workspace has its own independent Tag rows (snapshot after clone).
+
+| Column | Type | Constraint |
+|--------|------|------------|
+| `id` | UUID | PK |
+| `workspace_id` | UUID | FK → Workspace (CASCADE), NOT NULL |
+| `group_id` | UUID | FK → TagGroup (SET NULL), nullable |
+| `name` | VARCHAR(100) | NOT NULL |
+| `description` | TEXT | nullable |
+| `color` | VARCHAR(7) | NOT NULL |
+| `locked` | BOOLEAN | NOT NULL, default FALSE |
+| `order_index` | INTEGER | NOT NULL, default 0 |
+| `created_at` | TIMESTAMPTZ | NOT NULL |
+
+**CASCADE on workspace**: Tags are workspace-local. **SET NULL on group**: tag survives group deletion, becomes ungrouped.
+
+**`locked`**: When True, students cannot rename, recolor, regroup, or delete this tag. Locked does NOT prevent using the tag to annotate. Set by instructors on template workspaces, preserved during cloning.
+
+**`color`**: 7-character hex string (e.g. `#1f77b4`). Seed data uses a colorblind-accessible palette.
 
 ## ACL Tables
 
@@ -195,6 +241,8 @@ Course
               └── student Workspaces (SET NULL, 1:many via activity_id)
                     └── WorkspaceDocuments (CASCADE)
                     └── ACLEntries (CASCADE)
+                    └── TagGroups (CASCADE)
+                    └── Tags (CASCADE, group_id SET NULL on TagGroup delete)
 ```
 
 ## Design Decisions
@@ -232,6 +280,14 @@ All entity tables use UUID PKs (ORM compatibility, no sequential ID leakage). Bu
 - **RESTRICT**: Used when the child should be explicitly handled before parent deletion (Activity → template Workspace, ACLEntry → Permission).
 - **SET NULL**: Used when the child should survive parent deletion but lose the association (student Workspace → deleted Activity).
 
+### Per-workspace tag copies (snapshot semantics)
+
+Tags and TagGroups are per-workspace, not shared definitions. When a student clones an activity template, Tag and TagGroup rows are duplicated with new UUIDs. Each workspace is fully independent after cloning — students can rename, recolor, and delete their copies without affecting other workspaces. The `locked` boolean on Tag prevents modification by students (set by instructor on template, preserved during clone). This avoids the complexity of shared definitions with copy-on-write or live-link propagation. Trade-off: instructor renames after cloning do not propagate to existing student workspaces.
+
+### No untagged highlights
+
+Every highlight in the CRDT requires a Tag UUID reference. There is no untagged state. Deleting a tag deletes all its associated highlights (with confirmation). This simplifies the organise tab (no untagged column) and ensures data integrity.
+
 ## Workspace Architecture
 
 Workspaces are isolated silos identified by UUID.
@@ -250,8 +306,9 @@ Workspaces are isolated silos identified by UUID.
 2. Creates ACLEntry granting `"owner"` permission to `user_id`
 3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
 4. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
-5. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
-6. Entire operation is atomic (single session)
+5. Copies all TagGroups and Tags with new UUIDs, builds `group_id_map` and `tag_id_map`
+6. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped and `tag` field remapped via `tag_id_map`, `tag_order` keys remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
+7. Entire operation is atomic (single session)
 
 **Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
 

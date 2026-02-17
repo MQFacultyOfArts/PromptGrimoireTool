@@ -28,6 +28,7 @@ from tests.e2e.annotation_helpers import (
     select_text_range,
     setup_workspace_with_content_highlight_api,
 )
+from tests.e2e.conftest import _grant_workspace_access
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -64,6 +65,9 @@ def _setup_two_contexts(
     if not match:
         raise ValueError(f"No workspace_id in URL: {page1.url}")
     workspace_id = match.group(1)
+
+    # Grant page2 access (ACL gate requires explicit permission)
+    _grant_workspace_access(workspace_id, user2_email)
 
     # Page2 joins same workspace
     page2.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
@@ -332,6 +336,9 @@ class TestRemotePresenceSmoke:
 
             page2.goto(f"{app_server}/auth/callback?token=mock-token-{user2_email}")
             page2.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+            # Grant page2 access (ACL gate requires explicit permission)
+            _grant_workspace_access(workspace_id, user2_email)
 
             page2.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
             page2.wait_for_function(

@@ -288,7 +288,19 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
         page: Playwright page.
         timeout: Maximum wait time in milliseconds.
     """
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=timeout,
-    )
+    try:
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=timeout,
+        )
+    except TimeoutError:
+        # Capture diagnostic state for debugging
+        url = page.url
+        doc_html = page.evaluate(
+            "() => { const d = document.getElementById('doc-container');"
+            " return d ? d.innerHTML.substring(0, 200) : 'NO #doc-container'; }"
+        )
+        msg = (
+            f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
+        )
+        raise TimeoutError(msg) from None

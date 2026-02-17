@@ -15,6 +15,7 @@ from nicegui import app, events, ui
 
 from promptgrimoire.auth import check_workspace_access, is_privileged_user
 from promptgrimoire.crdt.persistence import get_persistence_manager
+from promptgrimoire.db.acl import grant_permission
 from promptgrimoire.db.activities import list_activities_for_week
 from promptgrimoire.db.courses import list_courses, list_user_enrollments
 from promptgrimoire.db.weeks import list_weeks
@@ -72,7 +73,8 @@ def _get_current_username() -> str:
 async def _create_workspace_and_redirect() -> None:
     """Create a new workspace and redirect to it.
 
-    Requires authenticated user (auth check only, no user ID stored on workspace).
+    Requires authenticated user. Grants the creator "owner" permission
+    so the ACL gate in _render_workspace_view allows access.
     """
     auth_user = app.storage.user.get("auth_user")
     if not auth_user:
@@ -80,9 +82,16 @@ async def _create_workspace_and_redirect() -> None:
         ui.navigate.to("/login")
         return
 
+    user_id = auth_user.get("user_id")
+    if not user_id:
+        ui.notify("Session error — please log in again", type="warning")
+        ui.navigate.to("/login")
+        return
+
     try:
         workspace = await create_workspace()
-        logger.info("Created workspace %s", workspace.id)
+        await grant_permission(workspace.id, UUID(user_id), "owner")
+        logger.info("Created workspace %s for user %s", workspace.id, user_id)
         ui.navigate.to(f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}")
     except Exception:
         logger.exception("Failed to create workspace")
@@ -620,6 +629,14 @@ def _inject_copy_protection() -> None:
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
     """Render the workspace content view with documents or add content form."""
+    # Check workspace exists before ACL (nonexistent → "not found",
+    # not "access denied")
+    workspace = await get_workspace(workspace_id)
+    if workspace is None:
+        ui.label("Workspace not found").classes("text-red-500")
+        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
+        return
+
     # --- ACL enforcement guard ---
     auth_user = app.storage.user.get("auth_user")
     permission = await check_workspace_access(workspace_id, auth_user)
@@ -634,12 +651,6 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         return
 
     # TODO(2026-02): Thread read_only for viewer permission -- #172
-    workspace = await get_workspace(workspace_id)
-
-    if workspace is None:
-        ui.label("Workspace not found").classes("text-red-500")
-        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
-        return
 
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)

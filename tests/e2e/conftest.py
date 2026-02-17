@@ -20,6 +20,7 @@ Traceability:
 
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -38,6 +39,45 @@ def _extract_workspace_id_from_url(url: str) -> str:
     if not match:
         raise ValueError(f"No workspace_id found in URL: {url}")
     return match.group(1)
+
+
+def _grant_workspace_access(
+    workspace_id: str, user_email: str, permission: str = "editor"
+) -> None:
+    """Grant workspace access to a user via sync DB connection.
+
+    The ACL gate in _render_workspace_view requires an explicit ACLEntry
+    for non-admin users. This helper inserts one directly so page2 in
+    multi-context fixtures can access the workspace created by page1.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        return
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            return
+        conn.execute(
+            text("""
+                INSERT INTO acl_entry
+                    (id, workspace_id, user_id, permission,
+                     created_at)
+                VALUES
+                    (gen_random_uuid(), CAST(:ws AS uuid),
+                     :uid, :perm, now())
+                ON CONFLICT (workspace_id, user_id)
+                DO UPDATE SET permission = :perm
+            """),
+            {"ws": workspace_id, "uid": row[0], "perm": permission},
+        )
+    engine.dispose()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -110,9 +150,7 @@ def authenticated_page(browser: Browser, app_server: str) -> Generator[Page]:
     context.close()
 
 
-def _authenticate_page(
-    page: Page, app_server: str, *, email: str | None = None
-) -> None:
+def _authenticate_page(page: Page, app_server: str, *, email: str | None = None) -> str:
     """Authenticate a page via mock auth.
 
     Uses mock auth tokens (DEV__AUTH_MOCK=true) to authenticate.
@@ -123,12 +161,16 @@ def _authenticate_page(
         email: Optional email for role-specific auth. When ``None``,
             a random UUID-based email is generated (student role).
             Use ``"instructor@uni.edu"`` for instructor role.
+
+    Returns:
+        The email address used for authentication.
     """
     if email is None:
         unique_id = uuid4().hex[:8]
         email = f"e2e-test-{unique_id}@test.example.edu.au"
     page.goto(f"{app_server}/auth/callback?token=mock-token-{email}")
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+    return email
 
 
 @pytest.fixture
@@ -159,13 +201,16 @@ def two_annotation_contexts(
 
     # Authenticate both pages first
     _authenticate_page(page1, app_server)
-    _authenticate_page(page2, app_server)
+    page2_email = _authenticate_page(page2, app_server)
 
     # Page1 creates the workspace via UI
     setup_workspace_with_content(page1, app_server, content)
 
     # Extract workspace_id from page1's URL
     workspace_id = _extract_workspace_id_from_url(page1.url)
+
+    # Grant page2 access (ACL gate requires explicit permission)
+    _grant_workspace_access(workspace_id, page2_email)
 
     # Page2 joins the same workspace
     url = f"{app_server}/annotation?workspace_id={workspace_id}"
@@ -223,6 +268,9 @@ def two_authenticated_contexts(
 
     # Extract workspace_id from page1's URL
     workspace_id = _extract_workspace_id_from_url(page1.url)
+
+    # Grant page2 access (ACL gate requires explicit permission)
+    _grant_workspace_access(workspace_id, user2_email)
 
     # Page2 joins the same workspace
     url = f"{app_server}/annotation?workspace_id={workspace_id}"

@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-02-10
+Last reviewed: 2026-02-17
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -22,7 +22,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** ORM combining Pydantic validation with SQLAlchemy query building. All database models are SQLModel classes.
 
-**Evidence:** 9 files import from sqlmodel (8 in `src/promptgrimoire/db/` + `src/promptgrimoire/cli.py`). All 6 database tables (User, Course, CourseEnrollment, Week, Workspace, WorkspaceDocument) are SQLModel classes. Alembic migrations use SQLModel.metadata. Note: `models/scenario.py` uses stdlib `@dataclass`, not SQLModel.
+**Evidence:** 11 files import from sqlmodel (10 in `src/promptgrimoire/db/` + `src/promptgrimoire/cli.py`). All 10 database tables (User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, Permission, CourseRoleRef, ACLEntry) are SQLModel classes. Alembic migrations use SQLModel.metadata. Note: `models/scenario.py` uses stdlib `@dataclass`, not SQLModel.
 
 **Why not alternatives:** SQLModel unifies the Pydantic validation layer with SQLAlchemy persistence. Using SQLAlchemy alone would require separate Pydantic models and manual mapping.
 

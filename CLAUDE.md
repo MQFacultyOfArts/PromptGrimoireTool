@@ -110,8 +110,10 @@ src/promptgrimoire/
 │   ├── courses.py       # Course management
 │   └── roleplay.py      # AI roleplay / client interview
 ├── export/              # PDF/LaTeX export (see docs/export.md)
-├── auth/                # Stytch integration
+├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)
+│   ├── acl.py           # ACL operations (grant, revoke, resolve, share)
+│   └── roles.py         # Cached staff role queries
 ├── crdt/                # pycrdt collaboration logic
 └── static/              # JS/CSS assets
 
@@ -153,11 +155,13 @@ PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design 
 2. **All models must be imported before schema operations** - Import `promptgrimoire.db.models` to register tables
 3. **Pages requiring DB must check availability** - Use `get_settings().database.url`
 
-## Authentication
+## Authentication & Access Control
 
 Stytch handles magic link login, passkey authentication, RBAC, and class invitations.
 
 `is_privileged_user(auth_user)` in `auth/__init__.py` determines whether a user bypasses copy protection. Returns `True` for org-level admins (`is_admin=True`) and users with `instructor` or `stytch_admin` roles.
+
+`check_workspace_access(workspace_id, auth_user)` in `auth/__init__.py` resolves effective permission for a workspace. Resolution order: unauthenticated returns `None`; admins get `"owner"` (bypass); others go through `resolve_permission()` which checks explicit ACL then enrollment-derived access, highest wins, default deny.
 
 ## Conventions
 

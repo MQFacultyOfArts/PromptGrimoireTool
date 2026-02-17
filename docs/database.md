@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-15
+**Last updated:** 2026-02-17
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -32,10 +32,13 @@ Course/unit of study with weeks and enrolled members.
 | `semester` | VARCHAR(20) | NOT NULL, INDEX |
 | `is_archived` | BOOLEAN | NOT NULL, default FALSE |
 | `default_copy_protection` | BOOLEAN | NOT NULL, default FALSE |
+| `default_allow_sharing` | BOOLEAN | NOT NULL, default FALSE |
 | `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`default_copy_protection`**: Course-level default inherited by activities with `copy_protection=NULL`.
+
+**`default_allow_sharing`**: Course-level default inherited by activities with `allow_sharing=NULL`. Controls whether workspace owners can share with other students.
 
 **`default_instructor_permission`**: Default permission level for instructors accessing student workspaces via enrollment-derived access. FK to `permission.name` with RESTRICT delete.
 
@@ -83,10 +86,13 @@ Assignment within a Week. Owns a template Workspace.
 | `title` | VARCHAR(200) | NOT NULL |
 | `description` | TEXT | nullable |
 | `copy_protection` | BOOLEAN | nullable (tri-state) |
+| `allow_sharing` | BOOLEAN | nullable (tri-state) |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 
 **`copy_protection`**: Tri-state — `NULL`=inherit from course, `TRUE`=on, `FALSE`=off. Resolved in `PlacementContext`.
+
+**`allow_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=disallowed. Mirrors `copy_protection` pattern. Resolved in `PlacementContext`.
 
 **`template_workspace_id`**: 1:1 relationship. RESTRICT prevents orphaning the activity's template. Created atomically with the activity via `create_activity()`.
 
@@ -128,9 +134,9 @@ Document within a workspace.
 
 **`source_type`**: Content format — "html", "rtf", "docx", "pdf", "text".
 
-## ACL Tables (Issue #96)
+## ACL Tables
 
-These tables are being added by the workspace ACL feature.
+Access control for workspace permissions.
 
 ### Permission
 
@@ -178,24 +184,6 @@ Per-user, per-workspace permission grant.
 **RESTRICT on permission**: Permission reference rows must never be deleted while ACLEntries reference them.
 
 **Future extensibility**: When roleplay sessions or other resource types need ACL, add a nullable FK column (e.g., `roleplay_session_id`) with a CHECK constraint ensuring exactly one FK is set — same mutual exclusivity pattern as `Workspace.activity_id`/`course_id`.
-
-## Modified Tables (Issue #96) — Planned
-
-> **Not yet migrated.** These columns will be added in later phases of #96.
-
-### Course (additions)
-
-| Column | Type | Constraint |
-|--------|------|------------|
-| `default_allow_sharing` | BOOLEAN | NOT NULL, default FALSE |
-
-### Activity (additions)
-
-| Column | Type | Constraint |
-|--------|------|------------|
-| `allow_sharing` | BOOLEAN | nullable (tri-state) |
-
-**`allow_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=on, `FALSE`=off. Mirrors `copy_protection` pattern exactly.
 
 ## Hierarchy
 
@@ -252,16 +240,18 @@ Workspaces are isolated silos identified by UUID.
 - **`PlacementContext`** (frozen dataclass) resolves the full hierarchy chain (Activity -> Week -> Course) for UI display. `display_label` provides a human-readable string like "Annotate Becky in Week 1 for LAWS1100".
 - **Template detection**: `is_template` flag on PlacementContext is True when the workspace is an Activity's `template_workspace_id`.
 - **Copy protection resolution**: `copy_protection: bool` on PlacementContext is resolved during placement query. Activity's explicit value wins; if `None`, inherits from `Course.default_copy_protection`. Loose and course-placed workspaces always resolve to `False`. See [docs/copy-protection.md](copy-protection.md).
+- **Sharing resolution**: `allow_sharing: bool` on PlacementContext follows the same tri-state pattern. Activity's explicit value wins; if `None`, inherits from `Course.default_allow_sharing`. Loose and course-placed workspaces always resolve to `False`.
 
 ### Workspace Cloning
 
-`clone_workspace_from_activity(activity_id)` creates a student workspace from a template:
+`clone_workspace_from_activity(activity_id, user_id)` creates a student workspace from a template:
 
 1. Creates new Workspace with `activity_id` set and `enable_save_as_draft` copied
-2. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
-3. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
-4. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
-5. Entire operation is atomic (single session)
+2. Creates ACLEntry granting `"owner"` permission to `user_id`
+3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
+4. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
+5. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
+6. Entire operation is atomic (single session)
 
 **Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).
 

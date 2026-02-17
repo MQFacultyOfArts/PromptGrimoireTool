@@ -1,6 +1,6 @@
 # Copy Protection
 
-*Last updated: 2026-02-15*
+*Last updated: 2026-02-17*
 
 Per-activity copy protection prevents students from copying, cutting, dragging, or printing annotated content. Instructors and admins bypass it.
 
@@ -22,4 +22,19 @@ When `protect=True` and user is not privileged:
 ## UI Controls (Courses Page)
 
 - **Course settings dialog** (`open_course_settings()`): Toggle `default_copy_protection` on/off.
-- **Per-activity tri-state select**: "Inherit from course" / "On" / "Off". Pure mapping functions `_model_to_ui()` and `_ui_to_model()` convert between model `bool | None` and UI string keys.
+- **Per-activity tri-state select**: "Inherit from course" / "On" / "Off". Pure mapping functions `_model_to_ui()` and `_ui_to_model()` convert between model `bool | None` and UI string keys. Used for both copy protection and sharing controls.
+
+## Sharing Controls
+
+Workspace sharing follows the same tri-state resolution pattern as copy protection.
+
+### Resolution Chain
+
+1. `Activity.allow_sharing` (tri-state: `None`/`True`/`False`)
+2. If `None`, inherit from `Course.default_allow_sharing` (bool, default `False`)
+3. Resolved in `PlacementContext.allow_sharing` during workspace placement query
+4. Loose and course-placed workspaces always resolve to `False`
+
+### Enforcement
+
+When `allow_sharing=True`, workspace owners can share via `grant_share()`. Staff (instructors/coordinators/tutors) can always share regardless of the setting. Sharing is limited to `"editor"` or `"viewer"` permissions -- `"owner"` cannot be granted via sharing.

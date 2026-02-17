@@ -485,8 +485,10 @@ class TestNaughtyStudent:
                 )
 
             with subtests.test(msg="protected_indicator_visible"):
-                # Verify the "Protected" lock icon chip is visible
-                expect(student_page.get_by_text("Protected")).to_be_visible(
+                # Verify the "Protected" lock icon chip is visible.
+                # Use exact=True to avoid matching "Protected Activity..."
+                # placement chip and document content containing "protected".
+                expect(student_page.get_by_text("Protected", exact=True)).to_be_visible(
                     timeout=5000
                 )
 

@@ -45,7 +45,7 @@ def _pre_test_db_cleanup() -> None:
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent
-    result = subprocess.run(
+    result = subprocess.run(  # nosec: B603, B607
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=project_root,
         capture_output=True,
@@ -148,7 +148,7 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603 — args from trusted CLI config
             all_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -332,7 +332,7 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     }
 
     console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # nosec B603 — hardcoded test server command
         [sys.executable, "-c", _E2E_SERVER_SCRIPT, str(port)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -484,6 +484,13 @@ def _build_user_parser():
     role_p.add_argument("semester", help="Semester")
     role_p.add_argument("new_role", help="New role")
 
+    # create
+    create_p = sub.add_parser("create", help="Create a new user")
+    create_p.add_argument("email", help="User email address")
+    create_p.add_argument(
+        "--name", default=None, help="Display name (default: derived from email)"
+    )
+
     return parser
 
 
@@ -554,6 +561,24 @@ async def _cmd_list(
         )
 
     con.print(table)
+
+
+async def _cmd_create(
+    email: str,
+    *,
+    name: str | None = None,
+    console: Console | None = None,
+) -> None:
+    """Create a new user."""
+    from promptgrimoire.db.users import find_or_create_user
+
+    con = console or globals()["console"]
+    display_name = name or email.split("@", maxsplit=1)[0].replace(".", " ").title()
+    user, created = await find_or_create_user(email=email, display_name=display_name)
+    if created:
+        con.print(f"[green]Created[/] user '{email}' ({display_name}, id={user.id})")
+    else:
+        con.print(f"[yellow]Already exists:[/] '{email}' (id={user.id})")
 
 
 async def _cmd_show(
@@ -694,6 +719,7 @@ def manage_users() -> None:
     Commands:
         list              List all users
         show <email>      Show user details and enrollments
+        create <email>    Create a new user (--name for display name)
         admin <email>     Set user as admin (--remove to unset)
         enroll <email> <code> <semester>  Enroll user in course
         unenroll <email> <code> <semester>  Remove from course
@@ -736,6 +762,8 @@ def manage_users() -> None:
                     args.semester,
                     args.new_role,
                 )
+            case "create":
+                await _cmd_create(args.email, name=args.name)
 
     asyncio.run(_run())
 

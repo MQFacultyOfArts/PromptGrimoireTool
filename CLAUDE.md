@@ -90,7 +90,7 @@ uvx ty check
 uv run seed-data
 
 # Manage users, roles, and course enrollments
-uv run manage-users list|show|admin|enroll|unenroll|role
+uv run manage-users list|show|create|admin|enroll|unenroll|role
 
 # Run the app
 uv run python -m promptgrimoire

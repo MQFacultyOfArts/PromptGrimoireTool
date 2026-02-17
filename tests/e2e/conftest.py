@@ -20,8 +20,11 @@ Traceability:
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
+import urllib.request
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -31,6 +34,36 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Browser, Page
+
+_diag_logger = logging.getLogger("e2e.diagnostics")
+
+
+def pytest_runtest_teardown(item: pytest.Item) -> None:
+    """Query server diagnostics after each E2E test.
+
+    Hits /api/test/diagnostics on the E2E server to log pool status,
+    pg_stat_activity counts, and NiceGUI client count. This data is
+    essential for diagnosing resource leaks and server degradation.
+
+    Uses WARNING level so --log-cli-level=WARNING shows this output
+    even for passing tests (pytest captures stdout/stderr but not log-cli).
+    """
+    base_url = os.environ.get("E2E_BASE_URL", "")
+    if not base_url:
+        return
+
+    try:
+        url = f"{base_url}/api/test/diagnostics"
+        with urllib.request.urlopen(url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
+            data = json.loads(resp.read().decode())
+        _diag_logger.warning(
+            "AFTER %s: pool=%s nicegui_clients=%s",
+            item.name,
+            data.get("pool"),
+            data.get("nicegui_clients"),
+        )
+    except Exception as exc:
+        _diag_logger.warning("Fetch failed for %s: %s", item.name, exc)
 
 
 def _extract_workspace_id_from_url(url: str) -> str:

@@ -307,6 +307,10 @@ os.environ.setdefault('STYTCH__PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 
+# Enable logging so pool events and diagnostics are visible
+from promptgrimoire import _setup_logging
+_setup_logging()
+
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 
@@ -314,7 +318,27 @@ import promptgrimoire
 _static_dir = Path(promptgrimoire.__file__).parent / "static"
 app.add_static_files("/static", str(_static_dir))
 
-ui.run(port=port, reload=False, show=False, storage_secret='test-secret-for-e2e')
+# Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
+@app.get("/api/test/diagnostics")
+async def _diagnostics():
+    from nicegui import Client
+    from promptgrimoire.db.engine import (
+        _pool_status, _state, log_pool_and_pg_stats,
+    )
+
+    await log_pool_and_pg_stats()
+
+    pool = _state.engine.sync_engine.pool if _state.engine else None
+    return {
+        "pool": _pool_status(pool) if pool else "no engine",
+        "nicegui_clients": len(Client.instances),
+    }
+
+ui.run(
+    port=port, reload=False, show=False,
+    storage_secret='test-secret-for-e2e',
+    reconnect_timeout=0.5,
+)
 """
 
 
@@ -434,6 +458,7 @@ def test_e2e() -> None:
                 "--durations=10",
                 "--tb=short",
                 "-v",
+                "--log-cli-level=WARNING",
             ],
         )
     finally:
@@ -481,6 +506,7 @@ def test_e2e_debug() -> None:
                 "-x",
                 "--durations=10",
                 "--tb=long",
+                "--log-cli-level=WARNING",
                 "-v",
             ],
         )

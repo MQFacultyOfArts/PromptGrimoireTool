@@ -193,6 +193,47 @@ class TestEnrollmentCRUDWithStringRoles:
         assert enrollment.role == "student"
 
 
+class TestGetStaffRoles:
+    """Verify get_staff_roles() returns expected staff roles from reference table."""
+
+    @pytest.mark.asyncio
+    async def test_returns_expected_staff_roles(self) -> None:
+        """get_staff_roles() returns coordinator, instructor, tutor."""
+        from promptgrimoire.db.roles import _reset_staff_roles_cache, get_staff_roles
+
+        _reset_staff_roles_cache()
+        roles = await get_staff_roles()
+        assert roles == frozenset({"coordinator", "instructor", "tutor"})
+
+    @pytest.mark.asyncio
+    async def test_get_all_roles_ordered_by_level(self) -> None:
+        """get_all_roles() returns all roles ordered by level ascending."""
+        from promptgrimoire.db.roles import _reset_all_roles_cache, get_all_roles
+
+        _reset_all_roles_cache()
+        roles = await get_all_roles()
+        assert roles == ("student", "tutor", "instructor", "coordinator")
+
+    @pytest.mark.asyncio
+    async def test_excludes_student(self) -> None:
+        """get_staff_roles() does not include student."""
+        from promptgrimoire.db.roles import _reset_staff_roles_cache, get_staff_roles
+
+        _reset_staff_roles_cache()
+        roles = await get_staff_roles()
+        assert "student" not in roles
+
+    @pytest.mark.asyncio
+    async def test_cache_returns_same_result(self) -> None:
+        """Second call returns cached result without DB query."""
+        from promptgrimoire.db.roles import _reset_staff_roles_cache, get_staff_roles
+
+        _reset_staff_roles_cache()
+        first = await get_staff_roles()
+        second = await get_staff_roles()
+        assert first is second  # Same object = cached
+
+
 class TestWeekVisibilityAfterNormalisation:
     """Verify week visibility works identically after normalisation.
 

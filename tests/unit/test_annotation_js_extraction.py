@@ -5,7 +5,7 @@ has been extracted from Python string constants to static JS files, and
 that no Python file in the source tree retains the old constant.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-14-120-annotation-split/phase_01.md
+- Design: docs/implementation-plans/2026-02-14-annotation-split-120/phase_01.md
 - AC: 120-annotation-split.AC2.1, AC2.2, AC2.5
 """
 

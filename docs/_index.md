@@ -106,11 +106,11 @@ library references during development.
 
 ## test-plans
 
-- [Human Test Plan: 134-lua-highlight](test-plans/2026-02-09-134-lua-highlight.md)
+- [Human Test Plan: 134-lua-highlight](test-plans/2026-02-09-lua-highlight-134.md)
 - [Human Test Plan: CSS Custom Highlight API Migration](test-plans/2026-02-11-css-highlight-api.md)
-- [Human Test Plan: Per-Activity Copy Protection (103-copy-protection)](test-plans/2026-02-13-103-copy-protection.md)
-- [Test Plan: Annotation Module Split (#120)](test-plans/2026-02-14-120-annotation-split.md)
-- [Human Test Plan: Auto-create Branch Databases (#165)](test-plans/2026-02-14-165-auto-create-branch-db.md)
+- [Human Test Plan: Per-Activity Copy Protection (103-copy-protection)](test-plans/2026-02-13-copy-protection-103.md)
+- [Test Plan: Annotation Module Split (#120)](test-plans/2026-02-14-annotation-split-120.md)
+- [Human Test Plan: Auto-create Branch Databases (#165)](test-plans/2026-02-14-auto-create-branch-db-165.md)
 - [Mega UAT: CSS Highlight API + Copy Protection + Pydantic-Settings](test-plans/2026-02-14-mega-uat.md)
 
 ---

@@ -12,8 +12,8 @@ After the annotation.py monolith was split into pages/annotation/ package
 - No PLC0415 per-file-ignores for the annotation package (AC3.3)
 - The package must be importable (smoke test)
 
-See: docs/implementation-plans/2026-02-14-120-annotation-split/phase_02.md
-See: docs/implementation-plans/2026-02-14-120-annotation-split/phase_03.md
+See: docs/implementation-plans/2026-02-14-annotation-split-120/phase_02.md
+See: docs/implementation-plans/2026-02-14-annotation-split-120/phase_03.md
 """
 
 from pathlib import Path

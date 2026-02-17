@@ -109,7 +109,7 @@ grep "annotation\.py" CLAUDE.md
 **Verifies:** 120-annotation-split.AC5.2
 
 **Files:**
-- Modify: `docs/design-plans/2026-02-10-annotation-perf.md` (lines 44–47 for AC4, lines 125–142 for Phase 1 module list)
+- Modify: `docs/design-plans/2026-02-10-annotation-perf-142.md` (lines 44–47 for AC4, lines 125–142 for Phase 1 module list)
 
 **Implementation:**
 
@@ -126,7 +126,7 @@ The annotation-perf.md AC4 criteria are:
 Add a note marking this as addressed:
 
 ```
-> **Addressed by:** Issue #120 (annotation-split). See `docs/design-plans/2026-02-14-120-annotation-split.md`.
+> **Addressed by:** Issue #120 (annotation-split). See `docs/design-plans/2026-02-14-annotation-split-120.md`.
 ```
 
 **Change 2: Update Phase 1 module list (lines 125–142).**
@@ -185,7 +185,7 @@ Extracting it requires restructuring from a closure-based `<script>` tag to a pa
 - Part of the annotation module split (#120) — JS extraction phase
 - `annotation-card-sync.js` and `annotation-copy-protection.js` were extracted in #120
 - This paste handler was explicitly deferred because it is tightly coupled to NiceGUI element IDs
-- See design plan: `docs/design-plans/2026-02-14-120-annotation-split.md` (Additional Considerations)
+- See design plan: `docs/design-plans/2026-02-14-annotation-split-120.md` (Additional Considerations)
 
 ## Acceptance Criteria
 

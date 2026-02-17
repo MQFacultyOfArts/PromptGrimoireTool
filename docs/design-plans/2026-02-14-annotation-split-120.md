@@ -204,7 +204,7 @@ All patterns (package structure, static JS, satellite modules) already exist in 
 
 **Components:**
 - `CLAUDE.md` — update project structure section to show `pages/annotation/` package with module listing
-- `docs/design-plans/2026-02-10-annotation-perf.md` — update Phase 1 to reflect actual module structure (9 modules, current function names, post-CSS-Highlight-API); mark AC4 as addressed by this work
+- `docs/design-plans/2026-02-10-annotation-perf-142.md` — update Phase 1 to reflect actual module structure (9 modules, current function names, post-CSS-Highlight-API); mark AC4 as addressed by this work
 - File GitHub issue for paste handler JS extraction as follow-up
 
 **Dependencies:** Phase 3 (all moves complete)

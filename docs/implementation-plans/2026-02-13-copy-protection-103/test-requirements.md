@@ -1,8 +1,8 @@
 # Per-Activity Copy Protection -- Test Requirements
 
 **Feature:** Per-activity copy protection (Issue #103)
-**Design plan:** `docs/design-plans/2026-02-13-103-copy-protection.md`
-**Implementation phases:** `docs/implementation-plans/2026-02-13-103-copy-protection/phase_01.md` through `phase_06.md`
+**Design plan:** `docs/design-plans/2026-02-13-copy-protection-103.md`
+**Implementation phases:** `docs/implementation-plans/2026-02-13-copy-protection-103/phase_01.md` through `phase_06.md`
 **Generated:** 2026-02-13
 
 ---

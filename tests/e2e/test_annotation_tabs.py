@@ -7,10 +7,10 @@ highlight cards. Phase 5 adds tests for Tab 3 Milkdown editor and collaboration.
 Phase 6 adds tests for warp navigation (locate buttons) and cross-tab reactivity.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_01.md
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_05.md
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_06.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_01.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_05.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_06.md
 - AC: three-tab-ui.AC1.1 through AC1.4
 - AC: three-tab-ui.AC2.1, AC2.2, AC2.6
 - AC: three-tab-ui.AC4.1 through AC4.5

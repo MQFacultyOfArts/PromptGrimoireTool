@@ -3,7 +3,7 @@
 Tests all conversation fixtures compile through the PDF export pipeline
 with speaker pre-processing and UI chrome removal.
 
-See: docs/design-plans/2026-01-29-css-fidelity-pdf-export.md Phase 4
+See: docs/design-plans/2026-01-29-css-fidelity-pdf-export-76.md Phase 4
 """
 
 from __future__ import annotations

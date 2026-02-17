@@ -1,7 +1,7 @@
 # LaTeX Test Optimisation -- Test Requirements
 
-**Design plan:** `docs/design-plans/2026-02-12-latex-test-optimization.md`
-**Implementation plans:** `docs/implementation-plans/2026-02-12-latex-test-optimization/phase_01.md` through `phase_05.md`
+**Design plan:** `docs/design-plans/2026-02-12-latex-test-optimization-76.md`
+**Implementation plans:** `docs/implementation-plans/2026-02-12-latex-test-optimization-76/phase_01.md` through `phase_05.md`
 
 This document maps every acceptance criterion (AC1.1 through AC5.4) to specific automated tests or human verification steps. Every AC is covered.
 

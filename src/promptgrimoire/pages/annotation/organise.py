@@ -12,8 +12,8 @@ This module imports TagInfo but NOT BriefTag -- the tag-agnostic abstraction
 ensures Tab 2 rendering is decoupled from the domain enum.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md Task 2
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 2
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 2
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_04.md Task 2
 - AC: three-tab-ui.AC2.1, AC2.2, AC2.3, AC2.4, AC2.6
 """
 

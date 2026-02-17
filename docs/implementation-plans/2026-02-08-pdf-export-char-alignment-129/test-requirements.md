@@ -1,6 +1,6 @@
 # PDF Export Character Alignment — Test Requirements
 
-Maps every acceptance criterion from `docs/design-plans/2026-02-08-pdf-export-char-alignment.md` to either an automated test or a documented human verification step.
+Maps every acceptance criterion from `docs/design-plans/2026-02-08-pdf-export-char-alignment-129.md` to either an automated test or a documented human verification step.
 
 **Notation:** Each entry uses the scoped identifier `pdf-export-char-alignment.AC{N}.{M}`.
 

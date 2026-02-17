@@ -63,7 +63,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 ### pydantic-settings >= 2.8
 
 **Added:** 2026-02-13
-**Design plan:** docs/design-plans/2026-02-13-130-pydantic-settings.md
+**Design plan:** docs/design-plans/2026-02-13-pydantic-settings-130.md
 **Claim:** Typed configuration from environment variables and `.env` files. Replaces scattered `os.environ.get()` calls with a single validated `Settings(BaseSettings)` class.
 **Evidence:** `src/promptgrimoire/config.py` (Settings class, get_settings singleton). All 15 files that previously used `os.environ.get()` now import from config.
 **Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
@@ -71,7 +71,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 ### ~~python-dotenv >= 1.0~~ (SUPERSEDED)
 
-Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-130-pydantic-settings.md`.
+Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-pydantic-settings-130.md`.
 
 ### asyncpg >= 0.30
 
@@ -196,7 +196,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** Extensively used in `tests/e2e/` — `test_annotation_cards.py`, `test_annotation_sync.py`, `test_auth_pages.py`, `test_annotation_basics.py`, `test_annotation_highlights.py`. Also used in LaTeX integration tests for mega-document compile-once patterns where multiple assertions share a single expensive compile.
 
-**Revised:** 2026-02-12 — expanded from E2E-only to integration test usage per `docs/design-plans/2026-02-12-latex-test-optimization.md`.
+**Revised:** 2026-02-12 — expanded from E2E-only to integration test usage per `docs/design-plans/2026-02-12-latex-test-optimization-76.md`.
 
 ### pytest-order >= 1.3.0
 

@@ -11,7 +11,7 @@ Acceptance criteria verified:
 - css-highlight-api.AC3.4: Local user's own cursor/selection not rendered
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_05.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_05.md
 - Task 9: Multi-context E2E smoke test for remote presence
 """
 

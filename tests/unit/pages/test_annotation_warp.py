@@ -5,7 +5,7 @@ correct signature, and that render_organise_tab and render_respond_tab accept
 the on_locate callback parameter.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_06.md
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_06.md
 - AC: three-tab-ui.AC5.1, AC5.4, AC5.5
 """
 

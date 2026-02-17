@@ -6,7 +6,7 @@ Verifies that the login page gates on CSS.highlights support:
 
 Traceability:
 - AC: css-highlight-api.AC4.1, css-highlight-api.AC4.2
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_01.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_01.md
 """
 
 from __future__ import annotations

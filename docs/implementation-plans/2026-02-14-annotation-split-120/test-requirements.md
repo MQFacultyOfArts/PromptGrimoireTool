@@ -1,7 +1,7 @@
 # Test Requirements: Annotation Module Split (#120)
 
-**Design Plan:** `docs/design-plans/2026-02-14-120-annotation-split.md`
-**Implementation Phases:** `docs/implementation-plans/2026-02-14-120-annotation-split/phase_01.md` through `phase_04.md`
+**Design Plan:** `docs/design-plans/2026-02-14-annotation-split-120.md`
+**Implementation Phases:** `docs/implementation-plans/2026-02-14-annotation-split-120/phase_01.md` through `phase_04.md`
 
 ---
 
@@ -39,7 +39,7 @@ These criteria require manual inspection or browser interaction that automated t
 | AC3.2 | `__init__.py` contains no late imports | Requires source inspection -- no automated way to distinguish "late" from "early" imports reliably. | Read `pages/annotation/__init__.py`. Verify all `import` statements are at module top level (not inside functions or `if` blocks). |
 | AC4.2 | E2E tests pass | E2E tests require running browser infrastructure (`uv run test-e2e`). Separated from `test-all` by design. | Run `uv run test-e2e` and verify all tests pass. |
 | AC5.1 | `CLAUDE.md` project structure lists annotation package modules | Documentation correctness -- not testable by code. | Read `CLAUDE.md` project structure section. Verify it lists `pages/annotation/` as a directory with all 12 modules (9 authored + 3 satellite). Verify no stale `annotation.py` reference. |
-| AC5.2 | `annotation-perf.md` Phase 1 references actual module names | Documentation correctness for a separate design doc. | Read `docs/design-plans/2026-02-10-annotation-perf.md`. Verify Phase 1 module list matches actual package contents and uses post-CSS-Highlight-API function names. |
+| AC5.2 | `annotation-perf.md` Phase 1 references actual module names | Documentation correctness for a separate design doc. | Read `docs/design-plans/2026-02-10-annotation-perf-142.md`. Verify Phase 1 module list matches actual package contents and uses post-CSS-Highlight-API function names. |
 | AC5.3 | Follow-up issue filed for paste handler JS extraction | GitHub issue existence check. | Run `gh issue list --search "paste handler JS"` and verify issue exists with correct title and acceptance criteria. |
 
 ---

@@ -4,7 +4,7 @@ Verifies that brief_tags_to_tag_info() correctly converts BriefTag enum members
 into a list of TagInfo instances with proper display names and colours.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md Task 1
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 1
 - AC: three-tab-ui.AC2.1 (data structure)
 """
 

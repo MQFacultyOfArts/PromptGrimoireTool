@@ -11,7 +11,7 @@ Acceptance criteria:
 - css-highlight-api.AC1.5: Overlapping highlights both visible
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_03.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_03.md
 """
 
 from __future__ import annotations

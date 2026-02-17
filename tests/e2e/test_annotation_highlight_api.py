@@ -9,7 +9,7 @@ Acceptance criteria verified:
 - css-highlight-api.AC2.1: Selection produces correct char offsets
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_03.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_03.md
 - Task 6: Full annotation page integration test
 """
 

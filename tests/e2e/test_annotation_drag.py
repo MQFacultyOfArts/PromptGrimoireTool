@@ -5,7 +5,7 @@ and between columns (tag reassignment), that changes persist in the CRDT,
 and that broadcasts propagate to other connected clients.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_04.md Task 3
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_04.md Task 3
 - AC: three-tab-ui.AC2.3, AC2.4, AC2.5
 """
 

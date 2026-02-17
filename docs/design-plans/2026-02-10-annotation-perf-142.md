@@ -46,7 +46,7 @@ The work is split into four phases across two pull requests. Phase 1 (separate P
 - **annotation-perf.AC4.2 Success:** All existing tests pass without modification (except import paths if needed)
 - **annotation-perf.AC4.3 Success:** No logic changes — pure mechanical move
 
-> **Addressed by:** Issue #120 (annotation-split). See `docs/design-plans/2026-02-14-120-annotation-split.md`.
+> **Addressed by:** Issue #120 (annotation-split). See `docs/design-plans/2026-02-14-annotation-split-120.md`.
 
 ## Glossary
 

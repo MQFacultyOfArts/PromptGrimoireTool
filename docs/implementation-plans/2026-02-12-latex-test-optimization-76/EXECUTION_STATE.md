@@ -39,7 +39,7 @@ WHAT_WAS_IMPLEMENTED: Phase 1 mega-document test infrastructure (68->14 compiles
   - Standalone isolation tests for margin notes + highlight boundaries
   - 3 redundant tests deleted
 
-PLAN_OR_REQUIREMENTS: docs/implementation-plans/2026-02-12-latex-test-optimization/phase_01.md
+PLAN_OR_REQUIREMENTS: docs/implementation-plans/2026-02-12-latex-test-optimization-76/phase_01.md
 BASE_SHA: fd0d512
 HEAD_SHA: f9622d5
 IMPLEMENTATION_GUIDANCE: .ed3d/implementation-plan-guidance.md

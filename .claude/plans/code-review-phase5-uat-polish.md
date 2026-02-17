@@ -3,7 +3,7 @@
 **Reviewer:** Claude Opus 4.6 (Code Reviewer role)
 **Date:** 2026-02-08
 **Branch:** `milkdown-crdt-spike`
-**Plan reference:** `docs/implementation-plans/2026-02-07-three-tab-ui/phase_05.md`
+**Plan reference:** `docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_05.md`
 
 ## Commits Reviewed
 

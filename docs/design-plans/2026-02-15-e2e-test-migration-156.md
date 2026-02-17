@@ -271,7 +271,7 @@ This design follows all existing patterns. The new persona tests use the same he
 - Delete 10 files: `test_annotation_basics.py`, `test_annotation_cards.py`, `test_annotation_workflows.py`, `test_subtests_validation.py`, `test_annotation_highlights.py`, `test_annotation_sync.py`, `test_annotation_collab.py`, `test_annotation_blns.py`, `test_annotation_cjk.py`, `test_i18n_pdf_export.py`
 - Verify zero `data-char-index` references remain in non-deprecated test files
 - Run full `test-e2e` suite and confirm all tests pass
-- Update `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md` status
+- Update `docs/implementation-plans/2026-02-04-html-input-pipeline-106/e2e-test-audit.md` status
 
 **Dependencies:** Phases 2-7 (all new tests must exist before deleting old ones)
 

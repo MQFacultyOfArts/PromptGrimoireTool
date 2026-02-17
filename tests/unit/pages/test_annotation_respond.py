@@ -4,7 +4,7 @@ Tests verify that the reference panel correctly groups highlights by tag,
 handles empty state, and truncates text snippets.
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_05.md Task 2
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_05.md Task 2
 - AC: three-tab-ui.AC4.4, AC4.5
 """
 

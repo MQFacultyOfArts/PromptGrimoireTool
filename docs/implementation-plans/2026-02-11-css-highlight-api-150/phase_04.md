@@ -10,7 +10,7 @@
 
 **Codebase verified:** 2026-02-12
 
-**Note on E2E tests:** Old E2E tests in `test_annotation_highlights.py` are deeply tied to char-span DOM structure. They will be completely rewritten for the new CSS Highlight API, not patched. The existing E2E test audit (currently at `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md`, moved to `docs/e2e-test-audit.md` in this phase) documents all E2E coverage — update it to reflect the CSS Highlight API migration changes.
+**Note on E2E tests:** Old E2E tests in `test_annotation_highlights.py` are deeply tied to char-span DOM structure. They will be completely rewritten for the new CSS Highlight API, not patched. The existing E2E test audit (currently at `docs/implementation-plans/2026-02-04-html-input-pipeline-106/e2e-test-audit.md`, moved to `docs/e2e-test-audit.md` in this phase) documents all E2E coverage — update it to reflect the CSS Highlight API migration changes.
 
 ---
 
@@ -166,7 +166,7 @@ Run: `uv run pytest tests/e2e/test_card_interaction.py -v`
 **Files:**
 - Delete: char-span-dependent test classes from `tests/e2e/test_annotation_highlights.py` (specifically `TestHighlightInteractionsConsolidated` with `goto_scrolls_to_highlight` and `hover_highlights_words` subtests, L269-338)
 - Modify: `tests/e2e/annotation_helpers.py` — update `select_chars()` to use new text-walker-based selection (no `[data-char-index]` locators); update `setup_workspace_with_content()` to remove the "wait for char spans" step
-- Move: `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md` → `docs/e2e-test-audit.md` (more accessible location) and update with CSS Highlight API migration changes
+- Move: `docs/implementation-plans/2026-02-04-html-input-pipeline-106/e2e-test-audit.md` → `docs/e2e-test-audit.md` (more accessible location) and update with CSS Highlight API migration changes
 
 **Implementation:**
 
@@ -176,7 +176,7 @@ Run: `uv run pytest tests/e2e/test_card_interaction.py -v`
    - `select_chars()` currently finds char spans by `[data-char-index]` to get bounding boxes for mouse simulation. **Defer the full rewrite to Phase 6 Task 5** (which provides the concrete `charOffsetToRect()`-based implementation). For now, mark `select_chars()` with a `# TODO: Phase 6 Task 5 rewrites this to use charOffsetToRect()` comment and leave the existing implementation (the old E2E tests that call it are being deleted in step 1 of this task, so it won't be exercised).
    - `setup_workspace_with_content()` currently waits for `[data-char-index]` elements to appear. Replace with waiting for `annotation-highlight.js` to initialise (e.g. wait for `window._textNodes` to be defined, or wait for the document container to have content).
 
-3. Move `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md` to `docs/e2e-test-audit.md` and update:
+3. Move `docs/implementation-plans/2026-02-04-html-input-pipeline-106/e2e-test-audit.md` to `docs/e2e-test-audit.md` and update:
    - Add a "CSS Highlight API Migration" section documenting what changed
    - List tests deleted and their replacement tests
    - Update any char-span-specific user action descriptions

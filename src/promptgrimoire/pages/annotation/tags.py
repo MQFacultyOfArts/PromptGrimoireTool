@@ -5,7 +5,7 @@ This module is the single point of coupling between BriefTag (domain model)
 and the Tab 2/Tab 3 rendering code, which only receives list[TagInfo].
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-07-three-tab-ui/phase_03.md Task 1
+- Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 1
 - AC: three-tab-ui.AC2.1 (data structure for tag columns)
 """
 

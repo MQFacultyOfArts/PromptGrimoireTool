@@ -4,7 +4,7 @@ Verifies that the auth module correctly identifies privileged users (admins,
 instructors) versus unprivileged users (students, tutors, unauthenticated).
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_03.md Task 1
+- Design: docs/implementation-plans/2026-02-13-copy-protection-103/phase_03.md Task 1
 - AC: 103-copy-protection.AC5.1 through AC5.6
 """
 

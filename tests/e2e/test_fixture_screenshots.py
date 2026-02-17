@@ -15,7 +15,7 @@ Run single fixture: uv run pytest tests/e2e/test_fixture_screenshots.py -v -k au
 
 Traceability:
 - Issue: #106 HTML input pipeline
-- Design: docs/design-plans/2026-02-04-html-input-pipeline.md
+- Design: docs/design-plans/2026-02-04-html-input-pipeline-106.md
 """
 
 from __future__ import annotations

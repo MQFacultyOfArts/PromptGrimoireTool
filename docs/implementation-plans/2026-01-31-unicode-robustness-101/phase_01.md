@@ -263,7 +263,7 @@ git commit -m "feat(test): add test-all-fixtures script for full corpus runs"
 ### Task 4: Document fontspec investigation decision
 
 **Files:**
-- Create: `/home/brian/people/Brian/PromptGrimoireTool/.worktrees/101-cjk-blns/docs/implementation-plans/2026-01-31-unicode-robustness/fontspec-investigation.md`
+- Create: `/home/brian/people/Brian/PromptGrimoireTool/.worktrees/101-cjk-blns/docs/implementation-plans/2026-01-31-unicode-robustness-101/fontspec-investigation.md`
 
 **Step 1: Create investigation document**
 
@@ -309,7 +309,7 @@ Benefits:
 **Step 2: Commit**
 
 ```bash
-git add docs/implementation-plans/2026-01-31-unicode-robustness/fontspec-investigation.md
+git add docs/implementation-plans/2026-01-31-unicode-robustness-101/fontspec-investigation.md
 git commit -m "docs: document fontspec investigation - chose detect-and-wrap"
 ```
 <!-- END_TASK_4 -->

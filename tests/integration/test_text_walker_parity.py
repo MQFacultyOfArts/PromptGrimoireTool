@@ -8,7 +8,7 @@ Uses Playwright to run JS in a real browser via page.set_content().
 
 Traceability:
 - AC: css-highlight-api.AC7.1, css-highlight-api.AC7.2, css-highlight-api.AC7.3
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_02.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_02.md
 """
 
 from __future__ import annotations

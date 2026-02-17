@@ -11,7 +11,7 @@ Acceptance criteria verified:
   API entry distinct from annotation highlights
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-11-css-highlight-api/phase_05.md
+- Design: docs/implementation-plans/2026-02-11-css-highlight-api-150/phase_05.md
 - Task 8: Unit tests for JS remote presence rendering
 """
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-14
 **Branch:** css-highlight-api
-**Implementation plan:** docs/implementation-plans/2026-02-11-css-highlight-api/
+**Implementation plan:** docs/implementation-plans/2026-02-11-css-highlight-api-150/
 
 ## Prerequisites
 

@@ -1,6 +1,6 @@
 # Workspace ACL — Test Requirements
 
-**Design plan:** `docs/design-plans/2026-02-15-96-workspace-acl.md`
+**Design plan:** `docs/design-plans/2026-02-15-workspace-acl-96.md`
 
 **Generated from:** Acceptance Criteria (96-workspace-acl.AC1–AC10)
 

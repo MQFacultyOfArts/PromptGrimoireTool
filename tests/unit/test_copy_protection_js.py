@@ -5,8 +5,8 @@ signatures) and that the JS block contains expected selectors and event
 handlers via substring checks (not exact string matching).
 
 Traceability:
-- Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_04.md
-- Design: docs/implementation-plans/2026-02-13-103-copy-protection/phase_05.md
+- Design: docs/implementation-plans/2026-02-13-copy-protection-103/phase_04.md
+- Design: docs/implementation-plans/2026-02-13-copy-protection-103/phase_05.md
 - AC: 103-copy-protection.AC4.1-AC4.13, AC4.6, AC6.1-AC6.3
 """
 

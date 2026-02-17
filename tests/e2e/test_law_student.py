@@ -245,6 +245,13 @@ class TestLawStudent:
                     pdf_text = "".join(pdf_page.get_text() for pdf_page in doc)
                     doc.close()
 
+                    # Normalise: LaTeX may soft-hyphenate long tokens at line
+                    # breaks (e.g. "abc-\ndef" → "abcdef").  Strip these so
+                    # UUID searches work regardless of line position.
+                    import re
+
+                    pdf_text = re.sub(r"-\n", "", pdf_text)
+
                     # Verify comment UUIDs in extracted PDF text
                     assert uuid1 in pdf_text, "First comment UUID not found in PDF"
                     assert uuid2 in pdf_text, "Second comment UUID not found in PDF"

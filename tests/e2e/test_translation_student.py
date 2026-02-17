@@ -25,6 +25,7 @@ Traceability:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -306,6 +307,11 @@ class TestTranslationStudent:
                     doc = pymupdf.open(download.path())
                     pdf_text = "".join(pdf_page.get_text() for pdf_page in doc)
                     doc.close()
+
+                    # Normalise: LaTeX may soft-hyphenate long tokens at line
+                    # breaks (e.g. "abc-\ndef" → "abcdef").  Strip these so
+                    # UUID searches work regardless of line position.
+                    pdf_text = re.sub(r"-\n", "", pdf_text)
 
                     # UUID comment string must appear (ASCII, always findable)
                     assert comment_uuid in pdf_text, (

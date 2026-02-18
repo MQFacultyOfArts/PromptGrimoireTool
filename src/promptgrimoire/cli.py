@@ -1502,45 +1502,66 @@ async def _seed_tags_for_activity(activity: Activity) -> None:
             console.print("[yellow]Tags exist:[/] skipping tag seed")
             return
 
-    # Legal Case Brief tag set with colorblind-accessible palette (Matplotlib tab10)
-    tag_definitions = [
-        (0, "Jurisdiction", "#1f77b4"),
-        (1, "Procedural History", "#ff7f0e"),
-        (2, "Legally Relevant Facts", "#2ca02c"),
-        (3, "Legal Issues", "#d62728"),
-        (4, "Reasons", "#9467bd"),
-        (5, "Court's Reasoning", "#8c564b"),
-        (6, "Decision", "#e377c2"),
-        (7, "Order", "#7f7f7f"),
-        (8, "Domestic Sources", "#bcbd22"),
-        (9, "Reflection", "#17becf"),
+    # Legal Case Brief tags in three logical groups.
+    # Colours are colorblind-accessible (Matplotlib tab10 palette).
+    group_defs: list[tuple[str, str | None, list[tuple[str, str]]]] = [
+        (
+            "Case ID",
+            "#4a90d9",
+            [
+                ("Jurisdiction", "#1f77b4"),
+                ("Procedural History", "#ff7f0e"),
+                ("Decision", "#e377c2"),
+                ("Order", "#7f7f7f"),
+            ],
+        ),
+        (
+            "Analysis",
+            "#d9534f",
+            [
+                ("Legally Relevant Facts", "#2ca02c"),
+                ("Legal Issues", "#d62728"),
+                ("Reasons", "#9467bd"),
+                ("Court's Reasoning", "#8c564b"),
+            ],
+        ),
+        (
+            "Sources",
+            "#5cb85c",
+            [
+                ("Domestic Sources", "#bcbd22"),
+                ("Reflection", "#17becf"),
+            ],
+        ),
     ]
 
     async with get_session() as session:
-        group = TagGroup(
-            workspace_id=workspace_id,
-            name="Legal Case Brief",
-            order_index=0,
-        )
-        session.add(group)
-        await session.flush()
-
-        for order_index, name, color in tag_definitions:
-            tag = Tag(
+        tag_count = 0
+        for group_idx, (group_name, group_color, tags) in enumerate(group_defs):
+            group = TagGroup(
                 workspace_id=workspace_id,
-                group_id=group.id,
-                name=name,
-                color=color,
-                locked=True,
-                order_index=order_index,
+                name=group_name,
+                color=group_color,
+                order_index=group_idx,
             )
-            session.add(tag)
+            session.add(group)
+            await session.flush()
+
+            for tag_idx, (name, color) in enumerate(tags):
+                tag = Tag(
+                    workspace_id=workspace_id,
+                    group_id=group.id,
+                    name=name,
+                    color=color,
+                    locked=True,
+                    order_index=tag_idx,
+                )
+                session.add(tag)
+                tag_count += 1
 
         await session.flush()
 
-    console.print(
-        f"[green]Seeded tags:[/] Legal Case Brief ({len(tag_definitions)} tags)"
-    )
+    console.print(f"[green]Seeded tags:[/] {len(group_defs)} groups, {tag_count} tags")
 
 
 def seed_data() -> None:

@@ -663,6 +663,7 @@ async def clone_workspace_from_activity(
             cloned_group = TagGroup(
                 workspace_id=clone.id,
                 name=tmpl_group.name,
+                color=tmpl_group.color,
                 order_index=tmpl_group.order_index,
             )
             session.add(cloned_group)

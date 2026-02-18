@@ -325,12 +325,21 @@ def _build_tag_toolbar(
     ):
         for group_name, members in groups.items():
             if group_name is not None:
+                # Resolve group background: custom colour or default grey
+                group_colour = members[0][1].group_colour if members else None
+                if group_colour:
+                    r = int(group_colour[1:3], 16)
+                    g = int(group_colour[3:5], 16)
+                    b = int(group_colour[5:7], 16)
+                    bg = f"rgba({r},{g},{b},0.15)"
+                else:
+                    bg = "rgba(0,0,0,0.06)"
                 # Grouped tags: bubble background with label
                 with (
                     ui.column()
                     .classes("gap-0 items-center")
                     .style(
-                        "background: rgba(0,0,0,0.06); border-radius: 8px; "
+                        f"background: {bg}; border-radius: 8px; "
                         "padding: 2px 6px 4px; margin: 0 2px;"
                     )
                 ):

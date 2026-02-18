@@ -35,6 +35,7 @@ class TagInfo:
     colour: str
     raw_key: str
     group_name: str | None = None
+    group_colour: str | None = None
 
 
 async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
@@ -51,14 +52,19 @@ async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
 
     tags = await list_tags_for_workspace(workspace_id)
     groups = await list_tag_groups_for_workspace(workspace_id)
-    group_names = {g.id: g.name for g in groups}
+    group_map = {g.id: g for g in groups}
 
     return [
         TagInfo(
             name=tag.name,
             colour=tag.color,
             raw_key=str(tag.id),
-            group_name=group_names.get(tag.group_id),
+            group_name=group_map[tag.group_id].name
+            if tag.group_id in group_map
+            else None,
+            group_colour=group_map[tag.group_id].color
+            if tag.group_id in group_map
+            else None,
         )
         for tag in tags
     ]

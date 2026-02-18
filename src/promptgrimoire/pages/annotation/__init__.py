@@ -197,6 +197,8 @@ class PageState:
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
     # Tag info list for Tab 2 (Organise) -- populated on first visit
     tag_info_list: list[TagInfo] | None = None
+    # Reference to the tag toolbar element for dynamic rebuilds
+    toolbar_container: Any = None
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast

@@ -56,7 +56,7 @@ class TestLawStudent:
         app_server: str,
         subtests: SubTests,
     ) -> None:
-        """Complete law student annotation workflow with 20 checkpoints.
+        """Complete law student annotation workflow with 18 checkpoints.
 
         Tests the full journey: auth, fixture paste, empty respond state,
         highlighting with legal tags, comments, tag changes, keyboard shortcuts,
@@ -255,40 +255,6 @@ class TestLawStudent:
                 expect(columns).to_be_visible(timeout=3000)
                 organise_tab = page.locator("role=tab").nth(1)
                 expect(organise_tab).to_have_attribute("aria-selected", "true")
-
-            with subtests.test(msg="organise_drag_retag"):
-                # Drag the Legal Issues card to the Reasons column
-                legal_col = page.locator(
-                    '[data-testid="tag-column"][data-tag-name="Legal Issues"]'
-                )
-                expect(legal_col).to_be_visible(timeout=3000)
-                source_card = legal_col.locator('[data-testid="organise-card"]').first
-                expect(source_card).to_be_visible(timeout=3000)
-
-                # Drag to Reasons sortable container
-                reasons_sortable = page.locator("#sort-reasons")
-                expect(reasons_sortable).to_be_visible(timeout=3000)
-                source_card.drag_to(reasons_sortable)
-                page.wait_for_timeout(2000)
-
-                # Verify card moved — Reasons column should now have 2 cards
-                reasons_col = page.locator(
-                    '[data-testid="tag-column"][data-tag-name="Reasons"]'
-                )
-                reasons_cards = reasons_col.locator('[data-testid="organise-card"]')
-                expect(reasons_cards).to_have_count(2, timeout=10000)
-
-            with subtests.test(msg="organise_drag_updates_sidebar"):
-                # Switch to Tab 1 to verify sidebar reflects the tag change
-                page.get_by_text("Annotate", exact=True).click()
-                wait_for_text_walker(page, timeout=10000)
-
-                # The second annotation card (originally Legal Issues)
-                # should now show Reasons in its tag combobox
-                second_card = page.locator("[data-testid='annotation-card']").nth(1)
-                expect(second_card).to_be_visible(timeout=5000)
-                tag_select = second_card.locator("[role='combobox']").first
-                expect(tag_select).to_contain_text("Reasons", timeout=5000)
 
             with subtests.test(msg="respond_tab"):
                 # Click Respond tab

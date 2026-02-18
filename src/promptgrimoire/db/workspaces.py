@@ -123,6 +123,16 @@ class PlacementContext:
 
     True = owner can share with other students.
     """
+    allow_tag_creation: bool = True
+    """Resolved tag creation permission.
+
+    True = students can create tags.
+    """
+    course_id: UUID | None = None
+    """Course UUID for activity-placed workspaces.
+
+    None for loose/course-only placement.
+    """
 
     @property
     def display_label(self) -> str:
@@ -210,6 +220,12 @@ async def _resolve_activity_placement(
     else:
         resolved_sharing = course.default_allow_sharing
 
+    # Resolve tri-state allow_tag_creation: explicit wins, else course default
+    if activity.allow_tag_creation is not None:
+        resolved_tag_creation = activity.allow_tag_creation
+    else:
+        resolved_tag_creation = course.default_allow_tag_creation
+
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -219,6 +235,8 @@ async def _resolve_activity_placement(
         course_name=course.name,
         copy_protection=resolved_cp,
         allow_sharing=resolved_sharing,
+        allow_tag_creation=resolved_tag_creation,
+        course_id=course.id,
     )
 
 

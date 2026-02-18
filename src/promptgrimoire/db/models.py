@@ -388,6 +388,9 @@ class TagGroup(SQLModel, table=True):
     """
 
     __tablename__ = "tag_group"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_tag_group_workspace_name"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
@@ -416,6 +419,11 @@ class Tag(SQLModel, table=True):
         order_index: Display order within group or workspace.
         created_at: Timestamp when tag was created.
     """
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_tag_workspace_name"),
+        CheckConstraint("color ~ '^#[0-9a-fA-F]{6}$'", name="ck_tag_color_hex"),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))

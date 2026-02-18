@@ -13,6 +13,10 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from promptgrimoire.db.models import Activity
 
 from rich.console import Console
 from rich.panel import Panel
@@ -1477,7 +1481,7 @@ async def _seed_enrolment_and_weeks(course) -> None:
     console.print("[green]Enabled:[/] default copy protection on course")
 
 
-async def _seed_tags_for_activity(activity) -> None:
+async def _seed_tags_for_activity(activity: Activity) -> None:
     """Seed Legal Case Brief tag group and tags for an activity's template workspace.
 
     Idempotent: skips if any TagGroups already exist for the workspace.

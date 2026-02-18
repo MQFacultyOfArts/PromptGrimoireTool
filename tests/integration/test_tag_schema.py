@@ -10,6 +10,7 @@ Tests verify:
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -26,7 +27,7 @@ async def _make_tag_creation_data(
     *,
     course_tag_creation: bool = True,
     activity_tag_creation: bool | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Create hierarchy for tag creation tri-state tests.
 
     Returns course, activity, and the cloned workspace_id.

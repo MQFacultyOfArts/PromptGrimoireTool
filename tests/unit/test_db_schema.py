@@ -148,7 +148,7 @@ def test_mask_password_in_error_messages() -> None:
     assert "secret123" not in masked
 
     # URL without password
-    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"  # nosec B105 -- test fixture, not a real password
+    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"  # nosec B105 -- bandit false positive: no password present
     assert _mask_password(url_no_pass) == url_no_pass
 
     # URL with special characters in password

@@ -70,6 +70,22 @@ def upgrade() -> None:
         ),
     )
 
+    # --- indexes on FK columns (PostgreSQL does not auto-create these) ---
+    op.create_index("ix_tag_group_workspace_id", "tag_group", ["workspace_id"])
+    op.create_index("ix_tag_workspace_id", "tag", ["workspace_id"])
+    op.create_index("ix_tag_group_id", "tag", ["group_id"])
+
+    # --- unique constraints ---
+    op.create_unique_constraint(
+        "uq_tag_group_workspace_name", "tag_group", ["workspace_id", "name"]
+    )
+    op.create_unique_constraint(
+        "uq_tag_workspace_name", "tag", ["workspace_id", "name"]
+    )
+
+    # --- check constraint on color ---
+    op.create_check_constraint("ck_tag_color_hex", "tag", "color ~ '^#[0-9a-fA-F]{6}$'")
+
     # --- policy columns ---
     op.add_column(
         "activity",
@@ -90,5 +106,11 @@ def downgrade() -> None:
     """Drop tag tables and policy columns."""
     op.drop_column("course", "default_allow_tag_creation")
     op.drop_column("activity", "allow_tag_creation")
+    op.drop_constraint("ck_tag_color_hex", "tag", type_="check")
+    op.drop_constraint("uq_tag_workspace_name", "tag", type_="unique")
+    op.drop_constraint("uq_tag_group_workspace_name", "tag_group", type_="unique")
+    op.drop_index("ix_tag_group_id", table_name="tag")
+    op.drop_index("ix_tag_workspace_id", table_name="tag")
+    op.drop_index("ix_tag_group_workspace_id", table_name="tag_group")
     op.drop_table("tag")
     op.drop_table("tag_group")

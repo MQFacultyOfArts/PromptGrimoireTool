@@ -101,6 +101,9 @@ ignore = [
 "src/promptgrimoire/db/workspaces.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with crdt
 ]
+"src/promptgrimoire/db/tags.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies with workspaces/crdt
+]
 "src/promptgrimoire/crdt/persistence.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with db
     "PLW0603",  # Global singleton pattern is intentional

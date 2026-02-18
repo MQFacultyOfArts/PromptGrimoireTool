@@ -29,7 +29,6 @@ from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
 )
-from promptgrimoire.models.case import TAG_COLORS
 from tests.conftest import requires_latexmk
 from tests.integration.conftest import extract_pdf_text_pymupdf
 
@@ -38,8 +37,20 @@ pytestmark = pytest.mark.order(1)
 
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures"
 
-# TAG_COLORS is dict[BriefTag, str]; export_annotation_pdf wants dict[str, str]
-_TAG_COLOURS: dict[str, str] = {str(k): v for k, v in TAG_COLORS.items()}
+# Tag colours for PDF export tests. Values are arbitrary valid hex colours;
+# the actual colour doesn't matter for compilation correctness.
+_TAG_COLOURS: dict[str, str] = {
+    "jurisdiction": "#1f77b4",
+    "procedural_history": "#ff7f0e",
+    "legally_relevant_facts": "#2ca02c",
+    "legal_issues": "#d62728",
+    "reasons": "#9467bd",
+    "courts_reasoning": "#8c564b",
+    "decision": "#e377c2",
+    "order": "#7f7f7f",
+    "domestic_sources": "#bcbd22",
+    "reflection": "#17becf",
+}
 
 
 def _load_workspace_fixture() -> dict:
@@ -62,7 +73,7 @@ def _extract_pdf_text(pdf_path: Path) -> str:
     for detecting tofu/missing glyphs — it emits U+FFFD replacement
     characters for glyphs the PDF couldn't render.
     """
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603, B607
         ["pdftotext", str(pdf_path), "-"],
         capture_output=True,
         text=True,

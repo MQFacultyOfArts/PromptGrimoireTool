@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.6.1",  # pinned: 3.7.x breaks char span injection (destroy+recreate regression)
+    "nicegui==3.6.1",  # pinned: 3.7.x re-renders elements on listener change, destroying JS event wiring
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",

@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-02-15*
+*Last updated: 2026-02-18*
 
 ## TDD is Mandatory
 
@@ -13,23 +13,47 @@ No feature code without corresponding tests. Playwright for E2E, pytest for unit
 
 ## E2E Test Guidelines
 
-**NEVER inject JavaScript in E2E tests.** Use Playwright's native APIs exclusively:
+### JavaScript in E2E Tests
 
-- **Text selection**: Use `page.mouse` to drag-select (move, down, move, up)
-- **Keyboard input**: Use `page.keyboard.press()` or `locator.press()`
-- **Clicks**: Use `locator.click()` with modifiers if needed
-- **Assertions**: Use `expect()` from `playwright.sync_api`
-- **Scroll into view**: Use `locator.scroll_into_view_if_needed()` before interacting with elements that may be off-screen
+Use Playwright's native APIs for user interactions (clicks, typing, drag). `page.evaluate()` is acceptable for:
 
-Tests must simulate real user behavior through Playwright events, not bypass the UI with JavaScript injection like `page.evaluate()` or `ui.run_javascript()`.
+- **Coordinate lookup**: `charOffsetToRect()` via the text walker for precise selection targeting
+- **Readiness gates**: `wait_for_text_walker()` checks `window._textNodes` before interactions
+- **Clipboard operations**: `navigator.clipboard.write()` for paste simulation
+
+Do not use `page.evaluate()` to assert on internal DOM state or bypass the UI.
+
+### E2E Test Structure
+
+Tests are organised as **persona tests** — narrative user journeys that exercise multiple features in sequence. Each persona file covers one user archetype:
+
+| File | Persona | Coverage |
+|------|---------|----------|
+| `test_law_student.py` | AustLII annotation workflow | Paste HTML, highlight, comment, organise, respond, export PDF |
+| `test_translation_student.py` | CJK/RTL text handling | Mixed scripts, i18n PDF export, Arabic/Hebrew |
+| `test_history_tutorial.py` | Bidirectional CRDT sync | Two students, highlight sync, comment sync, organise/respond sync |
+| `test_naughty_student.py` | Adversarial security | Dead-end navigation, XSS/BLNS injection, copy protection bypass |
+| `test_instructor_workflow.py` | Course setup + student clone | Create course, weeks, activities, template, enrol, student access |
+
+Each method uses **pytest-subtests** for checkpoint assertions within a shared browser context, reducing page loads.
+
+### Helper Modules
+
+| Module | Purpose |
+|--------|---------|
+| `annotation_helpers.py` | `select_chars()`, `create_highlight()`, `setup_workspace_with_content()`, `wait_for_text_walker()` |
+| `course_helpers.py` | `create_course()`, `add_week()`, `add_activity()`, `enrol_student()`, `publish_week()`, `configure_course_copy_protection()` |
+| `conftest.py` | `app_server` fixture (NiceGUI server lifecycle), `fresh_page`, `_authenticate_page()`, cleanup endpoint |
 
 ### Common E2E Pitfalls
 
-- Elements may be off-screen in headless mode - always scroll into view before assertions
-- NiceGUI pages may need time to hydrate - use `expect().to_be_visible()` with appropriate timeouts
-- Floating menus/popups often require scroll context to position correctly
-- **Annotation cards are scroll-sensitive** - they won't display if their anchor element is not visible; always `scroll_into_view_if_needed()` before selecting text for annotation
-- **Sticky selections on highlighted text (NiceGUI 3.6+)** - selections made on already-highlighted text become "sticky" and won't clear with clicks outside the document container. Workaround: before each drag selection, click on a non-highlighted word *inside* the document (e.g., `[data-w="0"]` header word) to reliably clear existing selection
+- Elements may be off-screen in headless mode — always scroll into view before assertions
+- NiceGUI pages may need time to hydrate — use `expect().to_be_visible()` with appropriate timeouts
+- **`wait_for_text_walker()`** is the canonical readiness gate before any char-offset operations
+- **Copy protection setup**: create week/activity BEFORE enabling copy protection (dialog→nav race)
+- **MockAuthClient `_pending_email` pollution**: use explicit `mock-token-{email}` format tokens instead of `MOCK_VALID_MAGIC_TOKEN` when test ordering matters (pytest-randomly)
+
+See [docs/e2e-debugging.md](e2e-debugging.md) for E2E infrastructure details and debugging patterns.
 
 ## Database Test Architecture
 
@@ -178,14 +202,10 @@ uv run python scripts/analyse_fixture.py structure google_aistudio_image
 
 Fixture names can be partial (substring match). Supports both `.html` and `.html.gz` transparently.
 
-### Visual QA Screenshots
+### E2E Debugging
 
-`tests/e2e/test_fixture_screenshots.py` renders all fixtures through the annotation pipeline and captures screenshots to `output/fixture_screenshots/`. Each fixture test clears its own stale screenshots (e.g. `austlii_*.png`) before regenerating -- no stale files accumulate.
-
-```bash
-# Generate all fixture screenshots (clears output first)
-uv run pytest tests/e2e/test_fixture_screenshots.py -v
-
-# Single fixture
-uv run pytest tests/e2e/test_fixture_screenshots.py -v -k austlii
-```
+See [docs/e2e-debugging.md](e2e-debugging.md) for:
+- Server lifecycle and cleanup endpoint details
+- NiceGUI task leak patterns and fixes
+- Watchdog stack dump analysis
+- Server log (`test-e2e-server.log`) post-mortem

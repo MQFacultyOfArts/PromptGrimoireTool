@@ -139,6 +139,8 @@ Detailed subsystem docs live in `docs/`. Key references:
 | [annotation-architecture.md](docs/annotation-architecture.md) | Annotation page package structure, import ordering |
 | [configuration.md](docs/configuration.md) | pydantic-settings, env vars, sub-models |
 | [copy-protection.md](docs/copy-protection.md) | Resolution chain, client-side enforcement, UI controls |
+| [e2e-debugging.md](docs/e2e-debugging.md) | E2E infrastructure, NiceGUI task leaks, cleanup endpoint |
+| [nicegui/lifecycle.md](docs/nicegui/lifecycle.md) | NiceGUI client lifecycle, on_disconnect vs on_delete |
 | [worktrees.md](docs/worktrees.md) | Git worktree setup, Serena memory management |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow diagrams, integration patterns |
 

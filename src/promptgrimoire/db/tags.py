@@ -43,7 +43,7 @@ async def _check_tag_creation_permission(workspace_id: UUID) -> None:
 async def create_tag_group(
     workspace_id: UUID,
     name: str,
-    order_index: int = 0,
+    order_index: int | None = None,
 ) -> TagGroup:
     """Create a TagGroup in a workspace.
 
@@ -56,8 +56,9 @@ async def create_tag_group(
         The parent workspace's UUID.
     name : str
         Display name for the group.
-    order_index : int
+    order_index : int | None
         Display order within the workspace.
+        ``None`` (default) appends after existing groups.
 
     Returns
     -------
@@ -67,6 +68,17 @@ async def create_tag_group(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
+        if order_index is None:
+            from sqlalchemy import func
+
+            result = await session.exec(
+                select(func.max(TagGroup.order_index)).where(
+                    TagGroup.workspace_id == workspace_id
+                )
+            )
+            max_idx = result.one_or_none()
+            order_index = (max_idx or 0) + 1
+
         group = TagGroup(
             workspace_id=workspace_id,
             name=name,
@@ -147,7 +159,7 @@ async def create_tag(
     group_id: UUID | None = None,
     description: str | None = None,
     locked: bool = False,
-    order_index: int = 0,
+    order_index: int | None = None,
 ) -> Tag:
     """Create a Tag in a workspace.
 
@@ -168,8 +180,9 @@ async def create_tag(
         Optional longer description.
     locked : bool
         Whether students can modify this tag.
-    order_index : int
+    order_index : int | None
         Display order within group or workspace.
+        ``None`` (default) appends after existing tags.
 
     Returns
     -------
@@ -179,6 +192,17 @@ async def create_tag(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
+        if order_index is None:
+            from sqlalchemy import func
+
+            result = await session.exec(
+                select(func.max(Tag.order_index)).where(
+                    Tag.workspace_id == workspace_id
+                )
+            )
+            max_idx = result.one_or_none()
+            order_index = (max_idx or 0) + 1
+
         tag = Tag(
             workspace_id=workspace_id,
             name=name,

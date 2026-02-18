@@ -267,9 +267,10 @@ def _render_tag_row(
         # Editable fields
         name_input = ui.input(value=tag.name).classes("w-32")
         color_input = ui.color_input(value=tag.color, preview=True).classes("w-24")
-        desc_input = ui.input(value=tag.description or "", label="Description").classes(
-            "flex-1"
-        )
+        desc_input = ui.input(
+            value=tag.description or "",
+            placeholder="Description",
+        ).classes("flex-1")
         group_sel = ui.select(
             options=group_options,
             value=str(tag.group_id) if tag.group_id else None,
@@ -643,7 +644,9 @@ async def open_tag_management(
         update_tag_group,
     )
 
-    is_instructor = ctx.is_template and is_privileged_user(auth_user)
+    # Privileged users (admins, instructors) can always manage locked tags.
+    # Template-workspace check is additive — not a gate on admin powers.
+    is_instructor = is_privileged_user(auth_user)
 
     with ui.dialog() as dialog, ui.card().classes("w-[600px]"):
         with ui.row().classes("w-full items-center justify-between mb-2"):

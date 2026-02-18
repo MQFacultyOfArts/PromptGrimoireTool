@@ -11,7 +11,6 @@ from typing import Any
 from nicegui import ui
 
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
-from promptgrimoire.models.case import TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
 from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 from promptgrimoire.pages.annotation.css import (
@@ -67,9 +66,13 @@ def _setup_selection_handlers(state: PageState) -> None:
     async def on_keydown(e: Any) -> None:
         """Handle keyboard shortcut for tag selection."""
         key = e.args.get("key")
-        if key and key in TAG_SHORTCUTS:
-            tag = TAG_SHORTCUTS[key]
-            await _add_highlight(state, tag)
+        if key and state.tag_info_list:
+            key_to_index = {
+                str((i + 1) % 10): i for i in range(min(10, len(state.tag_info_list)))
+            }
+            if key in key_to_index:
+                ti = state.tag_info_list[key_to_index[key]]
+                await _add_highlight(state, ti.raw_key)
 
     ui.on("keydown", on_keydown)
 
@@ -120,18 +123,21 @@ async def _render_document_with_highlights(
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
-    initial_css = _build_highlight_pseudo_css()
+    tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
+    initial_css = _build_highlight_pseudo_css(tag_colours)
 
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
 
     # Tag toolbar handler
-    async def handle_tag_click(tag: BriefTag) -> None:
-        await _add_highlight(state, tag)
+    async def handle_tag_click(tag_key: str) -> None:
+        await _add_highlight(state, tag_key)
 
     # Tag toolbar - always visible above document
-    _build_tag_toolbar(handle_tag_click)
+    state.toolbar_container = _build_tag_toolbar(
+        state.tag_info_list or [], handle_tag_click
+    )
 
     # Highlight creation menu (hidden popup for quick highlight without tag selection)
     with (

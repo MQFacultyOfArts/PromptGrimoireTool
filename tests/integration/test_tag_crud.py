@@ -127,7 +127,7 @@ class TestCreateTag:
         assert tag.group_id is None
         assert tag.description is None
         assert tag.locked is False
-        assert tag.order_index == 0
+        assert tag.order_index == 1  # auto-appends after existing (empty = 0+1)
 
 
 class TestUpdateTag:

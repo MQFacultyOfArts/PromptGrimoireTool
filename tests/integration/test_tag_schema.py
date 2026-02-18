@@ -1,8 +1,11 @@
-"""Tests for tag schema: PlacementContext allow_tag_creation resolution.
+"""Tests for tag schema: cascade, set-null, and PlacementContext resolution.
 
 These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
-Tests verify tri-state allow_tag_creation inheritance (AC1.5).
+Tests verify:
+- AC1.5: tri-state allow_tag_creation inheritance
+- AC1.6: workspace delete cascades to TagGroup and Tag rows
+- AC1.7: tag group delete sets group_id=NULL on Tags (not delete)
 """
 
 from __future__ import annotations
@@ -120,3 +123,131 @@ class TestPlacementContextTagCreation:
         ctx = await get_placement_context(data["workspace_id"])
         assert ctx.allow_tag_creation is True
         assert ctx.course_id == data["course"].id
+
+
+class TestTagCascadeOnWorkspaceDelete:
+    """Tests for CASCADE delete from Workspace to TagGroup and Tag.
+
+    Verifies AC1.6: deleting a Workspace removes its TagGroup and Tag rows.
+    """
+
+    @pytest.mark.asyncio
+    async def test_workspace_delete_cascades_to_tags(self) -> None:
+        """Deleting a workspace CASCADE-deletes its TagGroup and Tag rows.
+
+        Verifies AC1.6.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Tag, TagGroup, Workspace
+
+        # Create a workspace with a tag group and tag
+        async with get_session() as session:
+            ws = Workspace()
+            session.add(ws)
+            await session.flush()
+            ws_id = ws.id
+
+            group = TagGroup(
+                workspace_id=ws_id,
+                name="Test Group",
+                order_index=0,
+            )
+            session.add(group)
+            await session.flush()
+            group_id = group.id
+
+            tag = Tag(
+                workspace_id=ws_id,
+                group_id=group_id,
+                name="Test Tag",
+                color="#1f77b4",
+                order_index=0,
+            )
+            session.add(tag)
+            await session.flush()
+            tag_id = tag.id
+
+        # Verify they exist
+        async with get_session() as session:
+            assert await session.get(TagGroup, group_id) is not None
+            assert await session.get(Tag, tag_id) is not None
+
+        # Delete the workspace
+        async with get_session() as session:
+            ws = await session.get(Workspace, ws_id)
+            assert ws is not None
+            await session.delete(ws)
+
+        # Verify TagGroup and Tag are gone (CASCADE)
+        async with get_session() as session:
+            assert await session.get(TagGroup, group_id) is None
+            assert await session.get(Tag, tag_id) is None
+
+
+class TestTagGroupSetNullOnDelete:
+    """Tests for SET NULL on TagGroup delete.
+
+    Verifies AC1.7: deleting a TagGroup sets group_id=NULL on its Tags,
+    does not delete the Tags.
+    """
+
+    @pytest.mark.asyncio
+    async def test_tag_group_delete_nulls_tag_group_id(self) -> None:
+        """Deleting a TagGroup sets group_id=NULL on its Tags.
+
+        Verifies AC1.7.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Tag, TagGroup, Workspace
+
+        # Create workspace, tag group, and tag
+        async with get_session() as session:
+            ws = Workspace()
+            session.add(ws)
+            await session.flush()
+            ws_id = ws.id
+
+            group = TagGroup(
+                workspace_id=ws_id,
+                name="Will Be Deleted",
+                order_index=0,
+            )
+            session.add(group)
+            await session.flush()
+            group_id = group.id
+
+            tag = Tag(
+                workspace_id=ws_id,
+                group_id=group_id,
+                name="Surviving Tag",
+                color="#ff7f0e",
+                order_index=0,
+            )
+            session.add(tag)
+            await session.flush()
+            tag_id = tag.id
+
+        # Verify tag has group_id set
+        async with get_session() as session:
+            tag_before = await session.get(Tag, tag_id)
+            assert tag_before is not None
+            assert tag_before.group_id == group_id
+
+        # Delete the tag group
+        async with get_session() as session:
+            group = await session.get(TagGroup, group_id)
+            assert group is not None
+            await session.delete(group)
+
+        # Verify: tag still exists with group_id=None
+        async with get_session() as session:
+            tag_after = await session.get(Tag, tag_id)
+            assert tag_after is not None, (
+                "Tag should NOT be deleted when TagGroup is deleted"
+            )
+            assert tag_after.group_id is None, (
+                "Tag.group_id should be NULL after TagGroup delete"
+            )
+            assert tag_after.workspace_id == ws_id, (
+                "Tag should still belong to its workspace"
+            )

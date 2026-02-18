@@ -309,7 +309,8 @@ def _build_tag_toolbar(
 
             btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
             btn.style(
-                f"background-color: {ti.colour}; color: white; max-width: 160px; "
+                f"background-color: {ti.colour} !important; "
+                "color: white !important; max-width: 160px; "
                 "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
             )
             btn.tooltip(ti.name)

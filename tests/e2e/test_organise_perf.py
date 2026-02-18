@@ -103,7 +103,7 @@ class TestOrganiseTabPerformance:
         page = perf_workspace
 
         # Verify highlights were created in Tab 1
-        cards_tab1 = page.locator(".annotation-card")
+        cards_tab1 = page.locator("[data-testid='annotation-card']")
         expect(cards_tab1.first).to_be_visible(timeout=5000)
         highlight_count = cards_tab1.count()
         print(f"\nHighlights created in Tab 1: {highlight_count}")

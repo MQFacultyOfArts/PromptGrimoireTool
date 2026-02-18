@@ -265,6 +265,22 @@ def _setup_page_styles() -> None:
     ui.add_css(_PAGE_CSS)
 
 
+def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
+    """Render a single tag button inside the toolbar."""
+    label = f"[{shortcut}] {ti.name}" if shortcut else ti.name
+
+    async def apply_tag(tag_key: str = ti.raw_key) -> None:
+        await on_tag_click(tag_key)
+
+    btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
+    btn.style(
+        f"background-color: {ti.colour} !important; "
+        "color: white !important; max-width: 160px; "
+        "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+    )
+    btn.tooltip(ti.name)
+
+
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
@@ -274,7 +290,9 @@ def _build_tag_toolbar(
 ) -> Any:
     """Build fixed tag toolbar from DB-backed tag list.
 
-    Uses a div with fixed positioning for floating toolbar behavior.
+    Tags are visually grouped by ``TagInfo.group_name``: each group gets
+    a rounded bubble background with a small label, separated by horizontal
+    space. Ungrouped tags appear at the end without a bubble.
 
     Args:
         tag_info_list: List of TagInfo instances to render as buttons.
@@ -286,9 +304,14 @@ def _build_tag_toolbar(
     Returns:
         The toolbar row element.
     """
+    # Partition tags into groups preserving order
+    groups: dict[str | None, list[tuple[int, TagInfo]]] = {}
+    for i, ti in enumerate(tag_info_list):
+        groups.setdefault(ti.group_name, []).append((i, ti))
+
     toolbar_wrapper = (
         ui.element("div")
-        .classes("bg-gray-100 py-2 px-4")
+        .classes("bg-gray-100 py-1 px-4")
         .style(
             "position: fixed; top: 0; left: 0; right: 0; z-index: 100; "
             "box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
@@ -297,23 +320,32 @@ def _build_tag_toolbar(
     with (
         toolbar_wrapper,
         ui.row()
-        .classes("tag-toolbar-compact w-full")
+        .classes("tag-toolbar-compact w-full items-end")
         .props('data-testid="tag-toolbar"'),
     ):
-        for i, ti in enumerate(tag_info_list):
-            shortcut = str((i + 1) % 10) if i < 10 else ""
-            label = f"[{shortcut}] {ti.name}" if shortcut else ti.name
-
-            async def apply_tag(tag_key: str = ti.raw_key) -> None:
-                await on_tag_click(tag_key)
-
-            btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
-            btn.style(
-                f"background-color: {ti.colour} !important; "
-                "color: white !important; max-width: 160px; "
-                "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-            )
-            btn.tooltip(ti.name)
+        for group_name, members in groups.items():
+            if group_name is not None:
+                # Grouped tags: bubble background with label
+                with (
+                    ui.column()
+                    .classes("gap-0 items-center")
+                    .style(
+                        "background: rgba(0,0,0,0.06); border-radius: 8px; "
+                        "padding: 2px 6px 4px; margin: 0 2px;"
+                    )
+                ):
+                    ui.label(group_name).classes(
+                        "text-[9px] text-gray-500 leading-tight"
+                    )
+                    with ui.row().classes("gap-1"):
+                        for idx, ti in members:
+                            shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                            _render_tag_button(ti, shortcut, on_tag_click)
+            else:
+                # Ungrouped tags: no bubble, just buttons
+                for idx, ti in members:
+                    shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                    _render_tag_button(ti, shortcut, on_tag_click)
 
         # "+" button -- quick-create (hidden when creation not allowed)
         if on_add_click is not None:

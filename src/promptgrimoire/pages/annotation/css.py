@@ -214,11 +214,6 @@ _PAGE_CSS = """
 """
 
 
-def _get_tag_color(tag_str: str, tag_colours: dict[str, str]) -> str:
-    """Get hex color for a tag string from the workspace colour mapping."""
-    return tag_colours.get(tag_str, "#999999")
-
-
 def _build_highlight_pseudo_css(tag_colours: dict[str, str]) -> str:
     """Generate ::highlight() pseudo-element CSS rules for annotation tags.
 

@@ -51,7 +51,10 @@ from promptgrimoire.pages.annotation.highlights import (
 from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.respond import render_respond_tab
-from promptgrimoire.pages.annotation.tag_management import open_quick_create
+from promptgrimoire.pages.annotation.tag_management import (
+    open_quick_create,
+    open_tag_management,
+)
 from promptgrimoire.pages.annotation.tags import workspace_tags
 
 if TYPE_CHECKING:
@@ -703,7 +706,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         await _rebuild_toolbar()
 
     async def _on_manage_tags() -> None:
-        pass  # Wired in Task 5 (management dialog)
+        await open_tag_management(state, ctx, auth_user)
+        await _rebuild_toolbar()
 
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)

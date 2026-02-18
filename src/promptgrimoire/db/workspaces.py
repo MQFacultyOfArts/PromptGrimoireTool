@@ -677,6 +677,11 @@ async def clone_workspace_from_activity(
 
         tag_id_map: dict[UUID, UUID] = {}
         for tmpl_tag in template_tags:
+            remapped_group_id = (
+                group_id_map.get(tmpl_tag.group_id)
+                if tmpl_tag.group_id is not None
+                else None
+            )
             cloned_tag = Tag(
                 workspace_id=clone.id,
                 name=tmpl_tag.name,
@@ -684,9 +689,7 @@ async def clone_workspace_from_activity(
                 description=tmpl_tag.description,
                 locked=tmpl_tag.locked,
                 order_index=tmpl_tag.order_index,
-                group_id=group_id_map.get(tmpl_tag.group_id)
-                if tmpl_tag.group_id is not None
-                else None,
+                group_id=remapped_group_id,
             )
             session.add(cloned_tag)
             await session.flush()

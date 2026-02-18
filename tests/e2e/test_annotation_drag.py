@@ -257,14 +257,10 @@ class TestDragBetweenColumns:
         sidebar_card = page.locator(".ann-card-positioned").first
         expect(sidebar_card).to_be_visible(timeout=3000)
 
-        # The tag dropdown or label should reflect "legal_issues" tag
-        # Look for the tag select element in the card
-        tag_select = sidebar_card.locator("select, [role='combobox']").first
-        if tag_select.count() > 0:
-            selected_value = tag_select.input_value()
-            assert "legal_issues" in selected_value.lower(), (
-                f"Expected legal_issues tag in sidebar, got: {selected_value}"
-            )
+        # The tag dropdown should reflect "Legal Issues" tag
+        tag_select = sidebar_card.locator("[role='combobox']").first
+        expect(tag_select).to_be_visible(timeout=5000)
+        expect(tag_select).to_contain_text("Legal Issues", timeout=5000)
 
 
 class TestConcurrentDrag:

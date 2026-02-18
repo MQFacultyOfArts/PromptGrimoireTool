@@ -51,6 +51,7 @@ from promptgrimoire.pages.annotation.highlights import (
 from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.respond import render_respond_tab
+from promptgrimoire.pages.annotation.tag_management import open_quick_create
 from promptgrimoire.pages.annotation.tags import workspace_tags
 
 if TYPE_CHECKING:
@@ -674,6 +675,36 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     )
     state.tag_info_list = await workspace_tags(workspace_id)
 
+    # Tag management callbacks (Phase 5)
+    async def _rebuild_toolbar() -> None:
+        """Clear and rebuild the tag toolbar after tag mutations."""
+        if state.toolbar_container is not None:
+            state.toolbar_container.clear()
+            with state.toolbar_container:
+                from promptgrimoire.pages.annotation.css import (  # noqa: PLC0415
+                    _build_tag_toolbar,
+                )
+                from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+                    _add_highlight,
+                )
+
+                async def _tag_click(key: str) -> None:
+                    await _add_highlight(state, key)
+
+                _build_tag_toolbar(
+                    state.tag_info_list or [],
+                    _tag_click,
+                    on_add_click=(_on_add_tag if ctx.allow_tag_creation else None),
+                    on_manage_click=_on_manage_tags,
+                )
+
+    async def _on_add_tag() -> None:
+        await open_quick_create(state)
+        await _rebuild_toolbar()
+
+    async def _on_manage_tags() -> None:
+        pass  # Wired in Task 5 (management dialog)
+
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)
     logger.debug("[RENDER] client sync setup done")
@@ -768,7 +799,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                 # Render first document with highlight support
                 doc = documents[0]
                 logger.debug("[RENDER] rendering document with highlights")
-                await _render_document_with_highlights(state, doc, crdt_doc)
+                await _render_document_with_highlights(
+                    state,
+                    doc,
+                    crdt_doc,
+                    on_add_click=(_on_add_tag if ctx.allow_tag_creation else None),
+                    on_manage_click=_on_manage_tags,
+                )
                 logger.debug("[RENDER] document rendered")
             else:
                 # Show add content form (extracted to reduce function complexity)

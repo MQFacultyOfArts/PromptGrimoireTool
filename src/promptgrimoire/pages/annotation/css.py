@@ -268,6 +268,9 @@ def _setup_page_styles() -> None:
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
+    *,
+    on_add_click: Any | None = None,
+    on_manage_click: Any | None = None,
 ) -> Any:
     """Build fixed tag toolbar from DB-backed tag list.
 
@@ -276,6 +279,9 @@ def _build_tag_toolbar(
     Args:
         tag_info_list: List of TagInfo instances to render as buttons.
         on_tag_click: Async callback receiving a tag key string.
+        on_add_click: Optional callback for the "+" quick-create button.
+            Hidden when ``None`` (tag creation not allowed).
+        on_manage_click: Optional callback for the gear (manage) button.
 
     Returns:
         The toolbar row element.
@@ -307,4 +313,22 @@ def _build_tag_toolbar(
                 "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
             )
             btn.tooltip(ti.name)
+
+        # "+" button -- quick-create (hidden when creation not allowed)
+        if on_add_click is not None:
+            ui.button(
+                "+",
+                on_click=on_add_click,
+            ).classes("text-xs compact-btn").props(
+                "round dense",
+            ).tooltip("Create new tag")
+
+        # Gear button -- full management
+        if on_manage_click is not None:
+            ui.button(
+                icon="settings",
+                on_click=on_manage_click,
+            ).classes("text-xs compact-btn").props(
+                "round dense flat",
+            ).tooltip("Manage tags")
     return toolbar_wrapper

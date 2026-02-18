@@ -86,11 +86,10 @@ async def update_activity(
 ) -> Activity | None:
     """Update activity details.
 
-    Use description=None to clear it. Omit (or pass ...) to leave unchanged.
-    Use copy_protection=None to reset to inherit from course.
-    Use allow_sharing=None to reset to inherit from course.
-    Use allow_tag_creation=None to reset to inherit from course.
-    Omit (or pass ...) to leave unchanged.
+    Use description=None to clear it.
+    Use copy_protection=None / allow_sharing=None / allow_tag_creation=None
+    to reset to inherit from course.
+    Omit any parameter (or pass ...) to leave it unchanged.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)

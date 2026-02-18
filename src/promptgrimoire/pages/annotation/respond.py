@@ -10,8 +10,8 @@ XmlFragment (``response_draft``) instead of the default Doc-level binding.
 Yjs updates are Doc-level, so they flow through the existing annotation
 broadcast mechanism without fragment-level routing.
 
-This module imports TagInfo but NOT BriefTag -- the tag-agnostic abstraction
-ensures Tab 3 rendering is decoupled from the domain enum.
+This module imports TagInfo -- the tag-agnostic abstraction ensures Tab 3
+rendering is decoupled from any specific tag definition.
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_05.md Tasks 2-3

@@ -235,7 +235,7 @@ class TestDragBetweenColumns:
 
         _switch_to_organise(page)
 
-        # Drag card to Legal Issues column (index 2 in BriefTag)
+        # Drag card to Legal Issues column
         jurisdiction_col = page.locator(
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )

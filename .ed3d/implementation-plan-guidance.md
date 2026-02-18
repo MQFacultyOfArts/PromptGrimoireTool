@@ -69,7 +69,11 @@ uv run ruff format .
 **Standard test commands (use ONLY these):**
 - `uv run test-debug` — smart test selection, finds first failure (fast)
 - `uv run test-all` — full unit + integration suite (excludes E2E)
+- `uv run test-e2e` — E2E tests (starts server, serial fail-fast by default)
+- `uv run test-e2e --parallel` — E2E tests with xdist parallelism
+- `uv run test-e2e-debug` — re-run last-failed E2E tests (`--lf -x --tb=long`)
 - `uv run pytest tests/unit/test_foo.py -k test_name` — specific test
+- `uv run test-e2e -k test_name` — specific E2E test
 
 **Never use:** `pip install`, `python -m pip`, raw `python` (always `uv run python`)
 

@@ -247,3 +247,15 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Why not alternatives:** SQLAlchemy's synchronous `create_engine` needs a sync driver. asyncpg only works with `create_async_engine`. The test conftest needs a one-shot sync connection for table cleanup.
 
 **Classification:** Protective belt. Only needed for test infrastructure, not production.
+
+### showboat
+
+**Added:** 2026-02-17
+**Design plan:** docs/design-plans/2026-02-17-showboat-e2e-demos.md
+**Claim:** CLI tool (Go binary on PyPI) for generating narrative demo documents from E2E persona tests. Called via `subprocess.run()` from `tests/e2e/showboat_helpers.py` to produce Markdown documents with screenshots.
+**Evidence:** `tests/e2e/showboat_helpers.py` — `showboat_init()`, `showboat_note()`, `showboat_screenshot()` shell out to the `showboat` binary.
+**Serves:** Developers (confirmation of done), stakeholders (demo documents for review).
+
+**Why not alternatives:** Showboat is purpose-built for agent-generated demo documents. The alternative is hand-crafting Markdown with manual screenshot management, which defeats the automation purpose.
+
+**Classification:** Protective belt. Only used in E2E test infrastructure. Gracefully degrades to no-op when unavailable.

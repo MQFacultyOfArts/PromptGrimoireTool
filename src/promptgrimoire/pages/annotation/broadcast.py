@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time as _time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from promptgrimoire.pages.annotation import (
     _RemotePresence,
     _render_js,
     _workspace_presence,
+    _workspace_registry,
 )
 from promptgrimoire.pages.annotation.highlights import _update_highlight_css
 
@@ -74,7 +76,7 @@ async def _broadcast_js_to_others(
     Skips clients without a ``nicegui_client`` reference and suppresses
     individual send failures so one broken connection cannot block others.
     """
-    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+    for cid, presence in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid == exclude_client_id or presence.nicegui_client is None:
             continue
         with contextlib.suppress(Exception):
@@ -83,7 +85,7 @@ async def _broadcast_js_to_others(
 
 def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
     """Fire-and-forget notification to other clients in workspace."""
-    for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
+    for cid, cstate in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid != exclude_client_id and cstate.callback:
             with contextlib.suppress(Exception):
                 task = asyncio.create_task(cstate.invoke_callback())
@@ -107,7 +109,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Create broadcast function for annotation updates
     async def broadcast_update() -> None:
-        for cid, cstate in _workspace_presence.get(workspace_key, {}).items():
+        for cid, cstate in list(_workspace_presence.get(workspace_key, {}).items()):
             if cid != client_id and cstate.callback:
                 with contextlib.suppress(Exception):
                     await cstate.invoke_callback()
@@ -192,7 +194,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     _notify_other_clients(workspace_key, client_id)
 
     # Send existing remote cursors/selections to newly connected client
-    for cid, presence in _workspace_presence.get(workspace_key, {}).items():
+    for cid, presence in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid == client_id:
             continue
         if presence.cursor_char is not None:
@@ -216,18 +218,31 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             )
             ui.run_javascript(js)
 
-    # Disconnect handler
-    async def on_disconnect() -> None:
+    # Delete handler — runs only when the client is permanently removed
+    # (after reconnect_timeout expires with no reconnection).
+    # NiceGUI 3.0+ changed on_disconnect to fire on reconnects too,
+    # so heavy cleanup must use on_delete. See docs/nicegui/lifecycle.md.
+    async def on_client_delete() -> None:
+        t0 = _time.monotonic()
+        logger.warning(
+            "DELETE[%s] ws=%s start",
+            client_id,
+            workspace_id,
+        )
+
+        last_client = False
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
             # Clean up empty workspace dict to prevent slow memory leak
             if not _workspace_presence[workspace_key]:
                 del _workspace_presence[workspace_key]
+                last_client = True
             # Remove this client's cursor/selection and refresh UI for all remaining
             removal_js = _render_js(
                 t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
             )
-            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+            remaining = list(_workspace_presence.get(workspace_key, {}).items())
+            for _cid, presence in remaining:
                 if presence.nicegui_client is not None:
                     with contextlib.suppress(Exception):
                         await presence.nicegui_client.run_javascript(
@@ -236,10 +251,26 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 if presence.callback:
                     with contextlib.suppress(Exception):
                         await presence.invoke_callback()
+
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 
-    client.on_disconnect(on_disconnect)
+        # Evict CRDT doc from registries when last client leaves.
+        # This prevents unbounded memory growth from accumulated pycrdt
+        # documents. The doc is re-loaded from DB on the next visit.
+        if last_client:
+            doc_id = f"ws-{workspace_id}"
+            pm.evict_workspace(workspace_id, doc_id)
+            _workspace_registry.remove(doc_id)
+
+        logger.warning(
+            "DELETE[%s] total: %.3fs last=%s",
+            client_id,
+            _time.monotonic() - t0,
+            last_client,
+        )
+
+    client.on_delete(on_client_delete)
 
 
 def _broadcast_yjs_update(
@@ -251,7 +282,7 @@ def _broadcast_yjs_update(
     that has initialised the Milkdown editor, except the originating client.
     """
     ws_key = str(workspace_id)
-    for cid, cstate in _workspace_presence.get(ws_key, {}).items():
+    for cid, cstate in list(_workspace_presence.get(ws_key, {}).items()):
         if cid == origin_client_id:
             continue
         if cstate.has_milkdown_editor and cstate.nicegui_client:
@@ -297,7 +328,7 @@ async def revoke_and_redirect(workspace_id: UUID, user_id: UUID) -> int:
 
     # Find clients belonging to this user
     clients_to_remove: list[str] = []
-    for client_id, presence in _workspace_presence[workspace_key].items():
+    for client_id, presence in list(_workspace_presence[workspace_key].items()):
         if presence.user_id == str(user_id):
             clients_to_remove.append(client_id)
 

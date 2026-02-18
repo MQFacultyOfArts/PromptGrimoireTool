@@ -256,7 +256,9 @@ async def annotation_page(client: Client) -> None:
         ui.label("Annotation Workspace").classes("text-2xl font-bold mb-4")
 
         if workspace_id:
+            logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
             await _render_workspace_view(workspace_id, client)
+            logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
         else:
             # Show create workspace form
             ui.label("No workspace selected. Create a new one:").classes("mb-2")

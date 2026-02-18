@@ -169,7 +169,6 @@ class TestDragBetweenColumns:
     Verifies: three-tab-ui.AC2.4
     """
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_drag_between_columns_changes_tag(self, drag_workspace_page: Page) -> None:
         """Drag card from Jurisdiction to Procedural History column.
@@ -220,7 +219,6 @@ class TestDragBetweenColumns:
             f"Card {highlight_id} should not be in Jurisdiction after drag"
         )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_drag_between_columns_updates_tab1_sidebar(
         self, drag_workspace_page: Page
@@ -259,14 +257,10 @@ class TestDragBetweenColumns:
         sidebar_card = page.locator(".ann-card-positioned").first
         expect(sidebar_card).to_be_visible(timeout=3000)
 
-        # The tag dropdown or label should reflect "legal_issues" tag
-        # Look for the tag select element in the card
-        tag_select = sidebar_card.locator("select, [role='combobox']").first
-        if tag_select.count() > 0:
-            selected_value = tag_select.input_value()
-            assert "legal_issues" in selected_value.lower(), (
-                f"Expected legal_issues tag in sidebar, got: {selected_value}"
-            )
+        # The tag dropdown should reflect "Legal Issues" tag
+        tag_select = sidebar_card.locator(".q-select").first
+        expect(tag_select).to_be_visible(timeout=5000)
+        expect(tag_select).to_contain_text("Legal Issues", timeout=5000)
 
 
 class TestConcurrentDrag:
@@ -275,7 +269,6 @@ class TestConcurrentDrag:
     Verifies: three-tab-ui.AC2.5
     """
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_concurrent_drag_produces_consistent_result(
         self, two_annotation_contexts: tuple[Page, Page, str]

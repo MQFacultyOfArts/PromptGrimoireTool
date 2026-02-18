@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.6.1",  # pinned: 3.7.x breaks char span injection (destroy+recreate regression)
+    "nicegui==3.6.1",  # pinned: 3.7.x re-renders elements on listener change, destroying JS event wiring
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",
@@ -37,6 +37,7 @@ promptgrimoire = "promptgrimoire:main"
 test-debug = "promptgrimoire.cli:test_debug"
 test-all = "promptgrimoire.cli:test_all"
 test-e2e = "promptgrimoire.cli:test_e2e"
+test-e2e-debug = "promptgrimoire.cli:test_e2e_debug"
 test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 seed-data = "promptgrimoire.cli:seed_data"
 set-admin = "promptgrimoire.cli:set_admin"
@@ -137,7 +138,7 @@ markers = [
 exclude = ["alembic/"]
 
 [tool.bandit]
-  skips = ["B101", "B404"]
+  skips = ["B101", "B404", "B603", "B607"]
 
 [dependency-groups]
 dev = [
@@ -155,4 +156,7 @@ dev = [
     "pytest-xdist[psutil]>=3.8.0",
     "ast-grep-cli>=0.40.5",
     "ruff>=0.14.11",
+    "pytest-randomly>=4.0.1",
+    "py-spy>=0.4.1",
+    "pysnooper>=1.2.3",
 ]

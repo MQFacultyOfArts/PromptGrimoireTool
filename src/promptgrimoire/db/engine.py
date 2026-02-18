@@ -1,6 +1,7 @@
 """Async database engine and session management.
 
 Provides async PostgreSQL connections via SQLModel and asyncpg.
+Includes connection pool instrumentation for diagnostics.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -19,8 +21,74 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from sqlalchemy.ext.asyncio import AsyncEngine
+    from sqlalchemy.pool import _ConnectionRecord
 
 logger = logging.getLogger(__name__)
+_pool_logger = logging.getLogger(f"{__name__}.pool")
+
+
+def _pool_status(pool: object) -> str:
+    """Format current pool status for logging."""
+
+    # QueuePool exposes these as methods; NullPool does not have them
+    def _get(name: str) -> object:
+        attr = getattr(pool, name, None)
+        if attr is None:
+            return "?"
+        return attr() if callable(attr) else attr
+
+    size = _get("size")
+    checked_in = _get("checkedin")
+    checked_out = _get("checkedout")
+    overflow = _get("overflow")
+    max_overflow = _get("_max_overflow")
+    return (
+        f"size={size} checked_in={checked_in} checked_out={checked_out}"
+        f" overflow={overflow}/{max_overflow}"
+    )
+
+
+def _install_pool_listeners(engine: AsyncEngine) -> None:
+    """Attach event listeners to the connection pool for diagnostics.
+
+    Logs checkout, checkin, overflow, and invalidation events with
+    current pool status so we can detect connection leaks and exhaustion.
+    """
+    pool = engine.sync_engine.pool
+
+    @event.listens_for(pool, "checkout")
+    def _on_checkout(
+        _dbapi_conn: object, _rec: _ConnectionRecord, _proxy: object
+    ) -> None:
+        _pool_logger.debug("CHECKOUT %s", _pool_status(pool))
+
+    @event.listens_for(pool, "checkin")
+    def _on_checkin(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
+        _pool_logger.debug("CHECKIN  %s", _pool_status(pool))
+
+    @event.listens_for(pool, "connect")
+    def _on_connect(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
+        _pool_logger.info("NEW_CONN %s", _pool_status(pool))
+
+    @event.listens_for(pool, "invalidate")
+    def _on_invalidate(
+        _dbapi_conn: object,
+        _rec: _ConnectionRecord,
+        exception: BaseException | None,
+        _soft: bool,
+    ) -> None:
+        _pool_logger.warning(
+            "INVALIDATE soft=%s exception=%s %s",
+            _soft,
+            type(exception).__name__ if exception else None,
+            _pool_status(pool),
+        )
+
+    @event.listens_for(pool, "close")
+    def _on_close(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
+        _pool_logger.debug("CLOSE    %s", _pool_status(pool))
+
+    _pool_logger.info("Pool listeners installed. Initial: %s", _pool_status(pool))
 
 
 @dataclass
@@ -70,7 +138,11 @@ async def init_db() -> None:
 
     Call this on application startup (e.g., NiceGUI @app.on_startup).
     Creates the async engine with connection pooling configured.
+    Idempotent: returns immediately if engine already exists.
     """
+    if _state.engine is not None:
+        return
+
     _state.engine = create_async_engine(
         get_database_url(),
         echo=get_settings().dev.database_echo,
@@ -84,11 +156,68 @@ async def init_db() -> None:
         },
     )
 
+    _install_pool_listeners(_state.engine)
+
     _state.session_factory = async_sessionmaker(
         _state.engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
+
+
+async def log_pool_and_pg_stats() -> None:
+    """Log current pool status and PostgreSQL connection statistics.
+
+    Queries pg_stat_activity for connection counts by state and
+    pg_stat_database for session_busy_ratio (Cybertec formula).
+    Safe to call at any time; logs warnings on failure rather than raising.
+    """
+    if _state.engine is None:
+        return
+
+    pool = _state.engine.sync_engine.pool
+    _pool_logger.info("POOL_SNAPSHOT %s", _pool_status(pool))
+
+    try:
+        async with _state.engine.connect() as conn:
+            # Connection counts by state
+            result = await conn.execute(
+                text(
+                    "SELECT state, count(*) FROM pg_stat_activity"
+                    " WHERE datname = current_database()"
+                    " GROUP BY state ORDER BY count DESC"
+                )
+            )
+            rows = result.fetchall()
+            parts = [f"{state or 'NULL'}={count}" for state, count in rows]
+            _pool_logger.info("PG_CONNECTIONS %s", " ".join(parts))
+
+            # Session busy ratio (PostgreSQL 14+)
+            result = await conn.execute(
+                text(
+                    "SELECT active_time,"
+                    " idle_in_transaction_time,"
+                    " CASE WHEN (active_time + idle_in_transaction_time) > 0"
+                    " THEN active_time::float"
+                    "   / (active_time + idle_in_transaction_time)"
+                    " ELSE 0 END AS session_busy_ratio,"
+                    " numbackends"
+                    " FROM pg_stat_database"
+                    " WHERE datname = current_database()"
+                )
+            )
+            row = result.fetchone()
+            if row:
+                _pool_logger.info(
+                    "PG_STATS active_time=%.1fms idle_in_tx=%.1fms"
+                    " busy_ratio=%.3f backends=%d",
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3],
+                )
+    except Exception:
+        _pool_logger.warning("Failed to query pg_stat views", exc_info=True)
 
 
 async def close_db() -> None:

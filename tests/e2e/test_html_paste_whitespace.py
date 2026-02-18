@@ -115,7 +115,6 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
 class TestHTMLPasteWhitespace:
     """Visual tests for HTML paste whitespace handling."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_libreoffice_paste_no_excessive_whitespace(
         self,
         paste_ready_page: Page,
@@ -146,23 +145,29 @@ class TestHTMLPasteWhitespace:
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
 
         # Wait for document to render - first chars may be hidden newlines
-        page.locator("[data-char-index='50']").wait_for(state="attached", timeout=15000)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=15000,
+        )
 
         # Wait for rendering to stabilize
         page.wait_for_timeout(500)
 
         # Scroll down to see the content (it may be below the fold)
-        page.locator("[data-char-index='100']").scroll_into_view_if_needed()
+        page.evaluate(
+            "document.getElementById('doc-container').scrollTop = "
+            "document.getElementById('doc-container').scrollHeight * 0.1"
+        )
         page.wait_for_timeout(200)
 
         # Screenshot the rendered document
         page.screenshot(path=str(SCREENSHOT_DIR / "03_rendered_document.png"))
 
-        # Get the document container - use the document content div
+        # Get the document container
         doc_container = page.locator("[data-testid='document-content']")
         if doc_container.count() == 0:
-            # Fallback to any element containing char spans
-            doc_container = page.locator("[data-char-index]").first.locator("..")
+            # Fallback to the doc-container element
+            doc_container = page.locator("#doc-container")
 
         # Screenshot just the document content area
         doc_container.screenshot(path=str(SCREENSHOT_DIR / "04_document_content.png"))
@@ -230,7 +235,6 @@ class TestHTMLPasteWhitespace:
                 f"Expected <100px. See screenshots in {SCREENSHOT_DIR}/"
             )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paste_preserves_table_structure(
         self,
         paste_ready_page: Page,
@@ -245,45 +249,49 @@ class TestHTMLPasteWhitespace:
 
         simulate_html_paste(page, libreoffice_html)
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
-        page.locator("[data-char-index='50']").wait_for(state="attached", timeout=15000)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=15000,
+        )
         page.wait_for_timeout(500)
 
         # Scroll to make Case Name visible
-        page.locator("[data-char-index='100']").scroll_into_view_if_needed()
+        page.evaluate(
+            "document.getElementById('doc-container').scrollTop = "
+            "document.getElementById('doc-container').scrollHeight * 0.1"
+        )
         page.wait_for_timeout(200)
 
         # Screenshot the table layout
         page.screenshot(path=str(SCREENSHOT_DIR / "06_table_layout.png"))
 
-        # Get positions via JavaScript since text is split across char spans
+        # Get positions via JavaScript using text content search
         positions = page.evaluate("""() => {
-            const spans = document.querySelectorAll('[data-char-index]');
-            let caseNameSpan = null;
-            let lawlisSpan = null;
+            const container = document.getElementById('doc-container');
+            if (!container) return null;
 
-            // Find spans by looking at text content
-            for (const span of spans) {
-                const text = span.textContent;
-                // "Case" starts Case Name
-                if (text === 'C' && !caseNameSpan) {
-                    const next = span.nextElementSibling;
-                    if (next && next.textContent === 'a') {
-                        caseNameSpan = span;
-                    }
+            // Walk text nodes to find "Case Name" and "Lawlis"
+            const walker = document.createTreeWalker(
+                container, NodeFilter.SHOW_TEXT
+            );
+            let caseNode = null;
+            let lawlisNode = null;
+
+            while (walker.nextNode()) {
+                const text = walker.currentNode.textContent;
+                if (text.includes('Case') && !caseNode) {
+                    caseNode = walker.currentNode.parentElement;
                 }
-                // "L" starts Lawlis
-                if (text === 'L' && !lawlisSpan && caseNameSpan) {
-                    const next = span.nextElementSibling;
-                    if (next && next.textContent === 'a') {
-                        lawlisSpan = span;
-                    }
+                if (text.includes('Lawlis') && !lawlisNode) {
+                    lawlisNode = walker.currentNode.parentElement;
                 }
+                if (caseNode && lawlisNode) break;
             }
 
-            if (!caseNameSpan || !lawlisSpan) return null;
+            if (!caseNode || !lawlisNode) return null;
 
-            const caseRect = caseNameSpan.getBoundingClientRect();
-            const lawlisRect = lawlisSpan.getBoundingClientRect();
+            const caseRect = caseNode.getBoundingClientRect();
+            const lawlisRect = lawlisNode.getBoundingClientRect();
 
             return {
                 caseY: caseRect.top,
@@ -312,7 +320,10 @@ class TestHTMLPasteWhitespace:
 class TestParagraphNumberingAndIndent:
     """Tests for ordered list numbering and indentation preservation."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
+    @pytest.mark.xfail(
+        reason="Input pipeline strips margin-left from AustLII HTML — #179",
+        strict=False,
+    )
     def test_ground_1_indent_preserved(
         self,
         paste_ready_page: Page,
@@ -328,20 +339,17 @@ class TestParagraphNumberingAndIndent:
 
         simulate_html_paste(page, libreoffice_html)
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
-        page.locator("[data-char-index='50']").wait_for(state="attached", timeout=15000)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=15000,
+        )
         page.wait_for_timeout(500)
 
         # Find and measure indent of "Ground 1" text
-        # Since text is split across char spans, we need to find by searching
-        # the combined innerText and then locating the element
+        # Use a tree walker to find the text node, then walk up for margin-left
         indent_data = page.evaluate("""() => {
-            // Find the document content container (has data-char-index spans)
-            const charSpans = document.querySelectorAll('[data-char-index]');
-            if (charSpans.length === 0) return { error: 'No char spans found' };
-
-            // Get the content container
-            const contentContainer = charSpans[0].closest('div');
-            if (!contentContainer) return { error: 'No content container' };
+            const contentContainer = document.getElementById('doc-container');
+            if (!contentContainer) return { error: 'No doc-container found' };
 
             const containerRect = contentContainer.getBoundingClientRect();
             const fullText = contentContainer.innerText;
@@ -354,28 +362,24 @@ class TestParagraphNumberingAndIndent:
 
             const matchIndex = match.index;
 
-            // Now find the char span at approximately that position
-            // by counting characters
-            let charCount = 0;
-            let targetSpan = null;
-
-            for (const span of charSpans) {
-                const spanText = span.textContent || '';
-                charCount += spanText.length;
-                // Found approximately where "Ground 1" starts
-                if (charCount >= matchIndex && !targetSpan) {
-                    targetSpan = span;
+            // Walk text nodes to find the one containing "Ground"
+            const walker = document.createTreeWalker(
+                contentContainer, NodeFilter.SHOW_TEXT
+            );
+            let targetNode = null;
+            while (walker.nextNode()) {
+                if (walker.currentNode.textContent.includes('Ground')) {
+                    targetNode = walker.currentNode;
                     break;
                 }
             }
 
-            if (!targetSpan) {
-                return { error: 'Could not find span near Ground 1', matchIndex };
+            if (!targetNode) {
+                return { error: 'Could not find text node with Ground 1' };
             }
 
             // Find the parent element that has the margin-left style
-            // Walk up to find a p or div with style
-            let styledParent = targetSpan.parentElement;
+            let styledParent = targetNode.parentElement;
             while (styledParent && styledParent !== contentContainer) {
                 const style = styledParent.getAttribute('style') || '';
                 if (style.includes('margin-left')) {
@@ -384,7 +388,7 @@ class TestParagraphNumberingAndIndent:
                 styledParent = styledParent.parentElement;
             }
 
-            const el = styledParent || targetSpan;
+            const el = styledParent || targetNode.parentElement;
             el.scrollIntoView({ block: 'center' });
 
             const rect = el.getBoundingClientRect();
@@ -421,7 +425,6 @@ class TestParagraphNumberingAndIndent:
         else:
             pytest.fail("Could not find 'Ground 1' text in rendered document")
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paragraph_numbering_starts_at_4(
         self,
         paste_ready_page: Page,
@@ -436,7 +439,10 @@ class TestParagraphNumberingAndIndent:
 
         simulate_html_paste(page, libreoffice_html)
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
-        page.locator("[data-char-index='50']").wait_for(state="attached", timeout=15000)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=15000,
+        )
         page.wait_for_timeout(500)
 
         # Check if ordered lists with start attribute are rendered
@@ -481,7 +487,6 @@ class TestParagraphNumberingAndIndent:
             f"Ordered list start attributes may not be preserved."
         )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_highest_paragraph_number_is_48(
         self,
         paste_ready_page: Page,
@@ -495,7 +500,10 @@ class TestParagraphNumberingAndIndent:
 
         simulate_html_paste(page, libreoffice_html)
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
-        page.locator("[data-char-index='50']").wait_for(state="attached", timeout=15000)
+        page.wait_for_function(
+            "() => window._textNodes && window._textNodes.length > 0",
+            timeout=15000,
+        )
         page.wait_for_timeout(500)
 
         # Calculate highest paragraph number from ol start + li count
@@ -532,48 +540,3 @@ class TestParagraphNumberingAndIndent:
             f"Highest paragraph is {highest_para['highestNumberedPara']}, expected 48. "
             f"Some <ol start> attributes or <li> items may be lost."
         )
-
-
-class TestPasteHandlerConsoleOutput:
-    """Tests that verify paste handler JavaScript works correctly."""
-
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
-    def test_paste_triggers_cleanup(
-        self,
-        paste_ready_page: Page,
-        libreoffice_html: str,
-    ) -> None:
-        """Verify paste handler logs show cleanup happening."""
-        page = paste_ready_page
-
-        # Collect console messages
-        console_messages: list[str] = []
-        page.on("console", lambda msg: console_messages.append(msg.text))
-
-        simulate_html_paste(page, libreoffice_html)
-
-        # Wait for paste to complete
-        page.wait_for_timeout(500)
-
-        # Check for expected console output
-        paste_logs = [m for m in console_messages if "[PASTE" in m]
-
-        # Note: [PASTE-INIT] fires at DOMContentLoaded, before listener attached
-        # We only check for the paste event logs
-
-        assert any("[PASTE]" in m and "bytes" in m for m in paste_logs), (
-            f"Missing [PASTE] cleanup log. Got: {paste_logs}"
-        )
-
-        # Check that some size reduction happened
-        # Note: LibreOffice HTML is already fairly clean (~10% reduction)
-        # The big reductions (90%+) happen with browser-copied HTML that has
-        # computed CSS inline styles (2.7MB -> 40KB)
-        reduction_log = next((m for m in paste_logs if "reduction" in m), None)
-        if reduction_log:
-            # Extract percentage - just verify cleanup ran
-            match = re.search(r"(\d+)%", reduction_log)
-            if match:
-                reduction_pct = int(match.group(1))
-                # Even minimal cleanup should do something
-                assert reduction_pct >= 0, f"Negative reduction: {reduction_pct}%"

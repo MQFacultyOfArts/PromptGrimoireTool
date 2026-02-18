@@ -91,7 +91,6 @@ def perf_workspace(authenticated_page: Page, app_server: str) -> Generator[Page]
 class TestOrganiseTabPerformance:
     """Baseline performance measurement for Organise tab."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_organise_render_time_with_10_highlights(
         self, perf_workspace: Page
     ) -> None:
@@ -104,7 +103,7 @@ class TestOrganiseTabPerformance:
         page = perf_workspace
 
         # Verify highlights were created in Tab 1
-        cards_tab1 = page.locator(".annotation-card")
+        cards_tab1 = page.locator("[data-testid='annotation-card']")
         expect(cards_tab1.first).to_be_visible(timeout=5000)
         highlight_count = cards_tab1.count()
         print(f"\nHighlights created in Tab 1: {highlight_count}")

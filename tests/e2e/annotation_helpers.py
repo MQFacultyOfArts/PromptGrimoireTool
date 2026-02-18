@@ -12,10 +12,15 @@ Traceability:
 
 from __future__ import annotations
 
+import gzip
 import re
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import expect
+
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from playwright.sync_api import Page
 
 
@@ -25,11 +30,18 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     Uses the text walker (annotation-highlight.js) to convert char offsets
     to screen coordinates, then performs a mouse click-drag selection.
 
+    Ensures the text walker is ready before attempting coordinate lookup,
+    since tab switches can momentarily destroy and rebuild the DOM.
+
     Args:
         page: Playwright page.
         start_char: Index of first character to select.
         end_char: Index of last character to select (inclusive).
     """
+    # Ensure text walker and doc-container are ready (tab switches can
+    # rebuild the DOM after _textNodes was cached).
+    wait_for_text_walker(page, timeout=10000)
+
     # Get bounding rectangles for start and end positions via text walker.
     # charOffsetToRect() handles StaticRange -> live Range conversion
     # internally (charOffsetToRange() returns StaticRange which does NOT
@@ -37,7 +49,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     coords = page.evaluate(
         """([startChar, endChar]) => {
             const container = document.getElementById('doc-container');
-            if (typeof walkTextNodes === 'undefined') return null;
+            if (!container || typeof walkTextNodes === 'undefined') return null;
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
             const endRect = charOffsetToRect(nodes, endChar);
@@ -124,7 +136,9 @@ def create_highlight_with_tag(
     tag_button.click()
 
 
-def setup_workspace_with_content(page: Page, app_server: str, content: str) -> None:
+def setup_workspace_with_content(
+    page: Page, app_server: str, content: str, *, timeout: int = 15000
+) -> None:
     """Navigate to annotation page, create workspace, and add content.
 
     Common setup pattern shared by all annotation tests:
@@ -138,6 +152,7 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
         page: Playwright page (can be from any browser context).
         app_server: Base URL of the app server.
         content: Text content to add as document.
+        timeout: Max wait for text walker init (ms). Increase for late-running tests.
 
     Traceability:
         Extracted from repetitive setup code across 15+ test classes.
@@ -156,10 +171,7 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     confirm_btn.click()
 
     # Wait for the text walker to initialise
-    page.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
+    wait_for_text_walker(page, timeout=timeout)
     page.wait_for_timeout(200)
 
 
@@ -204,3 +216,104 @@ def select_text_range(page: Page, text: str) -> None:
         text,
     )
     page.wait_for_timeout(200)
+
+
+def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> None:
+    """Load an HTML fixture into a new workspace via clipboard paste.
+
+    Expects an already-authenticated page. Creates a new workspace, loads
+    the HTML fixture via clipboard paste (simulating real user interaction),
+    handles content type confirmation, and waits for text walker readiness.
+
+    Args:
+        page: Playwright page (must be already authenticated).
+        app_server: Base URL of the app server.
+        fixture_path: Path to HTML fixture (.html or .html.gz).
+
+    Note:
+        The browser context MUST have been created with clipboard permissions:
+        ``permissions=["clipboard-read", "clipboard-write"]``
+        This is the caller's responsibility.
+
+    Traceability:
+        Part of E2E test migration (#156) to unify fixture loading patterns
+        and reduce test code duplication.
+    """
+    # Navigate and create workspace
+    page.goto(f"{app_server}/annotation")
+    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.wait_for_url(re.compile(r"workspace_id="))
+
+    # Read fixture HTML (handle both .html.gz and plain .html)
+    if fixture_path.suffix == ".gz":
+        with gzip.open(fixture_path, "rt", encoding="utf-8") as f:
+            html_content = f.read()
+    else:
+        html_content = fixture_path.read_text(encoding="utf-8")
+
+    # Focus the editor
+    editor = page.locator(".q-editor__content")
+    expect(editor).to_be_visible()
+    editor.click()
+
+    # Write HTML to clipboard (same pattern as test_html_paste_whitespace.py)
+    page.evaluate(
+        """(html) => {
+            const plainText = html.replace(/<[^>]*>/g, '');
+            return navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([plainText], { type: 'text/plain' })
+                })
+            ]);
+        }""",
+        html_content,
+    )
+    page.wait_for_timeout(100)
+
+    # Trigger paste
+    page.keyboard.press("Control+v")
+    page.wait_for_timeout(500)
+
+    # Wait for "Content pasted" confirmation
+    expect(editor).to_contain_text("Content pasted", timeout=5000)
+
+    # Click "Add Document" button. For pasted HTML, the content type dialog
+    # is skipped (content_form.py auto-detects paste as HTML). The app
+    # processes the input and navigates back to the annotation page.
+    page.get_by_role("button", name=re.compile("add document", re.IGNORECASE)).click()
+
+    # Wait for text walker readiness (large fixtures like AustLII need time).
+    wait_for_text_walker(page, timeout=30000)
+
+
+def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
+    """Wait for the text walker to initialise (readiness gate).
+
+    This is a synchronisation wait, not a test assertion. It ensures
+    the text walker has built its node map before any interactions that
+    depend on character offsets or highlight rendering.
+
+    Args:
+        page: Playwright page.
+        timeout: Maximum wait time in milliseconds.
+    """
+    try:
+        page.wait_for_function(
+            "() => document.getElementById('doc-container')"
+            " && window._textNodes && window._textNodes.length > 0",
+            timeout=timeout,
+        )
+    except Exception as exc:
+        if "Timeout" not in type(exc).__name__:
+            raise
+        # Capture diagnostic state for debugging
+        url = page.url
+        doc_html = page.evaluate(
+            "() => { const d = document.getElementById('doc-container');"
+            " return d ? d.innerHTML.substring(0, 200) : 'NO #doc-container'; }"
+        )
+        msg = (
+            f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
+        )
+        raise type(exc)(msg) from None

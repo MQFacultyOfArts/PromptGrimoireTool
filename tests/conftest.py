@@ -138,7 +138,7 @@ def load_conversation_fixture(name: str) -> str:
     raise FileNotFoundError(msg)
 
 
-TEST_STORAGE_SECRET = "test-secret-for-e2e"
+TEST_STORAGE_SECRET = "test-secret-for-e2e"  # nosec B105 — test-only, not a real secret
 
 
 @pytest.fixture(scope="session")
@@ -317,6 +317,10 @@ os.environ.setdefault('STYTCH__PUBLIC_TOKEN', 'test-public-token')
 
 port = int(sys.argv[1])
 
+# Enable logging so pool events and diagnostics are visible
+from promptgrimoire import _setup_logging
+_setup_logging()
+
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401 - registers routes
 
@@ -325,7 +329,27 @@ import promptgrimoire
 _static_dir = Path(promptgrimoire.__file__).parent / "static"
 app.add_static_files("/static", str(_static_dir))
 
-ui.run(port=port, reload=False, show=False, storage_secret='{TEST_STORAGE_SECRET}')
+# Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
+@app.get("/api/test/diagnostics")
+async def _diagnostics():
+    from nicegui import Client
+    from promptgrimoire.db.engine import (
+        _pool_status, _state, log_pool_and_pg_stats,
+    )
+
+    await log_pool_and_pg_stats()
+
+    pool = _state.engine.sync_engine.pool if _state.engine else None
+    return {{
+        "pool": _pool_status(pool) if pool else "no engine",
+        "nicegui_clients": len(Client.instances),
+    }}
+
+ui.run(
+    port=port, reload=False, show=False,
+    storage_secret='{TEST_STORAGE_SECRET}',
+    reconnect_timeout=0.5,
+)
 """
 
 
@@ -415,7 +439,7 @@ def reset_crdt_state(app_server: str) -> Generator[None]:
 
     reset_url = f"{app_server}/api/test/reset-crdt"
     try:
-        with urllib.request.urlopen(reset_url, timeout=5) as resp:
+        with urllib.request.urlopen(reset_url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
             if resp.status != 200:
                 pytest.fail(f"Failed to reset CRDT state: {resp.status}")
     except Exception as e:

@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from tests.e2e.annotation_helpers import setup_workspace_with_content_highlight_api
 
 if TYPE_CHECKING:
@@ -162,7 +160,6 @@ class TestRemoteSelectionRendering:
         style = page.locator("#remote-sel-style-test-user-1")
         assert style.count() == 1, "Expected companion style element"
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_remove_selection(self, authenticated_page: Page, app_server: str) -> None:
         """removeRemoteSelection removes CSS.highlights entry and style element."""
         page = authenticated_page
@@ -185,7 +182,6 @@ class TestRemoteSelectionRendering:
         style = page.locator("#remote-sel-style-test-user-1")
         assert style.count() == 0, "Expected style element to be removed"
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_render_selection_replaces_existing(
         self, authenticated_page: Page, app_server: str
     ) -> None:
@@ -220,7 +216,6 @@ class TestRemoteSelectionRendering:
 class TestMultipleUsers:
     """Tests for independent presence indicators for multiple users."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_multiple_cursors_independent(
         self, authenticated_page: Page, app_server: str
     ) -> None:
@@ -251,7 +246,6 @@ class TestMultipleUsers:
         assert page.locator("#remote-cursor-user-alice").count() == 0
         assert page.locator("#remote-cursor-user-bob").count() == 1
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_multiple_selections_independent(
         self, authenticated_page: Page, app_server: str
     ) -> None:
@@ -279,7 +273,6 @@ class TestMultipleUsers:
 class TestRemoveAllRemotePresence:
     """Tests for removeAllRemotePresence cleanup function."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_remove_all_clears_cursors_and_selections(
         self, authenticated_page: Page, app_server: str
     ) -> None:
@@ -318,7 +311,6 @@ class TestRemoveAllRemotePresence:
 class TestUpdateRemoteCursorPositions:
     """Tests for updateRemoteCursorPositions reflow function."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_update_positions_adjusts_cursors(
         self, authenticated_page: Page, app_server: str
     ) -> None:

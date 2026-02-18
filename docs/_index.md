@@ -46,6 +46,7 @@ library references during development.
 
 - [Quasar color theming with ui.colors(), custom colors for branding](nicegui/colors.md)
 - [Event handler types and GenericEventArguments for ui.on() handlers](nicegui/events.md)
+- [NiceGUI 3.x client lifecycle events - on_connect, on_disconnect, on_delete, reconnect_timeout](nicegui/lifecycle.md)
 - [NiceGUI Multi-Client UI Synchronization](nicegui/multi-client-sync.md)
 - [NiceGUI WebSocket, reactivity, multi-client handling, JS integration](nicegui/realtime.md)
 - [NiceGUI styling with CSS, Tailwind, Quasar props, and static files](nicegui/styling.md)

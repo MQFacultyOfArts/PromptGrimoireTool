@@ -3,6 +3,43 @@
 **Date:** 2026-02-06 (revised 2026-02-09)
 **Context:** Issue #106 changed content input from plain-text `.fill()` to HTML clipboard paste. 8 of 15 E2E test files are SKIPPED pending this redesign.
 
+## Migration Status: COMPLETE (2026-02-17)
+
+**Issue:** #156
+**Design:** docs/design-plans/2026-02-14-156-e2e-test-migration.md
+
+### Files Deleted (12)
+- test_annotation_basics.py
+- test_annotation_cards.py
+- test_annotation_workflows.py
+- test_subtests_validation.py
+- test_annotation_highlights.py
+- test_annotation_sync.py
+- test_annotation_collab.py
+- test_annotation_blns.py
+- test_annotation_cjk.py
+- test_i18n_pdf_export.py
+- test_dom_performance.py (benchmark)
+- test_pdf_export.py (skipped stub)
+
+### Files Created (5 persona tests)
+- test_instructor_workflow.py — instructor course setup workflow
+- test_law_student.py — AustLII paste, annotation, PDF export
+- test_translation_student.py — CJK/RTL/mixed-script annotation, i18n PDF export
+- test_history_tutorial.py — bidirectional real-time collaboration
+- test_naughty_student.py — dead-end navigation, BLNS/XSS injection, copy protection bypass
+
+### Files Fixed (4)
+- conftest.py — _textNodes readiness in fixtures
+- test_annotation_tabs.py — text walker helpers
+- test_html_paste_whitespace.py — text walker helpers
+- test_fixture_screenshots.py — _textNodes readiness wait
+
+### Issues Closable
+- #156: All data-char-index references removed, E2E suite migrated
+- #106: HTML paste works end-to-end (test_law_student.py clipboard paste)
+- #101: CJK/RTL content works (test_translation_student.py); BLNS edge cases handled (test_naughty_student.py)
+
 ---
 
 ## Part 1: Every E2E Test as User Actions

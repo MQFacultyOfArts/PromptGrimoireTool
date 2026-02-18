@@ -70,7 +70,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
         url = f"{base_url}/api/test/diagnostics"
         with urllib.request.urlopen(url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
             data = json.loads(resp.read().decode())
-        _diag_logger.warning(
+        _diag_logger.debug(
             "DIAG: pool=%s clients=%s tasks=%s task_names=%s",
             data.get("pool"),
             data.get("nicegui_clients"),
@@ -78,7 +78,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
             data.get("asyncio_task_names"),
         )
     except Exception as exc:
-        _diag_logger.warning("Diagnostics fetch failed: %s", exc)
+        _diag_logger.debug("Diagnostics fetch failed: %s", exc)
 
     # Safety net: force-delete any stale clients that survived normal cleanup
     try:
@@ -86,7 +86,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
         req = urllib.request.Request(cleanup_url, method="POST", data=b"")
         with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
             cleanup_data = json.loads(resp.read().decode())
-        _diag_logger.warning(
+        _diag_logger.debug(
             "CLEANUP: deleted=%s orphan_wait=%s tasks=%s->%s",
             cleanup_data.get("deleted"),
             cleanup_data.get("orphan_wait"),

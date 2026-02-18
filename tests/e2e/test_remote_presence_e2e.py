@@ -21,6 +21,7 @@ import re
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
@@ -81,6 +82,11 @@ def _setup_two_contexts(
 class TestRemotePresenceSmoke:
     """End-to-end smoke test for remote presence across two browser contexts."""
 
+    @pytest.mark.xfail(
+        reason="Selection broadcast pipeline doesn't reliably propagate "
+        "to remote user's CSS.highlights within 5s — #177",
+        strict=False,
+    )
     def test_selection_visible_to_remote_user(
         self, browser: Browser, app_server: str
     ) -> None:

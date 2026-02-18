@@ -60,13 +60,14 @@ def _build_colour_picker(
     ui.label("Colour").classes("text-sm text-gray-600 mt-2")
 
     swatch_buttons: list[ui.button] = []
+    # Map button id -> colour to avoid reading NiceGUI private _style
+    swatch_colours: dict[int, str] = {}
 
     def _select_swatch(color: str) -> None:
         selected_color[0] = color
         color_el.value = color
         for btn in swatch_buttons:
-            bg = btn._style.get("background-color", "")
-            is_active = bg == color
+            is_active = swatch_colours.get(id(btn)) == color
             btn.classes(
                 replace=_SWATCH_SELECTED if is_active else _SWATCH_BASE,
             )
@@ -81,6 +82,7 @@ def _build_colour_picker(
             cls = _SWATCH_SELECTED if i == 0 else _SWATCH_BASE
             btn.classes(cls)
             swatch_buttons.append(btn)
+            swatch_colours[id(btn)] = preset
 
     def _on_custom_color(e: object) -> None:
         val = getattr(e, "value", None)
@@ -152,7 +154,9 @@ async def open_quick_create(state: PageState) -> None:
                         workspace_id=state.workspace_id,
                         name=tag_name.strip(),
                         color=selected_color[0],
-                        group_id=group_select.value,
+                        group_id=(
+                            UUID(group_select.value) if group_select.value else None
+                        ),
                     )
                 except PermissionError:
                     ui.notify(
@@ -384,6 +388,19 @@ def _reorder_list(items: list[Any], old_index: int, new_index: int) -> list[Any]
     return result
 
 
+def _extract_reorder_indices(e: Any) -> tuple[int, int] | None:
+    """Extract old and new indices from a Sortable end event.
+
+    Returns ``(old_index, new_index)`` or ``None`` if the event is
+    missing indices or the item did not move.
+    """
+    old_idx = e.args.get("oldIndex")
+    new_idx = e.args.get("newIndex")
+    if old_idx is None or new_idx is None or old_idx == new_idx:
+        return None
+    return old_idx, new_idx
+
+
 # ── Tag list rendering (content of management dialog) ────────────────
 
 
@@ -554,10 +571,14 @@ async def _render_import_section(
                 import_tags_from_activity,
             )
 
-            await import_tags_from_activity(
-                source_activity_id=UUID(activity_select.value),
-                target_workspace_id=state.workspace_id,
-            )
+            try:
+                await import_tags_from_activity(
+                    source_activity_id=UUID(activity_select.value),
+                    target_workspace_id=state.workspace_id,
+                )
+            except ValueError as exc:
+                ui.notify(str(exc), type="negative")
+                return
             await render_tag_list()
             await _refresh_tag_state(state)
             ui.notify("Tags imported", type="positive")
@@ -728,20 +749,28 @@ def _build_management_callbacks(
         ui.notify("Group saved", type="positive")
 
     async def _add_tag_in_group(group_id: UUID | None) -> None:
-        await create_tag(
-            workspace_id=state.workspace_id,
-            name="New tag",
-            color=_PRESET_PALETTE[0],
-            group_id=group_id,
-        )
+        try:
+            await create_tag(
+                workspace_id=state.workspace_id,
+                name="New tag",
+                color=_PRESET_PALETTE[0],
+                group_id=group_id,
+            )
+        except PermissionError:
+            ui.notify("Tag creation not allowed", type="negative")
+            return
         await render_tag_list()
         await _refresh_tag_state(state)
 
     async def _add_group() -> None:
-        await create_tag_group(
-            workspace_id=state.workspace_id,
-            name="New group",
-        )
+        try:
+            await create_tag_group(
+                workspace_id=state.workspace_id,
+                name="New group",
+            )
+        except PermissionError:
+            ui.notify("Tag creation not allowed", type="negative")
+            return
         await render_tag_list()
 
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
@@ -749,22 +778,19 @@ def _build_management_callbacks(
         await render_tag_list()
 
     async def _tag_reorder(e: Any, group_id: UUID | None) -> None:
-        old_idx = e.args.get("oldIndex")
-        new_idx = e.args.get("newIndex")
-        if old_idx is None or new_idx is None or old_idx == new_idx:
+        indices = _extract_reorder_indices(e)
+        if indices is None:
             return
-        ids = tag_id_lists.get(group_id, [])
-        new_order = _reorder_list(ids, old_idx, new_idx)
+        new_order = _reorder_list(tag_id_lists.get(group_id, []), *indices)
         await reorder_tags(new_order)
         await _refresh_tag_state(state)
         await render_tag_list()
 
     async def _group_reorder(e: Any) -> None:
-        old_idx = e.args.get("oldIndex")
-        new_idx = e.args.get("newIndex")
-        if old_idx is None or new_idx is None or old_idx == new_idx:
+        indices = _extract_reorder_indices(e)
+        if indices is None:
             return
-        new_order = _reorder_list(group_id_list, old_idx, new_idx)
+        new_order = _reorder_list(group_id_list, *indices)
         await reorder_tag_groups(new_order)
         await render_tag_list()
 

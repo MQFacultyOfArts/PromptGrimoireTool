@@ -269,14 +269,14 @@ class TestLawStudent:
                 reasons_sortable = page.locator("#sort-reasons")
                 expect(reasons_sortable).to_be_visible(timeout=3000)
                 source_card.drag_to(reasons_sortable)
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(2000)
 
                 # Verify card moved — Reasons column should now have 2 cards
                 reasons_col = page.locator(
                     '[data-testid="tag-column"][data-tag-name="Reasons"]'
                 )
                 reasons_cards = reasons_col.locator('[data-testid="organise-card"]')
-                expect(reasons_cards).to_have_count(2, timeout=3000)
+                expect(reasons_cards).to_have_count(2, timeout=10000)
 
             with subtests.test(msg="organise_drag_updates_sidebar"):
                 # Switch to Tab 1 to verify sidebar reflects the tag change

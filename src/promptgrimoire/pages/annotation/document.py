@@ -123,8 +123,7 @@ async def _render_document_with_highlights(
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
-    tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
-    initial_css = _build_highlight_pseudo_css(tag_colours)
+    initial_css = _build_highlight_pseudo_css(state.tag_colours())
 
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")

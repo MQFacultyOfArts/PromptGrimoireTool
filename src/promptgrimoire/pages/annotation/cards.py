@@ -142,7 +142,7 @@ def _build_annotation_card(
     para_ref = highlight.get("para_ref", "")
 
     # Get tag color from workspace tag info
-    tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
+    tag_colours = state.tag_colours()
     color = tag_colours.get(tag_str, "#999999")
 
     # Use ann-card-positioned for scroll-sync positioning
@@ -181,10 +181,7 @@ def _build_annotation_card(
                         state.save_status.text = "Saved"
                     _update_highlight_css(state)
                     # Update card border color
-                    tag_colours_map = {
-                        ti.raw_key: ti.colour for ti in (state.tag_info_list or [])
-                    }
-                    new_color = tag_colours_map.get(new_tag, "#999999")
+                    new_color = state.tag_colours().get(new_tag, "#999999")
                     crd.style(f"border-left: 4px solid {new_color};")
                     if state.broadcast_update:
                         await state.broadcast_update()

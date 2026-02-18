@@ -47,15 +47,16 @@ USER_COUNT = "[data-testid='user-count']"
 class TestHistoryTutorial:
     """Two history students collaborating on a shared annotation workspace."""
 
-    def test_bidirectional_sync_workflow(
+    def test_bidirectional_sync_workflow(  # noqa: PLR0915
         self,
         two_authenticated_contexts: tuple[Page, Page, str, str, str],
         subtests: SubTests,
     ) -> None:
-        """Complete collaboration workflow with 11 checkpoints.
+        """Complete collaboration workflow with 17 checkpoints.
 
         Tests bidirectional sync: highlights, comments, tag changes,
-        concurrent edits, user count, and user departure.
+        concurrent edits, cross-tab reactive sync (organise/respond),
+        warp isolation, respond CRDT sync, user count, and departure.
         """
         page1, page2, _workspace_id, _user1_email, _user2_email = (
             two_authenticated_contexts
@@ -141,6 +142,104 @@ class TestHistoryTutorial:
             # Wait for sync; both pages should have 4 cards total
             expect(page1.locator(ANNOTATION_CARD)).to_have_count(4, timeout=10000)
             expect(page2.locator(ANNOTATION_CARD)).to_have_count(4, timeout=10000)
+
+        with subtests.test(msg="cross_tab_organise_sync"):
+            # Student B switches to Organise tab
+            page2.get_by_text("Organise", exact=True).click()
+            page2.wait_for_timeout(1000)
+            expect(page2.locator('[data-testid="organise-columns"]')).to_be_visible(
+                timeout=5000
+            )
+
+            initial_org_count = page2.locator('[data-testid="organise-card"]').count()
+
+            # Student A creates another highlight on Tab 1
+            create_highlight_with_tag(page1, 37, 41, tag_index=0)
+
+            # Student B should see new organise-card appear
+            expect(page2.locator('[data-testid="organise-card"]')).to_have_count(
+                initial_org_count + 1, timeout=10000
+            )
+
+        with subtests.test(msg="cross_tab_respond_sync"):
+            # Student B switches to Respond tab
+            page2.get_by_text("Respond", exact=True).click()
+            editor2 = page2.locator("[data-testid='milkdown-editor-container']")
+            expect(editor2).to_be_visible(timeout=10000)
+
+            # Wait for reference panel to load
+            ref_panel = page2.locator("[data-testid='respond-reference-panel']")
+            expect(ref_panel).to_be_visible(timeout=5000)
+            initial_ref_count = ref_panel.locator(
+                "[data-testid='respond-reference-card']"
+            ).count()
+
+            # Student A creates yet another highlight on Tab 1
+            create_highlight_with_tag(page1, 43, 47, tag_index=1)
+
+            # Student B should see new reference card appear
+            expect(
+                ref_panel.locator("[data-testid='respond-reference-card']")
+            ).to_have_count(initial_ref_count + 1, timeout=10000)
+
+        with subtests.test(msg="warp_does_not_affect_other_user"):
+            # Student A switches to Organise tab and clicks locate
+            page1.get_by_text("Organise", exact=True).click()
+            page1.wait_for_timeout(1000)
+
+            card = page1.locator('[data-testid="organise-card"]').first
+            expect(card).to_be_visible(timeout=3000)
+            card.locator("button").first.click()
+            page1.wait_for_timeout(1000)
+
+            # Student A should be warped to Annotate tab
+            expect(page1.locator("role=tab").nth(0)).to_have_attribute(
+                "aria-selected", "true", timeout=3000
+            )
+
+            # Student B should STILL be on Respond tab
+            expect(page2.locator("role=tab").nth(2)).to_have_attribute(
+                "aria-selected", "true", timeout=3000
+            )
+
+        with subtests.test(msg="respond_real_time_sync"):
+            # Student A switches to Respond tab
+            page1.get_by_text("Respond", exact=True).click()
+            editor1 = page1.locator("[data-testid='milkdown-editor-container']")
+            expect(editor1).to_be_visible(timeout=10000)
+
+            # Student A types in the Milkdown editor
+            editor1.locator(".ProseMirror").click()
+            page1.wait_for_timeout(500)
+            page1.keyboard.type("Collaborative analysis notes")
+            page1.wait_for_timeout(2000)
+
+            # Student B (already on Respond tab) should see the text
+            prosemirror2 = page2.locator(
+                "[data-testid='milkdown-editor-container'] .ProseMirror"
+            )
+            expect(prosemirror2).to_contain_text(
+                "Collaborative analysis", timeout=10000
+            )
+
+        with subtests.test(msg="respond_late_joiner_sync"):
+            # Student B reloads to simulate a late joiner
+            page2.reload()
+            page2.wait_for_function(
+                "() => window._textNodes && window._textNodes.length > 0",
+                timeout=10000,
+            )
+
+            # Navigate to Respond tab
+            page2.get_by_text("Respond", exact=True).click()
+            editor2 = page2.locator("[data-testid='milkdown-editor-container']")
+            expect(editor2).to_be_visible(timeout=10000)
+
+            # Should see the text Student A typed earlier
+            prosemirror2 = editor2.locator(".ProseMirror")
+            expect(prosemirror2).to_contain_text(
+                "Collaborative analysis", timeout=10000
+            )
 
         with subtests.test(msg="user_count_shows_two"):
             # Both pages should show user count of 2

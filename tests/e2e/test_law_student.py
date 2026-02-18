@@ -56,10 +56,12 @@ class TestLawStudent:
         app_server: str,
         subtests: SubTests,
     ) -> None:
-        """Complete law student annotation workflow with 11 checkpoints.
+        """Complete law student annotation workflow with 20 checkpoints.
 
-        Tests the full journey: auth, fixture paste, highlighting with legal tags,
-        comments, tag changes, keyboard shortcuts, organise/respond tabs,
+        Tests the full journey: auth, fixture paste, empty respond state,
+        highlighting with legal tags, comments, tag changes, keyboard shortcuts,
+        organise tab (column placement, author/text, locate/warp, drag-retag),
+        respond tab (reference panel, locate/warp),
         reload persistence, and PDF export with annotation verification.
         """
         # Store UUIDs for cross-subtest verification
@@ -90,6 +92,22 @@ class TestLawStudent:
                 expect(page.locator("#doc-container")).to_contain_text(
                     "Lawlis", timeout=15000
                 )
+
+            with subtests.test(msg="respond_tab_empty_state"):
+                # Check what the Respond tab looks like before any annotations
+                page.get_by_text("Respond", exact=True).click()
+
+                editor = page.locator("[data-testid='milkdown-editor-container']")
+                expect(editor).to_be_visible(timeout=10000)
+
+                # Reference panel should show empty state
+                no_highlights = page.locator("[data-testid='respond-no-highlights']")
+                expect(no_highlights).to_be_visible(timeout=5000)
+                expect(no_highlights).to_contain_text("No highlights yet")
+
+                # Return to Annotate tab to start highlighting
+                page.get_by_text("Annotate", exact=True).click()
+                wait_for_text_walker(page, timeout=10000)
 
             with subtests.test(msg="highlight_with_legal_tag"):
                 # Create first highlight with Jurisdiction tag (tag_index=0)
@@ -193,6 +211,85 @@ class TestLawStudent:
                 # Verify a column heading matches a tag we used
                 expect(page.get_by_text("Procedural History").first).to_be_visible()
 
+            with subtests.test(msg="organise_highlight_in_correct_column"):
+                # The first card's tag was changed to Procedural History
+                # Verify it appears in the correct column
+                proc_col = page.locator(
+                    '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+                )
+                expect(proc_col).to_be_visible(timeout=3000)
+                cards_in_col = proc_col.locator('[data-testid="organise-card"]')
+                expect(cards_in_col.first).to_be_visible(timeout=3000)
+
+            with subtests.test(msg="organise_card_shows_author_and_text"):
+                # Organise card should show author attribution and text snippet
+                card = page.locator('[data-testid="organise-card"]').first
+                expect(card).to_be_visible(timeout=3000)
+                expect(card).to_contain_text("by ")
+                expect(card.locator(".italic")).to_be_visible()
+
+            with subtests.test(msg="organise_locate_warps_to_annotate"):
+                # Click locate button — should warp to Tab 1
+                card = page.locator('[data-testid="organise-card"]').first
+                locate_btn = card.locator("button").first
+                expect(locate_btn).to_be_visible(timeout=3000)
+                locate_btn.click()
+                page.wait_for_timeout(1000)
+
+                # Verify Annotate tab is now active
+                annotate_tab = page.locator("role=tab").nth(0)
+                expect(annotate_tab).to_have_attribute(
+                    "aria-selected", "true", timeout=3000
+                )
+                # Verify text walker is populated
+                page.wait_for_function(
+                    "() => window._textNodes && window._textNodes.length > 0",
+                    timeout=3000,
+                )
+
+            with subtests.test(msg="organise_return_after_warp"):
+                # Return to Organise tab — content should still be rendered
+                page.get_by_text("Organise", exact=True).click()
+                page.wait_for_timeout(500)
+                columns = page.locator('[data-testid="organise-columns"]')
+                expect(columns).to_be_visible(timeout=3000)
+                organise_tab = page.locator("role=tab").nth(1)
+                expect(organise_tab).to_have_attribute("aria-selected", "true")
+
+            with subtests.test(msg="organise_drag_retag"):
+                # Drag the Legal Issues card to the Reasons column
+                legal_col = page.locator(
+                    '[data-testid="tag-column"][data-tag-name="Legal Issues"]'
+                )
+                expect(legal_col).to_be_visible(timeout=3000)
+                source_card = legal_col.locator('[data-testid="organise-card"]').first
+                expect(source_card).to_be_visible(timeout=3000)
+
+                # Drag to Reasons sortable container
+                reasons_sortable = page.locator("#sort-reasons")
+                expect(reasons_sortable).to_be_visible(timeout=3000)
+                source_card.drag_to(reasons_sortable)
+                page.wait_for_timeout(1000)
+
+                # Verify card moved — Reasons column should now have 2 cards
+                reasons_col = page.locator(
+                    '[data-testid="tag-column"][data-tag-name="Reasons"]'
+                )
+                reasons_cards = reasons_col.locator('[data-testid="organise-card"]')
+                expect(reasons_cards).to_have_count(2, timeout=3000)
+
+            with subtests.test(msg="organise_drag_updates_sidebar"):
+                # Switch to Tab 1 to verify sidebar reflects the tag change
+                page.get_by_text("Annotate", exact=True).click()
+                wait_for_text_walker(page, timeout=10000)
+
+                # The second annotation card (originally Legal Issues)
+                # should now show Reasons in its tag combobox
+                second_card = page.locator("[data-testid='annotation-card']").nth(1)
+                expect(second_card).to_be_visible(timeout=5000)
+                tag_select = second_card.locator("[role='combobox']").first
+                expect(tag_select).to_contain_text("Reasons", timeout=5000)
+
             with subtests.test(msg="respond_tab"):
                 # Click Respond tab
                 page.get_by_text("Respond", exact=True).click()
@@ -204,6 +301,37 @@ class TestLawStudent:
                 # Type into the editor to exercise input capability
                 editor.locator("[contenteditable]").first.click()
                 page.keyboard.type("Case analysis notes")
+
+            with subtests.test(msg="respond_reference_panel"):
+                # Reference panel should show highlights grouped by tag
+                ref_panel = page.locator("[data-testid='respond-reference-panel']")
+                expect(ref_panel).to_be_visible(timeout=5000)
+                expect(ref_panel).to_contain_text("Highlight Reference")
+
+                # Should have tag group sections
+                tag_groups = ref_panel.locator("[data-testid='respond-tag-group']")
+                expect(tag_groups.first).to_be_visible(timeout=5000)
+
+                # Should have 3 reference cards (one per highlight)
+                ref_cards = ref_panel.locator("[data-testid='respond-reference-card']")
+                expect(ref_cards).to_have_count(3, timeout=5000)
+
+            with subtests.test(msg="respond_locate_warps_to_annotate"):
+                # Click locate button on a reference card — warp to Tab 1
+                ref_panel = page.locator("[data-testid='respond-reference-panel']")
+                ref_card = ref_panel.locator(
+                    "[data-testid='respond-reference-card']"
+                ).first
+                locate_btn = ref_card.locator("button").first
+                expect(locate_btn).to_be_visible(timeout=3000)
+                locate_btn.click()
+                page.wait_for_timeout(1000)
+
+                # Verify Annotate tab is now active
+                annotate_tab = page.locator("role=tab").nth(0)
+                expect(annotate_tab).to_have_attribute(
+                    "aria-selected", "true", timeout=3000
+                )
 
             with subtests.test(msg="reload_persistence"):
                 # Return to Annotate tab

@@ -112,6 +112,12 @@ async def open_quick_create(state: PageState) -> None:
     Must be awaited -- blocks until the dialog closes so the caller
     can rebuild the toolbar afterwards.
     """
+    # Snapshot selection coordinates before dialog interaction clears them.
+    # Clicking inside the dialog fires the document-level click handler
+    # which detects collapsed browser selection and wipes state.
+    saved_start = state.selection_start
+    saved_end = state.selection_end
+
     selected_color: list[str] = [_PRESET_PALETTE[0]]
 
     from promptgrimoire.db.tags import (  # noqa: PLC0415
@@ -167,14 +173,14 @@ async def open_quick_create(state: PageState) -> None:
 
                 await _refresh_tag_state(state)
 
-                if (
-                    state.selection_start is not None
-                    and state.selection_end is not None
-                ):
+                if saved_start is not None and saved_end is not None:
                     from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
                         _add_highlight,
                     )
 
+                    # Restore snapshot — dialog interaction cleared state
+                    state.selection_start = saved_start
+                    state.selection_end = saved_end
                     await _add_highlight(state, str(new_tag.id))
 
                 dialog.close()

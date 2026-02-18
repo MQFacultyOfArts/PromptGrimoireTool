@@ -150,6 +150,11 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with allow_sharing=NULL.
     """
+    default_allow_tag_creation: bool = Field(default=True)
+    """Course-level default for tag creation.
+
+    Inherited by activities with allow_tag_creation=NULL.
+    """
     default_instructor_permission: str = Field(
         default="editor",
         sa_column=Column(
@@ -278,6 +283,11 @@ class Activity(SQLModel, table=True):
     """
     allow_sharing: bool | None = Field(default=None)
     """Tri-state sharing control.
+
+    None=inherit from course, True=allowed, False=disallowed.
+    """
+    allow_tag_creation: bool | None = Field(default=None)
+    """Tri-state tag creation control.
 
     None=inherit from course, True=allowed, False=disallowed.
     """

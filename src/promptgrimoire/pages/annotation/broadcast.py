@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time as _time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -217,8 +218,18 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             )
             ui.run_javascript(js)
 
-    # Disconnect handler
-    async def on_disconnect() -> None:
+    # Delete handler — runs only when the client is permanently removed
+    # (after reconnect_timeout expires with no reconnection).
+    # NiceGUI 3.0+ changed on_disconnect to fire on reconnects too,
+    # so heavy cleanup must use on_delete. See docs/nicegui/lifecycle.md.
+    async def on_client_delete() -> None:
+        t0 = _time.monotonic()
+        logger.warning(
+            "DELETE[%s] ws=%s start",
+            client_id,
+            workspace_id,
+        )
+
         last_client = False
         if workspace_key in _workspace_presence:
             _workspace_presence[workspace_key].pop(client_id, None)
@@ -230,7 +241,8 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             removal_js = _render_js(
                 t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
             )
-            for _cid, presence in _workspace_presence.get(workspace_key, {}).items():
+            remaining = list(_workspace_presence.get(workspace_key, {}).items())
+            for _cid, presence in remaining:
                 if presence.nicegui_client is not None:
                     with contextlib.suppress(Exception):
                         await presence.nicegui_client.run_javascript(
@@ -239,6 +251,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
                 if presence.callback:
                     with contextlib.suppress(Exception):
                         await presence.invoke_callback()
+
         pm = get_persistence_manager()
         await pm.force_persist_workspace(workspace_id)
 
@@ -249,11 +262,15 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             doc_id = f"ws-{workspace_id}"
             pm.evict_workspace(workspace_id, doc_id)
             _workspace_registry.remove(doc_id)
-            logger.info(
-                "Last client left workspace %s — evicted CRDT doc", workspace_id
-            )
 
-    client.on_disconnect(on_disconnect)
+        logger.warning(
+            "DELETE[%s] total: %.3fs last=%s",
+            client_id,
+            _time.monotonic() - t0,
+            last_client,
+        )
+
+    client.on_delete(on_client_delete)
 
 
 def _broadcast_yjs_update(

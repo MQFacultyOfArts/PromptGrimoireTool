@@ -138,7 +138,11 @@ async def init_db() -> None:
 
     Call this on application startup (e.g., NiceGUI @app.on_startup).
     Creates the async engine with connection pooling configured.
+    Idempotent: returns immediately if engine already exists.
     """
+    if _state.engine is not None:
+        return
+
     _state.engine = create_async_engine(
         get_database_url(),
         echo=get_settings().dev.database_echo,

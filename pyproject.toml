@@ -157,4 +157,6 @@ dev = [
     "ast-grep-cli>=0.40.5",
     "ruff>=0.14.11",
     "pytest-randomly>=4.0.1",
+    "py-spy>=0.4.1",
+    "pysnooper>=1.2.3",
 ]

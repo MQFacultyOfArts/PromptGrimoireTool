@@ -30,6 +30,8 @@ def test_all_models_registered() -> None:
         "course_enrollment",
         "course_role",
         "permission",
+        "tag",
+        "tag_group",
         "user",
         "week",
         "workspace",
@@ -47,18 +49,20 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 10 table names."""
+    """get_expected_tables() returns all 12 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 10
+    assert len(tables) == 12
     assert "acl_entry" in tables
     assert "activity" in tables
     assert "course" in tables
     assert "course_enrollment" in tables
     assert "course_role" in tables
     assert "permission" in tables
+    assert "tag" in tables
+    assert "tag_group" in tables
     assert "user" in tables
     assert "week" in tables
     assert "workspace" in tables
@@ -144,7 +148,7 @@ def test_mask_password_in_error_messages() -> None:
     assert "secret123" not in masked
 
     # URL without password
-    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"
+    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"  # nosec B105 -- test fixture, not a real password
     assert _mask_password(url_no_pass) == url_no_pass
 
     # URL with special characters in password

@@ -348,6 +348,7 @@ async def _render_workspace_header(
         workspace_id: Workspace UUID for export.
         protect: Whether copy protection is active for this workspace.
     """
+    logger.debug("[HEADER] START workspace=%s", workspace_id)
     with ui.row().classes("gap-4 items-center"):
         # Save status indicator (for E2E test observability)
         state.save_status = (
@@ -381,11 +382,14 @@ async def _render_workspace_header(
                 export_btn.enable()
 
         export_btn.on_click(on_export_click)
+        logger.debug("[HEADER] buttons done, calling placement_chip")
 
         # Placement status chip (refreshable)
         @ui.refreshable
         async def placement_chip() -> None:
+            logger.debug("[HEADER] placement_chip: querying placement")
             ctx = await get_placement_context(workspace_id)
+            logger.debug("[HEADER] placement_chip: got ctx, rendering chip")
             label, color, icon = _get_placement_chip_style(ctx)
             is_authenticated = _get_current_user_id() is not None
 
@@ -407,8 +411,10 @@ async def _render_workspace_header(
                 chip.tooltip("Template placement is managed by the Activity")
             elif not is_authenticated:
                 chip.tooltip("Log in to change placement")
+            logger.debug("[HEADER] placement_chip: done")
 
         await placement_chip()
+        logger.debug("[HEADER] placement_chip awaited")
 
         # Copy protection lock icon chip (Phase 4)
         if protect:
@@ -629,9 +635,12 @@ def _inject_copy_protection() -> None:
 
 async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
     """Render the workspace content view with documents or add content form."""
+    logger.debug("[RENDER] START workspace=%s", workspace_id)
+
     # Check workspace exists before ACL (nonexistent → "not found",
     # not "access denied")
     workspace = await get_workspace(workspace_id)
+    logger.debug("[RENDER] get_workspace done: found=%s", workspace is not None)
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500")
         ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
@@ -640,6 +649,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # --- ACL enforcement guard ---
     auth_user = app.storage.user.get("auth_user")
     permission = await check_workspace_access(workspace_id, auth_user)
+    logger.debug("[RENDER] check_workspace_access done: permission=%s", permission)
 
     if auth_user is None:
         ui.navigate.to("/login")
@@ -655,6 +665,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
     protect = ctx.copy_protection and not is_privileged_user(auth_user)
+    logger.debug("[RENDER] placement done: protect=%s", protect)
 
     # Create page state
     state = PageState(
@@ -664,9 +675,12 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
 
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)
+    logger.debug("[RENDER] client sync setup done")
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
+    logger.debug("[RENDER] calling _render_workspace_header")
     await _render_workspace_header(state, workspace_id, protect=protect)
+    logger.debug("[RENDER] header done")
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
     # is first visited. Must be added during page construction -- dynamically
@@ -683,6 +697,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
 
     # Set up Tab 2 drag-and-drop and tab change handler (Phase 4)
     _setup_organise_drag(state)
+    logger.debug("[RENDER] tabs and organise drag setup done")
 
     async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
         """Handle tab switching with deferred rendering and refresh."""
@@ -738,19 +753,25 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
 
         with ui.tab_panel("Annotate"):
             # Load CRDT document for this workspace
+            logger.debug("[RENDER] loading CRDT doc")
             crdt_doc = await _workspace_registry.get_or_create_for_workspace(
                 workspace_id
             )
+            logger.debug("[RENDER] CRDT doc loaded")
 
             # Load existing documents
             documents = await list_documents(workspace_id)
+            logger.debug("[RENDER] documents loaded: count=%d", len(documents))
 
             if documents:
                 # Render first document with highlight support
                 doc = documents[0]
+                logger.debug("[RENDER] rendering document with highlights")
                 await _render_document_with_highlights(state, doc, crdt_doc)
+                logger.debug("[RENDER] document rendered")
             else:
                 # Show add content form (extracted to reduce function complexity)
+                logger.debug("[RENDER] no documents, showing add content form")
                 _render_add_content_form(workspace_id)
 
         with ui.tab_panel("Organise") as organise_panel:
@@ -760,6 +781,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         with ui.tab_panel("Respond") as respond_panel:
             state.respond_panel = respond_panel
             ui.label("Respond tab content will appear here.").classes("text-gray-400")
+
+    logger.debug("[RENDER] tab panels built, workspace=%s", workspace_id)
 
     # Inject copy protection JS after tab container is built (Phase 4)
     if protect:

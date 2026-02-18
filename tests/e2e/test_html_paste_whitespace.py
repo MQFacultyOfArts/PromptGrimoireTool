@@ -115,7 +115,6 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
 class TestHTMLPasteWhitespace:
     """Visual tests for HTML paste whitespace handling."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_libreoffice_paste_no_excessive_whitespace(
         self,
         paste_ready_page: Page,
@@ -236,7 +235,6 @@ class TestHTMLPasteWhitespace:
                 f"Expected <100px. See screenshots in {SCREENSHOT_DIR}/"
             )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paste_preserves_table_structure(
         self,
         paste_ready_page: Page,
@@ -322,7 +320,6 @@ class TestHTMLPasteWhitespace:
 class TestParagraphNumberingAndIndent:
     """Tests for ordered list numbering and indentation preservation."""
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_ground_1_indent_preserved(
         self,
         paste_ready_page: Page,
@@ -424,7 +421,6 @@ class TestParagraphNumberingAndIndent:
         else:
             pytest.fail("Could not find 'Ground 1' text in rendered document")
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_paragraph_numbering_starts_at_4(
         self,
         paste_ready_page: Page,
@@ -487,7 +483,6 @@ class TestParagraphNumberingAndIndent:
             f"Ordered list start attributes may not be preserved."
         )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     def test_highest_paragraph_number_is_48(
         self,
         paste_ready_page: Page,
@@ -541,48 +536,3 @@ class TestParagraphNumberingAndIndent:
             f"Highest paragraph is {highest_para['highestNumberedPara']}, expected 48. "
             f"Some <ol start> attributes or <li> items may be lost."
         )
-
-
-class TestPasteHandlerConsoleOutput:
-    """Tests that verify paste handler JavaScript works correctly."""
-
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
-    def test_paste_triggers_cleanup(
-        self,
-        paste_ready_page: Page,
-        libreoffice_html: str,
-    ) -> None:
-        """Verify paste handler logs show cleanup happening."""
-        page = paste_ready_page
-
-        # Collect console messages
-        console_messages: list[str] = []
-        page.on("console", lambda msg: console_messages.append(msg.text))
-
-        simulate_html_paste(page, libreoffice_html)
-
-        # Wait for paste to complete
-        page.wait_for_timeout(500)
-
-        # Check for expected console output
-        paste_logs = [m for m in console_messages if "[PASTE" in m]
-
-        # Note: [PASTE-INIT] fires at DOMContentLoaded, before listener attached
-        # We only check for the paste event logs
-
-        assert any("[PASTE]" in m and "bytes" in m for m in paste_logs), (
-            f"Missing [PASTE] cleanup log. Got: {paste_logs}"
-        )
-
-        # Check that some size reduction happened
-        # Note: LibreOffice HTML is already fairly clean (~10% reduction)
-        # The big reductions (90%+) happen with browser-copied HTML that has
-        # computed CSS inline styles (2.7MB -> 40KB)
-        reduction_log = next((m for m in paste_logs if "reduction" in m), None)
-        if reduction_log:
-            # Extract percentage - just verify cleanup ran
-            match = re.search(r"(\d+)%", reduction_log)
-            if match:
-                reduction_pct = int(match.group(1))
-                # Even minimal cleanup should do something
-                assert reduction_pct >= 0, f"Negative reduction: {reduction_pct}%"

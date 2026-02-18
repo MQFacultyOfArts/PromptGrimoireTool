@@ -169,7 +169,6 @@ class TestDragBetweenColumns:
     Verifies: three-tab-ui.AC2.4
     """
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_drag_between_columns_changes_tag(self, drag_workspace_page: Page) -> None:
         """Drag card from Jurisdiction to Procedural History column.
@@ -220,7 +219,6 @@ class TestDragBetweenColumns:
             f"Card {highlight_id} should not be in Jurisdiction after drag"
         )
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_drag_between_columns_updates_tab1_sidebar(
         self, drag_workspace_page: Page
@@ -275,7 +273,6 @@ class TestConcurrentDrag:
     Verifies: three-tab-ui.AC2.5
     """
 
-    @pytest.mark.skip(reason="Flaky E2E infrastructure timeout — #120")
     @pytestmark_db
     def test_concurrent_drag_produces_consistent_result(
         self, two_annotation_contexts: tuple[Page, Page, str]

@@ -96,14 +96,20 @@ async def get_tag_group(group_id: UUID) -> TagGroup | None:
         return await session.get(TagGroup, group_id)
 
 
+_UNSET = object()
+
+
 async def update_tag_group(
     group_id: UUID,
     name: str | None = None,
     order_index: int | None = None,
+    color: str | None | object = _UNSET,
 ) -> TagGroup | None:
     """Update TagGroup details.
 
     Omit any parameter (or pass None) to leave it unchanged.
+    ``color`` uses a sentinel default so that passing ``None`` explicitly
+    clears the colour.
     """
     async with get_session() as session:
         group = await session.get(TagGroup, group_id)
@@ -114,6 +120,8 @@ async def update_tag_group(
             group.name = name
         if order_index is not None:
             group.order_index = order_index
+        if color is not _UNSET:
+            group.color = color  # type: ignore[assignment]  -- sentinel pattern
 
         session.add(group)
         await session.flush()
@@ -434,6 +442,7 @@ async def import_tags_from_activity(
             new_group = TagGroup(
                 workspace_id=target_workspace_id,
                 name=src_group.name,
+                color=src_group.color,
                 order_index=src_group.order_index,
             )
             session.add(new_group)

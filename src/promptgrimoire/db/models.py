@@ -395,6 +395,7 @@ class TagGroup(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
     name: str = Field(max_length=100)
+    color: str | None = Field(default=None, max_length=7)
     order_index: int = Field(default=0)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

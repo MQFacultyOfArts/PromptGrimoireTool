@@ -329,15 +329,22 @@ def _render_group_header(
     on_save_group: Any,
     on_delete_group: Any,
 ) -> None:
-    """Render a group header with name input and action buttons."""
+    """Render a group header with name input, colour, and action buttons."""
     with ui.row().classes("items-center w-full gap-2 mt-4 mb-1"):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
         ui.icon("folder").classes("text-blue-600")
         group_name_input = ui.input(value=group.name).classes("font-bold text-blue-800")
+        group_color_input = ui.color_input(
+            value=group.color or "",
+            label="Bg",
+            preview=True,
+        ).classes("w-20")
         ui.button(
             icon="save",
-            on_click=lambda _e, g=group: on_save_group(g.id, group_name_input.value),
-        ).props("flat round dense").tooltip("Save group name")
+            on_click=lambda _e, g=group: on_save_group(
+                g.id, group_name_input.value, group_color_input.value
+            ),
+        ).props("flat round dense").tooltip("Save group")
         ui.button(
             icon="delete",
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),
@@ -722,6 +729,61 @@ async def open_tag_management(
 # ── Callback factory ─────────────────────────────────────────────────
 
 
+def _build_group_callbacks(
+    *,
+    state: PageState,
+    render_tag_list: Any,
+    update_tag_group: Any,
+    create_tag_group: Any,
+    reorder_tag_groups: Any,
+    group_id_list: list[UUID],
+) -> dict[str, Any]:
+    """Build group-related management callbacks."""
+
+    async def _on_group_changed() -> None:
+        await _refresh_tag_state(state)
+        await render_tag_list()
+
+    async def _on_group_deleted(_group_name: str) -> None:
+        await _on_group_changed()
+
+    async def _save_group(
+        group_id: UUID, new_name: str, new_color: str | None = None
+    ) -> None:
+        await update_tag_group(group_id, name=new_name, color=new_color or None)
+        await _on_group_changed()
+
+    async def _add_group() -> None:
+        try:
+            await create_tag_group(
+                workspace_id=state.workspace_id,
+                name="New group",
+            )
+        except PermissionError:
+            ui.notify("Tag creation not allowed", type="negative")
+            return
+        await render_tag_list()
+
+    async def _group_reorder(e: Any) -> None:
+        indices = _extract_reorder_indices(e)
+        if indices is None:
+            return
+        new_order = _reorder_list(group_id_list, *indices)
+        await reorder_tag_groups(new_order)
+        await render_tag_list()
+
+    return {
+        "save_group": _save_group,
+        "delete_group": lambda gid, gname: _open_confirm_delete_group(
+            gid,
+            gname,
+            on_confirmed=_on_group_deleted,
+        ),
+        "add_group": _add_group,
+        "group_reorder": _group_reorder,
+    }
+
+
 def _build_management_callbacks(
     *,
     state: PageState,
@@ -735,11 +797,15 @@ def _build_management_callbacks(
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
 ) -> dict[str, Any]:
-    """Build all management dialog callbacks as a dict.
-
-    Extracted to keep open_tag_management and _render_tag_list under
-    the 50-statement ruff limit.
-    """
+    """Build all management dialog callbacks as a dict."""
+    group_cbs = _build_group_callbacks(
+        state=state,
+        render_tag_list=render_tag_list,
+        update_tag_group=update_tag_group,
+        create_tag_group=create_tag_group,
+        reorder_tag_groups=reorder_tag_groups,
+        group_id_list=group_id_list,
+    )
 
     async def _save_tag(
         tag_id: UUID,
@@ -769,15 +835,6 @@ def _build_management_callbacks(
         await render_tag_list()
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
 
-    async def _on_group_deleted(group_name: str) -> None:
-        await render_tag_list()
-        ui.notify(f"Group '{group_name}' deleted", type="positive")
-
-    async def _save_group(group_id: UUID, new_name: str) -> None:
-        await update_tag_group(group_id, name=new_name)
-        await render_tag_list()
-        ui.notify("Group saved", type="positive")
-
     async def _add_tag_in_group(group_id: UUID | None) -> None:
         try:
             await create_tag(
@@ -792,17 +849,6 @@ def _build_management_callbacks(
         await render_tag_list()
         await _refresh_tag_state(state)
 
-    async def _add_group() -> None:
-        try:
-            await create_tag_group(
-                workspace_id=state.workspace_id,
-                name="New group",
-            )
-        except PermissionError:
-            ui.notify("Tag creation not allowed", type="negative")
-            return
-        await render_tag_list()
-
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
         await update_tag(tag_id, locked=locked)
         await render_tag_list()
@@ -816,14 +862,6 @@ def _build_management_callbacks(
         await _refresh_tag_state(state)
         await render_tag_list()
 
-    async def _group_reorder(e: Any) -> None:
-        indices = _extract_reorder_indices(e)
-        if indices is None:
-            return
-        new_order = _reorder_list(group_id_list, *indices)
-        await reorder_tag_groups(new_order)
-        await render_tag_list()
-
     return {
         "save_tag": _save_tag,
         "delete_tag": lambda tid, tname: _open_confirm_delete_tag(
@@ -831,15 +869,8 @@ def _build_management_callbacks(
             tname,
             on_confirmed=_on_tag_deleted,
         ),
-        "save_group": _save_group,
-        "delete_group": lambda gid, gname: _open_confirm_delete_group(
-            gid,
-            gname,
-            on_confirmed=_on_group_deleted,
-        ),
         "add_tag": _add_tag_in_group,
-        "add_group": _add_group,
         "lock_toggle": _lock_toggle,
         "tag_reorder": _tag_reorder,
-        "group_reorder": _group_reorder,
+        **group_cbs,
     }

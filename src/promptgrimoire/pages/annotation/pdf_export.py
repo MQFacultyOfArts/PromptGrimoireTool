@@ -43,9 +43,6 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     await asyncio.sleep(0)
 
     try:
-        # Get tag colours from workspace tag info
-        tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
-
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
 
@@ -90,7 +87,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         pdf_path = await export_annotation_pdf(
             html_content=html_content,
             highlights=highlights,
-            tag_colours=tag_colours,
+            tag_colours=state.tag_colours(),
             general_notes="",
             notes_latex=notes_latex,
             word_to_legal_para=None,

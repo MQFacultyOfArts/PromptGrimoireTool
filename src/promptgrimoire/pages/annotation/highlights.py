@@ -143,8 +143,7 @@ def _update_highlight_css(state: PageState) -> None:
     """
     if state.highlight_style is None or state.crdt_doc is None:
         return
-    tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
-    css = _build_highlight_pseudo_css(tag_colours)
+    css = _build_highlight_pseudo_css(state.tag_colours())
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
     _push_highlights_to_client(state)
@@ -222,8 +221,6 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         start = min(state.selection_start, state.selection_end)
         end = max(state.selection_start, state.selection_end)
 
-        tag_value = tag
-
         # Extract highlighted text from document characters
         highlighted_text = ""
         if state.document_chars:
@@ -233,7 +230,7 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         state.crdt_doc.add_highlight(
             start_char=start,
             end_char=end,
-            tag=tag_value,
+            tag=tag,
             text=highlighted_text,
             author=state.user_name,
             document_id=str(state.document_id),

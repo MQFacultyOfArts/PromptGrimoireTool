@@ -214,6 +214,10 @@ class PageState:
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
 
+    def tag_colours(self) -> dict[str, str]:
+        """Build tag key -> hex colour mapping from tag_info_list."""
+        return {ti.raw_key: ti.colour for ti in (self.tag_info_list or [])}
+
 
 # ---------------------------------------------------------------------------
 # Section 3: Submodule imports (types above are now available)

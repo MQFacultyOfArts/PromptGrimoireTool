@@ -76,13 +76,19 @@ function walkTextNodes(root) {
 // ============================================================================
 
 /**
- * Clear all hl-* entries from CSS.highlights.
+ * Clear annotation highlights from CSS.highlights.
+ *
+ * Only removes hl-{tag} entries (annotation highlights), preserving
+ * hl-sel-* (remote selections) and hl-hover/hl-throb (ephemeral).
  */
 function clearHighlights() {
     // Snapshot keys before iterating — deleting during iteration is
     // undefined behaviour on Map-like registries (may skip entries).
     for (const name of Array.from(CSS.highlights.keys())) {
-        if (name.startsWith('hl-')) CSS.highlights.delete(name);
+        if (name.startsWith('hl-') && !name.startsWith('hl-sel-')
+            && name !== 'hl-hover' && name !== 'hl-throb') {
+            CSS.highlights.delete(name);
+        }
     }
 }
 
@@ -440,7 +446,9 @@ function renderRemoteCursor(container, clientId, charIdx, name, color) {
     const existing = document.getElementById(existingId);
     if (existing) existing.remove();
 
-    const textNodes = window._textNodes || walkTextNodes(container);
+    // Always re-walk: NiceGUI may re-render doc-container between calls,
+    // leaving window._textNodes referencing detached DOM nodes.
+    const textNodes = walkTextNodes(container);
     const rect = charOffsetToRect(textNodes, charIdx);
     if (rect.width === 0 && rect.height === 0) return;
 
@@ -489,7 +497,7 @@ function removeRemoteCursor(clientId) {
  * @param {Element} container - The #doc-container element
  */
 function updateRemoteCursorPositions(container) {
-    const textNodes = window._textNodes || walkTextNodes(container);
+    const textNodes = walkTextNodes(container);
     const parent = container.parentElement;
     if (!parent) return;
     const parentRect = parent.getBoundingClientRect();
@@ -533,7 +541,9 @@ function renderRemoteSelection(clientId, startChar, endChar, name, color) {
     const container = document.getElementById('doc-container');
     if (!container) return;
 
-    const textNodes = window._textNodes || walkTextNodes(container);
+    // Always re-walk: NiceGUI may re-render doc-container between calls,
+    // leaving window._textNodes referencing detached DOM nodes.
+    const textNodes = walkTextNodes(container);
     const range = charOffsetToRange(textNodes, startChar, endChar);
     if (!range) return;
 

@@ -227,11 +227,14 @@ def _render_tag_row(
     can_edit: bool,
     is_instructor: bool,
     group_options: dict[str, str],
-    on_save: Any,
     on_delete: Any,
     on_lock_toggle: Any | None = None,
+    row_collector: dict[UUID, dict[str, Any]] | None = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
+
+    Inputs are collected into ``row_collector`` for batch save when the
+    dialog's "Done" button is clicked. No per-row save button.
 
     Parameters
     ----------
@@ -244,12 +247,12 @@ def _render_tag_row(
         Whether the current user is an instructor on a template workspace.
     group_options:
         Mapping of group UUID string -> group name for the group select.
-    on_save:
-        Async callback ``(tag_id, name, color, description, group_id) -> None``.
     on_delete:
         Async callback ``(tag_id, tag_name) -> None``.
     on_lock_toggle:
         Async callback ``(tag_id, locked) -> None``. Shown only for instructors.
+    row_collector:
+        Mutable dict to store input refs and original values for batch save.
     """
     with ui.row().classes("items-center w-full gap-1"):
         # Drag handle
@@ -291,21 +294,7 @@ def _render_tag_row(
                 lambda e, tid=tag.id: on_lock_toggle(tid, e.value),
             )
 
-        # Action buttons
-        save_btn = (
-            ui.button(
-                icon="save",
-                on_click=lambda _e, t=tag: on_save(
-                    t.id,
-                    name_input.value,
-                    color_input.value,
-                    desc_input.value,
-                    group_sel.value,
-                ),
-            )
-            .props("flat round dense")
-            .tooltip("Save changes")
-        )
+        # Delete button
         del_btn = (
             ui.button(
                 icon="delete",
@@ -316,8 +305,20 @@ def _render_tag_row(
         )
 
         if not can_edit:
-            save_btn.props("disable")
             del_btn.props("disable")
+
+        # Collect input refs for batch save
+        if row_collector is not None and can_edit:
+            row_collector[tag.id] = {
+                "name": name_input,
+                "color": color_input,
+                "desc": desc_input,
+                "group": group_sel,
+                "orig_name": tag.name,
+                "orig_color": tag.color,
+                "orig_desc": tag.description or "",
+                "orig_group": str(tag.group_id) if tag.group_id else None,
+            }
 
 
 # ── Group header rendering helper ────────────────────────────────────
@@ -326,10 +327,13 @@ def _render_tag_row(
 def _render_group_header(
     group: Any,
     *,
-    on_save_group: Any,
     on_delete_group: Any,
+    row_collector: dict[UUID, dict[str, Any]] | None = None,
 ) -> None:
-    """Render a group header with name input, colour, and action buttons."""
+    """Render a group header with name input, colour, and delete button.
+
+    Input refs are stored in ``row_collector`` for batch save.
+    """
     with ui.row().classes("items-center w-full gap-2 mt-4 mb-1"):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
         ui.icon("folder").classes("text-blue-600")
@@ -340,15 +344,18 @@ def _render_group_header(
             preview=True,
         ).classes("w-20")
         ui.button(
-            icon="save",
-            on_click=lambda _e, g=group: on_save_group(
-                g.id, group_name_input.value, group_color_input.value
-            ),
-        ).props("flat round dense").tooltip("Save group")
-        ui.button(
             icon="delete",
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),
         ).props("flat round dense color=negative").tooltip("Delete group")
+
+    # Collect input refs for batch save
+    if row_collector is not None:
+        row_collector[group.id] = {
+            "name": group_name_input,
+            "color": group_color_input,
+            "orig_name": group.name,
+            "orig_color": group.color or "",
+        }
 
 
 # ── Confirmation dialog helpers ──────────────────────────────────────
@@ -445,10 +452,10 @@ def _render_group_tags(
     tag_ids: list[UUID],
     is_instructor: bool,
     group_options: dict[str, str],
-    on_save_tag: Any,
     on_delete_tag: Any,
     on_lock_toggle: Any | None,
     on_tag_reorder: Any,
+    tag_row_collector: dict[UUID, dict[str, Any]] | None = None,
 ) -> None:
     """Render tags within a group, wrapped in a Sortable for drag reorder."""
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
@@ -465,9 +472,9 @@ def _render_group_tags(
                 can_edit=can_edit,
                 is_instructor=is_instructor,
                 group_options=group_options,
-                on_save=on_save_tag,
                 on_delete=on_delete_tag,
                 on_lock_toggle=on_lock_toggle,
+                row_collector=tag_row_collector,
             )
 
 
@@ -477,9 +484,7 @@ def _render_tag_list_content(
     tags_by_group: dict[UUID | None, list[Any]],
     group_options: dict[str, str],
     is_instructor: bool,
-    on_save_tag: Any,
     on_delete_tag: Any,
-    on_save_group: Any,
     on_delete_group: Any,
     on_add_tag: Any,
     on_add_group: Any,
@@ -488,11 +493,14 @@ def _render_tag_list_content(
     on_group_reorder: Any,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
+    tag_row_collector: dict[UUID, dict[str, Any]],
+    group_row_collector: dict[UUID, dict[str, Any]],
 ) -> None:
     """Render all tag groups and ungrouped tags inside the content area.
 
     Wraps groups in a top-level Sortable for group reordering and each
-    group's tags in a nested Sortable for tag reordering.
+    group's tags in a nested Sortable for tag reordering. Input refs are
+    stored in the collector dicts for batch save on "Done".
     """
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
 
@@ -511,20 +519,20 @@ def _render_tag_list_content(
             with ui.column().classes("w-full"):
                 _render_group_header(
                     group,
-                    on_save_group=on_save_group,
                     on_delete_group=on_delete_group,
+                    row_collector=group_row_collector,
                 )
                 _render_group_tags(
                     group_tags=group_tags,
                     tag_ids=tag_ids,
                     is_instructor=is_instructor,
                     group_options=group_options,
-                    on_save_tag=on_save_tag,
                     on_delete_tag=on_delete_tag,
                     on_lock_toggle=on_lock_toggle,
                     on_tag_reorder=lambda e, gid=group.id: on_tag_reorder_for_group(
                         e, gid
                     ),
+                    tag_row_collector=tag_row_collector,
                 )
                 ui.button(
                     "+ Add tag",
@@ -543,10 +551,10 @@ def _render_tag_list_content(
             tag_ids=ungrouped_ids,
             is_instructor=is_instructor,
             group_options=group_options,
-            on_save_tag=on_save_tag,
             on_delete_tag=on_delete_tag,
             on_lock_toggle=on_lock_toggle,
             on_tag_reorder=lambda e: on_tag_reorder_for_group(e, None),
+            tag_row_collector=tag_row_collector,
         )
         ui.button(
             "+ Add tag",
@@ -621,6 +629,48 @@ async def _render_import_section(
         ui.button("Import", on_click=_import_from_activity).props("flat dense")
 
 
+async def _batch_save_changes(
+    tag_row_inputs: dict[UUID, dict[str, Any]],
+    group_row_inputs: dict[UUID, dict[str, Any]],
+    update_tag: Any,
+    update_tag_group: Any,
+) -> bool:
+    """Batch-save all modified tags and groups.
+
+    Compares current input values to originals and persists changes.
+    Returns True on success, False if a validation error stopped saving.
+    """
+    for tag_id, inputs in tag_row_inputs.items():
+        name = inputs["name"].value
+        color = inputs["color"].value
+        desc = inputs["desc"].value
+        group_val = inputs["group"].value
+        if (
+            name != inputs["orig_name"]
+            or color != inputs["orig_color"]
+            or desc != inputs["orig_desc"]
+            or group_val != inputs["orig_group"]
+        ):
+            gid = UUID(group_val) if group_val else None
+            try:
+                await update_tag(
+                    tag_id,
+                    name=name,
+                    color=color,
+                    description=desc or None,
+                    group_id=gid,
+                )
+            except ValueError as exc:
+                ui.notify(str(exc), type="warning")
+                return False
+    for gid, inputs in group_row_inputs.items():
+        name = inputs["name"].value
+        color = inputs["color"].value
+        if name != inputs["orig_name"] or color != inputs["orig_color"]:
+            await update_tag_group(gid, name=name, color=color or None)
+    return True
+
+
 # ── Full management dialog ───────────────────────────────────────────
 
 
@@ -656,21 +706,24 @@ async def open_tag_management(
     is_instructor = is_privileged_user(auth_user)
 
     with ui.dialog() as dialog, ui.card().classes("w-[600px]"):
-        with ui.row().classes("w-full items-center justify-between mb-2"):
-            ui.label("Manage Tags").classes("text-lg font-bold")
-            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+        ui.label("Manage Tags").classes("text-lg font-bold mb-2")
 
         content_area = ui.column().classes("w-full gap-0 max-h-[60vh] overflow-y-auto")
 
         # Mutable state for tracking element order (populated by render)
         tag_id_lists: dict[UUID | None, list[UUID]] = {}
         group_id_list: list[UUID] = []
+        # Batch save collectors (populated by render helpers)
+        tag_row_inputs: dict[UUID, dict[str, Any]] = {}
+        group_row_inputs: dict[UUID, dict[str, Any]] = {}
 
         async def _render_tag_list() -> None:
             """Clear and rebuild the tag list inside the dialog."""
             content_area.clear()
             tag_id_lists.clear()
             group_id_list.clear()
+            tag_row_inputs.clear()
+            group_row_inputs.clear()
 
             groups = await list_tag_groups_for_workspace(state.workspace_id)
             all_tags = await list_tags_for_workspace(state.workspace_id)
@@ -684,7 +737,6 @@ async def open_tag_management(
                 state=state,
                 render_tag_list=_render_tag_list,
                 update_tag=update_tag,
-                update_tag_group=update_tag_group,
                 create_tag=create_tag,
                 create_tag_group=create_tag_group,
                 reorder_tags=reorder_tags,
@@ -699,9 +751,7 @@ async def open_tag_management(
                     tags_by_group=tags_by_group,
                     group_options=group_options,
                     is_instructor=is_instructor,
-                    on_save_tag=callbacks["save_tag"],
                     on_delete_tag=callbacks["delete_tag"],
-                    on_save_group=callbacks["save_group"],
                     on_delete_group=callbacks["delete_group"],
                     on_add_tag=callbacks["add_tag"],
                     on_add_group=callbacks["add_group"],
@@ -710,6 +760,8 @@ async def open_tag_management(
                     on_group_reorder=callbacks["group_reorder"],
                     tag_id_lists=tag_id_lists,
                     group_id_list=group_id_list,
+                    tag_row_collector=tag_row_inputs,
+                    group_row_collector=group_row_inputs,
                 )
 
                 # Import section (AC7.7) -- instructors on template only
@@ -722,6 +774,23 @@ async def open_tag_management(
 
         await _render_tag_list()
 
+        # "Done" button — batch-saves all modified tags and groups, then closes
+        async def _save_all_and_close() -> None:
+            ok = await _batch_save_changes(
+                tag_row_inputs,
+                group_row_inputs,
+                update_tag,
+                update_tag_group,
+            )
+            if not ok:
+                return
+            await _refresh_tag_state(state)
+            dialog.close()
+
+        ui.separator().classes("my-2")
+        with ui.row().classes("w-full justify-end"):
+            ui.button("Done", on_click=_save_all_and_close).props("color=primary")
+
     dialog.open()
     await dialog
 
@@ -733,25 +802,15 @@ def _build_group_callbacks(
     *,
     state: PageState,
     render_tag_list: Any,
-    update_tag_group: Any,
     create_tag_group: Any,
     reorder_tag_groups: Any,
     group_id_list: list[UUID],
 ) -> dict[str, Any]:
     """Build group-related management callbacks."""
 
-    async def _on_group_changed() -> None:
+    async def _on_group_deleted(_group_name: str) -> None:
         await _refresh_tag_state(state)
         await render_tag_list()
-
-    async def _on_group_deleted(_group_name: str) -> None:
-        await _on_group_changed()
-
-    async def _save_group(
-        group_id: UUID, new_name: str, new_color: str | None = None
-    ) -> None:
-        await update_tag_group(group_id, name=new_name, color=new_color or None)
-        await _on_group_changed()
 
     async def _add_group() -> None:
         try:
@@ -773,7 +832,6 @@ def _build_group_callbacks(
         await render_tag_list()
 
     return {
-        "save_group": _save_group,
         "delete_group": lambda gid, gname: _open_confirm_delete_group(
             gid,
             gname,
@@ -789,7 +847,6 @@ def _build_management_callbacks(
     state: PageState,
     render_tag_list: Any,
     update_tag: Any,
-    update_tag_group: Any,
     create_tag: Any,
     create_tag_group: Any,
     reorder_tags: Any,
@@ -801,34 +858,10 @@ def _build_management_callbacks(
     group_cbs = _build_group_callbacks(
         state=state,
         render_tag_list=render_tag_list,
-        update_tag_group=update_tag_group,
         create_tag_group=create_tag_group,
         reorder_tag_groups=reorder_tag_groups,
         group_id_list=group_id_list,
     )
-
-    async def _save_tag(
-        tag_id: UUID,
-        name: str,
-        color: str,
-        description: str,
-        group_id_str: str | None,
-    ) -> None:
-        gid = UUID(group_id_str) if group_id_str else None
-        try:
-            await update_tag(
-                tag_id,
-                name=name,
-                color=color,
-                description=description or None,
-                group_id=gid,
-            )
-        except ValueError as exc:
-            ui.notify(str(exc), type="warning")
-            return
-        await render_tag_list()
-        await _refresh_tag_state(state)
-        ui.notify("Tag saved", type="positive")
 
     async def _on_tag_deleted(tag_name: str) -> None:
         await _refresh_tag_state(state, reload_crdt=True)
@@ -863,7 +896,6 @@ def _build_management_callbacks(
         await render_tag_list()
 
     return {
-        "save_tag": _save_tag,
         "delete_tag": lambda tid, tname: _open_confirm_delete_tag(
             tid,
             tname,

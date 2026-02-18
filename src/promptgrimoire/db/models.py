@@ -363,6 +363,67 @@ class WorkspaceDocument(SQLModel, table=True):
     )
 
 
+class TagGroup(SQLModel, table=True):
+    """Visual container for grouping tags within a workspace.
+
+    TagGroups organise related tags (e.g. "Legal Case Brief" headings).
+    CASCADE-deleted when the parent Workspace is deleted.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        workspace_id: Foreign key to Workspace (CASCADE DELETE).
+        name: Group display name.
+        order_index: Display order within workspace.
+        created_at: Timestamp when group was created.
+    """
+
+    __tablename__ = "tag_group"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    name: str = Field(max_length=100)
+    order_index: int = Field(default=0)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class Tag(SQLModel, table=True):
+    """Per-workspace annotation tag.
+
+    Tags belong to a workspace and optionally to a TagGroup.
+    CASCADE-deleted when the parent Workspace is deleted.
+    If the parent TagGroup is deleted, group_id is set to NULL.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        workspace_id: Foreign key to Workspace (CASCADE DELETE).
+        group_id: Optional FK to TagGroup (SET NULL on delete).
+        name: Tag display name.
+        description: Optional longer description of the tag's purpose.
+        color: Hex colour string (e.g. "#1f77b4").
+        locked: Whether students can modify this tag.
+        order_index: Display order within group or workspace.
+        created_at: Timestamp when tag was created.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    group_id: UUID | None = Field(
+        default=None, sa_column=_set_null_fk_column("tag_group.id")
+    )
+    name: str = Field(max_length=100)
+    description: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    color: str = Field(max_length=7)
+    locked: bool = Field(default=False)
+    order_index: int = Field(default=0)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
 class ACLEntry(SQLModel, table=True):
     """Per-user, per-workspace permission grant.
 

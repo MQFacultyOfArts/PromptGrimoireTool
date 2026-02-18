@@ -288,6 +288,148 @@ async def list_tags_for_workspace(workspace_id: UUID) -> list[Tag]:
         return list(result.all())
 
 
+# ── Reorder ──────────────────────────────────────────────────────────
+
+
+async def reorder_tags(tag_ids: list[UUID]) -> None:
+    """Set tag order_index values to match the given list order.
+
+    Takes an ordered list of tag UUIDs and sets each tag's
+    order_index to its position in the list (0, 1, 2, ...).
+
+    Args:
+        tag_ids: Ordered list of tag UUIDs.
+
+    Raises:
+        ValueError: If any tag ID is not found.
+    """
+    async with get_session() as session:
+        for idx, tid in enumerate(tag_ids):
+            tag = await session.get(Tag, tid)
+            if not tag:
+                msg = f"Tag {tid} not found"
+                raise ValueError(msg)
+            tag.order_index = idx
+            session.add(tag)
+        await session.flush()
+
+
+async def reorder_tag_groups(group_ids: list[UUID]) -> None:
+    """Set tag group order_index values to match the given list order.
+
+    Takes an ordered list of TagGroup UUIDs and sets each group's
+    order_index to its position in the list (0, 1, 2, ...).
+
+    Args:
+        group_ids: Ordered list of TagGroup UUIDs.
+
+    Raises:
+        ValueError: If any group ID is not found.
+    """
+    async with get_session() as session:
+        for idx, gid in enumerate(group_ids):
+            group = await session.get(TagGroup, gid)
+            if not group:
+                msg = f"TagGroup {gid} not found"
+                raise ValueError(msg)
+            group.order_index = idx
+            session.add(group)
+        await session.flush()
+
+
+# ── Import from activity ─────────────────────────────────────────────
+
+
+async def import_tags_from_activity(
+    source_activity_id: UUID,
+    target_workspace_id: UUID,
+) -> list[Tag]:
+    """Copy TagGroups and Tags from a source activity's template into a workspace.
+
+    Creates independent copies with new UUIDs, preserving name, color,
+    description, locked, order_index, and group assignment (remapped to
+    new group UUIDs).
+
+    This follows the same ID-remapping pattern as
+    ``clone_workspace_from_activity()`` in ``db/workspaces.py``.
+
+    Args:
+        source_activity_id: Activity whose template workspace to copy from.
+        target_workspace_id: Workspace to copy tags into.
+
+    Returns:
+        List of newly created Tags in the target workspace.
+
+    Raises:
+        ValueError: If source activity is not found.
+    """
+    from promptgrimoire.db.models import Activity
+
+    async with get_session() as session:
+        activity = await session.get(Activity, source_activity_id)
+        if not activity:
+            msg = f"Activity {source_activity_id} not found"
+            raise ValueError(msg)
+
+        source_workspace_id = activity.template_workspace_id
+
+        # Load source groups
+        source_groups = list(
+            (
+                await session.exec(
+                    select(TagGroup)
+                    .where(TagGroup.workspace_id == source_workspace_id)
+                    .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
+                )
+            ).all()
+        )
+
+        # Load source tags
+        source_tags = list(
+            (
+                await session.exec(
+                    select(Tag)
+                    .where(Tag.workspace_id == source_workspace_id)
+                    .order_by(Tag.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
+                )
+            ).all()
+        )
+
+        # Create new groups with ID remapping
+        group_id_map: dict[UUID, UUID] = {}
+        for src_group in source_groups:
+            new_group = TagGroup(
+                workspace_id=target_workspace_id,
+                name=src_group.name,
+                order_index=src_group.order_index,
+            )
+            session.add(new_group)
+            await session.flush()
+            group_id_map[src_group.id] = new_group.id
+
+        # Create new tags with remapped group_id
+        new_tags: list[Tag] = []
+        for src_tag in source_tags:
+            new_group_id = (
+                group_id_map.get(src_tag.group_id) if src_tag.group_id else None
+            )
+            new_tag = Tag(
+                workspace_id=target_workspace_id,
+                name=src_tag.name,
+                color=src_tag.color,
+                description=src_tag.description,
+                locked=src_tag.locked,
+                order_index=src_tag.order_index,
+                group_id=new_group_id,
+            )
+            session.add(new_tag)
+            await session.flush()
+            await session.refresh(new_tag)
+            new_tags.append(new_tag)
+
+        return new_tags
+
+
 # ── CRDT cleanup (stub, fully implemented in Task 3) ────────────────
 
 

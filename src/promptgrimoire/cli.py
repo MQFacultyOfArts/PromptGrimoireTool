@@ -790,6 +790,7 @@ def test_e2e() -> None:
                 "-m",
                 "e2e",
                 *mode_args,
+                "--ff",
                 "--durations=10",
                 "--tb=short",
                 "-v",

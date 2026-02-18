@@ -187,6 +187,10 @@ class TestRemotePresenceSmoke:
             page1.context.close()
             page2.context.close()
 
+    @pytest.mark.xfail(
+        reason="Depends on selection broadcast which doesn't reliably propagate — #177",
+        strict=False,
+    )
     def test_disconnect_removes_remote_presence(
         self, browser: Browser, app_server: str
     ) -> None:

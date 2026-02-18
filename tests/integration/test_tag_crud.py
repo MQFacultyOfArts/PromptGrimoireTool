@@ -436,3 +436,332 @@ class TestPermissionEnforcement:
 
         with pytest.raises(PermissionError, match="Tag creation not allowed"):
             await create_tag_group(ws.id, name="Should Fail")
+
+
+class TestReorderTags:
+    """Tests for reorder_tags."""
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_updates_order_index(self) -> None:
+        """Reorder tags sets order_index to list position.
+
+        Verifies AC2.6.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag,
+            get_tag,
+            reorder_tags,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="Tag1", color="#a", order_index=0)
+        t2 = await create_tag(ws_id, name="Tag2", color="#b", order_index=1)
+        t3 = await create_tag(ws_id, name="Tag3", color="#c", order_index=2)
+
+        # Reorder: Tag3, Tag1, Tag2
+        await reorder_tags([t3.id, t1.id, t2.id])
+
+        r1 = await get_tag(t1.id)
+        r2 = await get_tag(t2.id)
+        r3 = await get_tag(t3.id)
+        assert r3 is not None and r3.order_index == 0
+        assert r1 is not None and r1.order_index == 1
+        assert r2 is not None and r2.order_index == 2
+
+
+class TestReorderTagGroups:
+    """Tests for reorder_tag_groups."""
+
+    @pytest.mark.asyncio
+    async def test_reorder_groups_updates_order_index(self) -> None:
+        """Reorder groups sets order_index to list position.
+
+        Verifies AC2.7.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag_group,
+            get_tag_group,
+            reorder_tag_groups,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        g1 = await create_tag_group(ws_id, name="G1", order_index=0)
+        g2 = await create_tag_group(ws_id, name="G2", order_index=1)
+        g3 = await create_tag_group(ws_id, name="G3", order_index=2)
+
+        # Reverse order
+        await reorder_tag_groups([g3.id, g2.id, g1.id])
+
+        r1 = await get_tag_group(g1.id)
+        r2 = await get_tag_group(g2.id)
+        r3 = await get_tag_group(g3.id)
+        assert r3 is not None and r3.order_index == 0
+        assert r2 is not None and r2.order_index == 1
+        assert r1 is not None and r1.order_index == 2
+
+
+class TestImportTagsFromActivity:
+    """Tests for import_tags_from_activity."""
+
+    @pytest.mark.asyncio
+    async def test_import_copies_groups_and_tags(self) -> None:
+        """Import copies TagGroups and Tags to target workspace.
+
+        Verifies AC3.1, AC3.2, AC3.3.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_activity,
+            list_tag_groups_for_workspace,
+            list_tags_for_workspace,
+        )
+
+        # Source activity with tags
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+
+        src_group = await create_tag_group(src_ws, name="Legal", order_index=0)
+        src_t1 = await create_tag(
+            src_ws,
+            name="Jurisdiction",
+            color="#1f77b4",
+            group_id=src_group.id,
+            description="Court jurisdiction",
+            locked=True,
+            order_index=0,
+        )
+        src_t2 = await create_tag(
+            src_ws,
+            name="Facts",
+            color="#ff7f0e",
+            group_id=src_group.id,
+            order_index=1,
+        )
+        src_t3 = await create_tag(
+            src_ws,
+            name="Ungrouped",
+            color="#2ca02c",
+            order_index=2,
+        )
+
+        # Target activity
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        # Import
+        new_tags = await import_tags_from_activity(src_activity.id, tgt_ws)
+
+        # AC3.1: target has 1 group and 3 tags
+        tgt_groups = await list_tag_groups_for_workspace(tgt_ws)
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        assert len(tgt_groups) == 1
+        assert len(tgt_tags) == 3
+        assert len(new_tags) == 3
+
+        # AC3.2: new UUIDs
+        assert tgt_groups[0].id != src_group.id
+        for new_tag, src_tag in zip(
+            sorted(new_tags, key=lambda t: t.order_index),
+            [src_t1, src_t2, src_t3],
+            strict=True,
+        ):
+            assert new_tag.id != src_tag.id
+
+        # AC3.3: preserved attributes
+        grouped = [t for t in new_tags if t.group_id is not None]
+        ungrouped = [t for t in new_tags if t.group_id is None]
+        assert len(grouped) == 2
+        assert len(ungrouped) == 1
+
+        # Grouped tags point to new group, not source group
+        for t in grouped:
+            assert t.group_id == tgt_groups[0].id
+            assert t.group_id != src_group.id
+
+        # Check preserved fields by name
+        by_name = {t.name: t for t in new_tags}
+        assert by_name["Jurisdiction"].color == "#1f77b4"
+        assert by_name["Jurisdiction"].description == "Court jurisdiction"
+        assert by_name["Jurisdiction"].locked is True
+        assert by_name["Jurisdiction"].order_index == 0
+        assert by_name["Facts"].color == "#ff7f0e"
+        assert by_name["Facts"].order_index == 1
+        assert by_name["Ungrouped"].color == "#2ca02c"
+        assert by_name["Ungrouped"].order_index == 2
+
+
+class TestDeleteTagCrdtCleanup:
+    """Tests for CRDT highlight cleanup on tag deletion."""
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_removes_crdt_highlights(self) -> None:
+        """Deleting a tag removes its CRDT highlights and tag_order.
+
+        Verifies AC2.3.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+
+        # Place workspace in activity so tag creation is permitted
+        from promptgrimoire.db.workspaces import place_workspace_in_activity
+
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="ToDelete", color="#f00")
+
+        # Build CRDT state with 3 highlights for this tag
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        hl_ids = []
+        for i in range(3):
+            hl_id = doc.add_highlight(
+                start_char=i * 10,
+                end_char=(i + 1) * 10,
+                tag=tag_str,
+                text=f"text{i}",
+                author="test",
+            )
+            hl_ids.append(hl_id)
+        doc.set_tag_order(tag_str, hl_ids)
+
+        # Save CRDT state to workspace
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Delete tag
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+
+        # Verify CRDT state is cleaned up
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+
+        doc2 = AnnotationDocument("verify")
+        doc2.apply_update(ws_after.crdt_state)
+        assert doc2.get_all_highlights() == []
+        assert tag_str not in doc2.tag_order
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_preserves_other_highlights(self) -> None:
+        """Deleting tag A removes only its highlights; tag B remains.
+
+        Verifies AC2.3.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag_a = await create_tag(ws.id, name="TagA", color="#a00")
+        tag_b = await create_tag(ws.id, name="TagB", color="#0b0")
+
+        # Build CRDT state with highlights for both tags
+        doc = AnnotationDocument("test")
+        a_str = str(tag_a.id)
+        b_str = str(tag_b.id)
+
+        doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag=a_str,
+            text="a1",
+            author="test",
+        )
+        b_hl = doc.add_highlight(
+            start_char=20,
+            end_char=30,
+            tag=b_str,
+            text="b1",
+            author="test",
+        )
+        doc.set_tag_order(a_str, [])
+        doc.set_tag_order(b_str, [b_hl])
+
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Delete tag A only
+        await delete_tag(tag_a.id)
+
+        # Verify tag B highlights remain
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+
+        doc2 = AnnotationDocument("verify")
+        doc2.apply_update(ws_after.crdt_state)
+
+        remaining = doc2.get_all_highlights()
+        assert len(remaining) == 1
+        assert remaining[0]["tag"] == b_str
+        assert b_str in doc2.tag_order
+        assert a_str not in doc2.tag_order
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_no_tag_order_entry(self) -> None:
+        """Cleanup succeeds when tag has highlights but no tag_order.
+
+        Verifies AC2.3 edge case: missing tag_order key is
+        silently skipped.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="NoOrder", color="#f0f")
+
+        # Build CRDT with highlights but NO tag_order entry
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag=tag_str,
+            text="hi",
+            author="test",
+        )
+        # Deliberately skip set_tag_order
+
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Delete tag -- should not error
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+
+        # Verify highlights removed
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+
+        doc2 = AnnotationDocument("verify")
+        doc2.apply_update(ws_after.crdt_state)
+        assert doc2.get_all_highlights() == []

@@ -28,29 +28,37 @@ class TagInfo:
         name: Human-readable display name (e.g. "Jurisdiction", "Legal Issues").
         colour: Hex colour string (e.g. "#1f77b4").
         raw_key: Tag UUID as a string for CRDT highlight tag identifiers.
+        group_name: Optional group name for toolbar visual grouping.
     """
 
     name: str
     colour: str
     raw_key: str
+    group_name: str | None = None
 
 
 async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
     """Load tags for a workspace from the database.
 
-    Returns TagInfo instances ordered by order_index, with raw_key set to
-    the Tag UUID string for use as CRDT highlight tag identifiers.
+    Returns TagInfo instances ordered by group then order_index, with
+    raw_key set to the Tag UUID string for use as CRDT highlight tag
+    identifiers.  group_name is populated from the joined TagGroup.
     """
     from promptgrimoire.db.tags import (  # noqa: PLC0415  -- lazy import avoids circular dep
+        list_tag_groups_for_workspace,
         list_tags_for_workspace,
     )
 
     tags = await list_tags_for_workspace(workspace_id)
+    groups = await list_tag_groups_for_workspace(workspace_id)
+    group_names = {g.id: g.name for g in groups}
+
     return [
         TagInfo(
             name=tag.name,
             colour=tag.color,
             raw_key=str(tag.id),
+            group_name=group_names.get(tag.group_id),
         )
         for tag in tags
     ]

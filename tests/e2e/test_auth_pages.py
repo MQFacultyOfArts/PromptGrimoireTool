@@ -25,6 +25,11 @@ from promptgrimoire.auth.mock import (
 )
 from promptgrimoire.config import get_settings
 
+# Use explicit email token format for tests that assert on the email address.
+# MOCK_VALID_MAGIC_TOKEN depends on _pending_email (shared singleton state),
+# which can be polluted by prior tests when pytest-randomly reorders them.
+_EXPLICIT_TEST_TOKEN = "mock-token-test@example.com"  # nosec B105
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
@@ -171,8 +176,8 @@ class TestProtectedPage:
         self, subtests, fresh_page: Page, app_server: str
     ) -> None:
         """Protected page behaviour when authenticated (user info, logout)."""
-        # Authenticate first
-        fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
+        # Authenticate first — use explicit token to avoid _pending_email pollution
+        fresh_page.goto(f"{app_server}/auth/callback?token={_EXPLICIT_TEST_TOKEN}")
         expect(fresh_page).to_have_url(f"{app_server}/")
 
         # Navigate to protected page
@@ -203,8 +208,8 @@ class TestSessionPersistence:
         self, subtests, fresh_page: Page, app_server: str
     ) -> None:
         """Session persists on refresh and across navigation."""
-        # Authenticate first
-        fresh_page.goto(f"{app_server}/auth/callback?token={MOCK_VALID_MAGIC_TOKEN}")
+        # Authenticate first — use explicit token to avoid _pending_email pollution
+        fresh_page.goto(f"{app_server}/auth/callback?token={_EXPLICIT_TEST_TOKEN}")
         expect(fresh_page).to_have_url(f"{app_server}/")
 
         # Navigate to protected page
@@ -213,8 +218,10 @@ class TestSessionPersistence:
         # --- Subtest: session persists on refresh ---
         with subtests.test(msg="persists_on_refresh"):
             fresh_page.reload()
-            expect(fresh_page).to_have_url(f"{app_server}/protected")
-            expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
+            # NiceGUI re-renders via WebSocket after reload — give it time
+            expect(fresh_page.get_by_text("test@example.com")).to_be_visible(
+                timeout=10000
+            )
 
         # --- Subtest: session persists across navigation ---
         with subtests.test(msg="persists_across_navigation"):

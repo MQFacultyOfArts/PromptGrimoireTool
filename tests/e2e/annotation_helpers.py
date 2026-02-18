@@ -30,11 +30,18 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     Uses the text walker (annotation-highlight.js) to convert char offsets
     to screen coordinates, then performs a mouse click-drag selection.
 
+    Ensures the text walker is ready before attempting coordinate lookup,
+    since tab switches can momentarily destroy and rebuild the DOM.
+
     Args:
         page: Playwright page.
         start_char: Index of first character to select.
         end_char: Index of last character to select (inclusive).
     """
+    # Ensure text walker and doc-container are ready (tab switches can
+    # rebuild the DOM after _textNodes was cached).
+    wait_for_text_walker(page, timeout=10000)
+
     # Get bounding rectangles for start and end positions via text walker.
     # charOffsetToRect() handles StaticRange -> live Range conversion
     # internally (charOffsetToRange() returns StaticRange which does NOT
@@ -42,7 +49,7 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     coords = page.evaluate(
         """([startChar, endChar]) => {
             const container = document.getElementById('doc-container');
-            if (typeof walkTextNodes === 'undefined') return null;
+            if (!container || typeof walkTextNodes === 'undefined') return null;
             const nodes = walkTextNodes(container);
             const startRect = charOffsetToRect(nodes, startChar);
             const endRect = charOffsetToRect(nodes, endChar);
@@ -290,7 +297,8 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
     """
     try:
         page.wait_for_function(
-            "() => window._textNodes && window._textNodes.length > 0",
+            "() => document.getElementById('doc-container')"
+            " && window._textNodes && window._textNodes.length > 0",
             timeout=timeout,
         )
     except Exception as exc:

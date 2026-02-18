@@ -10,7 +10,7 @@ respond editor, CRDT sync) have been folded into persona test workflows:
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_01.md
-- AC: three-tab-ui.AC1.1, AC2.6
+- AC: three-tab-ui.AC1.1
 """
 
 from __future__ import annotations
@@ -74,21 +74,3 @@ class TestTabHeaders:
         # Verify Annotate is the selected/active tab
         annotate_tab = tabs.nth(0)
         expect(annotate_tab).to_have_attribute("aria-selected", "true")
-
-
-class TestOrganiseTabColumns:
-    """Verify Tab 2 edge cases for tag columns.
-
-    Verifies: three-tab-ui.AC2.6
-    """
-
-    @pytestmark_db
-    def test_organise_tab_untagged_highlight_in_untagged_column(self) -> None:
-        """Create a highlight without a tag, verify it appears in Untagged column.
-
-        Verifies: three-tab-ui.AC2.6
-        Note: This test depends on being able to create a highlight with no tag.
-        If the UI always assigns a tag, this test will need adjustment.
-        The unit test test_untagged_highlights_collected covers the logic path.
-        """
-        pytest.skip("No UI mechanism to create untagged highlights yet")

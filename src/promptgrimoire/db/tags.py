@@ -430,19 +430,57 @@ async def import_tags_from_activity(
         return new_tags
 
 
-# ── CRDT cleanup (stub, fully implemented in Task 3) ────────────────
+# ── CRDT cleanup ─────────────────────────────────────────────────────
 
 
 async def _cleanup_crdt_highlights_for_tag(
     workspace_id: UUID,
     tag_id: UUID,
 ) -> int:
-    """Remove CRDT highlights referencing a tag.
+    """Remove CRDT highlights referencing a tag and its tag_order entry.
 
-    Loads workspace CRDT state, removes highlights matching the tag,
-    removes the tag_order entry, and saves the updated state.
+    Loads the workspace's CRDT state, iterates all highlights to find
+    those matching the tag UUID, removes them and the tag_order entry,
+    then saves the updated state back to the workspace.
 
-    Returns the count of removed highlights.
+    Uses the same lazy-import pattern as ``_replay_crdt_state()`` in
+    ``db/workspaces.py`` to avoid circular imports.
+
+    Args:
+        workspace_id: The workspace whose CRDT state to update.
+        tag_id: The tag UUID whose highlights should be removed.
+
+    Returns:
+        The count of removed highlights.
     """
-    _ = workspace_id, tag_id  # Used in full implementation (Task 3)
-    return 0
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.db.models import Workspace
+
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace or not workspace.crdt_state:
+            return 0
+
+        doc = AnnotationDocument("cleanup-tmp")
+        doc.apply_update(workspace.crdt_state)
+
+        # Collect highlight IDs matching this tag
+        tag_str = str(tag_id)
+        to_remove = [
+            hl["id"] for hl in doc.get_all_highlights() if hl.get("tag") == tag_str
+        ]
+
+        # Remove matching highlights
+        for hl_id in to_remove:
+            doc.remove_highlight(hl_id)
+
+        # Remove the tag_order entry (silently skip if missing)
+        if tag_str in doc.tag_order:
+            del doc.tag_order[tag_str]
+
+        # Save updated state
+        workspace.crdt_state = doc.get_full_state()
+        session.add(workspace)
+        await session.flush()
+
+        return len(to_remove)

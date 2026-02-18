@@ -276,3 +276,293 @@ class TestEmptyTagClone:
 
         assert cloned_groups == []
         assert cloned_tags == []
+
+
+class TestCrdtTagRemapping:
+    """Tests for CRDT highlight tag remapping during clone.
+
+    These tests set up template CRDT state with highlights referencing
+    Tag UUIDs, clone the workspace, and verify the clone's CRDT state
+    has remapped tag references.
+    """
+
+    @pytest.mark.asyncio
+    async def test_highlight_tags_remapped_to_cloned_tag_uuids(self) -> None:
+        """Cloned highlights reference the clone's Tag UUIDs, not the template's.
+
+        Verifies AC4.3.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import list_tags_for_workspace
+        from promptgrimoire.db.workspace_documents import add_document
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, _, activity = await _make_activity()
+        user = await _make_clone_user()
+
+        # Add a document so highlights have a document_id
+        tmpl_doc = await add_document(
+            workspace_id=activity.template_workspace_id,
+            type="source",
+            content="<p>Some content</p>",
+            source_type="html",
+            title="Source",
+        )
+
+        # Create 2 tags on template
+        template_tags = await _add_tags(
+            activity.template_workspace_id,
+            [
+                {"name": "TagA", "color": "#111111"},
+                {"name": "TagB", "color": "#222222"},
+            ],
+        )
+        tag_a, tag_b = template_tags
+
+        # Build CRDT state: 2 highlights for TagA, 1 for TagB
+        doc = AnnotationDocument("setup")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag=str(tag_a.id),
+            text="word1",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        doc.add_highlight(
+            start_char=10,
+            end_char=15,
+            tag=str(tag_a.id),
+            text="word2",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        doc.add_highlight(
+            start_char=20,
+            end_char=25,
+            tag=str(tag_b.id),
+            text="word3",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        await save_workspace_crdt_state(
+            activity.template_workspace_id, doc.get_full_state()
+        )
+
+        # Clone
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        # Load clone CRDT state
+        assert clone.crdt_state is not None
+        clone_doc = AnnotationDocument("verify")
+        clone_doc.apply_update(clone.crdt_state)
+        highlights = clone_doc.get_all_highlights()
+
+        assert len(highlights) == 3
+
+        # Get the cloned tag UUIDs
+        cloned_tags = await list_tags_for_workspace(clone.id)
+        clone_by_name = {t.name: t for t in cloned_tags}
+        clone_tag_a_id = str(clone_by_name["TagA"].id)
+        clone_tag_b_id = str(clone_by_name["TagB"].id)
+
+        # All highlights should reference cloned tag UUIDs
+        hl_by_text = {h["text"]: h for h in highlights}
+        assert hl_by_text["word1"]["tag"] == clone_tag_a_id
+        assert hl_by_text["word2"]["tag"] == clone_tag_a_id
+        assert hl_by_text["word3"]["tag"] == clone_tag_b_id
+
+        # None should reference template tag UUIDs
+        template_tag_ids = {str(tag_a.id), str(tag_b.id)}
+        for hl in highlights:
+            assert hl["tag"] not in template_tag_ids
+
+    @pytest.mark.asyncio
+    async def test_tag_order_keys_remapped_to_cloned_tag_uuids(self) -> None:
+        """Cloned tag_order uses the clone's Tag UUIDs as keys.
+
+        Verifies AC4.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import list_tags_for_workspace
+        from promptgrimoire.db.workspace_documents import add_document
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, _, activity = await _make_activity()
+        user = await _make_clone_user()
+
+        tmpl_doc = await add_document(
+            workspace_id=activity.template_workspace_id,
+            type="source",
+            content="<p>Content for tag order test</p>",
+            source_type="html",
+            title="Source",
+        )
+
+        template_tags = await _add_tags(
+            activity.template_workspace_id,
+            [
+                {"name": "TagA", "color": "#111111"},
+                {"name": "TagB", "color": "#222222"},
+            ],
+        )
+        tag_a, tag_b = template_tags
+
+        # Build CRDT state with highlights and tag_order
+        doc = AnnotationDocument("setup")
+        hl1_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag=str(tag_a.id),
+            text="first",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        hl2_id = doc.add_highlight(
+            start_char=10,
+            end_char=15,
+            tag=str(tag_a.id),
+            text="second",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        hl3_id = doc.add_highlight(
+            start_char=20,
+            end_char=25,
+            tag=str(tag_b.id),
+            text="third",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+
+        # Set tag_order with template tag UUIDs as keys
+        doc.set_tag_order(str(tag_a.id), [hl1_id, hl2_id])
+        doc.set_tag_order(str(tag_b.id), [hl3_id])
+        await save_workspace_crdt_state(
+            activity.template_workspace_id, doc.get_full_state()
+        )
+
+        # Clone
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        # Load clone CRDT
+        assert clone.crdt_state is not None
+        clone_doc = AnnotationDocument("verify")
+        clone_doc.apply_update(clone.crdt_state)
+
+        # Get cloned tag UUIDs
+        cloned_tags = await list_tags_for_workspace(clone.id)
+        clone_by_name = {t.name: t for t in cloned_tags}
+        clone_tag_a_id = str(clone_by_name["TagA"].id)
+        clone_tag_b_id = str(clone_by_name["TagB"].id)
+
+        # tag_order keys should be cloned tag UUIDs
+        tag_order_dict = dict(clone_doc.tag_order)
+        assert clone_tag_a_id in tag_order_dict
+        assert clone_tag_b_id in tag_order_dict
+
+        # Template tag UUIDs should NOT appear as keys
+        assert str(tag_a.id) not in tag_order_dict
+        assert str(tag_b.id) not in tag_order_dict
+
+        # Highlight IDs in tag_order should be the clone's highlight IDs
+        clone_highlights = clone_doc.get_all_highlights()
+        clone_hl_ids = {h["id"] for h in clone_highlights}
+        template_hl_ids = {hl1_id, hl2_id, hl3_id}
+
+        order_a = list(tag_order_dict[clone_tag_a_id])
+        order_b = list(tag_order_dict[clone_tag_b_id])
+
+        assert len(order_a) == 2
+        assert len(order_b) == 1
+
+        # All highlight IDs in tag_order are from the clone
+        for hl_id in order_a + order_b:
+            assert hl_id in clone_hl_ids
+            assert hl_id not in template_hl_ids
+
+
+class TestLegacyBriefTagPassthrough:
+    """Tests for backward compatibility with legacy BriefTag strings."""
+
+    @pytest.mark.asyncio
+    async def test_legacy_string_tags_pass_through_unchanged(self) -> None:
+        """UUID tags are remapped but legacy string tags pass through unchanged.
+
+        Verifies AC4.3 backward compatibility.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import list_tags_for_workspace
+        from promptgrimoire.db.workspace_documents import add_document
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, _, activity = await _make_activity()
+        user = await _make_clone_user()
+
+        tmpl_doc = await add_document(
+            workspace_id=activity.template_workspace_id,
+            type="source",
+            content="<p>Legacy tag test</p>",
+            source_type="html",
+            title="Source",
+        )
+
+        # Create 1 tag (UUID-based)
+        template_tags = await _add_tags(
+            activity.template_workspace_id,
+            [{"name": "ModernTag", "color": "#333333"}],
+        )
+        modern_tag = template_tags[0]
+
+        # Build CRDT state: one highlight with UUID tag, one with legacy string
+        doc = AnnotationDocument("setup")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag=str(modern_tag.id),
+            text="modern",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        doc.add_highlight(
+            start_char=10,
+            end_char=20,
+            tag="jurisdiction",
+            text="legacy",
+            author="instructor",
+            document_id=str(tmpl_doc.id),
+        )
+        await save_workspace_crdt_state(
+            activity.template_workspace_id, doc.get_full_state()
+        )
+
+        # Clone
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        # Load clone CRDT
+        assert clone.crdt_state is not None
+        clone_doc = AnnotationDocument("verify")
+        clone_doc.apply_update(clone.crdt_state)
+        highlights = clone_doc.get_all_highlights()
+
+        assert len(highlights) == 2
+
+        hl_by_text = {h["text"]: h for h in highlights}
+
+        # UUID-based tag should be remapped to clone's tag UUID
+        cloned_tags = await list_tags_for_workspace(clone.id)
+        clone_tag_id = str(cloned_tags[0].id)
+        assert hl_by_text["modern"]["tag"] == clone_tag_id
+        assert hl_by_text["modern"]["tag"] != str(modern_tag.id)
+
+        # Legacy string tag should pass through unchanged
+        assert hl_by_text["legacy"]["tag"] == "jurisdiction"

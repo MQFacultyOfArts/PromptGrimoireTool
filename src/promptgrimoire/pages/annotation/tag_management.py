@@ -33,12 +33,23 @@ _SWATCH_BASE = "w-8 h-8 min-w-0 p-0 rounded-full"
 _SWATCH_SELECTED = f"{_SWATCH_BASE} ring-2 ring-offset-1 ring-black"
 
 
-async def _refresh_tag_state(state: PageState) -> None:
+async def _refresh_tag_state(
+    state: PageState,
+    *,
+    reload_crdt: bool = False,
+) -> None:
     """Reload tags from DB and rebuild highlight CSS.
+
+    Args:
+        state: Page state to update.
+        reload_crdt: If True, also reload CRDT state from DB into the
+            in-memory doc and refresh annotation cards + client highlights.
+            Required after tag deletion which modifies CRDT in the DB.
 
     Lazily imports sibling modules to avoid circular dependencies.
     """
     from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+        _push_highlights_to_client,
         _update_highlight_css,
     )
     from promptgrimoire.pages.annotation.tags import (  # noqa: PLC0415
@@ -47,6 +58,16 @@ async def _refresh_tag_state(state: PageState) -> None:
 
     state.tag_info_list = await workspace_tags(state.workspace_id)
     _update_highlight_css(state)
+
+    if reload_crdt and state.crdt_doc is not None:
+        from promptgrimoire.db.workspaces import get_workspace  # noqa: PLC0415
+
+        ws = await get_workspace(state.workspace_id)
+        if ws and ws.crdt_state:
+            state.crdt_doc.apply_update(ws.crdt_state)
+        _push_highlights_to_client(state)
+        if state.refresh_annotations:
+            state.refresh_annotations()
 
 
 def _build_colour_picker(
@@ -741,7 +762,7 @@ def _build_management_callbacks(
         ui.notify("Tag saved", type="positive")
 
     async def _on_tag_deleted(tag_name: str) -> None:
-        await _refresh_tag_state(state)
+        await _refresh_tag_state(state, reload_crdt=True)
         await render_tag_list()
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
 

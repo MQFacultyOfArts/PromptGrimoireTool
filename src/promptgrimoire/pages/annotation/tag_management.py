@@ -78,7 +78,7 @@ def _build_colour_picker(
                 "",
                 on_click=lambda _e, c=preset: _select_swatch(c),
             )
-            btn.style(f"background-color: {preset}")
+            btn.style(f"background-color: {preset} !important")
             cls = _SWATCH_SELECTED if i == 0 else _SWATCH_BASE
             btn.classes(cls)
             swatch_buttons.append(btn)

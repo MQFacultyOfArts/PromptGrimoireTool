@@ -302,6 +302,7 @@ for key in list(os.environ.keys()):
 
 os.environ['DEV__AUTH_MOCK'] = 'true'
 os.environ['APP__STORAGE_SECRET'] = 'test-secret-for-e2e'
+# asyncio debug DISABLED — it causes event loop blocks (linecache.checkcache)
 os.environ.setdefault('STYTCH__SSO_CONNECTION_ID', 'test-sso-connection-id')
 os.environ.setdefault('STYTCH__PUBLIC_TOKEN', 'test-public-token')
 
@@ -311,6 +312,107 @@ port = int(sys.argv[1])
 from promptgrimoire import _setup_logging
 _setup_logging()
 
+# --- Event loop watchdog (runs on a separate thread) ---
+import asyncio
+import logging
+import threading
+
+_watchdog_logger = logging.getLogger("e2e.watchdog")
+_watchdog_loop_ref: asyncio.AbstractEventLoop | None = None
+
+def _watchdog_loop():
+    \"\"\"Log event loop responsiveness every 2 seconds from a daemon thread.\"\"\"
+    import time
+    global _watchdog_loop_ref
+    while True:
+        time.sleep(2)
+        loop = _watchdog_loop_ref
+        if loop is None:
+            continue
+
+        # Schedule a callback on the event loop and measure how long it takes
+        event = threading.Event()
+        t0 = time.monotonic()
+
+        def _ping():
+            event.set()
+
+        try:
+            loop.call_soon_threadsafe(_ping)
+        except RuntimeError:
+            _watchdog_logger.warning("WATCHDOG: event loop closed")
+            break
+
+        responded = event.wait(timeout=5.0)
+        elapsed = time.monotonic() - t0
+
+        if not responded:
+            import sys as _sys
+            import traceback as _tb
+            _watchdog_logger.warning(
+                "WATCHDOG: event loop DID NOT RESPOND in 5.0s"
+                " — BLOCKED. Dumping stacks to file."
+            )
+            # Canary: does code after the log message run?
+            open("/tmp/wd-canary.txt", "w").write("reached")
+            dump_path = "/tmp/watchdog-stacks.log"
+            try:
+                import datetime as _dt
+                fd = os.open(
+                    dump_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                    0o644,
+                )
+                def _w(s):
+                    os.write(fd, s.encode())
+                _w(
+                    f"\\n=== BLOCKED at"
+                    f" {_dt.datetime.now()} ===\\n"
+                )
+                frames = _sys._current_frames()
+                _w(f"Threads: {len(frames)}\\n")
+                for tid, frame in frames.items():
+                    tname = "unknown"
+                    for t in threading.enumerate():
+                        if t.ident == tid:
+                            tname = t.name
+                            break
+                    _w(f"--- {tname} (tid={tid}) ---\\n")
+                    for entry in _tb.extract_stack(frame):
+                        _w(
+                            f"  {entry.filename}:{entry.lineno}"
+                            f" in {entry.name}:"
+                            f" {entry.line}\\n"
+                        )
+                _w("=== END ===\\n")
+                os.close(fd)
+            except Exception as exc:
+                try:
+                    efd = os.open(
+                        dump_path,
+                        os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                        0o644,
+                    )
+                    os.write(
+                        efd,
+                        f"DUMP FAILED: {exc}\\n".encode(),
+                    )
+                    os.close(efd)
+                except Exception:
+                    pass
+        elif elapsed > 0.5:
+            _watchdog_logger.warning(
+                "WATCHDOG: event loop slow — responded in %.3fs", elapsed
+            )
+        else:
+            _watchdog_logger.debug(
+                "WATCHDOG: event loop OK — responded in %.3fs", elapsed
+            )
+
+_wd_thread = threading.Thread(target=_watchdog_loop, daemon=True)
+_wd_thread.start()
+# --- End watchdog ---
+
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 
@@ -318,21 +420,182 @@ import promptgrimoire
 _static_dir = Path(promptgrimoire.__file__).parent / "static"
 app.add_static_files("/static", str(_static_dir))
 
+
 # Diagnostic endpoint: pool + pg_stat + NiceGUI client stats
 @app.get("/api/test/diagnostics")
 async def _diagnostics():
     from nicegui import Client
+    from promptgrimoire.crdt.persistence import (
+        get_persistence_manager,
+    )
     from promptgrimoire.db.engine import (
         _pool_status, _state, log_pool_and_pg_stats,
+    )
+    from promptgrimoire.pages.annotation import (
+        _workspace_presence, _workspace_registry,
     )
 
     await log_pool_and_pg_stats()
 
-    pool = _state.engine.sync_engine.pool if _state.engine else None
+    pool = (
+        _state.engine.sync_engine.pool
+        if _state.engine
+        else None
+    )
+    pm = get_persistence_manager()
+    all_tasks = asyncio.all_tasks()
     return {
-        "pool": _pool_status(pool) if pool else "no engine",
+        "pool": (
+            _pool_status(pool) if pool else "no engine"
+        ),
+        "engine_id": id(_state.engine),
+        "engine_is_none": _state.engine is None,
         "nicegui_clients": len(Client.instances),
+        "nicegui_delete_tasks": sum(
+            len(c._delete_tasks)
+            for c in Client.instances.values()
+        ),
+        "crdt_docs": len(pm._doc_registry),
+        "crdt_dirty": len(pm._workspace_dirty),
+        "crdt_pending_saves": len(
+            pm._workspace_pending_saves
+        ),
+        "presence_workspaces": len(_workspace_presence),
+        "presence_total_clients": sum(
+            len(v) for v in _workspace_presence.values()
+        ),
+        "ws_registry": len(_workspace_registry._documents),
+        "asyncio_tasks": len(all_tasks),
+        "asyncio_task_names": _task_summary(all_tasks),
     }
+
+def _task_summary(tasks):
+    # Summarise asyncio tasks by coroutine/callback name.
+    from collections import Counter
+    names = []
+    for t in tasks:
+        coro = t.get_coro()
+        if coro is not None:
+            name = getattr(coro, '__qualname__', str(coro))
+        else:
+            name = t.get_name()
+        # Keep last two segments for disambiguation (e.g. Event.wait vs
+        # websocket_wait) instead of just the final name.
+        parts = name.rsplit('.', 2)
+        name = '.'.join(parts[-2:]) if len(parts) >= 2 else name
+        names.append(name)
+    return dict(Counter(names).most_common(10))
+
+# Cleanup endpoint: force-delete stale NiceGUI clients and engine.io
+# sessions between tests. Disconnects at both layers to prevent
+# task accumulation. See docs/e2e-debugging.md.
+@app.post("/api/test/cleanup")
+async def _cleanup():
+    from nicegui import Client, core
+    _cleanup_logger = logging.getLogger("e2e.cleanup")
+    before = len(Client.instances)
+    tasks_before = len(asyncio.all_tasks())
+    stale_ids = list(Client.instances.keys())
+    deleted = 0
+    sids_closed = 0
+    t_total = _time.monotonic()
+    for cid in stale_ids:
+        c = Client.instances.get(cid)
+        if c is not None:
+            for sid in list(c._socket_to_document_id.keys()):
+                try:
+                    await core.sio.disconnect(sid)
+                    sids_closed += 1
+                except Exception:
+                    pass
+            c.delete()
+            deleted += 1
+            await asyncio.sleep(0)
+    # Also disconnect any orphan engine.io sessions (WebSocket receive
+    # tasks from connections whose NiceGUI client was already deleted
+    # via the normal disconnect→delete_content→delete path).
+    eio_closed = 0
+    for eio_sid in list(core.sio.eio.sockets.keys()):
+        try:
+            await core.sio.eio.disconnect(eio_sid)
+            eio_closed += 1
+        except Exception:
+            pass
+    # Cancel orphan Event.wait tasks leaked by NiceGUI's page handler.
+    # page.py creates background_tasks.create(client._waiting_for_connection.wait())
+    # but never cancels it when the page result completes first.
+    # See handle_handshake() which CLEARS _waiting_for_connection (not sets it).
+    from nicegui import background_tasks as _bt
+    orphan_wait = 0
+    for t in list(_bt.running_tasks):
+        if not t.done():
+            coro = t.get_coro()
+            qn = getattr(coro, '__qualname__', '') if coro else ''
+            if qn == 'Event.wait':
+                t.cancel()
+                orphan_wait += 1
+    await asyncio.sleep(0)  # let cancellations propagate
+    elapsed_total = _time.monotonic() - t_total
+    tasks_after = len(asyncio.all_tasks())
+    _cleanup_logger.warning(
+        "CLEANUP: clients=%d/%d sids=%d eio=%d orphan_wait=%d"
+        " tasks=%d->%d elapsed=%.3fs",
+        deleted, before, sids_closed, eio_closed, orphan_wait,
+        tasks_before, tasks_after, elapsed_total,
+    )
+    return {
+        "deleted": deleted, "before": before,
+        "sids_closed": sids_closed,
+        "eio_closed": eio_closed,
+        "orphan_wait": orphan_wait,
+        "tasks_before": tasks_before,
+        "tasks_after": tasks_after,
+        "elapsed": elapsed_total,
+    }
+
+# Hand the running event loop to the watchdog thread
+@app.on_startup
+async def _hand_loop_to_watchdog():
+    global _watchdog_loop_ref
+    loop = asyncio.get_running_loop()
+    _watchdog_loop_ref = loop
+    # NOTE: loop.set_debug(True) CAUSES the event-loop block!
+    # In debug mode, every create_task() calls traceback.extract_stack()
+    # which calls linecache.checkcache() — O(n) filesystem stat() calls
+    # per stack frame per task. With many modules and frequent task
+    # creation, this blocks the event loop for 5-7 seconds.
+    # See watchdog-stacks.log for evidence.
+    _watchdog_logger.warning(
+        "WATCHDOG: acquired loop ref, asyncio debug OFF (debug causes block)"
+    )
+
+# Instrument NiceGUI client.delete() to measure time and element count.
+import time as _time
+from nicegui import Client as _Client
+
+# Monkey-patch Outbox.stop() to wake the sleeping loop immediately.
+# Without this, the outbox loop lingers for up to 1s in
+# asyncio.wait_for(Event.wait(), timeout=1.0) after stop() is called.
+from nicegui.outbox import Outbox as _Outbox
+_orig_outbox_stop = _Outbox.stop
+def _fast_outbox_stop(self):
+    _orig_outbox_stop(self)
+    if self._enqueue_event is not None:
+        self._enqueue_event.set()
+_Outbox.stop = _fast_outbox_stop
+
+_orig_delete = _Client.delete
+_delete_logger = logging.getLogger("e2e.client_delete")
+def _timed_delete(self):
+    n_elements = len(self.elements) if hasattr(self, 'elements') else -1
+    t0 = _time.monotonic()
+    _orig_delete(self)
+    elapsed = _time.monotonic() - t0
+    _delete_logger.warning(
+        "CLIENT_DELETE: id=%s elements=%d elapsed=%.3fs",
+        self.id[:8], n_elements, elapsed,
+    )
+_Client.delete = _timed_delete
 
 ui.run(
     port=port, reload=False, show=False,
@@ -356,10 +619,12 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     }
 
     console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
+    server_log = Path("test-e2e-server.log")
+    server_log_fh = server_log.open("w")
     process = subprocess.Popen(  # nosec B603 — hardcoded test server command
         [sys.executable, "-c", _E2E_SERVER_SCRIPT, str(port)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=server_log_fh,
+        stderr=subprocess.STDOUT,
         env=clean_env,
     )
 
@@ -367,11 +632,10 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     start_time = time.time()
     while time.time() - start_time < max_wait:
         if process.poll() is not None:
-            out = process.stdout.read() if process.stdout else b""
-            err = process.stderr.read() if process.stderr else b""
+            server_log_fh.close()
+            log_content = server_log.read_text()
             console.print(
-                f"[red]Server died (exit {process.returncode}):[/]\n"
-                f"{err.decode()}\n{out.decode()}"
+                f"[red]Server died (exit {process.returncode}):[/]\n{log_content}"
             )
             sys.exit(1)
         try:
@@ -393,6 +657,67 @@ def _stop_e2e_server(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
+
+
+def _check_ptrace_scope() -> None:
+    """Verify kernel.yama.ptrace_scope allows py-spy to attach."""
+    try:
+        scope = Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip()
+        if scope != "0":
+            console.print(
+                "[red]py-spy requires ptrace access.[/]\n"
+                "Run: sudo sysctl kernel.yama.ptrace_scope=0"
+            )
+            sys.exit(1)
+    except FileNotFoundError:
+        pass  # Non-Linux or no YAMA — assume OK
+
+
+def _start_pyspy(pid: int) -> subprocess.Popen[bytes]:
+    """Start py-spy recording against a server process."""
+    import shutil
+
+    pyspy = shutil.which("py-spy")
+    if pyspy is None:
+        console.print("[red]py-spy not found in PATH[/]")
+        sys.exit(1)
+
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path = log_dir / f"py-spy-{ts}.json"
+
+    console.print(f"[blue]py-spy recording PID {pid} → {out_path}[/]")
+    proc = subprocess.Popen(  # nosec B603
+        [
+            pyspy,
+            "record",
+            "--pid",
+            str(pid),
+            "--output",
+            str(out_path),
+            "--format",
+            "speedscope",
+            "--subprocesses",
+            "--rate",
+            "100",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return proc
+
+
+def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
+    """Stop py-spy recording and report output location."""
+    import signal
+
+    proc.send_signal(signal.SIGINT)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    console.print("[blue]py-spy recording saved to logs/[/]")
 
 
 def test_e2e() -> None:
@@ -417,10 +742,16 @@ def test_e2e() -> None:
     """
     import socket
 
-    # Consume --parallel before _run_pytest sees sys.argv
+    # Consume flags before _run_pytest sees sys.argv
     parallel = "--parallel" in sys.argv
     if parallel:
         sys.argv.remove("--parallel")
+    use_pyspy = "--py-spy" in sys.argv
+    if use_pyspy:
+        sys.argv.remove("--py-spy")
+
+    if use_pyspy:
+        _check_ptrace_scope()
 
     # Eagerly load settings so .env is read before subprocess spawning.
     from promptgrimoire.config import get_settings
@@ -439,6 +770,10 @@ def test_e2e() -> None:
 
     # All xdist workers inherit this and skip starting their own server
     os.environ["E2E_BASE_URL"] = url
+
+    pyspy_process: subprocess.Popen[bytes] | None = None
+    if use_pyspy:
+        pyspy_process = _start_pyspy(server_process.pid)
 
     if parallel:
         mode_args: list[str] = ["-n", "auto", "--dist=loadfile"]
@@ -462,6 +797,8 @@ def test_e2e() -> None:
             ],
         )
     finally:
+        if pyspy_process is not None:
+            _stop_pyspy(pyspy_process)
         _stop_e2e_server(server_process)
 
 

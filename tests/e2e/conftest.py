@@ -20,6 +20,7 @@ Traceability:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -38,32 +39,62 @@ if TYPE_CHECKING:
 _diag_logger = logging.getLogger("e2e.diagnostics")
 
 
-def pytest_runtest_teardown(item: pytest.Item) -> None:
-    """Query server diagnostics after each E2E test.
+@pytest.fixture(autouse=True)
+def _e2e_post_test_cleanup() -> Generator[None]:
+    """Wait for NiceGUI to process disconnects after each E2E test.
 
-    Hits /api/test/diagnostics on the E2E server to log pool status,
-    pg_stat_activity counts, and NiceGUI client count. This data is
-    essential for diagnosing resource leaks and server degradation.
+    Autouse fixture that tears down AFTER per-test fixtures (reverse setup
+    order). By the time this runs, authenticated_page/fresh_page have already
+    navigated to about:blank and closed their contexts, triggering NiceGUI's
+    normal disconnect→delete_content→delete chain.
 
-    Uses WARNING level so --log-cli-level=WARNING shows this output
-    even for passing tests (pytest captures stdout/stderr but not log-cli).
+    The sleep gives NiceGUI time to process the disconnect (reconnect_timeout
+    is 0.5s in E2E, so 1s is ample). Then we log diagnostics and clean up
+    any stragglers.
     """
+    yield
+
+    import time
+
     base_url = os.environ.get("E2E_BASE_URL", "")
     if not base_url:
         return
 
+    # Give NiceGUI time to fully process disconnects from fixture teardown.
+    # Chain: reconnect_timeout=0.5s → client.delete() → outbox.stop()
+    # → outbox Event.wait timeout=1.0s. Total worst case: 1.5s.
+    time.sleep(2.0)
+
+    # Log diagnostics AFTER cleanup has had time to run
     try:
         url = f"{base_url}/api/test/diagnostics"
         with urllib.request.urlopen(url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
             data = json.loads(resp.read().decode())
         _diag_logger.warning(
-            "AFTER %s: pool=%s nicegui_clients=%s",
-            item.name,
+            "DIAG: pool=%s clients=%s tasks=%s task_names=%s",
             data.get("pool"),
             data.get("nicegui_clients"),
+            data.get("asyncio_tasks"),
+            data.get("asyncio_task_names"),
         )
     except Exception as exc:
-        _diag_logger.warning("Fetch failed for %s: %s", item.name, exc)
+        _diag_logger.warning("Diagnostics fetch failed: %s", exc)
+
+    # Safety net: force-delete any stale clients that survived normal cleanup
+    try:
+        cleanup_url = f"{base_url}/api/test/cleanup"
+        req = urllib.request.Request(cleanup_url, method="POST", data=b"")
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
+            cleanup_data = json.loads(resp.read().decode())
+        _diag_logger.warning(
+            "CLEANUP: deleted=%s orphan_wait=%s tasks=%s->%s",
+            cleanup_data.get("deleted"),
+            cleanup_data.get("orphan_wait"),
+            cleanup_data.get("tasks_before"),
+            cleanup_data.get("tasks_after"),
+        )
+    except Exception:  # nosec B110 — cleanup is best-effort, failures are harmless
+        pass
 
 
 def _extract_workspace_id_from_url(url: str) -> str:
@@ -141,7 +172,8 @@ def fresh_page(browser: Browser) -> Generator[Page]:
 
     yield page
 
-    # Clean teardown
+    # Navigate away first to close NiceGUI WebSocket cleanly
+    page.goto("about:blank")
     page.close()
     context.close()
 
@@ -178,7 +210,8 @@ def authenticated_page(browser: Browser, app_server: str) -> Generator[Page]:
 
     yield page
 
-    # Clean teardown
+    # Navigate away first to close NiceGUI WebSocket cleanly
+    page.goto("about:blank")
     page.close()
     context.close()
 
@@ -256,6 +289,10 @@ def two_annotation_contexts(
     try:
         yield page1, page2, workspace_id
     finally:
+        # Navigate away to close NiceGUI WebSockets cleanly
+        for p in (page1, page2):
+            with contextlib.suppress(Exception):
+                p.goto("about:blank")
         context1.close()
         context2.close()
 
@@ -316,5 +353,9 @@ def two_authenticated_contexts(
     try:
         yield page1, page2, workspace_id, user1_email, user2_email
     finally:
+        # Navigate away to close NiceGUI WebSockets cleanly
+        for p in (page1, page2):
+            with contextlib.suppress(Exception):
+                p.goto("about:blank")
         context1.close()
         context2.close()

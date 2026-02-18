@@ -258,7 +258,7 @@ class TestDragBetweenColumns:
         expect(sidebar_card).to_be_visible(timeout=3000)
 
         # The tag dropdown should reflect "Legal Issues" tag
-        tag_select = sidebar_card.locator("[role='combobox']").first
+        tag_select = sidebar_card.locator(".q-select").first
         expect(tag_select).to_be_visible(timeout=5000)
         expect(tag_select).to_contain_text("Legal Issues", timeout=5000)
 

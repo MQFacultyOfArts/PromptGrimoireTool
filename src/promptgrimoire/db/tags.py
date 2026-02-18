@@ -6,12 +6,15 @@ Tags are per-workspace annotation categories; TagGroups visually group them.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import Tag, TagGroup
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -228,9 +231,9 @@ async def update_tag(
                 raise ValueError(msg)
 
         if name is not ...:
-            tag.name = name  # type: ignore[assignment]  -- sentinel
+            tag.name = name  # type: ignore[assignment]  -- Ellipsis sentinel already checked above
         if color is not ...:
-            tag.color = color  # type: ignore[assignment]  -- sentinel
+            tag.color = color  # type: ignore[assignment]  -- Ellipsis sentinel already checked above
         if description is not ...:
             tag.description = description
         if group_id is not ...:
@@ -252,6 +255,12 @@ async def delete_tag(tag_id: UUID) -> bool:
     CRDT highlights referencing this tag.
 
     Returns True if found and deleted.
+
+    Note: Uses three separate sessions (read, CRDT cleanup, delete) rather
+    than one long transaction. If the process crashes between CRDT cleanup
+    and row deletion, the tag row survives but its highlights are already
+    removed. This is recoverable by re-calling delete_tag(). The split is
+    intentional to avoid holding a transaction across the CRDT serialisation.
     """
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
@@ -268,7 +277,7 @@ async def delete_tag(tag_id: UUID) -> bool:
     # CRDT cleanup before row deletion (separate session)
     await _cleanup_crdt_highlights_for_tag(workspace_id, tag_id_for_cleanup)
 
-    # Delete the tag row
+    # Delete the tag row (separate session — see docstring)
     async with get_session() as session:
         tag_row = await session.get(Tag, tag_id_for_cleanup)
         if tag_row:
@@ -470,9 +479,14 @@ async def _cleanup_crdt_highlights_for_tag(
             hl["id"] for hl in doc.get_all_highlights() if hl.get("tag") == tag_str
         ]
 
-        # Remove matching highlights
+        # Remove matching highlights (best-effort: skip corrupted entries)
         for hl_id in to_remove:
-            doc.remove_highlight(hl_id)
+            try:
+                doc.remove_highlight(hl_id)
+            except Exception:  # CRDT corruption should not block cleanup
+                logger.warning(
+                    "Failed to remove highlight %s during tag cleanup", hl_id
+                )
 
         # Remove the tag_order entry (silently skip if missing)
         if tag_str in doc.tag_order:

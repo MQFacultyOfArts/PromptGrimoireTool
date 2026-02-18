@@ -1471,8 +1471,72 @@ async def _seed_enrolment_and_weeks(course) -> None:
     )
     console.print(f"[green]Created activity:[/] {activity.title} (id={activity.id})")
 
+    await _seed_tags_for_activity(activity)
+
     await update_course(course.id, default_copy_protection=True)
     console.print("[green]Enabled:[/] default copy protection on course")
+
+
+async def _seed_tags_for_activity(activity) -> None:
+    """Seed Legal Case Brief tag group and tags for an activity's template workspace.
+
+    Idempotent: skips if any TagGroups already exist for the workspace.
+    """
+    from sqlmodel import select
+
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Tag, TagGroup
+
+    workspace_id = activity.template_workspace_id
+
+    # Check if tags already exist (idempotent guard)
+    async with get_session() as session:
+        result = await session.exec(
+            select(TagGroup).where(TagGroup.workspace_id == workspace_id)
+        )
+        if result.first() is not None:
+            console.print("[yellow]Tags exist:[/] skipping tag seed")
+            return
+
+    # Legal Case Brief tag set with colorblind-accessible palette (Matplotlib tab10)
+    tag_definitions = [
+        (0, "Jurisdiction", "#1f77b4"),
+        (1, "Procedural History", "#ff7f0e"),
+        (2, "Legally Relevant Facts", "#2ca02c"),
+        (3, "Legal Issues", "#d62728"),
+        (4, "Reasons", "#9467bd"),
+        (5, "Court's Reasoning", "#8c564b"),
+        (6, "Decision", "#e377c2"),
+        (7, "Order", "#7f7f7f"),
+        (8, "Domestic Sources", "#bcbd22"),
+        (9, "Reflection", "#17becf"),
+    ]
+
+    async with get_session() as session:
+        group = TagGroup(
+            workspace_id=workspace_id,
+            name="Legal Case Brief",
+            order_index=0,
+        )
+        session.add(group)
+        await session.flush()
+
+        for order_index, name, color in tag_definitions:
+            tag = Tag(
+                workspace_id=workspace_id,
+                group_id=group.id,
+                name=name,
+                color=color,
+                locked=True,
+                order_index=order_index,
+            )
+            session.add(tag)
+
+        await session.flush()
+
+    console.print(
+        f"[green]Seeded tags:[/] Legal Case Brief ({len(tag_definitions)} tags)"
+    )
 
 
 def seed_data() -> None:

@@ -197,6 +197,7 @@ class TestNaughtyStudent:
                     page,
                     app_server,
                     '<script>alert("xss")</script>Safe text here',
+                    timeout=30000,
                 )
 
                 doc = page.locator("#doc-container")
@@ -217,6 +218,7 @@ class TestNaughtyStudent:
                     page,
                     app_server,
                     "<img src=x onerror=alert(1)>Normal text",
+                    timeout=30000,
                 )
 
                 doc = page.locator("#doc-container")

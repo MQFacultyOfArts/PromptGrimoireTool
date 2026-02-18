@@ -731,6 +731,7 @@ def test_e2e() -> None:
 
     By default, tests run single-threaded with ``-x`` (fail-fast).
     Pass ``--parallel`` to use xdist (``-n auto --dist=loadfile``).
+    Pass ``-v`` for verbose per-test output.
 
     The server URL is passed via ``E2E_BASE_URL`` env var. The
     ``app_server`` fixture checks this and yields it directly instead
@@ -793,7 +794,6 @@ def test_e2e() -> None:
                 "--ff",
                 "--durations=10",
                 "--tb=short",
-                "-v",
                 "--log-cli-level=WARNING",
             ],
         )

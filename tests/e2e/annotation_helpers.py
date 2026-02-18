@@ -136,7 +136,9 @@ def create_highlight_with_tag(
     tag_button.click()
 
 
-def setup_workspace_with_content(page: Page, app_server: str, content: str) -> None:
+def setup_workspace_with_content(
+    page: Page, app_server: str, content: str, *, timeout: int = 15000
+) -> None:
     """Navigate to annotation page, create workspace, and add content.
 
     Common setup pattern shared by all annotation tests:
@@ -150,6 +152,7 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
         page: Playwright page (can be from any browser context).
         app_server: Base URL of the app server.
         content: Text content to add as document.
+        timeout: Max wait for text walker init (ms). Increase for late-running tests.
 
     Traceability:
         Extracted from repetitive setup code across 15+ test classes.
@@ -168,7 +171,7 @@ def setup_workspace_with_content(page: Page, app_server: str, content: str) -> N
     confirm_btn.click()
 
     # Wait for the text walker to initialise
-    wait_for_text_walker(page, timeout=15000)
+    wait_for_text_walker(page, timeout=timeout)
     page.wait_for_timeout(200)
 
 

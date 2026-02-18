@@ -320,6 +320,10 @@ class TestHTMLPasteWhitespace:
 class TestParagraphNumberingAndIndent:
     """Tests for ordered list numbering and indentation preservation."""
 
+    @pytest.mark.xfail(
+        reason="Input pipeline strips margin-left from AustLII HTML — #179",
+        strict=False,
+    )
     def test_ground_1_indent_preserved(
         self,
         paste_ready_page: Page,

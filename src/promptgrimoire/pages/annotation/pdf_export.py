@@ -17,7 +17,6 @@ from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
 )
-from promptgrimoire.models.case import TAG_COLORS
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -44,8 +43,8 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     await asyncio.sleep(0)
 
     try:
-        # Get tag colours as dict[str, str]
-        tag_colours = {tag.value: colour for tag, colour in TAG_COLORS.items()}
+        # Get tag colours from workspace tag info
+        tag_colours = {ti.raw_key: ti.colour for ti in (state.tag_info_list or [])}
 
         # Get highlights for this document
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))

@@ -1,19 +1,23 @@
 """Tag-agnostic abstraction for annotation tag metadata.
 
-Provides TagInfo dataclass and a mapper from BriefTag enum to TagInfo list.
-This module is the single point of coupling between BriefTag (domain model)
-and the Tab 2/Tab 3 rendering code, which only receives list[TagInfo].
+Provides TagInfo dataclass and an async DB query to load workspace tags.
+This module is the single point of coupling between the DB-backed tag
+system and the Tab 2/Tab 3 rendering code, which only receives list[TagInfo].
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 1
 - AC: three-tab-ui.AC2.1 (data structure for tag columns)
+- Design: docs/implementation-plans/2026-02-18-95-annotation-tags/phase_04.md Task 1
+- AC: 95-annotation-tags.AC5.1 (tag toolbar renders from DB-backed tag list)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from promptgrimoire.models.case import TAG_COLORS, BriefTag
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +27,7 @@ class TagInfo:
     Attributes:
         name: Human-readable display name (e.g. "Jurisdiction", "Legal Issues").
         colour: Hex colour string (e.g. "#1f77b4").
-        raw_key: The raw enum value as a string (e.g. "jurisdiction"). Derived from
-                 name.lower().replace(" ", "_") for CRDT lookups and tag_order calls.
+        raw_key: Tag UUID as a string for CRDT highlight tag identifiers.
     """
 
     name: str
@@ -32,21 +35,22 @@ class TagInfo:
     raw_key: str
 
 
-def brief_tags_to_tag_info() -> list[TagInfo]:
-    """Convert BriefTag enum members to a list of TagInfo instances.
+async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
+    """Load tags for a workspace from the database.
 
-    Iterates BriefTag in declaration order, producing display names via
-    ``tag.value.replace("_", " ").title()`` and colours from TAG_COLORS.
-    The raw_key is the enum value (lowercase underscore-delimited).
-
-    Returns:
-        List of TagInfo in enum declaration order, one per BriefTag member.
+    Returns TagInfo instances ordered by order_index, with raw_key set to
+    the Tag UUID string for use as CRDT highlight tag identifiers.
     """
+    from promptgrimoire.db.tags import (  # noqa: PLC0415  -- lazy import avoids circular dep
+        list_tags_for_workspace,
+    )
+
+    tags = await list_tags_for_workspace(workspace_id)
     return [
         TagInfo(
-            name=tag.value.replace("_", " ").title(),
-            colour=TAG_COLORS[tag],
-            raw_key=tag.value,
+            name=tag.name,
+            colour=tag.color,
+            raw_key=str(tag.id),
         )
-        for tag in BriefTag
+        for tag in tags
     ]

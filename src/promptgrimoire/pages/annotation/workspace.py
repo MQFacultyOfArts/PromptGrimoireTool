@@ -51,7 +51,7 @@ from promptgrimoire.pages.annotation.highlights import (
 from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.respond import render_respond_tab
-from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import workspace_tags
 
 if TYPE_CHECKING:
     from nicegui import Client
@@ -550,7 +550,7 @@ def _setup_organise_drag(state: PageState) -> None:
         if not (state.organise_panel and state.crdt_doc):
             return
         if state.tag_info_list is None:
-            state.tag_info_list = brief_tags_to_tag_info()
+            return  # Tags not loaded yet — skip render
         render_organise_tab(
             state.organise_panel,
             state.tag_info_list,
@@ -571,7 +571,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     if not (state.respond_panel and state.crdt_doc):
         return
 
-    tags = state.tag_info_list or brief_tags_to_tag_info()
+    tags = state.tag_info_list or []
 
     def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
         _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
@@ -672,6 +672,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         workspace_id=workspace_id,
         user_name=_get_current_username(),
     )
+    state.tag_info_list = await workspace_tags(workspace_id)
 
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)

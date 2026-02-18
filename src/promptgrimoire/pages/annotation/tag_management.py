@@ -194,9 +194,11 @@ def _render_tag_row(
     tag: Any,
     *,
     can_edit: bool,
+    is_instructor: bool,
     group_options: dict[str, str],
     on_save: Any,
     on_delete: Any,
+    on_lock_toggle: Any | None = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
 
@@ -207,21 +209,28 @@ def _render_tag_row(
     can_edit:
         Whether inputs should be editable (False for locked tags viewed
         by non-instructors).
+    is_instructor:
+        Whether the current user is an instructor on a template workspace.
     group_options:
         Mapping of group UUID string -> group name for the group select.
     on_save:
         Async callback ``(tag_id, name, color, description, group_id) -> None``.
     on_delete:
         Async callback ``(tag_id, tag_name) -> None``.
+    on_lock_toggle:
+        Async callback ``(tag_id, locked) -> None``. Shown only for instructors.
     """
     with ui.row().classes("items-center w-full gap-1"):
+        # Drag handle
+        ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
+
         # Colour swatch
         ui.element("div").classes("w-6 h-6 rounded-full shrink-0").style(
             f"background-color: {tag.color}",
         )
 
-        # Lock icon for locked tags
-        if tag.locked:
+        # Lock icon for locked tags (non-instructor view)
+        if tag.locked and not is_instructor:
             ui.icon("lock").classes("text-gray-400").tooltip("Locked")
 
         # Editable fields
@@ -241,6 +250,14 @@ def _render_tag_row(
             for inp in (name_input, color_input, desc_input):
                 inp.props("readonly")
             group_sel.props("disable")
+
+        # Lock toggle (AC7.8) -- instructors only
+        if is_instructor and on_lock_toggle is not None:
+            ui.switch(value=tag.locked).tooltip(
+                "Lock tag (prevents student modification)"
+            ).on_value_change(
+                lambda e, tid=tag.id: on_lock_toggle(tid, e.value),
+            )
 
         # Action buttons
         save_btn = (
@@ -282,6 +299,7 @@ def _render_group_header(
 ) -> None:
     """Render a group header with name input and action buttons."""
     with ui.row().classes("items-center w-full gap-2 mt-4 mb-1"):
+        ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
         ui.icon("folder").classes("text-blue-600")
         group_name_input = ui.input(value=group.name).classes("font-bold text-blue-800")
         ui.button(
@@ -352,7 +370,53 @@ def _open_confirm_delete_group(
     dlg.open()
 
 
+# ── Reorder helpers ──────────────────────────────────────────────────
+
+
+def _reorder_list(items: list[Any], old_index: int, new_index: int) -> list[Any]:
+    """Move an item within a list from old_index to new_index.
+
+    Returns a new list with the item repositioned.
+    """
+    result = list(items)
+    item = result.pop(old_index)
+    result.insert(new_index, item)
+    return result
+
+
 # ── Tag list rendering (content of management dialog) ────────────────
+
+
+def _render_group_tags(
+    *,
+    group_tags: list[Any],
+    tag_ids: list[UUID],
+    is_instructor: bool,
+    group_options: dict[str, str],
+    on_save_tag: Any,
+    on_delete_tag: Any,
+    on_lock_toggle: Any | None,
+    on_tag_reorder: Any,
+) -> None:
+    """Render tags within a group, wrapped in a Sortable for drag reorder."""
+    from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
+
+    with Sortable(
+        on_end=on_tag_reorder,
+        options={"handle": ".drag-handle", "animation": 150},
+    ):
+        for tag in group_tags:
+            tag_ids.append(tag.id)
+            can_edit = not tag.locked or is_instructor
+            _render_tag_row(
+                tag,
+                can_edit=can_edit,
+                is_instructor=is_instructor,
+                group_options=group_options,
+                on_save=on_save_tag,
+                on_delete=on_delete_tag,
+                on_lock_toggle=on_lock_toggle,
+            )
 
 
 def _render_tag_list_content(
@@ -367,43 +431,71 @@ def _render_tag_list_content(
     on_delete_group: Any,
     on_add_tag: Any,
     on_add_group: Any,
+    on_lock_toggle: Any | None,
+    on_tag_reorder_for_group: Any,
+    on_group_reorder: Any,
+    tag_id_lists: dict[UUID | None, list[UUID]],
+    group_id_list: list[UUID],
 ) -> None:
-    """Render all tag groups and ungrouped tags inside the content area."""
-    for group in groups:
-        group_tags = tags_by_group.get(group.id, [])
-        _render_group_header(
-            group,
-            on_save_group=on_save_group,
-            on_delete_group=on_delete_group,
-        )
-        for tag in group_tags:
-            can_edit = not tag.locked or is_instructor
-            _render_tag_row(
-                tag,
-                can_edit=can_edit,
-                group_options=group_options,
-                on_save=on_save_tag,
-                on_delete=on_delete_tag,
-            )
-        ui.button(
-            "+ Add tag",
-            on_click=lambda _e, gid=group.id: on_add_tag(gid),
-        ).props("flat dense").classes("text-xs ml-8 mt-1")
+    """Render all tag groups and ungrouped tags inside the content area.
 
-    # Ungrouped section
+    Wraps groups in a top-level Sortable for group reordering and each
+    group's tags in a nested Sortable for tag reordering.
+    """
+    from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
+
+    # Groups section -- wrapped in Sortable for group reorder
+    with Sortable(
+        on_end=on_group_reorder,
+        options={"handle": ".drag-handle", "animation": 150},
+    ):
+        for group in groups:
+            group_id_list.append(group.id)
+            group_tags = tags_by_group.get(group.id, [])
+            tag_ids: list[UUID] = []
+            tag_id_lists[group.id] = tag_ids
+
+            # Each group section is a wrapper div (Sortable child)
+            with ui.column().classes("w-full"):
+                _render_group_header(
+                    group,
+                    on_save_group=on_save_group,
+                    on_delete_group=on_delete_group,
+                )
+                _render_group_tags(
+                    group_tags=group_tags,
+                    tag_ids=tag_ids,
+                    is_instructor=is_instructor,
+                    group_options=group_options,
+                    on_save_tag=on_save_tag,
+                    on_delete_tag=on_delete_tag,
+                    on_lock_toggle=on_lock_toggle,
+                    on_tag_reorder=lambda e, gid=group.id: on_tag_reorder_for_group(
+                        e, gid
+                    ),
+                )
+                ui.button(
+                    "+ Add tag",
+                    on_click=lambda _e, gid=group.id: on_add_tag(gid),
+                ).props("flat dense").classes("text-xs ml-8 mt-1")
+
+    # Ungrouped section (outside group Sortable)
     ungrouped = tags_by_group.get(None, [])
     if ungrouped or not groups:
+        ungrouped_ids: list[UUID] = []
+        tag_id_lists[None] = ungrouped_ids
         ui.separator().classes("my-2")
         ui.label("Ungrouped").classes("font-bold text-gray-500 mt-2")
-        for tag in ungrouped:
-            can_edit = not tag.locked or is_instructor
-            _render_tag_row(
-                tag,
-                can_edit=can_edit,
-                group_options=group_options,
-                on_save=on_save_tag,
-                on_delete=on_delete_tag,
-            )
+        _render_group_tags(
+            group_tags=ungrouped,
+            tag_ids=ungrouped_ids,
+            is_instructor=is_instructor,
+            group_options=group_options,
+            on_save_tag=on_save_tag,
+            on_delete_tag=on_delete_tag,
+            on_lock_toggle=on_lock_toggle,
+            on_tag_reorder=lambda e: on_tag_reorder_for_group(e, None),
+        )
         ui.button(
             "+ Add tag",
             on_click=lambda _e: on_add_tag(None),
@@ -414,6 +506,63 @@ def _render_tag_list_content(
     ui.button("+ Add group", on_click=on_add_group).props("flat dense").classes(
         "text-xs"
     )
+
+
+# ── Import section helper ────────────────────────────────────────────
+
+
+async def _render_import_section(
+    *,
+    ctx: PlacementContext,
+    state: PageState,
+    render_tag_list: Any,
+) -> None:
+    """Render the 'import tags from activity' dropdown (AC7.7).
+
+    Only shown for instructors on template workspaces within a course.
+    """
+    if ctx.course_id is None:
+        return
+
+    from promptgrimoire.db.activities import (  # noqa: PLC0415
+        list_activities_for_course,
+    )
+
+    activities = await list_activities_for_course(ctx.course_id)
+    activity_options = {
+        str(a.id): a.title
+        for a in activities
+        if a.template_workspace_id != state.workspace_id
+    }
+
+    if not activity_options:
+        return
+
+    ui.separator().classes("my-2")
+    ui.label("Import tags from another activity").classes("text-sm font-bold mt-2")
+    with ui.row().classes("items-center gap-2"):
+        activity_select = ui.select(
+            options=activity_options,
+            label="Source activity",
+        ).classes("w-64")
+
+        async def _import_from_activity() -> None:
+            if not activity_select.value:
+                ui.notify("Select an activity first", type="warning")
+                return
+            from promptgrimoire.db.tags import (  # noqa: PLC0415
+                import_tags_from_activity,
+            )
+
+            await import_tags_from_activity(
+                source_activity_id=UUID(activity_select.value),
+                target_workspace_id=state.workspace_id,
+            )
+            await render_tag_list()
+            await _refresh_tag_state(state)
+            ui.notify("Tags imported", type="positive")
+
+        ui.button("Import", on_click=_import_from_activity).props("flat dense")
 
 
 # ── Full management dialog ───────────────────────────────────────────
@@ -427,8 +576,9 @@ async def open_tag_management(
     """Open the full tag management dialog.
 
     Shows all tags grouped by TagGroup with inline editing, group
-    management, and delete-with-confirmation. Lock enforcement
-    (AC7.9) disables controls for students on locked tags.
+    management, drag reorder, import, lock toggle, and
+    delete-with-confirmation. Lock enforcement (AC7.9) disables
+    controls for students on locked tags.
 
     Must be awaited -- blocks until the dialog closes so the caller
     can rebuild the toolbar afterwards.
@@ -439,6 +589,8 @@ async def open_tag_management(
         create_tag_group,
         list_tag_groups_for_workspace,
         list_tags_for_workspace,
+        reorder_tag_groups,
+        reorder_tags,
         update_tag,
         update_tag_group,
     )
@@ -452,9 +604,16 @@ async def open_tag_management(
 
         content_area = ui.column().classes("w-full gap-0 max-h-[60vh] overflow-y-auto")
 
+        # Mutable state for tracking element order (populated by render)
+        tag_id_lists: dict[UUID | None, list[UUID]] = {}
+        group_id_list: list[UUID] = []
+
         async def _render_tag_list() -> None:
             """Clear and rebuild the tag list inside the dialog."""
             content_area.clear()
+            tag_id_lists.clear()
+            group_id_list.clear()
+
             groups = await list_tag_groups_for_workspace(state.workspace_id)
             all_tags = await list_tags_for_workspace(state.workspace_id)
             group_options: dict[str, str] = {str(g.id): g.name for g in groups}
@@ -463,61 +622,18 @@ async def open_tag_management(
             for tag in all_tags:
                 tags_by_group.setdefault(tag.group_id, []).append(tag)
 
-            # ── Callbacks ──
-
-            async def _save_tag(
-                tag_id: UUID,
-                name: str,
-                color: str,
-                description: str,
-                group_id_str: str | None,
-            ) -> None:
-                gid = UUID(group_id_str) if group_id_str else None
-                try:
-                    await update_tag(
-                        tag_id,
-                        name=name,
-                        color=color,
-                        description=description or None,
-                        group_id=gid,
-                    )
-                except ValueError as exc:
-                    ui.notify(str(exc), type="warning")
-                    return
-                await _render_tag_list()
-                await _refresh_tag_state(state)
-                ui.notify("Tag saved", type="positive")
-
-            async def _on_tag_deleted(tag_name: str) -> None:
-                await _refresh_tag_state(state)
-                await _render_tag_list()
-                ui.notify(f"Tag '{tag_name}' deleted", type="positive")
-
-            async def _on_group_deleted(group_name: str) -> None:
-                await _render_tag_list()
-                ui.notify(f"Group '{group_name}' deleted", type="positive")
-
-            async def _save_group(group_id: UUID, new_name: str) -> None:
-                await update_tag_group(group_id, name=new_name)
-                await _render_tag_list()
-                ui.notify("Group saved", type="positive")
-
-            async def _add_tag_in_group(group_id: UUID | None) -> None:
-                await create_tag(
-                    workspace_id=state.workspace_id,
-                    name="New tag",
-                    color=_PRESET_PALETTE[0],
-                    group_id=group_id,
-                )
-                await _render_tag_list()
-                await _refresh_tag_state(state)
-
-            async def _add_group() -> None:
-                await create_tag_group(
-                    workspace_id=state.workspace_id,
-                    name="New group",
-                )
-                await _render_tag_list()
+            callbacks = _build_management_callbacks(
+                state=state,
+                render_tag_list=_render_tag_list,
+                update_tag=update_tag,
+                update_tag_group=update_tag_group,
+                create_tag=create_tag,
+                create_tag_group=create_tag_group,
+                reorder_tags=reorder_tags,
+                reorder_tag_groups=reorder_tag_groups,
+                tag_id_lists=tag_id_lists,
+                group_id_list=group_id_list,
+            )
 
             with content_area:
                 _render_tag_list_content(
@@ -525,23 +641,149 @@ async def open_tag_management(
                     tags_by_group=tags_by_group,
                     group_options=group_options,
                     is_instructor=is_instructor,
-                    on_save_tag=_save_tag,
-                    on_delete_tag=lambda tid, tname: _open_confirm_delete_tag(
-                        tid,
-                        tname,
-                        on_confirmed=_on_tag_deleted,
-                    ),
-                    on_save_group=_save_group,
-                    on_delete_group=lambda gid, gname: _open_confirm_delete_group(
-                        gid,
-                        gname,
-                        on_confirmed=_on_group_deleted,
-                    ),
-                    on_add_tag=_add_tag_in_group,
-                    on_add_group=_add_group,
+                    on_save_tag=callbacks["save_tag"],
+                    on_delete_tag=callbacks["delete_tag"],
+                    on_save_group=callbacks["save_group"],
+                    on_delete_group=callbacks["delete_group"],
+                    on_add_tag=callbacks["add_tag"],
+                    on_add_group=callbacks["add_group"],
+                    on_lock_toggle=callbacks["lock_toggle"] if is_instructor else None,
+                    on_tag_reorder_for_group=callbacks["tag_reorder"],
+                    on_group_reorder=callbacks["group_reorder"],
+                    tag_id_lists=tag_id_lists,
+                    group_id_list=group_id_list,
                 )
+
+                # Import section (AC7.7) -- instructors on template only
+                if is_instructor:
+                    await _render_import_section(
+                        ctx=ctx,
+                        state=state,
+                        render_tag_list=_render_tag_list,
+                    )
 
         await _render_tag_list()
 
     dialog.open()
     await dialog
+
+
+# ── Callback factory ─────────────────────────────────────────────────
+
+
+def _build_management_callbacks(
+    *,
+    state: PageState,
+    render_tag_list: Any,
+    update_tag: Any,
+    update_tag_group: Any,
+    create_tag: Any,
+    create_tag_group: Any,
+    reorder_tags: Any,
+    reorder_tag_groups: Any,
+    tag_id_lists: dict[UUID | None, list[UUID]],
+    group_id_list: list[UUID],
+) -> dict[str, Any]:
+    """Build all management dialog callbacks as a dict.
+
+    Extracted to keep open_tag_management and _render_tag_list under
+    the 50-statement ruff limit.
+    """
+
+    async def _save_tag(
+        tag_id: UUID,
+        name: str,
+        color: str,
+        description: str,
+        group_id_str: str | None,
+    ) -> None:
+        gid = UUID(group_id_str) if group_id_str else None
+        try:
+            await update_tag(
+                tag_id,
+                name=name,
+                color=color,
+                description=description or None,
+                group_id=gid,
+            )
+        except ValueError as exc:
+            ui.notify(str(exc), type="warning")
+            return
+        await render_tag_list()
+        await _refresh_tag_state(state)
+        ui.notify("Tag saved", type="positive")
+
+    async def _on_tag_deleted(tag_name: str) -> None:
+        await _refresh_tag_state(state)
+        await render_tag_list()
+        ui.notify(f"Tag '{tag_name}' deleted", type="positive")
+
+    async def _on_group_deleted(group_name: str) -> None:
+        await render_tag_list()
+        ui.notify(f"Group '{group_name}' deleted", type="positive")
+
+    async def _save_group(group_id: UUID, new_name: str) -> None:
+        await update_tag_group(group_id, name=new_name)
+        await render_tag_list()
+        ui.notify("Group saved", type="positive")
+
+    async def _add_tag_in_group(group_id: UUID | None) -> None:
+        await create_tag(
+            workspace_id=state.workspace_id,
+            name="New tag",
+            color=_PRESET_PALETTE[0],
+            group_id=group_id,
+        )
+        await render_tag_list()
+        await _refresh_tag_state(state)
+
+    async def _add_group() -> None:
+        await create_tag_group(
+            workspace_id=state.workspace_id,
+            name="New group",
+        )
+        await render_tag_list()
+
+    async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
+        await update_tag(tag_id, locked=locked)
+        await render_tag_list()
+
+    async def _tag_reorder(e: Any, group_id: UUID | None) -> None:
+        old_idx = e.args.get("oldIndex")
+        new_idx = e.args.get("newIndex")
+        if old_idx is None or new_idx is None or old_idx == new_idx:
+            return
+        ids = tag_id_lists.get(group_id, [])
+        new_order = _reorder_list(ids, old_idx, new_idx)
+        await reorder_tags(new_order)
+        await _refresh_tag_state(state)
+        await render_tag_list()
+
+    async def _group_reorder(e: Any) -> None:
+        old_idx = e.args.get("oldIndex")
+        new_idx = e.args.get("newIndex")
+        if old_idx is None or new_idx is None or old_idx == new_idx:
+            return
+        new_order = _reorder_list(group_id_list, old_idx, new_idx)
+        await reorder_tag_groups(new_order)
+        await render_tag_list()
+
+    return {
+        "save_tag": _save_tag,
+        "delete_tag": lambda tid, tname: _open_confirm_delete_tag(
+            tid,
+            tname,
+            on_confirmed=_on_tag_deleted,
+        ),
+        "save_group": _save_group,
+        "delete_group": lambda gid, gname: _open_confirm_delete_group(
+            gid,
+            gname,
+            on_confirmed=_on_group_deleted,
+        ),
+        "add_tag": _add_tag_in_group,
+        "add_group": _add_group,
+        "lock_toggle": _lock_toggle,
+        "tag_reorder": _tag_reorder,
+        "group_reorder": _group_reorder,
+    }

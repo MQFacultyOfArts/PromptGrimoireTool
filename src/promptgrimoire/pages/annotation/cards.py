@@ -112,10 +112,11 @@ def _build_comments_section(
         highlight_id: ID of the highlight to add comments to.
         comments: Existing comments list from highlight.
     """
-    # Display existing comments
+    # Display existing comments in chronological order
     if comments:
         ui.separator()
-        for comment in comments:
+        sorted_comments = sorted(comments, key=lambda c: c.get("created_at", ""))
+        for comment in sorted_comments:
             c_author = comment.get("author", "Unknown")
             c_text = comment.get("text", "")
             c_user_id = comment.get("user_id")

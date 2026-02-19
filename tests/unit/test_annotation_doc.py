@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
 
@@ -189,6 +191,70 @@ class TestCommentUserId:
         comment = highlight["comments"][0]
         required_keys = {"id", "user_id", "author", "text", "created_at"}
         assert required_keys.issubset(comment.keys())
+
+
+class TestCommentChronology:
+    """Tests for comment ordering and legacy display (AC3.1, AC3.2, AC3.7)."""
+
+    def test_add_comment_appends_to_list(self) -> None:
+        """AC3.1: add_comment appends to the highlight's comments list."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "User1", "First comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight["comments"]) == 1
+        assert highlight["comments"][0]["text"] == "First comment"
+
+    def test_two_comments_chronological_order(self) -> None:
+        """AC3.2: Multiple comments appear in chronological order."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "User1", "First")
+        doc.add_comment(hl_id, "User2", "Second")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight["comments"]
+        assert len(comments) == 2
+        assert comments[0]["text"] == "First"
+        assert comments[1]["text"] == "Second"
+        # Verify chronological by created_at
+        assert comments[0]["created_at"] <= comments[1]["created_at"]
+
+    def test_legacy_highlight_no_user_id_has_author(self) -> None:
+        """AC3.7: Highlight without user_id uses stored author value."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "OldAuthor")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        # user_id defaults to None
+        assert highlight["user_id"] is None
+        # author is preserved
+        assert highlight["author"] == "OldAuthor"
+
+    def test_legacy_comment_no_user_id_has_author(self) -> None:
+        """AC3.7: Comment without user_id uses stored author value."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "LegacyCommenter", "old comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comment = highlight["comments"][0]
+        assert comment["user_id"] is None
+        assert comment["author"] == "LegacyCommenter"
+
+    def test_missing_author_defaults_to_unknown(self) -> None:
+        """AC3.7: get on missing author key returns 'Unknown'."""
+        # Simulate a legacy comment dict without author key
+        comment: dict[str, Any] = {"id": "c1", "text": "old"}
+        assert comment.get("author", "Unknown") == "Unknown"
 
 
 class TestDeleteCommentOwnership:

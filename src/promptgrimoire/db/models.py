@@ -150,6 +150,11 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with allow_sharing=NULL.
     """
+    default_anonymous_sharing: bool = Field(default=False)
+    """Course-level default for anonymous sharing.
+
+    Inherited by activities with anonymous_sharing=NULL.
+    """
     default_instructor_permission: str = Field(
         default="editor",
         sa_column=Column(
@@ -281,6 +286,11 @@ class Activity(SQLModel, table=True):
 
     None=inherit from course, True=allowed, False=disallowed.
     """
+    anonymous_sharing: bool | None = Field(default=None)
+    """Tri-state anonymity control.
+
+    None=inherit from course, True=on, False=off.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -319,6 +329,8 @@ class Workspace(SQLModel, table=True):
         default=None, sa_column=_set_null_fk_column("course.id")
     )
     enable_save_as_draft: bool = Field(default=False)
+    title: str | None = Field(default=None, max_length=200)
+    shared_with_class: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

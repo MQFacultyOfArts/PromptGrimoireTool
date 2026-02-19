@@ -293,10 +293,10 @@ async def _resolve_permission_with_session(
 ) -> str | None:
     """Internal: resolve permission using an existing session.
 
-    Two-step hybrid resolution:
+    Hybrid resolution:
     1. Explicit ACL lookup: query ACLEntry for (workspace_id, user_id).
     2. Enrollment-derived: resolve Workspace -> Activity -> Week -> Course
-       hierarchy, check CourseEnrollment for staff role.
+       hierarchy, check CourseEnrollment for staff/student role.
     3. If both apply, the higher Permission.level wins.
     4. Default deny: return None.
     """
@@ -316,14 +316,14 @@ async def _resolve_permission_with_session(
 
     # Step 3: Highest wins
     if explicit and derived_permission:
-        explicit_level_result = await session.exec(
-            select(Permission.level).where(Permission.name == explicit.permission)
+        level_result = await session.exec(
+            select(Permission.name, Permission.level).where(
+                Permission.name.in_([explicit.permission, derived_permission])  # type: ignore[union-attr]  -- Column has in_
+            )
         )
-        derived_level_result = await session.exec(
-            select(Permission.level).where(Permission.name == derived_permission)
-        )
-        e_level = explicit_level_result.one()
-        d_level = derived_level_result.one()
+        levels = dict(level_result.all())
+        e_level = levels[explicit.permission]
+        d_level = levels[derived_permission]
         return explicit.permission if e_level >= d_level else derived_permission
 
     if explicit:

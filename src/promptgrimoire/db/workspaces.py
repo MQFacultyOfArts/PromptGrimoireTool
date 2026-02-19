@@ -123,6 +123,11 @@ class PlacementContext:
 
     True = owner can share with other students.
     """
+    anonymous_sharing: bool = False
+    """Resolved anonymity setting for this workspace.
+
+    True = author names hidden from peer viewers.
+    """
 
     @property
     def display_label(self) -> str:
@@ -210,6 +215,12 @@ async def _resolve_activity_placement(
     else:
         resolved_sharing = course.default_allow_sharing
 
+    # Resolve tri-state anonymous_sharing: explicit wins, else course default
+    if activity.anonymous_sharing is not None:
+        resolved_anon = activity.anonymous_sharing
+    else:
+        resolved_anon = course.default_anonymous_sharing
+
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -219,6 +230,7 @@ async def _resolve_activity_placement(
         course_name=course.name,
         copy_protection=resolved_cp,
         allow_sharing=resolved_sharing,
+        anonymous_sharing=resolved_anon,
     )
 
 
@@ -226,7 +238,11 @@ async def _resolve_course_placement(
     session: AsyncSession,
     course_id: UUID,
 ) -> PlacementContext:
-    """Resolve Course placement. Falls back to loose on orphan."""
+    """Resolve Course placement. Falls back to loose on orphan.
+
+    Propagates all course-level defaults (copy_protection, allow_sharing,
+    anonymous_sharing) since there is no Activity to override them.
+    """
     course = await session.get(Course, course_id)
     if course is None:
         return PlacementContext(placement_type="loose")
@@ -234,6 +250,9 @@ async def _resolve_course_placement(
         placement_type="course",
         course_code=course.code,
         course_name=course.name,
+        copy_protection=course.default_copy_protection,
+        allow_sharing=course.default_allow_sharing,
+        anonymous_sharing=course.default_anonymous_sharing,
     )
 
 

@@ -184,6 +184,13 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         return loose
 
 
+def _resolve_tristate(override: bool | None, default: bool) -> bool:
+    """Resolve a tri-state bool: explicit override wins, else course default."""
+    if override is not None:
+        return override
+    return default
+
+
 async def _resolve_activity_placement(
     session: AsyncSession,
     activity_id: UUID,
@@ -203,24 +210,6 @@ async def _resolve_activity_placement(
     if course is None:
         return PlacementContext(placement_type="loose")
 
-    # Resolve tri-state copy_protection: explicit wins, else course default
-    if activity.copy_protection is not None:
-        resolved_cp = activity.copy_protection
-    else:
-        resolved_cp = course.default_copy_protection
-
-    # Resolve tri-state allow_sharing: explicit wins, else course default
-    if activity.allow_sharing is not None:
-        resolved_sharing = activity.allow_sharing
-    else:
-        resolved_sharing = course.default_allow_sharing
-
-    # Resolve tri-state anonymous_sharing: explicit wins, else course default
-    if activity.anonymous_sharing is not None:
-        resolved_anon = activity.anonymous_sharing
-    else:
-        resolved_anon = course.default_anonymous_sharing
-
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -228,9 +217,15 @@ async def _resolve_activity_placement(
         week_title=week.title,
         course_code=course.code,
         course_name=course.name,
-        copy_protection=resolved_cp,
-        allow_sharing=resolved_sharing,
-        anonymous_sharing=resolved_anon,
+        copy_protection=_resolve_tristate(
+            activity.copy_protection, course.default_copy_protection
+        ),
+        allow_sharing=_resolve_tristate(
+            activity.allow_sharing, course.default_allow_sharing
+        ),
+        anonymous_sharing=_resolve_tristate(
+            activity.anonymous_sharing, course.default_anonymous_sharing
+        ),
     )
 
 

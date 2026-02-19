@@ -643,3 +643,267 @@ class TestNoAuthDenial:
         workspace = await create_workspace()
         result = await resolve_permission(workspace.id, uuid4())
         assert result is None
+
+
+class TestStudentPeerAccess:
+    """workspace-sharing-97.AC2.1: Enrolled student gets peer access."""
+
+    @pytest.mark.asyncio
+    async def test_student_peer_access(self) -> None:
+        """Enrolled student + allow_sharing=True + shared_with_class=True -> 'peer'."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity, update_activity
+        from promptgrimoire.db.courses import create_course, enroll_user, update_course
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-access-{tag}@test.local",
+            display_name=f"Peer Student {tag}",
+        )
+        owner = await create_user(
+            email=f"peer-owner-{tag}@test.local",
+            display_name=f"Peer Owner {tag}",
+        )
+        course = await create_course(
+            code=f"PA{tag[:5]}",
+            name=f"Peer Access Test {tag}",
+            semester="2026-S1",
+        )
+        await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+        await enroll_user(course.id, owner.id, role="student")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Shared Activity")
+        await update_activity(activity.id, allow_sharing=True)
+
+        # Owner's workspace with sharing enabled
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result == "peer"
+
+
+class TestStudentPeerDenied:
+    """workspace-sharing-97.AC2.5 + AC2.6: Peer denied when conditions not met."""
+
+    @pytest.mark.asyncio
+    async def test_allow_sharing_false_denies_peer(self) -> None:
+        """AC2.5: allow_sharing=False -> None even if shared_with_class=True."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity, update_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-deny-share-{tag}@test.local",
+            display_name=f"Deny Share {tag}",
+        )
+        course = await create_course(
+            code=f"PD{tag[:5]}",
+            name=f"Peer Denied Share {tag}",
+            semester="2026-S1",
+        )
+        await enroll_user(course.id, student.id, role="student")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="No Sharing")
+        await update_activity(activity.id, allow_sharing=False)
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_shared_with_class_false_denies_peer(self) -> None:
+        """AC2.6: shared_with_class=False -> None even if allow_sharing=True."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity, update_activity
+        from promptgrimoire.db.courses import create_course, enroll_user, update_course
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-deny-class-{tag}@test.local",
+            display_name=f"Deny Class {tag}",
+        )
+        course = await create_course(
+            code=f"PC{tag[:5]}",
+            name=f"Peer Denied Class {tag}",
+            semester="2026-S1",
+        )
+        await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        activity = await create_activity(week.id, title="Sharing Enabled")
+        await update_activity(activity.id, allow_sharing=True)
+
+        # shared_with_class defaults to False -- don't set it
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None
+
+
+class TestStudentPeerTriState:
+    """workspace-sharing-97.AC2.1 variant: tri-state inheritance for allow_sharing."""
+
+    @pytest.mark.asyncio
+    async def test_activity_inherits_course_default(self) -> None:
+        """activity.allow_sharing=None + course.default_allow_sharing=True -> 'peer'."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user, update_course
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_activity,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-tristate-{tag}@test.local",
+            display_name=f"TriState {tag}",
+        )
+        course = await create_course(
+            code=f"PT{tag[:5]}",
+            name=f"Peer TriState {tag}",
+            semester="2026-S1",
+        )
+        await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+        week = await create_week(course.id, week_number=1, title="Week 1")
+        # allow_sharing defaults to None (inherit from course)
+        activity = await create_activity(week.id, title="Inherited Sharing")
+
+        workspace = await create_workspace()
+        await place_workspace_in_activity(workspace.id, activity.id)
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result == "peer"
+
+
+class TestStudentPeerLooseWorkspace:
+    """workspace-sharing-97.AC2.7: Loose workspace -- no peer path."""
+
+    @pytest.mark.asyncio
+    async def test_loose_workspace_no_peer(self) -> None:
+        """Loose workspace + shared_with_class=True -> None (no activity)."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user, update_course
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-loose-{tag}@test.local",
+            display_name=f"Loose Peer {tag}",
+        )
+        course = await create_course(
+            code=f"PL{tag[:5]}",
+            name=f"Peer Loose {tag}",
+            semester="2026-S1",
+        )
+        await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+
+        # Loose workspace (no activity_id, no course_id) with sharing
+        workspace = await create_workspace()
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None
+
+
+class TestStudentPeerCoursePlaced:
+    """workspace-sharing-97.AC2.8: Course-placed workspace -- no peer discovery."""
+
+    @pytest.mark.asyncio
+    async def test_course_placed_no_peer(self) -> None:
+        """Course-placed workspace + shared_with_class=True -> None."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user, update_course
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-cplace-{tag}@test.local",
+            display_name=f"CPlace Peer {tag}",
+        )
+        course = await create_course(
+            code=f"PP{tag[:5]}",
+            name=f"Peer CPlace {tag}",
+            semester="2026-S1",
+        )
+        await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+
+        workspace = await create_workspace()
+        await place_workspace_in_course(workspace.id, course.id)
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result is None

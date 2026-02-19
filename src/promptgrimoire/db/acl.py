@@ -221,11 +221,12 @@ async def list_activity_workspaces(
 async def _derive_enrollment_permission(
     session: AsyncSession, workspace_id: UUID, user_id: UUID
 ) -> str | None:
-    """Derive permission from course enrollment for staff roles.
+    """Derive permission from course enrollment.
 
     Resolves Workspace -> (Activity -> Week ->) Course hierarchy.
-    Checks CourseEnrollment for instructor/coordinator/tutor role.
-    Returns Course.default_instructor_permission if staff, None otherwise.
+    Staff roles get Course.default_instructor_permission.
+    Students get "peer" if the activity allows sharing and the workspace
+    has opted in via shared_with_class.
     """
     # Find workspace
     workspace = await session.get(Workspace, workspace_id)
@@ -234,6 +235,7 @@ async def _derive_enrollment_permission(
 
     # Resolve course_id from workspace placement
     course_id: UUID | None = None
+    activity: Activity | None = None
 
     if workspace.activity_id is not None:
         # Activity-placed: Activity -> Week -> Course
@@ -250,7 +252,11 @@ async def _derive_enrollment_permission(
     if course_id is None:
         return None
 
-    # Check enrollment with staff role
+    # Load course and check enrollment (both needed by staff and student paths)
+    course = await session.get(Course, course_id)
+    if course is None:
+        return None
+
     enrollment_result = await session.exec(
         select(CourseEnrollment).where(
             CourseEnrollment.course_id == course_id,
@@ -261,16 +267,23 @@ async def _derive_enrollment_permission(
     if enrollment is None:
         return None
 
-    # Staff roles get derived access; students do not
+    # Staff roles get derived instructor access
     staff_roles = await get_staff_roles()
-    if enrollment.role not in staff_roles:
-        return None
+    if enrollment.role in staff_roles:
+        return course.default_instructor_permission
 
-    # Return course's default instructor permission
-    course = await session.get(Course, course_id)
-    if course is None:
-        return None
-    return course.default_instructor_permission
+    # Student peer path: activity-placed + allow_sharing + shared_with_class
+    if activity is not None and workspace.shared_with_class:
+        # Resolve tri-state: explicit activity override wins, else course default
+        allow_sharing = (
+            activity.allow_sharing
+            if activity.allow_sharing is not None
+            else course.default_allow_sharing
+        )
+        if allow_sharing:
+            return "peer"
+
+    return None
 
 
 async def _resolve_permission_with_session(

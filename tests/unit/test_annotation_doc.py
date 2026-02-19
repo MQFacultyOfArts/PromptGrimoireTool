@@ -191,6 +191,112 @@ class TestCommentUserId:
         assert required_keys.issubset(comment.keys())
 
 
+class TestDeleteCommentOwnership:
+    """Tests for delete_comment ownership guard (AC3.4, AC3.5, AC1.5, AC1.8)."""
+
+    def _setup_doc_with_comment(
+        self,
+        comment_user_id: str | None = "user-commenter",
+    ) -> tuple[AnnotationDocument, str, str]:
+        """Helper: create doc with one highlight and one comment.
+
+        Returns (doc, highlight_id, comment_id).
+        """
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author", user_id="user-owner")
+        comment_id = doc.add_comment(
+            hl_id, "Commenter", "A comment", user_id=comment_user_id
+        )
+        assert comment_id is not None
+        return doc, hl_id, comment_id
+
+    def test_creator_can_delete_own_comment(self) -> None:
+        """AC3.4 / AC1.5: Creator (matching user_id) can delete own comment."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-commenter"
+        )
+
+        assert result is True
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight.get("comments", [])) == 0
+
+    def test_workspace_owner_can_delete_any_comment(self) -> None:
+        """AC3.5: Workspace owner can delete any comment."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-other", is_workspace_owner=True
+        )
+
+        assert result is True
+
+    def test_privileged_user_can_delete_any_comment(self) -> None:
+        """Privileged user (instructor/admin) can delete any comment."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-other", is_privileged=True
+        )
+
+        assert result is True
+
+    def test_peer_cannot_delete_others_comment(self) -> None:
+        """AC1.8: Peer (non-matching user_id, not owner/privileged) cannot delete."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-other")
+
+        assert result is False
+        # Comment should still be there
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight.get("comments", [])) == 1
+
+    def test_peer_can_delete_own_comment(self) -> None:
+        """AC1.5: Peer can delete own comment (matching user_id)."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-commenter"
+        )
+
+        assert result is True
+
+    def test_legacy_comment_without_user_id_only_owner_can_delete(self) -> None:
+        """Legacy comment (user_id=None) can only be deleted by owner/privileged."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment(comment_user_id=None)
+
+        # Regular user cannot delete
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-anyone")
+        assert result is False
+
+        # Owner can delete
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-anyone", is_workspace_owner=True
+        )
+        assert result is True
+
+    def test_no_requesting_user_id_denied(self) -> None:
+        """Without requesting_user_id, deletion is denied."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id=None)
+
+        assert result is False
+
+    def test_backwards_compat_no_ownership_args(self) -> None:
+        """delete_comment without ownership args denies by default."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        # No ownership params -- should deny (safe default)
+        result = doc.delete_comment(hl_id, comment_id)
+
+        assert result is False
+
+
 class TestTagOrder:
     """Tests for tag_order operations."""
 

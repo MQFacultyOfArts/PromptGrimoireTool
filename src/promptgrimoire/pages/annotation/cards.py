@@ -59,6 +59,47 @@ def _build_expandable_text(full_text: str) -> None:
         ui.label(f'"{full_text}"').classes("text-sm italic mt-1")
 
 
+def _build_comment_delete_btn(
+    state: PageState,
+    highlight_id: str,
+    comment_id: str,
+) -> None:
+    """Build a delete button for a comment owned by the current user."""
+
+    async def do_delete(
+        hid: str = highlight_id,
+        cid: str = comment_id,
+    ) -> None:
+        if state.crdt_doc is None:
+            return
+        deleted = state.crdt_doc.delete_comment(
+            hid,
+            cid,
+            requesting_user_id=state.user_id,
+        )
+        if not deleted:
+            return
+
+        pm = get_persistence_manager()
+        pm.mark_dirty_workspace(
+            state.workspace_id,
+            state.crdt_doc.doc_id,
+            last_editor=state.user_name,
+        )
+        await pm.force_persist_workspace(state.workspace_id)
+
+        if state.save_status:
+            state.save_status.text = "Saved"
+        if state.refresh_annotations:
+            state.refresh_annotations()
+        if state.broadcast_update:
+            await state.broadcast_update()
+
+    ui.button(icon="close", on_click=do_delete).props("flat dense size=xs").tooltip(
+        "Delete comment"
+    )
+
+
 def _build_comments_section(
     state: PageState,
     highlight_id: str,
@@ -77,8 +118,18 @@ def _build_comments_section(
         for comment in comments:
             c_author = comment.get("author", "Unknown")
             c_text = comment.get("text", "")
+            c_user_id = comment.get("user_id")
+            c_id = comment.get("id", "")
+            is_own = (
+                state.user_id is not None
+                and c_user_id is not None
+                and c_user_id == state.user_id
+            )
             with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
-                ui.label(c_author).classes("text-xs font-bold")
+                with ui.row().classes("w-full justify-between items-center"):
+                    ui.label(c_author).classes("text-xs font-bold")
+                    if is_own:
+                        _build_comment_delete_btn(state, highlight_id, c_id)
                 ui.label(c_text).classes("text-sm")
 
     # Comment input

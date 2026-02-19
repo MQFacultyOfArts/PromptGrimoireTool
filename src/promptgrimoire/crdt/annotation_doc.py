@@ -482,33 +482,57 @@ class AnnotationDocument:
         self,
         highlight_id: str,
         comment_id: str,
+        requesting_user_id: str | None = None,
+        is_workspace_owner: bool = False,
+        is_privileged: bool = False,
         origin_client_id: str | None = None,
     ) -> bool:
         """Delete a comment from a highlight's thread.
 
+        Enforces ownership: only the comment creator, workspace owner,
+        or a privileged user (instructor/admin) may delete.
+
         Args:
             highlight_id: ID of the highlight.
             comment_id: ID of the comment to delete.
-            origin_client_id: Client making the change (for echo prevention).
+            requesting_user_id: Stytch user ID of the requester.
+            is_workspace_owner: Whether the requester owns the workspace.
+            is_privileged: Whether the requester is instructor/admin.
+            origin_client_id: Client making the change (echo prevention).
 
         Returns:
-            True if comment was found and deleted.
+            True if comment was authorised and deleted.
         """
         highlight = self.highlights.get(highlight_id)
         if highlight is None:
             return False
 
+        # Find the target comment for authorisation check
+        comments = list(highlight.get("comments", []))
+        target = None
+        for c in comments:
+            if c.get("id") == comment_id:
+                target = c
+                break
+        if target is None:
+            return False
+
+        # Authorisation guard
+        if not is_workspace_owner and not is_privileged:
+            comment_owner = target.get("user_id")
+            if (
+                requesting_user_id is None
+                or comment_owner is None
+                or comment_owner != requesting_user_id
+            ):
+                return False
+
         token = _origin_var.set(origin_client_id)
         try:
-            comments = list(highlight.get("comments", []))
-            original_len = len(comments)
-            comments = [c for c in comments if c.get("id") != comment_id]
-
-            if len(comments) < original_len:
-                highlight["comments"] = comments
-                self.highlights[highlight_id] = highlight
-                return True
-            return False
+            remaining = [c for c in comments if c.get("id") != comment_id]
+            highlight["comments"] = remaining
+            self.highlights[highlight_id] = highlight
+            return True
         finally:
             _origin_var.reset(token)
 

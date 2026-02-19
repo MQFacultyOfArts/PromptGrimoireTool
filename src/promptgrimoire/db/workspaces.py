@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from sqlmodel import select
@@ -613,6 +613,39 @@ async def clone_workspace_from_activity(
         return clone, doc_id_map
 
 
+async def _update_workspace_fields(
+    workspace_id: UUID,
+    **fields: Any,
+) -> Workspace:
+    """Fetch a workspace, apply field updates, and persist.
+
+    Shared implementation for single-field update functions. Handles
+    the fetch-or-raise, timestamp bump, flush, and refresh boilerplate.
+
+    Args:
+        workspace_id: The workspace UUID.
+        **fields: Field name/value pairs to set on the workspace.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+        for attr, value in fields.items():
+            setattr(workspace, attr, value)
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
 async def update_workspace_sharing(
     workspace_id: UUID,
     shared_with_class: bool,
@@ -629,17 +662,9 @@ async def update_workspace_sharing(
     Raises:
         ValueError: If workspace not found.
     """
-    async with get_session() as session:
-        workspace = await session.get(Workspace, workspace_id)
-        if not workspace:
-            msg = f"Workspace {workspace_id} not found"
-            raise ValueError(msg)
-        workspace.shared_with_class = shared_with_class
-        workspace.updated_at = datetime.now(UTC)
-        session.add(workspace)
-        await session.flush()
-        await session.refresh(workspace)
-        return workspace
+    return await _update_workspace_fields(
+        workspace_id, shared_with_class=shared_with_class
+    )
 
 
 async def update_workspace_title(
@@ -658,14 +683,4 @@ async def update_workspace_title(
     Raises:
         ValueError: If workspace not found.
     """
-    async with get_session() as session:
-        workspace = await session.get(Workspace, workspace_id)
-        if not workspace:
-            msg = f"Workspace {workspace_id} not found"
-            raise ValueError(msg)
-        workspace.title = title
-        workspace.updated_at = datetime.now(UTC)
-        session.add(workspace)
-        await session.flush()
-        await session.refresh(workspace)
-        return workspace
+    return await _update_workspace_fields(workspace_id, title=title)

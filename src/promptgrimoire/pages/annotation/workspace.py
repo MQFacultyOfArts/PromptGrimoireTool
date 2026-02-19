@@ -510,6 +510,20 @@ async def _render_workspace_header(
         )
 
 
+def _is_plausible_email(email: str) -> bool:
+    """Quick structural check for email format before DB lookup.
+
+    Not a full RFC 5322 validator -- just catches obvious typos so
+    the sharing dialog can show an immediate warning instead of a
+    round-trip to the database.
+    """
+    parts = email.split("@")
+    if len(parts) != 2 or not parts[0]:
+        return False
+    domain = parts[1]
+    return "." in domain and not domain.startswith(".") and not domain.endswith(".")
+
+
 async def _open_sharing_dialog(
     workspace_id: UUID,
     grantor_id: UUID,
@@ -581,15 +595,7 @@ async def _open_sharing_dialog(
             if not email:
                 ui.notify("Please enter an email address", type="warning")
                 return
-            # Basic email format pre-check (DB lookup is authoritative)
-            parts = email.split("@")
-            if (
-                len(parts) != 2
-                or not parts[0]
-                or "." not in parts[1]
-                or parts[1].startswith(".")
-                or parts[1].endswith(".")
-            ):
+            if not _is_plausible_email(email):
                 ui.notify("Please enter a valid email address", type="warning")
                 return
 
@@ -884,8 +890,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     _setup_client_sync(workspace_id, client, state)
     logger.debug("[RENDER] client sync setup done")
 
-    # Compute sharing visibility for header toggle (Phase 5)
-    can_manage_sharing = permission == "owner" or privileged
+    # Sharing visibility: owner or privileged (instructor/admin) can toggle
+    can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
     logger.debug("[RENDER] calling _render_workspace_header")

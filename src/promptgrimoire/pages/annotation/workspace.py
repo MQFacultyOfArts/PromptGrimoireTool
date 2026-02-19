@@ -28,6 +28,7 @@ from promptgrimoire.db.workspaces import (
     make_workspace_loose,
     place_workspace_in_activity,
     place_workspace_in_course,
+    update_workspace_sharing,
 )
 from promptgrimoire.pages.annotation import (
     PageState,
@@ -338,6 +339,10 @@ async def _render_workspace_header(
     state: PageState,
     workspace_id: UUID,
     protect: bool = False,
+    *,
+    allow_sharing: bool = False,
+    shared_with_class: bool = False,
+    can_manage_sharing: bool = False,
 ) -> None:
     """Render the header row with save status, user count, and export button.
 
@@ -347,6 +352,9 @@ async def _render_workspace_header(
         state: Page state to populate with header element references.
         workspace_id: Workspace UUID for export.
         protect: Whether copy protection is active for this workspace.
+        allow_sharing: Whether the placement context allows sharing.
+        shared_with_class: Current workspace shared_with_class state.
+        can_manage_sharing: Whether the user can toggle sharing (owner or privileged).
     """
     logger.debug("[HEADER] START workspace=%s", workspace_id)
     with ui.row().classes("gap-4 items-center"):
@@ -426,6 +434,28 @@ async def _render_workspace_header(
             ).props(
                 'dense aria-label="Copy protection is enabled for this activity"'
             ).tooltip("Copy protection is enabled for this activity")
+
+        # "Share with class" toggle (Phase 5)
+        if allow_sharing and can_manage_sharing:
+
+            async def _handle_share_toggle(value: bool) -> None:
+                try:
+                    await update_workspace_sharing(
+                        workspace_id, shared_with_class=value
+                    )
+                    ui.notify(
+                        "Shared with class" if value else "Unshared from class",
+                        type="positive",
+                    )
+                except Exception:
+                    logger.exception("Failed to update sharing for %s", workspace_id)
+                    ui.notify("Failed to update sharing", type="negative")
+
+            ui.switch(
+                "Share with class",
+                value=shared_with_class,
+                on_change=lambda e: _handle_share_toggle(e.value),
+            ).props('data-testid="share-with-class-toggle"')
 
 
 def _parse_sort_end_args(
@@ -668,11 +698,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     logger.debug("[RENDER] placement done: protect=%s", protect)
 
     # Create page state with permission capabilities
+    # permission is guaranteed non-None here (guarded above) and always one of
+    # the Permission.name values ("viewer", "peer", "editor", "owner").
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
         user_id=auth_user.get("user_id"),
-        effective_permission=permission,
+        effective_permission=cast("Any", permission),
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,
     )
@@ -681,9 +713,19 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     _setup_client_sync(workspace_id, client, state)
     logger.debug("[RENDER] client sync setup done")
 
+    # Compute sharing visibility for header toggle (Phase 5)
+    can_manage_sharing = permission == "owner" or privileged
+
     ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
     logger.debug("[RENDER] calling _render_workspace_header")
-    await _render_workspace_header(state, workspace_id, protect=protect)
+    await _render_workspace_header(
+        state,
+        workspace_id,
+        protect=protect,
+        allow_sharing=ctx.allow_sharing,
+        shared_with_class=workspace.shared_with_class,
+        can_manage_sharing=can_manage_sharing,
+    )
     logger.debug("[RENDER] header done")
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)

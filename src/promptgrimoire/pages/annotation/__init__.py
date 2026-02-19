@@ -172,6 +172,7 @@ class PageState:
     selection_start: int | None = None
     selection_end: int | None = None
     user_name: str = "Anonymous"
+    user_id: str | None = None  # Stytch user ID for ownership checks
     user_color: str = "#666"  # Client color for cursor display
     # UI elements set during page build
     highlight_style: ui.element | None = None

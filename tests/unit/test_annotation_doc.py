@@ -104,6 +104,93 @@ class TestHighlights:
         assert highlight["para_ref"] == ""
 
 
+class TestHighlightUserId:
+    """Tests for user_id field on highlights (AC3.3)."""
+
+    def test_add_highlight_stores_user_id(self) -> None:
+        """add_highlight with user_id should store it in the dict."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+            user_id="user-abc-123",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["user_id"] == "user-abc-123"
+
+    def test_add_highlight_user_id_defaults_to_none(self) -> None:
+        """add_highlight without user_id should store None (backwards compat)."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["user_id"] is None
+
+
+class TestCommentUserId:
+    """Tests for user_id field on comments (AC3.3)."""
+
+    def test_add_comment_stores_user_id(self) -> None:
+        """add_comment with user_id should store it in the comment dict."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        comment_id = doc.add_comment(
+            hl_id, "Commenter", "Nice work", user_id="user-xyz"
+        )
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight.get("comments", [])
+        assert len(comments) == 1
+        comment = comments[0]
+        assert comment["id"] == comment_id
+        assert comment["user_id"] == "user-xyz"
+        assert comment["author"] == "Commenter"
+        assert comment["text"] == "Nice work"
+        assert "created_at" in comment
+
+    def test_add_comment_user_id_defaults_to_none(self) -> None:
+        """add_comment without user_id should store None (backwards compat)."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "Commenter", "Some comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight.get("comments", [])
+        assert len(comments) == 1
+        assert comments[0]["user_id"] is None
+
+    def test_comment_dict_has_all_required_fields(self) -> None:
+        """Comment dict must contain user_id, author, text, created_at (AC3.3)."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "Author1", "Comment text", user_id="user-1")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comment = highlight["comments"][0]
+        required_keys = {"id", "user_id", "author", "text", "created_at"}
+        assert required_keys.issubset(comment.keys())
+
+
 class TestTagOrder:
     """Tests for tag_order operations."""
 

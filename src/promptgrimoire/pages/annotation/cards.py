@@ -91,7 +91,9 @@ def _build_comments_section(
         inp: ui.input = comment_input,
     ) -> None:
         if inp.value and inp.value.strip() and state.crdt_doc:
-            state.crdt_doc.add_comment(hid, state.user_name, inp.value.strip())
+            state.crdt_doc.add_comment(
+                hid, state.user_name, inp.value.strip(), user_id=state.user_id
+            )
             inp.value = ""
 
             # Persist

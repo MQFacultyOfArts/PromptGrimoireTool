@@ -223,6 +223,7 @@ class AnnotationDocument:
         para_ref: str = "",
         origin_client_id: str | None = None,
         document_id: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Add a new highlight to the document.
 
@@ -235,6 +236,7 @@ class AnnotationDocument:
             para_ref: Paragraph reference string (e.g., "[3]", "[3]-[4]").
             origin_client_id: Client making the change (for echo prevention).
             document_id: Optional workspace document UUID for multi-document workspaces.
+            user_id: Stytch user ID of the author (None for legacy/anonymous).
 
         Returns:
             The generated highlight ID.
@@ -251,6 +253,7 @@ class AnnotationDocument:
                 "tag": tag,
                 "text": text,
                 "author": author,
+                "user_id": user_id,
                 "para_ref": para_ref,
                 "created_at": datetime.now(UTC).isoformat(),
                 "comments": [],  # Will be converted to Array by pycrdt
@@ -435,6 +438,7 @@ class AnnotationDocument:
         author: str,
         text: str,
         origin_client_id: str | None = None,
+        user_id: str | None = None,
     ) -> str | None:
         """Add a comment to a highlight's thread.
 
@@ -443,6 +447,7 @@ class AnnotationDocument:
             author: Display name of the comment author.
             text: Comment text content.
             origin_client_id: Client making the change (for echo prevention).
+            user_id: Stytch user ID of the comment author (None for legacy/anonymous).
 
         Returns:
             The generated comment ID, or None if highlight not found.
@@ -457,6 +462,7 @@ class AnnotationDocument:
             comment = {
                 "id": comment_id,
                 "author": author,
+                "user_id": user_id,
                 "text": text,
                 "created_at": datetime.now(UTC).isoformat(),
             }

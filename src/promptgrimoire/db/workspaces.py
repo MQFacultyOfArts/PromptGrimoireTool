@@ -611,3 +611,61 @@ async def clone_workspace_from_activity(
         await session.flush()
         await session.refresh(clone)
         return clone, doc_id_map
+
+
+async def update_workspace_sharing(
+    workspace_id: UUID,
+    shared_with_class: bool,
+) -> Workspace:
+    """Update a workspace's class sharing status.
+
+    Args:
+        workspace_id: The workspace UUID.
+        shared_with_class: Whether to share with class.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+        workspace.shared_with_class = shared_with_class
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
+async def update_workspace_title(
+    workspace_id: UUID,
+    title: str | None,
+) -> Workspace:
+    """Update a workspace's display title.
+
+    Args:
+        workspace_id: The workspace UUID.
+        title: New title, or None to clear.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+        workspace.title = title
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace

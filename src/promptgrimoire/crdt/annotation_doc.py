@@ -509,11 +509,7 @@ class AnnotationDocument:
 
         # Find the target comment for authorisation check
         comments = list(highlight.get("comments", []))
-        target = None
-        for c in comments:
-            if c.get("id") == comment_id:
-                target = c
-                break
+        target = next((c for c in comments if c.get("id") == comment_id), None)
         if target is None:
             return False
 
@@ -637,10 +633,7 @@ class AnnotationDocumentRegistry:
         Returns:
             True if document was found and removed.
         """
-        if doc_id in self._documents:
-            del self._documents[doc_id]
-            return True
-        return False
+        return self._documents.pop(doc_id, None) is not None
 
     def list_ids(self) -> list[str]:
         """List all document IDs in the registry."""

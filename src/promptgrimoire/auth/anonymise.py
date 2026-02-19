@@ -76,11 +76,7 @@ def anonymise_author(
         return author
     if viewer_is_privileged or viewer_is_owner:
         return author
-    if (
-        user_id is not None
-        and viewing_user_id is not None
-        and user_id == viewing_user_id
-    ):
+    if user_id is not None and user_id == viewing_user_id:
         return author
     if user_id is None:
         return "Unknown"

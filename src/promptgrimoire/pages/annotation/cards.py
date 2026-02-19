@@ -122,11 +122,7 @@ def _build_comments_section(
             c_text = comment.get("text", "")
             c_user_id = comment.get("user_id")
             c_id = comment.get("id", "")
-            is_own = (
-                state.user_id is not None
-                and c_user_id is not None
-                and c_user_id == state.user_id
-            )
+            is_own = state.user_id is not None and c_user_id == state.user_id
             c_author = anonymise_author(
                 author=c_author_raw,
                 user_id=c_user_id,

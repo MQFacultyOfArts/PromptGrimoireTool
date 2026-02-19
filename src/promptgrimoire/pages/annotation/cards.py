@@ -138,42 +138,136 @@ def _build_comments_section(
                         _build_comment_delete_btn(state, highlight_id, c_id)
                 ui.label(c_text).classes("text-sm")
 
-    # Comment input
-    comment_input = (
-        ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
-    )
+    # Comment input -- only for users who can annotate
+    if state.can_annotate:
+        comment_input = (
+            ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
+        )
 
-    async def add_comment(
-        hid: str = highlight_id,
-        inp: ui.input = comment_input,
-    ) -> None:
-        if inp.value and inp.value.strip() and state.crdt_doc:
-            state.crdt_doc.add_comment(
-                hid, state.user_name, inp.value.strip(), user_id=state.user_id
+        async def add_comment(
+            hid: str = highlight_id,
+            inp: ui.input = comment_input,
+        ) -> None:
+            if inp.value and inp.value.strip() and state.crdt_doc:
+                state.crdt_doc.add_comment(
+                    hid,
+                    state.user_name,
+                    inp.value.strip(),
+                    user_id=state.user_id,
+                )
+                inp.value = ""
+
+                # Persist
+                pm = get_persistence_manager()
+                pm.mark_dirty_workspace(
+                    state.workspace_id,
+                    state.crdt_doc.doc_id,
+                    last_editor=state.user_name,
+                )
+                await pm.force_persist_workspace(state.workspace_id)
+
+                if state.save_status:
+                    state.save_status.text = "Saved"
+
+                # Refresh cards to show new comment
+                if state.refresh_annotations:
+                    state.refresh_annotations()
+
+                # Broadcast to other clients
+                if state.broadcast_update:
+                    await state.broadcast_update()
+
+        ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+
+
+def _build_card_header(
+    state: PageState,
+    highlight_id: str,
+    tag_str: str,
+    color: str,
+    start_char: int,
+    end_char: int,
+    card: ui.card,
+) -> None:
+    """Build annotation card header with tag display and action buttons.
+
+    Renders an interactive tag dropdown + delete button when the user
+    can annotate, or a static tag label for viewers.
+
+    Args:
+        state: Page state with permission context.
+        highlight_id: Highlight ID for CRDT operations.
+        tag_str: Raw tag string from CRDT.
+        color: Hex colour for tag display.
+        start_char: Start char offset for go-to-highlight.
+        end_char: End char offset for go-to-highlight.
+        card: Parent card element (for border colour update).
+    """
+    with ui.row().classes("w-full justify-between items-center"):
+        if state.can_annotate:
+            # Interactive tag dropdown for changing tag type
+            tag_options = {t.value: t.value.replace("_", " ").title() for t in BriefTag}
+
+            async def on_tag_change(
+                e: Any,
+                hid: str = highlight_id,
+                crd: ui.card = card,
+            ) -> None:
+                new_tag = e.value
+                if state.crdt_doc and new_tag != tag_str:
+                    state.crdt_doc.update_highlight_tag(hid, new_tag)
+                    pm = get_persistence_manager()
+                    pm.mark_dirty_workspace(
+                        state.workspace_id,
+                        state.crdt_doc.doc_id,
+                        last_editor=state.user_name,
+                    )
+                    await pm.force_persist_workspace(state.workspace_id)
+                    if state.save_status:
+                        state.save_status.text = "Saved"
+                    _update_highlight_css(state)
+                    new_color = TAG_COLORS.get(BriefTag(new_tag), "#666")
+                    crd.style(f"border-left: 4px solid {new_color};")
+                    if state.broadcast_update:
+                        await state.broadcast_update()
+
+            ui.select(
+                tag_options,
+                value=tag_str,
+                on_change=on_tag_change,
+            ).props("dense borderless").classes("text-sm font-bold").style(
+                f"color: {color}; min-width: 120px;"
             )
-            inp.value = ""
+        else:
+            # Static tag label for viewers
+            display_tag = tag_str.replace("_", " ").title()
+            ui.label(display_tag).classes("text-sm font-bold").style(f"color: {color};")
 
-            # Persist
-            pm = get_persistence_manager()
-            pm.mark_dirty_workspace(
-                state.workspace_id,
-                state.crdt_doc.doc_id,
-                last_editor=state.user_name,
-            )
-            await pm.force_persist_workspace(state.workspace_id)
+        with ui.row().classes("gap-1"):
+            # Go-to-highlight button (available to all)
+            async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
+                js = _render_js(
+                    t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
+                    t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
+                )
+                await ui.run_javascript(js)
 
-            if state.save_status:
-                state.save_status.text = "Saved"
+            ui.button(icon="my_location", on_click=goto_highlight).props(
+                "flat dense size=xs"
+            ).tooltip("Go to highlight")
 
-            # Refresh cards to show new comment
-            if state.refresh_annotations:
-                state.refresh_annotations()
+            # Delete button -- only for annotators
+            if state.can_annotate:
 
-            # Broadcast to other clients
-            if state.broadcast_update:
-                await state.broadcast_update()
+                async def do_delete(
+                    hid: str = highlight_id,
+                    c: ui.card = card,
+                ) -> None:
+                    await _delete_highlight(state, hid, c)
 
-    ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+                ui.button(icon="close", on_click=do_delete).props(
+                    "flat dense size=xs"
+                ).tooltip("Delete highlight")
 
 
 def _build_annotation_card(
@@ -214,71 +308,23 @@ def _build_annotation_card(
         .classes("ann-card-positioned")
         .style(f"border-left: 4px solid {color};")
         .props(
-            f'data-testid="annotation-card" data-highlight-id="{highlight_id}" '
-            f'data-start-char="{start_char}" data-end-char="{end_char}"'
+            f'data-testid="annotation-card" '
+            f'data-highlight-id="{highlight_id}" '
+            f'data-start-char="{start_char}" '
+            f'data-end-char="{end_char}"'
         )
     )
 
     with card:
-        # Header with tag dropdown and action buttons
-        with ui.row().classes("w-full justify-between items-center"):
-            # Tag dropdown for changing tag type
-            tag_options = {t.value: t.value.replace("_", " ").title() for t in BriefTag}
-
-            async def on_tag_change(
-                e: Any,
-                hid: str = highlight_id,
-                crd: ui.card = card,
-            ) -> None:
-                new_tag = e.value
-                if state.crdt_doc and new_tag != tag_str:
-                    state.crdt_doc.update_highlight_tag(hid, new_tag)
-                    pm = get_persistence_manager()
-                    pm.mark_dirty_workspace(
-                        state.workspace_id,
-                        state.crdt_doc.doc_id,
-                        last_editor=state.user_name,
-                    )
-                    await pm.force_persist_workspace(state.workspace_id)
-                    if state.save_status:
-                        state.save_status.text = "Saved"
-                    _update_highlight_css(state)
-                    # Update card border color
-                    new_color = TAG_COLORS.get(BriefTag(new_tag), "#666")
-                    crd.style(f"border-left: 4px solid {new_color};")
-                    if state.broadcast_update:
-                        await state.broadcast_update()
-
-            ui.select(
-                tag_options,
-                value=tag_str,
-                on_change=on_tag_change,
-            ).props("dense borderless").classes("text-sm font-bold").style(
-                f"color: {color}; min-width: 120px;"
-            )
-
-            with ui.row().classes("gap-1"):
-                # Go-to-highlight button - scrolls to highlight and throbs it
-                async def goto_highlight(
-                    sc: int = start_char, ec: int = end_char
-                ) -> None:
-                    js = _render_js(
-                        t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
-                        t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
-                    )
-                    await ui.run_javascript(js)
-
-                ui.button(icon="my_location", on_click=goto_highlight).props(
-                    "flat dense size=xs"
-                ).tooltip("Go to highlight")
-
-                # Delete button - uses extracted _delete_highlight function
-                async def do_delete(hid: str = highlight_id, c: ui.card = card) -> None:
-                    await _delete_highlight(state, hid, c)
-
-                ui.button(icon="close", on_click=do_delete).props(
-                    "flat dense size=xs"
-                ).tooltip("Delete highlight")
+        _build_card_header(
+            state,
+            highlight_id,
+            tag_str,
+            color,
+            start_char,
+            end_char,
+            card,
+        )
 
         # Author and para_ref on same line
         display_author = anonymise_author(
@@ -298,7 +344,7 @@ def _build_annotation_card(
         if full_text:
             _build_expandable_text(full_text)
 
-        # Comments section (extracted to reduce statement count)
+        # Comments section
         _build_comments_section(state, highlight_id, highlight.get("comments", []))
 
     return card

@@ -130,20 +130,22 @@ async def _render_document_with_highlights(
     async def handle_tag_click(tag: BriefTag) -> None:
         await _add_highlight(state, tag)
 
-    # Tag toolbar - always visible above document
-    _build_tag_toolbar(handle_tag_click)
+    # Tag toolbar and highlight menu -- only for users who can annotate
+    if state.can_annotate:
+        _build_tag_toolbar(handle_tag_click)
 
-    # Highlight creation menu (hidden popup for quick highlight without tag selection)
-    with (
-        ui.card()
-        .classes("fixed z-50 shadow-lg p-2")
-        .style("top: 50%; left: 50%; transform: translate(-50%, -50%);")
-        .props('data-testid="highlight-menu"') as highlight_menu
-    ):
-        highlight_menu.set_visibility(False)
-        state.highlight_menu = highlight_menu
+        # Highlight creation menu (hidden popup for quick highlight
+        # without tag selection)
+        with (
+            ui.card()
+            .classes("fixed z-50 shadow-lg p-2")
+            .style("top: 50%; left: 50%; transform: translate(-50%, -50%);")
+            .props('data-testid="highlight-menu"') as highlight_menu
+        ):
+            highlight_menu.set_visibility(False)
+            state.highlight_menu = highlight_menu
 
-        ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
+            ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading
@@ -213,8 +215,9 @@ async def _render_document_with_highlights(
     # Load existing annotations
     _refresh_annotation_cards(state)
 
-    # Set up selection detection
-    _setup_selection_handlers(state)
+    # Set up selection detection (viewers get read-only view)
+    if state.can_annotate:
+        _setup_selection_handlers(state)
 
     # Set up scroll-synced card positioning and hover interaction
     # (loaded from static/annotation-card-sync.js)

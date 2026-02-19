@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -122,133 +121,15 @@ Command: {command_str}
     return header_text, log_header
 
 
-def _stream_plain(
+def _stream_output(
     process: subprocess.Popen[str],
     log_file: IO[str],
 ) -> int:
-    """Stream pytest output directly — for piped/CI use with rtk filtering."""
+    """Stream pytest output to stdout and log file."""
     for line in process.stdout or []:
         print(line, end="")
         log_file.write(line)
         log_file.flush()
-    process.wait()
-    return process.returncode
-
-
-# ---------------------------------------------------------------------------
-# Pytest output parsing for the Rich progress bar
-# ---------------------------------------------------------------------------
-
-_COLLECTED_RE = re.compile(r"collected (\d+) items?(?:\s*/\s*(\d+) deselected)?")
-_XDIST_ITEMS_RE = re.compile(r"\[(\d+) items?\]")
-_RESULT_KW_RE = re.compile(r"\b(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b")
-_PCT_RE = re.compile(r"\[\s*(\d+)%\s*\]")
-_SEPARATOR_RE = re.compile(r"^={5,}")
-
-
-def _parse_collection(line: str) -> int | None:
-    """Extract test count from a pytest collection line, or None."""
-    m = _COLLECTED_RE.search(line)
-    if m:
-        collected = int(m.group(1))
-        deselected = int(m.group(2)) if m.group(2) else 0
-        return collected - deselected
-    m = _XDIST_ITEMS_RE.search(line)
-    if m:
-        return int(m.group(1))
-    return None
-
-
-def _is_summary_boundary(line: str) -> bool:
-    """True if *line* marks the start of pytest's post-execution output."""
-    return bool(_SEPARATOR_RE.match(line)) or line in ("FAILURES", "ERRORS")
-
-
-def _parse_result(line: str, total: int | None) -> tuple[int, bool]:
-    """Return (advance_count, is_failure) for a pytest result line.
-
-    Handles verbose mode (keyword per line) and quiet mode ([NN%]).
-    Returns (0, False) when the line carries no result information.
-    """
-    if _RESULT_KW_RE.search(line):
-        return 1, ("FAILED" in line or "ERROR" in line)
-    m = _PCT_RE.search(line)
-    if m and total:
-        return total * int(m.group(1)) // 100, False
-    return 0, False
-
-
-def _stream_with_progress(
-    process: subprocess.Popen[str],
-    log_file: IO[str],
-) -> int:
-    """Stream pytest output with a Rich progress bar — for interactive TTY use."""
-    from rich.progress import (
-        BarColumn,
-        MofNCompleteColumn,
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        TimeElapsedColumn,
-    )
-
-    total: int | None = None
-    completed = 0
-    phase = "collecting"  # collecting → running → summary
-
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    )
-    task_id = progress.add_task("Collecting tests...", total=None)
-    progress.start()
-
-    try:
-        for line in process.stdout or []:
-            log_file.write(line)
-            log_file.flush()
-            stripped = line.rstrip()
-
-            if phase == "summary":
-                print(line, end="")
-                continue
-
-            # Collection phase → running
-            count = _parse_collection(stripped)
-            if count is not None:
-                total = count
-                desc = "No tests collected" if total == 0 else f"Running {total} tests"
-                progress.update(task_id, total=total or None, description=desc)
-                phase = "running"
-                continue
-
-            # End of execution → summary
-            if phase == "running" and _is_summary_boundary(stripped):
-                phase = "summary"
-                progress.stop()
-                print(line, end="")
-                continue
-
-            # Advance progress from result lines
-            if phase == "running":
-                advance, is_fail = _parse_result(stripped, total)
-                if advance:
-                    completed = (
-                        max(completed, advance)
-                        if total and advance > 1
-                        else completed + advance
-                    )
-                    progress.update(task_id, completed=completed)
-                    if is_fail:
-                        progress.print(f"[red]{stripped}[/]")
-    finally:
-        if phase != "summary":
-            progress.stop()
-
     process.wait()
     return process.returncode
 
@@ -274,14 +155,13 @@ def _run_pytest(
     start_time = datetime.now()
     user_args = sys.argv[1:]
 
-    # Interactive terminals get a Rich progress bar and no rtk.
-    # Piped output (e.g. Claude Code) gets rtk filtering for token savings.
+    # Panels for interactive terminals; piped output (e.g. Claude Code)
+    # gets a one-line header to minimise token usage.
+    # Note: rtk is NOT used for pytest — its "failures only" filter hides
+    # passing results, making Claude think tests didn't collect.
     interactive = sys.stdout.isatty()
 
-    if not interactive and shutil.which("rtk") is not None:
-        all_args = ["uv", "run", "rtk", "pytest", *default_args, *user_args]
-    else:
-        all_args = ["uv", "run", "pytest", *default_args, *user_args]
+    all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
     header_text, log_header = _build_test_header(
@@ -304,10 +184,7 @@ def _run_pytest(
             bufsize=1,
         )
 
-        if interactive:
-            exit_code = _stream_with_progress(process, log_file)
-        else:
-            exit_code = _stream_plain(process, log_file)
+        exit_code = _stream_output(process, log_file)
 
         end_time = datetime.now()
         duration = end_time - start_time

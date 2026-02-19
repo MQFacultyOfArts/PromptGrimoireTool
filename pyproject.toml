@@ -30,6 +30,7 @@ dependencies = [
     "selectolax>=0.4.6",
     "emoji>=2.0.0",
     "lxml>=6.0",
+    "coolname>=3.0.0",
 ]
 
 [project.scripts]

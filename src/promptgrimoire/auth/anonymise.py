@@ -1,133 +1,36 @@
 """Deterministic anonymisation utility for annotation authors.
 
-Provides adjective-animal pseudonyms derived from user IDs via SHA-256
-hashing. Labels are stable across sessions and page reloads.
+Provides adjective-animal pseudonyms derived from user IDs via the
+``coolname`` library (~328k unique 2-word combinations). Labels are
+deterministic per user_id — stable across sessions and page reloads.
 """
 
 from __future__ import annotations
 
 import hashlib
-import struct
+import pathlib
+import random
 
-# 50 positive/neutral adjectives -- audited for appropriateness
-ADJECTIVES: tuple[str, ...] = (
-    "Bright",
-    "Calm",
-    "Clever",
-    "Coral",
-    "Crisp",
-    "Daring",
-    "Eager",
-    "Fair",
-    "Gentle",
-    "Golden",
-    "Happy",
-    "Honest",
-    "Jolly",
-    "Keen",
-    "Kind",
-    "Lively",
-    "Lucky",
-    "Mellow",
-    "Merry",
-    "Mighty",
-    "Noble",
-    "Olive",
-    "Peaceful",
-    "Plucky",
-    "Polite",
-    "Proud",
-    "Quick",
-    "Quiet",
-    "Radiant",
-    "Rosy",
-    "Sandy",
-    "Silver",
-    "Sleek",
-    "Snowy",
-    "Spruce",
-    "Steady",
-    "Sunny",
-    "Swift",
-    "Tawny",
-    "Tender",
-    "Tidy",
-    "Topaz",
-    "Valiant",
-    "Verdant",
-    "Vivid",
-    "Warm",
-    "Witty",
-    "Zany",
-    "Zesty",
-    "Azure",
-)
+from coolname import RandomGenerator
+from coolname.loader import load_config
 
-# 50 animals -- audited for appropriateness
-ANIMALS: tuple[str, ...] = (
-    "Badger",
-    "Bear",
-    "Bison",
-    "Crane",
-    "Deer",
-    "Dolphin",
-    "Eagle",
-    "Falcon",
-    "Finch",
-    "Fox",
-    "Gecko",
-    "Hare",
-    "Hawk",
-    "Heron",
-    "Horse",
-    "Ibis",
-    "Jaguar",
-    "Jay",
-    "Koala",
-    "Lark",
-    "Lemur",
-    "Llama",
-    "Lynx",
-    "Marten",
-    "Moth",
-    "Newt",
-    "Okapi",
-    "Otter",
-    "Owl",
-    "Panda",
-    "Parrot",
-    "Pelican",
-    "Puffin",
-    "Quail",
-    "Raven",
-    "Robin",
-    "Seal",
-    "Shrike",
-    "Sloth",
-    "Sparrow",
-    "Stork",
-    "Swan",
-    "Tern",
-    "Tiger",
-    "Toucan",
-    "Turtle",
-    "Viper",
-    "Whale",
-    "Wren",
-    "Zebra",
+# Load coolname config once at module level.
+_COOLNAME_CONFIG = load_config(
+    pathlib.Path(__import__("coolname").__file__).parent / "data"  # type: ignore[arg-type]
 )
 
 
 def _adjective_animal_label(user_id: str) -> str:
     """Derive a deterministic adjective-animal label from a user_id.
 
-    Uses SHA-256 hash: first 4 bytes select the adjective,
-    next 4 bytes select the animal.
+    Seeds a ``coolname.RandomGenerator`` with a SHA-256 hash of the
+    user_id, producing a stable 2-word title-cased label
+    (e.g. "Crystal Peccary").
     """
-    digest = hashlib.sha256(user_id.encode()).digest()
-    adj_idx = struct.unpack_from(">I", digest, 0)[0] % len(ADJECTIVES)
-    animal_idx = struct.unpack_from(">I", digest, 4)[0] % len(ANIMALS)
-    return f"{ADJECTIVES[adj_idx]} {ANIMALS[animal_idx]}"
+    seed = int.from_bytes(hashlib.sha256(user_id.encode()).digest()[:8])
+    gen = RandomGenerator(_COOLNAME_CONFIG, random.Random(seed))
+    slug = gen.generate_slug(2)
+    return slug.replace("-", " ").title()
 
 
 def anonymise_author(

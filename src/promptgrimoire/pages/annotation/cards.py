@@ -11,6 +11,7 @@ from typing import Any
 
 from nicegui import ui
 
+from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.models.case import TAG_COLORS, BriefTag
 from promptgrimoire.pages.annotation import PageState, _render_js
@@ -117,7 +118,7 @@ def _build_comments_section(
         ui.separator()
         sorted_comments = sorted(comments, key=lambda c: c.get("created_at", ""))
         for comment in sorted_comments:
-            c_author = comment.get("author", "Unknown")
+            c_author_raw = comment.get("author", "Unknown")
             c_text = comment.get("text", "")
             c_user_id = comment.get("user_id")
             c_id = comment.get("id", "")
@@ -125,6 +126,15 @@ def _build_comments_section(
                 state.user_id is not None
                 and c_user_id is not None
                 and c_user_id == state.user_id
+            )
+            c_author = anonymise_author(
+                author=c_author_raw,
+                user_id=c_user_id,
+                viewing_user_id=state.user_id,
+                # TODO: Phase 4 threads these from PageState
+                anonymous_sharing=False,
+                viewer_is_privileged=False,
+                viewer_is_owner=False,
             )
             with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
                 with ui.row().classes("w-full justify-between items-center"):
@@ -276,8 +286,17 @@ def _build_annotation_card(
                 ).tooltip("Delete highlight")
 
         # Author and para_ref on same line
+        display_author = anonymise_author(
+            author=author,
+            user_id=highlight.get("user_id"),
+            viewing_user_id=state.user_id,
+            # TODO: Phase 4 threads these from PageState
+            anonymous_sharing=False,
+            viewer_is_privileged=False,
+            viewer_is_owner=False,
+        )
         with ui.row().classes("gap-2 items-center"):
-            ui.label(f"by {author}").classes("text-xs text-gray-500")
+            ui.label(f"by {display_author}").classes("text-xs text-gray-500")
             if para_ref:
                 ui.label(para_ref).classes("text-xs font-mono text-gray-400")
 

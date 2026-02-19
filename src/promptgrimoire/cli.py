@@ -9,10 +9,15 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import IO
 
 from rich.console import Console
 from rich.panel import Panel
@@ -119,7 +124,7 @@ Command: {command_str}
 
 def _stream_plain(
     process: subprocess.Popen[str],
-    log_file,
+    log_file: IO[str],
 ) -> int:
     """Stream pytest output directly — for piped/CI use with rtk filtering."""
     for line in process.stdout or []:
@@ -175,7 +180,7 @@ def _parse_result(line: str, total: int | None) -> tuple[int, bool]:
 
 def _stream_with_progress(
     process: subprocess.Popen[str],
-    log_file,
+    log_file: IO[str],
 ) -> int:
     """Stream pytest output with a Rich progress bar — for interactive TTY use."""
     from rich.progress import (
@@ -271,8 +276,6 @@ def _run_pytest(
 
     # Interactive terminals get a Rich progress bar and no rtk.
     # Piped output (e.g. Claude Code) gets rtk filtering for token savings.
-    import shutil
-
     interactive = sys.stdout.isatty()
 
     if not interactive and shutil.which("rtk") is not None:
@@ -819,8 +822,6 @@ def _check_ptrace_scope() -> None:
 
 def _start_pyspy(pid: int) -> subprocess.Popen[bytes]:
     """Start py-spy recording against a server process."""
-    import shutil
-
     pyspy = shutil.which("py-spy")
     if pyspy is None:
         console.print("[red]py-spy not found in PATH[/]")

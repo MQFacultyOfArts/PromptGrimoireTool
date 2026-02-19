@@ -80,7 +80,7 @@ def _build_comment_delete_btn(
             hid,
             cid,
             requesting_user_id=state.user_id,
-            is_workspace_owner=(state.effective_permission == "owner"),
+            is_workspace_owner=state.is_owner,
             is_privileged=state.viewer_is_privileged,
         )
         if not deleted:
@@ -127,24 +127,18 @@ def _build_comments_section(
             c_text = comment.get("text", "")
             c_user_id = comment.get("user_id")
             c_id = comment.get("id", "")
-            is_own = state.user_id is not None and c_user_id == state.user_id
             c_author = anonymise_author(
                 author=c_author_raw,
                 user_id=c_user_id,
                 viewing_user_id=state.user_id,
                 anonymous_sharing=state.is_anonymous,
                 viewer_is_privileged=state.viewer_is_privileged,
-                viewer_is_owner=state.effective_permission == "owner",
-            )
-            can_delete = (
-                is_own
-                or state.effective_permission == "owner"
-                or state.viewer_is_privileged
+                viewer_is_owner=state.is_owner,
             )
             with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
                 with ui.row().classes("w-full justify-between items-center"):
                     ui.label(c_author).classes("text-xs font-bold")
-                    if can_delete:
+                    if state.can_delete_content(c_user_id):
                         _build_comment_delete_btn(state, highlight_id, c_id)
                 ui.label(c_text).classes("text-sm")
 
@@ -255,15 +249,6 @@ def _build_card_header(
             display_tag = tag_str.replace("_", " ").title()
             ui.label(display_tag).classes("text-sm font-bold").style(f"color: {color};")
 
-        # Determine whether the delete highlight button is shown:
-        # creator of the highlight, workspace owner, or privileged
-        is_own_hl = state.user_id is not None and highlight_user_id == state.user_id
-        can_delete_hl = (
-            is_own_hl
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
-        )
-
         with ui.row().classes("gap-1"):
             # Go-to-highlight button (available to all)
             async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
@@ -277,7 +262,7 @@ def _build_card_header(
                 "flat dense size=xs"
             ).tooltip("Go to highlight")
 
-            if can_delete_hl:
+            if state.can_delete_content(highlight_user_id):
 
                 async def do_delete(
                     hid: str = highlight_id,
@@ -354,7 +339,7 @@ def _build_annotation_card(
             viewing_user_id=state.user_id,
             anonymous_sharing=state.is_anonymous,
             viewer_is_privileged=state.viewer_is_privileged,
-            viewer_is_owner=state.effective_permission == "owner",
+            viewer_is_owner=state.is_owner,
         )
         with ui.row().classes("gap-2 items-center"):
             ui.label(f"by {display_author}").classes("text-xs text-gray-500")

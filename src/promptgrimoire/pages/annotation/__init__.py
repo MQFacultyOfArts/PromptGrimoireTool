@@ -179,6 +179,7 @@ class PageState:
     can_annotate: bool = field(init=False)  # peer, editor, owner
     can_upload: bool = field(init=False)  # editor, owner
     can_manage_acl: bool = field(init=False)  # owner only
+    is_owner: bool = field(init=False)  # shorthand for permission == "owner"
     is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
     viewer_is_privileged: bool = False  # instructor / admin bypass
     # UI elements set during page build
@@ -223,9 +224,19 @@ class PageState:
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""
         perm = self.effective_permission
+        self.is_owner = perm == "owner"
         self.can_annotate = perm in ("peer", "editor", "owner")
         self.can_upload = perm in ("editor", "owner")
-        self.can_manage_acl = perm == "owner"
+        self.can_manage_acl = self.is_owner
+
+    def can_delete_content(self, content_user_id: str | None) -> bool:
+        """Whether the current user may delete content owned by content_user_id.
+
+        Returns True when the viewer is the content creator, the workspace
+        owner, or a privileged user (instructor / admin).
+        """
+        is_own = self.user_id is not None and content_user_id == self.user_id
+        return is_own or self.is_owner or self.viewer_is_privileged
 
 
 # ---------------------------------------------------------------------------

@@ -112,7 +112,7 @@ def _build_highlight_card(
             viewing_user_id=state.user_id,
             anonymous_sharing=state.is_anonymous,
             viewer_is_privileged=state.viewer_is_privileged,
-            viewer_is_owner=(state.effective_permission == "owner"),
+            viewer_is_owner=state.is_owner,
         )
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if snippet:
@@ -128,7 +128,7 @@ def _build_highlight_card(
                     viewing_user_id=state.user_id,
                     anonymous_sharing=state.is_anonymous,
                     viewer_is_privileged=state.viewer_is_privileged,
-                    viewer_is_owner=(state.effective_permission == "owner"),
+                    viewer_is_owner=state.is_owner,
                 )
                 with ui.row().classes("w-full gap-1 items-start"):
                     ui.label(f"{display_c_author}:").classes(

@@ -671,7 +671,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
-        user_id=(str(auth_user.get("user_id", "")) if auth_user else None),
+        user_id=auth_user.get("user_id"),
         effective_permission=permission,
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,

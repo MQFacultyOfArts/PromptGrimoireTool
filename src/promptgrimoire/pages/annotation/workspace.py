@@ -773,10 +773,24 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                 logger.debug("[RENDER] rendering document with highlights")
                 await _render_document_with_highlights(state, doc, crdt_doc)
                 logger.debug("[RENDER] document rendered")
-            else:
-                # Show add content form (extracted to reduce function complexity)
+
+                # "Add Document" button for editors/owners with
+                # existing documents
+                if state.can_upload:
+                    with ui.expansion(
+                        "Add Document",
+                        icon="note_add",
+                    ).classes("w-full mt-4"):
+                        _render_add_content_form(workspace_id)
+            elif state.can_upload:
+                # Show add content form for editors/owners
                 logger.debug("[RENDER] no documents, showing add content form")
                 _render_add_content_form(workspace_id)
+            else:
+                # Read-only empty state for viewers/peers
+                ui.label("This workspace has no documents yet.").classes(
+                    "text-gray-500 italic mt-4"
+                )
 
         with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel

@@ -5,8 +5,7 @@ Verifies:
 - Capability booleans computed correctly from effective_permission
 """
 
-from __future__ import annotations
-
+from typing import Literal
 from uuid import uuid4
 
 import pytest
@@ -223,7 +222,7 @@ class TestDeleteOwnershipContext:
     ids=["viewer", "peer", "editor", "owner"],
 )
 def test_capability_matrix(
-    permission: str,
+    permission: Literal["viewer", "peer", "editor", "owner"],
     can_annotate: bool,
     can_upload: bool,
     can_manage_acl: bool,

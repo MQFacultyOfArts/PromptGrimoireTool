@@ -52,8 +52,8 @@ def _build_highlight_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
-    state: PageState | None = None,
 ) -> ui.card:
     """Render a single highlight card inside a tag column.
 
@@ -64,10 +64,9 @@ def _build_highlight_card(
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name.
+        state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
             the highlight in Tab 1.
-        state: Page state for anonymisation context. When None,
-            raw author names are displayed (backwards-compatible).
 
     Returns:
         The created ui.card element.
@@ -107,17 +106,14 @@ def _build_highlight_card(
                 ).tooltip("Locate in document").classes("sortable-ignore")
 
         # Anonymise highlight author
-        if state is not None:
-            display_author = anonymise_author(
-                author=raw_author,
-                user_id=highlight.get("user_id"),
-                viewing_user_id=state.user_id,
-                anonymous_sharing=state.is_anonymous,
-                viewer_is_privileged=state.viewer_is_privileged,
-                viewer_is_owner=(state.effective_permission == "owner"),
-            )
-        else:
-            display_author = raw_author
+        display_author = anonymise_author(
+            author=raw_author,
+            user_id=highlight.get("user_id"),
+            viewing_user_id=state.user_id,
+            anonymous_sharing=state.is_anonymous,
+            viewer_is_privileged=state.viewer_is_privileged,
+            viewer_is_owner=(state.effective_permission == "owner"),
+        )
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
@@ -126,17 +122,14 @@ def _build_highlight_card(
             for comment in comments:
                 raw_c_author = comment.get("author", "Unknown")
                 comment_text = comment.get("text", "")
-                if state is not None:
-                    display_c_author = anonymise_author(
-                        author=raw_c_author,
-                        user_id=comment.get("user_id"),
-                        viewing_user_id=state.user_id,
-                        anonymous_sharing=state.is_anonymous,
-                        viewer_is_privileged=state.viewer_is_privileged,
-                        viewer_is_owner=(state.effective_permission == "owner"),
-                    )
-                else:
-                    display_c_author = raw_c_author
+                display_c_author = anonymise_author(
+                    author=raw_c_author,
+                    user_id=comment.get("user_id"),
+                    viewing_user_id=state.user_id,
+                    anonymous_sharing=state.is_anonymous,
+                    viewer_is_privileged=state.viewer_is_privileged,
+                    viewer_is_owner=(state.effective_permission == "owner"),
+                )
                 with ui.row().classes("w-full gap-1 items-start"):
                     ui.label(f"{display_c_author}:").classes(
                         "text-xs font-semibold text-gray-600 flex-shrink-0"
@@ -153,8 +146,8 @@ def _build_tag_column(
     highlights: list[dict[str, Any]],
     ordered_ids: list[str],
     on_sort_end: Callable[[GenericEventArguments], Any] | None,
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
-    state: PageState | None = None,
 ) -> ui.column:
     """Render a single tag column with header and highlight cards.
 
@@ -169,9 +162,9 @@ def _build_tag_column(
         highlights: All highlights assigned to this tag.
         ordered_ids: Ordered highlight IDs from CRDT tag_order.
         on_sort_end: Callback for sort-end events (None to disable drag).
+        state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
-        state: Page state for anonymisation context.
 
     Returns:
         The created ui.column element.
@@ -214,8 +207,8 @@ def _build_tag_column(
                         hl_by_id[hid],
                         tag_colour,
                         tag_name,
+                        state,
                         on_locate,
-                        state=state,
                     )
                     rendered_ids.add(hid)
 
@@ -223,9 +216,7 @@ def _build_tag_column(
             for hl in highlights:
                 hid = hl.get("id", "")
                 if hid not in rendered_ids:
-                    _build_highlight_card(
-                        hl, tag_colour, tag_name, on_locate, state=state
-                    )
+                    _build_highlight_card(hl, tag_colour, tag_name, state, on_locate)
 
             # Empty state hint (inside sortable so column is a valid drop target)
             if not highlights:
@@ -243,7 +234,7 @@ def render_organise_tab(
     *,
     on_sort_end: (Callable[[GenericEventArguments], Any] | None) = None,
     on_locate: Callable[..., Any] | None = None,
-    state: PageState | None = None,
+    state: PageState,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
@@ -315,8 +306,8 @@ def render_organise_tab(
                 highlights_for_tag,
                 ordered_ids,
                 on_sort_end,
+                state,
                 on_locate,
-                state=state,
             )
 
         # Untagged column (AC2.6)
@@ -329,8 +320,8 @@ def render_organise_tab(
                 untagged_highlights,
                 ordered_ids,
                 on_sort_end,
+                state,
                 on_locate,
-                state=state,
             )
 
     # Restore scroll position after rebuild

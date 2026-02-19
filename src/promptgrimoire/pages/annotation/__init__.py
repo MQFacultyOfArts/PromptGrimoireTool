@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string.templatelib import Interpolation, Template
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from nicegui import ui
@@ -175,10 +175,10 @@ class PageState:
     user_id: str | None = None  # Stytch user ID for ownership checks
     user_color: str = "#666"  # Client color for cursor display
     # Permission capabilities (Phase 4 -- workspace sharing)
-    effective_permission: str = "viewer"
-    can_annotate: bool = False  # peer, editor, owner
-    can_upload: bool = False  # editor, owner
-    can_manage_acl: bool = False  # owner only
+    effective_permission: Literal["viewer", "peer", "editor", "owner"] = "viewer"
+    can_annotate: bool = field(init=False)  # peer, editor, owner
+    can_upload: bool = field(init=False)  # editor, owner
+    can_manage_acl: bool = field(init=False)  # owner only
     is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
     viewer_is_privileged: bool = False  # instructor / admin bypass
     # UI elements set during page build

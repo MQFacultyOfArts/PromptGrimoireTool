@@ -267,14 +267,19 @@ async def _derive_enrollment_permission(
     if enrollment.role in staff_roles:
         return course.default_instructor_permission
 
-    # Student peer path: activity-placed + allow_sharing + shared_with_class
-    if activity is not None and workspace.shared_with_class:
-        # Resolve tri-state: explicit activity override wins, else course default
-        allow_sharing = (
-            activity.allow_sharing
-            if activity.allow_sharing is not None
-            else course.default_allow_sharing
-        )
+    # Student peer path: enrolled + allow_sharing resolved + shared_with_class
+    if workspace.shared_with_class:
+        if activity is not None:
+            # Activity-placed: tri-state resolution (activity overrides course default)
+            allow_sharing = (
+                activity.allow_sharing
+                if activity.allow_sharing is not None
+                else course.default_allow_sharing
+            )
+        else:
+            # Course-placed (no activity): use course default directly
+            allow_sharing = course.default_allow_sharing
+
         if allow_sharing:
             return "peer"
 

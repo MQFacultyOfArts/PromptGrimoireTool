@@ -868,11 +868,11 @@ class TestStudentPeerLooseWorkspace:
 
 
 class TestStudentPeerCoursePlaced:
-    """workspace-sharing-97.AC2.8: Course-placed workspace -- no peer discovery."""
+    """workspace-sharing-97.AC2.8: Course-placed workspace uses course default."""
 
     @pytest.mark.asyncio
-    async def test_course_placed_no_peer(self) -> None:
-        """Course-placed workspace + shared_with_class=True -> None."""
+    async def test_course_placed_peer_with_sharing(self) -> None:
+        """Course-placed + default_allow_sharing + shared_with_class -> peer."""
         from promptgrimoire.db.acl import resolve_permission
         from promptgrimoire.db.courses import create_course, enroll_user, update_course
         from promptgrimoire.db.engine import get_session
@@ -894,6 +894,44 @@ class TestStudentPeerCoursePlaced:
             semester="2026-S1",
         )
         await update_course(course.id, default_allow_sharing=True)
+        await enroll_user(course.id, student.id, role="student")
+
+        workspace = await create_workspace()
+        await place_workspace_in_course(workspace.id, course.id)
+        async with get_session() as session:
+            ws = await session.get(Workspace, workspace.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+
+        result = await resolve_permission(workspace.id, student.id)
+
+        assert result == "peer"
+
+    @pytest.mark.asyncio
+    async def test_course_placed_no_peer_when_sharing_disabled(self) -> None:
+        """Course-placed workspace + default_allow_sharing=False -> None."""
+        from promptgrimoire.db.acl import resolve_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+        )
+
+        tag = uuid4().hex[:8]
+        student = await create_user(
+            email=f"peer-cplace-noshr-{tag}@test.local",
+            display_name=f"CPlace NoShr {tag}",
+        )
+        course = await create_course(
+            code=f"PN{tag[:5]}",
+            name=f"Peer CPlace NoShr {tag}",
+            semester="2026-S1",
+        )
+        # default_allow_sharing defaults to False
         await enroll_user(course.id, student.id, role="student")
 
         workspace = await create_workspace()

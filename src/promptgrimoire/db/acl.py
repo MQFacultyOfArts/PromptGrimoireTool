@@ -233,8 +233,8 @@ async def _derive_enrollment_permission(
     if workspace is None:
         return None
 
-    # Resolve course_id from workspace placement
-    course_id: UUID | None = None
+    # Resolve Course and optional Activity from workspace placement
+    course: Course | None = None
     activity: Activity | None = None
 
     if workspace.activity_id is not None:
@@ -243,23 +243,18 @@ async def _derive_enrollment_permission(
         if activity is not None:
             week = await session.get(Week, activity.week_id)
             if week is not None:
-                course_id = week.course_id
+                course = await session.get(Course, week.course_id)
     elif workspace.course_id is not None:
         # Course-placed: direct
-        course_id = workspace.course_id
+        course = await session.get(Course, workspace.course_id)
 
-    # Loose workspaces (no activity_id, no course_id): no enrollment derivation
-    if course_id is None:
-        return None
-
-    # Load course and check enrollment (both needed by staff and student paths)
-    course = await session.get(Course, course_id)
+    # Loose workspaces or broken hierarchy: no enrollment derivation
     if course is None:
         return None
 
     enrollment_result = await session.exec(
         select(CourseEnrollment).where(
-            CourseEnrollment.course_id == course_id,
+            CourseEnrollment.course_id == course.id,
             CourseEnrollment.user_id == user_id,
         )
     )
@@ -442,3 +437,63 @@ async def grant_share(
         await session.flush()
         await session.refresh(acl_entry)
         return acl_entry
+
+
+async def list_peer_workspaces(
+    activity_id: UUID, exclude_user_id: UUID
+) -> list[Workspace]:
+    """List workspaces in an activity that have opted into peer sharing.
+
+    Returns workspaces where shared_with_class=True for the given
+    activity, excluding:
+    - Template workspaces (Activity.template_workspace_id)
+    - The requesting user's own workspaces (owner ACL entries)
+
+    This is a direct query for the peer discovery UI (Phase 6).
+    It does NOT check enrollment or allow_sharing -- the caller
+    is responsible for gating visibility.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The Activity UUID to find shared workspaces for.
+    exclude_user_id : UUID
+        The requesting user's UUID (their own workspaces excluded).
+
+    Returns
+    -------
+    list[Workspace]
+        Shared workspaces, ordered by created_at.
+    """
+    async with get_session() as session:
+        # Find template workspace ID for this activity
+        activity = await session.get(Activity, activity_id)
+        template_id = activity.template_workspace_id if activity else None
+
+        # Subquery: workspace IDs owned by the requesting user
+        owned_subq = (
+            select(ACLEntry.workspace_id)
+            .where(
+                ACLEntry.user_id == exclude_user_id,
+                ACLEntry.permission == "owner",
+            )
+            .scalar_subquery()
+        )
+
+        # Main query
+        stmt = (
+            select(Workspace)
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.shared_with_class == True,  # noqa: E712
+            )
+            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]  -- Column has not_in
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
+        )
+
+        # Exclude template workspace
+        if template_id is not None:
+            stmt = stmt.where(Workspace.id != template_id)
+
+        result = await session.exec(stmt)
+        return list(result.all())

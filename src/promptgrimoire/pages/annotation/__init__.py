@@ -174,6 +174,13 @@ class PageState:
     user_name: str = "Anonymous"
     user_id: str | None = None  # Stytch user ID for ownership checks
     user_color: str = "#666"  # Client color for cursor display
+    # Permission capabilities (Phase 4 -- workspace sharing)
+    effective_permission: str = "viewer"
+    can_annotate: bool = False  # peer, editor, owner
+    can_upload: bool = False  # editor, owner
+    can_manage_acl: bool = False  # owner only
+    is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
+    viewer_is_privileged: bool = False  # instructor / admin bypass
     # UI elements set during page build
     highlight_style: ui.element | None = None
     highlight_menu: ui.element | None = None
@@ -212,6 +219,13 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+
+    def __post_init__(self) -> None:
+        """Derive capability booleans from effective_permission."""
+        perm = self.effective_permission
+        self.can_annotate = perm in ("peer", "editor", "owner")
+        self.can_upload = perm in ("editor", "owner")
+        self.can_manage_acl = perm == "owner"
 
 
 # ---------------------------------------------------------------------------

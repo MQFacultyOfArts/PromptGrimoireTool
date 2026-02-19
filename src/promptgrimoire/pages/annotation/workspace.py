@@ -660,18 +660,20 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         ui.navigate.to("/courses")
         return
 
-    # TODO(2026-02): Thread read_only for viewer permission -- #172
-
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
-    protect = ctx.copy_protection and not is_privileged_user(auth_user)
+    privileged = is_privileged_user(auth_user)
+    protect = ctx.copy_protection and not privileged
     logger.debug("[RENDER] placement done: protect=%s", protect)
 
-    # Create page state
+    # Create page state with permission capabilities
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
-        user_id=str(auth_user.get("user_id", "")) if auth_user else None,
+        user_id=(str(auth_user.get("user_id", "")) if auth_user else None),
+        effective_permission=permission,
+        is_anonymous=ctx.anonymous_sharing,
+        viewer_is_privileged=privileged,
     )
 
     # Set up client synchronization

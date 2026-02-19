@@ -127,10 +127,9 @@ def _build_comments_section(
                 author=c_author_raw,
                 user_id=c_user_id,
                 viewing_user_id=state.user_id,
-                # TODO: Phase 4 threads these from PageState
-                anonymous_sharing=False,
-                viewer_is_privileged=False,
-                viewer_is_owner=False,
+                anonymous_sharing=state.is_anonymous,
+                viewer_is_privileged=state.viewer_is_privileged,
+                viewer_is_owner=state.effective_permission == "owner",
             )
             with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
                 with ui.row().classes("w-full justify-between items-center"):
@@ -286,10 +285,9 @@ def _build_annotation_card(
             author=author,
             user_id=highlight.get("user_id"),
             viewing_user_id=state.user_id,
-            # TODO: Phase 4 threads these from PageState
-            anonymous_sharing=False,
-            viewer_is_privileged=False,
-            viewer_is_owner=False,
+            anonymous_sharing=state.is_anonymous,
+            viewer_is_privileged=state.viewer_is_privileged,
+            viewer_is_owner=state.effective_permission == "owner",
         )
         with ui.row().classes("gap-2 items-center"):
             ui.label(f"by {display_author}").classes("text-xs text-gray-500")

@@ -557,6 +557,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.crdt_doc,
             on_sort_end=_on_organise_sort_end,
             on_locate=_on_locate,
+            state=state,
         )
 
     state.refresh_organise = _render_organise_now

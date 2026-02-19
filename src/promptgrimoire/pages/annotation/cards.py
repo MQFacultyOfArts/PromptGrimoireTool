@@ -65,7 +65,10 @@ def _build_comment_delete_btn(
     highlight_id: str,
     comment_id: str,
 ) -> None:
-    """Build a delete button for a comment owned by the current user."""
+    """Build a delete button for a comment.
+
+    Shown for comment owner, workspace owner, or privileged users.
+    """
 
     async def do_delete(
         hid: str = highlight_id,
@@ -77,6 +80,8 @@ def _build_comment_delete_btn(
             hid,
             cid,
             requesting_user_id=state.user_id,
+            is_workspace_owner=(state.effective_permission == "owner"),
+            is_privileged=state.viewer_is_privileged,
         )
         if not deleted:
             return
@@ -131,10 +136,15 @@ def _build_comments_section(
                 viewer_is_privileged=state.viewer_is_privileged,
                 viewer_is_owner=state.effective_permission == "owner",
             )
+            can_delete = (
+                is_own
+                or state.effective_permission == "owner"
+                or state.viewer_is_privileged
+            )
             with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
                 with ui.row().classes("w-full justify-between items-center"):
                     ui.label(c_author).classes("text-xs font-bold")
-                    if is_own:
+                    if can_delete:
                         _build_comment_delete_btn(state, highlight_id, c_id)
                 ui.label(c_text).classes("text-sm")
 
@@ -188,6 +198,7 @@ def _build_card_header(
     start_char: int,
     end_char: int,
     card: ui.card,
+    highlight_user_id: str | None = None,
 ) -> None:
     """Build annotation card header with tag display and action buttons.
 
@@ -202,6 +213,7 @@ def _build_card_header(
         start_char: Start char offset for go-to-highlight.
         end_char: End char offset for go-to-highlight.
         card: Parent card element (for border colour update).
+        highlight_user_id: Stytch user ID of the highlight creator.
     """
     with ui.row().classes("w-full justify-between items-center"):
         if state.can_annotate:
@@ -243,6 +255,15 @@ def _build_card_header(
             display_tag = tag_str.replace("_", " ").title()
             ui.label(display_tag).classes("text-sm font-bold").style(f"color: {color};")
 
+        # Determine whether the delete highlight button is shown:
+        # creator of the highlight, workspace owner, or privileged
+        is_own_hl = state.user_id is not None and highlight_user_id == state.user_id
+        can_delete_hl = (
+            is_own_hl
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+
         with ui.row().classes("gap-1"):
             # Go-to-highlight button (available to all)
             async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
@@ -256,8 +277,7 @@ def _build_card_header(
                 "flat dense size=xs"
             ).tooltip("Go to highlight")
 
-            # Delete button -- only for annotators
-            if state.can_annotate:
+            if can_delete_hl:
 
                 async def do_delete(
                     hid: str = highlight_id,
@@ -324,6 +344,7 @@ def _build_annotation_card(
             start_char,
             end_char,
             card,
+            highlight_user_id=highlight.get("user_id"),
         )
 
         # Author and para_ref on same line

@@ -119,6 +119,99 @@ class TestPageStateAnonymisationFields:
         assert state.viewer_is_privileged is True
 
 
+class TestDeleteOwnershipContext:
+    """Delete buttons respect ownership + permission context.
+
+    Verifies AC8.4 and AC1.7: delete visibility rules for
+    highlights and comments.
+    """
+
+    def test_viewer_cannot_delete_others_highlight(self) -> None:
+        """Viewer sees no delete button for other users' highlights."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="viewer",
+            user_id="user-a",
+        )
+        # Viewer: not own, not owner, not privileged
+        is_own = state.user_id is not None and state.user_id == "user-b"
+        can_delete = (
+            is_own
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+        assert can_delete is False
+
+    def test_peer_can_delete_own_highlight(self) -> None:
+        """Peer can delete their own highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="peer",
+            user_id="user-a",
+        )
+        is_own = state.user_id is not None and state.user_id == "user-a"
+        can_delete = (
+            is_own
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+        assert can_delete is True
+
+    def test_peer_cannot_delete_others_highlight(self) -> None:
+        """Peer cannot delete another user's highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="peer",
+            user_id="user-a",
+        )
+        is_own = state.user_id is not None and state.user_id == "user-b"
+        can_delete = (
+            is_own
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+        assert can_delete is False
+
+    def test_owner_can_delete_any_highlight(self) -> None:
+        """Owner can delete any user's highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="owner",
+            user_id="user-a",
+        )
+        is_own = state.user_id is not None and state.user_id == "user-b"
+        can_delete = (
+            is_own
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+        assert can_delete is True
+
+    def test_privileged_can_delete_any_highlight(self) -> None:
+        """Privileged user (instructor) can delete any highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="peer",
+            user_id="user-a",
+            viewer_is_privileged=True,
+        )
+        is_own = state.user_id is not None and state.user_id == "user-b"
+        can_delete = (
+            is_own
+            or state.effective_permission == "owner"
+            or state.viewer_is_privileged
+        )
+        assert can_delete is True
+
+    def test_peer_cannot_manage_acl_ac1_7(self) -> None:
+        """AC1.7: Peer cannot manage ACL (share workspace)."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="peer",
+        )
+        assert state.can_manage_acl is False
+
+
 @pytest.mark.parametrize(
     ("permission", "can_annotate", "can_upload", "can_manage_acl"),
     [

@@ -555,7 +555,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.organise_panel,
             state.tag_info_list,
             state.crdt_doc,
-            on_sort_end=_on_organise_sort_end,
+            on_sort_end=(_on_organise_sort_end if state.can_annotate else None),
             on_locate=_on_locate,
             state=state,
         )

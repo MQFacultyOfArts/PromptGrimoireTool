@@ -87,10 +87,9 @@ async def update_activity(
     """Update activity details.
 
     Use description=None to clear it. Omit (or pass ...) to leave unchanged.
-    Use copy_protection=None to reset to inherit from course.
-    Use allow_sharing=None to reset to inherit from course.
-    Use anonymous_sharing=None to reset to inherit from course.
-    Omit (or pass ...) to leave unchanged.
+    Use copy_protection=None to reset to inherit from course. Omit to leave unchanged.
+    Use allow_sharing=None to reset to inherit from course. Omit to leave unchanged.
+    Use anonymous_sharing=None to reset to inherit from course. Omit to leave unchanged.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)

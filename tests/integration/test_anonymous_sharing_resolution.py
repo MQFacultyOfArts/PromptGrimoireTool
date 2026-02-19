@@ -12,11 +12,15 @@ Tests verify:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import pytest
 
 from promptgrimoire.config import get_settings
+
+if TYPE_CHECKING:
+    from promptgrimoire.db.workspaces import PlacementContext
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -134,6 +138,27 @@ class TestAnonymousSharingTriState:
         assert ctx.anonymous_sharing is False
 
 
+async def _make_course_placed_workspace(**update_kwargs: Any) -> PlacementContext:
+    """Create a course, set one default, place a workspace, return context."""
+    from promptgrimoire.db.courses import create_course, update_course
+    from promptgrimoire.db.workspaces import (
+        create_workspace,
+        get_placement_context,
+        place_workspace_in_course,
+    )
+
+    tag = uuid4().hex[:8]
+    course = await create_course(
+        code=f"C{tag[:6].upper()}", name="Course Test", semester="2026-S1"
+    )
+    await update_course(course.id, **update_kwargs)
+
+    ws = await create_workspace()
+    await place_workspace_in_course(ws.id, course.id)
+
+    return await get_placement_context(ws.id)
+
+
 class TestCoursePlacementDefaults:
     """Tests for generalised course placement default propagation."""
 
@@ -143,23 +168,7 @@ class TestCoursePlacementDefaults:
 
         Verifies generalised _resolve_course_placement propagation.
         """
-        from promptgrimoire.db.courses import create_course, update_course
-        from promptgrimoire.db.workspaces import (
-            create_workspace,
-            get_placement_context,
-            place_workspace_in_course,
-        )
-
-        tag = uuid4().hex[:8]
-        course = await create_course(
-            code=f"C{tag[:6].upper()}", name="Course Anon", semester="2026-S1"
-        )
-        await update_course(course.id, default_anonymous_sharing=True)
-
-        ws = await create_workspace()
-        await place_workspace_in_course(ws.id, course.id)
-
-        ctx = await get_placement_context(ws.id)
+        ctx = await _make_course_placed_workspace(default_anonymous_sharing=True)
         assert ctx.placement_type == "course"
         assert ctx.anonymous_sharing is True
 
@@ -169,23 +178,7 @@ class TestCoursePlacementDefaults:
 
         Verifies generalised _resolve_course_placement propagation.
         """
-        from promptgrimoire.db.courses import create_course, update_course
-        from promptgrimoire.db.workspaces import (
-            create_workspace,
-            get_placement_context,
-            place_workspace_in_course,
-        )
-
-        tag = uuid4().hex[:8]
-        course = await create_course(
-            code=f"C{tag[:6].upper()}", name="Course CP", semester="2026-S1"
-        )
-        await update_course(course.id, default_copy_protection=True)
-
-        ws = await create_workspace()
-        await place_workspace_in_course(ws.id, course.id)
-
-        ctx = await get_placement_context(ws.id)
+        ctx = await _make_course_placed_workspace(default_copy_protection=True)
         assert ctx.placement_type == "course"
         assert ctx.copy_protection is True
 
@@ -195,23 +188,7 @@ class TestCoursePlacementDefaults:
 
         Verifies generalised _resolve_course_placement propagation.
         """
-        from promptgrimoire.db.courses import create_course, update_course
-        from promptgrimoire.db.workspaces import (
-            create_workspace,
-            get_placement_context,
-            place_workspace_in_course,
-        )
-
-        tag = uuid4().hex[:8]
-        course = await create_course(
-            code=f"C{tag[:6].upper()}", name="Course Share", semester="2026-S1"
-        )
-        await update_course(course.id, default_allow_sharing=True)
-
-        ws = await create_workspace()
-        await place_workspace_in_course(ws.id, course.id)
-
-        ctx = await get_placement_context(ws.id)
+        ctx = await _make_course_placed_workspace(default_allow_sharing=True)
         assert ctx.placement_type == "course"
         assert ctx.allow_sharing is True
 

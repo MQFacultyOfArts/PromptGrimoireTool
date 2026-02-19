@@ -158,8 +158,6 @@ class TestPeerPermission:
     @pytest.mark.asyncio
     async def test_peer_level_uniqueness(self) -> None:
         """Level 15 is unique — inserting another row with level 15 fails."""
-        from sqlalchemy.exc import IntegrityError
-
         from promptgrimoire.db.engine import get_session
         from promptgrimoire.db.models import Permission
 

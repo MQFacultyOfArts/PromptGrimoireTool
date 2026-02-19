@@ -329,7 +329,7 @@ class Workspace(SQLModel, table=True):
         default=None, sa_column=_set_null_fk_column("course.id")
     )
     enable_save_as_draft: bool = Field(default=False)
-    title: str | None = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
     shared_with_class: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

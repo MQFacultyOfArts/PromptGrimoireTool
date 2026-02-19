@@ -23,7 +23,7 @@ def upgrade() -> None:
     # Workspace columns
     op.add_column(
         "workspace",
-        sa.Column("title", sa.String(200), nullable=True),
+        sa.Column("title", sa.Text(), nullable=True),
     )
     op.add_column(
         "workspace",

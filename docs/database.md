@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-17
+**Last updated:** 2026-02-19
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -33,6 +33,7 @@ Course/unit of study with weeks and enrolled members.
 | `is_archived` | BOOLEAN | NOT NULL, default FALSE |
 | `default_copy_protection` | BOOLEAN | NOT NULL, default FALSE |
 | `default_allow_sharing` | BOOLEAN | NOT NULL, default FALSE |
+| `default_anonymous_sharing` | BOOLEAN | NOT NULL, default FALSE |
 | `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
 | `default_allow_tag_creation` | BOOLEAN | NOT NULL, default TRUE |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
@@ -40,6 +41,8 @@ Course/unit of study with weeks and enrolled members.
 **`default_copy_protection`**: Course-level default inherited by activities with `copy_protection=NULL`.
 
 **`default_allow_sharing`**: Course-level default inherited by activities with `allow_sharing=NULL`. Controls whether workspace owners can share with other students.
+
+**`default_anonymous_sharing`**: Course-level default inherited by activities with `anonymous_sharing=NULL`. Controls whether author names are hidden from peer viewers.
 
 **`default_instructor_permission`**: Default permission level for instructors accessing student workspaces via enrollment-derived access. FK to `permission.name` with RESTRICT delete.
 
@@ -90,6 +93,7 @@ Assignment within a Week. Owns a template Workspace.
 | `description` | TEXT | nullable |
 | `copy_protection` | BOOLEAN | nullable (tri-state) |
 | `allow_sharing` | BOOLEAN | nullable (tri-state) |
+| `anonymous_sharing` | BOOLEAN | nullable (tri-state) |
 | `allow_tag_creation` | BOOLEAN | nullable (tri-state) |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
@@ -97,6 +101,8 @@ Assignment within a Week. Owns a template Workspace.
 **`copy_protection`**: Tri-state — `NULL`=inherit from course, `TRUE`=on, `FALSE`=off. Resolved in `PlacementContext`.
 
 **`allow_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=disallowed. Mirrors `copy_protection` pattern. Resolved in `PlacementContext`.
+
+**`anonymous_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=author names hidden from peer viewers, `FALSE`=author names visible. Mirrors `copy_protection` pattern. Resolved in `PlacementContext`.
 
 **`allow_tag_creation`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=not allowed. Controls whether students can create new tags and groups in workspaces for this activity. Resolved in `PlacementContext`.
 
@@ -113,9 +119,15 @@ Container for documents and CRDT state. Unit of collaboration.
 | `activity_id` | UUID | FK → Activity (SET NULL), nullable |
 | `course_id` | UUID | FK → Course (SET NULL), nullable |
 | `enable_save_as_draft` | BOOLEAN | NOT NULL, default FALSE |
+| `title` | TEXT | nullable |
+| `shared_with_class` | BOOLEAN | NOT NULL, default FALSE |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 | | | CHECK: `activity_id` and `course_id` mutually exclusive |
+
+**`title`**: Optional display name for the workspace. Length limit enforced at UI layer (SQLModel `table=True` classes do not execute Pydantic validators).
+
+**`shared_with_class`**: Student opt-in flag for peer discovery. When `TRUE` and the activity allows sharing, other enrolled students can browse and view this workspace.
 
 **Placement**: A workspace can be placed in an Activity OR a Course, never both. Enforced by Pydantic validator + DB CHECK constraint (`ck_workspace_placement_exclusivity`). A workspace with neither is "loose".
 
@@ -193,7 +205,7 @@ Reference table for access permission levels. String PK.
 | `name` | VARCHAR(50) | PK |
 | `level` | INTEGER | NOT NULL, UNIQUE, CHECK (BETWEEN 1 AND 100) |
 
-Seed data: `owner` (30), `editor` (20), `viewer` (10). Higher level wins in resolution.
+Seed data: `owner` (30), `editor` (20), `peer` (15), `viewer` (10). Higher level wins in resolution.
 
 ### CourseRole (reference table)
 

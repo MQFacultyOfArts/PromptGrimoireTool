@@ -83,12 +83,18 @@ _SHARING_OPTIONS: dict[str, str] = {
     "off": "Not allowed",
 }
 
+_ANONYMOUS_SHARING_OPTIONS: dict[str, str] = {
+    "inherit": "Inherit from course",
+    "on": "Anonymous",
+    "off": "Named",
+}
+
 
 def _model_to_ui(value: bool | None) -> str:
     """Convert model tri-state value to UI select key.
 
     None -> "inherit", True -> "on", False -> "off".
-    Used for both copy_protection and allow_sharing.
+    Used for copy_protection, allow_sharing, and anonymous_sharing.
     """
     if value is None:
         return "inherit"
@@ -99,7 +105,7 @@ def _ui_to_model(value: str) -> bool | None:
     """Convert UI select key to model tri-state value.
 
     "inherit" -> None, "on" -> True, "off" -> False.
-    Used for both copy_protection and allow_sharing.
+    Used for copy_protection, allow_sharing, and anonymous_sharing.
     """
     if value == "inherit":
         return None
@@ -138,6 +144,10 @@ async def open_course_settings(course: Course) -> None:
             "Default allow sharing",
             value=course.default_allow_sharing,
         )
+        anon_switch = ui.switch(
+            "Anonymous sharing by default",
+            value=course.default_anonymous_sharing,
+        )
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -147,9 +157,11 @@ async def open_course_settings(course: Course) -> None:
                     course.id,
                     default_copy_protection=cp_switch.value,
                     default_allow_sharing=sharing_switch.value,
+                    default_anonymous_sharing=anon_switch.value,
                 )
                 course.default_copy_protection = cp_switch.value
                 course.default_allow_sharing = sharing_switch.value
+                course.default_anonymous_sharing = anon_switch.value
                 dialog.close()
                 ui.notify("Course settings saved", type="positive")
 
@@ -178,19 +190,28 @@ async def open_activity_settings(activity: Activity) -> None:
             label="Allow sharing",
         ).classes("w-full")
 
+        anon_select = ui.select(
+            options=_ANONYMOUS_SHARING_OPTIONS,
+            value=_model_to_ui(activity.anonymous_sharing),
+            label="Anonymity",
+        ).classes("w-full")
+
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
                 new_cp = _ui_to_model(cp_select.value)
                 new_sharing = _ui_to_model(sharing_select.value)
+                new_anon = _ui_to_model(anon_select.value)
                 await update_activity(
                     activity.id,
                     copy_protection=new_cp,
                     allow_sharing=new_sharing,
+                    anonymous_sharing=new_anon,
                 )
                 activity.copy_protection = new_cp
                 activity.allow_sharing = new_sharing
+                activity.anonymous_sharing = new_anon
                 dialog.close()
                 ui.notify("Activity settings saved", type="positive")
 

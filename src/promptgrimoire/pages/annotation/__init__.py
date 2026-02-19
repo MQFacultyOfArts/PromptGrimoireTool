@@ -162,6 +162,9 @@ def _render_js(template: Template) -> str:
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
+PermissionLevel = Literal["viewer", "peer", "editor", "owner"]
+
+
 @dataclass
 class PageState:
     """Per-page state for annotation workspace."""
@@ -175,7 +178,7 @@ class PageState:
     user_id: str | None = None  # Stytch user ID for ownership checks
     user_color: str = "#666"  # Client color for cursor display
     # Permission capabilities (Phase 4 -- workspace sharing)
-    effective_permission: Literal["viewer", "peer", "editor", "owner"] = "viewer"
+    effective_permission: PermissionLevel = "viewer"
     can_annotate: bool = field(init=False)  # peer, editor, owner
     can_upload: bool = field(init=False)  # editor, owner
     can_manage_acl: bool = field(init=False)  # owner only

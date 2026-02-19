@@ -63,6 +63,8 @@ from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
 if TYPE_CHECKING:
     from nicegui import Client
 
+    from promptgrimoire.pages.annotation import PermissionLevel
+
 logger = logging.getLogger(__name__)
 
 
@@ -386,7 +388,7 @@ def _render_sharing_controls(
         async def _open_share_dialog() -> None:
             await _open_sharing_dialog(
                 workspace_id=workspace_id,
-                grantor_id=_get_current_user_id(),  # type: ignore[arg-type]  # guarded by can_manage_sharing
+                grantor_id=_get_current_user_id(),  # type: ignore[arg-type]  # auth_user non-None (guarded at view entry), user_id always set
                 sharing_allowed=allow_sharing,
                 grantor_is_staff=viewer_is_privileged,
             )
@@ -579,8 +581,15 @@ async def _open_sharing_dialog(
             if not email:
                 ui.notify("Please enter an email address", type="warning")
                 return
-            # Basic email format check
-            if "@" not in email or "." not in email.split("@")[-1]:
+            # Basic email format pre-check (DB lookup is authoritative)
+            parts = email.split("@")
+            if (
+                len(parts) != 2
+                or not parts[0]
+                or "." not in parts[1]
+                or parts[1].startswith(".")
+                or parts[1].endswith(".")
+            ):
                 ui.notify("Please enter a valid email address", type="warning")
                 return
 
@@ -856,11 +865,17 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # Create page state with permission capabilities
     # permission is guaranteed non-None here (guarded above) and always one of
     # the Permission.name values ("viewer", "peer", "editor", "owner").
+    assert permission in {
+        "viewer",
+        "peer",
+        "editor",
+        "owner",
+    }, f"Unexpected permission value: {permission!r}"
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
         user_id=auth_user.get("user_id"),
-        effective_permission=cast("Any", permission),
+        effective_permission=cast("PermissionLevel", permission),
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,
     )

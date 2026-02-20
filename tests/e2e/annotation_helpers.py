@@ -13,7 +13,9 @@ Traceability:
 from __future__ import annotations
 
 import gzip
+import os
 import re
+import uuid
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -22,6 +24,114 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from playwright.sync_api import Page
+
+# Legal Case Brief tag seed data
+# (mirrors cli.py:_seed_tags_for_activity).
+_SEED_GROUP_DEFS: list[tuple[str, str, list[tuple[str, str]]]] = [
+    (
+        "Case ID",
+        "#4a90d9",
+        [
+            ("Jurisdiction", "#1f77b4"),
+            ("Procedural History", "#ff7f0e"),
+            ("Decision", "#e377c2"),
+            ("Order", "#7f7f7f"),
+        ],
+    ),
+    (
+        "Analysis",
+        "#d9534f",
+        [
+            ("Legally Relevant Facts", "#2ca02c"),
+            ("Legal Issues", "#d62728"),
+            ("Reasons", "#9467bd"),
+            ("Court's Reasoning", "#8c564b"),
+        ],
+    ),
+    (
+        "Sources",
+        "#5cb85c",
+        [
+            ("Domestic Sources", "#bcbd22"),
+            ("Reflection", "#17becf"),
+        ],
+    ),
+]
+
+
+def _seed_tags_for_workspace(workspace_id: str) -> None:
+    """Seed Legal Case Brief tags into a workspace via sync DB connection.
+
+    Inserts 3 tag groups and 10 tags using raw SQL with
+    ``ON CONFLICT (id) DO NOTHING`` so the operation is idempotent.
+
+    Deterministic UUIDs are derived from the workspace_id using uuid5
+    so re-seeding the same workspace always produces the same rows.
+
+    Follows the sync DB pattern of ``_grant_workspace_access()`` in
+    ``conftest.py``.
+
+    Args:
+        workspace_id: UUID string of the target workspace.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        return
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    ws_ns = uuid.UUID(workspace_id)
+
+    with engine.begin() as conn:
+        for group_idx, (group_name, group_color, tags) in enumerate(_SEED_GROUP_DEFS):
+            group_id = uuid.uuid5(ws_ns, f"seed-group-{group_name}")
+            conn.execute(
+                text(
+                    "INSERT INTO tag_group"
+                    " (id, workspace_id, name,"
+                    " color, order_index, created_at)"
+                    " VALUES (:id, CAST(:ws AS uuid),"
+                    " :name, :color, :order_index, now())"
+                    " ON CONFLICT (id) DO NOTHING"
+                ),
+                {
+                    "id": str(group_id),
+                    "ws": workspace_id,
+                    "name": group_name,
+                    "color": group_color,
+                    "order_index": group_idx,
+                },
+            )
+
+            for tag_idx, (tag_name, tag_color) in enumerate(tags):
+                tag_id = uuid.uuid5(ws_ns, f"seed-tag-{tag_name}")
+                conn.execute(
+                    text(
+                        "INSERT INTO tag"
+                        " (id, workspace_id, group_id,"
+                        " name, color, locked,"
+                        " order_index, created_at)"
+                        " VALUES"
+                        " (:id, CAST(:ws AS uuid),"
+                        " CAST(:gid AS uuid),"
+                        " :name, :color, :locked,"
+                        " :order_index, now())"
+                        " ON CONFLICT (id) DO NOTHING"
+                    ),
+                    {
+                        "id": str(tag_id),
+                        "ws": workspace_id,
+                        "gid": str(group_id),
+                        "name": tag_name,
+                        "color": tag_color,
+                        "locked": True,
+                        "order_index": tag_idx,
+                    },
+                )
+
+    engine.dispose()
 
 
 def select_chars(page: Page, start_char: int, end_char: int) -> None:

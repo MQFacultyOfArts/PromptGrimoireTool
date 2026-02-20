@@ -11,6 +11,7 @@ Traceability:
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -18,15 +19,22 @@ from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
 from tests.e2e.annotation_helpers import (
+    _create_workspace_via_db,
     create_highlight,
     create_highlight_with_tag,
-    setup_workspace_with_content,
+    wait_for_text_walker,
 )
+from tests.e2e.conftest import _authenticate_page
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from playwright.sync_api import Page
+    from playwright.sync_api import Browser, Locator, Page
+
+
+_DRAG_CONTENT_HTML = (
+    "<p>Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India Juliet</p>"
+)
 
 
 # Skip if no database configured
@@ -62,19 +70,46 @@ def _get_card_ids_in_column(page: Page, tag_name: str) -> list[str]:
     return ids
 
 
+def _get_sortable_for_tag(page: Page, tag_name: str) -> Locator:
+    """Find the SortableJS container inside a tag column by display name.
+
+    Sortable IDs use tag UUIDs (``sort-{uuid}``), not snake_case names,
+    so we locate via the column's ``data-tag-name`` attribute then find
+    the ``[id^="sort-"]`` child.
+    """
+    column = page.locator(f'[data-testid="tag-column"][data-tag-name="{tag_name}"]')
+    return column.locator('[id^="sort-"]')
+
+
 @pytest.fixture
-def drag_workspace_page(authenticated_page: Page, app_server: str) -> Generator[Page]:
-    """Workspace page with enough content for multiple highlights.
+def drag_workspace_page(browser: Browser, app_server: str) -> Generator[Page]:
+    """Workspace page with content and tags pre-seeded via DB.
+
+    Creates everything via direct DB operations (no UI clicks for workspace
+    creation), then navigates directly to the workspace.  This eliminates
+    flakiness from the multi-step UI creation flow.
 
     Provides a long text string so multiple non-overlapping highlights
     can be created at different character ranges.
     """
-    setup_workspace_with_content(
-        authenticated_page,
-        app_server,
-        "Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India Juliet",
+    context = browser.new_context()
+    page = context.new_page()
+    email = _authenticate_page(page, app_server)
+
+    workspace_id = _create_workspace_via_db(
+        user_email=email,
+        html_content=_DRAG_CONTENT_HTML,
     )
-    yield authenticated_page
+
+    page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+    wait_for_text_walker(page, timeout=15000)
+
+    yield page
+
+    with contextlib.suppress(Exception):
+        page.goto("about:blank")
+    page.close()
+    context.close()
 
 
 class TestDragCards:
@@ -196,7 +231,7 @@ class TestDragBetweenColumns:
         highlight_id = source_card.get_attribute("data-highlight-id")
 
         # Find the Procedural History Sortable container as drop target
-        proc_history_sortable = page.locator("#sort-procedural_history")
+        proc_history_sortable = _get_sortable_for_tag(page, "Procedural History")
         expect(proc_history_sortable).to_be_visible(timeout=3000)
 
         # Drag the card to the Procedural History sortable container
@@ -223,7 +258,11 @@ class TestDragBetweenColumns:
     def test_drag_between_columns_updates_tab1_sidebar(
         self, drag_workspace_page: Page
     ) -> None:
-        """Drag card to new tag column, verify Tab 1 sidebar shows new tag.
+        """Drag card to adjacent tag column, verify Tab 1 sidebar shows new tag.
+
+        Uses Procedural History (adjacent to Jurisdiction) to avoid
+        horizontal-scroll issues that break Playwright drag_to with
+        distant SortableJS containers.
 
         Verifies: three-tab-ui.AC2.4 (Tab 1 reactivity)
         """
@@ -235,32 +274,39 @@ class TestDragBetweenColumns:
 
         _switch_to_organise(page)
 
-        # Drag card to Legal Issues column
+        # Drag card to Procedural History column (adjacent, avoids
+        # horizontal-scroll issues with distant columns like Legal Issues)
         jurisdiction_col = page.locator(
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
         source_card = jurisdiction_col.locator('[data-testid="organise-card"]').first
         expect(source_card).to_be_visible(timeout=3000)
 
-        legal_issues_sortable = page.locator("#sort-legal_issues")
-        expect(legal_issues_sortable).to_be_visible(timeout=3000)
+        proc_history_sortable = _get_sortable_for_tag(page, "Procedural History")
+        expect(proc_history_sortable).to_be_visible(timeout=3000)
 
-        source_card.drag_to(legal_issues_sortable)
+        source_card.drag_to(proc_history_sortable)
         page.wait_for_timeout(1000)
+
+        # Verify the drag actually moved the card before checking sidebar
+        proc_cards = _get_card_ids_in_column(page, "Procedural History")
+        assert len(proc_cards) >= 1, (
+            "Card should have moved to Procedural History column"
+        )
 
         # Switch to Annotate tab
         _switch_to_annotate(page)
         page.wait_for_timeout(500)
 
         # Find the annotation card in the sidebar
-        # The sidebar card should show the new tag (Legal Issues)
+        # The sidebar card should show the new tag (Procedural History)
         sidebar_card = page.locator(".ann-card-positioned").first
         expect(sidebar_card).to_be_visible(timeout=3000)
 
-        # The tag dropdown should reflect "Legal Issues" tag
+        # The tag dropdown should reflect "Procedural History" tag
         tag_select = sidebar_card.locator(".q-select").first
         expect(tag_select).to_be_visible(timeout=5000)
-        expect(tag_select).to_contain_text("Legal Issues", timeout=5000)
+        expect(tag_select).to_contain_text("Procedural History", timeout=5000)
 
 
 class TestConcurrentDrag:
@@ -306,7 +352,7 @@ class TestConcurrentDrag:
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
         card_x = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
-        legal_issues_sortable_p1 = page1.locator("#sort-legal_issues")
+        legal_issues_sortable_p1 = _get_sortable_for_tag(page1, "Legal Issues")
         card_x.drag_to(legal_issues_sortable_p1)
         page1.wait_for_timeout(500)
 
@@ -323,7 +369,9 @@ class TestConcurrentDrag:
         remaining_cards = jurisdiction_col_p2.locator('[data-testid="organise-card"]')
         if remaining_cards.count() > 0:
             card_y = remaining_cards.first
-            proc_history_sortable_p2 = page2.locator("#sort-procedural_history")
+            proc_history_sortable_p2 = _get_sortable_for_tag(
+                page2, "Procedural History"
+            )
             card_y.drag_to(proc_history_sortable_p2)
             page2.wait_for_timeout(500)
 

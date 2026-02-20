@@ -163,4 +163,5 @@ dev = [
     "py-spy>=0.4.1",
     "pysnooper>=1.2.3",
     "pytest-sugar>=1.1.1",
+    "junitparser>=4.0.2",
 ]

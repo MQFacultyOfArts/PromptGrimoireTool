@@ -282,3 +282,123 @@ class TestTerminateConnections:
         assert connect_url.endswith("/postgres")
         assert "postgresql://" in connect_url
         assert "+asyncpg" not in connect_url
+
+
+# --- clone_database() tests ---
+
+
+class TestCloneDatabase:
+    """Tests for clone_database() function."""
+
+    def test_happy_path_creates_database_from_template(self) -> None:
+        """clone_database executes CREATE DATABASE target TEMPLATE source."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            result = clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "targetdb",
+            )
+
+        # Verify CREATE DATABASE was executed
+        execute_calls = mock_conn.execute.call_args_list
+        assert len(execute_calls) == 1
+        sql_obj = execute_calls[0][0][0]
+        # Render without a connection context (uses no encoding lookup)
+        sql_str = sql_obj.as_string(None)
+        assert "CREATE DATABASE" in sql_str
+        assert "TEMPLATE" in sql_str
+        assert '"targetdb"' in sql_str
+        assert '"sourcedb"' in sql_str
+
+        # Verify return URL has target db name
+        assert result == "postgresql://user:pass@localhost/targetdb"
+
+    def test_invalid_target_name_raises_value_error(self) -> None:
+        """clone_database raises ValueError for invalid target names."""
+        from promptgrimoire.db.bootstrap import clone_database
+
+        with pytest.raises(ValueError, match=r"Invalid.*target.*name"):
+            clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "bad-name!",
+            )
+
+    def test_terminate_connections_called_before_create(self) -> None:
+        """terminate_connections is called on source db before CREATE."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        call_order: list[str] = []
+
+        def record_terminate(*_args: object, **_kwargs: object) -> None:
+            call_order.append("terminate")
+
+        original_execute = mock_conn.execute
+
+        def record_execute(*args: object, **kwargs: object) -> object:
+            call_order.append("execute")
+            return original_execute(*args, **kwargs)
+
+        mock_conn.execute = record_execute
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch(
+                "promptgrimoire.db.bootstrap.terminate_connections",
+                side_effect=record_terminate,
+            ),
+        ):
+            clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "targetdb",
+            )
+
+        assert call_order.index("terminate") < call_order.index("execute")
+
+    def test_returns_url_with_target_name(self) -> None:
+        """clone_database returns a full URL with the target db name."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            result = clone_database(
+                "postgresql+asyncpg://user:pass@host:5432/source?sslmode=require",
+                "cloned_db",
+            )
+
+        assert (
+            result
+            == "postgresql+asyncpg://user:pass@host:5432/cloned_db?sslmode=require"
+        )

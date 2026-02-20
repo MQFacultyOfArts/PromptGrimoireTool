@@ -23,6 +23,7 @@ async def create_activity(
     title: str,
     description: str | None = None,
     copy_protection: bool | None = None,
+    allow_tag_creation: bool | None = None,
 ) -> Activity:
     """Create a new activity with its template workspace atomically.
 
@@ -40,6 +41,9 @@ async def create_activity(
     copy_protection : bool | None
         Tri-state copy protection. None=inherit from course,
         True=on, False=off.
+    allow_tag_creation : bool | None
+        Tri-state tag creation permission. None=inherit from course,
+        True=allowed, False=not allowed.
 
     Returns
     -------
@@ -56,6 +60,7 @@ async def create_activity(
             title=title,
             description=description,
             copy_protection=copy_protection,
+            allow_tag_creation=allow_tag_creation,
             template_workspace_id=template.id,
         )
         session.add(activity)

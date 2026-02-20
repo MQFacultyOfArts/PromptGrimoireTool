@@ -103,6 +103,12 @@ async def update_tag_group(
     group_id: UUID,
     name: str | None = None,
     order_index: int | None = None,
+    # ``color`` uses the ``_UNSET`` object sentinel (not ``...``) because the
+    # parameter lives in the public function signature where ``Ellipsis`` as a
+    # default looks unusual to callers.  The ``_UNSET`` name makes the intent
+    # ("omitted") explicit.  ``update_tag`` uses ``...`` (Ellipsis) for the
+    # same purpose in an internal helper -- both patterns are valid, but we keep
+    # them separate here for readability.
     color: str | None | object = _UNSET,
 ) -> TagGroup | None:
     """Update TagGroup details.

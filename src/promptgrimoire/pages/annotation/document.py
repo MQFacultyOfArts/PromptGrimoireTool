@@ -168,7 +168,7 @@ def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
     state.highlight_menu = highlight_menu
 
     # Store callback for rebuilds triggered by _refresh_tag_state
-    state._highlight_menu_tag_click = on_tag_click  # type: ignore[attr-defined]  -- dynamic attr for menu rebuild
+    state._highlight_menu_tag_click = on_tag_click
 
     _populate_highlight_menu(state, on_tag_click)
 

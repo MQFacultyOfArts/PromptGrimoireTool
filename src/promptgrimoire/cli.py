@@ -1290,43 +1290,48 @@ def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
 
 
 def test_e2e() -> None:
-    """Start a NiceGUI server and run Playwright E2E tests against it.
+    """Start NiceGUI server(s) and run Playwright E2E tests.
 
-    Manages the full E2E lifecycle:
-    1. Run Alembic migrations and truncate test database
-    2. Start NiceGUI server on a random port (single instance)
-    3. Run ``pytest -m e2e`` against the server
-    4. Shut down the server when tests complete
-
-    By default, tests run single-threaded with ``-x`` (fail-fast).
-    Pass ``--parallel`` to use xdist (``-n auto --dist=loadfile``).
-    Pass ``-v`` for verbose per-test output.
-
-    The server URL is passed via ``E2E_BASE_URL`` env var. The
-    ``app_server`` fixture checks this and yields it directly instead
-    of starting its own server per xdist worker.
+    By default, runs single-server serial mode with ``-x`` (fail-fast).
+    Pass ``--parallel`` for per-file parallelism with isolated servers
+    and databases. Pass ``--fail-fast`` with ``--parallel`` to kill
+    remaining workers on first failure.
 
     Extra arguments forwarded to pytest (e.g. ``uv run test-e2e -k browser``).
-
-    Output saved to: test-e2e.log
     """
     import socket
 
-    # Consume flags before _run_pytest sees sys.argv
+    # Consume custom flags before _run_pytest sees sys.argv
     parallel = "--parallel" in sys.argv
     if parallel:
         sys.argv.remove("--parallel")
+    fail_fast = "--fail-fast" in sys.argv
+    if fail_fast:
+        sys.argv.remove("--fail-fast")
     use_pyspy = "--py-spy" in sys.argv
     if use_pyspy:
         sys.argv.remove("--py-spy")
-
-    if use_pyspy:
-        _check_ptrace_scope()
 
     # Eagerly load settings so .env is read before subprocess spawning.
     from promptgrimoire.config import get_settings
 
     get_settings()
+
+    if parallel:
+        # Parallel mode: orchestrator handles servers, DBs, and pytest
+        if use_pyspy:
+            console.print(
+                "[yellow]--py-spy is not supported in parallel mode, ignoring[/]"
+            )
+        user_args = sys.argv[1:]
+        exit_code = asyncio.run(
+            _run_parallel_e2e(user_args=user_args, fail_fast=fail_fast)
+        )
+        sys.exit(exit_code)
+
+    # --- Serial mode (unchanged) ---
+    if use_pyspy:
+        _check_ptrace_scope()
 
     _pre_test_db_cleanup()
 
@@ -1338,28 +1343,20 @@ def test_e2e() -> None:
     server_process = _start_e2e_server(port)
     console.print(f"[green]Server ready at {url}[/]")
 
-    # All xdist workers inherit this and skip starting their own server
     os.environ["E2E_BASE_URL"] = url
 
     pyspy_process: subprocess.Popen[bytes] | None = None
     if use_pyspy:
         pyspy_process = _start_pyspy(server_process.pid)
 
-    if parallel:
-        mode_args: list[str] = ["-n", "auto", "--dist=loadfile"]
-        mode_label = "parallel"
-    else:
-        mode_args = ["-x"]
-        mode_label = "serial, fail-fast"
-
     try:
         _run_pytest(
-            title=f"E2E Test Suite (Playwright, {mode_label}) — server {url}",
+            title=f"E2E Test Suite (Playwright, serial, fail-fast) — server {url}",
             log_path=Path("test-e2e.log"),
             default_args=[
                 "-m",
                 "e2e",
-                *mode_args,
+                "-x",
                 "--ff",
                 "--durations=10",
                 "--tb=short",

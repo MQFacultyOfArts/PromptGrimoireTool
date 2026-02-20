@@ -753,6 +753,32 @@ ui.run(
 """
 
 
+def _allocate_ports(n: int) -> list[int]:
+    """Allocate *n* distinct free TCP ports from the OS.
+
+    Opens *n* sockets simultaneously (to guarantee uniqueness), reads their
+    OS-assigned ports, then closes them all.  The returned ports are not
+    *reserved* — a race is theoretically possible — but holding them open
+    together ensures no duplicates within the batch.
+    """
+    import socket
+
+    if n == 0:
+        return []
+
+    sockets: list[socket.socket] = []
+    try:
+        for _ in range(n):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("", 0))
+            sockets.append(s)
+        return [s.getsockname()[1] for s in sockets]
+    finally:
+        for s in sockets:
+            s.close()
+
+
 def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 

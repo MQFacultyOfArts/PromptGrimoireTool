@@ -8,19 +8,20 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (12 authored modules):
-    __init__    Core types, globals, route definition
-    broadcast   Multi-client sync and remote presence
-    cards       Annotation card UI components
-    content_form  Document upload/paste form
-    css         CSS styles and tag toolbar
-    document    Document rendering and selection wiring
-    highlights  Highlight CRUD and rendering
-    organise    Organise tab (tag columns, drag-and-drop)
-    pdf_export  PDF export orchestration
-    respond     Respond tab (reference panel, editor)
-    tags        Tag definitions and colour mapping
-    workspace   Workspace header, tabs, and view orchestration
+Package structure (13 authored modules):
+    __init__        Core types, globals, route definition
+    broadcast       Multi-client sync and remote presence
+    cards           Annotation card UI components
+    content_form    Document upload/paste form
+    css             CSS styles and tag toolbar
+    document        Document rendering and selection wiring
+    highlights      Highlight CRUD and rendering
+    organise        Organise tab (tag columns, drag-and-drop)
+    pdf_export      PDF export orchestration
+    respond         Respond tab (reference panel, editor)
+    tag_management  Tag/group CRUD dialog (save-on-blur, import)
+    tags            Tag definitions and colour mapping
+    workspace       Workspace header, tabs, and view orchestration
 """
 
 from __future__ import annotations

@@ -342,6 +342,13 @@ function setupAnnotationSelection(containerId, emitCallback) {
             textNodes, range.endContainer, range.endOffset);
 
         if (startChar !== null && endChar !== null && startChar < endChar) {
+            // Position highlight menu near the selection end
+            var menu = document.getElementById('highlight-menu');
+            if (menu) {
+                var endRect = charOffsetToRect(textNodes, Math.max(endChar - 1, startChar));
+                menu.style.top = endRect.bottom + 8 + 'px';
+                menu.style.left = endRect.left + 'px';
+            }
             emitCallback({start_char: startChar, end_char: endChar});
         }
     });

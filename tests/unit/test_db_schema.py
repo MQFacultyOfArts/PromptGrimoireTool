@@ -223,3 +223,62 @@ def test_ensure_database_exists_returns_false_when_exists() -> None:
     assert result is False
     # Called once: SELECT pg_database only
     assert mock_conn.execute.call_count == 1
+
+
+# --- terminate_connections() tests ---
+
+
+class TestTerminateConnections:
+    """Tests for terminate_connections() helper."""
+
+    def test_executes_correct_sql_with_db_name(self) -> None:
+        """terminate_connections runs pg_terminate_backend for the given db."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import terminate_connections
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "promptgrimoire.db.bootstrap.psycopg.connect",
+            return_value=mock_conn,
+        ):
+            terminate_connections(
+                "postgresql://user:pass@localhost/sourcedb",
+                "sourcedb",
+            )
+
+        # Verify SQL contains pg_terminate_backend
+        call_args = mock_conn.execute.call_args
+        sql_text = call_args[0][0]
+        assert "pg_terminate_backend" in sql_text
+        assert "pg_stat_activity" in sql_text
+        # Verify db_name passed as parameter
+        assert call_args[0][1] == ("sourcedb",)
+
+    def test_connects_to_postgres_maintenance_database(self) -> None:
+        """terminate_connections connects to 'postgres', not the target db."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import terminate_connections
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "promptgrimoire.db.bootstrap.psycopg.connect",
+            return_value=mock_conn,
+        ) as mock_connect:
+            terminate_connections(
+                "postgresql+asyncpg://user:pass@localhost/mydb",
+                "mydb",
+            )
+
+        # Should connect to postgres maintenance db with sync driver
+        connect_url = mock_connect.call_args[0][0]
+        assert connect_url.endswith("/postgres")
+        assert "postgresql://" in connect_url
+        assert "+asyncpg" not in connect_url

@@ -2,40 +2,23 @@
 
 **GitHub Issue:** #95
 
-## WIP Status (2026-02-18)
+## WIP Status (2026-02-20)
 
-**Branch:** `95-annotation-tags` (pushed, rebased on `origin/main`)
-**Current phase:** 5c — UAT in progress
+**Branch:** `95-annotation-tags` (pushed)
+**Current phase:** 5d — Refactor (next up)
 
 ### Completed
 - **Phases 1–4:** DB models, migration, CRUD, CRDT cleanup, reorder/import, workspace cloning, annotation page integration (BriefTag fully replaced)
 - **Phase 5a–5b:** Integration tests, code review fixes
-- **Phase 5c (partial):** UAT presented, user reported:
-  - Per-row save buttons in management dialog violated UX expectations (no global save)
-  - Refactored to batch save with single "Done" button at bottom of dialog
-  - Commit: `263ed74 refactor: replace per-row save buttons with batch "Done" in tag management`
-  - **Needs re-test:** user must verify the batch-save "Done" button works, then re-run full UAT checklist
-
-### UAT checklist (from Phase 5c)
-
-**Confirm:**
-1. Tag toolbar renders from DB tags (not hardcoded BriefTag)
-2. Keyboard shortcuts 1–0 map to first 10 tags positionally
-3. "+" quick-create button visible when `allow_tag_creation` is True
-4. Quick-create dialog: name + colour + optional group → creates tag and applies to selection
-5. Gear button opens full management dialog with grouped tag list
-6. Inline editing: rename, recolour, change description, move between groups
-7. Tag deletion shows highlight count confirmation, removes highlights
-8. Group deletion ungroups tags (no highlight loss)
-9. Lock toggle visible for instructors on template workspaces
-10. Import from activity copies tags between workspaces
-11. Tag buttons truncate with ellipsis, tooltip shows full name
-
-**Boundary probes:**
-1. Locked tag: edit/delete controls disabled, only lock toggle works
-2. `allow_tag_creation=False`: "+" hidden, create controls in management dialog hidden
-3. Tag with many highlights: deletion confirmation shows correct count, actually removes them all
-4. Empty workspace (no tags): toolbar shows only "+" and gear, management dialog shows empty state
+- **Phase 5c:** UAT passed (all 11 confirm items + 4 boundary probes). Bugs found and fixed during UAT:
+  - Tag button truncation: Quasar inner elements needed `!important` CSS targeting `.q-btn__content`
+  - Tag descriptions added to toolbar tooltips (bold name + description via `q-tooltip` + `ui.html`)
+  - Ungrouped tag baseline alignment (invisible group wrapper)
+  - Highlight menu: grouped abbreviated tag buttons, JS positioning via `charOffsetToRect`, rebuild on tag changes
+  - Keyboard shortcuts: filtered from INPUT/TEXTAREA/SELECT targets
+  - Input validation: `maxlength=100` on name fields, unique name generation for new tags, IntegrityError catch
+  - **Save-on-blur refactor:** replaced batch-save-on-Done with per-field save-on-blur (text on blur, colour on change, group on update). Extracted `_save_single_tag()` and `_save_single_group()` standalone functions. Done button now just closes + refreshes.
+  - `bypass_lock` parameter added to `update_tag`/`delete_tag` for instructor operations
 
 ### Remaining
 - **Phase 5d:** Refactor
@@ -43,10 +26,12 @@
 - **Final (#25):** Project context update, final review, test analysis
 
 ### Key files for Phase 5
-- `src/promptgrimoire/pages/annotation/tag_management.py` — management dialog (batch save)
-- `src/promptgrimoire/pages/annotation/workspace.py` — toolbar integration
-- `src/promptgrimoire/pages/annotation/css.py` — tag toolbar + highlight CSS
-- `src/promptgrimoire/db/tags.py` — tag CRUD operations
+- `src/promptgrimoire/pages/annotation/tag_management.py` — management dialog (save-on-blur)
+- `src/promptgrimoire/pages/annotation/document.py` — highlight menu with grouped tags
+- `src/promptgrimoire/pages/annotation/css.py` — tag toolbar + highlight CSS + truncation
+- `src/promptgrimoire/pages/annotation/tags.py` — TagInfo with description field
+- `src/promptgrimoire/db/tags.py` — tag CRUD with bypass_lock
+- `src/promptgrimoire/static/annotation-highlight.js` — menu positioning
 - `tests/integration/test_tags_*.py` — integration tests
 
 ---

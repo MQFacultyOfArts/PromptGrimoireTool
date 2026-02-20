@@ -23,7 +23,7 @@ from playwright.sync_api import expect
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from playwright.sync_api import Page
+    from playwright.sync_api import Locator, Page
 
 # Legal Case Brief tag seed data
 # (mirrors cli.py:_seed_tags_for_activity).
@@ -336,6 +336,20 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     page.mouse.down()
     page.mouse.move(coords["endX"], coords["endY"])
     page.mouse.up()
+
+
+def drag_sortable_item(source: Locator, target: Locator) -> None:
+    """Drag a SortableJS item by its drag handle to the target position.
+
+    Uses Playwright's native drag_to() which works reliably for adjacent
+    elements in the same SortableJS container.
+
+    Args:
+        source: Locator for the draggable element (must contain .drag-handle).
+        target: Locator for the drop target element.
+    """
+    source_handle = source.locator(".drag-handle").first
+    source_handle.drag_to(target)
 
 
 def create_highlight(page: Page, start_char: int, end_char: int) -> None:

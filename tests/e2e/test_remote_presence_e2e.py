@@ -17,17 +17,16 @@ Traceability:
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
+    _create_workspace_via_db,
     select_text_range,
-    setup_workspace_with_content_highlight_api,
+    wait_for_text_walker,
 )
-from tests.e2e.conftest import _grant_workspace_access
+from tests.e2e.conftest import _authenticate_page, _grant_workspace_access
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -38,42 +37,37 @@ def _setup_two_contexts(
 ) -> tuple[Page, Page, str, str, str]:
     """Set up two authenticated browser contexts viewing the same workspace.
 
+    Creates workspace via direct DB operations to eliminate UI flakiness.
+
     Returns:
         Tuple of (page1, page2, workspace_id, user1_email, user2_email).
     """
-    user1_email = f"presence_user1_{uuid4().hex[:8]}@test.edu.au"
-    user2_email = f"presence_user2_{uuid4().hex[:8]}@test.edu.au"
-
     context1 = browser.new_context()
     context2 = browser.new_context()
     page1 = context1.new_page()
     page2 = context2.new_page()
 
     # Authenticate with distinct identities
-    page1.goto(f"{app_server}/auth/callback?token=mock-token-{user1_email}")
-    page1.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+    user1_email = _authenticate_page(page1, app_server)
+    user2_email = _authenticate_page(page2, app_server)
 
-    page2.goto(f"{app_server}/auth/callback?token=mock-token-{user2_email}")
-    page2.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
-
-    # Page1 creates workspace
-    setup_workspace_with_content_highlight_api(page1, app_server, content)
-
-    # Extract workspace_id from URL
-    match = re.search(r"workspace_id=([^&]+)", page1.url)
-    if not match:
-        raise ValueError(f"No workspace_id in URL: {page1.url}")
-    workspace_id = match.group(1)
+    # Create workspace via DB (owned by user1)
+    html_content = f"<p>{content}</p>"
+    workspace_id = _create_workspace_via_db(
+        user_email=user1_email,
+        html_content=html_content,
+    )
 
     # Grant page2 access (ACL gate requires explicit permission)
     _grant_workspace_access(workspace_id, user2_email)
 
-    # Page2 joins same workspace
-    page2.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-    page2.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
+    # Both pages navigate to the workspace
+    ws_url = f"{app_server}/annotation?workspace_id={workspace_id}"
+    page1.goto(ws_url)
+    wait_for_text_walker(page1, timeout=15000)
+
+    page2.goto(ws_url)
+    wait_for_text_walker(page2, timeout=15000)
 
     return page1, page2, workspace_id, user1_email, user2_email
 
@@ -307,21 +301,20 @@ class TestRemotePresenceSmoke:
         content = (
             "The plaintiff alleged that the defendant was negligent in the workplace."
         )
-        user1_email = f"presence_late1_{uuid4().hex[:8]}@test.edu.au"
-        user2_email = f"presence_late2_{uuid4().hex[:8]}@test.edu.au"
 
         context1 = browser.new_context()
         page1 = context1.new_page()
+        user1_email = _authenticate_page(page1, app_server)
 
-        page1.goto(f"{app_server}/auth/callback?token=mock-token-{user1_email}")
-        page1.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+        # Create workspace via DB
+        workspace_id = _create_workspace_via_db(
+            user_email=user1_email,
+            html_content=f"<p>{content}</p>",
+        )
 
-        setup_workspace_with_content_highlight_api(page1, app_server, content)
-
-        # Extract workspace_id
-        match = re.search(r"workspace_id=([^&]+)", page1.url)
-        assert match, f"No workspace_id in URL: {page1.url}"
-        workspace_id = match.group(1)
+        ws_url = f"{app_server}/annotation?workspace_id={workspace_id}"
+        page1.goto(ws_url)
+        wait_for_text_walker(page1, timeout=15000)
 
         try:
             # User A emits cursor position BEFORE user B joins
@@ -330,18 +323,13 @@ class TestRemotePresenceSmoke:
             # Now user B joins
             context2 = browser.new_context()
             page2 = context2.new_page()
-
-            page2.goto(f"{app_server}/auth/callback?token=mock-token-{user2_email}")
-            page2.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+            user2_email = _authenticate_page(page2, app_server)
 
             # Grant page2 access (ACL gate requires explicit permission)
             _grant_workspace_access(workspace_id, user2_email)
 
-            page2.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page2.wait_for_function(
-                "() => window._textNodes && window._textNodes.length > 0",
-                timeout=10000,
-            )
+            page2.goto(ws_url)
+            wait_for_text_walker(page2, timeout=15000)
 
             # User B should see user A's cursor (sent on late-join sync)
             remote_cursors = page2.locator(".remote-cursor")

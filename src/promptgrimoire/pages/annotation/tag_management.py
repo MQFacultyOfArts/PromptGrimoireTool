@@ -177,7 +177,10 @@ async def open_quick_create(state: PageState) -> None:
     groups = await list_tag_groups_for_workspace(state.workspace_id)
     group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
-    with ui.dialog() as dialog, ui.card().classes("w-96"):
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes("w-96").props("data-testid=tag-quick-create-dialog"),
+    ):
         ui.label("Quick Create Tag").classes(
             "text-lg font-bold mb-2",
         )
@@ -307,8 +310,16 @@ def _render_tag_row(
         )
 
         # Editable fields
-        name_input = ui.input(value=tag.name).props("maxlength=100").classes("w-40")
-        color_input = ui.color_input(value=tag.color, preview=True).classes("w-28")
+        name_input = (
+            ui.input(value=tag.name)
+            .props(f"maxlength=100 data-testid=tag-name-input-{tag.id}")
+            .classes("w-40")
+        )
+        color_input = (
+            ui.color_input(value=tag.color, preview=True)
+            .props(f"data-testid=tag-color-input-{tag.id}")
+            .classes("w-28")
+        )
         desc_input = ui.input(
             value=tag.description or "",
             placeholder="Description",
@@ -347,17 +358,21 @@ def _render_tag_row(
                 await on_lock_toggle(tid, not cur)
 
             ui.button(icon=lock_icon, on_click=_toggle_lock).props(
-                "flat round dense"
+                f"flat round dense data-testid=tag-lock-icon-{tag.id}"
             ).tooltip(lock_tip)
         elif tag.locked:
-            ui.icon("lock").classes("text-gray-400").tooltip("Locked")
+            ui.icon("lock").classes("text-gray-400").props(
+                f"data-testid=tag-lock-icon-{tag.id}"
+            ).tooltip("Locked")
 
         del_btn = (
             ui.button(
                 icon="delete",
                 on_click=lambda _e, t=tag: on_delete(t.id, t.name),
             )
-            .props("flat round dense color=negative")
+            .props(
+                f"flat round dense color=negative data-testid=tag-delete-btn-{tag.id}"
+            )
             .tooltip("Delete tag")
         )
 
@@ -392,7 +407,11 @@ def _render_group_header(
 
     Input refs are stored in ``row_collector`` for save-on-blur.
     """
-    with ui.row().classes("items-center w-full gap-2 mt-4 mb-1"):
+    with (
+        ui.row()
+        .classes("items-center w-full gap-2 mt-4 mb-1")
+        .props(f"data-testid=tag-group-header-{group.id}")
+    ):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
         ui.icon("folder").classes("text-blue-600")
         group_name_input = (
@@ -408,7 +427,9 @@ def _render_group_header(
         ui.button(
             icon="delete",
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),
-        ).props("flat round dense color=negative").tooltip("Delete group")
+        ).props(
+            f"flat round dense color=negative data-testid=group-delete-btn-{group.id}"
+        ).tooltip("Delete group")
 
         # Auto-save on blur for group fields
         if on_group_field_save is not None:
@@ -626,7 +647,9 @@ def _render_tag_list_content(
                 ui.button(
                     "+ Add tag",
                     on_click=lambda _e, gid=group.id: on_add_tag(gid),
-                ).props("flat dense").classes("text-xs ml-8 mt-1")
+                ).props(f"flat dense data-testid=group-add-tag-btn-{group.id}").classes(
+                    "text-xs ml-8 mt-1"
+                )
 
     # Ungrouped section (outside group Sortable)
     ungrouped = tags_by_group.get(None, [])
@@ -689,34 +712,35 @@ async def _render_import_section(
         return
 
     ui.separator().classes("my-2")
-    ui.label("Import tags from another activity").classes("text-sm font-bold mt-2")
-    with ui.row().classes("items-center gap-2"):
-        activity_select = ui.select(
-            options=activity_options,
-            label="Source activity",
-        ).classes("w-64")
+    with ui.column().classes("w-full").props("data-testid=tag-import-section"):
+        ui.label("Import tags from another activity").classes("text-sm font-bold mt-2")
+        with ui.row().classes("items-center gap-2"):
+            activity_select = ui.select(
+                options=activity_options,
+                label="Source activity",
+            ).classes("w-64")
 
-        async def _import_from_activity() -> None:
-            if not activity_select.value:
-                ui.notify("Select an activity first", type="warning")
-                return
-            from promptgrimoire.db.tags import (  # noqa: PLC0415
-                import_tags_from_activity,
-            )
-
-            try:
-                await import_tags_from_activity(
-                    source_activity_id=UUID(activity_select.value),
-                    target_workspace_id=state.workspace_id,
+            async def _import_from_activity() -> None:
+                if not activity_select.value:
+                    ui.notify("Select an activity first", type="warning")
+                    return
+                from promptgrimoire.db.tags import (  # noqa: PLC0415
+                    import_tags_from_activity,
                 )
-            except ValueError as exc:
-                ui.notify(str(exc), type="negative")
-                return
-            await render_tag_list()
-            await _refresh_tag_state(state)
-            ui.notify("Tags imported", type="positive")
 
-        ui.button("Import", on_click=_import_from_activity).props("flat dense")
+                try:
+                    await import_tags_from_activity(
+                        source_activity_id=UUID(activity_select.value),
+                        target_workspace_id=state.workspace_id,
+                    )
+                except ValueError as exc:
+                    ui.notify(str(exc), type="negative")
+                    return
+                await render_tag_list()
+                await _refresh_tag_state(state)
+                ui.notify("Tags imported", type="positive")
+
+            ui.button("Import", on_click=_import_from_activity).props("flat dense")
 
 
 async def _save_single_tag(
@@ -838,7 +862,9 @@ async def open_tag_management(
 
     with (
         ui.dialog() as dialog,
-        ui.card().style("width: 800px !important; max-width: 90vw !important;"),
+        ui.card()
+        .style("width: 800px !important; max-width: 90vw !important;")
+        .props("data-testid=tag-management-dialog"),
     ):
         ui.label("Manage Tags").classes("text-lg font-bold mb-2")
 
@@ -932,7 +958,9 @@ async def open_tag_management(
 
         ui.separator().classes("my-2")
         with ui.row().classes("w-full justify-end"):
-            ui.button("Done", on_click=_save_all_and_close).props("color=primary")
+            ui.button("Done", on_click=_save_all_and_close).props(
+                "color=primary data-testid=tag-management-done-btn"
+            )
 
     dialog.open()
     await dialog

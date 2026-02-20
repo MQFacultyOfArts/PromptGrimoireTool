@@ -184,6 +184,14 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `tests/e2e/` directory. Provides `page`, `browser`, `context` fixtures.
 
+### junitparser >= 3.0
+
+**Added:** 2026-02-20
+**Design plan:** docs/design-plans/2026-02-20-parallel-e2e-runner-95.md
+**Claim:** JUnit XML merging for parallel E2E test runner. Each worker subprocess produces its own JUnit XML file; junitparser merges them into a single aggregate report.
+**Evidence:** `src/promptgrimoire/cli.py` — used in `_run_parallel_e2e()` to merge per-file XML results.
+**Serves:** Developers (aggregate test results), CI (single JUnit XML for reporting).
+
 ### playwright >= 1.49
 
 **Claim:** Browser automation for E2E tests.

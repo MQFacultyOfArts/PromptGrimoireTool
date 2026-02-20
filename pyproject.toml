@@ -162,4 +162,5 @@ dev = [
     "pytest-randomly>=4.0.1",
     "py-spy>=0.4.1",
     "pysnooper>=1.2.3",
+    "pytest-sugar>=1.1.1",
 ]

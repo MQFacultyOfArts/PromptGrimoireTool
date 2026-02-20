@@ -214,10 +214,12 @@ def _find_tag_input_by_name(page: Page, tag_name: str) -> str:
     """
     dialog = page.locator("[data-testid='tag-management-dialog']")
     inputs = dialog.locator("[data-testid^='tag-name-input-']")
+    # NiceGUI puts data-testid directly on the <input> element, not a wrapper
+    inputs.first.wait_for(state="attached", timeout=10000)
     count = inputs.count()
     for i in range(count):
         el = inputs.nth(i)
-        val = el.locator("input").first.input_value()
+        val = el.input_value()
         if val == tag_name:
             testid = el.get_attribute("data-testid") or ""
             return testid.replace("tag-name-input-", "")
@@ -318,7 +320,7 @@ def _instructor_lock_tag(page: Page, template_ws_id: str) -> None:
     expect(dialog).to_be_visible(timeout=5000)
     lock_icon = dialog.locator(f"[data-testid='tag-lock-icon-{jurisdiction_id}']")
     expect(lock_icon).to_be_visible(timeout=3000)
-    expect(lock_icon.locator("i.q-icon")).to_contain_text("lock")
+    expect(lock_icon.locator("i.q-icon")).to_have_text("lock")
     dialog.locator("[data-testid='tag-management-done-btn']").click()
     expect(dialog).to_be_hidden(timeout=5000)
 
@@ -470,9 +472,7 @@ def _student_verify_locked_readonly(student_page: Page) -> None:
     lock_icon = dialog.locator(f"[data-testid='tag-lock-icon-{jurisdiction_id}']")
     expect(lock_icon).to_be_visible(timeout=3000)
 
-    name_input = dialog.locator(
-        f"[data-testid='tag-name-input-{jurisdiction_id}'] input"
-    )
+    name_input = dialog.locator(f"[data-testid='tag-name-input-{jurisdiction_id}']")
     expect(name_input).to_have_attribute("readonly", "")
 
     dialog.locator("[data-testid='tag-management-done-btn']").click()
@@ -489,7 +489,7 @@ def _student_edit_unlocked_tag(student_page: Page) -> None:
     expect(dialog).to_be_visible(timeout=5000)
 
     si_tag_id = _find_tag_input_by_name(student_page, "Statutory Interpretation")
-    name_input = dialog.locator(f"[data-testid='tag-name-input-{si_tag_id}'] input")
+    name_input = dialog.locator(f"[data-testid='tag-name-input-{si_tag_id}']")
     name_input.clear()
     name_input.fill("Key Principles")
     name_input.blur()

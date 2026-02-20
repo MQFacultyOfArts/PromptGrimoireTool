@@ -287,13 +287,10 @@ def _run_pytest(
         all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
-    header_text, log_header = _build_test_header(
+    _header_text, log_header = _build_test_header(
         title, branch, db_name, start_time, command_str
     )
-    if interactive:
-        console.print(Panel(header_text, border_style="blue"))
-    else:
-        print(f"db={db_name} log={log_path}")
+    console.print(f"[blue]{title}[/] — {command_str}")
 
     with log_path.open("w") as log_file:
         log_file.write(log_header)
@@ -325,24 +322,12 @@ Exit code: {exit_code}
 """
         log_file.write(log_footer)
 
-    if interactive:
-        # Rich footer panel
-        console.print()
-        if exit_code == 0:
-            status = Text("PASSED", style="bold green")
-            border = "green"
-        else:
-            status = Text("FAILED", style="bold red")
-            border = "red"
-
-        footer_text = Text()
-        footer_text.append("Status: ")
-        footer_text.append_text(status)
-        footer_text.append(f"\nDuration: {duration}")
-        footer_text.append(f"\nLog: {log_path}", style="dim")
-
-        console.print(Panel(footer_text, border_style=border))
-
+    if exit_code == 0:
+        console.print(f"[green]PASSED[/] in {duration} — log: {log_path}")
+    else:
+        console.print(
+            f"[red]FAILED[/] (exit {exit_code}) in {duration} — log: {log_path}"
+        )
     sys.exit(exit_code)
 
 
@@ -1382,6 +1367,7 @@ def test_e2e() -> None:
                 "-m",
                 "e2e",
                 "-x",
+                "-q",
                 "--ff",
                 "--durations=10",
                 "--tb=short",

@@ -118,6 +118,58 @@ def terminate_connections(url: str, db_name: str) -> None:
         )
 
 
+def clone_database(source_url: str, target_name: str) -> str:
+    """Clone a database using PostgreSQL's TEMPLATE mechanism.
+
+    Creates a new database named *target_name* as an exact copy of the
+    database specified in *source_url*.  Active connections on the source
+    are terminated first (required by ``CREATE DATABASE ... TEMPLATE``).
+
+    Args:
+        source_url: Full PostgreSQL connection string for the template database.
+        target_name: Name for the new cloned database (alphanumeric + underscores).
+
+    Returns:
+        A full database URL pointing to the newly created clone.
+
+    Raises:
+        ValueError: If *target_name* contains invalid characters.
+    """
+    # Validate target name
+    if not re.match(r"^[a-zA-Z0-9_]+$", target_name):
+        msg = f"Invalid target database name: {target_name!r}"
+        raise ValueError(msg)
+
+    # Extract source db name from URL
+    base = source_url.split("?", maxsplit=1)[0]
+    source_db_name = base.rsplit("/", 1)[1]
+
+    # Terminate active connections on the source (template) database
+    terminate_connections(source_url, source_db_name)
+
+    # Build maintenance URL
+    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
+    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
+    if "?" in source_url:
+        maintenance_url += "?" + source_url.split("?", 1)[1]
+
+    with psycopg.connect(maintenance_url, autocommit=True) as conn:
+        stmt = psycopg.sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
+            psycopg.sql.Identifier(target_name),
+            psycopg.sql.Identifier(source_db_name),
+        )
+        conn.execute(stmt)
+
+    # Build and return the target URL
+    target_url = base.rsplit("/", 1)[0] + "/" + target_name
+    # Preserve the original scheme (including +asyncpg if present)
+    # by replacing just the db name portion in the original URL
+    if "?" in source_url:
+        target_url += "?" + source_url.split("?", 1)[1]
+
+    return target_url
+
+
 def is_db_configured() -> bool:
     """Check if database URL is configured in Settings.
 

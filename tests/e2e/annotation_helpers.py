@@ -155,6 +155,107 @@ def _seed_tags_for_workspace(workspace_id: str) -> None:
     engine.dispose()
 
 
+def _create_workspace_via_db(
+    user_email: str,
+    html_content: str,
+    *,
+    source_type: str = "text",
+    seed_tags: bool = True,
+) -> str:
+    """Create a workspace with content via direct DB operations.
+
+    Creates workspace, document, and ACL entry in a single transaction,
+    then optionally seeds Legal Case Brief tags.
+
+    This bypasses the UI and input pipeline, so the caller must provide
+    pre-processed HTML content (e.g. ``<p>My text here</p>``).
+
+    Use this for tests that need a workspace but are NOT testing workspace
+    creation itself.  Tests that test the creation flow (e.g. instructor
+    workflow) should continue using ``setup_workspace_with_content()``.
+
+    Args:
+        user_email: Email of the authenticated user (must exist in DB).
+        html_content: Pre-processed HTML content for the document.
+        source_type: Content type (``"text"``, ``"html"``, etc.).
+        seed_tags: If True (default), seed Legal Case Brief tags.
+
+    Returns:
+        workspace_id as string.
+
+    Raises:
+        RuntimeError: If DATABASE__URL is not configured or user not found.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    workspace_id = str(uuid.uuid4())
+    doc_id = str(uuid.uuid4())
+
+    with engine.begin() as conn:
+        # Look up user
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            msg = f"User not found in DB: {user_email}"
+            raise RuntimeError(msg)
+        user_id = row[0]
+
+        # Create workspace
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, enable_save_as_draft, created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), false, now(), now())"
+            ),
+            {"id": workspace_id},
+        )
+
+        # Create workspace document
+        conn.execute(
+            text(
+                "INSERT INTO workspace_document"
+                " (id, workspace_id, type, content,"
+                "  source_type, order_index, created_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                " :type, :content, :source_type, 0, now())"
+            ),
+            {
+                "id": doc_id,
+                "ws": workspace_id,
+                "type": "source",
+                "content": html_content,
+                "source_type": source_type,
+            },
+        )
+
+        # Create ACL entry (owner permission)
+        conn.execute(
+            text(
+                "INSERT INTO acl_entry"
+                " (id, workspace_id, user_id, permission, created_at)"
+                " VALUES (gen_random_uuid(),"
+                " CAST(:ws AS uuid), :uid, 'owner', now())"
+            ),
+            {"ws": workspace_id, "uid": user_id},
+        )
+
+    engine.dispose()
+
+    if seed_tags:
+        _seed_tags_for_workspace(workspace_id)
+
+    return workspace_id
+
+
 def select_chars(page: Page, start_char: int, end_char: int) -> None:
     """Select a character range using mouse events.
 

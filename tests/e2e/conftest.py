@@ -98,7 +98,12 @@ def _e2e_post_test_cleanup() -> Generator[None]:
 
 
 def _extract_workspace_id_from_url(url: str) -> str:
-    """Extract workspace_id from URL query parameter."""
+    """Extract workspace_id from URL query parameter.
+
+    .. deprecated:: Phase 6
+        No longer used after DB-based workspace creation.
+        Candidate for removal in Phase 6 cleanup.
+    """
     match = re.search(r"workspace_id=([^&]+)", url)
     if not match:
         raise ValueError(f"No workspace_id found in URL: {url}")
@@ -249,15 +254,16 @@ def two_annotation_contexts(
     genuinely independent clients - different cookie jars, no shared
     browser process state, realistic multi-user scenario.
 
-    Creates the workspace via the UI (page1 creates it, then shares URL with
-    page2) to avoid async/event loop issues with programmatic workspace creation.
+    Creates the workspace via direct DB operations (no UI clicks) to
+    eliminate flakiness from multi-step UI workspace creation.
 
     Yields:
         tuple: (page1, page2, workspace_id)
     """
-    from tests.e2e.annotation_helpers import setup_workspace_with_content
-
-    content = "Sync test word1 word2 word3 word4 word5"
+    from tests.e2e.annotation_helpers import (
+        _create_workspace_via_db,
+        wait_for_text_walker,
+    )
 
     # TWO contexts = two independent "browsers"
     context1 = browser.new_context()
@@ -266,25 +272,25 @@ def two_annotation_contexts(
     page2 = context2.new_page()
 
     # Authenticate both pages first
-    _authenticate_page(page1, app_server)
+    page1_email = _authenticate_page(page1, app_server)
     page2_email = _authenticate_page(page2, app_server)
 
-    # Page1 creates the workspace via UI
-    setup_workspace_with_content(page1, app_server, content)
-
-    # Extract workspace_id from page1's URL
-    workspace_id = _extract_workspace_id_from_url(page1.url)
+    # Create workspace via DB (owned by page1's user)
+    workspace_id = _create_workspace_via_db(
+        user_email=page1_email,
+        html_content="<p>Sync test word1 word2 word3 word4 word5</p>",
+    )
 
     # Grant page2 access (ACL gate requires explicit permission)
     _grant_workspace_access(workspace_id, page2_email)
 
-    # Page2 joins the same workspace
-    url = f"{app_server}/annotation?workspace_id={workspace_id}"
-    page2.goto(url)
-    page2.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
+    # Both pages navigate to the workspace
+    ws_url = f"{app_server}/annotation?workspace_id={workspace_id}"
+    page1.goto(ws_url)
+    wait_for_text_walker(page1, timeout=15000)
+
+    page2.goto(ws_url)
+    wait_for_text_walker(page2, timeout=15000)
 
     try:
         yield page1, page2, workspace_id
@@ -307,18 +313,18 @@ def two_authenticated_contexts(
     this fixture creates contexts with different authenticated identities
     to test user-specific features like attribution and presence.
 
+    Creates the workspace via direct DB operations (no UI clicks) to
+    eliminate flakiness from multi-step UI workspace creation.
+
     Returns user emails so tests can verify user-specific attribution.
 
     Yields:
         tuple: (page1, page2, workspace_id, user1_email, user2_email)
     """
-    from tests.e2e.annotation_helpers import setup_workspace_with_content
-
-    content = "Collaboration test word1 word2 word3 word4 word5"
-
-    # Generate unique emails for test isolation
-    user1_email = f"collab_user1_{uuid4().hex[:8]}@test.edu.au"
-    user2_email = f"collab_user2_{uuid4().hex[:8]}@test.edu.au"
+    from tests.e2e.annotation_helpers import (
+        _create_workspace_via_db,
+        wait_for_text_walker,
+    )
 
     # TWO contexts = two independent "browsers"
     context1 = browser.new_context()
@@ -327,28 +333,25 @@ def two_authenticated_contexts(
     page2 = context2.new_page()
 
     # Authenticate each with distinct mock token
-    page1.goto(f"{app_server}/auth/callback?token=mock-token-{user1_email}")
-    page1.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+    user1_email = _authenticate_page(page1, app_server)
+    user2_email = _authenticate_page(page2, app_server)
 
-    page2.goto(f"{app_server}/auth/callback?token=mock-token-{user2_email}")
-    page2.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
-
-    # Page1 creates the workspace via UI
-    setup_workspace_with_content(page1, app_server, content)
-
-    # Extract workspace_id from page1's URL
-    workspace_id = _extract_workspace_id_from_url(page1.url)
+    # Create workspace via DB (owned by user1)
+    workspace_id = _create_workspace_via_db(
+        user_email=user1_email,
+        html_content="<p>Collaboration test word1 word2 word3 word4 word5</p>",
+    )
 
     # Grant page2 access (ACL gate requires explicit permission)
     _grant_workspace_access(workspace_id, user2_email)
 
-    # Page2 joins the same workspace
-    url = f"{app_server}/annotation?workspace_id={workspace_id}"
-    page2.goto(url)
-    page2.wait_for_function(
-        "() => window._textNodes && window._textNodes.length > 0",
-        timeout=10000,
-    )
+    # Both pages navigate to the workspace
+    ws_url = f"{app_server}/annotation?workspace_id={workspace_id}"
+    page1.goto(ws_url)
+    wait_for_text_walker(page1, timeout=15000)
+
+    page2.goto(ws_url)
+    wait_for_text_walker(page2, timeout=15000)
 
     try:
         yield page1, page2, workspace_id, user1_email, user2_email

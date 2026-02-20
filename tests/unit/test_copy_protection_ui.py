@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 
 from promptgrimoire.pages.courses import (
-    _COPY_PROTECTION_OPTIONS,
     _model_to_ui,
+    _tri_state_options,
     _ui_to_model,
 )
 
@@ -50,20 +50,32 @@ class TestUiToModel:
         assert _ui_to_model("off") is False
 
 
-class TestCopyProtectionOptions:
-    """Tests for _COPY_PROTECTION_OPTIONS dictionary."""
+class TestTriStateOptions:
+    """Tests for _tri_state_options factory function."""
 
     def test_has_three_options(self) -> None:
         """Options dict has exactly three entries."""
-        assert len(_COPY_PROTECTION_OPTIONS) == 3
+        assert len(_tri_state_options()) == 3
 
     def test_keys_are_inherit_on_off(self) -> None:
         """Option keys are 'inherit', 'on', 'off'."""
-        assert set(_COPY_PROTECTION_OPTIONS.keys()) == {"inherit", "on", "off"}
+        assert set(_tri_state_options().keys()) == {"inherit", "on", "off"}
 
     def test_inherit_label_mentions_course(self) -> None:
         """Inherit option label mentions 'course' for clarity."""
-        assert "course" in _COPY_PROTECTION_OPTIONS["inherit"].lower()
+        assert "course" in _tri_state_options()["inherit"].lower()
+
+    def test_custom_labels(self) -> None:
+        """Custom on/off labels are used in the returned dict."""
+        opts = _tri_state_options(on_label="Allowed", off_label="Not allowed")
+        assert opts["on"] == "Allowed"
+        assert opts["off"] == "Not allowed"
+
+    def test_default_labels(self) -> None:
+        """Default on/off labels are 'On' and 'Off'."""
+        opts = _tri_state_options()
+        assert opts["on"] == "On"
+        assert opts["off"] == "Off"
 
 
 class TestRoundTrip:

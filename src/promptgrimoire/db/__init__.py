@@ -41,6 +41,7 @@ from promptgrimoire.db.courses import (
     list_courses,
     list_user_enrollments,
     unenroll_user,
+    update_course,
     update_user_role,
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
@@ -194,6 +195,7 @@ __all__ = [
     "set_admin",
     "unenroll_user",
     "update_activity",
+    "update_course",
     "update_display_name",
     "update_last_login",
     "update_tag",

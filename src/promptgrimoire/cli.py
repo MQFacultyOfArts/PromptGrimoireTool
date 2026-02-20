@@ -896,7 +896,7 @@ async def _run_e2e_worker(
             try:
                 os.killpg(os.getpgid(server.pid), signal.SIGTERM)
                 try:
-                    await asyncio.wait_for(server.wait(), timeout=5)
+                    await asyncio.wait_for(server.wait(), timeout=2)
                 except TimeoutError:
                     os.killpg(os.getpgid(server.pid), signal.SIGKILL)
             except ProcessLookupError:
@@ -904,44 +904,32 @@ async def _run_e2e_worker(
         log_fh.close()
 
 
+def _worker_status_label(exit_code: int) -> str:
+    """Return a coloured PASS/FAIL/CANCEL label for a worker exit code."""
+    if exit_code == -1:
+        return "[yellow]CANCEL[/]"
+    if exit_code in (0, 5):
+        return "[green]PASS[/]"
+    return "[red]FAIL[/]"
+
+
 def _print_parallel_summary(
     results: list[tuple[Path, int, float]],
     wall_clock: float,
 ) -> None:
-    """Print a Rich table summarising parallel E2E results."""
-    from rich.table import Table
-
-    table = Table(title="Parallel E2E Results")
-    table.add_column("File", style="cyan")
-    table.add_column("Result")
-    table.add_column("Duration", justify="right")
-
-    passed = 0
-    failed = 0
-    cancelled = 0
-
-    for test_file, exit_code, duration in results:
-        if exit_code == -1:
-            label = "[yellow]CANCEL[/]"
-            cancelled += 1
-        elif exit_code in (0, 5):
-            label = "[green]PASS[/]"
-            passed += 1
-        else:
-            label = "[red]FAIL[/]"
-            failed += 1
-        table.add_row(test_file.name, label, f"{duration:.1f}s")
-
-    console.print(table)
+    """Print a compact summary of parallel E2E results (no borders)."""
+    passed = sum(1 for _, c, _ in results if c in (0, 5))
+    failed = sum(1 for _, c, _ in results if c not in (0, 5, -1))
+    cancelled = sum(1 for _, c, _ in results if c == -1)
 
     total = len(results)
-    summary_parts = [f"{total} files: {passed} passed"]
+    parts = [f"{total} files: {passed} passed"]
     if failed:
-        summary_parts.append(f"{failed} failed")
+        parts.append(f"{failed} failed")
     if cancelled:
-        summary_parts.append(f"{cancelled} cancelled")
-    summary_parts.append(f"Total: {wall_clock:.1f}s")
-    console.print(", ".join(summary_parts))
+        parts.append(f"{cancelled} cancelled")
+    parts.append(f"{wall_clock:.1f}s wall-clock")
+    console.print(", ".join(parts))
 
 
 def _merge_junit_xml(result_dir: Path) -> Path:
@@ -967,20 +955,41 @@ async def _run_all_workers(
     result_dir: Path,
     user_args: list[str],
 ) -> list[tuple[Path, int, float]]:
-    """Run all E2E workers concurrently via ``asyncio.gather``."""
-    coros = [
-        _run_e2e_worker(f, ports[i], worker_dbs[i][0], result_dir, user_args)
-        for i, f in enumerate(files)
-    ]
-    raw_results = await asyncio.gather(*coros, return_exceptions=True)
-
+    """Run all E2E workers concurrently, printing progress as each finishes."""
+    total = len(files)
+    done_count = 0
     results: list[tuple[Path, int, float]] = []
-    for i, item in enumerate(raw_results):
-        if isinstance(item, BaseException):
-            console.print(f"[red]Worker {files[i].name} raised: {item}[/]")
-            results.append((files[i], 1, 0.0))
-        else:
-            results.append(item)
+
+    async def _tracked_worker(i: int) -> tuple[Path, int, float]:
+        return await _run_e2e_worker(
+            files[i], ports[i], worker_dbs[i][0], result_dir, user_args
+        )
+
+    tasks = [asyncio.create_task(_tracked_worker(i)) for i in range(total)]
+
+    for done_count, future in enumerate(asyncio.as_completed(tasks), 1):
+        try:
+            result = await future
+        except Exception as exc:
+            # Find which file this was — match by task identity
+            fpath = files[0]  # fallback
+            for j, t in enumerate(tasks):
+                if t is future or (t.done() and not t.cancelled()):
+                    try:
+                        t.result()
+                    except Exception as t_exc:
+                        if t_exc is exc:
+                            fpath = files[j]
+                            break
+            console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
+            result = (fpath, 1, 0.0)
+
+        results.append(result)
+        label = _worker_status_label(result[1])
+        console.print(
+            f"  [{done_count}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+        )
+
     return results
 
 
@@ -1020,8 +1029,10 @@ async def _run_fail_fast_workers(
         for i, f in enumerate(files)
     ]
 
+    total = len(files)
     results: list[tuple[Path, int, float]] = []
     completed_files: set[Path] = set()
+    done_count = 0
 
     for future in asyncio.as_completed(tasks):
         try:
@@ -1035,13 +1046,15 @@ async def _run_fail_fast_workers(
 
         results.append(result)
         completed_files.add(result[0])
+        done_count += 1
+        label = _worker_status_label(result[1])
+        console.print(
+            f"  [{done_count}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+        )
 
         # Check for failure (exit code not 0 and not 5)
         if result[1] not in (0, 5):
-            console.print(
-                f"[red]Fail-fast: {result[0].name} failed, "
-                f"cancelling remaining workers[/]"
-            )
+            console.print("[red]  Fail-fast: cancelling remaining workers[/]")
             for t in tasks:
                 if not t.done():
                     t.cancel()
@@ -1123,6 +1136,14 @@ async def _run_parallel_e2e(
 
     # -- Extract source db name --
     source_db_name = test_db_url.split("?")[0].rsplit("/", 1)[1]
+
+    # -- Drop stale worker databases from interrupted previous runs --
+    base_url = test_db_url.split("?")[0].rsplit("/", 1)[0]
+    query = ("?" + test_db_url.split("?", 1)[1]) if "?" in test_db_url else ""
+    for i in range(len(files)):
+        stale_url = f"{base_url}/{source_db_name}_w{i}{query}"
+        with contextlib.suppress(Exception):
+            drop_database(stale_url)
 
     # -- Create worker databases --
     worker_dbs: list[tuple[str, str]] = []
@@ -1324,9 +1345,13 @@ def test_e2e() -> None:
                 "[yellow]--py-spy is not supported in parallel mode, ignoring[/]"
             )
         user_args = sys.argv[1:]
-        exit_code = asyncio.run(
-            _run_parallel_e2e(user_args=user_args, fail_fast=fail_fast)
-        )
+        try:
+            exit_code = asyncio.run(
+                _run_parallel_e2e(user_args=user_args, fail_fast=fail_fast)
+            )
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted — cleaning up...[/]")
+            exit_code = 130  # conventional SIGINT exit code
         sys.exit(exit_code)
 
     # --- Serial mode (unchanged) ---

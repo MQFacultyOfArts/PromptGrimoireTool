@@ -305,7 +305,7 @@ class TestLockEnforcement:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        tag = await create_tag(ws_id, name="Locked", color="#000", locked=True)
+        tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
         with pytest.raises(ValueError, match="Tag is locked"):
             await update_tag(tag.id, name="New Name")
@@ -321,7 +321,7 @@ class TestLockEnforcement:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        tag = await create_tag(ws_id, name="Locked", color="#000", locked=True)
+        tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
         with pytest.raises(ValueError, match="Tag is locked"):
             await delete_tag(tag.id)
@@ -337,7 +337,7 @@ class TestLockEnforcement:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        tag = await create_tag(ws_id, name="ToUnlock", color="#000", locked=True)
+        tag = await create_tag(ws_id, name="ToUnlock", color="#000000", locked=True)
 
         updated = await update_tag(tag.id, locked=False)
         assert updated is not None
@@ -354,7 +354,7 @@ class TestLockEnforcement:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        tag = await create_tag(ws_id, name="Unlocked", color="#000", locked=False)
+        tag = await create_tag(ws_id, name="Unlocked", color="#000000", locked=False)
 
         updated = await update_tag(tag.id, name="Renamed")
         assert updated is not None
@@ -389,7 +389,7 @@ class TestPermissionEnforcement:
         await place_workspace_in_activity(ws.id, activity.id)
 
         with pytest.raises(PermissionError, match="Tag creation not allowed"):
-            await create_tag(ws.id, name="Should Fail", color="#000")
+            await create_tag(ws.id, name="Should Fail", color="#000000")
 
     @pytest.mark.asyncio
     async def test_create_tag_allowed_when_tag_creation_true(self) -> None:
@@ -411,7 +411,7 @@ class TestPermissionEnforcement:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        tag = await create_tag(ws.id, name="Allowed", color="#123")
+        tag = await create_tag(ws.id, name="Allowed", color="#112233")
         assert tag.name == "Allowed"
 
     @pytest.mark.asyncio
@@ -456,9 +456,9 @@ class TestReorderTags:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        t1 = await create_tag(ws_id, name="Tag1", color="#a", order_index=0)
-        t2 = await create_tag(ws_id, name="Tag2", color="#b", order_index=1)
-        t3 = await create_tag(ws_id, name="Tag3", color="#c", order_index=2)
+        t1 = await create_tag(ws_id, name="Tag1", color="#aaaaaa", order_index=0)
+        t2 = await create_tag(ws_id, name="Tag2", color="#bbbbbb", order_index=1)
+        t3 = await create_tag(ws_id, name="Tag3", color="#cccccc", order_index=2)
 
         # Reorder: Tag3, Tag1, Tag2
         await reorder_tags([t3.id, t1.id, t2.id])
@@ -620,7 +620,7 @@ class TestDeleteTagCrdtCleanup:
 
         await place_workspace_in_activity(ws.id, activity.id)
 
-        tag = await create_tag(ws.id, name="ToDelete", color="#f00")
+        tag = await create_tag(ws.id, name="ToDelete", color="#ff0000")
 
         # Build CRDT state with 3 highlights for this tag
         doc = AnnotationDocument("test")
@@ -673,8 +673,8 @@ class TestDeleteTagCrdtCleanup:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        tag_a = await create_tag(ws.id, name="TagA", color="#a00")
-        tag_b = await create_tag(ws.id, name="TagB", color="#0b0")
+        tag_a = await create_tag(ws.id, name="TagA", color="#aa0000")
+        tag_b = await create_tag(ws.id, name="TagB", color="#00bb00")
 
         # Build CRDT state with highlights for both tags
         doc = AnnotationDocument("test")
@@ -737,7 +737,7 @@ class TestDeleteTagCrdtCleanup:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        tag = await create_tag(ws.id, name="NoOrder", color="#f0f")
+        tag = await create_tag(ws.id, name="NoOrder", color="#ff00ff")
 
         # Build CRDT with highlights but NO tag_order entry
         doc = AnnotationDocument("test")

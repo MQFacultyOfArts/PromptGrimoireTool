@@ -1143,6 +1143,7 @@ async def _run_parallel_e2e(
 
     wall_start = time.monotonic()
     results: list[tuple[Path, int, float]] = []
+    all_passed = False  # safe default for finally if try raises early
 
     try:
         if fail_fast:

@@ -14,6 +14,16 @@ from nicegui import ui
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation.tags import TagInfo
 
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Parse a ``#RRGGBB`` hex string into an (r, g, b) tuple."""
+    return (
+        int(hex_color[1:3], 16),
+        int(hex_color[3:5], 16),
+        int(hex_color[5:7], 16),
+    )
+
+
 # CSS styles for annotation interface
 _PAGE_CSS = """
     /* Document container */
@@ -263,11 +273,7 @@ def _build_highlight_pseudo_css(tag_colours: dict[str, str]) -> str:
     """
     css_rules: list[str] = []
     for tag_str, hex_color in tag_colours.items():
-        r, g, b = (
-            int(hex_color[1:3], 16),
-            int(hex_color[3:5], 16),
-            int(hex_color[5:7], 16),
-        )
+        r, g, b = _hex_to_rgb(hex_color)
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
         css_rules.append(
             f"::highlight(hl-{tag_str}) {{\n"
@@ -317,6 +323,19 @@ def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
         btn.tooltip(ti.name)
 
 
+def _resolve_group_bg(group_name: str | None, group_colour: str | None) -> str | None:
+    """Return an rgba background string for a named tag group, or None if ungrouped.
+
+    Named groups without a custom colour get a default grey background.
+    """
+    if group_name is None:
+        return None
+    if group_colour is None:
+        return "rgba(0,0,0,0.06)"
+    r, g, b = _hex_to_rgb(group_colour)
+    return f"rgba({r},{g},{b},0.15)"
+
+
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
@@ -360,38 +379,27 @@ def _build_tag_toolbar(
         .props('data-testid="tag-toolbar"'),
     ):
         for group_name, members in groups.items():
-            if group_name is not None:
-                # Resolve group background: custom colour or default grey
-                group_colour = members[0][1].group_colour if members else None
-                if group_colour:
-                    r = int(group_colour[1:3], 16)
-                    g = int(group_colour[3:5], 16)
-                    b = int(group_colour[5:7], 16)
-                    bg = f"rgba({r},{g},{b},0.15)"
+            group_colour = members[0][1].group_colour if members else None
+            bg = _resolve_group_bg(group_name, group_colour)
+
+            col = ui.column().classes("tag-group-col")
+            if bg is not None:
+                col.style(f"background: {bg} !important;")
+            with col:
+                # Named groups get a visible label; ungrouped get a
+                # hidden spacer so button baselines align.
+                label_text = group_name or ""
+                label_cls = "text-[9px] leading-tight"
+                if group_name is not None:
+                    label_cls += " text-gray-500"
                 else:
-                    bg = "rgba(0,0,0,0.06)"
-                # Grouped tags: bubble background with label
-                with (
-                    ui.column()
-                    .classes("tag-group-col")
-                    .style(f"background: {bg} !important;")
-                ):
-                    ui.label(group_name).classes(
-                        "text-[9px] text-gray-500 leading-tight"
-                    )
-                    with ui.row().classes("gap-1"):
-                        for idx, ti in members:
-                            shortcut = str((idx + 1) % 10) if idx < 10 else ""
-                            _render_tag_button(ti, shortcut, on_tag_click)
-            else:
-                # Ungrouped tags: invisible group for baseline alignment
-                with ui.column().classes("tag-group-col"):
-                    # Invisible label to match grouped tag height
-                    ui.label("").classes("text-[9px] leading-tight tag-group-spacer")
-                    with ui.row().classes("gap-1"):
-                        for idx, ti in members:
-                            shortcut = str((idx + 1) % 10) if idx < 10 else ""
-                            _render_tag_button(ti, shortcut, on_tag_click)
+                    label_cls += " tag-group-spacer"
+                ui.label(label_text).classes(label_cls)
+
+                with ui.row().classes("gap-1"):
+                    for idx, ti in members:
+                        shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                        _render_tag_button(ti, shortcut, on_tag_click)
 
         # Action buttons (+ and gear) aligned with tag button baseline
         if on_add_click is not None or on_manage_click is not None:

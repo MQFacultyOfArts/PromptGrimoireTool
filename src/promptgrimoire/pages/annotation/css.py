@@ -169,6 +169,19 @@ _PAGE_CSS = """
         padding: 2px 8px !important;
         min-height: 24px !important;
         font-size: 11px !important;
+        vertical-align: middle !important;
+    }
+
+    /* Tag group containers in toolbar */
+    .tag-group-col {
+        gap: 0 !important;
+        align-items: center !important;
+        border-radius: 8px !important;
+        padding: 2px 6px !important;
+        margin: 0 2px !important;
+    }
+    .tag-group-spacer {
+        visibility: hidden !important;
     }
 
     /* Tag button truncation — Quasar wraps label text in nested spans */
@@ -360,11 +373,8 @@ def _build_tag_toolbar(
                 # Grouped tags: bubble background with label
                 with (
                     ui.column()
-                    .classes("gap-0 items-center")
-                    .style(
-                        f"background: {bg}; border-radius: 8px; "
-                        "padding: 2px 6px 4px; margin: 0 2px;"
-                    )
+                    .classes("tag-group-col")
+                    .style(f"background: {bg} !important;")
                 ):
                     ui.label(group_name).classes(
                         "text-[9px] text-gray-500 leading-tight"
@@ -375,35 +385,32 @@ def _build_tag_toolbar(
                             _render_tag_button(ti, shortcut, on_tag_click)
             else:
                 # Ungrouped tags: invisible group for baseline alignment
-                with (
-                    ui.column()
-                    .classes("gap-0 items-center")
-                    .style("border-radius: 8px; padding: 2px 6px 4px; margin: 0 2px;")
-                ):
+                with ui.column().classes("tag-group-col"):
                     # Invisible label to match grouped tag height
-                    ui.label("").classes("text-[9px] leading-tight").style(
-                        "visibility: hidden;"
-                    )
+                    ui.label("").classes("text-[9px] leading-tight tag-group-spacer")
                     with ui.row().classes("gap-1"):
                         for idx, ti in members:
                             shortcut = str((idx + 1) % 10) if idx < 10 else ""
                             _render_tag_button(ti, shortcut, on_tag_click)
 
-        # "+" button -- quick-create (hidden when creation not allowed)
-        if on_add_click is not None:
-            ui.button(
-                "+",
-                on_click=on_add_click,
-            ).classes("text-xs compact-btn").props(
-                "round dense",
-            ).tooltip("Create new tag")
+        # Action buttons (+ and gear) aligned with tag button baseline
+        if on_add_click is not None or on_manage_click is not None:
+            with ui.column().classes("tag-group-col"):
+                ui.label("").classes("text-[9px] leading-tight tag-group-spacer")
+                with ui.row().classes("gap-1 items-center"):
+                    if on_add_click is not None:
+                        ui.button(
+                            icon="add",
+                            on_click=on_add_click,
+                        ).classes("compact-btn").props(
+                            "round dense flat color=grey-7",
+                        ).tooltip("Create new tag")
 
-        # Gear button -- full management
-        if on_manage_click is not None:
-            ui.button(
-                icon="settings",
-                on_click=on_manage_click,
-            ).classes("text-xs compact-btn").props(
-                "round dense flat",
-            ).tooltip("Manage tags")
+                    if on_manage_click is not None:
+                        ui.button(
+                            icon="settings",
+                            on_click=on_manage_click,
+                        ).classes("compact-btn").props(
+                            "round dense flat color=grey-7",
+                        ).tooltip("Manage tags")
     return toolbar_wrapper

@@ -669,11 +669,15 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
     protect = ctx.copy_protection and not is_privileged_user(auth_user)
-    # Instructors can always create tags on templates, regardless of the setting
-    can_create_tags = ctx.allow_tag_creation or (
-        ctx.is_template and is_privileged_user(auth_user)
+    # Template editors can always create tags (they're setting up the activity).
+    # Privileged users (admin/instructor) can always create tags.
+    # Students follow the resolved allow_tag_creation setting.
+    can_create_tags = (
+        ctx.allow_tag_creation or ctx.is_template or is_privileged_user(auth_user)
     )
-    logger.debug("[RENDER] placement done: protect=%s", protect)
+    logger.debug(
+        "[RENDER] placement done: protect=%s can_create=%s", protect, can_create_tags
+    )
 
     # Create page state
     state = PageState(

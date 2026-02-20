@@ -6,6 +6,7 @@ page style setup, and tag toolbar builder.
 
 from __future__ import annotations
 
+from html import escape
 from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
@@ -295,7 +296,10 @@ def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
     )
     if ti.description:
         with btn, ui.element("q-tooltip"):
-            ui.html(f"<b>{ti.name}</b><br>{ti.description}", sanitize=False)
+            ui.html(
+                f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
+                sanitize=False,
+            )
     else:
         btn.tooltip(ti.name)
 

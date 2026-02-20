@@ -998,8 +998,8 @@ def _resolve_failed_task_file(
         except Exception as t_exc:
             if t_exc is exc:
                 stem = t.get_name().removeprefix("e2e-")
-                return next((f for f in files if f.stem == stem), files[0])
-    return files[0]
+                return next((f for f in files if f.stem == stem), Path("unknown"))
+    return Path("unknown")
 
 
 async def _run_fail_fast_workers(
@@ -1154,25 +1154,25 @@ async def _run_parallel_e2e(
                 files, ports, worker_dbs, result_dir, user_args
             )
 
-        # -- Merge JUnit XML --
-        _merge_junit_xml(result_dir)
-
         # -- Compute aggregate exit code --
-        all_passed = all(code in (0, 5, -1) for _, code, _ in results)
-        # Cancelled-only doesn't count as "all passed" in fail-fast
-        any_real_pass = any(code in (0, 5) for _, code, _ in results)
-        aggregate = 0 if (all_passed and any_real_pass) else 1
+        # "all passed" for cleanup: only real results (0 or 5), not cancelled (-1)
+        all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
+        aggregate = 0 if all_passed else 1
 
         wall_clock = time.monotonic() - wall_start
 
-        # -- Summary --
+        # -- Summary (printed before JUnit merge so it's visible even if merge fails) --
         _print_parallel_summary(results, wall_clock)
+
+        # -- Merge JUnit XML (best-effort) --
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            _merge_junit_xml(result_dir)
 
         return aggregate
 
     finally:
-        wall_clock = time.monotonic() - wall_start
-        all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
         _cleanup_parallel_results(all_passed, worker_dbs, result_dir, results)
 
 

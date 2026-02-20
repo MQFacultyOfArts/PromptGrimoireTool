@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -779,6 +781,125 @@ def _allocate_ports(n: int) -> list[int]:
             s.close()
 
 
+async def _run_e2e_worker(
+    test_file: Path,
+    port: int,
+    db_url: str,
+    result_dir: Path,
+    user_args: list[str],
+) -> tuple[Path, int, float]:
+    """Run a single E2E test file against a dedicated server instance.
+
+    Starts a NiceGUI server subprocess on *port* with *db_url*, waits for it
+    to accept connections, then runs ``pytest -m e2e`` on *test_file*.  Server
+    and pytest stdout/stderr are merged into a single log file under
+    *result_dir*.
+
+    Returns ``(test_file, pytest_exit_code, duration_seconds)``.
+
+    The server process group is always cleaned up in the ``finally`` block,
+    even on cancellation.
+    """
+    clean_env = {
+        k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
+    }
+    clean_env["DATABASE__URL"] = db_url
+
+    log_path = result_dir / f"test-e2e-{test_file.stem}.log"
+    log_fh = log_path.open("w")
+    server: asyncio.subprocess.Process | None = None
+    start_time = time.monotonic()
+
+    try:
+        # -- Start server subprocess --
+        server = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            _E2E_SERVER_SCRIPT,
+            str(port),
+            stdout=log_fh,
+            stderr=asyncio.subprocess.STDOUT,
+            env=clean_env,
+            start_new_session=True,
+        )
+
+        # -- Health check: poll until server accepts connections --
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if server.returncode is not None:
+                raise RuntimeError(
+                    f"Server for {test_file.name} died "
+                    f"(exit {server.returncode}); see {log_path}"
+                )
+            try:
+                _reader, writer = await asyncio.open_connection("localhost", port)
+                writer.close()
+                await writer.wait_closed()
+                break
+            except OSError:
+                await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(
+                f"Server for {test_file.name} did not start within 15 s; see {log_path}"
+            )
+
+        # -- Build pytest command --
+        junit_path = result_dir / f"{test_file.stem}.xml"
+
+        # Filter user_args: strip any existing --junitxml argument
+        filtered_user_args: list[str] = []
+        skip_next = False
+        for arg in user_args:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--junitxml":
+                skip_next = True
+                continue
+            if arg.startswith("--junitxml="):
+                continue
+            filtered_user_args.append(arg)
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(test_file),
+            "-m",
+            "e2e",
+            "--tb=short",
+            f"--junitxml={junit_path}",
+            *filtered_user_args,
+        ]
+
+        pytest_env = {**clean_env, "E2E_BASE_URL": f"http://localhost:{port}"}
+
+        # -- Run pytest --
+        pytest_proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=log_fh,
+            stderr=asyncio.subprocess.STDOUT,
+            env=pytest_env,
+        )
+        await pytest_proc.wait()
+
+        duration = time.monotonic() - start_time
+        return (test_file, pytest_proc.returncode or 0, duration)
+
+    finally:
+        # -- Process group cleanup --
+        if server is not None and server.returncode is None:
+            try:
+                os.killpg(os.getpgid(server.pid), signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(server.wait(), timeout=5)
+                except TimeoutError:
+                    os.killpg(os.getpgid(server.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        log_fh.close()
+
+
 def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 
@@ -786,7 +907,6 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     or fails with ``sys.exit(1)`` on timeout/crash.
     """
     import socket
-    import time
 
     clean_env = {
         k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
@@ -884,8 +1004,6 @@ def _start_pyspy(pid: int) -> subprocess.Popen[bytes]:
 
 def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
     """Stop py-spy recording and report output location."""
-    import signal
-
     proc.send_signal(signal.SIGINT)
     try:
         proc.wait(timeout=10)

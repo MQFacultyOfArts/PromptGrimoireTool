@@ -202,7 +202,11 @@ async def open_quick_create(state: PageState) -> None:
                     )
                     return
                 except Exception as exc:
-                    if "uq_tag_workspace_name" in str(exc):
+                    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+
+                    if isinstance(
+                        exc, IntegrityError
+                    ) and "uq_tag_workspace_name" in str(exc):
                         ui.notify(
                             f"A tag named '{tag_name.strip()}' already exists",
                             type="warning",
@@ -253,8 +257,8 @@ def _render_tag_row(
 ) -> None:
     """Render a single tag row with inline editing controls.
 
-    Inputs are collected into ``row_collector`` for batch save when the
-    dialog's "Done" button is clicked. No per-row save button.
+    Inputs are collected into ``row_collector`` for save-on-blur. When any
+    field loses focus, changed values are saved immediately.
 
     Parameters
     ----------
@@ -463,7 +467,12 @@ def _open_confirm_delete_group(
             async def _do_delete() -> None:
                 from promptgrimoire.db.tags import delete_tag_group  # noqa: PLC0415
 
-                await delete_tag_group(group_id)
+                try:
+                    await delete_tag_group(group_id)
+                except Exception as exc:
+                    ui.notify(f"Failed to delete group: {exc}", type="negative")
+                    dlg.close()
+                    return
                 dlg.close()
                 await on_confirmed(group_name)
 
@@ -730,7 +739,9 @@ async def _save_single_tag(
         ui.notify(str(exc), type="warning")
         return False
     except Exception as exc:
-        if "uq_tag_workspace_name" in str(exc):
+        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+
+        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
             ui.notify(f"A tag named '{name}' already exists", type="warning")
         else:
             ui.notify(f"Failed to save: {exc}", type="negative")
@@ -1006,7 +1017,9 @@ def _build_management_callbacks(
             ui.notify("Tag creation not allowed", type="negative")
             return
         except Exception as exc:
-            if "uq_tag_workspace_name" in str(exc):
+            from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+
+            if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
                 ui.notify(
                     f"A tag named '{name}' already exists",
                     type="warning",
@@ -1018,7 +1031,11 @@ def _build_management_callbacks(
         await _refresh_tag_state(state)
 
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
-        await update_tag(tag_id, locked=locked)
+        try:
+            await update_tag(tag_id, locked=locked)
+        except Exception as exc:
+            ui.notify(f"Failed to update lock: {exc}", type="negative")
+            return
         await render_tag_list()
 
     async def _tag_reorder(e: Any, group_id: UUID | None) -> None:

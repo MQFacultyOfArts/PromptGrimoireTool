@@ -6,6 +6,7 @@ setting up JS-based text selection detection, and keyboard shortcuts.
 
 from __future__ import annotations
 
+from html import escape
 from typing import Any
 
 from nicegui import ui
@@ -147,7 +148,7 @@ def _populate_highlight_menu(state: PageState, on_tag_click: Any) -> None:
                             if ti.description:
                                 with btn, ui.element("q-tooltip"):
                                     ui.html(
-                                        f"<b>{ti.name}</b><br>{ti.description}",
+                                        f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
                                         sanitize=False,
                                     )
                             else:

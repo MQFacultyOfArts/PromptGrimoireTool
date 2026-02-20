@@ -147,7 +147,7 @@ def _seed_tags_for_workspace(workspace_id: str) -> None:
                         "gid": str(group_id),
                         "name": tag_name,
                         "color": tag_color,
-                        "locked": True,
+                        "locked": False,
                         "order_index": tag_idx,
                     },
                 )

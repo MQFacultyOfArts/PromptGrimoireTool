@@ -170,6 +170,43 @@ def clone_database(source_url: str, target_name: str) -> str:
     return target_url
 
 
+def drop_database(url: str) -> None:
+    """Drop a database, terminating any active connections first.
+
+    Uses ``DROP DATABASE IF EXISTS`` so the call is idempotent — dropping a
+    database that does not exist is not an error.
+
+    Args:
+        url: Full PostgreSQL connection string whose database will be dropped.
+
+    Raises:
+        ValueError: If the database name in *url* contains invalid characters.
+    """
+    # Extract database name from URL
+    base = url.split("?", maxsplit=1)[0]
+    db_name = base.rsplit("/", 1)[1]
+
+    # Validate db name
+    if not re.match(r"^[a-zA-Z0-9_]+$", db_name):
+        msg = f"Invalid database name: {db_name!r}"
+        raise ValueError(msg)
+
+    # Terminate active connections before drop
+    terminate_connections(url, db_name)
+
+    # Build maintenance URL
+    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
+    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
+    if "?" in url:
+        maintenance_url += "?" + url.split("?", 1)[1]
+
+    with psycopg.connect(maintenance_url, autocommit=True) as conn:
+        stmt = psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
+            psycopg.sql.Identifier(db_name)
+        )
+        conn.execute(stmt)
+
+
 def is_db_configured() -> bool:
     """Check if database URL is configured in Settings.
 

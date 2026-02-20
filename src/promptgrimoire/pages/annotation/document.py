@@ -93,6 +93,9 @@ def _setup_selection_handlers(state: PageState) -> None:
         "  var lastKeyTime = 0;"
         "  document.addEventListener('keydown', function(e) {"
         "    if (e.repeat) return;"
+        "    var tag = e.target.tagName;"
+        "    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
+        "        || e.target.isContentEditable) return;"
         "    var now = Date.now();"
         "    if (now - lastKeyTime < 300) return;"
         "    lastKeyTime = now;"
@@ -104,6 +107,69 @@ def _setup_selection_handlers(state: PageState) -> None:
     )
     # fmt: on
     ui.run_javascript(js_code)
+
+
+def _populate_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+    """Populate the highlight menu card with abbreviated tag buttons.
+
+    Clears existing content and rebuilds from ``state.tag_info_list``.
+    Called on initial build and after tag list changes.
+    """
+    menu = state.highlight_menu
+    if menu is None:
+        return
+    menu.clear()
+    with menu:
+        if state.tag_info_list:
+            # Partition tags by group, preserving order
+            groups: dict[str | None, list[Any]] = {}
+            for ti in state.tag_info_list:
+                groups.setdefault(ti.group_name, []).append(ti)
+
+            with ui.column().classes("gap-1"):
+                for members in groups.values():
+                    with ui.row().classes("gap-1 items-center"):
+                        for ti in members:
+                            abbrev = ti.name[:6]
+
+                            async def _apply(tag_key: str = ti.raw_key) -> None:
+                                await on_tag_click(tag_key)
+
+                            btn = ui.button(abbrev, on_click=_apply).classes(
+                                "text-xs compact-btn"
+                            )
+                            btn.style(
+                                f"background-color: {ti.colour} !important; "
+                                "color: white !important; "
+                                "padding: 1px 4px !important; "
+                                "min-height: 20px !important;"
+                            )
+                            if ti.description:
+                                with btn, ui.element("q-tooltip"):
+                                    ui.html(
+                                        f"<b>{ti.name}</b><br>{ti.description}",
+                                        sanitize=False,
+                                    )
+                            else:
+                                btn.tooltip(ti.name)
+        else:
+            ui.label("No tags available").classes("text-sm text-gray-600")
+
+
+def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+    """Build the floating highlight menu card and populate it."""
+    highlight_menu = (
+        ui.card()
+        .classes("fixed z-50 shadow-lg p-2")
+        .props('data-testid="highlight-menu" id="highlight-menu"')
+    )
+    highlight_menu.set_visibility(False)
+    state.highlight_menu = highlight_menu
+
+    # Store callback for rebuilds triggered by _refresh_tag_state
+    state._highlight_menu_tag_click = on_tag_click  # type: ignore[attr-defined]  -- dynamic attr for menu rebuild
+
+    _populate_highlight_menu(state, on_tag_click)
 
 
 async def _render_document_with_highlights(
@@ -144,17 +210,8 @@ async def _render_document_with_highlights(
         on_manage_click=on_manage_click,
     )
 
-    # Highlight creation menu (hidden popup for quick highlight without tag selection)
-    with (
-        ui.card()
-        .classes("fixed z-50 shadow-lg p-2")
-        .style("top: 50%; left: 50%; transform: translate(-50%, -50%);")
-        .props('data-testid="highlight-menu"') as highlight_menu
-    ):
-        highlight_menu.set_visibility(False)
-        state.highlight_menu = highlight_menu
-
-        ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
+    # Highlight creation menu (popup with abbreviated tag buttons)
+    _build_highlight_menu(state, handle_tag_click)
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading

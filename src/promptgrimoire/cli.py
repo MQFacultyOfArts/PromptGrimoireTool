@@ -904,6 +904,278 @@ async def _run_e2e_worker(
         log_fh.close()
 
 
+def _print_parallel_summary(
+    results: list[tuple[Path, int, float]],
+    wall_clock: float,
+) -> None:
+    """Print a Rich table summarising parallel E2E results."""
+    from rich.table import Table
+
+    table = Table(title="Parallel E2E Results")
+    table.add_column("File", style="cyan")
+    table.add_column("Result")
+    table.add_column("Duration", justify="right")
+
+    passed = 0
+    failed = 0
+    cancelled = 0
+
+    for test_file, exit_code, duration in results:
+        if exit_code == -1:
+            label = "[yellow]CANCEL[/]"
+            cancelled += 1
+        elif exit_code in (0, 5):
+            label = "[green]PASS[/]"
+            passed += 1
+        else:
+            label = "[red]FAIL[/]"
+            failed += 1
+        table.add_row(test_file.name, label, f"{duration:.1f}s")
+
+    console.print(table)
+
+    total = len(results)
+    summary_parts = [f"{total} files: {passed} passed"]
+    if failed:
+        summary_parts.append(f"{failed} failed")
+    if cancelled:
+        summary_parts.append(f"{cancelled} cancelled")
+    summary_parts.append(f"Total: {wall_clock:.1f}s")
+    console.print(", ".join(summary_parts))
+
+
+def _merge_junit_xml(result_dir: Path) -> Path:
+    """Merge per-worker JUnit XML files into a single ``combined.xml``.
+
+    Returns the path to the combined file.
+    """
+    from junitparser import JUnitXml
+
+    merged = JUnitXml()
+    for xml_path in sorted(result_dir.glob("*.xml")):
+        if xml_path.name != "combined.xml":
+            merged += JUnitXml.fromfile(str(xml_path))
+    combined_path = result_dir / "combined.xml"
+    merged.write(str(combined_path), pretty=True)
+    return combined_path
+
+
+async def _run_all_workers(
+    files: list[Path],
+    ports: list[int],
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    user_args: list[str],
+) -> list[tuple[Path, int, float]]:
+    """Run all E2E workers concurrently via ``asyncio.gather``."""
+    coros = [
+        _run_e2e_worker(f, ports[i], worker_dbs[i][0], result_dir, user_args)
+        for i, f in enumerate(files)
+    ]
+    raw_results = await asyncio.gather(*coros, return_exceptions=True)
+
+    results: list[tuple[Path, int, float]] = []
+    for i, item in enumerate(raw_results):
+        if isinstance(item, BaseException):
+            console.print(f"[red]Worker {files[i].name} raised: {item}[/]")
+            results.append((files[i], 1, 0.0))
+        else:
+            results.append(item)
+    return results
+
+
+def _resolve_failed_task_file(
+    tasks: list[asyncio.Task[tuple[Path, int, float]]],
+    exc: Exception,
+    files: list[Path],
+) -> Path:
+    """Find which test file a failed task corresponds to."""
+    for t in tasks:
+        if not t.done() or t.cancelled():
+            continue
+        try:
+            t.result()
+        except Exception as t_exc:
+            if t_exc is exc:
+                stem = t.get_name().removeprefix("e2e-")
+                return next((f for f in files if f.stem == stem), files[0])
+    return files[0]
+
+
+async def _run_fail_fast_workers(
+    files: list[Path],
+    ports: list[int],
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    user_args: list[str],
+) -> list[tuple[Path, int, float]]:
+    """Run E2E workers with fail-fast: cancel remaining on first failure."""
+    import contextlib
+
+    tasks: list[asyncio.Task[tuple[Path, int, float]]] = [
+        asyncio.create_task(
+            _run_e2e_worker(f, ports[i], worker_dbs[i][0], result_dir, user_args),
+            name=f"e2e-{f.stem}",
+        )
+        for i, f in enumerate(files)
+    ]
+
+    results: list[tuple[Path, int, float]] = []
+    completed_files: set[Path] = set()
+
+    for future in asyncio.as_completed(tasks):
+        try:
+            result = await future
+        except asyncio.CancelledError:
+            continue
+        except Exception as exc:
+            fpath = _resolve_failed_task_file(tasks, exc, files)
+            console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
+            result = (fpath, 1, 0.0)
+
+        results.append(result)
+        completed_files.add(result[0])
+
+        # Check for failure (exit code not 0 and not 5)
+        if result[1] not in (0, 5):
+            console.print(
+                f"[red]Fail-fast: {result[0].name} failed, "
+                f"cancelling remaining workers[/]"
+            )
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            break
+
+    # Await cancelled tasks so their finally blocks run
+    for t in tasks:
+        if t.cancelled() or not t.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+
+    # Add cancelled entries for files that never completed
+    for f in files:
+        if f not in completed_files:
+            results.append((f, -1, 0.0))
+
+    return results
+
+
+def _cleanup_parallel_results(
+    all_passed: bool,
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    results: list[tuple[Path, int, float]],
+) -> None:
+    """Clean up or preserve worker databases and result directory."""
+    import contextlib
+    import shutil
+
+    from promptgrimoire.db.bootstrap import drop_database
+
+    if all_passed:
+        for db_url, _db_name in worker_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(db_url)
+        shutil.rmtree(result_dir, ignore_errors=True)
+        console.print("[green]All passed — cleaned up worker databases and results[/]")
+    else:
+        console.print("[yellow]Some tests failed — preserving artifacts:[/]")
+        console.print(f"  Results: {result_dir}")
+        for db_url, db_name in worker_dbs:
+            console.print(f"  DB: {db_name} ({db_url})")
+        for test_file, exit_code, _duration in results:
+            if exit_code not in (0, 5, -1):
+                log_path = result_dir / f"test-e2e-{test_file.stem}.log"
+                console.print(f"  Log: {log_path}")
+
+
+async def _run_parallel_e2e(
+    user_args: list[str],
+    fail_fast: bool = False,
+) -> int:
+    """Orchestrate parallel E2E test execution with per-file isolation.
+
+    Each test file gets its own cloned database and server instance.
+    Returns 0 if all tests pass, 1 if any failed.
+    """
+    import contextlib
+    import tempfile
+
+    from promptgrimoire.config import get_settings
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    # -- Discover test files --
+    files = sorted(Path("tests/e2e").glob("test_*.py"))
+    if not files:
+        console.print("[yellow]No E2E test files found[/]")
+        return 0
+    console.print(f"[blue]Found {len(files)} test files[/]")
+
+    # -- Get test database URL --
+    test_db_url = get_settings().dev.test_database_url
+    if not test_db_url:
+        console.print("[red]DEV__TEST_DATABASE_URL not set[/]")
+        return 1
+
+    # -- Prepare template database --
+    _pre_test_db_cleanup()
+
+    # -- Extract source db name --
+    source_db_name = test_db_url.split("?")[0].rsplit("/", 1)[1]
+
+    # -- Create worker databases --
+    worker_dbs: list[tuple[str, str]] = []
+    try:
+        for i in range(len(files)):
+            target_name = f"{source_db_name}_w{i}"
+            db_url = clone_database(test_db_url, target_name)
+            worker_dbs.append((db_url, target_name))
+    except Exception:
+        for url, _ in worker_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(url)
+        raise
+
+    # -- Allocate ports and result directory --
+    ports = _allocate_ports(len(files))
+    result_dir = Path(tempfile.mkdtemp(prefix="e2e_parallel_"))
+
+    wall_start = time.monotonic()
+    results: list[tuple[Path, int, float]] = []
+
+    try:
+        if fail_fast:
+            results = await _run_fail_fast_workers(
+                files, ports, worker_dbs, result_dir, user_args
+            )
+        else:
+            results = await _run_all_workers(
+                files, ports, worker_dbs, result_dir, user_args
+            )
+
+        # -- Merge JUnit XML --
+        _merge_junit_xml(result_dir)
+
+        # -- Compute aggregate exit code --
+        all_passed = all(code in (0, 5, -1) for _, code, _ in results)
+        # Cancelled-only doesn't count as "all passed" in fail-fast
+        any_real_pass = any(code in (0, 5) for _, code, _ in results)
+        aggregate = 0 if (all_passed and any_real_pass) else 1
+
+        wall_clock = time.monotonic() - wall_start
+
+        # -- Summary --
+        _print_parallel_summary(results, wall_clock)
+
+        return aggregate
+
+    finally:
+        wall_clock = time.monotonic() - wall_start
+        all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
+        _cleanup_parallel_results(all_passed, worker_dbs, result_dir, results)
+
+
 def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 

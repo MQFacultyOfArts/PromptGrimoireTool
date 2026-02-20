@@ -59,6 +59,16 @@ async def _refresh_tag_state(
     state.tag_info_list = await workspace_tags(state.workspace_id)
     _update_highlight_css(state)
 
+    # Rebuild the highlight menu if it exists
+    if state.highlight_menu is not None:
+        from promptgrimoire.pages.annotation.document import (  # noqa: PLC0415
+            _populate_highlight_menu,
+        )
+
+        on_tag_click = getattr(state, "_highlight_menu_tag_click", None)
+        if on_tag_click is not None:
+            _populate_highlight_menu(state, on_tag_click)
+
     if reload_crdt and state.crdt_doc is not None:
         from promptgrimoire.db.workspaces import get_workspace  # noqa: PLC0415
 
@@ -152,7 +162,7 @@ async def open_quick_create(state: PageState) -> None:
         ui.label("Quick Create Tag").classes(
             "text-lg font-bold mb-2",
         )
-        name_input = ui.input("Tag name").classes("w-full")
+        name_input = ui.input("Tag name").props("maxlength=100").classes("w-full")
 
         _build_colour_picker(selected_color)
 
@@ -190,6 +200,15 @@ async def open_quick_create(state: PageState) -> None:
                         "Tag creation not allowed",
                         type="negative",
                     )
+                    return
+                except Exception as exc:
+                    if "uq_tag_workspace_name" in str(exc):
+                        ui.notify(
+                            f"A tag named '{tag_name.strip()}' already exists",
+                            type="warning",
+                        )
+                    else:
+                        ui.notify(f"Failed to create tag: {exc}", type="negative")
                     return
 
                 await _refresh_tag_state(state)
@@ -230,6 +249,7 @@ def _render_tag_row(
     on_delete: Any,
     on_lock_toggle: Any | None = None,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
+    on_field_save: Any | None = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
 
@@ -263,13 +283,9 @@ def _render_tag_row(
             f"background-color: {tag.color}",
         )
 
-        # Lock icon for locked tags (non-instructor view)
-        if tag.locked and not is_instructor:
-            ui.icon("lock").classes("text-gray-400").tooltip("Locked")
-
         # Editable fields
-        name_input = ui.input(value=tag.name).classes("w-32")
-        color_input = ui.color_input(value=tag.color, preview=True).classes("w-24")
+        name_input = ui.input(value=tag.name).props("maxlength=100").classes("w-40")
+        color_input = ui.color_input(value=tag.color, preview=True).classes("w-28")
         desc_input = ui.input(
             value=tag.description or "",
             placeholder="Description",
@@ -279,22 +295,40 @@ def _render_tag_row(
             value=str(tag.group_id) if tag.group_id else None,
             clearable=True,
             label="Group",
-        ).classes("w-32")
+        ).classes("w-40")
+
+        # Auto-save on blur for each editable field
+        if can_edit and on_field_save is not None:
+
+            async def _blur_save(_e: Any, tid: UUID = tag.id) -> None:
+                await on_field_save(tid)
+
+            for inp in (name_input, desc_input):
+                inp.on("blur", _blur_save)
+            color_input.on("change", _blur_save)
+            group_sel.on("update:model-value", _blur_save)
 
         if not can_edit:
             for inp in (name_input, color_input, desc_input):
                 inp.props("readonly")
             group_sel.props("disable")
 
-        # Lock toggle (AC7.8) -- instructors only
+        # Lock toggle + delete button (side by side)
         if is_instructor and on_lock_toggle is not None:
-            ui.switch(value=tag.locked).tooltip(
-                "Lock tag (prevents student modification)"
-            ).on_value_change(
-                lambda e, tid=tag.id: on_lock_toggle(tid, e.value),
-            )
+            lock_icon = "lock" if tag.locked else "lock_open"
+            lock_tip = "Unlock tag" if tag.locked else "Lock tag"
 
-        # Delete button
+            async def _toggle_lock(
+                _e: Any, tid: UUID = tag.id, cur: bool = tag.locked
+            ) -> None:
+                await on_lock_toggle(tid, not cur)
+
+            ui.button(icon=lock_icon, on_click=_toggle_lock).props(
+                "flat round dense"
+            ).tooltip(lock_tip)
+        elif tag.locked:
+            ui.icon("lock").classes("text-gray-400").tooltip("Locked")
+
         del_btn = (
             ui.button(
                 icon="delete",
@@ -329,15 +363,20 @@ def _render_group_header(
     *,
     on_delete_group: Any,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
+    on_group_field_save: Any | None = None,
 ) -> None:
     """Render a group header with name input, colour, and delete button.
 
-    Input refs are stored in ``row_collector`` for batch save.
+    Input refs are stored in ``row_collector`` for save-on-blur.
     """
     with ui.row().classes("items-center w-full gap-2 mt-4 mb-1"):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
         ui.icon("folder").classes("text-blue-600")
-        group_name_input = ui.input(value=group.name).classes("font-bold text-blue-800")
+        group_name_input = (
+            ui.input(value=group.name)
+            .props("maxlength=100")
+            .classes("font-bold text-blue-800")
+        )
         group_color_input = ui.color_input(
             value=group.color or "",
             label="Bg",
@@ -348,7 +387,16 @@ def _render_group_header(
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),
         ).props("flat round dense color=negative").tooltip("Delete group")
 
-    # Collect input refs for batch save
+        # Auto-save on blur for group fields
+        if on_group_field_save is not None:
+
+            async def _blur_save(_e: Any, gid: UUID = group.id) -> None:
+                await on_group_field_save(gid)
+
+            group_name_input.on("blur", _blur_save)
+            group_color_input.on("change", _blur_save)
+
+    # Collect input refs for save-on-blur
     if row_collector is not None:
         row_collector[group.id] = {
             "name": group_name_input,
@@ -366,13 +414,20 @@ def _open_confirm_delete_tag(
     tag_name: str,
     *,
     on_confirmed: Any,
+    bypass_lock: bool = False,
+    highlight_count: int = 0,
 ) -> None:
     """Show a confirmation dialog before deleting a tag."""
     with ui.dialog() as dlg, ui.card():
         ui.label(f"Delete tag '{tag_name}'?").classes("font-bold")
-        ui.label("This will remove all highlights using this tag.").classes(
-            "text-sm text-gray-600"
-        )
+        if highlight_count:
+            msg = (
+                f"This will remove {highlight_count} "
+                f"highlight{'s' if highlight_count != 1 else ''} using this tag."
+            )
+        else:
+            msg = "This tag has no highlights."
+        ui.label(msg).classes("text-sm text-gray-600")
         with ui.row().classes("w-full justify-end gap-2 mt-2"):
             ui.button("Cancel", on_click=dlg.close).props("flat")
 
@@ -380,7 +435,7 @@ def _open_confirm_delete_tag(
                 from promptgrimoire.db.tags import delete_tag  # noqa: PLC0415
 
                 try:
-                    await delete_tag(tag_id)
+                    await delete_tag(tag_id, bypass_lock=bypass_lock)
                 except ValueError as exc:
                     ui.notify(str(exc), type="warning")
                     dlg.close()
@@ -456,6 +511,7 @@ def _render_group_tags(
     on_lock_toggle: Any | None,
     on_tag_reorder: Any,
     tag_row_collector: dict[UUID, dict[str, Any]] | None = None,
+    on_field_save: Any | None = None,
 ) -> None:
     """Render tags within a group, wrapped in a Sortable for drag reorder."""
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
@@ -475,6 +531,7 @@ def _render_group_tags(
                 on_delete=on_delete_tag,
                 on_lock_toggle=on_lock_toggle,
                 row_collector=tag_row_collector,
+                on_field_save=on_field_save,
             )
 
 
@@ -495,12 +552,14 @@ def _render_tag_list_content(
     group_id_list: list[UUID],
     tag_row_collector: dict[UUID, dict[str, Any]],
     group_row_collector: dict[UUID, dict[str, Any]],
+    on_field_save: Any | None = None,
+    on_group_field_save: Any | None = None,
 ) -> None:
     """Render all tag groups and ungrouped tags inside the content area.
 
     Wraps groups in a top-level Sortable for group reordering and each
     group's tags in a nested Sortable for tag reordering. Input refs are
-    stored in the collector dicts for batch save on "Done".
+    stored in the collector dicts for save-on-blur.
     """
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
 
@@ -521,6 +580,7 @@ def _render_tag_list_content(
                     group,
                     on_delete_group=on_delete_group,
                     row_collector=group_row_collector,
+                    on_group_field_save=on_group_field_save,
                 )
                 _render_group_tags(
                     group_tags=group_tags,
@@ -533,6 +593,7 @@ def _render_tag_list_content(
                         e, gid
                     ),
                     tag_row_collector=tag_row_collector,
+                    on_field_save=on_field_save,
                 )
                 ui.button(
                     "+ Add tag",
@@ -555,6 +616,7 @@ def _render_tag_list_content(
             on_lock_toggle=on_lock_toggle,
             on_tag_reorder=lambda e: on_tag_reorder_for_group(e, None),
             tag_row_collector=tag_row_collector,
+            on_field_save=on_field_save,
         )
         ui.button(
             "+ Add tag",
@@ -629,45 +691,82 @@ async def _render_import_section(
         ui.button("Import", on_click=_import_from_activity).props("flat dense")
 
 
-async def _batch_save_changes(
+async def _save_single_tag(
+    tag_id: UUID,
     tag_row_inputs: dict[UUID, dict[str, Any]],
-    group_row_inputs: dict[UUID, dict[str, Any]],
     update_tag: Any,
+    *,
+    bypass_lock: bool = False,
+) -> bool:
+    """Auto-save a single tag's current input values on blur.
+
+    Returns True if save succeeded (or no changes), False on error.
+    """
+    inputs = tag_row_inputs.get(tag_id)
+    if not inputs:
+        return True
+    name = inputs["name"].value
+    color = inputs["color"].value
+    desc = inputs["desc"].value
+    group_val = inputs["group"].value
+    if (
+        name == inputs["orig_name"]
+        and color == inputs["orig_color"]
+        and desc == inputs["orig_desc"]
+        and group_val == inputs["orig_group"]
+    ):
+        return True  # No changes
+    gid = UUID(group_val) if group_val else None
+    try:
+        await update_tag(
+            tag_id,
+            name=name,
+            color=color,
+            description=desc or None,
+            group_id=gid,
+            bypass_lock=bypass_lock,
+        )
+    except ValueError as exc:
+        ui.notify(str(exc), type="warning")
+        return False
+    except Exception as exc:
+        if "uq_tag_workspace_name" in str(exc):
+            ui.notify(f"A tag named '{name}' already exists", type="warning")
+        else:
+            ui.notify(f"Failed to save: {exc}", type="negative")
+        return False
+    # Update originals so subsequent blur doesn't re-save
+    inputs["orig_name"] = name
+    inputs["orig_color"] = color
+    inputs["orig_desc"] = desc
+    inputs["orig_group"] = group_val
+    return True
+
+
+async def _save_single_group(
+    group_id: UUID,
+    group_row_inputs: dict[UUID, dict[str, Any]],
     update_tag_group: Any,
 ) -> bool:
-    """Batch-save all modified tags and groups.
+    """Auto-save a single group's current input values on blur.
 
-    Compares current input values to originals and persists changes.
-    Returns True on success, False if a validation error stopped saving.
+    Returns True if save succeeded (or no changes), False on error.
     """
-    for tag_id, inputs in tag_row_inputs.items():
-        name = inputs["name"].value
-        color = inputs["color"].value
-        desc = inputs["desc"].value
-        group_val = inputs["group"].value
-        if (
-            name != inputs["orig_name"]
-            or color != inputs["orig_color"]
-            or desc != inputs["orig_desc"]
-            or group_val != inputs["orig_group"]
-        ):
-            gid = UUID(group_val) if group_val else None
-            try:
-                await update_tag(
-                    tag_id,
-                    name=name,
-                    color=color,
-                    description=desc or None,
-                    group_id=gid,
-                )
-            except ValueError as exc:
-                ui.notify(str(exc), type="warning")
-                return False
-    for gid, inputs in group_row_inputs.items():
-        name = inputs["name"].value
-        color = inputs["color"].value
-        if name != inputs["orig_name"] or color != inputs["orig_color"]:
-            await update_tag_group(gid, name=name, color=color or None)
+    inputs = group_row_inputs.get(group_id)
+    if not inputs:
+        return True
+    name = inputs["name"].value
+    color = inputs["color"].value
+    if name == inputs["orig_name"] and color == inputs["orig_color"]:
+        return True  # No changes
+    try:
+        await update_tag_group(group_id, name=name, color=color or None)
+    except Exception as exc:
+        ui.notify(f"Failed to save group: {exc}", type="negative")
+        return False
+    # Update originals so subsequent blur doesn't re-save
+    inputs["orig_name"] = name
+    inputs["orig_color"] = color
     return True
 
 
@@ -701,11 +800,16 @@ async def open_tag_management(
         update_tag_group,
     )
 
-    # Privileged users (admins, instructors) can always manage locked tags.
-    # Template-workspace check is additive — not a gate on admin powers.
-    is_instructor = is_privileged_user(auth_user)
+    # Instructor = template workspace owner OR org-level admin.
+    # Students never access templates (ACL gate in workspace.py), so
+    # is_template reliably identifies instructor context.  Org admins
+    # get instructor powers everywhere.
+    is_instructor = ctx.is_template or is_privileged_user(auth_user)
 
-    with ui.dialog() as dialog, ui.card().classes("w-[600px]"):
+    with (
+        ui.dialog() as dialog,
+        ui.card().style("width: 800px !important; max-width: 90vw !important;"),
+    ):
         ui.label("Manage Tags").classes("text-lg font-bold mb-2")
 
         content_area = ui.column().classes("w-full gap-0 max-h-[60vh] overflow-y-auto")
@@ -713,7 +817,7 @@ async def open_tag_management(
         # Mutable state for tracking element order (populated by render)
         tag_id_lists: dict[UUID | None, list[UUID]] = {}
         group_id_list: list[UUID] = []
-        # Batch save collectors (populated by render helpers)
+        # Row input collectors for save-on-blur (populated by render helpers)
         tag_row_inputs: dict[UUID, dict[str, Any]] = {}
         group_row_inputs: dict[UUID, dict[str, Any]] = {}
 
@@ -743,7 +847,22 @@ async def open_tag_management(
                 reorder_tag_groups=reorder_tag_groups,
                 tag_id_lists=tag_id_lists,
                 group_id_list=group_id_list,
+                is_instructor=is_instructor,
             )
+
+            async def _save_tag_field(tag_id: UUID) -> None:
+                ok = await _save_single_tag(
+                    tag_id, tag_row_inputs, update_tag, bypass_lock=is_instructor
+                )
+                if ok:
+                    await _refresh_tag_state(state)
+
+            async def _save_group_field(group_id: UUID) -> None:
+                ok = await _save_single_group(
+                    group_id, group_row_inputs, update_tag_group
+                )
+                if ok:
+                    await _refresh_tag_state(state)
 
             with content_area:
                 _render_tag_list_content(
@@ -762,6 +881,8 @@ async def open_tag_management(
                     group_id_list=group_id_list,
                     tag_row_collector=tag_row_inputs,
                     group_row_collector=group_row_inputs,
+                    on_field_save=_save_tag_field,
+                    on_group_field_save=_save_group_field,
                 )
 
                 # Import section (AC7.7) -- instructors on template only
@@ -774,16 +895,8 @@ async def open_tag_management(
 
         await _render_tag_list()
 
-        # "Done" button — batch-saves all modified tags and groups, then closes
+        # "Done" button — refreshes toolbar state and closes
         async def _save_all_and_close() -> None:
-            ok = await _batch_save_changes(
-                tag_row_inputs,
-                group_row_inputs,
-                update_tag,
-                update_tag_group,
-            )
-            if not ok:
-                return
             await _refresh_tag_state(state)
             dialog.close()
 
@@ -853,6 +966,7 @@ def _build_management_callbacks(
     reorder_tag_groups: Any,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
+    is_instructor: bool,
 ) -> dict[str, Any]:
     """Build all management dialog callbacks as a dict."""
     group_cbs = _build_group_callbacks(
@@ -869,15 +983,36 @@ def _build_management_callbacks(
         ui.notify(f"Tag '{tag_name}' deleted", type="positive")
 
     async def _add_tag_in_group(group_id: UUID | None) -> None:
+        # Find a unique default name from DB state
+        existing_names = (
+            {t.name for t in state.tag_info_list} if state.tag_info_list else set()
+        )
+        name = "New tag"
+        if name in existing_names:
+            for i in range(2, 100):
+                candidate = f"New tag {i}"
+                if candidate not in existing_names:
+                    name = candidate
+                    break
+
         try:
             await create_tag(
                 workspace_id=state.workspace_id,
-                name="New tag",
+                name=name,
                 color=_PRESET_PALETTE[0],
                 group_id=group_id,
             )
         except PermissionError:
             ui.notify("Tag creation not allowed", type="negative")
+            return
+        except Exception as exc:
+            if "uq_tag_workspace_name" in str(exc):
+                ui.notify(
+                    f"A tag named '{name}' already exists",
+                    type="warning",
+                )
+            else:
+                ui.notify(f"Failed to create tag: {exc}", type="negative")
             return
         await render_tag_list()
         await _refresh_tag_state(state)
@@ -895,11 +1030,22 @@ def _build_management_callbacks(
         await _refresh_tag_state(state)
         await render_tag_list()
 
+    def _count_highlights_for_tag(tag_id: UUID) -> int:
+        """Count CRDT highlights referencing a tag."""
+        if not state.crdt_doc:
+            return 0
+        tag_str = str(tag_id)
+        return sum(
+            1 for hl in state.crdt_doc.get_all_highlights() if hl.get("tag") == tag_str
+        )
+
     return {
         "delete_tag": lambda tid, tname: _open_confirm_delete_tag(
             tid,
             tname,
             on_confirmed=_on_tag_deleted,
+            bypass_lock=is_instructor,
+            highlight_count=_count_highlights_for_tag(tid),
         ),
         "add_tag": _add_tag_in_group,
         "lock_toggle": _lock_toggle,

@@ -9,9 +9,9 @@ Provides standardized fixtures for test isolation:
 - two_annotation_contexts: Two separate browser contexts viewing same workspace
 - two_authenticated_contexts: Two contexts with distinct user identities
 
-Workspace isolation: Each test creates its own workspace via the UI.
-No database user creation needed - mock auth handles authentication,
-and workspace UUIDs provide test-to-test isolation.
+Workspace isolation: Each test creates its own workspace via direct DB
+operations (_create_workspace_via_db) or the UI. Mock auth handles
+authentication, and workspace UUIDs provide test-to-test isolation.
 
 Traceability:
 - Epic: #92 (Annotation Workspace Platform)
@@ -309,9 +309,9 @@ def two_authenticated_contexts(
 ) -> Generator[tuple[Page, Page, str, str, str]]:
     """Two separate browser contexts with distinct authenticated users.
 
-    Unlike two_annotation_contexts which uses anonymous contexts,
-    this fixture creates contexts with different authenticated identities
-    to test user-specific features like attribution and presence.
+    Unlike two_annotation_contexts which uses random identities,
+    this fixture returns the email addresses so tests can verify
+    user-specific features like attribution and presence.
 
     Creates the workspace via direct DB operations (no UI clicks) to
     eliminate flakiness from multi-step UI workspace creation.

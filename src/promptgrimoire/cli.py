@@ -781,6 +781,23 @@ def _allocate_ports(n: int) -> list[int]:
             s.close()
 
 
+def _filter_junitxml_args(user_args: list[str]) -> list[str]:
+    """Strip ``--junitxml`` from *user_args* so per-worker paths take precedence."""
+    filtered: list[str] = []
+    skip_next = False
+    for arg in user_args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--junitxml":
+            skip_next = True
+            continue
+        if arg.startswith("--junitxml="):
+            continue
+        filtered.append(arg)
+    return filtered
+
+
 async def _run_e2e_worker(
     test_file: Path,
     port: int,
@@ -846,20 +863,6 @@ async def _run_e2e_worker(
         # -- Build pytest command --
         junit_path = result_dir / f"{test_file.stem}.xml"
 
-        # Filter user_args: strip any existing --junitxml argument
-        filtered_user_args: list[str] = []
-        skip_next = False
-        for arg in user_args:
-            if skip_next:
-                skip_next = False
-                continue
-            if arg == "--junitxml":
-                skip_next = True
-                continue
-            if arg.startswith("--junitxml="):
-                continue
-            filtered_user_args.append(arg)
-
         cmd = [
             sys.executable,
             "-m",
@@ -869,7 +872,7 @@ async def _run_e2e_worker(
             "e2e",
             "--tb=short",
             f"--junitxml={junit_path}",
-            *filtered_user_args,
+            *_filter_junitxml_args(user_args),
         ]
 
         pytest_env = {**clean_env, "E2E_BASE_URL": f"http://localhost:{port}"}
@@ -884,7 +887,8 @@ async def _run_e2e_worker(
         await pytest_proc.wait()
 
         duration = time.monotonic() - start_time
-        return (test_file, pytest_proc.returncode or 0, duration)
+        assert pytest_proc.returncode is not None  # guaranteed after wait()
+        return (test_file, pytest_proc.returncode, duration)
 
     finally:
         # -- Process group cleanup --

@@ -163,9 +163,13 @@ def _run_pytest(
         )
 
         for line in process.stdout or []:
-            print(line, end="")
             log_file.write(line)
             log_file.flush()
+            # Suppress individual PASSED lines — only show failures and summaries
+            stripped = line.rstrip()
+            if stripped.endswith("PASSED") or " PASSED " in stripped:
+                continue
+            print(line, end="")
 
         process.wait()
         exit_code = process.returncode

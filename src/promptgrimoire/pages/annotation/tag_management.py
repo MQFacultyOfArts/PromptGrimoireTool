@@ -7,7 +7,7 @@ functions) to avoid circular dependencies.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from uuid import UUID
 
 from nicegui import ui
@@ -15,6 +15,25 @@ from nicegui import ui
 if TYPE_CHECKING:
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
+
+
+class TagRowInputs(TypedDict):
+    """Input element references and original values for a single tag row.
+
+    Used by ``_save_single_tag`` and ``_render_tag_row`` to track live
+    NiceGUI input widgets alongside the last-saved values so save-on-blur
+    can detect changes and skip unnecessary DB writes.
+    """
+
+    name: ui.input
+    color: ui.color_input
+    desc: ui.input
+    group: ui.select
+    orig_name: str
+    orig_color: str
+    orig_desc: str
+    orig_group: str | None
+
 
 _PRESET_PALETTE: list[str] = [
     "#1f77b4",
@@ -252,7 +271,7 @@ def _render_tag_row(
     group_options: dict[str, str],
     on_delete: Any,
     on_lock_toggle: Any | None = None,
-    row_collector: dict[UUID, dict[str, Any]] | None = None,
+    row_collector: dict[UUID, TagRowInputs] | None = None,
     on_field_save: Any | None = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
@@ -519,7 +538,7 @@ def _render_group_tags(
     on_delete_tag: Any,
     on_lock_toggle: Any | None,
     on_tag_reorder: Any,
-    tag_row_collector: dict[UUID, dict[str, Any]] | None = None,
+    tag_row_collector: dict[UUID, TagRowInputs] | None = None,
     on_field_save: Any | None = None,
 ) -> None:
     """Render tags within a group, wrapped in a Sortable for drag reorder."""
@@ -559,7 +578,7 @@ def _render_tag_list_content(
     on_group_reorder: Any,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
-    tag_row_collector: dict[UUID, dict[str, Any]],
+    tag_row_collector: dict[UUID, TagRowInputs],
     group_row_collector: dict[UUID, dict[str, Any]],
     on_field_save: Any | None = None,
     on_group_field_save: Any | None = None,
@@ -702,7 +721,7 @@ async def _render_import_section(
 
 async def _save_single_tag(
     tag_id: UUID,
-    tag_row_inputs: dict[UUID, dict[str, Any]],
+    tag_row_inputs: dict[UUID, TagRowInputs],
     update_tag: Any,
     *,
     bypass_lock: bool = False,
@@ -829,7 +848,7 @@ async def open_tag_management(
         tag_id_lists: dict[UUID | None, list[UUID]] = {}
         group_id_list: list[UUID] = []
         # Row input collectors for save-on-blur (populated by render helpers)
-        tag_row_inputs: dict[UUID, dict[str, Any]] = {}
+        tag_row_inputs: dict[UUID, TagRowInputs] = {}
         group_row_inputs: dict[UUID, dict[str, Any]] = {}
 
         async def _render_tag_list() -> None:

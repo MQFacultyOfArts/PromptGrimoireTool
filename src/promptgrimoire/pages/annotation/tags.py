@@ -60,8 +60,10 @@ async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
     max_order = float("inf")
 
     def _sort_key(tag: object) -> tuple[float, int]:
-        grp = group_map.get(tag.group_id) if tag.group_id else None  # type: ignore[attr-defined]
-        return (grp.order_index if grp else max_order, tag.order_index)  # type: ignore[attr-defined, return-value]
+        # tag is always a Tag SQLModel instance; typed as object to satisfy
+        # sorted()'s homogeneous key-callable signature without a runtime import.
+        grp = group_map.get(tag.group_id) if tag.group_id else None  # type: ignore[attr-defined]  -- see above
+        return (grp.order_index if grp else max_order, tag.order_index)  # type: ignore[attr-defined, return-value]  -- see above
 
     sorted_tags = sorted(tags, key=_sort_key)
 

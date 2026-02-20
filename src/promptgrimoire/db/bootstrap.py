@@ -86,6 +86,27 @@ def ensure_database_exists(url: str | None) -> bool:
     return False
 
 
+def _build_maintenance_url(url: str) -> str:
+    """Build a maintenance database URL pointing to the ``postgres`` database.
+
+    Replaces the database name in *url* with ``postgres`` and strips any
+    SQLAlchemy async driver suffix (``+asyncpg``) so the URL is usable with
+    sync psycopg.  Query parameters (e.g. ``sslmode``) are preserved.
+
+    Args:
+        url: Full PostgreSQL connection string.
+
+    Returns:
+        A connection string pointing to the ``postgres`` maintenance database.
+    """
+    base = url.split("?", maxsplit=1)[0]
+    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
+    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
+    if "?" in url:
+        maintenance_url += "?" + url.split("?", 1)[1]
+    return maintenance_url
+
+
 def terminate_connections(url: str, db_name: str) -> None:
     """Terminate all active connections to a database.
 
@@ -100,14 +121,7 @@ def terminate_connections(url: str, db_name: str) -> None:
         url: PostgreSQL connection string (used to derive maintenance URL).
         db_name: Name of the database whose connections should be terminated.
     """
-    # Build maintenance URL: replace db name with "postgres"
-    base = url.split("?", maxsplit=1)[0]
-    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
-    # Strip SQLAlchemy async driver prefix
-    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
-    # Restore query params if present
-    if "?" in url:
-        maintenance_url += "?" + url.split("?", 1)[1]
+    maintenance_url = _build_maintenance_url(url)
 
     with psycopg.connect(maintenance_url, autocommit=True) as conn:
         conn.execute(
@@ -147,11 +161,7 @@ def clone_database(source_url: str, target_name: str) -> str:
     # Terminate active connections on the source (template) database
     terminate_connections(source_url, source_db_name)
 
-    # Build maintenance URL
-    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
-    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
-    if "?" in source_url:
-        maintenance_url += "?" + source_url.split("?", 1)[1]
+    maintenance_url = _build_maintenance_url(source_url)
 
     with psycopg.connect(maintenance_url, autocommit=True) as conn:
         stmt = psycopg.sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
@@ -194,11 +204,7 @@ def drop_database(url: str) -> None:
     # Terminate active connections before drop
     terminate_connections(url, db_name)
 
-    # Build maintenance URL
-    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
-    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
-    if "?" in url:
-        maintenance_url += "?" + url.split("?", 1)[1]
+    maintenance_url = _build_maintenance_url(url)
 
     with psycopg.connect(maintenance_url, autocommit=True) as conn:
         stmt = psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(

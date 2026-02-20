@@ -170,6 +170,20 @@ _PAGE_CSS = """
         font-size: 11px !important;
     }
 
+    /* Tag button truncation — Quasar wraps label text in nested spans */
+    .compact-btn .q-btn__content {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        max-width: 100% !important;
+        display: inline !important;
+    }
+    .compact-btn .q-btn__content > * {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
     /* Annotation sidebar - relative container for positioned cards */
     .annotations-sidebar {
         position: relative !important;
@@ -275,10 +289,15 @@ def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
     btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
     btn.style(
         f"background-color: {ti.colour} !important; "
-        "color: white !important; max-width: 160px; "
-        "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+        "color: white !important; max-width: 160px !important; "
+        "overflow: hidden !important; text-overflow: ellipsis !important; "
+        "white-space: nowrap !important;"
     )
-    btn.tooltip(ti.name)
+    if ti.description:
+        with btn, ui.element("q-tooltip"):
+            ui.html(f"<b>{ti.name}</b><br>{ti.description}", sanitize=False)
+    else:
+        btn.tooltip(ti.name)
 
 
 def _build_tag_toolbar(
@@ -351,10 +370,20 @@ def _build_tag_toolbar(
                             shortcut = str((idx + 1) % 10) if idx < 10 else ""
                             _render_tag_button(ti, shortcut, on_tag_click)
             else:
-                # Ungrouped tags: no bubble, just buttons
-                for idx, ti in members:
-                    shortcut = str((idx + 1) % 10) if idx < 10 else ""
-                    _render_tag_button(ti, shortcut, on_tag_click)
+                # Ungrouped tags: invisible group for baseline alignment
+                with (
+                    ui.column()
+                    .classes("gap-0 items-center")
+                    .style("border-radius: 8px; padding: 2px 6px 4px; margin: 0 2px;")
+                ):
+                    # Invisible label to match grouped tag height
+                    ui.label("").classes("text-[9px] leading-tight").style(
+                        "visibility: hidden;"
+                    )
+                    with ui.row().classes("gap-1"):
+                        for idx, ti in members:
+                            shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                            _render_tag_button(ti, shortcut, on_tag_click)
 
         # "+" button -- quick-create (hidden when creation not allowed)
         if on_add_click is not None:

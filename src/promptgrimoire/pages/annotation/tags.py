@@ -36,6 +36,7 @@ class TagInfo:
     raw_key: str
     group_name: str | None = None
     group_colour: str | None = None
+    description: str | None = None
 
 
 async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
@@ -54,6 +55,16 @@ async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
     groups = await list_tag_groups_for_workspace(workspace_id)
     group_map = {g.id: g for g in groups}
 
+    # Sort by (group order_index, tag order_index) so the flat list
+    # matches toolbar display order.  Ungrouped tags sort last.
+    max_order = float("inf")
+
+    def _sort_key(tag: object) -> tuple[float, int]:
+        grp = group_map.get(tag.group_id) if tag.group_id else None  # type: ignore[attr-defined]
+        return (grp.order_index if grp else max_order, tag.order_index)  # type: ignore[attr-defined, return-value]
+
+    sorted_tags = sorted(tags, key=_sort_key)
+
     return [
         TagInfo(
             name=tag.name,
@@ -65,6 +76,7 @@ async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:
             group_colour=group_map[tag.group_id].color
             if tag.group_id in group_map
             else None,
+            description=tag.description,
         )
-        for tag in tags
+        for tag in sorted_tags
     ]

@@ -86,6 +86,38 @@ def ensure_database_exists(url: str | None) -> bool:
     return False
 
 
+def terminate_connections(url: str, db_name: str) -> None:
+    """Terminate all active connections to a database.
+
+    Required before ``CREATE DATABASE ... TEMPLATE`` (source must have no
+    active connections) and before ``DROP DATABASE`` (target must have no
+    active connections).
+
+    Connects to the ``postgres`` maintenance database using sync psycopg
+    with AUTOCOMMIT isolation.
+
+    Args:
+        url: PostgreSQL connection string (used to derive maintenance URL).
+        db_name: Name of the database whose connections should be terminated.
+    """
+    # Build maintenance URL: replace db name with "postgres"
+    base = url.split("?", maxsplit=1)[0]
+    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
+    # Strip SQLAlchemy async driver prefix
+    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
+    # Restore query params if present
+    if "?" in url:
+        maintenance_url += "?" + url.split("?", 1)[1]
+
+    with psycopg.connect(maintenance_url, autocommit=True) as conn:
+        conn.execute(
+            "SELECT pg_terminate_backend(pid) "
+            "FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (db_name,),
+        )
+
+
 def is_db_configured() -> bool:
     """Check if database URL is configured in Settings.
 

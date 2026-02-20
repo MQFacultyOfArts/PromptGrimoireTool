@@ -96,7 +96,6 @@ def _model_to_ui(value: bool | None) -> str:
     """Convert model tri-state value to UI select key.
 
     None -> "inherit", True -> "on", False -> "off".
-    Used for both copy_protection and allow_sharing.
     """
     if value is None:
         return "inherit"
@@ -107,7 +106,6 @@ def _ui_to_model(value: str) -> bool | None:
     """Convert UI select key to model tri-state value.
 
     "inherit" -> None, "on" -> True, "off" -> False.
-    Used for both copy_protection and allow_sharing.
     """
     if value == "inherit":
         return None

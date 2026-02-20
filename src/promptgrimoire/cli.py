@@ -165,9 +165,9 @@ def _run_pytest(
         for line in process.stdout or []:
             log_file.write(line)
             log_file.flush()
-            # Suppress individual PASSED lines — only show failures and summaries
+            # Suppress individual passing lines — only show failures and summaries
             stripped = line.rstrip()
-            if stripped.endswith("PASSED") or " PASSED " in stripped:
+            if "PASSED" in stripped or "SUBPASSED" in stripped:
                 continue
             print(line, end="")
 

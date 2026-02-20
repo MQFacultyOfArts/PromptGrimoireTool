@@ -247,7 +247,12 @@ def create_highlight_with_tag(
 
 
 def setup_workspace_with_content(
-    page: Page, app_server: str, content: str, *, timeout: int = 15000
+    page: Page,
+    app_server: str,
+    content: str,
+    *,
+    timeout: int = 15000,
+    seed_tags: bool = True,
 ) -> None:
     """Navigate to annotation page, create workspace, and add content.
 
@@ -257,12 +262,15 @@ def setup_workspace_with_content(
     3. Wait for workspace URL
     4. Fill content
     5. Submit and wait for text walker initialisation
+    6. Optionally seed Legal Case Brief tags
 
     Args:
         page: Playwright page (can be from any browser context).
         app_server: Base URL of the app server.
         content: Text content to add as document.
-        timeout: Max wait for text walker init (ms). Increase for late-running tests.
+        timeout: Max wait for text walker init (ms).
+        seed_tags: If True (default), seed Legal Case Brief
+            tags into the workspace after content is loaded.
 
     Traceability:
         Extracted from repetitive setup code across 15+ test classes.
@@ -283,6 +291,12 @@ def setup_workspace_with_content(
     # Wait for the text walker to initialise
     wait_for_text_walker(page, timeout=timeout)
     page.wait_for_timeout(200)
+
+    if seed_tags:
+        workspace_id = page.url.split("workspace_id=")[1].split("&")[0]
+        _seed_tags_for_workspace(workspace_id)
+        page.reload()
+        wait_for_text_walker(page, timeout=timeout)
 
 
 # Alias kept for callers that imported the _highlight_api variant.
@@ -328,7 +342,13 @@ def select_text_range(page: Page, text: str) -> None:
     page.wait_for_timeout(200)
 
 
-def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> None:
+def _load_fixture_via_paste(
+    page: Page,
+    app_server: str,
+    fixture_path: Path,
+    *,
+    seed_tags: bool = True,
+) -> None:
     """Load an HTML fixture into a new workspace via clipboard paste.
 
     Expects an already-authenticated page. Creates a new workspace, loads
@@ -339,6 +359,8 @@ def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> 
         page: Playwright page (must be already authenticated).
         app_server: Base URL of the app server.
         fixture_path: Path to HTML fixture (.html or .html.gz).
+        seed_tags: If True (default), seed Legal Case Brief
+            tags into the workspace after content is loaded.
 
     Note:
         The browser context MUST have been created with clipboard permissions:
@@ -395,6 +417,12 @@ def _load_fixture_via_paste(page: Page, app_server: str, fixture_path: Path) -> 
 
     # Wait for text walker readiness (large fixtures like AustLII need time).
     wait_for_text_walker(page, timeout=30000)
+
+    if seed_tags:
+        workspace_id = page.url.split("workspace_id=")[1].split("&")[0]
+        _seed_tags_for_workspace(workspace_id)
+        page.reload()
+        wait_for_text_walker(page, timeout=30000)
 
 
 def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:

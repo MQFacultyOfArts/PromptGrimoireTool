@@ -669,6 +669,10 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
     protect = ctx.copy_protection and not is_privileged_user(auth_user)
+    # Instructors can always create tags on templates, regardless of the setting
+    can_create_tags = ctx.allow_tag_creation or (
+        ctx.is_template and is_privileged_user(auth_user)
+    )
     logger.debug("[RENDER] placement done: protect=%s", protect)
 
     # Create page state
@@ -697,7 +701,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                 _build_tag_toolbar(
                     state.tag_info_list or [],
                     _tag_click,
-                    on_add_click=(_on_add_tag if ctx.allow_tag_creation else None),
+                    on_add_click=(_on_add_tag if can_create_tags else None),
                     on_manage_click=_on_manage_tags,
                 )
 
@@ -807,7 +811,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                     state,
                     doc,
                     crdt_doc,
-                    on_add_click=(_on_add_tag if ctx.allow_tag_creation else None),
+                    on_add_click=(_on_add_tag if can_create_tags else None),
                     on_manage_click=_on_manage_tags,
                 )
                 logger.debug("[RENDER] document rendered")

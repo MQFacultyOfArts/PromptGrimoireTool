@@ -59,6 +59,27 @@ _SEED_GROUP_DEFS: list[tuple[str, str, list[tuple[str, str]]]] = [
 ]
 
 
+def seed_tag_id(workspace_id: str, tag_name: str) -> str:
+    """Compute the deterministic UUID for a seeded tag.
+
+    Uses the same uuid5 derivation as ``_seed_tags_for_workspace()``,
+    so the returned ID matches the ``id`` column in the ``tag`` table
+    after seeding.  Useful for constructing ``data-testid`` selectors
+    in Playwright tests (e.g. ``f"tag-name-input-{seed_tag_id(ws, 'Jurisdiction')}"``)
+    """
+    ws_ns = uuid.UUID(workspace_id)
+    return str(uuid.uuid5(ws_ns, f"seed-tag-{tag_name}"))
+
+
+def seed_group_id(workspace_id: str, group_name: str) -> str:
+    """Compute the deterministic UUID for a seeded tag group.
+
+    Uses the same uuid5 derivation as ``_seed_tags_for_workspace()``.
+    """
+    ws_ns = uuid.UUID(workspace_id)
+    return str(uuid.uuid5(ws_ns, f"seed-group-{group_name}"))
+
+
 def _seed_tags_for_workspace(workspace_id: str) -> None:
     """Seed Legal Case Brief tags into a workspace via sync DB connection.
 

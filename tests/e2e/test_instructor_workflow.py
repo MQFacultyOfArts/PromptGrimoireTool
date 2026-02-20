@@ -27,6 +27,7 @@ from uuid import uuid4
 
 import pytest
 
+from tests.e2e.annotation_helpers import _seed_tags_for_workspace
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
     add_activity,
@@ -91,6 +92,16 @@ def _fill_template_workspace(page: Page) -> None:
     doc_container.wait_for(state="visible", timeout=5000)
     assert doc_container.inner_text().strip(), (
         "Document container should have visible text"
+    )
+
+    # Seed tags into the template workspace so Phase 2 subtests
+    # start with a known 10-tag set (same as standalone workspaces).
+    workspace_id = page.url.split("workspace_id=")[1].split("&")[0]
+    _seed_tags_for_workspace(workspace_id)
+    page.reload()
+    page.wait_for_function(
+        "() => window._textNodes && window._textNodes.length > 0",
+        timeout=10000,
     )
 
 

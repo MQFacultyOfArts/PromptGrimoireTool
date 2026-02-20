@@ -62,14 +62,7 @@ def ensure_database_exists(url: str | None) -> bool:
         msg = f"Invalid database name: {db_name!r}"
         raise ValueError(msg)
 
-    # Build maintenance URL: replace db name with "postgres" and use
-    # sync psycopg driver
-    maintenance_url = base.rsplit("/", 1)[0] + "/postgres"
-    # Strip SQLAlchemy driver suffix — psycopg accepts bare postgresql://
-    maintenance_url = maintenance_url.replace("postgresql+asyncpg://", "postgresql://")
-    # Restore query params if present
-    if "?" in url:
-        maintenance_url += "?" + url.split("?", 1)[1]
+    maintenance_url = _build_maintenance_url(url)
 
     with psycopg.connect(maintenance_url, autocommit=True) as conn:
         row = conn.execute(

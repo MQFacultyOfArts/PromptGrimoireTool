@@ -240,6 +240,7 @@ async def update_tag(
     description: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
     group_id: UUID | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
     locked: bool | None = None,
+    bypass_lock: bool = False,
 ) -> Tag | None:
     """Update Tag details.
 
@@ -247,14 +248,16 @@ async def update_tag(
     unchanged. If the tag is locked, only the ``locked`` field itself
     may be changed (to allow instructor lock toggle); all other field
     changes raise ``ValueError("Tag is locked")``.
+
+    Pass ``bypass_lock=True`` to allow instructors to edit locked tags.
     """
     async with get_session() as session:
         tag = await session.get(Tag, tag_id)
         if not tag:
             return None
 
-        # Lock enforcement
-        if tag.locked:
+        # Lock enforcement (skipped for instructors via bypass_lock)
+        if tag.locked and not bypass_lock:
             has_non_lock_changes = any(
                 v is not ... for v in [name, color, description, group_id]
             )
@@ -279,10 +282,11 @@ async def update_tag(
         return tag
 
 
-async def delete_tag(tag_id: UUID) -> bool:
+async def delete_tag(tag_id: UUID, *, bypass_lock: bool = False) -> bool:
     """Delete a Tag.
 
-    Checks tag.locked and raises ValueError if locked. Before deleting
+    Checks tag.locked and raises ValueError if locked (unless
+    ``bypass_lock=True`` for instructor operations). Before deleting
     the Tag row, calls _cleanup_crdt_highlights_for_tag() to remove
     CRDT highlights referencing this tag.
 
@@ -299,7 +303,7 @@ async def delete_tag(tag_id: UUID) -> bool:
         if not tag:
             return False
 
-        if tag.locked:
+        if tag.locked and not bypass_lock:
             msg = "Tag is locked"
             raise ValueError(msg)
 

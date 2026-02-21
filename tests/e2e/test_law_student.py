@@ -15,10 +15,15 @@ Acceptance Criteria:
 - 156-e2e-test-migration.AC5.1: Creates own workspace (no shared state)
 - 156-e2e-test-migration.AC5.2: Random auth email + UUID comments for isolation
 - 156-e2e-test-migration.AC7.2: HTML paste via clipboard simulation (#106)
+- tags-qa-95.AC4.1: Typing "1" in comment input inserts character (not shortcut)
+- tags-qa-95.AC4.2: Typing "1" in comment input does NOT create highlight
+- tags-qa-95.AC4.3: Pressing "a" with text selected does NOT create highlight
+- tags-qa-95.AC4.4: Organise tab has no "Untagged" column header
 
 Traceability:
 - Issue: #156 (E2E test migration)
 - Design: docs/design-plans/2026-02-14-156-e2e-test-migration.md Phase 4
+- Issue: #95 (Annotation tags QA)
 """
 
 from __future__ import annotations
@@ -56,12 +61,13 @@ class TestLawStudent:
         app_server: str,
         subtests: SubTests,
     ) -> None:
-        """Complete law student annotation workflow with 18 checkpoints.
+        """Complete law student annotation workflow with 21 checkpoints.
 
         Tests the full journey: auth, fixture paste, empty respond state,
         highlighting with legal tags, comments, tag changes, keyboard shortcuts,
-        organise tab (column placement, author/text, locate/warp, drag-retag),
-        respond tab (reference panel, locate/warp),
+        keyboard shortcut isolation (input fields, letter keys),
+        organise tab (no untagged column, column placement, author/text,
+        locate/warp, drag-retag), respond tab (reference panel, locate/warp),
         reload persistence, and PDF export with annotation verification.
         """
         # Store UUIDs for cross-subtest verification
@@ -196,6 +202,65 @@ class TestLawStudent:
                     page.locator("[data-testid='annotation-card']").nth(2)
                 ).to_be_visible(timeout=10000)
 
+            with subtests.test(msg="keyboard_shortcut_in_input_field"):
+                # AC4.1: Typing "1" in comment input inserts character
+                # AC4.2: Typing "1" in comment input does NOT create highlight
+                highlight_count = page.locator(
+                    "[data-testid='annotation-card']"
+                ).count()
+
+                # Use the third card's comment input (from keyboard_shortcut_tag).
+                # It is at the bottom of the stack and not overlapped by other
+                # absolutely-positioned cards. The input is empty (no comment
+                # posted on this card).
+                third_card = page.locator("[data-testid='annotation-card']").nth(2)
+                comment_input = third_card.get_by_placeholder("Add comment")
+                comment_input.click()
+                comment_input.press("1")
+
+                # Character appears in input field
+                expect(comment_input).to_have_value("1")
+
+                # No new highlight created
+                assert (
+                    page.locator("[data-testid='annotation-card']").count()
+                    == highlight_count
+                )
+
+                # Wait to catch any async highlight creation
+                page.wait_for_timeout(500)
+                assert (
+                    page.locator("[data-testid='annotation-card']").count()
+                    == highlight_count
+                )
+
+                # Clear the input for subsequent tests
+                comment_input.fill("")
+
+            with subtests.test(msg="letter_key_no_highlight"):
+                # AC4.3: Pressing "a" with text selected does NOT create highlight
+                highlight_count = page.locator(
+                    "[data-testid='annotation-card']"
+                ).count()
+
+                # Select text in document (different range from existing selections)
+                select_chars(page, 300, 350)
+
+                # Press letter key -- JS handler only responds to digits 1-0
+                page.keyboard.press("a")
+
+                # Wait for any async processing
+                page.wait_for_timeout(500)
+
+                # Highlight count unchanged
+                assert (
+                    page.locator("[data-testid='annotation-card']").count()
+                    == highlight_count
+                )
+
+                # Click elsewhere to deselect
+                page.locator("#doc-container").click(position={"x": 5, "y": 5})
+
             with subtests.test(msg="organise_tab"):
                 # Click Organise tab
                 page.get_by_text("Organise", exact=True).click()
@@ -210,6 +275,15 @@ class TestLawStudent:
 
                 # Verify a column heading matches a tag we used
                 expect(page.get_by_text("Procedural History").first).to_be_visible()
+
+            with subtests.test(msg="no_untagged_column_in_organise"):
+                # AC4.4: All highlights have tags, so "Untagged" column absent
+                # Organise tab is already visible from subtest above
+                expect(
+                    page.locator("[data-testid='organise-columns']").get_by_text(
+                        "Untagged"
+                    )
+                ).not_to_be_visible()
 
             with subtests.test(msg="organise_highlight_in_correct_column"):
                 # The first card's tag was changed to Procedural History

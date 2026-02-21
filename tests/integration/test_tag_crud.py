@@ -8,6 +8,7 @@ permission resolution, reorder, import-from-activity, and CRDT cleanup.
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID, uuid4
 
 import pytest
@@ -823,4 +824,76 @@ class TestAtomicTagCounter:
 
         # Create a 4th tag -- should get order_index == 3
         t4 = await create_tag(ws_id, name="T4", color="#440000")
+        assert t4.order_index == 3
+
+
+class TestConcurrentTagCreation:
+    """Tests for concurrent tag/group creation via asyncio.gather.
+
+    Verifies AC5.4: two concurrent create_tag() calls produce distinct
+    order_index values (no duplicate indices from race conditions).
+    Also re-verifies AC5.5 with a reorder-then-create sequence.
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_create_tag_distinct_order(self) -> None:
+        """Two concurrent create_tag calls produce distinct order_index values.
+
+        Verifies AC5.4: under the atomic counter pattern, the UPDATE
+        row-level lock serialises concurrent inserts and they get
+        distinct indices.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag_a, tag_b = await asyncio.gather(
+            create_tag(ws_id, name="ConcA", color="#aa0000"),
+            create_tag(ws_id, name="ConcB", color="#bb0000"),
+        )
+
+        assert tag_a.order_index != tag_b.order_index
+        assert {tag_a.order_index, tag_b.order_index} == {0, 1}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_create_tag_group_distinct_order(self) -> None:
+        """Two concurrent create_tag_group calls produce distinct order_index values.
+
+        Verifies AC5.4 for tag groups.
+        """
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group_a, group_b = await asyncio.gather(
+            create_tag_group(ws_id, name="ConcGroupA"),
+            create_tag_group(ws_id, name="ConcGroupB"),
+        )
+
+        assert group_a.order_index != group_b.order_index
+        assert {group_a.order_index, group_b.order_index} == {0, 1}
+
+    @pytest.mark.asyncio
+    async def test_counter_correct_after_reorder_then_create(self) -> None:
+        """After reorder, new tag gets order_index == count.
+
+        Verifies AC5.5: reorder syncs the counter, so the next
+        create_tag() uses the correct next index.
+        """
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="R1", color="#110000")
+        t2 = await create_tag(ws_id, name="R2", color="#220000")
+        t3 = await create_tag(ws_id, name="R3", color="#330000")
+
+        # Reorder to [t3, t1, t2] -- counter syncs to 3
+        await reorder_tags([t3.id, t1.id, t2.id])
+
+        # Create a 4th tag -- should get order_index == 3
+        t4 = await create_tag(ws_id, name="R4", color="#440000")
         assert t4.order_index == 3

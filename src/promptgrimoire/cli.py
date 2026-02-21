@@ -1990,6 +1990,16 @@ async def _seed_tags_for_activity(activity: Activity) -> None:
 
         await session.flush()
 
+        # Sync workspace counter columns after bulk insert
+        from promptgrimoire.db.models import Workspace
+
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace:
+            workspace.next_tag_order = tag_count
+            workspace.next_group_order = len(group_defs)
+            session.add(workspace)
+            await session.flush()
+
     console.print(f"[green]Seeded tags:[/] {len(group_defs)} groups, {tag_count} tags")
 
 

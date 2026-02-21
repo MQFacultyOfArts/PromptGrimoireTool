@@ -152,6 +152,24 @@ def _seed_tags_for_workspace(workspace_id: str) -> None:
                     },
                 )
 
+        # Update atomic counters so the next create_tag()/create_tag_group()
+        # claims the correct order_index (not 0, which would collide).
+        total_tags = sum(len(tags) for _, _, tags in _SEED_GROUP_DEFS)
+        total_groups = len(_SEED_GROUP_DEFS)
+        conn.execute(
+            text(
+                "UPDATE workspace"
+                " SET next_tag_order = :tag_count,"
+                "     next_group_order = :group_count"
+                " WHERE id = CAST(:ws AS uuid)"
+            ),
+            {
+                "tag_count": total_tags,
+                "group_count": total_groups,
+                "ws": workspace_id,
+            },
+        )
+
     engine.dispose()
 
 

@@ -16,8 +16,26 @@ from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 from promptgrimoire.pages.annotation.organise import _SNIPPET_MAX_CHARS
-from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import TagInfo
 from promptgrimoire.pages.annotation.workspace import _parse_sort_end_args
+
+# Test tag list — uses string raw_keys matching CRDT highlight tag values
+_TEST_TAGS = [
+    TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="jurisdiction"),
+    TagInfo(name="Procedural History", colour="#ff7f0e", raw_key="procedural_history"),
+    TagInfo(
+        name="Legally Relevant Facts",
+        colour="#2ca02c",
+        raw_key="legally_relevant_facts",
+    ),
+    TagInfo(name="Legal Issues", colour="#d62728", raw_key="legal_issues"),
+    TagInfo(name="Reasons", colour="#9467bd", raw_key="reasons"),
+    TagInfo(name="Court's Reasoning", colour="#8c564b", raw_key="courts_reasoning"),
+    TagInfo(name="Decision", colour="#e377c2", raw_key="decision"),
+    TagInfo(name="Order", colour="#7f7f7f", raw_key="order"),
+    TagInfo(name="Domestic Sources", colour="#bcbd22", raw_key="domestic_sources"),
+    TagInfo(name="Reflection", colour="#17becf", raw_key="reflection"),
+]
 
 
 class TestHighlightGrouping:
@@ -30,7 +48,7 @@ class TestHighlightGrouping:
         doc.add_highlight(10, 20, "legal_issues", "test text 2", "Author B")
         doc.add_highlight(20, 30, "jurisdiction", "test text 3", "Author A")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         all_highlights = doc.get_all_highlights()
 
         # Build the same grouping logic as render_organise_tab
@@ -58,7 +76,7 @@ class TestHighlightGrouping:
         doc.add_highlight(10, 20, "jurisdiction", "tagged text", "Author B")
         doc.add_highlight(20, 30, "nonexistent_tag", "unknown tag text", "Author C")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         all_highlights = doc.get_all_highlights()
 
         tag_raw_values: dict[str, str] = {
@@ -130,9 +148,9 @@ class TestHighlightGrouping:
         assert len(snippet) == _SNIPPET_MAX_CHARS + 3  # _SNIPPET_MAX_CHARS + "..."
         assert snippet.endswith("...")
 
-    def test_all_ten_tags_produce_columns(self) -> None:
-        """Each of the 10 BriefTag members maps to a column (AC2.1)."""
-        tags = brief_tags_to_tag_info()
+    def test_tag_info_list_produces_columns(self) -> None:
+        """A TagInfo list produces one column per tag."""
+        tags = _TEST_TAGS
         assert len(tags) == 10
         # Verify all have non-empty names and colours
         for tag_info in tags:

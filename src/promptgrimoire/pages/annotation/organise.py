@@ -8,8 +8,8 @@ Cards are draggable within and between columns via SortableJS. Sort-end events
 update the CRDT tag_order (reorder) or move highlights between tags (reassign)
 and broadcast changes to all connected clients.
 
-This module imports TagInfo but NOT BriefTag -- the tag-agnostic abstraction
-ensures Tab 2 rendering is decoupled from the domain enum.
+This module imports TagInfo -- the tag-agnostic abstraction ensures Tab 2
+rendering is decoupled from any specific tag definition.
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 2

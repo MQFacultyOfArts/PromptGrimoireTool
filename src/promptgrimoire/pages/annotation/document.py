@@ -6,12 +6,12 @@ setting up JS-based text selection detection, and keyboard shortcuts.
 
 from __future__ import annotations
 
+from html import escape
 from typing import Any
 
 from nicegui import ui
 
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
-from promptgrimoire.models.case import TAG_SHORTCUTS, BriefTag
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
 from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 from promptgrimoire.pages.annotation.css import (
@@ -67,9 +67,13 @@ def _setup_selection_handlers(state: PageState) -> None:
     async def on_keydown(e: Any) -> None:
         """Handle keyboard shortcut for tag selection."""
         key = e.args.get("key")
-        if key and key in TAG_SHORTCUTS:
-            tag = TAG_SHORTCUTS[key]
-            await _add_highlight(state, tag)
+        if key and state.tag_info_list:
+            key_to_index = {
+                str((i + 1) % 10): i for i in range(min(10, len(state.tag_info_list)))
+            }
+            if key in key_to_index:
+                ti = state.tag_info_list[key_to_index[key]]
+                await _add_highlight(state, ti.raw_key)
 
     ui.on("keydown", on_keydown)
 
@@ -90,6 +94,9 @@ def _setup_selection_handlers(state: PageState) -> None:
         "  var lastKeyTime = 0;"
         "  document.addEventListener('keydown', function(e) {"
         "    if (e.repeat) return;"
+        "    var tag = e.target.tagName;"
+        "    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
+        "        || e.target.isContentEditable) return;"
         "    var now = Date.now();"
         "    if (now - lastKeyTime < 300) return;"
         "    lastKeyTime = now;"
@@ -103,10 +110,76 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.run_javascript(js_code)
 
 
+def _populate_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+    """Populate the highlight menu card with abbreviated tag buttons.
+
+    Clears existing content and rebuilds from ``state.tag_info_list``.
+    Called on initial build and after tag list changes.
+    """
+    menu = state.highlight_menu
+    if menu is None:
+        return
+    menu.clear()
+    with menu:
+        if state.tag_info_list:
+            # Partition tags by group, preserving order
+            groups: dict[str | None, list[Any]] = {}
+            for ti in state.tag_info_list:
+                groups.setdefault(ti.group_name, []).append(ti)
+
+            with ui.column().classes("gap-1"):
+                for members in groups.values():
+                    with ui.row().classes("gap-1 items-center"):
+                        for ti in members:
+                            abbrev = ti.name[:6]
+
+                            async def _apply(tag_key: str = ti.raw_key) -> None:
+                                await on_tag_click(tag_key)
+
+                            btn = ui.button(abbrev, on_click=_apply).classes(
+                                "text-xs compact-btn"
+                            )
+                            btn.style(
+                                f"background-color: {ti.colour} !important; "
+                                "color: white !important; "
+                                "padding: 1px 4px !important; "
+                                "min-height: 20px !important;"
+                            )
+                            if ti.description:
+                                with btn, ui.element("q-tooltip"):
+                                    ui.html(
+                                        f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
+                                        sanitize=False,
+                                    )
+                            else:
+                                btn.tooltip(ti.name)
+        else:
+            ui.label("No tags available").classes("text-sm text-gray-600")
+
+
+def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+    """Build the floating highlight menu card and populate it."""
+    highlight_menu = (
+        ui.card()
+        .classes("fixed z-50 shadow-lg p-2")
+        .props('data-testid="highlight-menu" id="highlight-menu"')
+    )
+    highlight_menu.set_visibility(False)
+    state.highlight_menu = highlight_menu
+
+    # Store callback for rebuilds triggered by _refresh_tag_state
+    state._highlight_menu_tag_click = on_tag_click
+
+    _populate_highlight_menu(state, on_tag_click)
+
+
 async def _render_document_with_highlights(
     state: PageState,
     doc: Any,
     crdt_doc: Any,
+    *,
+    on_add_click: Any | None = None,
+    on_manage_click: Any | None = None,
 ) -> None:
     """Render a document with highlight support."""
     state.document_id = doc.id
@@ -120,30 +193,26 @@ async def _render_document_with_highlights(
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
-    initial_css = _build_highlight_pseudo_css()
+    initial_css = _build_highlight_pseudo_css(state.tag_colours())
 
     # Dynamic style element for highlights
     state.highlight_style = ui.element("style")
     state.highlight_style._props["innerHTML"] = initial_css
 
     # Tag toolbar handler
-    async def handle_tag_click(tag: BriefTag) -> None:
-        await _add_highlight(state, tag)
+    async def handle_tag_click(tag_key: str) -> None:
+        await _add_highlight(state, tag_key)
 
     # Tag toolbar - always visible above document
-    _build_tag_toolbar(handle_tag_click)
+    state.toolbar_container = _build_tag_toolbar(
+        state.tag_info_list or [],
+        handle_tag_click,
+        on_add_click=on_add_click,
+        on_manage_click=on_manage_click,
+    )
 
-    # Highlight creation menu (hidden popup for quick highlight without tag selection)
-    with (
-        ui.card()
-        .classes("fixed z-50 shadow-lg p-2")
-        .style("top: 50%; left: 50%; transform: translate(-50%, -50%);")
-        .props('data-testid="highlight-menu"') as highlight_menu
-    ):
-        highlight_menu.set_visibility(False)
-        state.highlight_menu = highlight_menu
-
-        ui.label("Select a tag above to highlight").classes("text-sm text-gray-600")
+    # Highlight creation menu (popup with abbreviated tag buttons)
+    _build_highlight_menu(state, handle_tag_click)
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading

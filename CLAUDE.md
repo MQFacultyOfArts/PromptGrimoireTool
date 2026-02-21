@@ -116,7 +116,8 @@ src/promptgrimoire/
 ├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)
 │   ├── acl.py           # ACL operations (grant, revoke, resolve, share)
-│   └── roles.py         # Cached staff role queries
+│   ├── roles.py         # Cached staff role queries
+│   └── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 ├── crdt/                # pycrdt collaboration logic
 └── static/              # JS/CSS assets
 
@@ -152,7 +153,7 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 
 PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design decisions in [docs/database.md](docs/database.md).
 
-10 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, Permission, CourseRoleRef, ACLEntry.
+12 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry.
 
 ### Key Rules
 

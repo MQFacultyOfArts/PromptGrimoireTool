@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from nicegui import ui
 
@@ -20,9 +20,6 @@ from promptgrimoire.pages.annotation import (
     _workspace_presence,
 )
 from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
-
-if TYPE_CHECKING:
-    from promptgrimoire.models.case import BriefTag
 
 logger = logging.getLogger(__name__)
 
@@ -146,15 +143,9 @@ def _update_highlight_css(state: PageState) -> None:
     """
     if state.highlight_style is None or state.crdt_doc is None:
         return
-
-    # CSS is invariant (fixed TAG_COLORS palette) but cheap to regenerate.
-    # Re-setting it here keeps this function as a single "sync everything"
-    # call site, which is simpler than caching the string.
-    css = _build_highlight_pseudo_css()
+    css = _build_highlight_pseudo_css(state.tag_colours())
     state.highlight_style._props["innerHTML"] = css
     state.highlight_style.update()
-
-    # Push updated highlight ranges to the client
     _push_highlights_to_client(state)
 
 
@@ -184,12 +175,12 @@ async def _delete_highlight(
         await state.broadcast_update()
 
 
-async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
+async def _add_highlight(state: PageState, tag: str) -> None:
     """Add a highlight from current selection to CRDT.
 
     Args:
         state: Page state with selection and CRDT document.
-        tag: Optional BriefTag for the highlight. Defaults to "highlight".
+        tag: Tag key string (UUID) for the highlight.
     """
     # Guard against duplicate calls (e.g., rapid keyboard events)
     if state.processing_highlight:
@@ -230,9 +221,6 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         start = min(state.selection_start, state.selection_end)
         end = max(state.selection_start, state.selection_end)
 
-        # Use tag value if provided, otherwise default to "highlight"
-        tag_value = tag.value if tag else "highlight"
-
         # Extract highlighted text from document characters
         highlighted_text = ""
         if state.document_chars:
@@ -242,7 +230,7 @@ async def _add_highlight(state: PageState, tag: BriefTag | None = None) -> None:
         state.crdt_doc.add_highlight(
             start_char=start,
             end_char=end,
-            tag=tag_value,
+            tag=tag,
             text=highlighted_text,
             author=state.user_name,
             document_id=str(state.document_id),

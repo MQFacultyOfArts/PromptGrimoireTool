@@ -22,7 +22,6 @@ import pytest_asyncio
 
 from tests.conftest import load_conversation_fixture, requires_latexmk
 from tests.integration.conftest import (
-    TAG_COLOURS,
     MegaDocResult,
     MegaDocSegment,
     compile_mega_document,
@@ -108,8 +107,8 @@ def _build_english_segments() -> list[MegaDocSegment]:
                 },
             ],
             tag_colours={
-                "jurisdiction": TAG_COLOURS["jurisdiction"],
-                "legal_issues": TAG_COLOURS["legal_issues"],
+                "jurisdiction": "#1f77b4",
+                "legal_issues": "#d62728",
             },
             preprocess=False,
         )
@@ -147,9 +146,9 @@ def _build_english_segments() -> list[MegaDocSegment]:
                 },
             ],
             tag_colours={
-                "jurisdiction": TAG_COLOURS["jurisdiction"],
-                "legal_issues": TAG_COLOURS["legal_issues"],
-                "reasons": TAG_COLOURS["reasons"],
+                "jurisdiction": "#1f77b4",
+                "legal_issues": "#d62728",
+                "reasons": "#9467bd",
             },
             preprocess=False,
         )
@@ -186,8 +185,8 @@ def _build_english_segments() -> list[MegaDocSegment]:
                 },
             ],
             tag_colours={
-                "jurisdiction": TAG_COLOURS["jurisdiction"],
-                "legal_issues": TAG_COLOURS["legal_issues"],
+                "jurisdiction": "#1f77b4",
+                "legal_issues": "#d62728",
             },
             preprocess=False,
         )
@@ -212,7 +211,7 @@ def _build_english_segments() -> list[MegaDocSegment]:
                     "created_at": "2026-01-27T10:00:00+00:00",
                 }
             ],
-            tag_colours={"order": TAG_COLOURS["order"]},
+            tag_colours={"order": "#7f7f7f"},
             preprocess=True,
         )
     )
@@ -234,7 +233,7 @@ def _build_english_segments() -> list[MegaDocSegment]:
                     "comments": [],
                 }
             ],
-            tag_colours={"jurisdiction": TAG_COLOURS["jurisdiction"]},
+            tag_colours={"jurisdiction": "#1f77b4"},
             preprocess=False,
         )
     )
@@ -259,7 +258,7 @@ def _build_english_segments() -> list[MegaDocSegment]:
                     ],
                 }
             ],
-            tag_colours={"decision": TAG_COLOURS["decision"]},
+            tag_colours={"decision": "#e377c2"},
             preprocess=False,
         )
     )

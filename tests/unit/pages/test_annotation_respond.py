@@ -16,7 +16,25 @@ from promptgrimoire.pages.annotation.respond import (
     _matches_filter,
     group_highlights_by_tag,
 )
-from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import TagInfo
+
+# Test tag list — uses string raw_keys matching CRDT highlight tag values
+_TEST_TAGS = [
+    TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="jurisdiction"),
+    TagInfo(name="Procedural History", colour="#ff7f0e", raw_key="procedural_history"),
+    TagInfo(
+        name="Legally Relevant Facts",
+        colour="#2ca02c",
+        raw_key="legally_relevant_facts",
+    ),
+    TagInfo(name="Legal Issues", colour="#d62728", raw_key="legal_issues"),
+    TagInfo(name="Reasons", colour="#9467bd", raw_key="reasons"),
+    TagInfo(name="Court's Reasoning", colour="#8c564b", raw_key="courts_reasoning"),
+    TagInfo(name="Decision", colour="#e377c2", raw_key="decision"),
+    TagInfo(name="Order", colour="#7f7f7f", raw_key="order"),
+    TagInfo(name="Domestic Sources", colour="#bcbd22", raw_key="domestic_sources"),
+    TagInfo(name="Reflection", colour="#17becf", raw_key="reflection"),
+]
 
 
 class TestReferenceHighlightGrouping:
@@ -29,7 +47,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(10, 20, "legal_issues", "test text 2", "Author B")
         doc.add_highlight(20, 30, "jurisdiction", "test text 3", "Author A")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
@@ -40,7 +58,7 @@ class TestReferenceHighlightGrouping:
     def test_empty_document_returns_no_highlights(self) -> None:
         """An empty document produces has_any_highlights=False (AC4.5)."""
         doc = AnnotationDocument("test-ref-empty")
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is False
@@ -56,7 +74,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(10, 20, "nonexistent_tag", "bad tag", "Author B")
         doc.add_highlight(20, 30, "jurisdiction", "good tag", "Author C")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
@@ -91,7 +109,7 @@ class TestReferenceHighlightGrouping:
         doc.add_highlight(20, 30, "legally_relevant_facts", "hl3", "C")
         doc.add_highlight(30, 40, "reasons", "hl4", "D")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         tagged, untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True
@@ -106,7 +124,7 @@ class TestReferenceHighlightGrouping:
         doc = AnnotationDocument("test-ref-sparse")
         doc.add_highlight(0, 10, "jurisdiction", "only one tag", "A")
 
-        tags = brief_tags_to_tag_info()
+        tags = _TEST_TAGS
         tagged, _untagged, has_any = group_highlights_by_tag(tags, doc)
 
         assert has_any is True

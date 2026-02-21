@@ -18,6 +18,8 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
+    Tag,
+    TagGroup,
     Week,
     Workspace,
     WorkspaceDocument,
@@ -123,6 +125,16 @@ class PlacementContext:
 
     True = owner can share with other students.
     """
+    allow_tag_creation: bool = True
+    """Resolved tag creation permission.
+
+    True = students can create tags.
+    """
+    course_id: UUID | None = None
+    """Course UUID for activity-placed workspaces.
+
+    None for loose/course-only placement.
+    """
 
     @property
     def display_label(self) -> str:
@@ -179,6 +191,16 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         return loose
 
 
+def _resolve_tristate(override: bool | None, default: bool) -> bool:
+    """Resolve a tri-state activity setting against its course default.
+
+    Activity-level overrides (True/False) win; None inherits the course default.
+    """
+    if override is not None:
+        return override
+    return default
+
+
 async def _resolve_activity_placement(
     session: AsyncSession,
     activity_id: UUID,
@@ -198,18 +220,6 @@ async def _resolve_activity_placement(
     if course is None:
         return PlacementContext(placement_type="loose")
 
-    # Resolve tri-state copy_protection: explicit wins, else course default
-    if activity.copy_protection is not None:
-        resolved_cp = activity.copy_protection
-    else:
-        resolved_cp = course.default_copy_protection
-
-    # Resolve tri-state allow_sharing: explicit wins, else course default
-    if activity.allow_sharing is not None:
-        resolved_sharing = activity.allow_sharing
-    else:
-        resolved_sharing = course.default_allow_sharing
-
     return PlacementContext(
         placement_type="activity",
         activity_title=activity.title,
@@ -217,8 +227,16 @@ async def _resolve_activity_placement(
         week_title=week.title,
         course_code=course.code,
         course_name=course.name,
-        copy_protection=resolved_cp,
-        allow_sharing=resolved_sharing,
+        copy_protection=_resolve_tristate(
+            activity.copy_protection, course.default_copy_protection
+        ),
+        allow_sharing=_resolve_tristate(
+            activity.allow_sharing, course.default_allow_sharing
+        ),
+        allow_tag_creation=_resolve_tristate(
+            activity.allow_tag_creation, course.default_allow_tag_creation
+        ),
+        course_id=course.id,
     )
 
 
@@ -447,17 +465,35 @@ async def list_loose_workspaces_for_course(
         return list(result.all())
 
 
+def _remap_uuid_str(raw: str, id_map: dict[UUID, UUID] | None) -> str:
+    """Remap a string through a UUID mapping, passing non-UUIDs through.
+
+    If *id_map* is ``None`` or *raw* is not a valid UUID, the original
+    string is returned unchanged.  This handles legacy BriefTag strings
+    (e.g. ``"jurisdiction"``) that are not UUIDs.
+    """
+    if id_map is None:
+        return raw
+    try:
+        original = UUID(raw)
+    except ValueError:
+        return raw
+    return str(id_map.get(original, original))
+
+
 def _replay_crdt_state(
     template: Workspace,
     clone: Workspace,
     doc_id_map: dict[UUID, UUID],
+    tag_id_map: dict[UUID, UUID] | None = None,
 ) -> None:
-    """Replay CRDT state from template into clone with document ID remapping.
+    """Replay CRDT state from template into clone with ID remapping.
 
     Loads the template's CRDT state into a temporary AnnotationDocument,
     creates a fresh AnnotationDocument for the clone, and replays all
-    highlights (with remapped document_id values), comments, and general
-    notes. Client metadata is deliberately NOT replayed (AC4.9).
+    highlights (with remapped document_id and tag values), comments,
+    general notes, and tag_order. Client metadata is deliberately NOT
+    replayed (AC4.9).
 
     If template has no crdt_state, the clone gets None (AC4.10).
 
@@ -465,6 +501,11 @@ def _replay_crdt_state(
         template: The template Workspace (source of CRDT state).
         clone: The cloned Workspace (destination for replayed state).
         doc_id_map: Mapping of {template_doc_id: cloned_doc_id}.
+        tag_id_map: Optional mapping of {template_tag_id: cloned_tag_id}.
+            When provided, highlight tag fields containing valid UUIDs are
+            remapped to the cloned tag UUIDs, and tag_order keys are
+            similarly remapped. Non-UUID tag strings (legacy BriefTag
+            values) pass through unchanged.
     """
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
 
@@ -478,8 +519,11 @@ def _replay_crdt_state(
     # Fresh document for clone (empty client_meta satisfies AC4.9)
     clone_doc = AnnotDoc("clone-tmp")
 
-    # Replay highlights with remapped document_id
+    # Replay highlights with remapped document_id and tag
+    highlight_id_map: dict[str, str] = {}
     for hl in template_doc.get_all_highlights():
+        old_hl_id = hl["id"]
+
         # Remap document_id: template doc UUID -> cloned doc UUID
         raw_doc_id = hl.get("document_id")
         if raw_doc_id is not None:
@@ -492,12 +536,13 @@ def _replay_crdt_state(
         new_hl_id = clone_doc.add_highlight(
             start_char=hl["start_char"],
             end_char=hl["end_char"],
-            tag=hl["tag"],
+            tag=_remap_uuid_str(hl["tag"], tag_id_map),
             text=hl["text"],
             author=hl["author"],
             para_ref=hl.get("para_ref", ""),
             document_id=remapped_doc_id,
         )
+        highlight_id_map[old_hl_id] = new_hl_id
 
         # Replay comments for this highlight
         for comment in hl.get("comments", []):
@@ -512,6 +557,15 @@ def _replay_crdt_state(
     if notes:
         clone_doc.set_general_notes(notes)
 
+    # Rebuild tag_order with remapped tag keys and highlight IDs
+    for tag_key in list(dict(template_doc.tag_order)):
+        template_order = list(template_doc.tag_order[tag_key])
+        remapped_key = _remap_uuid_str(tag_key, tag_id_map)
+        remapped_order = [
+            highlight_id_map.get(old_id, old_id) for old_id in template_order
+        ]
+        clone_doc.set_tag_order(remapped_key, remapped_order)
+
     # Serialise and assign to cloned workspace
     clone.crdt_state = clone_doc.get_full_state()
 
@@ -524,9 +578,14 @@ async def clone_workspace_from_activity(
 
     Creates a new Workspace within a single transaction, copies all template
     documents (preserving content, type, source_type, title, order_index),
-    builds a document ID mapping, and replays CRDT state (highlights,
-    comments, general notes) with remapped document IDs. Client metadata
-    is NOT cloned -- the fresh workspace starts with empty client state.
+    builds a document ID mapping, clones TagGroups and Tags (with group_id
+    remapping), and replays CRDT state (highlights, comments, general notes)
+    with remapped document IDs and tag IDs. Client metadata is NOT cloned --
+    the fresh workspace starts with empty client state.
+
+    Tags are cloned via direct ``session.add()``, bypassing CRUD permission
+    checks -- cloning is a system operation that always copies the
+    instructor's tag set regardless of the ``allow_tag_creation`` flag.
 
     Also creates an ACLEntry granting owner permission to the cloning user.
 
@@ -591,8 +650,59 @@ async def clone_workspace_from_activity(
             await session.flush()
             doc_id_map[tmpl_doc.id] = cloned_doc.id
 
+        # --- Clone TagGroups with ID remapping ---
+        group_result = await session.exec(
+            select(TagGroup)
+            .where(TagGroup.workspace_id == template.id)
+            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        template_groups = list(group_result.all())
+
+        group_id_map: dict[UUID, UUID] = {}
+        for tmpl_group in template_groups:
+            cloned_group = TagGroup(
+                workspace_id=clone.id,
+                name=tmpl_group.name,
+                color=tmpl_group.color,
+                order_index=tmpl_group.order_index,
+            )
+            session.add(cloned_group)
+            await session.flush()
+            group_id_map[tmpl_group.id] = cloned_group.id
+
+        # --- Clone Tags with group_id and ID remapping ---
+        tag_result = await session.exec(
+            select(Tag).where(Tag.workspace_id == template.id).order_by(Tag.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        )
+        template_tags = list(tag_result.all())
+
+        tag_id_map: dict[UUID, UUID] = {}
+        for tmpl_tag in template_tags:
+            remapped_group_id = (
+                group_id_map.get(tmpl_tag.group_id)
+                if tmpl_tag.group_id is not None
+                else None
+            )
+            cloned_tag = Tag(
+                workspace_id=clone.id,
+                name=tmpl_tag.name,
+                color=tmpl_tag.color,
+                description=tmpl_tag.description,
+                locked=tmpl_tag.locked,
+                order_index=tmpl_tag.order_index,
+                group_id=remapped_group_id,
+            )
+            session.add(cloned_tag)
+            await session.flush()
+            tag_id_map[tmpl_tag.id] = cloned_tag.id
+
+        # --- Sync workspace counter columns after cloning tags/groups ---
+        clone.next_tag_order = len(template_tags)
+        clone.next_group_order = len(template_groups)
+        session.add(clone)
+
         # --- CRDT state cloning via API replay ---
-        _replay_crdt_state(template, clone, doc_id_map)
+        _replay_crdt_state(template, clone, doc_id_map, tag_id_map)
 
         await session.flush()
         await session.refresh(clone)

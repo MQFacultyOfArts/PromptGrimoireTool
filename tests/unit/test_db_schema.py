@@ -30,6 +30,8 @@ def test_all_models_registered() -> None:
         "course_enrollment",
         "course_role",
         "permission",
+        "tag",
+        "tag_group",
         "user",
         "week",
         "workspace",
@@ -47,18 +49,20 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 10 table names."""
+    """get_expected_tables() returns all 12 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 10
+    assert len(tables) == 12
     assert "acl_entry" in tables
     assert "activity" in tables
     assert "course" in tables
     assert "course_enrollment" in tables
     assert "course_role" in tables
     assert "permission" in tables
+    assert "tag" in tables
+    assert "tag_group" in tables
     assert "user" in tables
     assert "week" in tables
     assert "workspace" in tables
@@ -144,7 +148,7 @@ def test_mask_password_in_error_messages() -> None:
     assert "secret123" not in masked
 
     # URL without password
-    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"
+    url_no_pass = "postgresql+asyncpg://user@localhost:5432/mydb"  # nosec B105 -- bandit false positive: no password present
     assert _mask_password(url_no_pass) == url_no_pass
 
     # URL with special characters in password
@@ -219,3 +223,281 @@ def test_ensure_database_exists_returns_false_when_exists() -> None:
     assert result is False
     # Called once: SELECT pg_database only
     assert mock_conn.execute.call_count == 1
+
+
+# --- terminate_connections() tests ---
+
+
+class TestTerminateConnections:
+    """Tests for terminate_connections() helper."""
+
+    def test_executes_correct_sql_with_db_name(self) -> None:
+        """terminate_connections runs pg_terminate_backend for the given db."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import terminate_connections
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "promptgrimoire.db.bootstrap.psycopg.connect",
+            return_value=mock_conn,
+        ):
+            terminate_connections(
+                "postgresql://user:pass@localhost/sourcedb",
+                "sourcedb",
+            )
+
+        # Verify SQL contains pg_terminate_backend
+        call_args = mock_conn.execute.call_args
+        sql_text = call_args[0][0]
+        assert "pg_terminate_backend" in sql_text
+        assert "pg_stat_activity" in sql_text
+        # Verify db_name passed as parameter
+        assert call_args[0][1] == ("sourcedb",)
+
+    def test_connects_to_postgres_maintenance_database(self) -> None:
+        """terminate_connections connects to 'postgres', not the target db."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import terminate_connections
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "promptgrimoire.db.bootstrap.psycopg.connect",
+            return_value=mock_conn,
+        ) as mock_connect:
+            terminate_connections(
+                "postgresql+asyncpg://user:pass@localhost/mydb",
+                "mydb",
+            )
+
+        # Should connect to postgres maintenance db with sync driver
+        connect_url = mock_connect.call_args[0][0]
+        assert connect_url.endswith("/postgres")
+        assert "postgresql://" in connect_url
+        assert "+asyncpg" not in connect_url
+
+
+# --- clone_database() tests ---
+
+
+class TestCloneDatabase:
+    """Tests for clone_database() function."""
+
+    def test_happy_path_creates_database_from_template(self) -> None:
+        """clone_database executes CREATE DATABASE target TEMPLATE source."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            result = clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "targetdb",
+            )
+
+        # Verify CREATE DATABASE was executed
+        execute_calls = mock_conn.execute.call_args_list
+        assert len(execute_calls) == 1
+        sql_obj = execute_calls[0][0][0]
+        # Render without a connection context (uses no encoding lookup)
+        sql_str = sql_obj.as_string(None)
+        assert "CREATE DATABASE" in sql_str
+        assert "TEMPLATE" in sql_str
+        assert '"targetdb"' in sql_str
+        assert '"sourcedb"' in sql_str
+
+        # Verify return URL has target db name
+        assert result == "postgresql://user:pass@localhost/targetdb"
+
+    def test_invalid_target_name_raises_value_error(self) -> None:
+        """clone_database raises ValueError for invalid target names."""
+        from promptgrimoire.db.bootstrap import clone_database
+
+        with pytest.raises(ValueError, match=r"Invalid.*target.*name"):
+            clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "bad-name!",
+            )
+
+    def test_terminate_connections_called_before_create(self) -> None:
+        """terminate_connections is called on source db before CREATE."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        call_order: list[str] = []
+
+        def record_terminate(*_args: object, **_kwargs: object) -> None:
+            call_order.append("terminate")
+
+        original_execute = mock_conn.execute
+
+        def record_execute(*args: object, **kwargs: object) -> object:
+            call_order.append("execute")
+            return original_execute(*args, **kwargs)
+
+        mock_conn.execute = record_execute
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch(
+                "promptgrimoire.db.bootstrap.terminate_connections",
+                side_effect=record_terminate,
+            ),
+        ):
+            clone_database(
+                "postgresql://user:pass@localhost/sourcedb",
+                "targetdb",
+            )
+
+        assert call_order.index("terminate") < call_order.index("execute")
+
+    def test_returns_url_with_target_name(self) -> None:
+        """clone_database returns a full URL with the target db name."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import clone_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            result = clone_database(
+                "postgresql+asyncpg://user:pass@host:5432/source?sslmode=require",
+                "cloned_db",
+            )
+
+        assert (
+            result
+            == "postgresql+asyncpg://user:pass@host:5432/cloned_db?sslmode=require"
+        )
+
+
+# --- drop_database() tests ---
+
+
+class TestDropDatabase:
+    """Tests for drop_database() function."""
+
+    def test_happy_path_drops_database(self) -> None:
+        """drop_database executes DROP DATABASE IF EXISTS for the db in URL."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import drop_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            drop_database("postgresql://user:pass@localhost/targetdb")
+
+        execute_calls = mock_conn.execute.call_args_list
+        assert len(execute_calls) == 1
+        sql_str = execute_calls[0][0][0].as_string(None)
+        assert "DROP DATABASE IF EXISTS" in sql_str
+        assert '"targetdb"' in sql_str
+
+    def test_invalid_db_name_in_url_raises_value_error(self) -> None:
+        """drop_database raises ValueError for invalid db names in URL."""
+        from promptgrimoire.db.bootstrap import drop_database
+
+        with pytest.raises(ValueError, match=r"Invalid.*database.*name"):
+            drop_database("postgresql://user:pass@localhost/bad-name!")
+
+    def test_terminate_connections_called_before_drop(self) -> None:
+        """terminate_connections is called before DROP DATABASE."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import drop_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        call_order: list[str] = []
+
+        def record_terminate(*_args: object, **_kwargs: object) -> None:
+            call_order.append("terminate")
+
+        original_execute = mock_conn.execute
+
+        def record_execute(*_args: object, **_kwargs: object) -> object:
+            call_order.append("execute")
+            return original_execute(*_args, **_kwargs)
+
+        mock_conn.execute = record_execute
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch(
+                "promptgrimoire.db.bootstrap.terminate_connections",
+                side_effect=record_terminate,
+            ),
+        ):
+            drop_database("postgresql://user:pass@localhost/targetdb")
+
+        assert call_order.index("terminate") < call_order.index("execute")
+
+    def test_idempotent_uses_if_exists(self) -> None:
+        """drop_database uses IF EXISTS so dropping non-existent db is safe."""
+        from unittest.mock import MagicMock
+
+        from promptgrimoire.db.bootstrap import drop_database
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "promptgrimoire.db.bootstrap.psycopg.connect",
+                return_value=mock_conn,
+            ),
+            patch("promptgrimoire.db.bootstrap.terminate_connections"),
+        ):
+            # Should not raise even if database doesn't exist
+            drop_database("postgresql://user:pass@localhost/nonexistent_db")
+
+        sql_str = mock_conn.execute.call_args_list[0][0][0].as_string(None)
+        assert "IF EXISTS" in sql_str

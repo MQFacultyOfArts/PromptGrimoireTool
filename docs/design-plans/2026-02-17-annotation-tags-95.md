@@ -2,6 +2,40 @@
 
 **GitHub Issue:** #95
 
+## WIP Status (2026-02-20)
+
+**Branch:** `95-annotation-tags` (pushed)
+**Current phase:** 5d — Refactor (next up)
+
+### Completed
+- **Phases 1–4:** DB models, migration, CRUD, CRDT cleanup, reorder/import, workspace cloning, annotation page integration (BriefTag fully replaced)
+- **Phase 5a–5b:** Integration tests, code review fixes
+- **Phase 5c:** UAT passed (all 11 confirm items + 4 boundary probes). Bugs found and fixed during UAT:
+  - Tag button truncation: Quasar inner elements needed `!important` CSS targeting `.q-btn__content`
+  - Tag descriptions added to toolbar tooltips (bold name + description via `q-tooltip` + `ui.html`)
+  - Ungrouped tag baseline alignment (invisible group wrapper)
+  - Highlight menu: grouped abbreviated tag buttons, JS positioning via `charOffsetToRect`, rebuild on tag changes
+  - Keyboard shortcuts: filtered from INPUT/TEXTAREA/SELECT targets
+  - Input validation: `maxlength=100` on name fields, unique name generation for new tags, IntegrityError catch
+  - **Save-on-blur refactor:** replaced batch-save-on-Done with per-field save-on-blur (text on blur, colour on change, group on update). Extracted `_save_single_tag()` and `_save_single_group()` standalone functions. Done button now just closes + refreshes.
+  - `bypass_lock` parameter added to `update_tag`/`delete_tag` for instructor operations
+
+### Remaining
+- **Phase 5d:** Refactor
+- **Phase 6a–d:** Activity Settings + Course Defaults (AC8)
+- **Final (#25):** Project context update, final review, test analysis
+
+### Key files for Phase 5
+- `src/promptgrimoire/pages/annotation/tag_management.py` — management dialog (save-on-blur)
+- `src/promptgrimoire/pages/annotation/document.py` — highlight menu with grouped tags
+- `src/promptgrimoire/pages/annotation/css.py` — tag toolbar + highlight CSS + truncation
+- `src/promptgrimoire/pages/annotation/tags.py` — TagInfo with description field
+- `src/promptgrimoire/db/tags.py` — tag CRUD with bypass_lock
+- `src/promptgrimoire/static/annotation-highlight.js` — menu positioning
+- `tests/integration/test_tags_*.py` — integration tests
+
+---
+
 ## Summary
 
 This design adds configurable, workspace-scoped annotation tags to replace the hardcoded `BriefTag` enum. Instructors create tag sets (organized into visual groups) within activity templates, which are then cloned into student workspaces when activities are claimed. Students annotate documents by applying these tags to text selections, creating highlights stored in the CRDT as tag UUID references. The design supports instructor control over whether students can create their own tags via a tri-state permission inherited from course defaults.

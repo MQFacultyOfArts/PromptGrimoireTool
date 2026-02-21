@@ -10,6 +10,8 @@
 
 **Codebase verified:** 2026-02-20
 
+**Status:** NOT STARTED (audited 2026-02-21). No migration, no atomic counters, `create_tag()`/`create_tag_group()` still use `SELECT max(order_index)`.
+
 ---
 
 ## Acceptance Criteria Coverage

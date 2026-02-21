@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -68,8 +69,6 @@ async def create_tag_group(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        from sqlalchemy import text
-
         result = await session.execute(
             text(
                 "UPDATE workspace SET next_group_order = next_group_order + 1 "
@@ -77,7 +76,13 @@ async def create_tag_group(
             ),
             {"ws_id": str(workspace_id)},
         )
-        order_index = result.scalar_one()
+        order_index = result.scalar_one_or_none()
+        if order_index is None:
+            msg = (
+                f"Workspace {workspace_id} not found. "
+                "Cannot determine tag group order index."
+            )
+            raise ValueError(msg)
 
         group = TagGroup(
             workspace_id=workspace_id,
@@ -206,8 +211,6 @@ async def create_tag(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        from sqlalchemy import text
-
         result = await session.execute(
             text(
                 "UPDATE workspace SET next_tag_order = next_tag_order + 1 "
@@ -215,7 +218,12 @@ async def create_tag(
             ),
             {"ws_id": str(workspace_id)},
         )
-        order_index = result.scalar_one()
+        order_index = result.scalar_one_or_none()
+        if order_index is None:
+            msg = (
+                f"Workspace {workspace_id} not found. Cannot determine tag order index."
+            )
+            raise ValueError(msg)
 
         tag = Tag(
             workspace_id=workspace_id,
@@ -372,8 +380,6 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
         await session.flush()
 
         # Sync counter so next create_tag() uses the correct index
-        from sqlalchemy import text
-
         await session.execute(
             text("UPDATE workspace SET next_tag_order = :count WHERE id = :ws_id"),
             {"count": len(tag_ids), "ws_id": str(workspace_id)},
@@ -410,8 +416,6 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
         await session.flush()
 
         # Sync counter so next create_tag_group() uses the correct index
-        from sqlalchemy import text
-
         await session.execute(
             text("UPDATE workspace SET next_group_order = :count WHERE id = :ws_id"),
             {"count": len(group_ids), "ws_id": str(workspace_id)},
@@ -511,8 +515,6 @@ async def import_tags_from_activity(
 
         # Sync workspace counters to account for imported tags/groups.
         # Uses GREATEST to handle the case where tags already exist.
-        from sqlalchemy import text
-
         imported_tag_count = len(new_tags)
         imported_group_count = len(group_id_map)
         await session.execute(

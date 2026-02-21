@@ -10,6 +10,8 @@
 
 **Codebase verified:** 2026-02-20
 
+**Status:** NOT STARTED (audited 2026-02-21). `tag_management.py` not split, no dead code cleanup done.
+
 ---
 
 ## Acceptance Criteria Coverage

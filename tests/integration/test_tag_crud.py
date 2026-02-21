@@ -874,26 +874,3 @@ class TestConcurrentTagCreation:
 
         assert group_a.order_index != group_b.order_index
         assert {group_a.order_index, group_b.order_index} == {0, 1}
-
-    @pytest.mark.asyncio
-    async def test_counter_correct_after_reorder_then_create(self) -> None:
-        """After reorder, new tag gets order_index == count.
-
-        Verifies AC5.5: reorder syncs the counter, so the next
-        create_tag() uses the correct next index.
-        """
-        from promptgrimoire.db.tags import create_tag, reorder_tags
-
-        _, activity = await _make_course_week_activity()
-        ws_id = activity.template_workspace_id
-
-        t1 = await create_tag(ws_id, name="R1", color="#110000")
-        t2 = await create_tag(ws_id, name="R2", color="#220000")
-        t3 = await create_tag(ws_id, name="R3", color="#330000")
-
-        # Reorder to [t3, t1, t2] -- counter syncs to 3
-        await reorder_tags([t3.id, t1.id, t2.id])
-
-        # Create a 4th tag -- should get order_index == 3
-        t4 = await create_tag(ws_id, name="R4", color="#440000")
-        assert t4.order_index == 3

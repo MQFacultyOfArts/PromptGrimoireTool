@@ -10,6 +10,8 @@
 
 **Codebase verified:** 2026-02-20
 
+**Status:** NOT STARTED (audited 2026-02-21). No CHECK constraint migration, no integration test gap tests added.
+
 ---
 
 ## Acceptance Criteria Coverage

@@ -1,0 +1,127 @@
+INFO: Logging configured. Log file: /home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/logs/promptgrimoire.1134881.log
+NiceGUI ready to go on http://localhost:49839, http://10.206.27.0:49839, and http://100.94.38.104:49839
+WARNING: WATCHDOG: acquired loop ref, asyncio debug OFF (debug causes block)
+INFO: Magic link callback received
+INFO: Settings loaded .env from: /home/brian/people/Brian/PromptGrimoireTool/.env, /home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.env
+INFO: Pool listeners installed. Initial: size=5 checked_in=0 checked_out=0 overflow=-5/10
+INFO: NEW_CONN size=5 checked_in=0 checked_out=1 overflow=-4/10
+INFO: User upserted: id=344cf5d7-b71b-439d-82dd-f264d937965d, email=e2e-test-2a2e5b98@test.example.edu.au, is_admin=False
+INFO: Login successful: email=e2e-test-2a2e5b98@test.example.edu.au, member_id=mock-member-27ee7b12, auth_method=magic_link, user_id=344cf5d7-b71b-439d-82dd-f264d937965d
+INFO: Created workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 for user 344cf5d7-b71b-439d-82dd-f264d937965d
+INFO: CLIENT_REGISTERED: ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 client=f5bc25fa total=1
+WARNING: CLIENT_DELETE: id=3d2411ce elements=6 elapsed=0.000s
+WARNING: CLIENT_DELETE: id=ee2e4bd3 elements=68 elapsed=0.000s
+WARNING: CLIENT_DELETE: id=27ad4f9d elements=8 elapsed=0.000s
+ERROR: JavaScript did not respond within 1.0 s
+Traceback (most recent call last):
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/tasks.py", line 488, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/javascript_request.py", line 28, in __await__
+    yield from asyncio.wait_for(self._event.wait(), self.timeout).__await__()
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/tasks.py", line 487, in wait_for
+    async with timeouts.timeout(timeout):
+               ~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/timeouts.py", line 114, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/background_tasks.py", line 93, in _handle_exceptions
+    task.result()
+    ~~~~~~~~~~~^^
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/client.py", line 378, in result_with_client
+    await result
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/elements/drawer.py", line 60, in _request_value
+    self.value = await context.client.run_javascript(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        f'!getHtmlElement({self.id}).parentElement.classList.contains("q-layout--prevent-focus")  // __IS_DRAWER_OPEN__'
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/client.py", line 251, in send_and_wait
+    return await JavaScriptRequest(request_id, timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/javascript_request.py", line 30, in __await__
+    raise TimeoutError(f'JavaScript did not respond within {self.timeout:.1f} s') from e
+TimeoutError: JavaScript did not respond within 1.0 s
+INFO: [PIPELINE] Input: type=html, size=38048 bytes (37.2 KB)
+INFO: [PIPELINE] After conversion: size=38048 bytes (37.2 KB), ratio=1.0x
+INFO: [PIPELINE] After preprocess: size=38087 bytes (37.2 KB), ratio=1.0x
+INFO: [PIPELINE] Final output: size=38087 bytes (37.2 KB), ratio=1.0x from input
+INFO: CLIENT_REGISTERED: ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 client=bcf902f7 total=2
+INFO: CLIENT_REGISTERED: ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 client=f63256b3 total=3
+WARNING: CLIENT_DELETE: id=fe1791b7 elements=27 elapsed=0.001s
+WARNING: DELETE[f5bc25fa-28c0-41e5-b708-47805a2a2bd8] ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 start
+WARNING: Event listeners changed after initial definition. Re-rendering affected elements.
+WARNING: CLIENT_DELETE: id=7db55fb0 elements=39 elapsed=0.000s
+WARNING: DELETE[bcf902f7-eea0-4752-84b0-6ad6b18e4d6b] ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 start
+WARNING: DELETE[bcf902f7-eea0-4752-84b0-6ad6b18e4d6b] total: 0.003s last=False
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+WARNING: PUSH_HIGHLIGHTS: no client ref for client_id=bcf902f7 -- skipping JS push
+WARNING: Client has been deleted but is still being used. This is most likely a bug in your application code. See https://github.com/zauberzeug/nicegui/issues/3028 for more information.
+Stack (most recent call last):
+  File "<string>", line 306, in <module>
+    ui.run(
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/ui_run.py", line 296, in run
+    Server.instance.run()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/server.py", line 37, in run
+    super().run(sockets=sockets)
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/runners.py", line 204, in run
+    return runner.run(main)
+  File "/home/brian/.local/share/uv/python/cpython-3.14.2-linux-x86_64-gnu/lib/python3.14/asyncio/runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/client.py", line 378, in result_with_client
+    await result
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/broadcast.py", line 253, in on_client_delete
+    await presence.invoke_callback()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/__init__.py", line 111, in invoke_callback
+    await self.callback()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/broadcast.py", line 162, in handle_update_from_other
+    state.refresh_annotations()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/document.py", line 278, in refresh_annotations
+    _refresh_annotation_cards(state)
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/cards.py", line 267, in _refresh_annotation_cards
+    card = _build_annotation_card(state, hl)
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/src/promptgrimoire/pages/annotation/cards.py", line 150, in _build_annotation_card
+    ui.card()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/elements/card.py", line 27, in __init__
+    super().__init__('q-card')
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/element.py", line 85, in __init__
+    client.outbox.enqueue_update(self)
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/outbox.py", line 68, in enqueue_update
+    self.client.check_existence()
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/client.py", line 433, in check_existence
+    helpers.warn_once('Client has been deleted but is still being used. '
+  File "/home/brian/people/Brian/PromptGrimoireTool/.worktrees/95-annotation-tags/.venv/lib/python3.14/site-packages/nicegui/helpers.py", line 34, in warn_once
+    log.warning(message, stack_info=stack_info)
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+WARNING: DELETE[f5bc25fa-28c0-41e5-b708-47805a2a2bd8] total: 2.385s last=False
+INFO: CLIENT_REGISTERED: ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 client=ffe19ff6 total=2
+WARNING: CLIENT_DELETE: id=4acdc522 elements=243 elapsed=0.001s
+WARNING: DELETE[f63256b3-807b-4124-994c-f3f5906428ce] ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 start
+INFO: Persisted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2
+WARNING: DELETE[f63256b3-807b-4124-994c-f3f5906428ce] total: 0.018s last=False
+WARNING: CLIENT_DELETE: id=34f14f34 elements=138 elapsed=0.001s
+WARNING: DELETE[ffe19ff6-7485-4089-bd10-37df87b07063] ws=e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 start
+INFO: Evicted workspace e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2 (doc ws-e6a7b57b-7ffe-4a0d-be1b-66d45ee601f2) from persistence
+WARNING: DELETE[ffe19ff6-7485-4089-bd10-37df87b07063] total: 0.000s last=True
+INFO: POOL_SNAPSHOT size=5 checked_in=1 checked_out=0 overflow=-4/10
+INFO: PG_CONNECTIONS active=1
+INFO: PG_STATS active_time=99189.8ms idle_in_tx=262885.7ms busy_ratio=0.274 backends=1
+WARNING: CLEANUP: clients=0/0 sids=0 eio=0 orphan_wait=4 tasks=16->12 elapsed=0.000s

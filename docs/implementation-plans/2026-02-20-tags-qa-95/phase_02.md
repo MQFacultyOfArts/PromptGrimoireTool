@@ -10,6 +10,8 @@
 
 **Codebase verified:** 2026-02-20
 
+**Status:** COMPLETE (2026-02-21). Instructor subtests + student clone verification delivered in `35ec0ef`. Supporting infra (DB workspace creation, drag helper, parallel runner) added alongside but outside this plan's scope.
+
 ---
 
 ## Acceptance Criteria Coverage

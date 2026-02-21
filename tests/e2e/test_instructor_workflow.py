@@ -32,7 +32,6 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _seed_tags_for_workspace,
-    drag_sortable_item,
     seed_group_id,
     seed_tag_id,
     select_chars,
@@ -336,12 +335,11 @@ def _instructor_reorder_groups(page: Page, template_ws_id: str) -> None:
 
     sources_gid = seed_group_id(template_ws_id, "Sources")
     analysis_gid = seed_group_id(template_ws_id, "Analysis")
-    sources_header = dialog.locator(f"[data-testid='tag-group-header-{sources_gid}']")
-    analysis_header = dialog.locator(f"[data-testid='tag-group-header-{analysis_gid}']")
-    expect(sources_header).to_be_visible(timeout=3000)
-    expect(analysis_header).to_be_visible(timeout=3000)
 
-    drag_sortable_item(sources_header, analysis_header)
+    # Click "move up" on Sources group to swap it above Analysis.
+    move_up_btn = dialog.locator(f"[data-testid='group-move-up-{sources_gid}']")
+    expect(move_up_btn).to_be_visible(timeout=3000)
+    move_up_btn.click()
     page.wait_for_timeout(500)
 
     # Close and reopen to verify order persisted
@@ -518,12 +516,10 @@ def _student_reorder_tags(student_page: Page) -> None:
     dialog = student_page.locator("[data-testid='tag-management-dialog']")
     expect(dialog).to_be_visible(timeout=5000)
 
-    tag_rows = dialog.locator(".drag-handle")
-    if tag_rows.count() >= 2:
-        drag_sortable_item(
-            tag_rows.nth(1).locator("xpath=ancestor::div[1]"),
-            tag_rows.nth(0).locator("xpath=ancestor::div[1]"),
-        )
+    # Use move-down button on the first tag to swap positions 0 and 1
+    move_down_btns = dialog.locator("[data-testid^='tag-move-down-']")
+    if move_down_btns.count() >= 1:
+        move_down_btns.first.click()
         student_page.wait_for_timeout(500)
 
     dialog.locator("[data-testid='tag-management-done-btn']").click()

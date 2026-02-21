@@ -274,6 +274,9 @@ def _render_tag_row(
     group_options: dict[str, str],
     on_delete: Any,
     on_lock_toggle: Any | None = None,
+    on_move_tag: Any | None = None,
+    tag_index: int = 0,
+    total_tags: int = 1,
     row_collector: dict[UUID, TagRowInputs] | None = None,
     on_field_save: Any | None = None,
 ) -> None:
@@ -297,12 +300,41 @@ def _render_tag_row(
         Async callback ``(tag_id, tag_name) -> None``.
     on_lock_toggle:
         Async callback ``(tag_id, locked) -> None``. Shown only for instructors.
+    on_move_tag:
+        Async callback ``(tag_id, direction) -> None``.
+        ``direction`` is ``-1`` (up) or ``1`` (down).
+    tag_index:
+        Zero-based position of this tag within its group.
+    total_tags:
+        Total number of tags in this group (for disabling buttons).
     row_collector:
         Mutable dict to store input refs and original values for batch save.
     """
     with ui.row().classes("items-center w-full gap-1"):
         # Drag handle
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
+        # Move up/down buttons for keyboard-accessible reordering
+        if on_move_tag is not None:
+            up_btn = (
+                ui.button(
+                    icon="arrow_upward",
+                    on_click=lambda _e, t=tag: on_move_tag(t.id, -1),
+                )
+                .props(f"flat round dense size=xs data-testid=tag-move-up-{tag.id}")
+                .tooltip("Move tag up")
+            )
+            if tag_index == 0:
+                up_btn.props("disable")
+            down_btn = (
+                ui.button(
+                    icon="arrow_downward",
+                    on_click=lambda _e, t=tag: on_move_tag(t.id, 1),
+                )
+                .props(f"flat round dense size=xs data-testid=tag-move-down-{tag.id}")
+                .tooltip("Move tag down")
+            )
+            if tag_index >= total_tags - 1:
+                down_btn.props("disable")
 
         # Colour swatch
         ui.element("div").classes("w-6 h-6 rounded-full shrink-0").style(
@@ -400,6 +432,9 @@ def _render_group_header(
     group: Any,
     *,
     on_delete_group: Any,
+    on_move_group: Any | None = None,
+    group_index: int = 0,
+    total_groups: int = 1,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
     on_group_field_save: Any | None = None,
 ) -> None:
@@ -413,6 +448,30 @@ def _render_group_header(
         .props(f"data-testid=tag-group-header-{group.id}")
     ):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
+        # Move up/down buttons for keyboard-accessible reordering
+        if on_move_group is not None:
+            up_btn = (
+                ui.button(
+                    icon="arrow_upward",
+                    on_click=lambda _e, g=group: on_move_group(g.id, -1),
+                )
+                .props(f"flat round dense size=xs data-testid=group-move-up-{group.id}")
+                .tooltip("Move group up")
+            )
+            if group_index == 0:
+                up_btn.props("disable")
+            down_btn = (
+                ui.button(
+                    icon="arrow_downward",
+                    on_click=lambda _e, g=group: on_move_group(g.id, 1),
+                )
+                .props(
+                    f"flat round dense size=xs data-testid=group-move-down-{group.id}"
+                )
+                .tooltip("Move group down")
+            )
+            if group_index >= total_groups - 1:
+                down_btn.props("disable")
         ui.icon("folder").classes("text-blue-600")
         group_name_input = (
             ui.input(value=group.name)
@@ -559,17 +618,19 @@ def _render_group_tags(
     on_delete_tag: Any,
     on_lock_toggle: Any | None,
     on_tag_reorder: Any,
+    on_move_tag: Any | None = None,
     tag_row_collector: dict[UUID, TagRowInputs] | None = None,
     on_field_save: Any | None = None,
 ) -> None:
     """Render tags within a group, wrapped in a Sortable for drag reorder."""
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
 
+    total_tags = len(group_tags)
     with Sortable(
         on_end=on_tag_reorder,
         options={"handle": ".drag-handle", "animation": 150},
     ):
-        for tag in group_tags:
+        for idx, tag in enumerate(group_tags):
             tag_ids.append(tag.id)
             can_edit = not tag.locked or is_instructor
             _render_tag_row(
@@ -579,6 +640,9 @@ def _render_group_tags(
                 group_options=group_options,
                 on_delete=on_delete_tag,
                 on_lock_toggle=on_lock_toggle,
+                on_move_tag=on_move_tag,
+                tag_index=idx,
+                total_tags=total_tags,
                 row_collector=tag_row_collector,
                 on_field_save=on_field_save,
             )
@@ -597,6 +661,8 @@ def _render_tag_list_content(
     on_lock_toggle: Any | None,
     on_tag_reorder_for_group: Any,
     on_group_reorder: Any,
+    on_move_group: Any | None = None,
+    on_move_tag: Any | None = None,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
     tag_row_collector: dict[UUID, TagRowInputs],
@@ -617,7 +683,8 @@ def _render_tag_list_content(
         on_end=on_group_reorder,
         options={"handle": ".drag-handle", "animation": 150},
     ):
-        for group in groups:
+        total_groups = len(groups)
+        for idx, group in enumerate(groups):
             group_id_list.append(group.id)
             group_tags = tags_by_group.get(group.id, [])
             tag_ids: list[UUID] = []
@@ -628,6 +695,9 @@ def _render_tag_list_content(
                 _render_group_header(
                     group,
                     on_delete_group=on_delete_group,
+                    on_move_group=on_move_group,
+                    group_index=idx,
+                    total_groups=total_groups,
                     row_collector=group_row_collector,
                     on_group_field_save=on_group_field_save,
                 )
@@ -641,6 +711,7 @@ def _render_tag_list_content(
                     on_tag_reorder=lambda e, gid=group.id: on_tag_reorder_for_group(
                         e, gid
                     ),
+                    on_move_tag=on_move_tag,
                     tag_row_collector=tag_row_collector,
                     on_field_save=on_field_save,
                 )
@@ -666,6 +737,7 @@ def _render_tag_list_content(
             on_delete_tag=on_delete_tag,
             on_lock_toggle=on_lock_toggle,
             on_tag_reorder=lambda e: on_tag_reorder_for_group(e, None),
+            on_move_tag=on_move_tag,
             tag_row_collector=tag_row_collector,
             on_field_save=on_field_save,
         )
@@ -933,6 +1005,8 @@ async def open_tag_management(
                     on_lock_toggle=callbacks["lock_toggle"] if is_instructor else None,
                     on_tag_reorder_for_group=callbacks["tag_reorder"],
                     on_group_reorder=callbacks["group_reorder"],
+                    on_move_group=callbacks["move_group"],
+                    on_move_tag=callbacks["move_tag"],
                     tag_id_lists=tag_id_lists,
                     group_id_list=group_id_list,
                     tag_row_collector=tag_row_inputs,
@@ -1002,6 +1076,19 @@ def _build_group_callbacks(
         await reorder_tag_groups(new_order)
         await render_tag_list()
 
+    async def _move_group(group_id: UUID, direction: int) -> None:
+        """Move a group up (-1) or down (+1) by one position."""
+        try:
+            old_idx = group_id_list.index(group_id)
+        except ValueError:
+            return
+        new_idx = old_idx + direction
+        if new_idx < 0 or new_idx >= len(group_id_list):
+            return
+        new_order = _reorder_list(group_id_list, old_idx, new_idx)
+        await reorder_tag_groups(new_order)
+        await render_tag_list()
+
     return {
         "delete_group": lambda gid, gname: _open_confirm_delete_group(
             gid,
@@ -1010,6 +1097,48 @@ def _build_group_callbacks(
         ),
         "add_group": _add_group,
         "group_reorder": _group_reorder,
+        "move_group": _move_group,
+    }
+
+
+def _build_tag_reorder_callbacks(
+    *,
+    state: PageState,
+    render_tag_list: Any,
+    reorder_tags: Any,
+    tag_id_lists: dict[UUID | None, list[UUID]],
+) -> dict[str, Any]:
+    """Build tag reorder callbacks (drag and button-based)."""
+
+    async def _tag_reorder(e: Any, group_id: UUID | None) -> None:
+        indices = _extract_reorder_indices(e)
+        if indices is None:
+            return
+        new_order = _reorder_list(tag_id_lists.get(group_id, []), *indices)
+        await reorder_tags(new_order)
+        await _refresh_tag_state(state)
+        await render_tag_list()
+
+    async def _move_tag(tag_id: UUID, direction: int) -> None:
+        """Move a tag up (-1) or down (+1) within its group."""
+        for _gid, id_list in tag_id_lists.items():
+            if tag_id in id_list:
+                try:
+                    old_idx = id_list.index(tag_id)
+                except ValueError:
+                    return
+                new_idx = old_idx + direction
+                if new_idx < 0 or new_idx >= len(id_list):
+                    return
+                new_order = _reorder_list(id_list, old_idx, new_idx)
+                await reorder_tags(new_order)
+                await _refresh_tag_state(state)
+                await render_tag_list()
+                return
+
+    return {
+        "tag_reorder": _tag_reorder,
+        "move_tag": _move_tag,
     }
 
 
@@ -1033,6 +1162,12 @@ def _build_management_callbacks(
         create_tag_group=create_tag_group,
         reorder_tag_groups=reorder_tag_groups,
         group_id_list=group_id_list,
+    )
+    tag_reorder_cbs = _build_tag_reorder_callbacks(
+        state=state,
+        render_tag_list=render_tag_list,
+        reorder_tags=reorder_tags,
+        tag_id_lists=tag_id_lists,
     )
 
     async def _on_tag_deleted(tag_name: str) -> None:
@@ -1085,15 +1220,6 @@ def _build_management_callbacks(
             return
         await render_tag_list()
 
-    async def _tag_reorder(e: Any, group_id: UUID | None) -> None:
-        indices = _extract_reorder_indices(e)
-        if indices is None:
-            return
-        new_order = _reorder_list(tag_id_lists.get(group_id, []), *indices)
-        await reorder_tags(new_order)
-        await _refresh_tag_state(state)
-        await render_tag_list()
-
     def _count_highlights_for_tag(tag_id: UUID) -> int:
         """Count CRDT highlights referencing a tag."""
         if not state.crdt_doc:
@@ -1113,6 +1239,6 @@ def _build_management_callbacks(
         ),
         "add_tag": _add_tag_in_group,
         "lock_toggle": _lock_toggle,
-        "tag_reorder": _tag_reorder,
+        **tag_reorder_cbs,
         **group_cbs,
     }

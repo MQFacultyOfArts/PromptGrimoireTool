@@ -10,7 +10,7 @@
 
 **Codebase verified:** 2026-02-20
 
-**Status:** NOT STARTED (audited 2026-02-21). No migration, no atomic counters, `create_tag()`/`create_tag_group()` still use `SELECT max(order_index)`.
+**Status:** COMPLETE (2026-02-21). All 5 tasks delivered: `a0b9f69` (migration), `0419998` (atomic counter refactor), `89bae9e` (E2E seed helper), `ebbaaa9` (concurrency tests), `79825c9` (review fixes). Code review: zero issues on re-review.
 
 ---
 

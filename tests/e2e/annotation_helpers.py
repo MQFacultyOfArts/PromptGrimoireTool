@@ -339,13 +339,14 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
 
 
 def drag_sortable_item(source: Locator, target: Locator) -> None:
-    """Drag a SortableJS item by its drag handle to the target position.
+    """Drag a SortableJS item by its drag handle to the target.
 
-    Uses Playwright's native drag_to() which works reliably for adjacent
-    elements in the same SortableJS container.
+    Uses Playwright's ``drag_to`` between the source's
+    ``.drag-handle`` child and the *target* locator.
 
     Args:
-        source: Locator for the draggable element (must contain .drag-handle).
+        source: Locator for the draggable element
+            (must contain ``.drag-handle``).
         target: Locator for the drop target element.
     """
     source_handle = source.locator(".drag-handle").first

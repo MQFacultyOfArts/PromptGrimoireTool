@@ -328,6 +328,8 @@ class Workspace(SQLModel, table=True):
     course_id: UUID | None = Field(
         default=None, sa_column=_set_null_fk_column("course.id")
     )
+    next_tag_order: int = Field(default=0)
+    next_group_order: int = Field(default=0)
     enable_save_as_draft: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

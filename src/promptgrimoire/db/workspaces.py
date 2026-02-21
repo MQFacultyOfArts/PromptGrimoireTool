@@ -696,6 +696,11 @@ async def clone_workspace_from_activity(
             await session.flush()
             tag_id_map[tmpl_tag.id] = cloned_tag.id
 
+        # --- Sync workspace counter columns after cloning tags/groups ---
+        clone.next_tag_order = len(template_tags)
+        clone.next_group_order = len(template_groups)
+        session.add(clone)
+
         # --- CRDT state cloning via API replay ---
         _replay_crdt_state(template, clone, doc_id_map, tag_id_map)
 

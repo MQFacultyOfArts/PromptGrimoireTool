@@ -93,7 +93,6 @@ class TestCreateTag:
             group_id=group.id,
             description="Legal jurisdiction tags",
             locked=True,
-            order_index=5,
         )
 
         assert isinstance(tag.id, UUID)
@@ -103,7 +102,7 @@ class TestCreateTag:
         assert tag.group_id == group.id
         assert tag.description == "Legal jurisdiction tags"
         assert tag.locked is True
-        assert tag.order_index == 5
+        assert tag.order_index == 0  # first tag gets index 0 from atomic counter
         assert tag.created_at is not None
 
     @pytest.mark.asyncio
@@ -127,7 +126,7 @@ class TestCreateTag:
         assert tag.group_id is None
         assert tag.description is None
         assert tag.locked is False
-        assert tag.order_index == 1  # auto-appends after existing (empty = 0+1)
+        assert tag.order_index == 0  # first tag gets index 0 from atomic counter
 
 
 class TestUpdateTag:
@@ -202,7 +201,7 @@ class TestCreateTagGroup:
 
     @pytest.mark.asyncio
     async def test_create_tag_group_with_fields(self) -> None:
-        """Create a TagGroup with name and order_index.
+        """Create a TagGroup with name; order_index assigned atomically.
 
         Verifies AC2.4.
         """
@@ -211,12 +210,12 @@ class TestCreateTagGroup:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        group = await create_tag_group(ws_id, name="Legal Issues", order_index=3)
+        group = await create_tag_group(ws_id, name="Legal Issues")
 
         assert isinstance(group.id, UUID)
         assert group.workspace_id == ws_id
         assert group.name == "Legal Issues"
-        assert group.order_index == 3
+        assert group.order_index == 0  # first group gets index 0
 
 
 class TestUpdateTagGroup:
@@ -233,7 +232,7 @@ class TestUpdateTagGroup:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        group = await create_tag_group(ws_id, name="Original", order_index=0)
+        group = await create_tag_group(ws_id, name="Original")
 
         updated = await update_tag_group(group.id, name="Renamed", order_index=5)
 
@@ -456,9 +455,9 @@ class TestReorderTags:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        t1 = await create_tag(ws_id, name="Tag1", color="#aaaaaa", order_index=0)
-        t2 = await create_tag(ws_id, name="Tag2", color="#bbbbbb", order_index=1)
-        t3 = await create_tag(ws_id, name="Tag3", color="#cccccc", order_index=2)
+        t1 = await create_tag(ws_id, name="Tag1", color="#aaaaaa")
+        t2 = await create_tag(ws_id, name="Tag2", color="#bbbbbb")
+        t3 = await create_tag(ws_id, name="Tag3", color="#cccccc")
 
         # Reorder: Tag3, Tag1, Tag2
         await reorder_tags([t3.id, t1.id, t2.id])
@@ -489,9 +488,9 @@ class TestReorderTagGroups:
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        g1 = await create_tag_group(ws_id, name="G1", order_index=0)
-        g2 = await create_tag_group(ws_id, name="G2", order_index=1)
-        g3 = await create_tag_group(ws_id, name="G3", order_index=2)
+        g1 = await create_tag_group(ws_id, name="G1")
+        g2 = await create_tag_group(ws_id, name="G2")
+        g3 = await create_tag_group(ws_id, name="G3")
 
         # Reverse order
         await reorder_tag_groups([g3.id, g2.id, g1.id])
@@ -525,7 +524,7 @@ class TestImportTagsFromActivity:
         _, src_activity = await _make_course_week_activity()
         src_ws = src_activity.template_workspace_id
 
-        src_group = await create_tag_group(src_ws, name="Legal", order_index=0)
+        src_group = await create_tag_group(src_ws, name="Legal")
         src_t1 = await create_tag(
             src_ws,
             name="Jurisdiction",
@@ -533,20 +532,17 @@ class TestImportTagsFromActivity:
             group_id=src_group.id,
             description="Court jurisdiction",
             locked=True,
-            order_index=0,
         )
         src_t2 = await create_tag(
             src_ws,
             name="Facts",
             color="#ff7f0e",
             group_id=src_group.id,
-            order_index=1,
         )
         src_t3 = await create_tag(
             src_ws,
             name="Ungrouped",
             color="#2ca02c",
-            order_index=2,
         )
 
         # Target activity
@@ -765,3 +761,66 @@ class TestDeleteTagCrdtCleanup:
         doc2 = AnnotationDocument("verify")
         doc2.apply_update(ws_after.crdt_state)
         assert doc2.get_all_highlights() == []
+
+
+class TestAtomicTagCounter:
+    """Tests for atomic counter-based order_index assignment.
+
+    Verifies AC5.2, AC5.3, AC5.5.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_assigns_sequential_order_index(self) -> None:
+        """Two sequential create_tag calls produce distinct order_index values.
+
+        Verifies AC5.2.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag_a = await create_tag(ws_id, name="TagA", color="#aa0000")
+        tag_b = await create_tag(ws_id, name="TagB", color="#bb0000")
+
+        assert tag_a.order_index != tag_b.order_index
+        assert {tag_a.order_index, tag_b.order_index} == {0, 1}
+
+    @pytest.mark.asyncio
+    async def test_create_tag_group_assigns_sequential_order_index(self) -> None:
+        """Two sequential create_tag_group calls produce distinct order_index values.
+
+        Verifies AC5.3.
+        """
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group_a = await create_tag_group(ws_id, name="GroupA")
+        group_b = await create_tag_group(ws_id, name="GroupB")
+
+        assert group_a.order_index != group_b.order_index
+        assert {group_a.order_index, group_b.order_index} == {0, 1}
+
+    @pytest.mark.asyncio
+    async def test_counter_correct_after_reorder_then_create(self) -> None:
+        """After reorder, new tag gets order_index == count.
+
+        Verifies AC5.5.
+        """
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="T1", color="#110000")
+        t2 = await create_tag(ws_id, name="T2", color="#220000")
+        t3 = await create_tag(ws_id, name="T3", color="#330000")
+
+        # Reorder to [t3, t1, t2]
+        await reorder_tags([t3.id, t1.id, t2.id])
+
+        # Create a 4th tag -- should get order_index == 3
+        t4 = await create_tag(ws_id, name="T4", color="#440000")
+        assert t4.order_index == 3

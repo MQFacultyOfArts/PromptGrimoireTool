@@ -43,12 +43,15 @@ async def _check_tag_creation_permission(workspace_id: UUID) -> None:
 async def create_tag_group(
     workspace_id: UUID,
     name: str,
-    order_index: int | None = None,
 ) -> TagGroup:
     """Create a TagGroup in a workspace.
 
     Resolves PlacementContext and raises PermissionError if
     allow_tag_creation is False.
+
+    Order index is assigned atomically via the workspace's
+    ``next_group_order`` counter column, preventing duplicate
+    indices under concurrent creation.
 
     Parameters
     ----------
@@ -56,9 +59,6 @@ async def create_tag_group(
         The parent workspace's UUID.
     name : str
         Display name for the group.
-    order_index : int | None
-        Display order within the workspace.
-        ``None`` (default) appends after existing groups.
 
     Returns
     -------
@@ -68,16 +68,16 @@ async def create_tag_group(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        if order_index is None:
-            from sqlalchemy import func
+        from sqlalchemy import text
 
-            result = await session.exec(
-                select(func.max(TagGroup.order_index)).where(
-                    TagGroup.workspace_id == workspace_id
-                )
-            )
-            max_idx = result.one_or_none()
-            order_index = (max_idx or 0) + 1
+        result = await session.execute(
+            text(
+                "UPDATE workspace SET next_group_order = next_group_order + 1 "
+                "WHERE id = :ws_id RETURNING next_group_order - 1"
+            ),
+            {"ws_id": str(workspace_id)},
+        )
+        order_index = result.scalar_one()
 
         group = TagGroup(
             workspace_id=workspace_id,
@@ -173,12 +173,15 @@ async def create_tag(
     group_id: UUID | None = None,
     description: str | None = None,
     locked: bool = False,
-    order_index: int | None = None,
 ) -> Tag:
     """Create a Tag in a workspace.
 
     Resolves PlacementContext and raises PermissionError if
     allow_tag_creation is False.
+
+    Order index is assigned atomically via the workspace's
+    ``next_tag_order`` counter column, preventing duplicate
+    indices under concurrent creation.
 
     Parameters
     ----------
@@ -194,9 +197,6 @@ async def create_tag(
         Optional longer description.
     locked : bool
         Whether students can modify this tag.
-    order_index : int | None
-        Display order within group or workspace.
-        ``None`` (default) appends after existing tags.
 
     Returns
     -------
@@ -206,16 +206,16 @@ async def create_tag(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        if order_index is None:
-            from sqlalchemy import func
+        from sqlalchemy import text
 
-            result = await session.exec(
-                select(func.max(Tag.order_index)).where(
-                    Tag.workspace_id == workspace_id
-                )
-            )
-            max_idx = result.one_or_none()
-            order_index = (max_idx or 0) + 1
+        result = await session.execute(
+            text(
+                "UPDATE workspace SET next_tag_order = next_tag_order + 1 "
+                "WHERE id = :ws_id RETURNING next_tag_order - 1"
+            ),
+            {"ws_id": str(workspace_id)},
+        )
+        order_index = result.scalar_one()
 
         tag = Tag(
             workspace_id=workspace_id,
@@ -347,6 +347,7 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
 
     Takes an ordered list of tag UUIDs and sets each tag's
     order_index to its position in the list (0, 1, 2, ...).
+    Also syncs the workspace's ``next_tag_order`` counter.
 
     Args:
         tag_ids: Ordered list of tag UUIDs.
@@ -354,7 +355,11 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
     Raises:
         ValueError: If any tag ID is not found.
     """
+    if not tag_ids:
+        return
+
     async with get_session() as session:
+        workspace_id: UUID | None = None
         for idx, tid in enumerate(tag_ids):
             tag = await session.get(Tag, tid)
             if not tag:
@@ -362,7 +367,17 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
                 raise ValueError(msg)
             tag.order_index = idx
             session.add(tag)
+            if workspace_id is None:
+                workspace_id = tag.workspace_id
         await session.flush()
+
+        # Sync counter so next create_tag() uses the correct index
+        from sqlalchemy import text
+
+        await session.execute(
+            text("UPDATE workspace SET next_tag_order = :count WHERE id = :ws_id"),
+            {"count": len(tag_ids), "ws_id": str(workspace_id)},
+        )
 
 
 async def reorder_tag_groups(group_ids: list[UUID]) -> None:
@@ -370,6 +385,7 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
 
     Takes an ordered list of TagGroup UUIDs and sets each group's
     order_index to its position in the list (0, 1, 2, ...).
+    Also syncs the workspace's ``next_group_order`` counter.
 
     Args:
         group_ids: Ordered list of TagGroup UUIDs.
@@ -377,7 +393,11 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
     Raises:
         ValueError: If any group ID is not found.
     """
+    if not group_ids:
+        return
+
     async with get_session() as session:
+        workspace_id: UUID | None = None
         for idx, gid in enumerate(group_ids):
             group = await session.get(TagGroup, gid)
             if not group:
@@ -385,7 +405,17 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
                 raise ValueError(msg)
             group.order_index = idx
             session.add(group)
+            if workspace_id is None:
+                workspace_id = group.workspace_id
         await session.flush()
+
+        # Sync counter so next create_tag_group() uses the correct index
+        from sqlalchemy import text
+
+        await session.execute(
+            text("UPDATE workspace SET next_group_order = :count WHERE id = :ws_id"),
+            {"count": len(group_ids), "ws_id": str(workspace_id)},
+        )
 
 
 # ── Import from activity ─────────────────────────────────────────────
@@ -478,6 +508,26 @@ async def import_tags_from_activity(
             await session.flush()
             await session.refresh(new_tag)
             new_tags.append(new_tag)
+
+        # Sync workspace counters to account for imported tags/groups.
+        # Uses GREATEST to handle the case where tags already exist.
+        from sqlalchemy import text
+
+        imported_tag_count = len(new_tags)
+        imported_group_count = len(group_id_map)
+        await session.execute(
+            text(
+                "UPDATE workspace SET "
+                "next_tag_order = GREATEST(next_tag_order, :tag_count), "
+                "next_group_order = GREATEST(next_group_order, :group_count) "
+                "WHERE id = :ws_id"
+            ),
+            {
+                "tag_count": imported_tag_count,
+                "group_count": imported_group_count,
+                "ws_id": str(target_workspace_id),
+            },
+        )
 
         return new_tags
 

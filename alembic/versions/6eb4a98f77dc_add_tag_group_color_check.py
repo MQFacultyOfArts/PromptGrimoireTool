@@ -31,7 +31,7 @@ def upgrade() -> None:
         )
     )
     bad_count = result.scalar()
-    if bad_count:
+    if bad_count is not None and bad_count > 0:
         msg = (
             f"Cannot add CHECK constraint: {bad_count} tag_group rows "
             f"have invalid color values. Fix data first."

@@ -113,6 +113,8 @@ Container for documents and CRDT state. Unit of collaboration.
 | `activity_id` | UUID | FK → Activity (SET NULL), nullable |
 | `course_id` | UUID | FK → Course (SET NULL), nullable |
 | `enable_save_as_draft` | BOOLEAN | NOT NULL, default FALSE |
+| `next_tag_order` | INTEGER | NOT NULL, default 0 |
+| `next_group_order` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 | | | CHECK: `activity_id` and `course_id` mutually exclusive |
@@ -153,7 +155,7 @@ Visual container for grouping tags within a workspace. Presentation-level only �
 | `id` | UUID | PK |
 | `workspace_id` | UUID | FK → Workspace (CASCADE), NOT NULL |
 | `name` | VARCHAR(100) | NOT NULL |
-| `color` | VARCHAR(7) | nullable |
+| `color` | VARCHAR(7) | nullable, CHECK (`color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$'`) |
 | `order_index` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | | | UNIQUE (workspace_id, name) |
@@ -173,7 +175,7 @@ Per-workspace annotation tag definition. Each workspace has its own independent 
 | `group_id` | UUID | FK → TagGroup (SET NULL), nullable |
 | `name` | VARCHAR(100) | NOT NULL |
 | `description` | TEXT | nullable |
-| `color` | VARCHAR(7) | NOT NULL |
+| `color` | VARCHAR(7) | NOT NULL, CHECK (`color ~ '^#[0-9a-fA-F]{6}$'`) |
 | `locked` | BOOLEAN | NOT NULL, default FALSE |
 | `order_index` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |

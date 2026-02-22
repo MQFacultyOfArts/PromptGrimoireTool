@@ -8,10 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from promptgrimoire.db.models import Activity
 
 from rich.console import Console
 from rich.panel import Panel
@@ -41,6 +48,10 @@ def _pre_test_db_cleanup() -> None:
 
     # Override DATABASE__URL so Settings resolves to the test database
     os.environ["DATABASE__URL"] = test_database_url
+    # Signal engine module to use NullPool instead of QueuePool.
+    # Inherited by all xdist workers.  Avoids asyncpg connection-state
+    # leakage under parallel execution (asyncpg#784, SQLAlchemy#10226).
+    os.environ["_PROMPTGRIMOIRE_USE_NULL_POOL"] = "1"
     get_settings.cache_clear()
 
     # Run Alembic migrations
@@ -116,11 +127,174 @@ Command: {command_str}
     return header_text, log_header
 
 
+def _stream_plain(
+    process: subprocess.Popen[str],
+    log_file,
+) -> int:
+    """Stream pytest output with token-minimising filtering for piped/CI use.
+
+    All lines go to the log file. Stdout suppresses everything until the
+    post-results summary section, then prints from there. FAILED/ERROR
+    lines are printed immediately regardless of phase.
+
+    Pytest output structure:
+    1. ``== test session starts ==``  (opening separator)
+    2. header lines, collection info
+    3. dot-progress or verbose results
+    4. ``== warnings summary ==`` or ``== N passed ==``  (closing separator)
+    5. summary details
+
+    We skip phase 1-3, print from phase 4 onwards.
+    """
+    separator_count = 0
+    in_summary = False
+
+    for line in process.stdout or []:
+        log_file.write(line)
+        log_file.flush()
+        stripped = line.rstrip()
+
+        # Count ``=====`` separators; summary starts at the second one
+        if not in_summary and _SEPARATOR_RE.match(stripped):
+            separator_count += 1
+            if separator_count >= 2:
+                in_summary = True
+
+        if in_summary:
+            print(line, end="")
+            continue
+
+        # Before summary: only print FAILED/ERROR lines
+        if "FAILED" in stripped or "ERROR" in stripped:
+            print(line, end="")
+
+    process.wait()
+    return process.returncode
+
+
+# ---------------------------------------------------------------------------
+# Pytest output parsing for the Rich progress bar
+# ---------------------------------------------------------------------------
+
+_COLLECTED_RE = re.compile(r"collected (\d+) items?(?:\s*/\s*(\d+) deselected)?")
+_XDIST_ITEMS_RE = re.compile(r"\[(\d+) items?\]")
+_RESULT_KW_RE = re.compile(r"\b(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b")
+_PCT_RE = re.compile(r"\[\s*(\d+)%\s*\]")
+_SEPARATOR_RE = re.compile(r"^={5,}")
+
+
+def _parse_collection(line: str) -> int | None:
+    """Extract test count from a pytest collection line, or None."""
+    m = _COLLECTED_RE.search(line)
+    if m:
+        collected = int(m.group(1))
+        deselected = int(m.group(2)) if m.group(2) else 0
+        return collected - deselected
+    m = _XDIST_ITEMS_RE.search(line)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _is_summary_boundary(line: str) -> bool:
+    """True if *line* marks the start of pytest's post-execution output."""
+    return bool(_SEPARATOR_RE.match(line)) or line in ("FAILURES", "ERRORS")
+
+
+def _parse_result(line: str, total: int | None) -> tuple[int, bool]:
+    """Return (advance_count, is_failure) for a pytest result line.
+
+    Handles verbose mode (keyword per line) and quiet mode ([NN%]).
+    Returns (0, False) when the line carries no result information.
+    """
+    if _RESULT_KW_RE.search(line):
+        return 1, ("FAILED" in line or "ERROR" in line)
+    m = _PCT_RE.search(line)
+    if m and total:
+        return total * int(m.group(1)) // 100, False
+    return 0, False
+
+
+def _stream_with_progress(
+    process: subprocess.Popen[str],
+    log_file,
+) -> int:
+    """Stream pytest output with a Rich progress bar — for interactive TTY use."""
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
+    total: int | None = None
+    completed = 0
+    phase = "collecting"  # collecting → running → summary
+
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
+    task_id = progress.add_task("Collecting tests...", total=None)
+    progress.start()
+
+    try:
+        for line in process.stdout or []:
+            log_file.write(line)
+            log_file.flush()
+            stripped = line.rstrip()
+
+            if phase == "summary":
+                print(line, end="")
+                continue
+
+            # Collection phase → running
+            count = _parse_collection(stripped)
+            if count is not None:
+                total = count
+                desc = "No tests collected" if total == 0 else f"Running {total} tests"
+                progress.update(task_id, total=total or None, description=desc)
+                phase = "running"
+                continue
+
+            # End of execution → summary
+            if phase == "running" and _is_summary_boundary(stripped):
+                phase = "summary"
+                progress.stop()
+                print(line, end="")
+                continue
+
+            # Advance progress from result lines
+            if phase == "running":
+                advance, is_fail = _parse_result(stripped, total)
+                if advance:
+                    completed = (
+                        max(completed, advance)
+                        if total and advance > 1
+                        else completed + advance
+                    )
+                    progress.update(task_id, completed=completed)
+                    if is_fail:
+                        progress.print(f"[red]{stripped}[/]")
+    finally:
+        if phase != "summary":
+            progress.stop()
+
+    process.wait()
+    return process.returncode
+
+
 def _run_pytest(
     title: str,
     log_path: Path,
     default_args: list[str],
-) -> None:
+) -> int:
     """Run pytest with Rich formatting and logging."""
     _pre_test_db_cleanup()
 
@@ -136,13 +310,23 @@ def _run_pytest(
 
     start_time = datetime.now()
     user_args = sys.argv[1:]
+
+    # Interactive terminals get a Rich progress bar.
+    # Piped output (e.g. Claude Code) uses _stream_plain filtering.
+    # rtk is not used here — it mangles multi-word pytest args like
+    # ``-m "not e2e"`` and causes zero test collection.
+    interactive = sys.stdout.isatty()
+
     all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
     header_text, log_header = _build_test_header(
         title, branch, db_name, start_time, command_str
     )
-    console.print(Panel(header_text, border_style="blue"))
+    if interactive:
+        console.print(Panel(header_text, border_style="blue"))
+    else:
+        print(f"db={db_name} log={log_path}")
 
     with log_path.open("w") as log_file:
         log_file.write(log_header)
@@ -156,18 +340,15 @@ def _run_pytest(
             bufsize=1,
         )
 
-        for line in process.stdout or []:
-            print(line, end="")
-            log_file.write(line)
-            log_file.flush()
-
-        process.wait()
-        exit_code = process.returncode
+        if interactive:
+            exit_code = _stream_with_progress(process, log_file)
+        else:
+            exit_code = _stream_plain(process, log_file)
 
         end_time = datetime.now()
         duration = end_time - start_time
 
-        # Footer
+        # Footer always written to log
         log_footer = f"""
 {"=" * 60}
 Finished: {end_time.isoformat()}
@@ -177,27 +358,29 @@ Exit code: {exit_code}
 """
         log_file.write(log_footer)
 
-    # Rich footer panel
-    console.print()
-    if exit_code == 0:
-        status = Text("PASSED", style="bold green")
-        border = "green"
-    else:
-        status = Text("FAILED", style="bold red")
-        border = "red"
+    if interactive:
+        # Rich footer panel
+        console.print()
+        if exit_code == 0:
+            status = Text("PASSED", style="bold green")
+            border = "green"
+        else:
+            status = Text("FAILED", style="bold red")
+            border = "red"
 
-    footer_text = Text()
-    footer_text.append("Status: ")
-    footer_text.append_text(status)
-    footer_text.append(f"\nDuration: {duration}")
-    footer_text.append(f"\nLog: {log_path}", style="dim")
+        footer_text = Text()
+        footer_text.append("Status: ")
+        footer_text.append_text(status)
+        footer_text.append(f"\nDuration: {duration}")
+        footer_text.append(f"\nLog: {log_path}", style="dim")
 
-    console.print(Panel(footer_text, border_style=border))
-    sys.exit(exit_code)
+        console.print(Panel(footer_text, border_style=border))
+
+    return exit_code
 
 
-def test_debug() -> None:
-    """Run pytest on tests affected by recent changes, stopping on first failure.
+def test_changed() -> None:
+    """Run pytest on tests affected by changes relative to main.
 
     Uses pytest-depper for smart test selection based on code dependencies.
     Only tests that depend on changed files (vs main branch) will run.
@@ -207,34 +390,50 @@ def test_debug() -> None:
 
     Flags applied:
         --depper: Enable smart test selection based on changed files
-        --depper-run-all-on-error: Fall back to all tests if analysis fails
         -m "not e2e": Exclude Playwright E2E tests by marker
         -n auto: Parallel execution with auto-detected workers
         --dist=worksteal: Workers steal tests from others for better load balancing
         -x: Stop on first failure
         --ff: Run failed tests first, then remaining tests
-        --durations=10: Show 10 slowest tests
+        --reruns 3: Retry failed tests up to 3 times (asyncpg connection churn)
         --tb=short: Shorter tracebacks
 
     Output saved to: test-failures.log
     """
-    _run_pytest(
-        title="Test Debug Run (changed files only)",
-        log_path=Path("test-failures.log"),
-        default_args=[
-            "--depper",
-            "--depper-run-all-on-error",
-            "-m",
-            "not e2e",
-            "-n",
-            "auto",
-            "--dist=worksteal",
-            "-x",
-            "--ff",
-            "--durations=10",
-            "--tb=short",
-        ],
+    sys.exit(
+        _run_pytest(
+            title="Changed Tests (vs main)",
+            log_path=Path("test-failures.log"),
+            default_args=[
+                "--depper",
+                "-m",
+                "not e2e",
+                "-n",
+                "auto",
+                "--dist=worksteal",
+                "-x",
+                "--ff",
+                "--reruns",
+                "3",
+                "--tb=short",
+            ],
+        )
     )
+
+
+def _xdist_worker_count() -> str:
+    """Calculate reliable xdist worker count.
+
+    Caps at half CPU count (max 16).  Higher counts cause intermittent
+    asyncpg ``ConnectionResetError`` under NullPool connection churn —
+    asyncpg's protocol handling has a low-probability race when many
+    workers create/destroy Unix-socket connections simultaneously.
+
+    Benchmarking shows half-CPU is also the fastest configuration:
+    reduced process management overhead outweighs lost parallelism.
+    """
+    cpus = os.cpu_count() or 4
+    return str(min(cpus // 2, 16))
 
 
 def test_all() -> None:
@@ -248,25 +447,29 @@ def test_all() -> None:
 
     Flags applied:
         -m "not e2e": Exclude Playwright E2E tests by marker
-        -n auto: Parallel execution with auto-detected workers
+        -n <half-cpu>: Parallel execution with capped worker count
         --dist=worksteal: Workers steal tests from others for better load balancing
+        --reruns 3: Retry failed tests up to 3 times (asyncpg connection churn)
         --durations=10: Show 10 slowest tests
         -v: Verbose output
 
     Output saved to: test-all.log
     """
-    _run_pytest(
-        title="Full Test Suite (unit + integration, excludes E2E)",
-        log_path=Path("test-all.log"),
-        default_args=[
-            "-m",
-            "not e2e",
-            "-n",
-            "auto",
-            "--dist=worksteal",
-            "--durations=10",
-            "-v",
-        ],
+    sys.exit(
+        _run_pytest(
+            title="Full Test Suite (unit + integration, excludes E2E)",
+            log_path=Path("test-all.log"),
+            default_args=[
+                "-m",
+                "not e2e",
+                "-n",
+                _xdist_worker_count(),
+                "--dist=worksteal",
+                "--reruns",
+                "3",
+                "-v",
+            ],
+        )
     )
 
 
@@ -283,10 +486,12 @@ def test_all_fixtures() -> None:
 
     Output saved to: test-all-fixtures.log
     """
-    _run_pytest(
-        title="Full Fixture Corpus (including BLNS/slow)",
-        log_path=Path("test-all-fixtures.log"),
-        default_args=["-m", "", "-v", "--tb=short"],
+    sys.exit(
+        _run_pytest(
+            title="Full Fixture Corpus (including BLNS/slow)",
+            log_path=Path("test-all-fixtures.log"),
+            default_args=["-m", "", "-v", "--tb=short"],
+        )
     )
 
 
@@ -605,6 +810,571 @@ ui.run(
 """
 
 
+def _allocate_ports(n: int) -> list[int]:
+    """Allocate *n* distinct free TCP ports from the OS.
+
+    Opens *n* sockets simultaneously (to guarantee uniqueness), reads their
+    OS-assigned ports, then closes them all.  The returned ports are not
+    *reserved* — a race is theoretically possible — but holding them open
+    together ensures no duplicates within the batch.
+    """
+    import socket
+
+    if n == 0:
+        return []
+
+    sockets: list[socket.socket] = []
+    try:
+        for _ in range(n):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("", 0))
+            sockets.append(s)
+        return [s.getsockname()[1] for s in sockets]
+    finally:
+        for s in sockets:
+            s.close()
+
+
+def _filter_junitxml_args(user_args: list[str]) -> list[str]:
+    """Strip ``--junitxml`` from *user_args* so per-worker paths take precedence."""
+    filtered: list[str] = []
+    skip_next = False
+    for arg in user_args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--junitxml":
+            skip_next = True
+            continue
+        if arg.startswith("--junitxml="):
+            continue
+        filtered.append(arg)
+    return filtered
+
+
+async def _run_e2e_worker(
+    test_file: Path,
+    port: int,
+    db_url: str,
+    result_dir: Path,
+    user_args: list[str],
+) -> tuple[Path, int, float]:
+    """Run a single E2E test file against a dedicated server instance.
+
+    Starts a NiceGUI server subprocess on *port* with *db_url*, waits for it
+    to accept connections, then runs ``pytest -m e2e`` on *test_file*.  Server
+    and pytest stdout/stderr are merged into a single log file under
+    *result_dir*.
+
+    Returns ``(test_file, pytest_exit_code, duration_seconds)``.
+
+    The server process group is always cleaned up in the ``finally`` block,
+    even on cancellation.
+    """
+    clean_env = {
+        k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
+    }
+    clean_env["DATABASE__URL"] = db_url
+
+    log_path = result_dir / f"test-e2e-{test_file.stem}.log"
+    log_fh = log_path.open("w")
+    server: asyncio.subprocess.Process | None = None
+    start_time = time.monotonic()
+
+    try:
+        # -- Start server subprocess --
+        server = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            _E2E_SERVER_SCRIPT,
+            str(port),
+            stdout=log_fh,
+            stderr=asyncio.subprocess.STDOUT,
+            env=clean_env,
+            start_new_session=True,
+        )
+
+        # -- Health check: poll until server accepts connections --
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if server.returncode is not None:
+                raise RuntimeError(
+                    f"Server for {test_file.name} died "
+                    f"(exit {server.returncode}); see {log_path}"
+                )
+            try:
+                _reader, writer = await asyncio.open_connection("localhost", port)
+                writer.close()
+                await writer.wait_closed()
+                break
+            except OSError:
+                await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(
+                f"Server for {test_file.name} did not start within 15 s; see {log_path}"
+            )
+
+        # -- Build pytest command --
+        junit_path = result_dir / f"{test_file.stem}.xml"
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(test_file),
+            "-m",
+            "e2e",
+            "--tb=short",
+            f"--junitxml={junit_path}",
+            *_filter_junitxml_args(user_args),
+        ]
+
+        pytest_env = {**clean_env, "E2E_BASE_URL": f"http://localhost:{port}"}
+
+        # -- Run pytest --
+        pytest_proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=log_fh,
+            stderr=asyncio.subprocess.STDOUT,
+            env=pytest_env,
+        )
+        await pytest_proc.wait()
+
+        duration = time.monotonic() - start_time
+        assert pytest_proc.returncode is not None  # guaranteed after wait()
+        return (test_file, pytest_proc.returncode, duration)
+
+    finally:
+        # -- Process group cleanup --
+        if server is not None and server.returncode is None:
+            try:
+                os.killpg(os.getpgid(server.pid), signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(server.wait(), timeout=2)
+                except TimeoutError:
+                    os.killpg(os.getpgid(server.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        log_fh.close()
+
+
+def _worker_status_label(exit_code: int) -> str:
+    """Return a coloured PASS/FAIL/CANCEL label for a worker exit code."""
+    if exit_code == -1:
+        return "[yellow]CANCEL[/]"
+    if exit_code in (0, 5):
+        return "[green]PASS[/]"
+    return "[red]FAIL[/]"
+
+
+def _print_parallel_summary(
+    results: list[tuple[Path, int, float]],
+    wall_clock: float,
+) -> None:
+    """Print a compact summary of parallel E2E results (no borders)."""
+    passed = sum(1 for _, c, _ in results if c in (0, 5))
+    failed = sum(1 for _, c, _ in results if c not in (0, 5, -1))
+    cancelled = sum(1 for _, c, _ in results if c == -1)
+
+    total = len(results)
+    parts = [f"{total} files: {passed} passed"]
+    if failed:
+        parts.append(f"{failed} failed")
+    if cancelled:
+        parts.append(f"{cancelled} cancelled")
+    parts.append(f"{wall_clock:.1f}s wall-clock")
+    console.print(", ".join(parts))
+
+
+def _merge_junit_xml(result_dir: Path) -> Path:
+    """Merge per-worker JUnit XML files into a single ``combined.xml``.
+
+    Returns the path to the combined file.
+    """
+    from junitparser import JUnitXml
+
+    merged = JUnitXml()
+    for xml_path in sorted(result_dir.glob("*.xml")):
+        if xml_path.name != "combined.xml":
+            merged += JUnitXml.fromfile(str(xml_path))
+    combined_path = result_dir / "combined.xml"
+    merged.write(str(combined_path), pretty=True)
+    return combined_path
+
+
+async def _run_all_workers(
+    files: list[Path],
+    ports: list[int],
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    user_args: list[str],
+) -> list[tuple[Path, int, float]]:
+    """Run all E2E workers concurrently, printing progress as each finishes."""
+    total = len(files)
+    done_count = 0
+    results: list[tuple[Path, int, float]] = []
+
+    async def _tracked_worker(i: int) -> tuple[Path, int, float]:
+        return await _run_e2e_worker(
+            files[i], ports[i], worker_dbs[i][0], result_dir, user_args
+        )
+
+    tasks = [asyncio.create_task(_tracked_worker(i)) for i in range(total)]
+
+    for done_count, future in enumerate(asyncio.as_completed(tasks), 1):
+        try:
+            result = await future
+        except Exception as exc:
+            # Find which file this was — match by task identity
+            fpath = files[0]  # fallback
+            for j, t in enumerate(tasks):
+                if t is future or (t.done() and not t.cancelled()):
+                    try:
+                        t.result()
+                    except Exception as t_exc:
+                        if t_exc is exc:
+                            fpath = files[j]
+                            break
+            console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
+            result = (fpath, 1, 0.0)
+
+        results.append(result)
+        label = _worker_status_label(result[1])
+        console.print(
+            f"  [{done_count}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+        )
+
+    return results
+
+
+def _resolve_failed_task_file(
+    tasks: list[asyncio.Task[tuple[Path, int, float]]],
+    exc: Exception,
+    files: list[Path],
+) -> Path:
+    """Find which test file a failed task corresponds to."""
+    for t in tasks:
+        if not t.done() or t.cancelled():
+            continue
+        try:
+            t.result()
+        except Exception as t_exc:
+            if t_exc is exc:
+                stem = t.get_name().removeprefix("e2e-")
+                return next((f for f in files if f.stem == stem), Path("unknown"))
+    return Path("unknown")
+
+
+async def _run_fail_fast_workers(
+    files: list[Path],
+    ports: list[int],
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    user_args: list[str],
+) -> list[tuple[Path, int, float]]:
+    """Run E2E workers with fail-fast: cancel remaining on first failure."""
+    import contextlib
+
+    tasks: list[asyncio.Task[tuple[Path, int, float]]] = [
+        asyncio.create_task(
+            _run_e2e_worker(f, ports[i], worker_dbs[i][0], result_dir, user_args),
+            name=f"e2e-{f.stem}",
+        )
+        for i, f in enumerate(files)
+    ]
+
+    total = len(files)
+    results: list[tuple[Path, int, float]] = []
+    completed_files: set[Path] = set()
+    done_count = 0
+
+    for future in asyncio.as_completed(tasks):
+        try:
+            result = await future
+        except asyncio.CancelledError:
+            continue
+        except Exception as exc:
+            fpath = _resolve_failed_task_file(tasks, exc, files)
+            console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
+            result = (fpath, 1, 0.0)
+
+        results.append(result)
+        completed_files.add(result[0])
+        done_count += 1
+        label = _worker_status_label(result[1])
+        console.print(
+            f"  [{done_count}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+        )
+
+        # Check for failure (exit code not 0 and not 5)
+        if result[1] not in (0, 5):
+            console.print("[red]  Fail-fast: cancelling remaining workers[/]")
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            break
+
+    # Await cancelled tasks so their finally blocks run
+    for t in tasks:
+        if t.cancelled() or not t.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+
+    # Add cancelled entries for files that never completed
+    for f in files:
+        if f not in completed_files:
+            results.append((f, -1, 0.0))
+
+    return results
+
+
+def _cleanup_parallel_results(
+    all_passed: bool,
+    worker_dbs: list[tuple[str, str]],
+    result_dir: Path,
+    results: list[tuple[Path, int, float]],
+) -> None:
+    """Clean up or preserve worker databases and result directory."""
+    import contextlib
+    import shutil
+
+    from promptgrimoire.db.bootstrap import drop_database
+
+    if all_passed:
+        for db_url, _db_name in worker_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(db_url)
+        shutil.rmtree(result_dir, ignore_errors=True)
+        console.print("[green]All passed — cleaned up worker databases and results[/]")
+    else:
+        console.print("[yellow]Some tests failed — preserving artifacts:[/]")
+        console.print(f"  Results: {result_dir}")
+        for db_url, db_name in worker_dbs:
+            console.print(f"  DB: {db_name} ({db_url})")
+        for test_file, exit_code, _duration in results:
+            if exit_code not in (0, 5, -1):
+                log_path = result_dir / f"test-e2e-{test_file.stem}.log"
+                console.print(f"  Log: {log_path}")
+
+
+async def _retry_parallel_failures(
+    failed_files: list[Path],
+    template_db_url: str,
+    source_db_name: str,
+    result_dir: Path,
+    user_args: list[str],
+) -> tuple[list[Path], list[Path]]:
+    """Re-run failed E2E files with fresh servers and databases.
+
+    Each failed file gets a new cloned database and server instance.
+    Runs sequentially to maximise isolation.
+
+    Returns ``(genuine_failures, flaky_files)``.
+    """
+    import contextlib
+
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    console.print(
+        f"\n[blue]Re-running {len(failed_files)} failed file(s) in isolation...[/]"
+    )
+
+    retry_ports = _allocate_ports(len(failed_files))
+    retry_dbs: list[tuple[str, str]] = []
+
+    try:
+        # Prepare retry databases
+        base_url = template_db_url.split("?", maxsplit=1)[0].rsplit("/", 1)[0]
+        query = (
+            ("?" + template_db_url.split("?", 1)[1]) if "?" in template_db_url else ""
+        )
+        for i in range(len(failed_files)):
+            target_name = f"{source_db_name}_retry{i}"
+            stale_url = f"{base_url}/{target_name}{query}"
+            with contextlib.suppress(Exception):
+                drop_database(stale_url)
+            db_url = clone_database(template_db_url, target_name)
+            retry_dbs.append((db_url, target_name))
+
+        # Run each failed file sequentially
+        genuine_failures: list[Path] = []
+        flaky_files: list[Path] = []
+
+        for i, fpath in enumerate(failed_files):
+            try:
+                result = await _run_e2e_worker(
+                    fpath,
+                    retry_ports[i],
+                    retry_dbs[i][0],
+                    result_dir,
+                    user_args,
+                )
+            except Exception as exc:
+                console.print(f"[red]Retry worker {fpath.name} raised: {exc}[/]")
+                result = (fpath, 1, 0.0)
+
+            label = _worker_status_label(result[1])
+            console.print(
+                f"  [retry {i + 1}/{len(failed_files)}] "
+                f"{result[0].name}: {label} ({result[2]:.1f}s)"
+            )
+
+            if result[1] in (0, 5):
+                flaky_files.append(fpath)
+            else:
+                genuine_failures.append(fpath)
+
+        # Summary
+        console.print()
+        if flaky_files:
+            console.print(f"[yellow]Flaky ({len(flaky_files)}):[/] passed on retry")
+            for f in flaky_files:
+                console.print(f"  {f.name}")
+        if genuine_failures:
+            console.print(f"[red]Genuine failures ({len(genuine_failures)}):[/]")
+            for f in genuine_failures:
+                console.print(f"  {f.name}")
+
+        return genuine_failures, flaky_files
+
+    finally:
+        # Clean up retry databases
+        for url, _ in retry_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(url)
+
+
+def _create_worker_databases(
+    test_db_url: str,
+    source_db_name: str,
+    count: int,
+    suffix: str = "w",
+) -> list[tuple[str, str]]:
+    """Clone *count* worker databases from *test_db_url*.
+
+    Drops stale databases with matching names first, then clones fresh
+    copies. On partial failure, cleans up any databases already created.
+
+    Returns list of ``(db_url, db_name)`` tuples.
+    """
+    import contextlib
+
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    base_url = test_db_url.split("?", maxsplit=1)[0].rsplit("/", 1)[0]
+    query = ("?" + test_db_url.split("?", 1)[1]) if "?" in test_db_url else ""
+
+    # Drop stale databases from interrupted previous runs
+    for i in range(count):
+        stale_url = f"{base_url}/{source_db_name}_{suffix}{i}{query}"
+        with contextlib.suppress(Exception):
+            drop_database(stale_url)
+
+    # Clone fresh databases
+    worker_dbs: list[tuple[str, str]] = []
+    try:
+        for i in range(count):
+            target_name = f"{source_db_name}_{suffix}{i}"
+            db_url = clone_database(test_db_url, target_name)
+            worker_dbs.append((db_url, target_name))
+    except Exception:
+        for url, _ in worker_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(url)
+        raise
+
+    return worker_dbs
+
+
+async def _run_parallel_e2e(
+    user_args: list[str],
+    fail_fast: bool = False,
+) -> int:
+    """Orchestrate parallel E2E test execution with per-file isolation.
+
+    Each test file gets its own cloned database and server instance.
+    Returns 0 if all tests pass, 1 if any failed.
+    """
+    import contextlib
+    import tempfile
+
+    from promptgrimoire.config import get_settings
+
+    # -- Discover test files --
+    files = sorted(Path("tests/e2e").glob("test_*.py"))
+    if not files:
+        console.print("[yellow]No E2E test files found[/]")
+        return 0
+    console.print(f"[blue]Found {len(files)} test files[/]")
+
+    # -- Get test database URL --
+    test_db_url = get_settings().dev.test_database_url
+    if not test_db_url:
+        console.print("[red]DEV__TEST_DATABASE_URL not set[/]")
+        return 1
+
+    # -- Prepare template database --
+    _pre_test_db_cleanup()
+
+    # -- Extract source db name --
+    source_db_name = test_db_url.split("?")[0].rsplit("/", 1)[1]
+
+    # -- Create worker databases (drops stale ones first) --
+    worker_dbs = _create_worker_databases(test_db_url, source_db_name, len(files))
+
+    # -- Allocate ports and result directory --
+    ports = _allocate_ports(len(files))
+    result_dir = Path(tempfile.mkdtemp(prefix="e2e_parallel_"))
+
+    wall_start = time.monotonic()
+    results: list[tuple[Path, int, float]] = []
+    all_passed = False  # safe default for finally if try raises early
+
+    try:
+        if fail_fast:
+            results = await _run_fail_fast_workers(
+                files, ports, worker_dbs, result_dir, user_args
+            )
+        else:
+            results = await _run_all_workers(
+                files, ports, worker_dbs, result_dir, user_args
+            )
+
+        # -- Compute aggregate exit code --
+        # "all passed" for cleanup: only real results (0 or 5), not cancelled (-1)
+        all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
+
+        wall_clock = time.monotonic() - wall_start
+
+        # -- Summary (printed before JUnit merge so it's visible even if merge fails) --
+        _print_parallel_summary(results, wall_clock)
+
+        # -- Retry failed files in isolation --
+        if not all_passed:
+            failed_files = [f for f, code, _ in results if code not in (0, 5, -1)]
+            if failed_files:
+                genuine, _flaky = await _retry_parallel_failures(
+                    failed_files,
+                    test_db_url,
+                    source_db_name,
+                    result_dir,
+                    user_args,
+                )
+                all_passed = not genuine
+
+        aggregate = 0 if all_passed else 1
+
+        # -- Merge JUnit XML (best-effort) --
+        with contextlib.suppress(Exception):
+            _merge_junit_xml(result_dir)
+
+        return aggregate
+
+    finally:
+        _cleanup_parallel_results(all_passed, worker_dbs, result_dir, results)
+
+
 def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     """Start a NiceGUI server subprocess for E2E tests.
 
@@ -612,7 +1382,6 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     or fails with ``sys.exit(1)`` on timeout/crash.
     """
     import socket
-    import time
 
     clean_env = {
         k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
@@ -710,8 +1479,6 @@ def _start_pyspy(pid: int) -> subprocess.Popen[bytes]:
 
 def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
     """Stop py-spy recording and report output location."""
-    import signal
-
     proc.send_signal(signal.SIGINT)
     try:
         proc.wait(timeout=10)
@@ -720,45 +1487,148 @@ def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
     console.print("[blue]py-spy recording saved to logs/[/]")
 
 
+def _get_last_failed() -> list[str]:
+    """Read failed test node IDs from pytest's lastfailed cache."""
+    import json
+
+    cache_path = Path(".pytest_cache/v/cache/lastfailed")
+    if not cache_path.exists():
+        return []
+    data = json.loads(cache_path.read_text())
+    return [k for k, v in data.items() if v]
+
+
+def _retry_e2e_tests_in_isolation(log_path: Path) -> int:
+    """Re-run failed E2E tests individually to distinguish flaky from genuine failures.
+
+    Reads the pytest lastfailed cache for test node IDs, re-runs each one
+    in its own pytest invocation (without ``--reruns``), and reports which
+    passed (flaky due to test interaction) vs which still failed (genuine).
+
+    Returns 0 if all failures were flaky, 1 if any genuinely failed.
+    """
+    failed_tests = _get_last_failed()
+    if not failed_tests:
+        return 1  # No cached failures — can't retry, report original failure
+
+    console.print(
+        f"\n[blue]Re-running {len(failed_tests)} failed test(s) in isolation...[/]"
+    )
+
+    genuine_failures: list[str] = []
+    flaky: list[str] = []
+
+    with log_path.open("a") as log_file:
+        log_file.write(
+            f"\n{'=' * 60}\n"
+            f"Isolation retry: {len(failed_tests)} test(s)\n"
+            f"{'=' * 60}\n\n"
+        )
+
+        for i, node_id in enumerate(failed_tests, 1):
+            cmd = [
+                "uv",
+                "run",
+                "pytest",
+                node_id,
+                "--tb=short",
+                "-v",
+                "--no-header",
+                "-p",
+                "no:cacheprovider",
+            ]
+
+            log_file.write(f"--- Retry {i}/{len(failed_tests)}: {node_id} ---\n")
+            log_file.flush()
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+            )
+
+            log_file.write(result.stdout)
+            log_file.write(f"Exit code: {result.returncode}\n\n")
+            log_file.flush()
+
+            if result.returncode in (0, 5):
+                flaky.append(node_id)
+                console.print(
+                    f"  [{i}/{len(failed_tests)}] {node_id}: "
+                    f"[yellow]FLAKY[/] (passed in isolation)"
+                )
+            else:
+                genuine_failures.append(node_id)
+                console.print(
+                    f"  [{i}/{len(failed_tests)}] {node_id}: "
+                    f"[red]FAILED[/] (genuine failure)"
+                )
+
+    console.print()
+    if flaky:
+        console.print(
+            f"[yellow]Flaky ({len(flaky)}):[/] passed when re-run in isolation"
+        )
+        for t in flaky:
+            console.print(f"  {t}")
+    if genuine_failures:
+        console.print(f"[red]Genuine failures ({len(genuine_failures)}):[/]")
+        for t in genuine_failures:
+            console.print(f"  {t}")
+
+    return 1 if genuine_failures else 0
+
+
 def test_e2e() -> None:
-    """Start a NiceGUI server and run Playwright E2E tests against it.
+    """Start NiceGUI server(s) and run Playwright E2E tests.
 
-    Manages the full E2E lifecycle:
-    1. Run Alembic migrations and truncate test database
-    2. Start NiceGUI server on a random port (single instance)
-    3. Run ``pytest -m e2e`` against the server
-    4. Shut down the server when tests complete
-
-    By default, tests run single-threaded with ``-x`` (fail-fast).
-    Pass ``--parallel`` to use xdist (``-n auto --dist=loadfile``).
-    Pass ``-v`` for verbose per-test output.
-
-    The server URL is passed via ``E2E_BASE_URL`` env var. The
-    ``app_server`` fixture checks this and yields it directly instead
-    of starting its own server per xdist worker.
+    By default, runs single-server serial mode.
+    Pass ``--parallel`` for per-file parallelism with isolated servers
+    and databases. Pass ``--fail-fast`` with ``--parallel`` to kill
+    remaining workers on first failure.
 
     Extra arguments forwarded to pytest (e.g. ``uv run test-e2e -k browser``).
-
-    Output saved to: test-e2e.log
     """
     import socket
 
-    # Consume flags before _run_pytest sees sys.argv
+    # Consume custom flags before _run_pytest sees sys.argv
     parallel = "--parallel" in sys.argv
     if parallel:
         sys.argv.remove("--parallel")
+    fail_fast = "--fail-fast" in sys.argv
+    if fail_fast:
+        sys.argv.remove("--fail-fast")
     use_pyspy = "--py-spy" in sys.argv
     if use_pyspy:
         sys.argv.remove("--py-spy")
-
-    if use_pyspy:
-        _check_ptrace_scope()
 
     # Eagerly load settings so .env is read before subprocess spawning.
     from promptgrimoire.config import get_settings
 
     get_settings()
 
+    if parallel:
+        # Parallel mode: orchestrator handles servers, DBs, and pytest
+        if use_pyspy:
+            console.print(
+                "[yellow]--py-spy is not supported in parallel mode, ignoring[/]"
+            )
+        user_args = sys.argv[1:]
+        try:
+            exit_code = asyncio.run(
+                _run_parallel_e2e(user_args=user_args, fail_fast=fail_fast)
+            )
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted — cleaning up...[/]")
+            exit_code = 130  # conventional SIGINT exit code
+        sys.exit(exit_code)
+
+    # --- Serial mode (unchanged) ---
+    if use_pyspy:
+        _check_ptrace_scope()
+
     _pre_test_db_cleanup()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -769,50 +1639,48 @@ def test_e2e() -> None:
     server_process = _start_e2e_server(port)
     console.print(f"[green]Server ready at {url}[/]")
 
-    # All xdist workers inherit this and skip starting their own server
     os.environ["E2E_BASE_URL"] = url
 
     pyspy_process: subprocess.Popen[bytes] | None = None
     if use_pyspy:
         pyspy_process = _start_pyspy(server_process.pid)
 
-    if parallel:
-        mode_args: list[str] = ["-n", "auto", "--dist=loadfile"]
-        mode_label = "parallel"
-    else:
-        mode_args = ["-x"]
-        mode_label = "serial, fail-fast"
-
+    exit_code = 1
     try:
-        _run_pytest(
-            title=f"E2E Test Suite (Playwright, {mode_label}) — server {url}",
-            log_path=Path("test-e2e.log"),
+        log_path = Path("test-e2e.log")
+        exit_code = _run_pytest(
+            title=f"E2E Test Suite (Playwright, serial, fail-fast) — server {url}",
+            log_path=log_path,
             default_args=[
                 "-m",
                 "e2e",
-                *mode_args,
                 "--ff",
-                "--durations=10",
+                "--reruns",
+                "3",
+                "-v",
                 "--tb=short",
                 "--log-cli-level=WARNING",
             ],
         )
+        if exit_code not in (0, 5):
+            exit_code = _retry_e2e_tests_in_isolation(log_path)
     finally:
         if pyspy_process is not None:
             _stop_pyspy(pyspy_process)
         _stop_e2e_server(server_process)
+    sys.exit(exit_code)
 
 
-def test_e2e_debug() -> None:
-    """Re-run last-failed E2E tests, or all if none failed previously.
+def test_e2e_changed() -> None:
+    """Run E2E tests affected by changes relative to main.
 
-    Same server lifecycle as ``test-e2e`` but optimised for iterating on
-    failures: runs only previously-failed tests (``--lf``), stops on first
-    failure (``-x``), and shows full tracebacks (``--tb=long``).
+    Same server lifecycle as ``test-e2e`` but uses pytest-depper for
+    smart test selection. Only E2E tests that depend on changed files
+    (vs main branch) will run. Doesn't stop on first failure, because
+    the retryer will just get stuck.
 
-    If no prior failures exist, falls back to running all E2E tests.
-
-    Extra arguments forwarded to pytest (e.g. ``uv run test-e2e-debug -k law``).
+    Extra arguments forwarded to pytest
+    (e.g. ``uv run test-e2e-changed -k law``).
 
     Output saved to: test-e2e.log
     """
@@ -833,23 +1701,27 @@ def test_e2e_debug() -> None:
 
     os.environ["E2E_BASE_URL"] = url
 
+    exit_code = 1
     try:
-        _run_pytest(
-            title=f"E2E Debug (last-failed) — server {url}",
-            log_path=Path("test-e2e.log"),
+        log_path = Path("test-e2e.log")
+        exit_code = _run_pytest(
+            title=f"E2E Changed Tests (vs main) — server {url}",
+            log_path=log_path,
             default_args=[
                 "-m",
                 "e2e",
-                "--lf",
-                "-x",
-                "--durations=10",
+                "--ff",
+                "--depper",
                 "--tb=long",
                 "--log-cli-level=WARNING",
                 "-v",
             ],
         )
+        if exit_code not in (0, 5):
+            exit_code = _retry_e2e_tests_in_isolation(log_path)
     finally:
         _stop_e2e_server(server_process)
+    sys.exit(exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -1327,8 +2199,103 @@ async def _seed_enrolment_and_weeks(course) -> None:
     )
     console.print(f"[green]Created activity:[/] {activity.title} (id={activity.id})")
 
+    await _seed_tags_for_activity(activity)
+
     await update_course(course.id, default_copy_protection=True)
     console.print("[green]Enabled:[/] default copy protection on course")
+
+
+async def _seed_tags_for_activity(activity: Activity) -> None:
+    """Seed Legal Case Brief tag group and tags for an activity's template workspace.
+
+    Idempotent: skips if any TagGroups already exist for the workspace.
+    """
+    from sqlmodel import select
+
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Tag, TagGroup
+
+    workspace_id = activity.template_workspace_id
+
+    # Check if tags already exist (idempotent guard)
+    async with get_session() as session:
+        result = await session.exec(
+            select(TagGroup).where(TagGroup.workspace_id == workspace_id)
+        )
+        if result.first() is not None:
+            console.print("[yellow]Tags exist:[/] skipping tag seed")
+            return
+
+    # Legal Case Brief tags in three logical groups.
+    # Colours are colorblind-accessible (Matplotlib tab10 palette).
+    group_defs: list[tuple[str, str | None, list[tuple[str, str]]]] = [
+        (
+            "Case ID",
+            "#4a90d9",
+            [
+                ("Jurisdiction", "#1f77b4"),
+                ("Procedural History", "#ff7f0e"),
+                ("Decision", "#e377c2"),
+                ("Order", "#7f7f7f"),
+            ],
+        ),
+        (
+            "Analysis",
+            "#d9534f",
+            [
+                ("Legally Relevant Facts", "#2ca02c"),
+                ("Legal Issues", "#d62728"),
+                ("Reasons", "#9467bd"),
+                ("Court's Reasoning", "#8c564b"),
+            ],
+        ),
+        (
+            "Sources",
+            "#5cb85c",
+            [
+                ("Domestic Sources", "#bcbd22"),
+                ("Reflection", "#17becf"),
+            ],
+        ),
+    ]
+
+    async with get_session() as session:
+        tag_count = 0
+        for group_idx, (group_name, group_color, tags) in enumerate(group_defs):
+            group = TagGroup(
+                workspace_id=workspace_id,
+                name=group_name,
+                color=group_color,
+                order_index=group_idx,
+            )
+            session.add(group)
+            await session.flush()
+
+            for tag_idx, (name, color) in enumerate(tags):
+                tag = Tag(
+                    workspace_id=workspace_id,
+                    group_id=group.id,
+                    name=name,
+                    color=color,
+                    locked=True,
+                    order_index=tag_idx,
+                )
+                session.add(tag)
+                tag_count += 1
+
+        await session.flush()
+
+        # Sync workspace counter columns after bulk insert
+        from promptgrimoire.db.models import Workspace
+
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace:
+            workspace.next_tag_order = tag_count
+            workspace.next_group_order = len(group_defs)
+            session.add(workspace)
+            await session.flush()
+
+    console.print(f"[green]Seeded tags:[/] {len(group_defs)} groups, {tag_count} tags")
 
 
 def seed_data() -> None:
@@ -1391,8 +2358,6 @@ def _find_export_dir(user_id: str | None) -> Path:
 
 def _show_error_context(log_file: Path, tex_file: Path) -> None:
     """Show LaTeX error with context from both log and tex file."""
-    import re
-
     from rich.syntax import Syntax
 
     log_content = log_file.read_text()

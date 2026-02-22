@@ -113,6 +113,7 @@ library references during development.
 - [Test Plan: Annotation Module Split (#120)](test-plans/2026-02-14-annotation-split-120.md)
 - [Human Test Plan: Auto-create Branch Databases (#165)](test-plans/2026-02-14-auto-create-branch-db-165.md)
 - [Mega UAT: CSS Highlight API + Copy Protection + Pydantic-Settings](test-plans/2026-02-14-mega-uat.md)
+- [Human Test Plan: Annotation Tags (Issue #95)](test-plans/2026-02-18-95-annotation-tags.md)
 
 ---
 

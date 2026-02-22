@@ -153,7 +153,7 @@ function applyHighlights(container, highlightData, tagColors) {
         }
         if (ranges.length) {
             const hl = new Highlight(...ranges);
-            hl.priority = regionPriority(tag, tagIdx);
+            hl.priority = tagIdx;
             CSS.highlights.set('hl-' + tag, hl);
         }
         tagIdx++;
@@ -161,14 +161,6 @@ function applyHighlights(container, highlightData, tagColors) {
     // Signal that highlights (and _textNodes) are ready
     window._highlightsReady = true;
     document.dispatchEvent(new Event('highlights-ready'));
-}
-
-function regionPriority(tag, tagIdx) {
-    const priorities = {
-        jurisdiction: 10, legal_issues: 20,
-        legislation: 30, evidence: 40
-    };
-    return priorities[tag] || (tagIdx !== undefined ? tagIdx : 0);
 }
 
 function charOffsetToRange(textNodes, startChar, endChar) {
@@ -342,6 +334,13 @@ function setupAnnotationSelection(containerId, emitCallback) {
             textNodes, range.endContainer, range.endOffset);
 
         if (startChar !== null && endChar !== null && startChar < endChar) {
+            // Position highlight menu near the selection end
+            var menu = document.getElementById('highlight-menu');
+            if (menu) {
+                var endRect = charOffsetToRect(textNodes, Math.max(endChar - 1, startChar));
+                menu.style.top = endRect.bottom + 8 + 'px';
+                menu.style.left = endRect.left + 'px';
+            }
             emitCallback({start_char: startChar, end_char: endChar});
         }
     });

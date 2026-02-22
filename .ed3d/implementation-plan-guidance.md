@@ -47,7 +47,7 @@ uv add --dev <package>
 uv run python -m promptgrimoire
 
 # Run tests (smart selection based on changes - fast)
-uv run test-debug
+uv run test-changed
 
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all
@@ -67,11 +67,11 @@ uv run ruff format .
 ```
 
 **Standard test commands (use ONLY these):**
-- `uv run test-debug` — smart test selection, finds first failure (fast)
+- `uv run test-changed` — smart test selection based on changes vs main (fast)
 - `uv run test-all` — full unit + integration suite (excludes E2E)
 - `uv run test-e2e` — E2E tests (starts server, serial fail-fast by default)
 - `uv run test-e2e --parallel` — E2E tests with xdist parallelism
-- `uv run test-e2e-debug` — re-run last-failed E2E tests (`--lf -x --tb=long`)
+- `uv run test-e2e-changed` — E2E tests affected by changes vs main (`--depper -x`)
 - `uv run pytest tests/unit/test_foo.py -k test_name` — specific test
 - `uv run test-e2e -k test_name` — specific E2E test
 

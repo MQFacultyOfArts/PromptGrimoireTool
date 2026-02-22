@@ -51,7 +51,9 @@ from promptgrimoire.pages.annotation.highlights import (
 from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.respond import render_respond_tab
-from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tag_management import open_tag_management
+from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
+from promptgrimoire.pages.annotation.tags import workspace_tags
 
 if TYPE_CHECKING:
     from nicegui import Client
@@ -550,7 +552,7 @@ def _setup_organise_drag(state: PageState) -> None:
         if not (state.organise_panel and state.crdt_doc):
             return
         if state.tag_info_list is None:
-            state.tag_info_list = brief_tags_to_tag_info()
+            return  # Tags not loaded yet — skip render
         render_organise_tab(
             state.organise_panel,
             state.tag_info_list,
@@ -571,7 +573,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     if not (state.respond_panel and state.crdt_doc):
         return
 
-    tags = state.tag_info_list or brief_tags_to_tag_info()
+    tags = state.tag_info_list or []
 
     def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
         _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
@@ -665,13 +667,53 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
     protect = ctx.copy_protection and not is_privileged_user(auth_user)
-    logger.debug("[RENDER] placement done: protect=%s", protect)
+    # Template editors can always create tags (they're setting up the activity).
+    # Privileged users (admin/instructor) can always create tags.
+    # Students follow the resolved allow_tag_creation setting.
+    can_create_tags = (
+        ctx.allow_tag_creation or ctx.is_template or is_privileged_user(auth_user)
+    )
+    logger.debug(
+        "[RENDER] placement done: protect=%s can_create=%s", protect, can_create_tags
+    )
 
     # Create page state
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
     )
+    state.tag_info_list = await workspace_tags(workspace_id)
+
+    # Tag management callbacks (Phase 5)
+    async def _rebuild_toolbar() -> None:
+        """Clear and rebuild the tag toolbar after tag mutations."""
+        if state.toolbar_container is not None:
+            state.toolbar_container.clear()
+            with state.toolbar_container:
+                from promptgrimoire.pages.annotation.css import (  # noqa: PLC0415
+                    _build_tag_toolbar,
+                )
+                from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+                    _add_highlight,
+                )
+
+                async def _tag_click(key: str) -> None:
+                    await _add_highlight(state, key)
+
+                _build_tag_toolbar(
+                    state.tag_info_list or [],
+                    _tag_click,
+                    on_add_click=(_on_add_tag if can_create_tags else None),
+                    on_manage_click=_on_manage_tags,
+                )
+
+    async def _on_add_tag() -> None:
+        await open_quick_create(state)
+        await _rebuild_toolbar()
+
+    async def _on_manage_tags() -> None:
+        await open_tag_management(state, ctx, auth_user)
+        await _rebuild_toolbar()
 
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)
@@ -767,7 +809,13 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                 # Render first document with highlight support
                 doc = documents[0]
                 logger.debug("[RENDER] rendering document with highlights")
-                await _render_document_with_highlights(state, doc, crdt_doc)
+                await _render_document_with_highlights(
+                    state,
+                    doc,
+                    crdt_doc,
+                    on_add_click=(_on_add_tag if can_create_tags else None),
+                    on_manage_click=_on_manage_tags,
+                )
                 logger.debug("[RENDER] document rendered")
             else:
                 # Show add content form (extracted to reduce function complexity)

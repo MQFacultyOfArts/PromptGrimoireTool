@@ -8,9 +8,9 @@ they reveal where the test suite is redundant or incomplete.
 
 > **Scope:** This file covers tests added or modified on the
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
-> css-highlight-api, 165-auto-create-branch-db, and 96-workspace-acl
-> branches. Existing tests from before these branches are not yet
-> documented here.
+> css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
+> and 95-annotation-tags branches. Existing tests from before these
+> branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -1231,12 +1231,12 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Old monolith file removed; a file here would shadow the package and break all imports
 
-### All 12 authored modules present
+### All 17 authored modules present
 **File:** tests/unit/test_annotation_package_structure.py::test_all_authored_modules_exist
-1. Check __init__, broadcast, cards, content_form, css, document, highlights, organise, pdf_export, respond, tags, workspace
-2. Assert all 12 .py files exist in pages/annotation/
+1. Check __init__, broadcast, cards, content_form, css, document, highlights, organise, pdf_export, respond, tag_import, tag_management, tag_management_rows, tag_management_save, tag_quick_create, tags, workspace
+2. Assert all 17 .py files exist in pages/annotation/
 
-**Verifies:** No modules accidentally deleted during split
+**Verifies:** No modules accidentally deleted during split or new additions
 
 ### No satellite files at pages/ level
 **File:** tests/unit/test_annotation_package_structure.py::test_no_satellite_files_at_pages_level
@@ -1725,6 +1725,618 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 ### Expected tables list updated
 **File:** tests/unit/test_db_schema.py (modified)
-1. get_expected_tables() now returns 10 tables including permission, course_role, acl_entry
+1. get_expected_tables() now returns 12 tables including permission, course_role, acl_entry, tag_group, tag
 
-**Verifies:** Schema verification function knows about all ACL tables
+**Verifies:** Schema verification function knows about all tables including tag tables
+
+## Annotation Tags -- Tag Model Defaults (Unit)
+
+### TagGroup has auto UUID and defaults
+**File:** tests/unit/test_tag_models.py::TestTagGroupDefaults
+1. Create TagGroup via fixture
+2. Assert id is UUID, name is stored, order_index defaults to 0, created_at is set, workspace_id is UUID
+
+**Verifies:** TagGroup model fields have correct types and defaults
+
+### Tag has auto UUID and defaults
+**File:** tests/unit/test_tag_models.py::TestTagDefaults
+1. Create Tag via fixture
+2. Assert id is UUID, workspace_id is UUID, group_id defaults to None
+3. Assert name/color stored, description defaults to None, locked defaults to False, order_index defaults to 0, created_at is set
+
+**Verifies:** Tag model fields have correct types and defaults
+
+### Activity.allow_tag_creation defaults to None
+**File:** tests/unit/test_tag_models.py::TestActivityTagCreationPolicy
+1. Construct Activity model without allow_tag_creation
+2. Assert allow_tag_creation is None (inherits from course)
+
+**Verifies:** Activity policy column defaults to tri-state inherit
+
+### Course.default_allow_tag_creation defaults to True
+**File:** tests/unit/test_tag_models.py::TestCourseTagCreationPolicy
+1. Construct Course model without default_allow_tag_creation
+2. Assert default_allow_tag_creation is True
+
+**Verifies:** Course-level tag creation defaults to permissive
+
+## Annotation Tags -- TagInfo Dataclass (Unit)
+
+### TagInfo frozen dataclass properties
+**File:** tests/unit/pages/test_annotation_tags.py::TestTagInfo
+1. Create TagInfo, assert name/colour/raw_key are strings
+2. Attempt mutation, assert AttributeError (frozen)
+3. Assert colour matches hex pattern (#xxxxxx)
+4. Assert equality for same fields, inequality for different raw_key
+
+**Verifies:** TagInfo is immutable with expected string fields and correct equality semantics
+
+## Annotation Tags -- Tag CRUD (Integration)
+
+### Create tag with all fields
+**File:** tests/integration/test_tag_crud.py::TestCreateTag::test_create_tag_with_all_fields
+1. Create Course -> Week -> Activity hierarchy
+2. Create TagGroup, then create Tag with name, color, group_id, description, locked=True, order_index=5
+3. Assert all fields match, UUID generated, created_at set
+
+**Verifies:** Full Tag creation with all fields persists correctly
+
+### Create tag with only required fields
+**File:** tests/integration/test_tag_crud.py::TestCreateTag::test_create_tag_with_only_required_fields
+1. Create hierarchy, create Tag with only name and color
+2. Assert group_id is None, description is None, locked is False, order_index auto-appends
+
+**Verifies:** Defaults are correct when optional fields omitted
+
+### Update tag fields
+**File:** tests/integration/test_tag_crud.py::TestUpdateTag::test_update_tag_fields
+1. Create tag, update name/color/description/group_id
+2. Assert all updated fields match
+
+**Verifies:** update_tag modifies requested fields
+
+### Ellipsis sentinel leaves fields unchanged
+**File:** tests/integration/test_tag_crud.py::TestUpdateTag::test_update_with_ellipsis_leaves_unchanged
+1. Create tag with specific name/color/description
+2. Call update_tag with only locked=True (other fields default to Ellipsis)
+3. Assert original name/color/description unchanged, locked is True
+
+**Verifies:** Ellipsis sentinel pattern distinguishes "not provided" from explicit None
+
+### Update nonexistent tag returns None
+**File:** tests/integration/test_tag_crud.py::TestUpdateTag::test_update_nonexistent_returns_none
+1. Call update_tag with random UUID
+2. Assert result is None
+
+**Verifies:** Graceful handling of missing tags
+
+### Create TagGroup with fields
+**File:** tests/integration/test_tag_crud.py::TestCreateTagGroup::test_create_tag_group_with_fields
+1. Create hierarchy, create TagGroup with name and order_index
+2. Assert UUID, workspace_id, name, order_index all correct
+
+**Verifies:** TagGroup creation persists correctly
+
+### Update TagGroup name and order
+**File:** tests/integration/test_tag_crud.py::TestUpdateTagGroup::test_update_tag_group_name_and_order
+1. Create group, update name and order_index
+2. Assert both changed
+
+**Verifies:** update_tag_group modifies requested fields
+
+### Delete TagGroup ungroups its tags
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagGroup::test_delete_group_ungroups_tags
+1. Create group, create tag in group
+2. Delete group
+3. Assert tag still exists with group_id=None
+
+**Verifies:** SET NULL FK on TagGroup delete preserves tags as ungrouped
+
+### Locked tag rejects field changes
+**File:** tests/integration/test_tag_crud.py::TestLockEnforcement::test_update_locked_tag_rejects_field_changes
+1. Create tag with locked=True
+2. Attempt update_tag with name change
+3. Assert ValueError("Tag is locked")
+
+**Verifies:** Lock enforcement blocks non-lock field modifications
+
+### Locked tag rejects deletion
+**File:** tests/integration/test_tag_crud.py::TestLockEnforcement::test_delete_locked_tag_raises
+1. Create tag with locked=True
+2. Attempt delete_tag
+3. Assert ValueError("Tag is locked")
+
+**Verifies:** Lock enforcement blocks tag deletion
+
+### Lock toggle always permitted
+**File:** tests/integration/test_tag_crud.py::TestLockEnforcement::test_lock_toggle_always_permitted
+1. Create tag with locked=True
+2. Call update_tag with locked=False
+3. Assert success, locked is now False
+
+**Verifies:** Instructors can always toggle the lock field itself
+
+### Unlocked tag permits update and delete
+**File:** tests/integration/test_tag_crud.py::TestLockEnforcement::test_unlocked_tag_allows_update_and_delete
+1. Create unlocked tag
+2. Rename it, assert success
+3. Delete it, assert success
+
+**Verifies:** No lock enforcement on unlocked tags
+
+### Permission denied when tag creation disallowed
+**File:** tests/integration/test_tag_crud.py::TestPermissionEnforcement::test_create_tag_denied_when_tag_creation_false
+1. Create hierarchy with course default_allow_tag_creation=False
+2. Create student workspace in activity
+3. Attempt create_tag
+4. Assert PermissionError
+
+**Verifies:** Tag creation respects PlacementContext permission resolution
+
+### Permission allowed when tag creation enabled
+**File:** tests/integration/test_tag_crud.py::TestPermissionEnforcement::test_create_tag_allowed_when_tag_creation_true
+1. Create hierarchy with course default_allow_tag_creation=True
+2. Create student workspace, create tag
+3. Assert tag created successfully
+
+**Verifies:** Tag creation succeeds when permitted
+
+### Permission denied for group creation when disallowed
+**File:** tests/integration/test_tag_crud.py::TestPermissionEnforcement::test_create_tag_group_denied_when_tag_creation_false
+1. Create hierarchy with tag creation disabled
+2. Attempt create_tag_group
+3. Assert PermissionError
+
+**Verifies:** Group creation follows same permission gate as tag creation
+
+### Reorder tags updates order_index
+**File:** tests/integration/test_tag_crud.py::TestReorderTags::test_reorder_tags_updates_order_index
+1. Create 3 tags with order 0,1,2
+2. Call reorder_tags with reversed order [t3,t1,t2]
+3. Re-fetch each, assert order_index matches new position
+
+**Verifies:** Reorder assigns sequential order_index matching list position
+
+### Reorder groups updates order_index
+**File:** tests/integration/test_tag_crud.py::TestReorderTagGroups::test_reorder_groups_updates_order_index
+1. Create 3 groups with order 0,1,2
+2. Call reorder_tag_groups with reversed order
+3. Re-fetch each, assert order_index matches new position
+
+**Verifies:** Group reorder works identically to tag reorder
+
+### Import copies groups and tags with new UUIDs
+**File:** tests/integration/test_tag_crud.py::TestImportTagsFromActivity::test_import_copies_groups_and_tags
+1. Create source activity with 1 group and 3 tags (2 grouped, 1 ungrouped)
+2. Create target activity, call import_tags_from_activity
+3. Assert target has 1 group and 3 tags with new UUIDs
+4. Assert grouped tags point to new group, ungrouped tag has group_id=None
+5. Assert all field values (color, description, locked, order_index) preserved
+
+**Verifies:** Import creates independent copies with correct field preservation and group remapping
+
+### Delete tag removes CRDT highlights
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_removes_crdt_highlights
+1. Create workspace with tag, build CRDT state with 3 highlights for that tag
+2. Save CRDT state, delete tag
+3. Reload CRDT, assert 0 highlights remain and tag_order entry removed
+
+**Verifies:** Tag deletion cascades to CRDT highlight cleanup
+
+### Delete tag preserves other tags' highlights
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_preserves_other_highlights
+1. Create 2 tags, build CRDT state with highlights for both
+2. Delete tag A only
+3. Assert tag B's highlights and tag_order entry preserved
+
+**Verifies:** CRDT cleanup is surgical -- only removes targeted tag's data
+
+### Delete tag succeeds when no tag_order entry exists
+**File:** tests/integration/test_tag_crud.py::TestDeleteTagCrdtCleanup::test_delete_tag_no_tag_order_entry
+1. Create tag, build CRDT with highlight but no tag_order entry
+2. Delete tag -- assert no error
+3. Assert highlights removed
+
+**Verifies:** Missing tag_order is silently skipped during cleanup
+
+## Annotation Tags -- Tag Schema & Cascade (Integration)
+
+### PlacementContext inherits allow_tag_creation from course
+**File:** tests/integration/test_tag_schema.py::TestPlacementContextTagCreation::test_inherits_from_course_true
+1. Create hierarchy with course default=True, activity=None
+2. Clone workspace, get PlacementContext
+3. Assert allow_tag_creation is True
+
+**Verifies:** Tri-state inheritance: None at activity level inherits course default
+
+### Activity overrides course True with False
+**File:** tests/integration/test_tag_schema.py::TestPlacementContextTagCreation::test_activity_overrides_course_true_with_false
+1. Create hierarchy with course default=True, activity=False
+2. Clone workspace, get PlacementContext
+3. Assert allow_tag_creation is False
+
+**Verifies:** Activity-level override wins over course default
+
+### Activity overrides course False with True
+**File:** tests/integration/test_tag_schema.py::TestPlacementContextTagCreation::test_activity_overrides_course_false_with_true
+1. Create hierarchy with course default=False, activity=True
+2. Clone workspace, get PlacementContext
+3. Assert allow_tag_creation is True
+
+**Verifies:** Activity-level override works in both directions
+
+### Workspace delete cascades to tags
+**File:** tests/integration/test_tag_schema.py::TestTagCascadeOnWorkspaceDelete::test_workspace_delete_cascades_to_tags
+1. Create workspace, add TagGroup and Tag via direct session
+2. Verify both exist
+3. Delete workspace
+4. Assert both TagGroup and Tag are gone
+
+**Verifies:** CASCADE delete from Workspace propagates to tag tables
+
+### TagGroup delete nullifies tag group_id
+**File:** tests/integration/test_tag_schema.py::TestTagGroupSetNullOnDelete::test_tag_group_delete_nulls_tag_group_id
+1. Create workspace, group, and tag in group
+2. Delete group
+3. Assert tag still exists with group_id=None
+
+**Verifies:** SET NULL FK on TagGroup delete preserves tag rows
+
+## Annotation Tags -- Tag Cloning (Integration)
+
+### Clone creates TagGroups with same names and new UUIDs
+**File:** tests/integration/test_tag_cloning.py::TestTagGroupCloning::test_clone_creates_tag_groups_with_same_names_and_order
+1. Add 2 TagGroups to template workspace
+2. Clone workspace
+3. Assert cloned groups have same names and order_index but new UUIDs and new workspace_id
+
+**Verifies:** TagGroup cloning preserves display properties with fresh identities
+
+### Clone creates Tags with remapped group IDs
+**File:** tests/integration/test_tag_cloning.py::TestTagCloning::test_clone_creates_tags_with_remapped_group_ids
+1. Add 1 group and 3 tags (2 grouped, 1 ungrouped) to template
+2. Clone workspace
+3. Assert grouped tags point to clone's group (not template's), ungrouped stays None
+4. Assert field values (color, description) preserved, new workspace_id
+
+**Verifies:** Tag cloning remaps group_id references to cloned group UUIDs
+
+### Clone preserves locked flag
+**File:** tests/integration/test_tag_cloning.py::TestTagCloning::test_locked_flag_preserved_on_clone
+1. Add locked and unlocked tags to template
+2. Clone workspace
+3. Assert locked tag stays locked, unlocked stays unlocked
+
+**Verifies:** Lock state survives cloning
+
+### Empty template produces zero tags
+**File:** tests/integration/test_tag_cloning.py::TestEmptyTagClone::test_empty_template_produces_zero_tags
+1. Clone a template with no tags
+2. Assert 0 TagGroups and 0 Tags
+
+**Verifies:** Cloning empty template is safe (no spurious data)
+
+### CRDT highlight tags remapped to cloned tag UUIDs
+**File:** tests/integration/test_tag_cloning.py::TestCrdtTagRemapping::test_highlight_tags_remapped_to_cloned_tag_uuids
+1. Add 2 tags and 3 highlights to template CRDT (2 for TagA, 1 for TagB)
+2. Clone workspace
+3. Assert all cloned highlights reference cloned tag UUIDs, not template UUIDs
+
+**Verifies:** CRDT highlight tag fields are remapped during clone replay
+
+### tag_order keys remapped to cloned tag UUIDs
+**File:** tests/integration/test_tag_cloning.py::TestCrdtTagRemapping::test_tag_order_keys_remapped_to_cloned_tag_uuids
+1. Add 2 tags, 3 highlights with tag_order entries to template CRDT
+2. Clone workspace
+3. Assert tag_order keys are cloned tag UUIDs, not template UUIDs
+4. Assert highlight IDs in tag_order are from clone, not template
+
+**Verifies:** tag_order map is fully remapped during clone
+
+### Legacy BriefTag strings pass through unchanged
+**File:** tests/integration/test_tag_cloning.py::TestLegacyBriefTagPassthrough::test_legacy_string_tags_pass_through_unchanged
+1. Add 1 UUID-based tag and build CRDT with one UUID highlight and one legacy string ("jurisdiction") highlight
+2. Clone workspace
+3. Assert UUID-based tag is remapped to cloned UUID
+4. Assert legacy string "jurisdiction" passes through unchanged
+
+**Verifies:** Backward compatibility with pre-UUID tag strings
+
+## Annotation Tags -- Tag Creation Settings CRUD (Integration)
+
+### Create activity with allow_tag_creation=False
+**File:** tests/integration/test_tag_settings.py::TestCreateActivityWithTagCreation::test_create_with_allow_tag_creation_false
+1. Create activity with allow_tag_creation=False
+2. Assert persisted value is False after re-fetch
+
+**Verifies:** create_activity accepts and persists allow_tag_creation
+
+### Create activity defaults allow_tag_creation to None
+**File:** tests/integration/test_tag_settings.py::TestCreateActivityWithTagCreation::test_create_without_allow_tag_creation_defaults_none
+1. Create activity without allow_tag_creation
+2. Assert persisted value is None
+
+**Verifies:** Omitting allow_tag_creation defaults to inherit
+
+### Update activity allow_tag_creation to False
+**File:** tests/integration/test_tag_settings.py::TestUpdateActivityTagCreation::test_update_allow_tag_creation_to_false
+1. Create activity (default None), update to False
+2. Assert persisted value is False
+
+**Verifies:** update_activity can set allow_tag_creation
+
+### Reset activity allow_tag_creation to None
+**File:** tests/integration/test_tag_settings.py::TestUpdateActivityTagCreation::test_update_allow_tag_creation_reset_to_none
+1. Create activity with False, update to None
+2. Assert persisted value is None
+
+**Verifies:** Can reset to inherit after explicit override
+
+### Update title only preserves allow_tag_creation
+**File:** tests/integration/test_tag_settings.py::TestUpdateActivityTagCreation::test_update_title_only_preserves_allow_tag_creation
+1. Create activity with allow_tag_creation=False
+2. Update only title
+3. Assert allow_tag_creation still False
+
+**Verifies:** Ellipsis sentinel prevents unintended field resets
+
+### Update course default_allow_tag_creation to False
+**File:** tests/integration/test_tag_settings.py::TestUpdateCourseDefaultTagCreation::test_update_default_allow_tag_creation_to_false
+1. Create course (default True), update to False
+2. Assert persisted value is False
+
+**Verifies:** update_course accepts and persists default_allow_tag_creation
+
+### Update course default_allow_tag_creation to True
+**File:** tests/integration/test_tag_settings.py::TestUpdateCourseDefaultTagCreation::test_update_default_allow_tag_creation_to_true
+1. Set to False, then back to True
+2. Assert persisted value is True
+
+**Verifies:** Round-trip through both values works
+
+### Update name only preserves default_allow_tag_creation
+**File:** tests/integration/test_tag_settings.py::TestUpdateCourseDefaultTagCreation::test_update_name_only_preserves_default_allow_tag_creation
+1. Set to False, then update only name
+2. Assert default_allow_tag_creation still False
+
+**Verifies:** Ellipsis sentinel on course update
+
+### CRUD round-trip: inherit True from course
+**File:** tests/integration/test_tag_settings.py::TestTriStateInheritanceFromCrud::test_activity_none_inherits_course_true
+1. Set course default=True, activity=None via update functions
+2. Clone workspace, check PlacementContext
+3. Assert allow_tag_creation is True
+
+**Verifies:** End-to-end inheritance through CRUD
+
+### CRUD round-trip: activity True overrides course False
+**File:** tests/integration/test_tag_settings.py::TestTriStateInheritanceFromCrud::test_activity_true_overrides_course_false
+1. Set course default=False, activity=True via update functions
+2. Clone workspace, check PlacementContext
+3. Assert allow_tag_creation is True
+
+**Verifies:** Activity override via CRUD round-trip
+
+### CRUD round-trip: activity False overrides course True
+**File:** tests/integration/test_tag_settings.py::TestTriStateInheritanceFromCrud::test_activity_false_overrides_course_true
+1. Set course default=True, activity=False via update functions
+2. Clone workspace, check PlacementContext
+3. Assert allow_tag_creation is False
+
+**Verifies:** Activity override in the other direction
+
+## Annotation Tags -- Tag Management Workflow (Integration)
+
+### Created tag appears in workspace_tags()
+**File:** tests/integration/test_tag_management.py::TestQuickCreateWorkflow::test_created_tag_appears_in_workspace_tags
+1. Create tag via create_tag
+2. Call workspace_tags(ws_id)
+3. Assert 1 TagInfo with correct name, colour, raw_key
+
+**Verifies:** End-to-end create-to-render pipeline works
+
+### Tag UUID usable as CRDT highlight tag
+**File:** tests/integration/test_tag_management.py::TestQuickCreateWorkflow::test_tag_uuid_usable_as_crdt_highlight_tag
+1. Create tag, get raw_key from workspace_tags()
+2. Create CRDT highlight using raw_key as tag value
+3. Assert highlight stores the tag UUID
+
+**Verifies:** Tag UUIDs are valid CRDT highlight tag identifiers
+
+### Creation denied when course disallows
+**File:** tests/integration/test_tag_management.py::TestCreationGating::test_creation_denied_when_course_disallows
+1. Create hierarchy with default_allow_tag_creation=False
+2. Attempt create_tag
+3. Assert PermissionError
+
+**Verifies:** Permission gate works at workflow level
+
+### Creation allowed when course allows
+**File:** tests/integration/test_tag_management.py::TestCreationGating::test_creation_allowed_when_course_allows
+1. Create hierarchy with default_allow_tag_creation=True
+2. Create tag, assert success
+
+**Verifies:** Permission gate permits when enabled
+
+### Delete tag removes from workspace_tags
+**File:** tests/integration/test_tag_management.py::TestDeleteWithCrdtCleanup::test_delete_tag_removes_from_workspace_tags
+1. Create tag, verify workspace_tags returns 1
+2. Delete tag
+3. Assert workspace_tags returns 0
+
+**Verifies:** Deleted tag disappears from rendering pipeline
+
+### Delete tag cleans CRDT highlights
+**File:** tests/integration/test_tag_management.py::TestDeleteWithCrdtCleanup::test_delete_tag_cleans_crdt_highlights
+1. Create tag, build CRDT with 2 highlights for it, save state
+2. Delete tag
+3. Reload CRDT, assert 0 highlights for that tag
+
+**Verifies:** CRDT cleanup integrated with delete workflow
+
+### Imported tags appear in workspace_tags
+**File:** tests/integration/test_tag_management.py::TestImportWorkflow::test_imported_tags_appear_in_workspace_tags
+1. Create source activity with 2 tags
+2. Create target activity, import tags
+3. Assert workspace_tags returns 2 with correct names and colours
+
+**Verifies:** Import-to-render pipeline works end-to-end
+
+### Imported tags have different UUIDs
+**File:** tests/integration/test_tag_management.py::TestImportWorkflow::test_imported_tags_have_different_uuids
+1. Create source tag, get its raw_key
+2. Import into target
+3. Assert target tag has different raw_key but same name/colour
+
+**Verifies:** Import creates independent copies, not references
+
+## Annotation Tags -- workspace_tags() DB Query (Integration)
+
+### workspace_tags returns correct TagInfo for 3 tags
+**File:** tests/integration/test_workspace_tags.py::TestWorkspaceTags::test_workspace_with_three_tags
+1. Create workspace, add 3 tags via direct session
+2. Call workspace_tags()
+3. Assert 3 TagInfo instances with correct name, colour, raw_key
+
+**Verifies:** DB-to-TagInfo mapping is correct
+
+### workspace_tags returns empty list for no tags
+**File:** tests/integration/test_workspace_tags.py::TestWorkspaceTags::test_workspace_with_no_tags
+1. Create empty workspace
+2. Call workspace_tags()
+3. Assert empty list
+
+**Verifies:** No error on empty workspace
+
+### workspace_tags respects order_index
+**File:** tests/integration/test_workspace_tags.py::TestWorkspaceTagsOrdering::test_returns_tags_ordered_by_order_index
+1. Create 3 tags inserted out of order (2, 0, 1)
+2. Call workspace_tags()
+3. Assert results ordered: First, Second, Third
+
+**Verifies:** Tags sorted by order_index regardless of insertion order
+
+## CLI Utilities (Unit)
+
+### _allocate_ports returns distinct ports
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_returns_distinct_ports
+1. Call _allocate_ports(5)
+2. Assert 5 ports returned, all distinct, all > 0
+
+**Verifies:** Port allocator produces unique positive port numbers for parallel E2E workers
+
+### _allocate_ports single port
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_single
+1. Call _allocate_ports(1)
+2. Assert exactly 1 port returned, > 0
+
+**Verifies:** Edge case -- single worker gets one valid port
+
+### _allocate_ports zero returns empty
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_zero
+1. Call _allocate_ports(0)
+2. Assert empty list returned
+
+**Verifies:** Zero workers produces no ports (no crash)
+
+## Database Bootstrap Helpers (Unit)
+
+### terminate_connections executes correct SQL
+**File:** tests/unit/test_db_schema.py::TestTerminateConnections::test_executes_correct_sql_with_db_name
+1. Mock psycopg.connect
+2. Call terminate_connections with a URL and db name
+3. Assert SQL contains pg_terminate_backend and pg_stat_activity
+4. Assert db name passed as parameter
+
+**Verifies:** terminate_connections sends the right SQL to kill active connections
+
+### terminate_connections uses postgres maintenance database
+**File:** tests/unit/test_db_schema.py::TestTerminateConnections::test_connects_to_postgres_maintenance_database
+1. Mock psycopg.connect
+2. Call terminate_connections with an asyncpg URL
+3. Assert connection URL ends with /postgres (not the target db)
+4. Assert asyncpg driver replaced with sync driver
+
+**Verifies:** Connects to postgres maintenance DB, not the target being terminated
+
+### clone_database creates from template
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_happy_path_creates_database_from_template
+1. Mock psycopg.connect and terminate_connections
+2. Call clone_database with source URL and target name
+3. Assert SQL contains CREATE DATABASE and TEMPLATE with correct names
+4. Assert returned URL has target db name
+
+**Verifies:** clone_database generates correct CREATE DATABASE ... TEMPLATE SQL
+
+### clone_database rejects invalid names
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_invalid_target_name_raises_value_error
+1. Call clone_database with "bad-name!" as target
+2. Assert ValueError raised
+
+**Verifies:** SQL injection protection via name validation
+
+### clone_database terminates connections first
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_terminate_connections_called_before_create
+1. Track call order of terminate_connections and execute
+2. Call clone_database
+3. Assert terminate called before execute
+
+**Verifies:** Active connections are killed before attempting template clone
+
+### clone_database returns correct URL
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_returns_url_with_target_name
+1. Call clone_database with full URL including asyncpg driver and query params
+2. Assert returned URL has target db name, preserves driver and params
+
+**Verifies:** URL construction preserves all components except database name
+
+### drop_database executes DROP DATABASE IF EXISTS
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_happy_path_drops_database
+1. Mock psycopg.connect and terminate_connections
+2. Call drop_database
+3. Assert SQL contains DROP DATABASE IF EXISTS with correct db name
+
+**Verifies:** drop_database generates correct DROP SQL
+
+### drop_database rejects invalid names
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_invalid_db_name_in_url_raises_value_error
+1. Call drop_database with "bad-name!" in URL
+2. Assert ValueError raised
+
+**Verifies:** SQL injection protection on drop path
+
+### drop_database terminates connections first
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_terminate_connections_called_before_drop
+1. Track call order of terminate_connections and execute
+2. Call drop_database
+3. Assert terminate called before execute
+
+**Verifies:** Active connections are killed before attempting drop
+
+### drop_database uses IF EXISTS for idempotency
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_idempotent_uses_if_exists
+1. Call drop_database on a non-existent database
+2. Assert SQL contains IF EXISTS
+
+**Verifies:** Dropping a non-existent database does not raise
+
+## Database Bootstrap Helpers (Integration)
+
+### clone and drop round-trip
+**File:** tests/integration/test_db_cloning.py::test_clone_and_drop_round_trip
+1. Clone the test database to a unique target name
+2. Verify cloned database exists
+3. Verify cloned database has same tables as source
+4. Drop the cloned database
+5. Verify cloned database no longer exists
+
+**Verifies:** Full clone-from-template and drop lifecycle against real PostgreSQL
+
+### drop is idempotent
+**File:** tests/integration/test_db_cloning.py::test_drop_is_idempotent
+1. Clone the test database
+2. Drop it (first time)
+3. Verify it does not exist
+4. Drop it again (second time, should not raise)
+
+**Verifies:** Dropping a non-existent database is safe (IF EXISTS)

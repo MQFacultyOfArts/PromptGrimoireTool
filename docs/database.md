@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-17
+**Last updated:** 2026-02-22
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -113,6 +113,8 @@ Container for documents and CRDT state. Unit of collaboration.
 | `activity_id` | UUID | FK → Activity (SET NULL), nullable |
 | `course_id` | UUID | FK → Course (SET NULL), nullable |
 | `enable_save_as_draft` | BOOLEAN | NOT NULL, default FALSE |
+| `next_tag_order` | INTEGER | NOT NULL, default 0 |
+| `next_group_order` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 | | | CHECK: `activity_id` and `course_id` mutually exclusive |
@@ -153,10 +155,14 @@ Visual container for grouping tags within a workspace. Presentation-level only �
 | `id` | UUID | PK |
 | `workspace_id` | UUID | FK → Workspace (CASCADE), NOT NULL |
 | `name` | VARCHAR(100) | NOT NULL |
+| `color` | VARCHAR(7) | nullable, CHECK (`color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$'`) |
 | `order_index` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
+| | | UNIQUE (workspace_id, name) |
 
 **CASCADE on workspace**: Groups are workspace-local. Deleting a workspace removes all its groups.
+
+**`color`**: Optional 7-character hex string (e.g. `#1f77b4`). When set, the group's colour is used as the visual grouping indicator in the tag toolbar and highlight menu.
 
 ### Tag
 
@@ -169,7 +175,7 @@ Per-workspace annotation tag definition. Each workspace has its own independent 
 | `group_id` | UUID | FK → TagGroup (SET NULL), nullable |
 | `name` | VARCHAR(100) | NOT NULL |
 | `description` | TEXT | nullable |
-| `color` | VARCHAR(7) | NOT NULL |
+| `color` | VARCHAR(7) | NOT NULL, CHECK (`color ~ '^#[0-9a-fA-F]{6}$'`) |
 | `locked` | BOOLEAN | NOT NULL, default FALSE |
 | `order_index` | INTEGER | NOT NULL, default 0 |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
@@ -297,6 +303,7 @@ Workspaces are isolated silos identified by UUID.
 - **Template detection**: `is_template` flag on PlacementContext is True when the workspace is an Activity's `template_workspace_id`.
 - **Copy protection resolution**: `copy_protection: bool` on PlacementContext is resolved during placement query. Activity's explicit value wins; if `None`, inherits from `Course.default_copy_protection`. Loose and course-placed workspaces always resolve to `False`. See [docs/copy-protection.md](copy-protection.md).
 - **Sharing resolution**: `allow_sharing: bool` on PlacementContext follows the same tri-state pattern. Activity's explicit value wins; if `None`, inherits from `Course.default_allow_sharing`. Loose and course-placed workspaces always resolve to `False`.
+- **Tag creation resolution**: `allow_tag_creation: bool` on PlacementContext follows the same tri-state pattern. Activity's explicit value wins; if `None`, inherits from `Course.default_allow_tag_creation`. Loose and course-placed workspaces default to `True`. Tag CRUD functions (`create_tag`, `create_tag_group`) check this via `_check_tag_creation_permission()` and raise `PermissionError` if denied.
 
 ### Workspace Cloning
 

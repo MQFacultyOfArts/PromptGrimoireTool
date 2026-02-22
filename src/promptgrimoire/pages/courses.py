@@ -69,26 +69,33 @@ _MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 # course_id -> {client_id -> weeks_list_refresh_func}
 _course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
 
-# -- Copy protection UI mapping (tri-state: None/True/False <-> inherit/on/off) --
+# -- Tri-state settings UI config --
 
-_COPY_PROTECTION_OPTIONS: dict[str, str] = {
-    "inherit": "Inherit from course",
-    "on": "On",
-    "off": "Off",
-}
 
-_SHARING_OPTIONS: dict[str, str] = {
-    "inherit": "Inherit from course",
-    "on": "Allowed",
-    "off": "Not allowed",
-}
+def _tri_state_options(on_label: str = "On", off_label: str = "Off") -> dict[str, str]:
+    """Build a tri-state options dict for activity settings selects."""
+    return {"inherit": "Inherit from course", "on": on_label, "off": off_label}
+
+
+# (UI label, model attribute name, on_label, off_label)
+_ACTIVITY_TRI_STATE_FIELDS: list[tuple[str, str, str, str]] = [
+    ("Copy protection", "copy_protection", "On", "Off"),
+    ("Allow sharing", "allow_sharing", "Allowed", "Not allowed"),
+    ("Allow tag creation", "allow_tag_creation", "Allowed", "Not allowed"),
+]
+
+# (UI label, model attribute name)
+_COURSE_DEFAULT_FIELDS: list[tuple[str, str]] = [
+    ("Default copy protection", "default_copy_protection"),
+    ("Default allow sharing", "default_allow_sharing"),
+    ("Default allow tag creation", "default_allow_tag_creation"),
+]
 
 
 def _model_to_ui(value: bool | None) -> str:
     """Convert model tri-state value to UI select key.
 
     None -> "inherit", True -> "on", False -> "off".
-    Used for both copy_protection and allow_sharing.
     """
     if value is None:
         return "inherit"
@@ -99,7 +106,6 @@ def _ui_to_model(value: str) -> bool | None:
     """Convert UI select key to model tri-state value.
 
     "inherit" -> None, "on" -> True, "off" -> False.
-    Used for both copy_protection and allow_sharing.
     """
     if value == "inherit":
         return None
@@ -125,31 +131,26 @@ def _broadcast_weeks_refresh(
 async def open_course_settings(course: Course) -> None:
     """Open a dialog to edit course settings.
 
-    Follows the awaitable dialog pattern from dialogs.py.
+    Shows boolean switches for each default policy field, driven by
+    _COURSE_DEFAULT_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Course Settings").classes("text-lg font-bold")
 
-        cp_switch = ui.switch(
-            "Default copy protection",
-            value=course.default_copy_protection,
-        )
-        sharing_switch = ui.switch(
-            "Default allow sharing",
-            value=course.default_allow_sharing,
-        )
+        switches: dict[str, ui.switch] = {}
+        for label, attr in _COURSE_DEFAULT_FIELDS:
+            switches[attr] = ui.switch(label, value=getattr(course, attr))
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                await update_course(
-                    course.id,
-                    default_copy_protection=cp_switch.value,
-                    default_allow_sharing=sharing_switch.value,
-                )
-                course.default_copy_protection = cp_switch.value
-                course.default_allow_sharing = sharing_switch.value
+                kwargs = {
+                    attr: switches[attr].value for _, attr in _COURSE_DEFAULT_FIELDS
+                }
+                await update_course(course.id, **kwargs)
+                for _, attr in _COURSE_DEFAULT_FIELDS:
+                    setattr(course, attr, kwargs[attr])
                 dialog.close()
                 ui.notify("Course settings saved", type="positive")
 
@@ -161,36 +162,31 @@ async def open_course_settings(course: Course) -> None:
 async def open_activity_settings(activity: Activity) -> None:
     """Open a dialog to edit per-activity settings.
 
-    Shows tri-state selects for copy protection and sharing.
+    Shows tri-state selects for each policy field, driven by
+    _ACTIVITY_TRI_STATE_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Activity Settings").classes("text-lg font-bold")
 
-        cp_select = ui.select(
-            options=_COPY_PROTECTION_OPTIONS,
-            value=_model_to_ui(activity.copy_protection),
-            label="Copy protection",
-        ).classes("w-full")
-
-        sharing_select = ui.select(
-            options=_SHARING_OPTIONS,
-            value=_model_to_ui(activity.allow_sharing),
-            label="Allow sharing",
-        ).classes("w-full")
+        selects: dict[str, ui.select] = {}
+        for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
+            selects[attr] = ui.select(
+                options=_tri_state_options(on_text, off_text),
+                value=_model_to_ui(getattr(activity, attr)),
+                label=label,
+            ).classes("w-full")
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                new_cp = _ui_to_model(cp_select.value)
-                new_sharing = _ui_to_model(sharing_select.value)
-                await update_activity(
-                    activity.id,
-                    copy_protection=new_cp,
-                    allow_sharing=new_sharing,
-                )
-                activity.copy_protection = new_cp
-                activity.allow_sharing = new_sharing
+                kwargs = {
+                    attr: _ui_to_model(selects[attr].value)
+                    for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS
+                }
+                await update_activity(activity.id, **kwargs)  # type: ignore[invalid-argument-type]  -- kwargs keys are tri-state field names only (copy_protection, allow_sharing, allow_tag_creation)
+                for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS:
+                    setattr(activity, attr, kwargs[attr])
                 dialog.close()
                 ui.notify("Activity settings saved", type="positive")
 

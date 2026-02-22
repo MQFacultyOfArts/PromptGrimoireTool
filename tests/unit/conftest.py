@@ -190,3 +190,51 @@ def make_workspace_document():
         )
 
     return _make
+
+
+@pytest.fixture
+def make_tag_group():
+    """Factory for TagGroup instances (not persisted)."""
+    from uuid import uuid4
+
+    from promptgrimoire.db.models import TagGroup
+
+    def _make(
+        workspace_id: UUID | None = None,
+        name: str = "Test Group",
+        order_index: int = 0,
+        **kwargs,
+    ):
+        return TagGroup(
+            workspace_id=workspace_id or uuid4(),
+            name=name,
+            order_index=order_index,
+            **kwargs,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_tag():
+    """Factory for Tag instances (not persisted)."""
+    from uuid import uuid4
+
+    from promptgrimoire.db.models import Tag
+
+    def _make(
+        workspace_id: UUID | None = None,
+        name: str = "Test Tag",
+        color: str = "#1f77b4",
+        order_index: int = 0,
+        **kwargs,
+    ):
+        return Tag(
+            workspace_id=workspace_id or uuid4(),
+            name=name,
+            color=color,
+            order_index=order_index,
+            **kwargs,
+        )
+
+    return _make

@@ -6,11 +6,23 @@ page style setup, and tag toolbar builder.
 
 from __future__ import annotations
 
-from typing import Any
+from html import escape
+from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
-from promptgrimoire.models.case import TAG_COLORS, TAG_SHORTCUTS, BriefTag
+if TYPE_CHECKING:
+    from promptgrimoire.pages.annotation.tags import TagInfo
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Parse a ``#RRGGBB`` hex string into an (r, g, b) tuple."""
+    return (
+        int(hex_color[1:3], 16),
+        int(hex_color[3:5], 16),
+        int(hex_color[5:7], 16),
+    )
+
 
 # CSS styles for annotation interface
 _PAGE_CSS = """
@@ -167,6 +179,33 @@ _PAGE_CSS = """
         padding: 2px 8px !important;
         min-height: 24px !important;
         font-size: 11px !important;
+        vertical-align: middle !important;
+    }
+
+    /* Tag group containers in toolbar */
+    .tag-group-col {
+        gap: 0 !important;
+        align-items: center !important;
+        border-radius: 8px !important;
+        padding: 2px 6px !important;
+        margin: 0 2px !important;
+    }
+    .tag-group-spacer {
+        visibility: hidden !important;
+    }
+
+    /* Tag button truncation — Quasar wraps label text in nested spans */
+    .compact-btn .q-btn__content {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        max-width: 100% !important;
+        display: inline !important;
+    }
+    .compact-btn .q-btn__content > * {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
     }
 
     /* Annotation sidebar - relative container for positioned cards */
@@ -213,16 +252,7 @@ _PAGE_CSS = """
 """
 
 
-def _get_tag_color(tag_str: str) -> str:
-    """Get hex color for a tag string."""
-    try:
-        tag = BriefTag(tag_str)
-        return TAG_COLORS.get(tag, "#FFEB3B")
-    except ValueError:
-        return "#FFEB3B"
-
-
-def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
+def _build_highlight_pseudo_css(tag_colours: dict[str, str]) -> str:
     """Generate ::highlight() pseudo-element CSS rules for annotation tags.
 
     Uses the CSS Custom Highlight API: each tag gets a ``::highlight(hl-<tag>)``
@@ -236,22 +266,14 @@ def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
     supported inside ``::highlight()`` rules.
 
     Args:
-        tags: Optional set of tag strings to generate rules for.
-              If None, generates rules for all BriefTag values.
+        tag_colours: Mapping of tag key to hex colour string.
 
     Returns:
         CSS string with ``::highlight()`` rules.
     """
-    tag_strings = [t.value for t in BriefTag] if tags is None else sorted(tags)
-
     css_rules: list[str] = []
-    for tag_str in tag_strings:
-        hex_color = _get_tag_color(tag_str)
-        r, g, b = (
-            int(hex_color[1:3], 16),
-            int(hex_color[3:5], 16),
-            int(hex_color[5:7], 16),
-        )
+    for tag_str, hex_color in tag_colours.items():
+        r, g, b = _hex_to_rgb(hex_color)
         bg_rgba = f"rgba({r}, {g}, {b}, 0.4)"
         css_rules.append(
             f"::highlight(hl-{tag_str}) {{\n"
@@ -273,45 +295,131 @@ def _build_highlight_pseudo_css(tags: set[str] | None = None) -> str:
 
 
 def _setup_page_styles() -> None:
-    """Add CSS and register custom tag colors."""
+    """Add page CSS styles."""
     ui.add_css(_PAGE_CSS)
 
-    # Register custom colors for tag buttons
-    custom_tag_colors = {
-        tag.value.replace("_", "-"): color for tag, color in TAG_COLORS.items()
-    }
-    ui.colors(**custom_tag_colors)
+
+def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
+    """Render a single tag button inside the toolbar."""
+    label = f"[{shortcut}] {ti.name}" if shortcut else ti.name
+
+    async def apply_tag(tag_key: str = ti.raw_key) -> None:
+        await on_tag_click(tag_key)
+
+    btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
+    btn.props(f'data-tag-id="{ti.raw_key}"')
+    btn.style(
+        f"background-color: {ti.colour} !important; "
+        "color: white !important; max-width: 160px !important; "
+        "overflow: hidden !important; text-overflow: ellipsis !important; "
+        "white-space: nowrap !important;"
+    )
+    if ti.description:
+        with btn, ui.element("q-tooltip"):
+            ui.html(
+                f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
+                sanitize=False,
+            )
+    else:
+        btn.tooltip(ti.name)
+
+
+def _resolve_group_bg(group_name: str | None, group_colour: str | None) -> str | None:
+    """Return an rgba background string for a named tag group, or None if ungrouped.
+
+    Named groups without a custom colour get a default grey background.
+    """
+    if group_name is None:
+        return None
+    if group_colour is None:
+        return "rgba(0,0,0,0.06)"
+    r, g, b = _hex_to_rgb(group_colour)
+    return f"rgba({r},{g},{b},0.15)"
 
 
 def _build_tag_toolbar(
-    on_tag_click: Any,  # Callable[[BriefTag], Awaitable[None]]
-) -> None:
-    """Build fixed tag toolbar.
+    tag_info_list: list[TagInfo],
+    on_tag_click: Any,
+    *,
+    on_add_click: Any | None = None,
+    on_manage_click: Any | None = None,
+) -> Any:
+    """Build fixed tag toolbar from DB-backed tag list.
 
-    Uses a div with fixed positioning for floating toolbar behavior.
+    Tags are visually grouped by ``TagInfo.group_name``: each group gets
+    a rounded bubble background with a small label, separated by horizontal
+    space. Ungrouped tags appear at the end without a bubble.
+
+    Args:
+        tag_info_list: List of TagInfo instances to render as buttons.
+        on_tag_click: Async callback receiving a tag key string.
+        on_add_click: Optional callback for the "+" quick-create button.
+            Hidden when ``None`` (tag creation not allowed).
+        on_manage_click: Optional callback for the gear (manage) button.
+
+    Returns:
+        The toolbar row element.
     """
-    with (
+    # Partition tags into groups preserving order
+    groups: dict[str | None, list[tuple[int, TagInfo]]] = {}
+    for i, ti in enumerate(tag_info_list):
+        groups.setdefault(ti.group_name, []).append((i, ti))
+
+    toolbar_wrapper = (
         ui.element("div")
-        .classes("bg-gray-100 py-2 px-4")
+        .classes("bg-gray-100 py-1 px-4")
         .style(
             "position: fixed; top: 0; left: 0; right: 0; z-index: 100; "
             "box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
-        ),
+        )
+    )
+    with (
+        toolbar_wrapper,
         ui.row()
-        .classes("tag-toolbar-compact w-full")
+        .classes("tag-toolbar-compact w-full items-end")
         .props('data-testid="tag-toolbar"'),
     ):
-        for i, tag in enumerate(BriefTag):
-            shortcut = list(TAG_SHORTCUTS.keys())[i] if i < len(TAG_SHORTCUTS) else ""
-            tag_name = tag.value.replace("_", " ").title()
-            label = f"[{shortcut}] {tag_name}"
+        for group_name, members in groups.items():
+            group_colour = members[0][1].group_colour if members else None
+            bg = _resolve_group_bg(group_name, group_colour)
 
-            # Create handler with tag bound
-            async def apply_tag(t: BriefTag = tag) -> None:
-                await on_tag_click(t)
+            col = ui.column().classes("tag-group-col")
+            if bg is not None:
+                col.style(f"background: {bg} !important;")
+            with col:
+                # Named groups get a visible label; ungrouped get a
+                # hidden spacer so button baselines align.
+                label_text = group_name or ""
+                label_cls = "text-[9px] leading-tight"
+                if group_name is not None:
+                    label_cls += " text-gray-500"
+                else:
+                    label_cls += " tag-group-spacer"
+                ui.label(label_text).classes(label_cls)
 
-            # Use registered color name (tag.value with underscores replaced by dashes)
-            color_name = tag.value.replace("_", "-")
-            ui.button(label, on_click=apply_tag, color=color_name).classes(
-                "text-xs compact-btn"
-            )
+                with ui.row().classes("gap-1"):
+                    for idx, ti in members:
+                        shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                        _render_tag_button(ti, shortcut, on_tag_click)
+
+        # Action buttons (+ and gear) aligned with tag button baseline
+        if on_add_click is not None or on_manage_click is not None:
+            with ui.column().classes("tag-group-col"):
+                ui.label("").classes("text-[9px] leading-tight tag-group-spacer")
+                with ui.row().classes("gap-1 items-center"):
+                    if on_add_click is not None:
+                        ui.button(
+                            icon="add",
+                            on_click=on_add_click,
+                        ).classes("compact-btn").props(
+                            "round dense flat color=grey-7",
+                        ).tooltip("Create new tag")
+
+                    if on_manage_click is not None:
+                        ui.button(
+                            icon="settings",
+                            on_click=on_manage_click,
+                        ).classes("compact-btn").props(
+                            "round dense flat color=grey-7",
+                        ).tooltip("Manage tags")
+    return toolbar_wrapper

@@ -307,6 +307,7 @@ def _render_tag_button(ti: TagInfo, shortcut: str, on_tag_click: Any) -> None:
         await on_tag_click(tag_key)
 
     btn = ui.button(label, on_click=apply_tag).classes("text-xs compact-btn")
+    btn.props(f'data-tag-id="{ti.raw_key}"')
     btn.style(
         f"background-color: {ti.colour} !important; "
         "color: white !important; max-width: 160px !important; "

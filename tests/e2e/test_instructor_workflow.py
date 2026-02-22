@@ -261,7 +261,7 @@ def _instructor_quick_create_tag(page: Page) -> None:
 
 
 def _instructor_add_tag_via_management(page: Page, template_ws_id: str) -> None:
-    """AC2.2: Add tag via management dialog, verify persistence."""
+    """AC2.2: Add a named tag via management dialog, verify toolbar shows name."""
     toolbar = page.locator("[data-testid='tag-toolbar']")
     toolbar.locator("button").filter(
         has=page.locator("i.q-icon", has_text="settings")
@@ -274,14 +274,39 @@ def _instructor_add_tag_via_management(page: Page, template_ws_id: str) -> None:
 
     analysis_gid = seed_group_id(template_ws_id, "Analysis")
     add_btn = dialog.locator(f"[data-testid='group-add-tag-btn-{analysis_gid}']")
+
+    # Add tag — the backend creates it with a default name ("New tag")
     add_btn.click()
     page.wait_for_timeout(500)
     expect(name_inputs).to_have_count(count_before + 1, timeout=3000)
 
-    # Close and reopen to verify persistence
+    # Find the newly created tag's input within the Analysis group section.
+    # We scope to the group section to avoid accidentally picking up ungrouped
+    # tags (e.g. "Statutory Interpretation") at the bottom of the dialog.
+    # The group header's ancestor nicegui-column wraps: header + tags + add-btn.
+    analysis_header = dialog.locator(f"[data-testid='tag-group-header-{analysis_gid}']")
+    analysis_header.wait_for(state="visible", timeout=3000)
+    group_section = analysis_header.locator(
+        "xpath=ancestor::div[contains(@class,'nicegui-column')][1]"
+    )
+    # The last name input within this group section is the newly added tag
+    new_input = group_section.locator("[data-testid^='tag-name-input-']").last
+    new_input.wait_for(state="visible", timeout=3000)
+    # Fill with a specific name and blur to trigger save-on-blur
+    new_input.clear()
+    new_input.fill("Facts")
+    new_input.blur()
+    # Wait for the blur-save WebSocket round-trip before closing the dialog
+    page.wait_for_timeout(800)
+
+    # Close dialog — Done button refreshes toolbar and closes
     dialog.locator("[data-testid='tag-management-done-btn']").click()
     expect(dialog).to_be_hidden(timeout=5000)
 
+    # Toolbar must show the new tag name after dialog closes
+    expect(toolbar).to_contain_text("Facts", timeout=5000)
+
+    # Reopen and verify count + name persisted
     toolbar.locator("button").filter(
         has=page.locator("i.q-icon", has_text="settings")
     ).click()
@@ -526,21 +551,70 @@ def _student_reorder_tags(student_page: Page) -> None:
     expect(dialog).to_be_hidden(timeout=5000)
 
 
+def _parse_tag_name_from_button(btn_text: str) -> str:
+    """Extract the tag name from a toolbar button label.
+
+    Toolbar buttons have labels like "[2] Procedural History".
+    Strips the leading "[N] " shortcut prefix if present.
+
+    Uses text_content() (not inner_text()) to get the raw DOM text without
+    CSS text-transform (Quasar buttons default to uppercase visually, but
+    text_content() returns the original case for comparison).
+
+    Args:
+        btn_text: text_content() of the toolbar button element.
+
+    Returns:
+        Tag name with shortcut prefix removed.
+    """
+    stripped = btn_text.strip()
+    if "] " in stripped:
+        return stripped.split("] ", 1)[1].strip()
+    return stripped
+
+
 def _student_keyboard_shortcuts(student_page: Page) -> None:
-    """AC3.5 + AC3.6: Keyboard shortcuts create highlights."""
+    """AC3.5 + AC3.6: Keyboard shortcuts apply the correct reordered tag."""
+    toolbar = student_page.locator("[data-testid='tag-toolbar']")
+
+    # Read the tag name at shortcut position "2" (2nd tag button, 0-indexed=1).
+    # Use text_content() (not inner_text()) to get raw DOM text without
+    # Quasar's uppercase CSS text-transform applied.
+    key2_btn = toolbar.locator("[data-tag-id]").nth(1)
+    key2_btn.wait_for(state="visible", timeout=5000)
+    key2_raw = key2_btn.text_content() or ""
+    key2_tag_name = _parse_tag_name_from_button(key2_raw)
+
+    # Read the tag name at shortcut position "3" (3rd tag button, 0-indexed=2)
+    key3_btn = toolbar.locator("[data-tag-id]").nth(2)
+    key3_btn.wait_for(state="visible", timeout=5000)
+    key3_raw = key3_btn.text_content() or ""
+    key3_tag_name = _parse_tag_name_from_button(key3_raw)
+
+    # AC3.5: Press "2" with text selected — highlight created with tag at position 2
     select_chars(student_page, 0, 5)
     student_page.keyboard.press("2")
     student_page.wait_for_timeout(500)
 
-    sidebar_card = student_page.locator(".ann-card-positioned").first
-    expect(sidebar_card).to_be_visible(timeout=3000)
+    first_card = student_page.locator("[data-testid='annotation-card']").first
+    expect(first_card).to_be_visible(timeout=3000)
 
+    # The card's tag select should show the tag name for shortcut "2"
+    first_card_select = first_card.locator(".q-select").first
+    expect(first_card_select).to_contain_text(key2_tag_name, timeout=3000)
+
+    # AC3.6: Press "3" with text selected — highlight created with tag at position 3
     select_chars(student_page, 10, 20)
     student_page.keyboard.press("3")
     student_page.wait_for_timeout(500)
 
-    cards = student_page.locator(".ann-card-positioned")
+    cards = student_page.locator("[data-testid='annotation-card']")
     expect(cards).to_have_count(2, timeout=3000)
+
+    # The second card's tag select should show the tag name for shortcut "3"
+    second_card = cards.nth(1)
+    second_card_select = second_card.locator(".q-select").first
+    expect(second_card_select).to_contain_text(key3_tag_name, timeout=3000)
 
 
 def _run_student_tag_subtests(

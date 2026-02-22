@@ -153,7 +153,7 @@ function applyHighlights(container, highlightData, tagColors) {
         }
         if (ranges.length) {
             const hl = new Highlight(...ranges);
-            hl.priority = tagIdx !== undefined ? tagIdx : 0;
+            hl.priority = tagIdx;
             CSS.highlights.set('hl-' + tag, hl);
         }
         tagIdx++;

@@ -413,10 +413,7 @@ def _xdist_worker_count() -> str:
     Benchmarking shows half-CPU is also the fastest configuration:
     reduced process management overhead outweighs lost parallelism.
     """
-    try:
-        cpus = os.cpu_count() or 4
-    except Exception:
-        cpus = 4
+    cpus = os.cpu_count() or 4
     return str(min(cpus // 2, 16))
 
 

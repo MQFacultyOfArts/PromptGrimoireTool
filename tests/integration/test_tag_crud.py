@@ -578,6 +578,22 @@ class TestReorderTags:
         assert r1 is not None and r1.order_index == 1
         assert r2 is not None and r2.order_index == 2
 
+    @pytest.mark.asyncio
+    async def test_reorder_with_unknown_tag_raises_value_error(self) -> None:
+        """reorder_tags raises ValueError when a tag UUID is not found.
+
+        Verifies AC6.9.
+        """
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="Tag1", color="#aaaaaa")
+
+        with pytest.raises(ValueError, match=r"Tag.*not found"):
+            await reorder_tags([t1.id, uuid4()])
+
 
 class TestReorderTagGroups:
     """Tests for reorder_tag_groups."""
@@ -610,6 +626,22 @@ class TestReorderTagGroups:
         assert r3 is not None and r3.order_index == 0
         assert r2 is not None and r2.order_index == 1
         assert r1 is not None and r1.order_index == 2
+
+    @pytest.mark.asyncio
+    async def test_reorder_with_unknown_group_raises_value_error(self) -> None:
+        """reorder_tag_groups raises ValueError when a group UUID is not found.
+
+        Verifies AC6.10.
+        """
+        from promptgrimoire.db.tags import create_tag_group, reorder_tag_groups
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        g1 = await create_tag_group(ws_id, name="G1")
+
+        with pytest.raises(ValueError, match=r"TagGroup.*not found"):
+            await reorder_tag_groups([g1.id, uuid4()])
 
 
 class TestImportTagsFromActivity:

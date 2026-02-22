@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-20
+**Last updated:** 2026-02-22
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 

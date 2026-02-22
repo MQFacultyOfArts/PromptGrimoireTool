@@ -83,6 +83,9 @@ uv run test-e2e
 # Run E2E tests in parallel (xdist)
 uv run test-e2e --parallel
 
+# Run E2E tests (smart selection based on changes)
+uv run test-e2e-changed
+
 # Run linting
 uv run ruff check .
 

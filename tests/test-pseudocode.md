@@ -2215,3 +2215,128 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert results ordered: First, Second, Third
 
 **Verifies:** Tags sorted by order_index regardless of insertion order
+
+## CLI Utilities (Unit)
+
+### _allocate_ports returns distinct ports
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_returns_distinct_ports
+1. Call _allocate_ports(5)
+2. Assert 5 ports returned, all distinct, all > 0
+
+**Verifies:** Port allocator produces unique positive port numbers for parallel E2E workers
+
+### _allocate_ports single port
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_single
+1. Call _allocate_ports(1)
+2. Assert exactly 1 port returned, > 0
+
+**Verifies:** Edge case -- single worker gets one valid port
+
+### _allocate_ports zero returns empty
+**File:** tests/unit/test_cli_parallel.py::test_allocate_ports_zero
+1. Call _allocate_ports(0)
+2. Assert empty list returned
+
+**Verifies:** Zero workers produces no ports (no crash)
+
+## Database Bootstrap Helpers (Unit)
+
+### terminate_connections executes correct SQL
+**File:** tests/unit/test_db_schema.py::TestTerminateConnections::test_executes_correct_sql_with_db_name
+1. Mock psycopg.connect
+2. Call terminate_connections with a URL and db name
+3. Assert SQL contains pg_terminate_backend and pg_stat_activity
+4. Assert db name passed as parameter
+
+**Verifies:** terminate_connections sends the right SQL to kill active connections
+
+### terminate_connections uses postgres maintenance database
+**File:** tests/unit/test_db_schema.py::TestTerminateConnections::test_connects_to_postgres_maintenance_database
+1. Mock psycopg.connect
+2. Call terminate_connections with an asyncpg URL
+3. Assert connection URL ends with /postgres (not the target db)
+4. Assert asyncpg driver replaced with sync driver
+
+**Verifies:** Connects to postgres maintenance DB, not the target being terminated
+
+### clone_database creates from template
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_happy_path_creates_database_from_template
+1. Mock psycopg.connect and terminate_connections
+2. Call clone_database with source URL and target name
+3. Assert SQL contains CREATE DATABASE and TEMPLATE with correct names
+4. Assert returned URL has target db name
+
+**Verifies:** clone_database generates correct CREATE DATABASE ... TEMPLATE SQL
+
+### clone_database rejects invalid names
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_invalid_target_name_raises_value_error
+1. Call clone_database with "bad-name!" as target
+2. Assert ValueError raised
+
+**Verifies:** SQL injection protection via name validation
+
+### clone_database terminates connections first
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_terminate_connections_called_before_create
+1. Track call order of terminate_connections and execute
+2. Call clone_database
+3. Assert terminate called before execute
+
+**Verifies:** Active connections are killed before attempting template clone
+
+### clone_database returns correct URL
+**File:** tests/unit/test_db_schema.py::TestCloneDatabase::test_returns_url_with_target_name
+1. Call clone_database with full URL including asyncpg driver and query params
+2. Assert returned URL has target db name, preserves driver and params
+
+**Verifies:** URL construction preserves all components except database name
+
+### drop_database executes DROP DATABASE IF EXISTS
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_happy_path_drops_database
+1. Mock psycopg.connect and terminate_connections
+2. Call drop_database
+3. Assert SQL contains DROP DATABASE IF EXISTS with correct db name
+
+**Verifies:** drop_database generates correct DROP SQL
+
+### drop_database rejects invalid names
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_invalid_db_name_in_url_raises_value_error
+1. Call drop_database with "bad-name!" in URL
+2. Assert ValueError raised
+
+**Verifies:** SQL injection protection on drop path
+
+### drop_database terminates connections first
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_terminate_connections_called_before_drop
+1. Track call order of terminate_connections and execute
+2. Call drop_database
+3. Assert terminate called before execute
+
+**Verifies:** Active connections are killed before attempting drop
+
+### drop_database uses IF EXISTS for idempotency
+**File:** tests/unit/test_db_schema.py::TestDropDatabase::test_idempotent_uses_if_exists
+1. Call drop_database on a non-existent database
+2. Assert SQL contains IF EXISTS
+
+**Verifies:** Dropping a non-existent database does not raise
+
+## Database Bootstrap Helpers (Integration)
+
+### clone and drop round-trip
+**File:** tests/integration/test_db_cloning.py::test_clone_and_drop_round_trip
+1. Clone the test database to a unique target name
+2. Verify cloned database exists
+3. Verify cloned database has same tables as source
+4. Drop the cloned database
+5. Verify cloned database no longer exists
+
+**Verifies:** Full clone-from-template and drop lifecycle against real PostgreSQL
+
+### drop is idempotent
+**File:** tests/integration/test_db_cloning.py::test_drop_is_idempotent
+1. Clone the test database
+2. Drop it (first time)
+3. Verify it does not exist
+4. Drop it again (second time, should not raise)
+
+**Verifies:** Dropping a non-existent database is safe (IF EXISTS)

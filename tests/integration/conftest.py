@@ -137,23 +137,15 @@ async def reset_db_engine_per_test() -> AsyncGenerator[None]:
     """Dispose shared database engine after each test.
 
     REQUIRED for service layer tests that use get_session() from the shared
-    engine module. The shared engine uses QueuePool, and pooled connections
-    bind to the event loop that created them.
+    engine module.  The shared engine's connections bind to the event loop
+    that created them.  Without disposal, Test B tries to reuse Test A's
+    connections after A's loop closed → RuntimeError.
 
-    Without this fixture:
-    - Test A creates engine/connections bound to its event loop
-    - Test A finishes, its event loop closes
-    - Test B tries to reuse pooled connections → RuntimeError: Event loop is closed
-
-    This fixture disposes the engine (closing all pooled connections) after
-    each test. The next test lazily creates a fresh engine in its own loop.
-
-    Note: Tests using the db_session fixture (NullPool) don't need this,
-    but it doesn't hurt them either. Service layer tests REQUIRE it.
+    This fixture disposes the engine (closing all connections) after
+    each test.  The next test lazily creates a fresh engine in its own loop.
     """
     yield
 
-    # Only dispose engine if it was actually used during this test
     from promptgrimoire.db.engine import _state, close_db
 
     if _state.engine is not None:

@@ -72,7 +72,7 @@ Git commits trigger ruff lint + format check and ty type check. Commits will be 
 uv sync
 
 # Run tests (smart selection based on changes - fast)
-uv run test-debug
+uv run test-changed
 
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all

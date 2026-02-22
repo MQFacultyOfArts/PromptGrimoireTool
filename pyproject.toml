@@ -34,10 +34,10 @@ dependencies = [
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
-test-debug = "promptgrimoire.cli:test_debug"
+test-changed = "promptgrimoire.cli:test_changed"
 test-all = "promptgrimoire.cli:test_all"
 test-e2e = "promptgrimoire.cli:test_e2e"
-test-e2e-debug = "promptgrimoire.cli:test_e2e_debug"
+test-e2e-changed = "promptgrimoire.cli:test_e2e_changed"
 test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 seed-data = "promptgrimoire.cli:seed_data"
 set-admin = "promptgrimoire.cli:set_admin"

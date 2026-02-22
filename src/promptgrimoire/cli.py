@@ -358,8 +358,8 @@ Exit code: {exit_code}
     sys.exit(exit_code)
 
 
-def test_debug() -> None:
-    """Run pytest on tests affected by recent changes, stopping on first failure.
+def test_changed() -> None:
+    """Run pytest on tests affected by changes relative to main.
 
     Uses pytest-depper for smart test selection based on code dependencies.
     Only tests that depend on changed files (vs main branch) will run.
@@ -369,24 +369,21 @@ def test_debug() -> None:
 
     Flags applied:
         --depper: Enable smart test selection based on changed files
-        --depper-run-all-on-error: Fall back to all tests if analysis fails
         -m "not e2e": Exclude Playwright E2E tests by marker
         -n auto: Parallel execution with auto-detected workers
         --dist=worksteal: Workers steal tests from others for better load balancing
         -x: Stop on first failure
         --ff: Run failed tests first, then remaining tests
         --reruns 3: Retry failed tests up to 3 times (asyncpg connection churn)
-        --durations=10: Show 10 slowest tests
         --tb=short: Shorter tracebacks
 
     Output saved to: test-failures.log
     """
     _run_pytest(
-        title="Test Debug Run (changed files only)",
+        title="Changed Tests (vs main)",
         log_path=Path("test-failures.log"),
         default_args=[
             "--depper",
-            "--depper-run-all-on-error",
             "-m",
             "not e2e",
             "-n",
@@ -396,7 +393,6 @@ def test_debug() -> None:
             "--ff",
             "--reruns",
             "3",
-            "--durations=10",
             "--tb=short",
         ],
     )
@@ -447,7 +443,6 @@ def test_all() -> None:
             "--dist=worksteal",
             "--reruns",
             "3",
-            "--durations=10",
             "-v",
         ],
     )
@@ -1418,7 +1413,7 @@ def test_e2e() -> None:
                 "--ff",
                 "--reruns",
                 "3",
-                "--durations=10",
+                "-v",
                 "--tb=short",
                 "--log-cli-level=WARNING",
             ],
@@ -1429,16 +1424,15 @@ def test_e2e() -> None:
         _stop_e2e_server(server_process)
 
 
-def test_e2e_debug() -> None:
-    """Re-run last-failed E2E tests, or all if none failed previously.
+def test_e2e_changed() -> None:
+    """Run E2E tests affected by changes relative to main.
 
-    Same server lifecycle as ``test-e2e`` but optimised for iterating on
-    failures: runs only previously-failed tests (``--lf``), stops on first
-    failure (``-x``), and shows full tracebacks (``--tb=long``).
+    Same server lifecycle as ``test-e2e`` but uses pytest-depper for
+    smart test selection. Only E2E tests that depend on changed files
+    (vs main branch) will run. Stops on first failure (``-x``).
 
-    If no prior failures exist, falls back to running all E2E tests.
-
-    Extra arguments forwarded to pytest (e.g. ``uv run test-e2e-debug -k law``).
+    Extra arguments forwarded to pytest
+    (e.g. ``uv run test-e2e-changed -k law``).
 
     Output saved to: test-e2e.log
     """
@@ -1461,14 +1455,14 @@ def test_e2e_debug() -> None:
 
     try:
         _run_pytest(
-            title=f"E2E Debug (last-failed) — server {url}",
+            title=f"E2E Changed Tests (vs main) — server {url}",
             log_path=Path("test-e2e.log"),
             default_args=[
                 "-m",
                 "e2e",
-                "--lf",
+                "--ff",
                 "-x",
-                "--durations=10",
+                "--depper",
                 "--tb=long",
                 "--log-cli-level=WARNING",
                 "-v",

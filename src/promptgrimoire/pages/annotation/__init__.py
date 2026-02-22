@@ -8,19 +8,24 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (12 authored modules):
-    __init__    Core types, globals, route definition
-    broadcast   Multi-client sync and remote presence
-    cards       Annotation card UI components
-    content_form  Document upload/paste form
-    css         CSS styles and tag toolbar
-    document    Document rendering and selection wiring
-    highlights  Highlight CRUD and rendering
-    organise    Organise tab (tag columns, drag-and-drop)
-    pdf_export  PDF export orchestration
-    respond     Respond tab (reference panel, editor)
-    tags        Tag definitions and colour mapping
-    workspace   Workspace header, tabs, and view orchestration
+Package structure (17 authored modules):
+    __init__             Core types, globals, route definition
+    broadcast            Multi-client sync and remote presence
+    cards                Annotation card UI components
+    content_form         Document upload/paste form
+    css                  CSS styles and tag toolbar
+    document             Document rendering and selection wiring
+    highlights           Highlight CRUD and rendering
+    organise             Organise tab (tag columns, drag-and-drop)
+    pdf_export           PDF export orchestration
+    respond              Respond tab (reference panel, editor)
+    tag_import           Tag import from other activities
+    tag_management       Tag/group management dialog orchestrator
+    tag_management_rows  Tag/group row rendering and deletion
+    tag_management_save  Tag/group save-on-blur handlers
+    tag_quick_create     Quick tag creation dialog and colour picker
+    tags                 Tag definitions and colour mapping
+    workspace            Workspace header, tabs, and view orchestration
 """
 
 from __future__ import annotations
@@ -209,6 +214,11 @@ class PageState:
     initialised_tabs: set[str] | None = None  # Tracks which tabs have been rendered
     # Tag info list for Tab 2 (Organise) -- populated on first visit
     tag_info_list: list[TagInfo] | None = None
+    # Reference to the tag toolbar element for dynamic rebuilds
+    toolbar_container: Any = None
+    # Callback stored so _refresh_tag_state can rebuild the highlight menu
+    # without re-wiring the on_tag_click closure.  Set by _build_highlight_menu.
+    _highlight_menu_tag_click: Any = None
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast
@@ -240,6 +250,10 @@ class PageState:
         """
         is_own = self.user_id is not None and content_user_id == self.user_id
         return is_own or self.is_owner or self.viewer_is_privileged
+
+    def tag_colours(self) -> dict[str, str]:
+        """Build tag key -> hex colour mapping from tag_info_list."""
+        return {ti.raw_key: ti.colour for ti in (self.tag_info_list or [])}
 
 
 # ---------------------------------------------------------------------------

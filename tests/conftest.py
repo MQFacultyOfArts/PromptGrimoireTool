@@ -24,7 +24,7 @@ from promptgrimoire.export.pdf import get_latexmk_path
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Database cleanup is handled by CLI commands (test-all, test-debug).
+    """Database cleanup is handled by CLI commands (test-all, test-changed).
 
     The CLI runs Alembic migrations and TRUNCATE in a single process before
     pytest starts, avoiding xdist worker deadlocks. See cli.py._pre_test_db_cleanup().

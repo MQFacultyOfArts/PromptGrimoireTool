@@ -7,12 +7,14 @@ Includes connection pool instrumentation for diagnostics.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from promptgrimoire.config import get_settings
@@ -75,7 +77,7 @@ def _install_pool_listeners(engine: AsyncEngine) -> None:
         _dbapi_conn: object,
         _rec: _ConnectionRecord,
         exception: BaseException | None,
-        _soft: bool,
+        _soft: bool = False,
     ) -> None:
         _pool_logger.warning(
             "INVALIDATE soft=%s exception=%s %s",
@@ -133,28 +135,54 @@ def get_engine() -> AsyncEngine | None:
     return _state.engine
 
 
+def _is_test_environment() -> bool:
+    """Detect whether we're running inside a test harness.
+
+    Returns True when _PROMPTGRIMOIRE_USE_NULL_POOL=1 is set in the
+    environment.  This flag is set by _pre_test_db_cleanup() in cli.py
+    before pytest is spawned and inherited by all xdist workers.
+    """
+    return os.environ.get("_PROMPTGRIMOIRE_USE_NULL_POOL") == "1"
+
+
 async def init_db() -> None:
     """Initialize database engine and session factory.
 
     Call this on application startup (e.g., NiceGUI @app.on_startup).
     Creates the async engine with connection pooling configured.
     Idempotent: returns immediately if engine already exists.
+
+    In test environments (detected via matching database URLs), uses
+    NullPool instead of QueuePool.  NullPool creates a fresh connection
+    per request and closes it immediately, avoiding asyncpg connection-
+    state leakage between tests under pytest-xdist parallel execution.
+    See: asyncpg#784, SQLAlchemy#10226.
     """
     if _state.engine is not None:
         return
 
-    _state.engine = create_async_engine(
-        get_database_url(),
-        echo=get_settings().dev.database_echo,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,
-        pool_recycle=3600,  # Recycle stale connections after 1 hour
-        connect_args={
-            "timeout": 10,  # Connection timeout in seconds
-            "command_timeout": 30,  # Query timeout in seconds
+    use_null_pool = _is_test_environment()
+
+    pool_kwargs: dict[str, object] = {
+        "echo": get_settings().dev.database_echo,
+        "connect_args": {
+            "timeout": 10,
+            "command_timeout": 30,
         },
-    )
+    }
+
+    if use_null_pool:
+        pool_kwargs["poolclass"] = NullPool
+        logger.info("Using NullPool (test environment detected)")
+    else:
+        pool_kwargs |= {
+            "pool_size": 5,
+            "max_overflow": 10,
+            "pool_pre_ping": True,
+            "pool_recycle": 3600,
+        }
+
+    _state.engine = create_async_engine(get_database_url(), **pool_kwargs)
 
     _install_pool_listeners(_state.engine)
 

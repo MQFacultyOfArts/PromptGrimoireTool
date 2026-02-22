@@ -13,7 +13,6 @@ from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.models.case import TAG_COLORS, BriefTag
 from promptgrimoire.pages.annotation import PageState, _render_js
 from promptgrimoire.pages.annotation.highlights import (
     _delete_highlight,
@@ -212,7 +211,7 @@ def _build_card_header(
     with ui.row().classes("w-full justify-between items-center"):
         if state.can_annotate:
             # Interactive tag dropdown for changing tag type
-            tag_options = {t.value: t.value.replace("_", " ").title() for t in BriefTag}
+            tag_options = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
 
             async def on_tag_change(
                 e: Any,
@@ -232,7 +231,8 @@ def _build_card_header(
                     if state.save_status:
                         state.save_status.text = "Saved"
                     _update_highlight_css(state)
-                    new_color = TAG_COLORS.get(BriefTag(new_tag), "#666")
+                    # Update card border color
+                    new_color = state.tag_colours().get(new_tag, "#999999")
                     crd.style(f"border-left: 4px solid {new_color};")
                     if state.broadcast_update:
                         await state.broadcast_update()
@@ -300,12 +300,9 @@ def _build_annotation_card(
     # Get para_ref if stored
     para_ref = highlight.get("para_ref", "")
 
-    # Get tag color
-    try:
-        tag = BriefTag(tag_str)
-        color = TAG_COLORS.get(tag, "#666")
-    except ValueError:
-        color = "#666"
+    # Get tag color from workspace tag info
+    tag_colours = state.tag_colours()
+    color = tag_colours.get(tag_str, "#999999")
 
     # Use ann-card-positioned for scroll-sync positioning
     card = (

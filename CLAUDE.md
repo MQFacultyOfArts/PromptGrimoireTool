@@ -72,7 +72,7 @@ Git commits trigger ruff lint + format check and ty type check. Commits will be 
 uv sync
 
 # Run tests (smart selection based on changes - fast)
-uv run test-debug
+uv run test-changed
 
 # Run all tests (unit + integration, excludes E2E)
 uv run test-all
@@ -82,6 +82,9 @@ uv run test-e2e
 
 # Run E2E tests in parallel (xdist)
 uv run test-e2e --parallel
+
+# Run E2E tests (smart selection based on changes)
+uv run test-e2e-changed
 
 # Run linting
 uv run ruff check .
@@ -116,7 +119,8 @@ src/promptgrimoire/
 ├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)
 │   ├── acl.py           # ACL operations (grant, revoke, resolve, share)
-│   └── roles.py         # Cached staff role queries
+│   ├── roles.py         # Cached staff role queries
+│   └── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 ├── crdt/                # pycrdt collaboration logic
 └── static/              # JS/CSS assets
 
@@ -152,7 +156,7 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 
 PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design decisions in [docs/database.md](docs/database.md).
 
-10 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, Permission, CourseRoleRef, ACLEntry.
+12 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry.
 
 ### Key Rules
 

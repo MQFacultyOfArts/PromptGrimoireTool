@@ -1,69 +1,55 @@
-"""Unit tests for TagInfo abstraction and BriefTag mapper.
+"""Unit tests for TagInfo dataclass.
 
-Verifies that brief_tags_to_tag_info() correctly converts BriefTag enum members
-into a list of TagInfo instances with proper display names and colours.
+Verifies that TagInfo instances are frozen, have expected fields, and
+can be used as dict keys (hashable).
 
 Traceability:
 - Design: docs/implementation-plans/2026-02-07-three-tab-ui-98/phase_03.md Task 1
 - AC: three-tab-ui.AC2.1 (data structure)
+- Design: docs/implementation-plans/2026-02-18-95-annotation-tags/phase_04.md Task 1
+- AC: 95-annotation-tags.AC5.1 (DB-backed tag list)
 """
 
 from __future__ import annotations
 
 import re
 
-from promptgrimoire.models.case import TAG_COLORS, BriefTag
-from promptgrimoire.pages.annotation.tags import brief_tags_to_tag_info
+from promptgrimoire.pages.annotation.tags import TagInfo
 
 
-class TestBriefTagsToTagInfo:
-    """Verify brief_tags_to_tag_info() mapper produces correct TagInfo list."""
+class TestTagInfo:
+    """Verify TagInfo dataclass properties."""
 
-    def test_brief_tags_to_tag_info_returns_all_tags(self) -> None:
-        """Result has 10 entries, one per BriefTag member."""
-        result = brief_tags_to_tag_info()
-        assert len(result) == 10
-        assert len(result) == len(BriefTag)
+    def test_tag_info_has_expected_fields(self) -> None:
+        """TagInfo instances have name, colour, and raw_key string fields."""
+        ti = TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="some-uuid")
+        assert isinstance(ti.name, str)
+        assert isinstance(ti.colour, str)
+        assert isinstance(ti.raw_key, str)
 
-    def test_tag_info_names_are_title_case(self) -> None:
-        """Each name matches tag.value.replace('_', ' ').title()."""
-        result = brief_tags_to_tag_info()
-        for tag_info, brief_tag in zip(result, BriefTag, strict=True):
-            expected_name = brief_tag.value.replace("_", " ").title()
-            assert tag_info.name == expected_name, (
-                f"Expected {expected_name!r}, got {tag_info.name!r} for {brief_tag}"
-            )
+    def test_tag_info_is_frozen(self) -> None:
+        """TagInfo instances are immutable (frozen dataclass)."""
+        ti = TagInfo(name="Test", colour="#000000", raw_key="key")
+        try:
+            ti.name = "Changed"  # type: ignore[misc]  -- testing frozen
+            raise AssertionError("Expected FrozenInstanceError")
+        except AttributeError:
+            pass
 
-    def test_tag_info_colours_are_hex(self) -> None:
-        """Each colour starts with '#' and has 7 characters (e.g. '#1f77b4')."""
+    def test_tag_info_colour_is_hex(self) -> None:
+        """Colour field should be a 7-character hex string."""
         hex_pattern = re.compile(r"^#[0-9a-fA-F]{6}$")
-        result = brief_tags_to_tag_info()
-        for tag_info in result:
-            assert hex_pattern.match(tag_info.colour), (
-                f"Invalid hex colour: {tag_info.colour!r} for tag {tag_info.name!r}"
-            )
+        ti = TagInfo(name="Test", colour="#1f77b4", raw_key="key")
+        assert hex_pattern.match(ti.colour)
 
-    def test_tag_info_colours_match_tag_colors(self) -> None:
-        """Each colour matches TAG_COLORS[tag] for the corresponding BriefTag."""
-        result = brief_tags_to_tag_info()
-        for tag_info, brief_tag in zip(result, BriefTag, strict=True):
-            expected_colour = TAG_COLORS[brief_tag]
-            assert tag_info.colour == expected_colour, (
-                f"Expected {expected_colour!r}, got {tag_info.colour!r} for {brief_tag}"
-            )
+    def test_tag_info_equality(self) -> None:
+        """Two TagInfo with same fields are equal."""
+        a = TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="key1")
+        b = TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="key1")
+        assert a == b
 
-    def test_tag_info_is_dataclass_with_expected_fields(self) -> None:
-        """TagInfo instances have name and colour string fields."""
-        result = brief_tags_to_tag_info()
-        tag_info = result[0]
-        assert isinstance(tag_info.name, str)
-        assert isinstance(tag_info.colour, str)
-        assert tag_info.name != ""
-        assert tag_info.colour != ""
-
-    def test_order_matches_enum_order(self) -> None:
-        """Tag info list preserves BriefTag enum declaration order."""
-        result = brief_tags_to_tag_info()
-        expected_order = [t.value.replace("_", " ").title() for t in BriefTag]
-        actual_order = [t.name for t in result]
-        assert actual_order == expected_order
+    def test_tag_info_inequality(self) -> None:
+        """TagInfo with different raw_key are not equal."""
+        a = TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="key1")
+        b = TagInfo(name="Jurisdiction", colour="#1f77b4", raw_key="key2")
+        assert a != b

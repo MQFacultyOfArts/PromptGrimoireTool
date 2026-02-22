@@ -35,10 +35,10 @@ dependencies = [
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
-test-debug = "promptgrimoire.cli:test_debug"
+test-changed = "promptgrimoire.cli:test_changed"
 test-all = "promptgrimoire.cli:test_all"
 test-e2e = "promptgrimoire.cli:test_e2e"
-test-e2e-debug = "promptgrimoire.cli:test_e2e_debug"
+test-e2e-changed = "promptgrimoire.cli:test_e2e_changed"
 test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 seed-data = "promptgrimoire.cli:seed_data"
 set-admin = "promptgrimoire.cli:set_admin"
@@ -102,6 +102,9 @@ ignore = [
 "src/promptgrimoire/db/workspaces.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with crdt
 ]
+"src/promptgrimoire/db/tags.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies with workspaces/crdt
+]
 "src/promptgrimoire/crdt/persistence.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with db
     "PLW0603",  # Global singleton pattern is intentional
@@ -134,6 +137,12 @@ markers = [
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
+filterwarnings = [
+    # SQLModel marks session.execute() as deprecated in favour of session.exec(),
+    # but text() queries require execute() — exec() overloads don't accept TextClause.
+    "ignore::DeprecationWarning:promptgrimoire.db.tags",
+    "ignore::DeprecationWarning:promptgrimoire.db.acl",
+]
 
 [tool.ty.src]
 exclude = ["alembic/"]
@@ -160,4 +169,7 @@ dev = [
     "pytest-randomly>=4.0.1",
     "py-spy>=0.4.1",
     "pysnooper>=1.2.3",
+    "pytest-sugar>=1.1.1",
+    "junitparser>=4.0.2",
+    "pytest-rerunfailures>=16.1",
 ]

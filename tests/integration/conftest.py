@@ -31,20 +31,6 @@ logger = logging.getLogger(__name__)
 # PDF Export Test Fixtures
 # =============================================================================
 
-# Standard tag colours used across the application
-TAG_COLOURS: dict[str, str] = {
-    "jurisdiction": "#1f77b4",
-    "procedural_history": "#ff7f0e",
-    "legally_relevant_facts": "#2ca02c",
-    "legal_issues": "#d62728",
-    "reasons": "#9467bd",
-    "courts_reasoning": "#8c564b",
-    "decision": "#e377c2",
-    "order": "#7f7f7f",
-    "domestic_sources": "#bcbd22",
-    "reflection": "#17becf",
-}
-
 # Shared output directory for test artifacts (gitignored)
 PDF_TEST_OUTPUT_DIR = Path("output/test_output")
 
@@ -84,6 +70,7 @@ def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
         html: str,
         highlights: list[dict[str, Any]],
         test_name: str,
+        tag_colours: dict[str, str] | None = None,
         general_notes: str = "",
         acceptance_criteria: str = "",
     ) -> PdfExportResult:
@@ -93,6 +80,7 @@ def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
             html: HTML content to convert.
             highlights: List of highlight dicts.
             test_name: Name for output files (e.g., "cross_env_test").
+            tag_colours: Tag colour mapping. Defaults to empty dict if None.
             general_notes: Optional HTML content for general notes section.
             acceptance_criteria: Optional text prepended to general notes
                 describing what the test validates.
@@ -122,7 +110,7 @@ def pdf_exporter() -> Callable[..., Coroutine[Any, Any, PdfExportResult]]:
         pdf_path = await export_annotation_pdf(
             html_content=html,
             highlights=highlights,
-            tag_colours=TAG_COLOURS,
+            tag_colours=tag_colours if tag_colours is not None else {},
             general_notes=notes_content,
             output_dir=output_dir,
             filename=test_name,
@@ -149,23 +137,15 @@ async def reset_db_engine_per_test() -> AsyncGenerator[None]:
     """Dispose shared database engine after each test.
 
     REQUIRED for service layer tests that use get_session() from the shared
-    engine module. The shared engine uses QueuePool, and pooled connections
-    bind to the event loop that created them.
+    engine module.  The shared engine's connections bind to the event loop
+    that created them.  Without disposal, Test B tries to reuse Test A's
+    connections after A's loop closed → RuntimeError.
 
-    Without this fixture:
-    - Test A creates engine/connections bound to its event loop
-    - Test A finishes, its event loop closes
-    - Test B tries to reuse pooled connections → RuntimeError: Event loop is closed
-
-    This fixture disposes the engine (closing all pooled connections) after
-    each test. The next test lazily creates a fresh engine in its own loop.
-
-    Note: Tests using the db_session fixture (NullPool) don't need this,
-    but it doesn't hurt them either. Service layer tests REQUIRE it.
+    This fixture disposes the engine (closing all connections) after
+    each test.  The next test lazily creates a fresh engine in its own loop.
     """
     yield
 
-    # Only dispose engine if it was actually used during this test
     from promptgrimoire.db.engine import _state, close_db
 
     if _state.engine is not None:

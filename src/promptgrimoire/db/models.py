@@ -155,6 +155,11 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with anonymous_sharing=NULL.
     """
+    default_allow_tag_creation: bool = Field(default=True)
+    """Course-level default for tag creation.
+
+    Inherited by activities with allow_tag_creation=NULL.
+    """
     default_instructor_permission: str = Field(
         default="editor",
         sa_column=Column(
@@ -291,6 +296,11 @@ class Activity(SQLModel, table=True):
 
     None=inherit from course, True=on, False=off.
     """
+    allow_tag_creation: bool | None = Field(default=None)
+    """Tri-state tag creation control.
+
+    None=inherit from course, True=allowed, False=disallowed.
+    """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -328,6 +338,8 @@ class Workspace(SQLModel, table=True):
     course_id: UUID | None = Field(
         default=None, sa_column=_set_null_fk_column("course.id")
     )
+    next_tag_order: int = Field(default=0)
+    next_group_order: int = Field(default=0)
     enable_save_as_draft: bool = Field(default=False)
     title: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
     shared_with_class: bool = Field(default=False)
@@ -370,6 +382,80 @@ class WorkspaceDocument(SQLModel, table=True):
     source_type: str = Field(max_length=20)  # "html", "rtf", "docx", "pdf", "text"
     order_index: int = Field(default=0)
     title: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class TagGroup(SQLModel, table=True):
+    """Visual container for grouping tags within a workspace.
+
+    TagGroups organise related tags (e.g. "Legal Case Brief" headings).
+    CASCADE-deleted when the parent Workspace is deleted.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        workspace_id: Foreign key to Workspace (CASCADE DELETE).
+        name: Group display name.
+        order_index: Display order within workspace.
+        created_at: Timestamp when group was created.
+    """
+
+    __tablename__ = "tag_group"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_tag_group_workspace_name"),
+        CheckConstraint(
+            "color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$'",
+            name="ck_tag_group_color_hex",
+        ),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    name: str = Field(max_length=100)
+    color: str | None = Field(default=None, max_length=7)
+    order_index: int = Field(default=0)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class Tag(SQLModel, table=True):
+    """Per-workspace annotation tag.
+
+    Tags belong to a workspace and optionally to a TagGroup.
+    CASCADE-deleted when the parent Workspace is deleted.
+    If the parent TagGroup is deleted, group_id is set to NULL.
+
+    Attributes:
+        id: Primary key UUID, auto-generated.
+        workspace_id: Foreign key to Workspace (CASCADE DELETE).
+        group_id: Optional FK to TagGroup (SET NULL on delete).
+        name: Tag display name.
+        description: Optional longer description of the tag's purpose.
+        color: Hex colour string (e.g. "#1f77b4").
+        locked: Whether students can modify this tag.
+        order_index: Display order within group or workspace.
+        created_at: Timestamp when tag was created.
+    """
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_tag_workspace_name"),
+        CheckConstraint("color ~ '^#[0-9a-fA-F]{6}$'", name="ck_tag_color_hex"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    group_id: UUID | None = Field(
+        default=None, sa_column=_set_null_fk_column("tag_group.id")
+    )
+    name: str = Field(max_length=100)
+    description: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    color: str = Field(max_length=7)
+    locked: bool = Field(default=False)
+    order_index: int = Field(default=0)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

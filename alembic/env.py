@@ -25,6 +25,8 @@ from promptgrimoire.db.models import (  # noqa: F401
     CourseEnrollment,
     CourseRoleRef,
     Permission,
+    Tag,
+    TagGroup,
     User,
     Week,
     Workspace,

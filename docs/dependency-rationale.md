@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-02-17
+Last reviewed: 2026-02-22
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -22,7 +22,7 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 
 **Claim:** ORM combining Pydantic validation with SQLAlchemy query building. All database models are SQLModel classes.
 
-**Evidence:** 11 files import from sqlmodel (10 in `src/promptgrimoire/db/` + `src/promptgrimoire/cli.py`). All 10 database tables (User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, Permission, CourseRoleRef, ACLEntry) are SQLModel classes. Alembic migrations use SQLModel.metadata. Note: `models/scenario.py` uses stdlib `@dataclass`, not SQLModel.
+**Evidence:** 12 files import from sqlmodel (11 in `src/promptgrimoire/db/` + `src/promptgrimoire/cli.py`). All 12 database tables (User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry) are SQLModel classes. Alembic migrations use SQLModel.metadata. Note: `models/scenario.py` uses stdlib `@dataclass`, not SQLModel.
 
 **Why not alternatives:** SQLModel unifies the Pydantic validation layer with SQLAlchemy persistence. Using SQLAlchemy alone would require separate Pydantic models and manual mapping.
 
@@ -184,6 +184,30 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `tests/e2e/` directory. Provides `page`, `browser`, `context` fixtures.
 
+### junitparser >= 4.0.2
+
+**Added:** 2026-02-20
+**Design plan:** docs/design-plans/2026-02-20-parallel-e2e-runner-95.md
+**Claim:** JUnit XML merging for parallel E2E test runner. Each worker subprocess produces its own JUnit XML file; junitparser merges them into a single aggregate report.
+**Evidence:** `src/promptgrimoire/cli.py` — used in `_run_parallel_e2e()` to merge per-file XML results.
+**Serves:** Developers (aggregate test results), CI (single JUnit XML for reporting).
+
+### pytest-rerunfailures >= 16.1
+
+**Added:** 2026-02-22
+**Claim:** Automatic retry for flaky tests. Provides `--reruns N` flag to re-run failed tests up to N times before reporting failure. Used by `test-all` and `test-e2e` CLI commands to mitigate transient PostgreSQL connection errors under xdist parallelism.
+**Evidence:** `pyproject.toml` dev dependency. `src/promptgrimoire/cli.py` passes `--reruns` flag in test runner commands.
+**Why not alternatives:** pytest-rerunfailures is the standard pytest plugin for test retries. No viable alternative with the same pytest integration.
+**Classification:** Protective belt. Test infrastructure only.
+
+### pytest-sugar >= 1.1.1
+
+**Added:** 2026-02-22
+**Claim:** Prettier pytest progress bars. Auto-activates as a pytest plugin when installed. Replaces the default dot-based progress with a real-time progress bar showing test names and pass/fail status.
+**Evidence:** `pyproject.toml` dev dependency. No explicit imports -- pytest auto-discovers the plugin.
+**Why not alternatives:** pytest-sugar is the standard pytest progress plugin. Drop-in replacement for default output.
+**Classification:** Protective belt. Developer experience only. No code depends on it.
+
 ### playwright >= 1.49
 
 **Claim:** Browser automation for E2E tests.
@@ -206,7 +230,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 ### pytest-depper >= 0.2.0
 
-**Claim:** Test dependency analysis. Used by `test-debug` CLI command to identify which tests to run based on code changes.
+**Claim:** Test dependency analysis. Used by `test-changed` CLI command to identify which tests to run based on code changes.
 
 **Evidence:** `src/promptgrimoire/cli.py` references pytest-depper for smart test selection.
 
@@ -234,9 +258,9 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `src/promptgrimoire/cli.py` uses Rich for test runner output formatting (panels, status displays).
 
-**Why not alternatives:** Rich provides formatted terminal output. The alternative is plain print statements, which would degrade the developer experience for `test-debug` and `test-all`.
+**Why not alternatives:** Rich provides formatted terminal output. The alternative is plain print statements, which would degrade the developer experience for `test-changed` and `test-all`.
 
-**Classification:** Protective belt. Only used in dev CLI tooling (`test-debug`, `test-all`), not in the web application. Moved from production deps to dev.
+**Classification:** Protective belt. Only used in dev CLI tooling (`test-changed`, `test-all`), not in the web application. Moved from production deps to dev.
 
 ### psycopg[binary] >= 3.2
 

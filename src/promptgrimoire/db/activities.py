@@ -23,6 +23,7 @@ async def create_activity(
     title: str,
     description: str | None = None,
     copy_protection: bool | None = None,
+    allow_tag_creation: bool | None = None,
 ) -> Activity:
     """Create a new activity with its template workspace atomically.
 
@@ -40,6 +41,9 @@ async def create_activity(
     copy_protection : bool | None
         Tri-state copy protection. None=inherit from course,
         True=on, False=off.
+    allow_tag_creation : bool | None
+        Tri-state tag creation permission. None=inherit from course,
+        True=allowed, False=not allowed.
 
     Returns
     -------
@@ -56,6 +60,7 @@ async def create_activity(
             title=title,
             description=description,
             copy_protection=copy_protection,
+            allow_tag_creation=allow_tag_creation,
             template_workspace_id=template.id,
         )
         session.add(activity)
@@ -83,13 +88,14 @@ async def update_activity(
     copy_protection: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     allow_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     anonymous_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
+    allow_tag_creation: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
 ) -> Activity | None:
     """Update activity details.
 
-    Use description=None to clear it. Omit (or pass ...) to leave unchanged.
-    Use copy_protection=None to reset to inherit from course. Omit to leave unchanged.
-    Use allow_sharing=None to reset to inherit from course. Omit to leave unchanged.
-    Use anonymous_sharing=None to reset to inherit from course. Omit to leave unchanged.
+    Use description=None to clear it.
+    Use copy_protection=None / allow_sharing=None / anonymous_sharing=None /
+    allow_tag_creation=None to reset to inherit from course.
+    Omit any parameter (or pass ...) to leave it unchanged.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
@@ -106,6 +112,8 @@ async def update_activity(
             activity.allow_sharing = allow_sharing
         if anonymous_sharing is not ...:
             activity.anonymous_sharing = anonymous_sharing
+        if allow_tag_creation is not ...:
+            activity.allow_tag_creation = allow_tag_creation
 
         activity.updated_at = datetime.now(UTC)
         session.add(activity)

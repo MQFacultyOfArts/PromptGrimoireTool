@@ -133,17 +133,41 @@ def _stream_plain(
 ) -> int:
     """Stream pytest output with token-minimising filtering for piped/CI use.
 
-    All lines are written to the log file. Only failures and summaries
-    are printed to stdout — PASSED, SUBPASSED, and XFAIL lines are
-    suppressed to reduce token consumption in Claude Code.
+    All lines go to the log file. Stdout suppresses everything until the
+    post-results summary section, then prints from there. FAILED/ERROR
+    lines are printed immediately regardless of phase.
+
+    Pytest output structure:
+    1. ``== test session starts ==``  (opening separator)
+    2. header lines, collection info
+    3. dot-progress or verbose results
+    4. ``== warnings summary ==`` or ``== N passed ==``  (closing separator)
+    5. summary details
+
+    We skip phase 1-3, print from phase 4 onwards.
     """
+    separator_count = 0
+    in_summary = False
+
     for line in process.stdout or []:
         log_file.write(line)
         log_file.flush()
         stripped = line.rstrip()
-        if "PASSED" in stripped or "SUBPASSED" in stripped or "XFAIL" in stripped:
+
+        # Count ``=====`` separators; summary starts at the second one
+        if not in_summary and _SEPARATOR_RE.match(stripped):
+            separator_count += 1
+            if separator_count >= 2:
+                in_summary = True
+
+        if in_summary:
+            print(line, end="")
             continue
-        print(line, end="")
+
+        # Before summary: only print FAILED/ERROR lines
+        if "FAILED" in stripped or "ERROR" in stripped:
+            print(line, end="")
+
     process.wait()
     return process.returncode
 
@@ -287,16 +311,13 @@ def _run_pytest(
     start_time = datetime.now()
     user_args = sys.argv[1:]
 
-    # Interactive terminals get a Rich progress bar and no rtk.
-    # Piped output (e.g. Claude Code) gets rtk filtering for token savings.
-    import shutil
-
+    # Interactive terminals get a Rich progress bar.
+    # Piped output (e.g. Claude Code) uses _stream_plain filtering.
+    # rtk is not used here — it mangles multi-word pytest args like
+    # ``-m "not e2e"`` and causes zero test collection.
     interactive = sys.stdout.isatty()
 
-    if not interactive and shutil.which("rtk") is not None:
-        all_args = ["uv", "run", "rtk", "pytest", *default_args, *user_args]
-    else:
-        all_args = ["uv", "run", "pytest", *default_args, *user_args]
+    all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
     header_text, log_header = _build_test_header(
@@ -1563,7 +1584,7 @@ def _retry_e2e_tests_in_isolation(log_path: Path) -> int:
 def test_e2e() -> None:
     """Start NiceGUI server(s) and run Playwright E2E tests.
 
-    By default, runs single-server serial mode with ``-x`` (fail-fast).
+    By default, runs single-server serial mode.
     Pass ``--parallel`` for per-file parallelism with isolated servers
     and databases. Pass ``--fail-fast`` with ``--parallel`` to kill
     remaining workers on first failure.
@@ -1633,7 +1654,6 @@ def test_e2e() -> None:
             default_args=[
                 "-m",
                 "e2e",
-                "-x",
                 "--ff",
                 "--reruns",
                 "3",
@@ -1656,7 +1676,8 @@ def test_e2e_changed() -> None:
 
     Same server lifecycle as ``test-e2e`` but uses pytest-depper for
     smart test selection. Only E2E tests that depend on changed files
-    (vs main branch) will run. Stops on first failure (``-x``).
+    (vs main branch) will run. Doesn't stop on first failure, because
+    the retryer will just get stuck.
 
     Extra arguments forwarded to pytest
     (e.g. ``uv run test-e2e-changed -k law``).
@@ -1690,7 +1711,6 @@ def test_e2e_changed() -> None:
                 "-m",
                 "e2e",
                 "--ff",
-                "-x",
                 "--depper",
                 "--tb=long",
                 "--log-cli-level=WARNING",

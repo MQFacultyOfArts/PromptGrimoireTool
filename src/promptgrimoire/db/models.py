@@ -392,6 +392,10 @@ class TagGroup(SQLModel, table=True):
     __tablename__ = "tag_group"
     __table_args__ = (
         UniqueConstraint("workspace_id", "name", name="uq_tag_group_workspace_name"),
+        CheckConstraint(
+            "color IS NULL OR color ~ '^#[0-9a-fA-F]{6}$'",
+            name="ck_tag_group_color_hex",
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)

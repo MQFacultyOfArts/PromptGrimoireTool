@@ -1,4 +1,4 @@
-"""Tests for tag schema: cascade, set-null, and PlacementContext resolution.
+"""Tests for tag schema constraints and PlacementContext resolution.
 
 These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
@@ -6,6 +6,8 @@ Tests verify:
 - AC1.5: tri-state allow_tag_creation inheritance
 - AC1.6: workspace delete cascades to TagGroup and Tag rows
 - AC1.7: tag group delete sets group_id=NULL on Tags (not delete)
+- AC6.1: tag_group.color CHECK constraint rejects invalid hex
+- AC6.2: tag_group.color CHECK constraint allows NULL
 """
 
 from __future__ import annotations
@@ -252,3 +254,90 @@ class TestTagGroupSetNullOnDelete:
             assert tag_after.workspace_id == ws_id, (
                 "Tag should still belong to its workspace"
             )
+
+
+class TestTagGroupColorConstraint:
+    """Tests for ck_tag_group_color_hex CHECK constraint.
+
+    Verifies AC6.1 (invalid hex rejected) and AC6.2 (NULL allowed).
+    """
+
+    @pytest.mark.asyncio
+    async def test_invalid_hex_rejected(self) -> None:
+        """Non-hex color string is rejected by CHECK constraint.
+
+        Verifies AC6.1.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import TagGroup, Workspace
+
+        async with get_session() as session:
+            ws = Workspace()
+            session.add(ws)
+            await session.flush()
+
+            group = TagGroup(
+                workspace_id=ws.id,
+                name="Bad Color",
+                color="red",
+                order_index=0,
+            )
+            session.add(group)
+            with pytest.raises(IntegrityError):
+                await session.flush()
+            # Rollback so get_session() context manager
+            # can exit cleanly after the failed flush.
+            await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_null_color_allowed(self) -> None:
+        """NULL color is accepted by CHECK constraint.
+
+        Verifies AC6.2.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import TagGroup, Workspace
+
+        async with get_session() as session:
+            ws = Workspace()
+            session.add(ws)
+            await session.flush()
+
+            group = TagGroup(
+                workspace_id=ws.id,
+                name="No Color",
+                color=None,
+                order_index=0,
+            )
+            session.add(group)
+            await session.flush()
+            await session.refresh(group)
+
+            assert group.color is None
+            assert group.id is not None
+
+    @pytest.mark.asyncio
+    async def test_valid_hex_accepted(self) -> None:
+        """Valid 6-digit hex color is accepted by CHECK constraint."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import TagGroup, Workspace
+
+        async with get_session() as session:
+            ws = Workspace()
+            session.add(ws)
+            await session.flush()
+
+            group = TagGroup(
+                workspace_id=ws.id,
+                name="Valid Color",
+                color="#FF0000",
+                order_index=0,
+            )
+            session.add(group)
+            await session.flush()
+            await session.refresh(group)
+
+            assert group.color == "#FF0000"
+            assert group.id is not None

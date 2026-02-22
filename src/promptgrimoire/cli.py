@@ -270,7 +270,7 @@ def _run_pytest(
     title: str,
     log_path: Path,
     default_args: list[str],
-) -> None:
+) -> int:
     """Run pytest with Rich formatting and logging."""
     _pre_test_db_cleanup()
 
@@ -355,7 +355,7 @@ Exit code: {exit_code}
 
         console.print(Panel(footer_text, border_style=border))
 
-    sys.exit(exit_code)
+    return exit_code
 
 
 def test_changed() -> None:
@@ -379,22 +379,24 @@ def test_changed() -> None:
 
     Output saved to: test-failures.log
     """
-    _run_pytest(
-        title="Changed Tests (vs main)",
-        log_path=Path("test-failures.log"),
-        default_args=[
-            "--depper",
-            "-m",
-            "not e2e",
-            "-n",
-            "auto",
-            "--dist=worksteal",
-            "-x",
-            "--ff",
-            "--reruns",
-            "3",
-            "--tb=short",
-        ],
+    sys.exit(
+        _run_pytest(
+            title="Changed Tests (vs main)",
+            log_path=Path("test-failures.log"),
+            default_args=[
+                "--depper",
+                "-m",
+                "not e2e",
+                "-n",
+                "auto",
+                "--dist=worksteal",
+                "-x",
+                "--ff",
+                "--reruns",
+                "3",
+                "--tb=short",
+            ],
+        )
     )
 
 
@@ -432,19 +434,21 @@ def test_all() -> None:
 
     Output saved to: test-all.log
     """
-    _run_pytest(
-        title="Full Test Suite (unit + integration, excludes E2E)",
-        log_path=Path("test-all.log"),
-        default_args=[
-            "-m",
-            "not e2e",
-            "-n",
-            _xdist_worker_count(),
-            "--dist=worksteal",
-            "--reruns",
-            "3",
-            "-v",
-        ],
+    sys.exit(
+        _run_pytest(
+            title="Full Test Suite (unit + integration, excludes E2E)",
+            log_path=Path("test-all.log"),
+            default_args=[
+                "-m",
+                "not e2e",
+                "-n",
+                _xdist_worker_count(),
+                "--dist=worksteal",
+                "--reruns",
+                "3",
+                "-v",
+            ],
+        )
     )
 
 
@@ -461,10 +465,12 @@ def test_all_fixtures() -> None:
 
     Output saved to: test-all-fixtures.log
     """
-    _run_pytest(
-        title="Full Fixture Corpus (including BLNS/slow)",
-        log_path=Path("test-all-fixtures.log"),
-        default_args=["-m", "", "-v", "--tb=short"],
+    sys.exit(
+        _run_pytest(
+            title="Full Fixture Corpus (including BLNS/slow)",
+            log_path=Path("test-all-fixtures.log"),
+            default_args=["-m", "", "-v", "--tb=short"],
+        )
     )
 
 
@@ -1131,6 +1137,135 @@ def _cleanup_parallel_results(
                 console.print(f"  Log: {log_path}")
 
 
+async def _retry_parallel_failures(
+    failed_files: list[Path],
+    template_db_url: str,
+    source_db_name: str,
+    result_dir: Path,
+    user_args: list[str],
+) -> tuple[list[Path], list[Path]]:
+    """Re-run failed E2E files with fresh servers and databases.
+
+    Each failed file gets a new cloned database and server instance.
+    Runs sequentially to maximise isolation.
+
+    Returns ``(genuine_failures, flaky_files)``.
+    """
+    import contextlib
+
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    console.print(
+        f"\n[blue]Re-running {len(failed_files)} failed file(s) in isolation...[/]"
+    )
+
+    retry_ports = _allocate_ports(len(failed_files))
+    retry_dbs: list[tuple[str, str]] = []
+
+    try:
+        # Prepare retry databases
+        base_url = template_db_url.split("?", maxsplit=1)[0].rsplit("/", 1)[0]
+        query = (
+            ("?" + template_db_url.split("?", 1)[1]) if "?" in template_db_url else ""
+        )
+        for i in range(len(failed_files)):
+            target_name = f"{source_db_name}_retry{i}"
+            stale_url = f"{base_url}/{target_name}{query}"
+            with contextlib.suppress(Exception):
+                drop_database(stale_url)
+            db_url = clone_database(template_db_url, target_name)
+            retry_dbs.append((db_url, target_name))
+
+        # Run each failed file sequentially
+        genuine_failures: list[Path] = []
+        flaky_files: list[Path] = []
+
+        for i, fpath in enumerate(failed_files):
+            try:
+                result = await _run_e2e_worker(
+                    fpath,
+                    retry_ports[i],
+                    retry_dbs[i][0],
+                    result_dir,
+                    user_args,
+                )
+            except Exception as exc:
+                console.print(f"[red]Retry worker {fpath.name} raised: {exc}[/]")
+                result = (fpath, 1, 0.0)
+
+            label = _worker_status_label(result[1])
+            console.print(
+                f"  [retry {i + 1}/{len(failed_files)}] "
+                f"{result[0].name}: {label} ({result[2]:.1f}s)"
+            )
+
+            if result[1] in (0, 5):
+                flaky_files.append(fpath)
+            else:
+                genuine_failures.append(fpath)
+
+        # Summary
+        console.print()
+        if flaky_files:
+            console.print(f"[yellow]Flaky ({len(flaky_files)}):[/] passed on retry")
+            for f in flaky_files:
+                console.print(f"  {f.name}")
+        if genuine_failures:
+            console.print(f"[red]Genuine failures ({len(genuine_failures)}):[/]")
+            for f in genuine_failures:
+                console.print(f"  {f.name}")
+
+        return genuine_failures, flaky_files
+
+    finally:
+        # Clean up retry databases
+        for url, _ in retry_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(url)
+
+
+def _create_worker_databases(
+    test_db_url: str,
+    source_db_name: str,
+    count: int,
+    suffix: str = "w",
+) -> list[tuple[str, str]]:
+    """Clone *count* worker databases from *test_db_url*.
+
+    Drops stale databases with matching names first, then clones fresh
+    copies. On partial failure, cleans up any databases already created.
+
+    Returns list of ``(db_url, db_name)`` tuples.
+    """
+    import contextlib
+
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    base_url = test_db_url.split("?", maxsplit=1)[0].rsplit("/", 1)[0]
+    query = ("?" + test_db_url.split("?", 1)[1]) if "?" in test_db_url else ""
+
+    # Drop stale databases from interrupted previous runs
+    for i in range(count):
+        stale_url = f"{base_url}/{source_db_name}_{suffix}{i}{query}"
+        with contextlib.suppress(Exception):
+            drop_database(stale_url)
+
+    # Clone fresh databases
+    worker_dbs: list[tuple[str, str]] = []
+    try:
+        for i in range(count):
+            target_name = f"{source_db_name}_{suffix}{i}"
+            db_url = clone_database(test_db_url, target_name)
+            worker_dbs.append((db_url, target_name))
+    except Exception:
+        for url, _ in worker_dbs:
+            with contextlib.suppress(Exception):
+                drop_database(url)
+        raise
+
+    return worker_dbs
+
+
 async def _run_parallel_e2e(
     user_args: list[str],
     fail_fast: bool = False,
@@ -1144,7 +1279,6 @@ async def _run_parallel_e2e(
     import tempfile
 
     from promptgrimoire.config import get_settings
-    from promptgrimoire.db.bootstrap import clone_database, drop_database
 
     # -- Discover test files --
     files = sorted(Path("tests/e2e").glob("test_*.py"))
@@ -1165,26 +1299,8 @@ async def _run_parallel_e2e(
     # -- Extract source db name --
     source_db_name = test_db_url.split("?")[0].rsplit("/", 1)[1]
 
-    # -- Drop stale worker databases from interrupted previous runs --
-    base_url = test_db_url.split("?")[0].rsplit("/", 1)[0]
-    query = ("?" + test_db_url.split("?", 1)[1]) if "?" in test_db_url else ""
-    for i in range(len(files)):
-        stale_url = f"{base_url}/{source_db_name}_w{i}{query}"
-        with contextlib.suppress(Exception):
-            drop_database(stale_url)
-
-    # -- Create worker databases --
-    worker_dbs: list[tuple[str, str]] = []
-    try:
-        for i in range(len(files)):
-            target_name = f"{source_db_name}_w{i}"
-            db_url = clone_database(test_db_url, target_name)
-            worker_dbs.append((db_url, target_name))
-    except Exception:
-        for url, _ in worker_dbs:
-            with contextlib.suppress(Exception):
-                drop_database(url)
-        raise
+    # -- Create worker databases (drops stale ones first) --
+    worker_dbs = _create_worker_databases(test_db_url, source_db_name, len(files))
 
     # -- Allocate ports and result directory --
     ports = _allocate_ports(len(files))
@@ -1207,16 +1323,28 @@ async def _run_parallel_e2e(
         # -- Compute aggregate exit code --
         # "all passed" for cleanup: only real results (0 or 5), not cancelled (-1)
         all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
-        aggregate = 0 if all_passed else 1
 
         wall_clock = time.monotonic() - wall_start
 
         # -- Summary (printed before JUnit merge so it's visible even if merge fails) --
         _print_parallel_summary(results, wall_clock)
 
-        # -- Merge JUnit XML (best-effort) --
-        import contextlib
+        # -- Retry failed files in isolation --
+        if not all_passed:
+            failed_files = [f for f, code, _ in results if code not in (0, 5, -1)]
+            if failed_files:
+                genuine, _flaky = await _retry_parallel_failures(
+                    failed_files,
+                    test_db_url,
+                    source_db_name,
+                    result_dir,
+                    user_args,
+                )
+                all_passed = not genuine
 
+        aggregate = 0 if all_passed else 1
+
+        # -- Merge JUnit XML (best-effort) --
         with contextlib.suppress(Exception):
             _merge_junit_xml(result_dir)
 
@@ -1338,6 +1466,100 @@ def _stop_pyspy(proc: subprocess.Popen[bytes]) -> None:
     console.print("[blue]py-spy recording saved to logs/[/]")
 
 
+def _get_last_failed() -> list[str]:
+    """Read failed test node IDs from pytest's lastfailed cache."""
+    import json
+
+    cache_path = Path(".pytest_cache/v/cache/lastfailed")
+    if not cache_path.exists():
+        return []
+    data = json.loads(cache_path.read_text())
+    return [k for k, v in data.items() if v]
+
+
+def _retry_e2e_tests_in_isolation(log_path: Path) -> int:
+    """Re-run failed E2E tests individually to distinguish flaky from genuine failures.
+
+    Reads the pytest lastfailed cache for test node IDs, re-runs each one
+    in its own pytest invocation (without ``--reruns``), and reports which
+    passed (flaky due to test interaction) vs which still failed (genuine).
+
+    Returns 0 if all failures were flaky, 1 if any genuinely failed.
+    """
+    failed_tests = _get_last_failed()
+    if not failed_tests:
+        return 1  # No cached failures — can't retry, report original failure
+
+    console.print(
+        f"\n[blue]Re-running {len(failed_tests)} failed test(s) in isolation...[/]"
+    )
+
+    genuine_failures: list[str] = []
+    flaky: list[str] = []
+
+    with log_path.open("a") as log_file:
+        log_file.write(
+            f"\n{'=' * 60}\n"
+            f"Isolation retry: {len(failed_tests)} test(s)\n"
+            f"{'=' * 60}\n\n"
+        )
+
+        for i, node_id in enumerate(failed_tests, 1):
+            cmd = [
+                "uv",
+                "run",
+                "pytest",
+                node_id,
+                "--tb=short",
+                "-v",
+                "--no-header",
+                "-p",
+                "no:cacheprovider",
+            ]
+
+            log_file.write(f"--- Retry {i}/{len(failed_tests)}: {node_id} ---\n")
+            log_file.flush()
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+            )
+
+            log_file.write(result.stdout)
+            log_file.write(f"Exit code: {result.returncode}\n\n")
+            log_file.flush()
+
+            if result.returncode in (0, 5):
+                flaky.append(node_id)
+                console.print(
+                    f"  [{i}/{len(failed_tests)}] {node_id}: "
+                    f"[yellow]FLAKY[/] (passed in isolation)"
+                )
+            else:
+                genuine_failures.append(node_id)
+                console.print(
+                    f"  [{i}/{len(failed_tests)}] {node_id}: "
+                    f"[red]FAILED[/] (genuine failure)"
+                )
+
+    console.print()
+    if flaky:
+        console.print(
+            f"[yellow]Flaky ({len(flaky)}):[/] passed when re-run in isolation"
+        )
+        for t in flaky:
+            console.print(f"  {t}")
+    if genuine_failures:
+        console.print(f"[red]Genuine failures ({len(genuine_failures)}):[/]")
+        for t in genuine_failures:
+            console.print(f"  {t}")
+
+    return 1 if genuine_failures else 0
+
+
 def test_e2e() -> None:
     """Start NiceGUI server(s) and run Playwright E2E tests.
 
@@ -1402,10 +1624,12 @@ def test_e2e() -> None:
     if use_pyspy:
         pyspy_process = _start_pyspy(server_process.pid)
 
+    exit_code = 1
     try:
-        _run_pytest(
+        log_path = Path("test-e2e.log")
+        exit_code = _run_pytest(
             title=f"E2E Test Suite (Playwright, serial, fail-fast) — server {url}",
-            log_path=Path("test-e2e.log"),
+            log_path=log_path,
             default_args=[
                 "-m",
                 "e2e",
@@ -1418,10 +1642,13 @@ def test_e2e() -> None:
                 "--log-cli-level=WARNING",
             ],
         )
+        if exit_code not in (0, 5):
+            exit_code = _retry_e2e_tests_in_isolation(log_path)
     finally:
         if pyspy_process is not None:
             _stop_pyspy(pyspy_process)
         _stop_e2e_server(server_process)
+    sys.exit(exit_code)
 
 
 def test_e2e_changed() -> None:
@@ -1453,10 +1680,12 @@ def test_e2e_changed() -> None:
 
     os.environ["E2E_BASE_URL"] = url
 
+    exit_code = 1
     try:
-        _run_pytest(
+        log_path = Path("test-e2e.log")
+        exit_code = _run_pytest(
             title=f"E2E Changed Tests (vs main) — server {url}",
-            log_path=Path("test-e2e.log"),
+            log_path=log_path,
             default_args=[
                 "-m",
                 "e2e",
@@ -1468,8 +1697,11 @@ def test_e2e_changed() -> None:
                 "-v",
             ],
         )
+        if exit_code not in (0, 5):
+            exit_code = _retry_e2e_tests_in_isolation(log_path)
     finally:
         _stop_e2e_server(server_process)
+    sys.exit(exit_code)
 
 
 # ---------------------------------------------------------------------------

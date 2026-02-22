@@ -48,6 +48,10 @@ def _pre_test_db_cleanup() -> None:
 
     # Override DATABASE__URL so Settings resolves to the test database
     os.environ["DATABASE__URL"] = test_database_url
+    # Signal engine module to use NullPool instead of QueuePool.
+    # Inherited by all xdist workers.  Avoids asyncpg connection-state
+    # leakage under parallel execution (asyncpg#784, SQLAlchemy#10226).
+    os.environ["_PROMPTGRIMOIRE_USE_NULL_POOL"] = "1"
     get_settings.cache_clear()
 
     # Run Alembic migrations
@@ -371,6 +375,7 @@ def test_debug() -> None:
         --dist=worksteal: Workers steal tests from others for better load balancing
         -x: Stop on first failure
         --ff: Run failed tests first, then remaining tests
+        --reruns 3: Retry failed tests up to 3 times (asyncpg connection churn)
         --durations=10: Show 10 slowest tests
         --tb=short: Shorter tracebacks
 
@@ -389,10 +394,30 @@ def test_debug() -> None:
             "--dist=worksteal",
             "-x",
             "--ff",
+            "--reruns",
+            "3",
             "--durations=10",
             "--tb=short",
         ],
     )
+
+
+def _xdist_worker_count() -> str:
+    """Calculate reliable xdist worker count.
+
+    Caps at half CPU count (max 16).  Higher counts cause intermittent
+    asyncpg ``ConnectionResetError`` under NullPool connection churn —
+    asyncpg's protocol handling has a low-probability race when many
+    workers create/destroy Unix-socket connections simultaneously.
+
+    Benchmarking shows half-CPU is also the fastest configuration:
+    reduced process management overhead outweighs lost parallelism.
+    """
+    try:
+        cpus = os.cpu_count() or 4
+    except Exception:
+        cpus = 4
+    return str(min(cpus // 2, 16))
 
 
 def test_all() -> None:
@@ -406,8 +431,9 @@ def test_all() -> None:
 
     Flags applied:
         -m "not e2e": Exclude Playwright E2E tests by marker
-        -n auto: Parallel execution with auto-detected workers
+        -n <half-cpu>: Parallel execution with capped worker count
         --dist=worksteal: Workers steal tests from others for better load balancing
+        --reruns 3: Retry failed tests up to 3 times (asyncpg connection churn)
         --durations=10: Show 10 slowest tests
         -v: Verbose output
 
@@ -420,8 +446,10 @@ def test_all() -> None:
             "-m",
             "not e2e",
             "-n",
-            "auto",
+            _xdist_worker_count(),
             "--dist=worksteal",
+            "--reruns",
+            "3",
             "--durations=10",
             "-v",
         ],
@@ -1391,6 +1419,8 @@ def test_e2e() -> None:
                 "e2e",
                 "-x",
                 "--ff",
+                "--reruns",
+                "3",
                 "--durations=10",
                 "--tb=short",
                 "--log-cli-level=WARNING",

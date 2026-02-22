@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nicegui import ui
+from nicegui import events, ui
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from uuid import UUID
 
+    from promptgrimoire.db.models import Tag, TagGroup
     from promptgrimoire.pages.annotation.tag_management import TagRowInputs
 
 
@@ -22,18 +23,18 @@ if TYPE_CHECKING:
 
 
 def _render_tag_row(
-    tag: Any,
+    tag: Tag,
     *,
     can_edit: bool,
     is_instructor: bool,
     group_options: dict[str, str],
-    on_delete: Any,
-    on_lock_toggle: Any | None = None,
-    on_move_tag: Any | None = None,
+    on_delete: Callable[[UUID, str], None],
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None = None,
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
     tag_index: int = 0,
     total_tags: int = 1,
     row_collector: dict[UUID, TagRowInputs] | None = None,
-    on_field_save: Any | None = None,
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
 
@@ -52,7 +53,7 @@ def _render_tag_row(
     group_options:
         Mapping of group UUID string -> group name for the group select.
     on_delete:
-        Async callback ``(tag_id, tag_name) -> None``.
+        Sync callback ``(tag_id, tag_name) -> None``.
     on_lock_toggle:
         Async callback ``(tag_id, locked) -> None``. Shown only for instructors.
     on_move_tag:
@@ -121,7 +122,9 @@ def _render_tag_row(
         # Auto-save on blur for each editable field
         if can_edit and on_field_save is not None:
 
-            async def _blur_save(_e: Any, tid: UUID = tag.id) -> None:
+            async def _blur_save(
+                _e: events.GenericEventArguments, tid: UUID = tag.id
+            ) -> None:
                 await on_field_save(tid)
 
             for inp in (name_input, desc_input):
@@ -140,7 +143,9 @@ def _render_tag_row(
             lock_tip = "Unlock tag" if tag.locked else "Lock tag"
 
             async def _toggle_lock(
-                _e: Any, tid: UUID = tag.id, cur: bool = tag.locked
+                _e: events.ClickEventArguments,
+                tid: UUID = tag.id,
+                cur: bool = tag.locked,
             ) -> None:
                 await on_lock_toggle(tid, not cur)
 
@@ -184,14 +189,14 @@ def _render_tag_row(
 
 
 def _render_group_header(
-    group: Any,
+    group: TagGroup,
     *,
-    on_delete_group: Any,
-    on_move_group: Any | None = None,
+    on_delete_group: Callable[[UUID, str], None],
+    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None,
     group_index: int = 0,
     total_groups: int = 1,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
-    on_group_field_save: Any | None = None,
+    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None,
 ) -> None:
     """Render a group header with name input, colour, and delete button.
 
@@ -248,7 +253,9 @@ def _render_group_header(
         # Auto-save on blur for group fields
         if on_group_field_save is not None:
 
-            async def _blur_save(_e: Any, gid: UUID = group.id) -> None:
+            async def _blur_save(
+                _e: events.GenericEventArguments, gid: UUID = group.id
+            ) -> None:
                 await on_group_field_save(gid)
 
             group_name_input.on("blur", _blur_save)
@@ -319,16 +326,16 @@ def _open_confirm_delete(
 
 def _render_group_tags(
     *,
-    group_tags: list[Any],
+    group_tags: list[Tag],
     tag_ids: list[UUID],
     is_instructor: bool,
     group_options: dict[str, str],
-    on_delete_tag: Any,
-    on_lock_toggle: Any | None,
-    on_tag_reorder: Any,
-    on_move_tag: Any | None = None,
+    on_delete_tag: Callable[[UUID, str], None],
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None,
+    on_tag_reorder: Any,  # Sortable on_end handler -- exact type unclear
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
     tag_row_collector: dict[UUID, TagRowInputs] | None = None,
-    on_field_save: Any | None = None,
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
 ) -> None:
     """Render tags within a group, wrapped in a Sortable for drag reorder."""
     from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
@@ -358,25 +365,25 @@ def _render_group_tags(
 
 def _render_tag_list_content(
     *,
-    groups: list[Any],
-    tags_by_group: dict[UUID | None, list[Any]],
+    groups: list[TagGroup],
+    tags_by_group: dict[UUID | None, list[Tag]],
     group_options: dict[str, str],
     is_instructor: bool,
-    on_delete_tag: Any,
-    on_delete_group: Any,
-    on_add_tag: Any,
-    on_add_group: Any,
-    on_lock_toggle: Any | None,
-    on_tag_reorder_for_group: Any,
-    on_group_reorder: Any,
-    on_move_group: Any | None = None,
-    on_move_tag: Any | None = None,
+    on_delete_tag: Callable[[UUID, str], None],
+    on_delete_group: Callable[[UUID, str], None],
+    on_add_tag: Callable[[UUID | None], Awaitable[None]],
+    on_add_group: Callable[[], Awaitable[None]],
+    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None,
+    on_tag_reorder_for_group: Any,  # Sortable on_end handler -- exact type unclear
+    on_group_reorder: Any,  # Sortable on_end handler -- exact type unclear
+    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None,
+    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
     tag_row_collector: dict[UUID, TagRowInputs],
     group_row_collector: dict[UUID, dict[str, Any]],
-    on_field_save: Any | None = None,
-    on_group_field_save: Any | None = None,
+    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
+    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None,
 ) -> None:
     """Render all tag groups and ungrouped tags inside the content area.
 

@@ -6,7 +6,7 @@ Renders the 'import tags from another activity' dropdown. Imports
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from nicegui import ui
@@ -16,6 +16,8 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
@@ -24,7 +26,7 @@ async def _render_import_section(
     *,
     ctx: PlacementContext,
     state: PageState,
-    render_tag_list: Any,
+    render_tag_list: Callable[[], Awaitable[None]],
 ) -> None:
     """Render the 'import tags from activity' dropdown (AC7.7).
 

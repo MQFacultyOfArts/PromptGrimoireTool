@@ -26,8 +26,10 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from uuid import UUID
 
+    from promptgrimoire.db.models import Tag
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
@@ -67,7 +69,7 @@ _PRESET_PALETTE: list[str] = [
 # ── Reorder helpers ──────────────────────────────────────────────────
 
 
-def _reorder_list(items: list[Any], old_index: int, new_index: int) -> list[Any]:
+def _reorder_list[T](items: list[T], old_index: int, new_index: int) -> list[T]:
     """Move an item within a list from old_index to new_index.
 
     Returns a new list with the item repositioned.
@@ -83,6 +85,9 @@ def _extract_reorder_indices(e: Any) -> tuple[int, int] | None:
 
     Returns ``(old_index, new_index)`` or ``None`` if the event is
     missing indices or the item did not move.
+
+    ``e`` is a Sortable event argument whose exact type is not
+    exported by the NiceGUI Sortable element.
     """
     old_idx = e.args.get("oldIndex")
     new_idx = e.args.get("newIndex")
@@ -156,7 +161,7 @@ async def open_tag_management(
             all_tags = await list_tags_for_workspace(state.workspace_id)
             group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
-            tags_by_group: dict[UUID | None, list[Any]] = {}
+            tags_by_group: dict[UUID | None, list[Tag]] = {}
             for tag in all_tags:
                 tags_by_group.setdefault(tag.group_id, []).append(tag)
 
@@ -241,9 +246,9 @@ async def open_tag_management(
 def _build_group_callbacks(
     *,
     state: PageState,
-    render_tag_list: Any,
-    create_tag_group: Any,
-    reorder_tag_groups: Any,
+    render_tag_list: Callable[[], Awaitable[None]],
+    create_tag_group: Callable[..., Awaitable[object]],
+    reorder_tag_groups: Callable[..., Awaitable[None]],
     group_id_list: list[UUID],
 ) -> dict[str, Any]:
     """Build group-related management callbacks."""
@@ -263,7 +268,7 @@ def _build_group_callbacks(
             return
         await render_tag_list()
 
-    async def _group_reorder(e: Any) -> None:
+    async def _group_reorder(e: Any) -> None:  # Sortable event
         indices = _extract_reorder_indices(e)
         if indices is None:
             return
@@ -308,13 +313,13 @@ def _build_group_callbacks(
 def _build_tag_reorder_callbacks(
     *,
     state: PageState,
-    render_tag_list: Any,
-    reorder_tags: Any,
+    render_tag_list: Callable[[], Awaitable[None]],
+    reorder_tags: Callable[..., Awaitable[None]],
     tag_id_lists: dict[UUID | None, list[UUID]],
 ) -> dict[str, Any]:
     """Build tag reorder callbacks (drag and button-based)."""
 
-    async def _tag_reorder(e: Any, group_id: UUID | None) -> None:
+    async def _tag_reorder(e: Any, group_id: UUID | None) -> None:  # Sortable event
         indices = _extract_reorder_indices(e)
         if indices is None:
             return
@@ -349,12 +354,12 @@ def _build_tag_reorder_callbacks(
 def _build_management_callbacks(
     *,
     state: PageState,
-    render_tag_list: Any,
-    update_tag: Any,
-    create_tag: Any,
-    create_tag_group: Any,
-    reorder_tags: Any,
-    reorder_tag_groups: Any,
+    render_tag_list: Callable[[], Awaitable[None]],
+    update_tag: Callable[..., Awaitable[object]],
+    create_tag: Callable[..., Awaitable[object]],
+    create_tag_group: Callable[..., Awaitable[object]],
+    reorder_tags: Callable[..., Awaitable[None]],
+    reorder_tag_groups: Callable[..., Awaitable[None]],
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
     is_instructor: bool,

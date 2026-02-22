@@ -14,6 +14,8 @@ from uuid import UUID
 from nicegui import ui
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tag_management import TagRowInputs
 
@@ -68,7 +70,7 @@ async def _refresh_tag_state(
 async def _save_single_tag(
     tag_id: UUID,
     tag_row_inputs: dict[UUID, TagRowInputs],
-    update_tag: Any,
+    update_tag: Callable[..., Awaitable[object]],
     *,
     bypass_lock: bool = False,
 ) -> bool:
@@ -122,7 +124,7 @@ async def _save_single_tag(
 async def _save_single_group(
     group_id: UUID,
     group_row_inputs: dict[UUID, dict[str, Any]],
-    update_tag_group: Any,
+    update_tag_group: Callable[..., Awaitable[object]],
 ) -> bool:
     """Auto-save a single group's current input values on blur.
 

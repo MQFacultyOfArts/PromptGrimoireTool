@@ -363,6 +363,43 @@ class TestLockEnforcement:
         deleted = await delete_tag(tag.id)
         assert deleted is True
 
+    @pytest.mark.asyncio
+    async def test_update_locked_tag_with_bypass_lock(self) -> None:
+        """update_tag with bypass_lock=True succeeds on a locked tag.
+
+        Verifies AC6.3: instructor bypass allows editing locked tags.
+        """
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
+
+        updated = await update_tag(tag.id, name="New Name", bypass_lock=True)
+        assert updated is not None
+        assert updated.name == "New Name"
+
+    @pytest.mark.asyncio
+    async def test_delete_locked_tag_with_bypass_lock(self) -> None:
+        """delete_tag with bypass_lock=True succeeds on a locked tag.
+
+        Verifies AC6.4: instructor bypass allows deleting locked tags.
+        """
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
+
+        deleted = await delete_tag(tag.id, bypass_lock=True)
+        assert deleted is True
+
+        # Verify tag no longer exists
+        refetched = await get_tag(tag.id)
+        assert refetched is None
+
 
 class TestPermissionEnforcement:
     """Tests for allow_tag_creation permission enforcement."""

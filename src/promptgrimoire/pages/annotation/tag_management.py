@@ -34,6 +34,33 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 
 
+class GroupCallbacks(TypedDict):
+    """Typed return value of ``_build_group_callbacks``."""
+
+    delete_group: Callable[[UUID, str], None]
+    add_group: Callable[[], Awaitable[None]]
+    group_reorder: Callable[[Any], Awaitable[None]]
+    move_group: Callable[[UUID, int], Awaitable[None]]
+
+
+class TagReorderCallbacks(TypedDict):
+    """Typed return value of ``_build_tag_reorder_callbacks``."""
+
+    tag_reorder: Callable[[Any, UUID | None], Awaitable[None]]
+    move_tag: Callable[[UUID, int], Awaitable[None]]
+
+
+class ManagementCallbacks(GroupCallbacks, TagReorderCallbacks):
+    """Typed return value of ``_build_management_callbacks``.
+
+    Merges group and reorder callbacks, adding tag-specific ones.
+    """
+
+    delete_tag: Callable[[UUID, str], None]
+    add_tag: Callable[[UUID | None], Awaitable[None]]
+    lock_toggle: Callable[[UUID, bool], Awaitable[None]]
+
+
 class TagRowInputs(TypedDict):
     """Input element references and original values for a single tag row.
 
@@ -250,7 +277,7 @@ def _build_group_callbacks(
     create_tag_group: Callable[..., Awaitable[object]],
     reorder_tag_groups: Callable[..., Awaitable[None]],
     group_id_list: list[UUID],
-) -> dict[str, Any]:
+) -> GroupCallbacks:
     """Build group-related management callbacks."""
 
     async def _on_group_deleted(_group_name: str) -> None:
@@ -316,7 +343,7 @@ def _build_tag_reorder_callbacks(
     render_tag_list: Callable[[], Awaitable[None]],
     reorder_tags: Callable[..., Awaitable[None]],
     tag_id_lists: dict[UUID | None, list[UUID]],
-) -> dict[str, Any]:
+) -> TagReorderCallbacks:
     """Build tag reorder callbacks (drag and button-based)."""
 
     async def _tag_reorder(e: Any, group_id: UUID | None) -> None:  # Sortable event
@@ -363,7 +390,7 @@ def _build_management_callbacks(
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
     is_instructor: bool,
-) -> dict[str, Any]:
+) -> ManagementCallbacks:
     """Build all management dialog callbacks as a dict."""
     group_cbs = _build_group_callbacks(
         state=state,
@@ -464,6 +491,10 @@ def _build_management_callbacks(
         "delete_tag": _delete_tag,
         "add_tag": _add_tag_in_group,
         "lock_toggle": _lock_toggle,
-        **tag_reorder_cbs,
-        **group_cbs,
+        "tag_reorder": tag_reorder_cbs["tag_reorder"],
+        "move_tag": tag_reorder_cbs["move_tag"],
+        "delete_group": group_cbs["delete_group"],
+        "add_group": group_cbs["add_group"],
+        "group_reorder": group_cbs["group_reorder"],
+        "move_group": group_cbs["move_group"],
     }

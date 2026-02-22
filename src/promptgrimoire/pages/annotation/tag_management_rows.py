@@ -310,8 +310,8 @@ def _open_confirm_delete(
             async def _do_delete() -> None:
                 try:
                     await delete_fn()
-                except (ValueError, Exception) as exc:
-                    ui.notify(str(exc), type="warning")
+                except Exception as exc:
+                    ui.notify(str(exc), type="negative")
                     dlg.close()
                     return
                 dlg.close()

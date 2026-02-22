@@ -153,7 +153,7 @@ function applyHighlights(container, highlightData, tagColors) {
         }
         if (ranges.length) {
             const hl = new Highlight(...ranges);
-            hl.priority = regionPriority(tag, tagIdx);
+            hl.priority = tagIdx !== undefined ? tagIdx : 0;
             CSS.highlights.set('hl-' + tag, hl);
         }
         tagIdx++;
@@ -161,14 +161,6 @@ function applyHighlights(container, highlightData, tagColors) {
     // Signal that highlights (and _textNodes) are ready
     window._highlightsReady = true;
     document.dispatchEvent(new Event('highlights-ready'));
-}
-
-function regionPriority(tag, tagIdx) {
-    const priorities = {
-        jurisdiction: 10, legal_issues: 20,
-        legislation: 30, evidence: 40
-    };
-    return priorities[tag] || (tagIdx !== undefined ? tagIdx : 0);
 }
 
 function charOffsetToRange(textNodes, startChar, endChar) {

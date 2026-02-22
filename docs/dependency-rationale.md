@@ -184,7 +184,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `tests/e2e/` directory. Provides `page`, `browser`, `context` fixtures.
 
-### junitparser >= 3.0
+### junitparser >= 4.0.2
 
 **Added:** 2026-02-20
 **Design plan:** docs/design-plans/2026-02-20-parallel-e2e-runner-95.md
@@ -199,6 +199,14 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `pyproject.toml` dev dependency. `src/promptgrimoire/cli.py` passes `--reruns` flag in test runner commands.
 **Why not alternatives:** pytest-rerunfailures is the standard pytest plugin for test retries. No viable alternative with the same pytest integration.
 **Classification:** Protective belt. Test infrastructure only.
+
+### pytest-sugar >= 1.1.1
+
+**Added:** 2026-02-22
+**Claim:** Prettier pytest progress bars. Auto-activates as a pytest plugin when installed. Replaces the default dot-based progress with a real-time progress bar showing test names and pass/fail status.
+**Evidence:** `pyproject.toml` dev dependency. No explicit imports -- pytest auto-discovers the plugin.
+**Why not alternatives:** pytest-sugar is the standard pytest progress plugin. Drop-in replacement for default output.
+**Classification:** Protective belt. Developer experience only. No code depends on it.
 
 ### playwright >= 1.49
 

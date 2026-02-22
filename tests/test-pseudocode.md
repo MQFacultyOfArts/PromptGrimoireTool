@@ -1231,10 +1231,10 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Old monolith file removed; a file here would shadow the package and break all imports
 
-### All 13 authored modules present
+### All 17 authored modules present
 **File:** tests/unit/test_annotation_package_structure.py::test_all_authored_modules_exist
-1. Check __init__, broadcast, cards, content_form, css, document, highlights, organise, pdf_export, respond, tag_management, tags, workspace
-2. Assert all 13 .py files exist in pages/annotation/
+1. Check __init__, broadcast, cards, content_form, css, document, highlights, organise, pdf_export, respond, tag_import, tag_management, tag_management_rows, tag_management_save, tag_quick_create, tags, workspace
+2. Assert all 17 .py files exist in pages/annotation/
 
 **Verifies:** No modules accidentally deleted during split or new additions
 

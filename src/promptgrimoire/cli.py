@@ -127,11 +127,19 @@ def _stream_plain(
     process: subprocess.Popen[str],
     log_file,
 ) -> int:
-    """Stream pytest output directly — for piped/CI use with rtk filtering."""
+    """Stream pytest output with token-minimising filtering for piped/CI use.
+
+    All lines are written to the log file. Only failures and summaries
+    are printed to stdout — PASSED, SUBPASSED, and XFAIL lines are
+    suppressed to reduce token consumption in Claude Code.
+    """
     for line in process.stdout or []:
-        print(line, end="")
         log_file.write(line)
         log_file.flush()
+        stripped = line.rstrip()
+        if "PASSED" in stripped or "SUBPASSED" in stripped or "XFAIL" in stripped:
+            continue
+        print(line, end="")
     process.wait()
     return process.returncode
 
@@ -287,10 +295,13 @@ def _run_pytest(
         all_args = ["uv", "run", "pytest", *default_args, *user_args]
     command_str = " ".join(all_args[2:])
 
-    _header_text, log_header = _build_test_header(
+    header_text, log_header = _build_test_header(
         title, branch, db_name, start_time, command_str
     )
-    console.print(f"[blue]{title}[/] — {command_str}")
+    if interactive:
+        console.print(Panel(header_text, border_style="blue"))
+    else:
+        print(f"db={db_name} log={log_path}")
 
     with log_path.open("w") as log_file:
         log_file.write(log_header)
@@ -322,12 +333,24 @@ Exit code: {exit_code}
 """
         log_file.write(log_footer)
 
-    if exit_code == 0:
-        console.print(f"[green]PASSED[/] in {duration} — log: {log_path}")
-    else:
-        console.print(
-            f"[red]FAILED[/] (exit {exit_code}) in {duration} — log: {log_path}"
-        )
+    if interactive:
+        # Rich footer panel
+        console.print()
+        if exit_code == 0:
+            status = Text("PASSED", style="bold green")
+            border = "green"
+        else:
+            status = Text("FAILED", style="bold red")
+            border = "red"
+
+        footer_text = Text()
+        footer_text.append("Status: ")
+        footer_text.append_text(status)
+        footer_text.append(f"\nDuration: {duration}")
+        footer_text.append(f"\nLog: {log_path}", style="dim")
+
+        console.print(Panel(footer_text, border_style=border))
+
     sys.exit(exit_code)
 
 
@@ -1367,7 +1390,6 @@ def test_e2e() -> None:
                 "-m",
                 "e2e",
                 "-x",
-                "-q",
                 "--ff",
                 "--durations=10",
                 "--tb=short",
@@ -2063,8 +2085,6 @@ def _find_export_dir(user_id: str | None) -> Path:
 
 def _show_error_context(log_file: Path, tex_file: Path) -> None:
     """Show LaTeX error with context from both log and tex file."""
-    import re
-
     from rich.syntax import Syntax
 
     log_content = log_file.read_text()

@@ -51,10 +51,8 @@ from promptgrimoire.pages.annotation.highlights import (
 from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.respond import render_respond_tab
-from promptgrimoire.pages.annotation.tag_management import (
-    open_quick_create,
-    open_tag_management,
-)
+from promptgrimoire.pages.annotation.tag_management import open_tag_management
+from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
 from promptgrimoire.pages.annotation.tags import workspace_tags
 
 if TYPE_CHECKING:

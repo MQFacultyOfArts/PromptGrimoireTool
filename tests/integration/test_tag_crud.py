@@ -249,6 +249,62 @@ class TestUpdateTagGroup:
         result = await update_tag_group(uuid4(), name="Nope")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_update_color_to_none_clears(self) -> None:
+        """update_tag_group(color=None) explicitly clears the group colour.
+
+        Verifies AC6.7.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag_group,
+            get_tag_group,
+            update_tag_group,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Coloured")
+        # Set a colour first
+        await update_tag_group(group.id, color="#FF0000")
+
+        # Now explicitly clear it
+        updated = await update_tag_group(group.id, color=None)
+        assert updated is not None
+
+        # Reload from DB to confirm persistence
+        reloaded = await get_tag_group(group.id)
+        assert reloaded is not None
+        assert reloaded.color is None
+
+    @pytest.mark.asyncio
+    async def test_update_without_color_preserves(self) -> None:
+        """update_tag_group without color parameter preserves existing colour.
+
+        Verifies AC6.8.
+        """
+        from promptgrimoire.db.tags import (
+            create_tag_group,
+            get_tag_group,
+            update_tag_group,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="KeepColor")
+        # Set a colour
+        await update_tag_group(group.id, color="#FF0000")
+
+        # Update name only — color should not be passed at all
+        updated = await update_tag_group(group.id, name="Renamed")
+        assert updated is not None
+
+        # Reload from DB to confirm colour preserved
+        reloaded = await get_tag_group(group.id)
+        assert reloaded is not None
+        assert reloaded.color == "#FF0000"
+
 
 class TestDeleteTagGroup:
     """Tests for delete_tag_group."""
@@ -288,6 +344,21 @@ class TestDeleteTagGroup:
         from promptgrimoire.db.tags import delete_tag_group
 
         result = await delete_tag_group(uuid4())
+        assert result is False
+
+
+class TestDeleteTag:
+    """Tests for delete_tag."""
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_returns_false(self) -> None:
+        """Deleting a non-existent tag returns False.
+
+        Verifies AC6.5.
+        """
+        from promptgrimoire.db.tags import delete_tag
+
+        result = await delete_tag(uuid4())
         assert result is False
 
 
@@ -627,6 +698,21 @@ class TestImportTagsFromActivity:
         assert by_name["Facts"].order_index == 1
         assert by_name["Ungrouped"].color == "#2ca02c"
         assert by_name["Ungrouped"].order_index == 2
+
+    @pytest.mark.asyncio
+    async def test_import_nonexistent_activity_raises_value_error(self) -> None:
+        """import_tags_from_activity with nonexistent activity raises ValueError.
+
+        Verifies AC6.6.
+        """
+        from promptgrimoire.db.tags import import_tags_from_activity
+
+        # Create a target workspace
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        with pytest.raises(ValueError, match="not found"):
+            await import_tags_from_activity(uuid4(), tgt_ws)
 
 
 class TestDeleteTagCrdtCleanup:

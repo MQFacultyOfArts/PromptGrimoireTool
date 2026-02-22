@@ -136,6 +136,11 @@ markers = [
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
+filterwarnings = [
+    # SQLModel marks session.execute() as deprecated in favour of session.exec(),
+    # but text() queries require execute() — exec() overloads don't accept TextClause.
+    "ignore:.*You probably want to use.*session.exec.*:DeprecationWarning",
+]
 
 [tool.ty.src]
 exclude = ["alembic/"]

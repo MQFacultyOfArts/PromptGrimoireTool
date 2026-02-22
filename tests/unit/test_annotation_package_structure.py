@@ -5,7 +5,7 @@ After the annotation.py monolith was split into pages/annotation/ package
 
 - The package directory must exist with __init__.py (AC1.1)
 - The monolith annotation.py must NOT exist as a file (AC1.2, AC1.6)
-- All 13 authored modules must be present (AC1.3, AC1.4)
+- All 17 authored modules must be present (AC1.3, AC1.4)
 - Satellite modules (organise, respond, tags) are inside the package (AC1.4)
 - No satellite files at pages/ level (AC1.5)
 - No imports from old annotation_organise/respond/tags paths (AC3.1)
@@ -35,7 +35,11 @@ _AUTHORED_MODULES = (
     "organise.py",
     "pdf_export.py",
     "respond.py",
+    "tag_import.py",
     "tag_management.py",
+    "tag_management_rows.py",
+    "tag_management_save.py",
+    "tag_quick_create.py",
     "tags.py",
     "workspace.py",
 )
@@ -80,7 +84,7 @@ def test_monolith_annotation_py_does_not_exist() -> None:
 
 
 def test_all_authored_modules_exist() -> None:
-    """AC1.3, AC1.4: All 13 authored modules must be present in the package."""
+    """AC1.3, AC1.4: All 17 authored modules must be present in the package."""
     missing = [
         name for name in _AUTHORED_MODULES if not (_ANNOTATION_PKG / name).is_file()
     ]

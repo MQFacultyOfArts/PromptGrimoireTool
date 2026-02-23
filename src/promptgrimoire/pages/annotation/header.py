@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
+
 from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
 from promptgrimoire.pages.annotation.sharing import render_sharing_controls

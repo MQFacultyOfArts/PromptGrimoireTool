@@ -15,7 +15,7 @@ Package structure (20 authored modules):
     content_form         Document upload/paste form
     css                  CSS styles and tag toolbar
     document             Document rendering and selection wiring
-    header               Workspace header, placement chip, copy protection
+    header               Workspace header, placement chip, sharing, copy protection
     highlights           Highlight CRUD and rendering
     organise             Organise tab (tag columns, drag-and-drop)
     pdf_export           PDF export orchestration

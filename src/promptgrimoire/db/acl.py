@@ -23,6 +23,7 @@ from promptgrimoire.db.models import (
     Workspace,
 )
 from promptgrimoire.db.roles import get_staff_roles
+from promptgrimoire.db.workspaces import resolve_tristate
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -269,16 +270,10 @@ async def _derive_enrollment_permission(
 
     # Student peer path: enrolled + allow_sharing resolved + shared_with_class
     if workspace.shared_with_class:
-        if activity is not None:
-            # Activity-placed: tri-state resolution (activity overrides course default)
-            allow_sharing = (
-                activity.allow_sharing
-                if activity.allow_sharing is not None
-                else course.default_allow_sharing
-            )
-        else:
-            # Course-placed (no activity): use course default directly
-            allow_sharing = course.default_allow_sharing
+        activity_override = activity.allow_sharing if activity is not None else None
+        allow_sharing = resolve_tristate(
+            activity_override, course.default_allow_sharing
+        )
 
         if allow_sharing:
             return "peer"

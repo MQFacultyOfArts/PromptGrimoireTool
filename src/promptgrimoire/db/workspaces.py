@@ -196,7 +196,7 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         return loose
 
 
-def _resolve_tristate(override: bool | None, default: bool) -> bool:
+def resolve_tristate(override: bool | None, default: bool) -> bool:
     """Resolve a tri-state activity setting against its course default.
 
     Activity-level overrides (True/False) win; None inherits the course default.
@@ -232,16 +232,16 @@ async def _resolve_activity_placement(
         week_title=week.title,
         course_code=course.code,
         course_name=course.name,
-        copy_protection=_resolve_tristate(
+        copy_protection=resolve_tristate(
             activity.copy_protection, course.default_copy_protection
         ),
-        allow_sharing=_resolve_tristate(
+        allow_sharing=resolve_tristate(
             activity.allow_sharing, course.default_allow_sharing
         ),
-        anonymous_sharing=_resolve_tristate(
+        anonymous_sharing=resolve_tristate(
             activity.anonymous_sharing, course.default_anonymous_sharing
         ),
-        allow_tag_creation=_resolve_tristate(
+        allow_tag_creation=resolve_tristate(
             activity.allow_tag_creation, course.default_allow_tag_creation
         ),
         course_id=course.id,

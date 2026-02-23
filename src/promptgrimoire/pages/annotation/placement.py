@@ -34,6 +34,19 @@ async def _load_enrolled_course_options(
     }
 
 
+def _reset_select(
+    select: ui.select,
+    selected: dict[str, UUID | None],
+    *keys: str,
+) -> None:
+    """Clear a cascading select and null its tracked keys."""
+    select.options = {}
+    select.value = None
+    select.disable()
+    for key in keys:
+        selected[key] = None
+
+
 def _build_activity_cascade(
     course_options: dict[str, str],
     selected: dict[str, UUID | None],
@@ -64,13 +77,8 @@ def _build_activity_cascade(
     activity_select.disable()
 
     async def on_course_change(e: events.ValueChangeEventArguments) -> None:
-        week_select.options = {}
-        week_select.value = None
-        week_select.disable()
-        activity_select.options = {}
-        activity_select.value = None
-        activity_select.disable()
-        selected["course"] = selected["week"] = selected["activity"] = None
+        _reset_select(week_select, selected, "course", "week", "activity")
+        _reset_select(activity_select, selected)
         if e.value:
             try:
                 cid = UUID(e.value)
@@ -88,10 +96,7 @@ def _build_activity_cascade(
     course_select.on_value_change(on_course_change)
 
     async def on_week_change(e: events.ValueChangeEventArguments) -> None:
-        activity_select.options = {}
-        activity_select.value = None
-        activity_select.disable()
-        selected["week"] = selected["activity"] = None
+        _reset_select(activity_select, selected, "week", "activity")
         if e.value:
             try:
                 wid = UUID(e.value)

@@ -8,7 +8,7 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (17 authored modules):
+Package structure (18 authored modules):
     __init__             Core types, globals, route definition
     broadcast            Multi-client sync and remote presence
     cards                Annotation card UI components
@@ -18,6 +18,7 @@ Package structure (17 authored modules):
     highlights           Highlight CRUD and rendering
     organise             Organise tab (tag columns, drag-and-drop)
     pdf_export           PDF export orchestration
+    placement            Placement dialog (course/activity assignment)
     respond              Respond tab (reference panel, editor)
     tag_import           Tag import from other activities
     tag_management       Tag/group management dialog orchestrator

@@ -24,6 +24,7 @@ from promptgrimoire.export.preamble import build_annotation_preamble
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine
+    from uuid import UUID
 
 logger = logging.getLogger(__name__)
 

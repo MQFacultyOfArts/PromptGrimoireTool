@@ -20,7 +20,7 @@ from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.acl import grant_permission
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import (
-    PlacementContext,  # noqa: F401  # used by Phase 4: _resolve_workspace_context
+    PlacementContext,  # noqa: F401  # used in Task 2: _resolve_workspace_context
     create_workspace,
     get_placement_context,
     get_workspace,
@@ -35,6 +35,7 @@ from promptgrimoire.pages.annotation.broadcast import (
     _setup_client_sync,
 )
 from promptgrimoire.pages.annotation.content_form import _render_add_content_form
+from promptgrimoire.pages.annotation.css import _build_tag_toolbar
 from promptgrimoire.pages.annotation.document import (
     _render_document_with_highlights,
 )
@@ -43,6 +44,7 @@ from promptgrimoire.pages.annotation.header import (
     render_workspace_header,
 )
 from promptgrimoire.pages.annotation.highlights import (
+    _add_highlight,
     _push_highlights_to_client,
     _update_highlight_css,
     _warp_to_highlight,
@@ -345,12 +347,6 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         if state.toolbar_container is not None:
             state.toolbar_container.clear()
             with state.toolbar_container:
-                from promptgrimoire.pages.annotation.css import (  # noqa: PLC0415
-                    _build_tag_toolbar,
-                )
-                from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
-                    _add_highlight,
-                )
 
                 async def _tag_click(key: str) -> None:
                     await _add_highlight(state, key)

@@ -20,7 +20,7 @@ from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.acl import grant_permission
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import (
-    PlacementContext,  # noqa: F401  # used in Task 2: _resolve_workspace_context
+    PlacementContext,
     create_workspace,
     get_placement_context,
     get_workspace,
@@ -283,54 +283,41 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         clients[state.client_id].has_milkdown_editor = True
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
-    """Render the workspace content view with documents or add content form."""
-    logger.debug("[RENDER] START workspace=%s", workspace_id)
+async def _resolve_workspace_context(
+    workspace_id: UUID,
+) -> tuple[PageState, PlacementContext, bool, bool, bool] | None:
+    """Resolve workspace, ACL, placement context, and build PageState.
 
-    # Check workspace exists before ACL (nonexistent → "not found",
-    # not "access denied")
+    Returns (state, ctx, protect, can_create_tags, shared_with_class)
+    or None if the request was handled (redirect/error) and rendering
+    should stop.
+    """
     workspace = await get_workspace(workspace_id)
-    logger.debug("[RENDER] get_workspace done: found=%s", workspace is not None)
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500")
         ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
-        return
+        return None
 
-    # --- ACL enforcement guard ---
     auth_user = app.storage.user.get("auth_user")
     permission = await check_workspace_access(workspace_id, auth_user)
-    logger.debug("[RENDER] check_workspace_access done: permission=%s", permission)
 
     if auth_user is None:
         ui.navigate.to("/login")
-        return
+        return None
 
     if permission is None:
         ui.notify("You do not have access to this workspace", type="negative")
         ui.navigate.to("/courses")
-        return
+        return None
 
-    # Compute copy protection flag (Phase 3 -- consumed by Phase 4 JS injection)
     ctx = await get_placement_context(workspace_id)
     privileged = is_privileged_user(auth_user)
     protect = ctx.copy_protection and not privileged
-    # Template editors can always create tags (they're setting up the activity).
-    # Privileged users (admin/instructor) can always create tags.
-    # Students follow the resolved allow_tag_creation setting.
     can_create_tags = ctx.allow_tag_creation or ctx.is_template or privileged
-    logger.debug(
-        "[RENDER] placement done: protect=%s can_create=%s", protect, can_create_tags
-    )
 
-    # Create page state with permission capabilities
-    # permission is guaranteed non-None here (guarded above) and always one of
-    # the Permission.name values ("viewer", "peer", "editor", "owner").
-    assert permission in {
-        "viewer",
-        "peer",
-        "editor",
-        "owner",
-    }, f"Unexpected permission value: {permission!r}"
+    assert permission in {"viewer", "peer", "editor", "owner"}, (
+        f"Unexpected permission value: {permission!r}"
+    )
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
@@ -341,7 +328,21 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
     )
     state.tag_info_list = await workspace_tags(workspace_id)
 
-    # Tag management callbacks (Phase 5)
+    return state, ctx, protect, can_create_tags, workspace.shared_with_class
+
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
+    """Render the workspace content view with documents or add content form."""
+    result = await _resolve_workspace_context(workspace_id)
+    if result is None:
+        return
+    state, ctx, protect, can_create_tags, shared_with_class = result
+    # auth_user is guaranteed non-None: _resolve_workspace_context
+    # redirects to /login when unauthenticated.
+    auth_user = app.storage.user.get("auth_user")
+    assert auth_user is not None
+
+    # Tag management callbacks
     async def _rebuild_toolbar() -> None:
         """Clear and rebuild the tag toolbar after tag mutations."""
         if state.toolbar_container is not None:
@@ -380,7 +381,7 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
         workspace_id,
         protect=protect,
         allow_sharing=ctx.allow_sharing,
-        shared_with_class=workspace.shared_with_class,
+        shared_with_class=shared_with_class,
         can_manage_sharing=can_manage_sharing,
         user_id=_get_current_user_id(),
     )

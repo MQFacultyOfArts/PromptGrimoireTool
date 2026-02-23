@@ -54,6 +54,12 @@ library references during development.
 - [NiceGUI UI patterns - timer, refreshable, pages, events, storage, styling](nicegui/ui-patterns.md)
 - [NiceGUI User fixture for fast headless page testing without a browser](nicegui/user-fixture-testing.md)
 
+## openrouter
+
+- [Programmatic API key provisioning with per-key budgets, expiry, and lifecycle management](openrouter/key-management-api.md)
+- [List available models with pricing, capabilities, context length, and supported parameters](openrouter/models-api.md)
+- [Using pydantic-ai with OpenRouter via OpenAI-compatible interface](openrouter/pydantic-ai-integration.md)
+
 ## pandoc
 
 - [Lua filter API for AST manipulation during conversion](pandoc/lua-filters.md)

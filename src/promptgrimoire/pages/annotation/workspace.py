@@ -387,6 +387,7 @@ def _make_tab_change_handler(
         state.active_tab = tab_name
 
         # Sync markdown to CRDT when leaving the Respond tab.
+        # Failure must not block tab switch — Annotate refresh would break.
         if prev_tab == "Respond" and state.sync_respond_markdown:
             try:
                 await state.sync_respond_markdown()
@@ -396,12 +397,15 @@ def _make_tab_change_handler(
                     exc_info=True,
                 )
 
+        # Always re-render Organise tab to show current highlights
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
             state.initialised_tabs.add(tab_name)
             if state.refresh_organise:
                 state.refresh_organise()
             return
 
+        # Rebuild text node map and re-apply highlights. The text walker
+        # does not modify the DOM so this is safe on every tab switch.
         if tab_name == "Annotate":
             _push_highlights_to_client(state)
             if state.refresh_annotations:
@@ -423,52 +427,22 @@ def _make_tab_change_handler(
     return _on_tab_change
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
-    """Render the workspace content view with documents or add content form."""
-    result = await _resolve_workspace_context(workspace_id)
-    if result is None:
-        return
-    state, ctx, protect, can_create_tags, shared_with_class = result
-    # auth_user is guaranteed non-None: _resolve_workspace_context
-    # redirects to /login when unauthenticated.
-    auth_user = app.storage.user.get("auth_user")
-    assert auth_user is not None
+async def _build_tab_panels(
+    state: PageState,
+    workspace_id: UUID,
+    tabs: ui.tabs,
+    on_tab_change: Any,
+    *,
+    on_add_tag: Any,
+    on_manage_tags: Any,
+    can_create_tags: bool,
+) -> None:
+    """Build the three tab panels and store panel refs on ``state``.
 
-    on_add_tag, on_manage_tags = _create_tag_callbacks(
-        state, can_create_tags, ctx, auth_user
-    )
-
-    _setup_client_sync(workspace_id, client, state)
-    can_manage_sharing = state.is_owner or state.viewer_is_privileged
-
-    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
-    await render_workspace_header(
-        state,
-        workspace_id,
-        protect=protect,
-        allow_sharing=ctx.allow_sharing,
-        shared_with_class=shared_with_class,
-        can_manage_sharing=can_manage_sharing,
-        user_id=_get_current_user_id(),
-    )
-
-    # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
-    # is first visited. Must be added during page construction -- dynamically
-    # injected <script> tags via ui.add_body_html after page load don't execute.
-    ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
-
-    # Three-tab container (Phase 1: three-tab UI)
-    state.initialised_tabs = {"Annotate"}
-
-    with ui.tabs().classes("w-full") as tabs:
-        ui.tab("Annotate")
-        ui.tab("Organise")
-        ui.tab("Respond")
-
-    # Set up Tab 2 drag-and-drop and tab change handler
-    _setup_organise_drag(state)
-    on_tab_change = _make_tab_change_handler(state, workspace_id)
-
+    Populates Annotate (with CRDT load + document render), Organise, and
+    Respond panels.  Stores ``state.tab_panels``, ``state.organise_panel``,
+    and ``state.respond_panel`` for later use by broadcast callbacks.
+    """
     with ui.tab_panels(tabs, value="Annotate", on_change=on_tab_change).classes(
         "w-full"
     ) as panels:
@@ -526,6 +500,63 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
             ui.label("Respond tab content will appear here.").classes("text-gray-400")
 
     logger.debug("[RENDER] tab panels built, workspace=%s", workspace_id)
+
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
+    """Render the workspace content view with documents or add content form."""
+    result = await _resolve_workspace_context(workspace_id)
+    if result is None:
+        return
+    state, ctx, protect, can_create_tags, shared_with_class = result
+    # auth_user is guaranteed non-None: _resolve_workspace_context
+    # redirects to /login when unauthenticated.
+    auth_user = app.storage.user.get("auth_user")
+    assert auth_user is not None
+
+    on_add_tag, on_manage_tags = _create_tag_callbacks(
+        state, can_create_tags, ctx, auth_user
+    )
+
+    _setup_client_sync(workspace_id, client, state)
+    can_manage_sharing = state.is_owner or state.viewer_is_privileged
+
+    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
+    await render_workspace_header(
+        state,
+        workspace_id,
+        protect=protect,
+        allow_sharing=ctx.allow_sharing,
+        shared_with_class=shared_with_class,
+        can_manage_sharing=can_manage_sharing,
+        user_id=_get_current_user_id(),
+    )
+
+    # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
+    # is first visited. Must be added during page construction -- dynamically
+    # injected <script> tags via ui.add_body_html after page load don't execute.
+    ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
+
+    # Three-tab container (Phase 1: three-tab UI)
+    state.initialised_tabs = {"Annotate"}
+
+    with ui.tabs().classes("w-full") as tabs:
+        ui.tab("Annotate")
+        ui.tab("Organise")
+        ui.tab("Respond")
+
+    # Set up Tab 2 drag-and-drop and tab change handler
+    _setup_organise_drag(state)
+    on_tab_change = _make_tab_change_handler(state, workspace_id)
+
+    await _build_tab_panels(
+        state,
+        workspace_id,
+        tabs,
+        on_tab_change,
+        on_add_tag=on_add_tag,
+        on_manage_tags=on_manage_tags,
+        can_create_tags=can_create_tags,
+    )
 
     # Inject copy protection JS after tab container is built (Phase 4)
     if protect:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from nicegui import events, ui
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 from promptgrimoire.db.activities import list_activities_for_week
 from promptgrimoire.db.courses import list_courses, list_user_enrollments
@@ -168,7 +171,7 @@ async def _apply_placement(
 async def show_placement_dialog(
     workspace_id: UUID,
     current_ctx: PlacementContext,
-    on_changed: Any,
+    on_changed: Callable[[], Awaitable[None]],
     user_id: UUID | None,
 ) -> None:
     """Open the placement dialog for changing workspace placement.

@@ -64,9 +64,11 @@ def render_sharing_controls(
     if can_manage_sharing:
 
         async def _open_share_dialog() -> None:
+            if grantor_id is None:
+                return  # Unreachable: can_manage_sharing requires auth
             await open_sharing_dialog(
                 workspace_id=workspace_id,
-                grantor_id=grantor_id,  # type: ignore[arg-type]  # auth_user non-None (guarded at view entry), user_id always set
+                grantor_id=grantor_id,
                 sharing_allowed=allow_sharing,
                 grantor_is_staff=viewer_is_privileged,
             )

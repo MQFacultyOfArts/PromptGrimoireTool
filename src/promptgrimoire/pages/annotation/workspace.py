@@ -331,18 +331,18 @@ async def _resolve_workspace_context(
     return state, ctx, protect, can_create_tags, workspace.shared_with_class
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
-    """Render the workspace content view with documents or add content form."""
-    result = await _resolve_workspace_context(workspace_id)
-    if result is None:
-        return
-    state, ctx, protect, can_create_tags, shared_with_class = result
-    # auth_user is guaranteed non-None: _resolve_workspace_context
-    # redirects to /login when unauthenticated.
-    auth_user = app.storage.user.get("auth_user")
-    assert auth_user is not None
+def _create_tag_callbacks(
+    state: PageState,
+    can_create_tags: bool,
+    ctx: PlacementContext,
+    auth_user: dict[str, Any],
+) -> tuple[Any, Any]:
+    """Create tag management closures for the workspace toolbar.
 
-    # Tag management callbacks
+    Returns (on_add_tag, on_manage_tags) callables.  The closures
+    capture ``state`` and the tag creation permission flag.
+    """
+
     async def _rebuild_toolbar() -> None:
         """Clear and rebuild the tag toolbar after tag mutations."""
         if state.toolbar_container is not None:
@@ -355,17 +355,35 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                 _build_tag_toolbar(
                     state.tag_info_list or [],
                     _tag_click,
-                    on_add_click=(_on_add_tag if can_create_tags else None),
-                    on_manage_click=_on_manage_tags,
+                    on_add_click=(on_add_tag if can_create_tags else None),
+                    on_manage_click=on_manage_tags,
                 )
 
-    async def _on_add_tag() -> None:
+    async def on_add_tag() -> None:
         await open_quick_create(state)
         await _rebuild_toolbar()
 
-    async def _on_manage_tags() -> None:
+    async def on_manage_tags() -> None:
         await open_tag_management(state, ctx, auth_user)
         await _rebuild_toolbar()
+
+    return on_add_tag, on_manage_tags
+
+
+async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7 -- extract tab setup into helpers
+    """Render the workspace content view with documents or add content form."""
+    result = await _resolve_workspace_context(workspace_id)
+    if result is None:
+        return
+    state, ctx, protect, can_create_tags, shared_with_class = result
+    # auth_user is guaranteed non-None: _resolve_workspace_context
+    # redirects to /login when unauthenticated.
+    auth_user = app.storage.user.get("auth_user")
+    assert auth_user is not None
+
+    on_add_tag, on_manage_tags = _create_tag_callbacks(
+        state, can_create_tags, ctx, auth_user
+    )
 
     # Set up client synchronization
     _setup_client_sync(workspace_id, client, state)
@@ -476,8 +494,8 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:  #
                     state,
                     doc,
                     crdt_doc,
-                    on_add_click=(_on_add_tag if can_create_tags else None),
-                    on_manage_click=_on_manage_tags,
+                    on_add_click=(on_add_tag if can_create_tags else None),
+                    on_manage_click=on_manage_tags,
                 )
                 logger.debug("[RENDER] document rendered")
 

@@ -203,13 +203,14 @@ async def _render_document_with_highlights(
     async def handle_tag_click(tag_key: str) -> None:
         await _add_highlight(state, tag_key)
 
-    # Tag toolbar - always visible above document
-    state.toolbar_container = _build_tag_toolbar(
-        state.tag_info_list or [],
-        handle_tag_click,
-        on_add_click=on_add_click,
-        on_manage_click=on_manage_click,
-    )
+    # Tag toolbar — only for users who can annotate
+    if state.can_annotate:
+        state.toolbar_container = _build_tag_toolbar(
+            state.tag_info_list or [],
+            handle_tag_click,
+            on_add_click=on_add_click,
+            on_manage_click=on_manage_click,
+        )
 
     # Highlight creation menu (popup with abbreviated tag buttons)
     # Only built for users who can annotate

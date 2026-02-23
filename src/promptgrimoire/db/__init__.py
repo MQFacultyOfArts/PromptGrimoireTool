@@ -110,6 +110,7 @@ from promptgrimoire.db.workspaces import (
     place_workspace_in_activity,
     place_workspace_in_course,
     save_workspace_crdt_state,
+    update_workspace_sharing,
 )
 
 __all__ = [
@@ -201,6 +202,7 @@ __all__ = [
     "update_tag",
     "update_tag_group",
     "update_user_role",
+    "update_workspace_sharing",
     "upsert_user_on_login",
     "verify_schema",
     "workspaces_with_documents",

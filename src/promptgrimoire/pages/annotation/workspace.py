@@ -311,8 +311,9 @@ async def _resolve_workspace_context(
         return None
 
     if permission is None:
-        ui.notify("You do not have access to this workspace", type="negative")
-        ui.navigate.to("/courses")
+        ui.label("You do not have access to this workspace").classes(
+            "text-red-500 text-lg"
+        )
         return None
 
     ctx = await get_placement_context(workspace_id)

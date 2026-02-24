@@ -79,7 +79,6 @@ def _build_comment_delete_btn(
             hid,
             cid,
             requesting_user_id=state.user_id,
-            is_workspace_owner=state.is_owner,
             is_privileged=state.viewer_is_privileged,
         )
         if not deleted:
@@ -100,9 +99,9 @@ def _build_comment_delete_btn(
         if state.broadcast_update:
             await state.broadcast_update()
 
-    ui.button(icon="close", on_click=do_delete).props("flat dense size=xs").tooltip(
-        "Delete comment"
-    )
+    ui.button(icon="close", on_click=do_delete).props(
+        'flat dense size=xs data-testid="comment-delete"'
+    ).tooltip("Delete comment")
 
 
 def _build_comments_section(
@@ -132,11 +131,19 @@ def _build_comments_section(
                 viewing_user_id=state.user_id,
                 anonymous_sharing=state.is_anonymous,
                 viewer_is_privileged=state.viewer_is_privileged,
-                viewer_is_owner=state.is_owner,
+                author_is_privileged=(
+                    c_user_id is not None and c_user_id in state.privileged_user_ids
+                ),
             )
-            with ui.element("div").classes("bg-gray-100 p-2 rounded mt-1"):
+            with (
+                ui.element("div")
+                .classes("bg-gray-100 p-2 rounded mt-1")
+                .props('data-testid="comment"')
+            ):
                 with ui.row().classes("w-full justify-between items-center"):
-                    ui.label(c_author).classes("text-xs font-bold")
+                    ui.label(c_author).classes("text-xs font-bold").props(
+                        'data-testid="comment-author"'
+                    )
                     if state.can_delete_content(c_user_id):
                         _build_comment_delete_btn(state, highlight_id, c_id)
                 ui.label(c_text).classes("text-sm")
@@ -330,13 +337,16 @@ def _build_annotation_card(
         )
 
         # Author and para_ref on same line
+        hl_user_id = highlight.get("user_id")
         display_author = anonymise_author(
             author=author,
-            user_id=highlight.get("user_id"),
+            user_id=hl_user_id,
             viewing_user_id=state.user_id,
             anonymous_sharing=state.is_anonymous,
             viewer_is_privileged=state.viewer_is_privileged,
-            viewer_is_owner=state.is_owner,
+            author_is_privileged=(
+                hl_user_id is not None and hl_user_id in state.privileged_user_ids
+            ),
         )
         with ui.row().classes("gap-2 items-center"):
             ui.label(f"by {display_author}").classes("text-xs text-gray-500")

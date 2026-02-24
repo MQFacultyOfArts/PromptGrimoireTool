@@ -19,6 +19,7 @@ from promptgrimoire.db.models import (
     Course,
     CourseEnrollment,
     Permission,
+    User,
     Week,
     Workspace,
 )
@@ -439,6 +440,55 @@ async def grant_share(
         return acl_entry
 
 
+async def get_privileged_user_ids_for_workspace(
+    workspace_id: UUID,
+) -> frozenset[str]:
+    """Return user IDs of privileged users in this workspace's course context.
+
+    Finds the course containing this workspace (via activity/week or
+    direct course_id), then returns the string-form ``User.id`` for:
+    - Users enrolled with a staff role (``CourseRoleRef.is_staff=True``)
+    - Org-level admins (``User.is_admin=True``)
+
+    These IDs match the ``user_id`` stored in CRDT annotations,
+    allowing callers to determine whether an annotation author
+    is privileged without per-author DB queries.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return frozenset()
+
+        # Resolve course_id from workspace placement
+        course_id = workspace.course_id
+        if course_id is None and workspace.activity_id is not None:
+            activity = await session.get(Activity, workspace.activity_id)
+            if activity is not None:
+                week = await session.get(Week, activity.week_id)
+                if week is not None:
+                    course_id = week.course_id
+
+        staff_ids: set[str] = set()
+
+        if course_id is not None:
+            staff_roles = await get_staff_roles()
+            result = await session.exec(
+                select(CourseEnrollment.user_id).where(
+                    CourseEnrollment.course_id == course_id,
+                    CourseEnrollment.role.in_(staff_roles),  # type: ignore[union-attr]  -- Column has in_
+                )
+            )
+            staff_ids = {str(uid) for uid in result.all()}
+
+        # Also include org-level admins
+        admin_result = await session.exec(
+            select(User.id).where(User.is_admin == True)  # noqa: E712
+        )
+        admin_ids = {str(uid) for uid in admin_result.all()}
+
+        return frozenset(staff_ids | admin_ids)
+
+
 async def list_peer_workspaces(
     activity_id: UUID, exclude_user_id: UUID
 ) -> list[Workspace]:
@@ -497,3 +547,50 @@ async def list_peer_workspaces(
 
         result = await session.exec(stmt)
         return list(result.all())
+
+
+async def list_peer_workspaces_with_owners(
+    activity_id: UUID, exclude_user_id: UUID
+) -> list[tuple[Workspace, str, UUID]]:
+    """List shared peer workspaces with owner display names.
+
+    Same filtering as ``list_peer_workspaces`` but joins with
+    ACLEntry + User to return owner info in a single query.
+
+    Returns
+    -------
+    list[tuple[Workspace, str, UUID]]
+        (workspace, owner_display_name, owner_user_id) tuples,
+        ordered by created_at.
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        template_id = activity.template_workspace_id if activity else None
+
+        owned_subq = (
+            select(ACLEntry.workspace_id)
+            .where(
+                ACLEntry.user_id == exclude_user_id,
+                ACLEntry.permission == "owner",
+            )
+            .scalar_subquery()
+        )
+
+        stmt = (
+            select(Workspace, User.display_name, ACLEntry.user_id)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
+            .join(User, User.id == ACLEntry.user_id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.shared_with_class == True,  # noqa: E712
+                ACLEntry.permission == "owner",
+            )
+            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+        )
+
+        if template_id is not None:
+            stmt = stmt.where(Workspace.id != template_id)
+
+        rows = await session.exec(stmt)
+        return [(row[0], row[1], row[2]) for row in rows.all()]

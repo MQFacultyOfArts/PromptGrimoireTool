@@ -13,6 +13,8 @@ from promptgrimoire.db.acl import (
     list_course_workspaces,
     list_entries_for_user,
     list_entries_for_workspace,
+    list_peer_workspaces,
+    list_peer_workspaces_with_owners,
     resolve_permission,
     revoke_permission,
 )
@@ -178,6 +180,8 @@ __all__ = [
     "list_entries_for_user",
     "list_entries_for_workspace",
     "list_loose_workspaces_for_course",
+    "list_peer_workspaces",
+    "list_peer_workspaces_with_owners",
     "list_tag_groups_for_workspace",
     "list_tags_for_workspace",
     "list_user_enrollments",

@@ -483,20 +483,19 @@ class AnnotationDocument:
         highlight_id: str,
         comment_id: str,
         requesting_user_id: str | None = None,
-        is_workspace_owner: bool = False,
         is_privileged: bool = False,
         origin_client_id: str | None = None,
     ) -> bool:
         """Delete a comment from a highlight's thread.
 
-        Enforces ownership: only the comment creator, workspace owner,
-        or a privileged user (instructor/admin) may delete.
+        Enforces ownership: only the comment creator or a privileged
+        user (instructor/admin) may delete.  Workspace owners who are
+        not privileged may only delete their own comments.
 
         Args:
             highlight_id: ID of the highlight.
             comment_id: ID of the comment to delete.
             requesting_user_id: Stytch user ID of the requester.
-            is_workspace_owner: Whether the requester owns the workspace.
             is_privileged: Whether the requester is instructor/admin.
             origin_client_id: Client making the change (echo prevention).
 
@@ -514,7 +513,7 @@ class AnnotationDocument:
             return False
 
         # Authorisation guard
-        if not is_workspace_owner and not is_privileged:
+        if not is_privileged:
             comment_owner = target.get("user_id")
             if (
                 requesting_user_id is None

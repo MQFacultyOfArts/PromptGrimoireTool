@@ -33,7 +33,7 @@ def _anonymise_dict_author(
     viewing_user_id: str,
     anonymous_sharing: bool,
     viewer_is_privileged: bool,
-    viewer_is_owner: bool,
+    privileged_user_ids: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     """Return a shallow copy of *d* with its ``author`` field anonymised."""
     out = dict(d)
@@ -44,7 +44,7 @@ def _anonymise_dict_author(
         viewing_user_id=viewing_user_id,
         anonymous_sharing=anonymous_sharing,
         viewer_is_privileged=viewer_is_privileged,
-        viewer_is_owner=viewer_is_owner,
+        author_is_privileged=(uid is not None and uid in privileged_user_ids),
     )
     return out
 
@@ -55,7 +55,7 @@ def anonymise_highlights(
     viewing_user_id: str,
     anonymous_sharing: bool,
     viewer_is_privileged: bool,
-    viewer_is_owner: bool,
+    privileged_user_ids: frozenset[str] = frozenset(),
 ) -> list[dict[str, object]]:
     """Return a deep copy of highlights with author names anonymised.
 
@@ -66,7 +66,7 @@ def anonymise_highlights(
         "viewing_user_id": viewing_user_id,
         "anonymous_sharing": anonymous_sharing,
         "viewer_is_privileged": viewer_is_privileged,
-        "viewer_is_owner": viewer_is_owner,
+        "privileged_user_ids": privileged_user_ids,
     }
     result: list[dict[str, object]] = []
     for hl in highlights:
@@ -110,7 +110,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
                 viewing_user_id=state.user_id,
                 anonymous_sharing=True,
                 viewer_is_privileged=state.viewer_is_privileged,
-                viewer_is_owner=state.is_owner,
+                privileged_user_ids=state.privileged_user_ids,
             )
 
         doc = await get_document(state.document_id)

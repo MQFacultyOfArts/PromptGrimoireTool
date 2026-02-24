@@ -110,6 +110,8 @@ class TestRemotePresenceDataclass:
             "selection_end",
             "has_milkdown_editor",
             "user_id",
+            "viewer_is_privileged",
+            "is_owner",
         }
         assert expected == field_names
 

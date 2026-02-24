@@ -17,7 +17,10 @@ from nicegui import app, events, ui
 
 from promptgrimoire.auth import check_workspace_access, is_privileged_user
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.db.acl import grant_permission
+from promptgrimoire.db.acl import (
+    get_privileged_user_ids_for_workspace,
+    grant_permission,
+)
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.db.workspaces import (
     PlacementContext,
@@ -67,10 +70,12 @@ def _get_current_username() -> str:
     """Get the display name for the current user."""
     auth_user = app.storage.user.get("auth_user")
     if auth_user:
+        if auth_user.get("name"):
+            return auth_user["name"]
         if auth_user.get("display_name"):
             return auth_user["display_name"]
         if auth_user.get("email"):
-            return auth_user["email"].split("@")[0]
+            return auth_user["email"].split("@")[0].replace(".", " ").title()
     return "Anonymous"
 
 
@@ -318,6 +323,7 @@ async def _resolve_workspace_context(
     assert permission in {"viewer", "peer", "editor", "owner"}, (
         f"Unexpected permission value: {permission!r}"
     )
+    priv_ids = await get_privileged_user_ids_for_workspace(workspace_id)
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
@@ -325,6 +331,7 @@ async def _resolve_workspace_context(
         effective_permission=cast("PermissionLevel", permission),
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,
+        privileged_user_ids=priv_ids,
     )
     state.tag_info_list = await workspace_tags(workspace_id)
 

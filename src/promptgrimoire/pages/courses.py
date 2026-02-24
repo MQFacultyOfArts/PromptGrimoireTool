@@ -19,7 +19,9 @@ from uuid import UUID
 
 from nicegui import app, ui
 
+from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.acl import list_peer_workspaces_with_owners
 from promptgrimoire.db.activities import (
     create_activity,
     list_activities_for_week,
@@ -51,6 +53,7 @@ from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
     get_user_workspace_for_activity,
+    resolve_tristate,
 )
 from promptgrimoire.pages.registry import page_route
 
@@ -68,6 +71,45 @@ _MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
 _course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
+
+
+async def _build_peer_map(
+    activities: list[Activity],
+    course: Course,
+    user_id: UUID,
+    is_staff: bool,
+) -> dict[UUID, list[tuple[str, str, str]]]:
+    """Build activity_id -> [(ws_id_str, title, display_name)] for peer workspaces.
+
+    Pre-processes anonymisation so the renderer needs no domain imports.
+    Returns empty dict for activities where sharing is disabled or no
+    peers have shared.
+    """
+    peer_map: dict[UUID, list[tuple[str, str, str]]] = {}
+    for act in activities:
+        if not resolve_tristate(act.allow_sharing, course.default_allow_sharing):
+            continue
+        peers = await list_peer_workspaces_with_owners(act.id, user_id)
+        if not peers:
+            continue
+        anon = resolve_tristate(act.anonymous_sharing, course.default_anonymous_sharing)
+        peer_map[act.id] = [
+            (
+                str(ws.id),
+                ws.title or "Untitled Workspace",
+                anonymise_author(
+                    author=name,
+                    user_id=str(uid),
+                    viewing_user_id=str(user_id),
+                    anonymous_sharing=anon,
+                    viewer_is_privileged=is_staff,
+                    author_is_privileged=False,
+                ),
+            )
+            for ws, name, uid in peers
+        ]
+    return peer_map
+
 
 # -- Tri-state settings UI config --
 
@@ -452,6 +494,7 @@ async def course_detail_page(course_id: str) -> None:
         can_manage: bool,
         populated_templates: set[UUID],
         user_workspace_map: dict[UUID, Workspace],
+        peer_workspaces: list[tuple[str, str, str]] | None = None,
     ) -> None:
         """Render a single Activity row with template/start or resume buttons."""
         with ui.row().classes("items-center gap-2"):
@@ -508,6 +551,19 @@ async def course_detail_page(course_id: str) -> None:
                 ui.button("Start Activity", on_click=start_activity).props(
                     "flat dense size=sm color=primary"
                 )
+
+        # Peer workspace list (gated by allow_sharing in _build_peer_map)
+        if peer_workspaces:
+            with ui.column().classes("ml-8 mt-1 gap-0"):
+                ui.label("Peer Workspaces").classes("text-xs font-medium text-gray-500")
+                for ws_id, title, display_name in peer_workspaces:
+                    qs = urlencode({"workspace_id": ws_id})
+                    with ui.row().classes("items-center gap-1"):
+                        ui.icon("person").classes("text-gray-300 text-sm")
+                        ui.link(
+                            f"{display_name} — {title}",
+                            target=f"/annotation?{qs}",
+                        ).classes("text-xs text-blue-600")
 
     @ui.refreshable
     async def weeks_list() -> None:
@@ -568,6 +624,9 @@ async def course_detail_page(course_id: str) -> None:
                             else set()
                         )
                         ws_map = await _build_user_workspace_map(activities, user_id)
+                        peer_map = await _build_peer_map(
+                            activities, course, user_id, can_view_drafts
+                        )
                         with ui.column().classes("ml-4 gap-1 mt-2"):
                             for act in activities:
                                 _render_activity_row(
@@ -575,6 +634,7 @@ async def course_detail_page(course_id: str) -> None:
                                     can_manage=can_manage,
                                     populated_templates=populated,
                                     user_workspace_map=ws_map,
+                                    peer_workspaces=peer_map.get(act.id),
                                 )
                     elif can_manage:
                         ui.label("No activities yet").classes(

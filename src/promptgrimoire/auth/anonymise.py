@@ -39,16 +39,17 @@ def anonymise_author(
     viewing_user_id: str | None,
     anonymous_sharing: bool,
     viewer_is_privileged: bool,
-    viewer_is_owner: bool,
+    author_is_privileged: bool = False,
 ) -> str:
     """Return the display name for an annotation author.
 
     Resolution order:
     1. No anonymisation active -> real author
-    2. Privileged viewer or workspace owner -> real author
-    3. Viewing own annotation -> real author
-    4. Legacy data (no user_id) -> "Unknown"
-    5. Otherwise -> deterministic adjective-animal label
+    2. Privileged viewer (instructor/admin) -> real author
+    3. Privileged author (instructor/admin) -> real author
+    4. Viewing own annotation -> real author
+    5. Legacy data (no user_id) -> "Unknown"
+    6. Otherwise -> deterministic adjective-animal label
 
     Parameters
     ----------
@@ -64,8 +65,10 @@ def anonymise_author(
         Whether anonymisation is enabled for this workspace.
     viewer_is_privileged:
         Whether the viewer is an instructor or admin.
-    viewer_is_owner:
-        Whether the viewer is the workspace owner.
+    author_is_privileged:
+        Whether the author is an instructor or admin. Privileged
+        authors are never anonymised so students can identify
+        instructor feedback.
 
     Returns
     -------
@@ -74,7 +77,9 @@ def anonymise_author(
     """
     if not anonymous_sharing:
         return author
-    if viewer_is_privileged or viewer_is_owner:
+    if viewer_is_privileged:
+        return author
+    if author_is_privileged:
         return author
     if user_id is not None and user_id == viewing_user_id:
         return author

@@ -5,9 +5,15 @@ Verifies:
 - AC4.4: Owner viewing own workspace sees real author
 - AC4.5: Peer sees own annotations with real name, others with anonymised label
 - AC4.6: Anonymised labels are deterministic adjective-animal names
+
+Regression tests (sensitive+specific):
+- No viewer_is_owner bypass exists in the API (would let owners see all real names)
+- author_is_privileged parameter exists and works (instructor names never anonymised)
 """
 
 from __future__ import annotations
+
+import inspect
 
 from promptgrimoire.auth.anonymise import anonymise_author, anonymise_display_name
 
@@ -23,7 +29,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=False,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result == "Alice Smith"
 
@@ -35,21 +41,80 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-789",
             anonymous_sharing=True,
             viewer_is_privileged=True,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result == "Alice Smith"
 
-    def test_owner_sees_real_author(self) -> None:
-        """AC4.4: Owner viewing own workspace sees real author names."""
+    def test_non_privileged_viewer_sees_anonymised_name(self) -> None:
+        """Non-privileged viewer (including workspace owner) sees anonymised name.
+
+        Sensitive: would fail if a viewer_is_owner bypass were added.
+        Specific: passes because non-privileged viewers always get anonymised names.
+
+        This covers the workspace-owner scenario: production code passes
+        viewer_is_privileged=False for student owners, so this function
+        MUST anonymise regardless of any ownership concept.
+        """
         result = anonymise_author(
             author="Alice Smith",
             user_id="user-123",
             viewing_user_id="user-789",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=True,
+            author_is_privileged=False,
         )
-        assert result == "Alice Smith"
+        assert result != "Alice Smith"
+        parts = result.split(" ")
+        assert len(parts) == 2, f"Expected 'Adjective Animal', got '{result}'"
+
+    def test_privileged_author_always_shows_real_name(self) -> None:
+        """Privileged authors (instructors) are never anonymised.
+
+        Sensitive: would TypeError on code without author_is_privileged param.
+        Specific: passes because author_is_privileged=True bypasses anonymisation.
+        """
+        result = anonymise_author(
+            author="Prof. Smith",
+            user_id="user-instructor",
+            viewing_user_id="user-student",
+            anonymous_sharing=True,
+            viewer_is_privileged=False,
+            author_is_privileged=True,
+        )
+        assert result == "Prof. Smith"
+
+
+class TestAnonymiseAuthorAPIContract:
+    """Regression guards for the anonymise_author API surface.
+
+    These tests are sensitive (fail on pre-fix code) and specific (pass on
+    current code). They guard against reintroduction of the viewer_is_owner
+    bypass that let workspace owners see all real names.
+    """
+
+    def test_no_viewer_is_owner_parameter(self) -> None:
+        """API must NOT accept viewer_is_owner — that bypass was the bug.
+
+        Sensitive: fails on pre-fix code where viewer_is_owner existed.
+        Specific: passes on current code where it does not.
+        """
+        params = inspect.signature(anonymise_author).parameters
+        assert "viewer_is_owner" not in params, (
+            "viewer_is_owner parameter must not exist — "
+            "workspace owners must NOT bypass anonymisation"
+        )
+
+    def test_author_is_privileged_parameter_exists(self) -> None:
+        """API must accept author_is_privileged for instructor visibility.
+
+        Sensitive: fails on pre-fix code that lacked this parameter.
+        Specific: passes on current code where it exists.
+        """
+        params = inspect.signature(anonymise_author).parameters
+        assert "author_is_privileged" in params, (
+            "author_is_privileged parameter must exist — "
+            "instructor names must never be anonymised"
+        )
 
     def test_own_annotation_shows_real_name(self) -> None:
         """AC4.5: Peer sees own annotations with real name."""
@@ -59,7 +124,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-123",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result == "Alice Smith"
 
@@ -71,7 +136,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result != "Alice Smith"
         # Should be an adjective-animal label
@@ -86,7 +151,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         result2 = anonymise_author(
             author="Alice Smith",
@@ -94,7 +159,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result1 == result2
 
@@ -106,7 +171,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         result2 = anonymise_author(
             author="Bob Jones",
@@ -114,7 +179,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result1 != result2
 
@@ -126,7 +191,7 @@ class TestAnonymiseAuthor:
             viewing_user_id="user-456",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result == "Unknown"
 
@@ -138,7 +203,7 @@ class TestAnonymiseAuthor:
             viewing_user_id=None,
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert result != "Alice Smith"
         parts = result.split(" ")
@@ -152,7 +217,7 @@ class TestAnonymiseAuthor:
             viewing_user_id=None,
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         # Should be "Unknown" because user_id is None (legacy data)
         assert result == "Unknown"
@@ -189,6 +254,6 @@ class TestAnonymiseDisplayName:
             viewing_user_id="viewer-other",
             anonymous_sharing=True,
             viewer_is_privileged=False,
-            viewer_is_owner=False,
+            author_is_privileged=False,
         )
         assert display_label == author_label

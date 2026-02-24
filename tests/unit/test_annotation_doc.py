@@ -289,15 +289,13 @@ class TestDeleteCommentOwnership:
         assert highlight is not None
         assert len(highlight.get("comments", [])) == 0
 
-    def test_workspace_owner_can_delete_any_comment(self) -> None:
-        """AC3.5: Workspace owner can delete any comment."""
+    def test_workspace_owner_cannot_delete_others_comment(self) -> None:
+        """Bug 3: Workspace owner (non-privileged) cannot delete others' comments."""
         doc, hl_id, comment_id = self._setup_doc_with_comment()
 
-        result = doc.delete_comment(
-            hl_id, comment_id, requesting_user_id="user-other", is_workspace_owner=True
-        )
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-other")
 
-        assert result is True
+        assert result is False
 
     def test_privileged_user_can_delete_any_comment(self) -> None:
         """Privileged user (instructor/admin) can delete any comment."""
@@ -331,17 +329,17 @@ class TestDeleteCommentOwnership:
 
         assert result is True
 
-    def test_legacy_comment_without_user_id_only_owner_can_delete(self) -> None:
-        """Legacy comment (user_id=None) can only be deleted by owner/privileged."""
+    def test_legacy_comment_without_user_id_only_privileged_can_delete(self) -> None:
+        """Legacy comment (user_id=None) can only be deleted by privileged user."""
         doc, hl_id, comment_id = self._setup_doc_with_comment(comment_user_id=None)
 
         # Regular user cannot delete
         result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-anyone")
         assert result is False
 
-        # Owner can delete
+        # Privileged user can delete
         result = doc.delete_comment(
-            hl_id, comment_id, requesting_user_id="user-anyone", is_workspace_owner=True
+            hl_id, comment_id, requesting_user_id="user-anyone", is_privileged=True
         )
         assert result is True
 

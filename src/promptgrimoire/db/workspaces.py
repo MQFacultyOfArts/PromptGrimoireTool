@@ -556,6 +556,7 @@ def _replay_crdt_state(
             author=hl["author"],
             para_ref=hl.get("para_ref", ""),
             document_id=remapped_doc_id,
+            user_id=hl.get("user_id"),
         )
         highlight_id_map[old_hl_id] = new_hl_id
 
@@ -565,6 +566,7 @@ def _replay_crdt_state(
                 highlight_id=new_hl_id,
                 author=comment["author"],
                 text=comment["text"],
+                user_id=comment.get("user_id"),
             )
 
     # Clone general notes

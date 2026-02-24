@@ -102,6 +102,8 @@ class _RemotePresence:
     selection_end: int | None = None
     has_milkdown_editor: bool = False
     user_id: str | None = None
+    viewer_is_privileged: bool = False
+    is_owner: bool = False
 
     async def invoke_callback(self) -> None:
         """Run the callback inside this client's NiceGUI slot context.
@@ -193,6 +195,7 @@ class PageState:
     is_owner: bool = field(init=False)  # shorthand for permission == "owner"
     is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
     viewer_is_privileged: bool = False  # instructor / admin bypass
+    privileged_user_ids: frozenset[str] = field(default_factory=frozenset)
     # UI elements set during page build
     highlight_style: ui.element | None = None
     highlight_menu: ui.element | None = None
@@ -248,11 +251,12 @@ class PageState:
     def can_delete_content(self, content_user_id: str | None) -> bool:
         """Whether the current user may delete content owned by content_user_id.
 
-        Returns True when the viewer is the content creator, the workspace
-        owner, or a privileged user (instructor / admin).
+        Returns True when the viewer is the content creator or a
+        privileged user (instructor / admin).  Workspace owners who are
+        not privileged may only delete their own content.
         """
         is_own = self.user_id is not None and content_user_id == self.user_id
-        return is_own or self.is_owner or self.viewer_is_privileged
+        return is_own or self.viewer_is_privileged
 
     def tag_colours(self) -> dict[str, str]:
         """Build tag key -> hex colour mapping from tag_info_list."""

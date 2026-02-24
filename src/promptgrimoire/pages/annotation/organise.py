@@ -106,13 +106,16 @@ def _build_highlight_card(
                 ).tooltip("Locate in document").classes("sortable-ignore")
 
         # Anonymise highlight author
+        hl_user_id = highlight.get("user_id")
         display_author = anonymise_author(
             author=raw_author,
-            user_id=highlight.get("user_id"),
+            user_id=hl_user_id,
             viewing_user_id=state.user_id,
             anonymous_sharing=state.is_anonymous,
             viewer_is_privileged=state.viewer_is_privileged,
-            viewer_is_owner=state.is_owner,
+            author_is_privileged=(
+                hl_user_id is not None and hl_user_id in state.privileged_user_ids
+            ),
         )
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if snippet:
@@ -122,13 +125,16 @@ def _build_highlight_card(
             for comment in comments:
                 raw_c_author = comment.get("author", "Unknown")
                 comment_text = comment.get("text", "")
+                c_uid = comment.get("user_id")
                 display_c_author = anonymise_author(
                     author=raw_c_author,
-                    user_id=comment.get("user_id"),
+                    user_id=c_uid,
                     viewing_user_id=state.user_id,
                     anonymous_sharing=state.is_anonymous,
                     viewer_is_privileged=state.viewer_is_privileged,
-                    viewer_is_owner=state.is_owner,
+                    author_is_privileged=(
+                        c_uid is not None and c_uid in state.privileged_user_ids
+                    ),
                 )
                 with ui.row().classes("w-full gap-1 items-start"):
                     ui.label(f"{display_c_author}:").classes(

@@ -115,10 +115,15 @@ async def open_sharing_dialog(
         ui.label("Share Workspace").classes("text-lg font-bold mb-2")
 
         email_input = (
-            ui.input(label="Recipient email", validation={"Required": bool})
+            ui.input(
+                label="Recipient email",
+                validation={"Required": bool},
+            )
+            .without_auto_validation()
             .classes("w-full")
             .props('data-testid="share-email-input"')
         )
+        email_input.on("blur", email_input.validate)
         perm_select = (
             ui.select(
                 options={"viewer": "Viewer", "editor": "Editor"},

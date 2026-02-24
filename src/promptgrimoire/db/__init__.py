@@ -13,6 +13,8 @@ from promptgrimoire.db.acl import (
     list_course_workspaces,
     list_entries_for_user,
     list_entries_for_workspace,
+    list_peer_workspaces,
+    list_peer_workspaces_with_owners,
     resolve_permission,
     revoke_permission,
 )
@@ -110,6 +112,7 @@ from promptgrimoire.db.workspaces import (
     place_workspace_in_activity,
     place_workspace_in_course,
     save_workspace_crdt_state,
+    update_workspace_sharing,
 )
 
 __all__ = [
@@ -177,6 +180,8 @@ __all__ = [
     "list_entries_for_user",
     "list_entries_for_workspace",
     "list_loose_workspaces_for_course",
+    "list_peer_workspaces",
+    "list_peer_workspaces_with_owners",
     "list_tag_groups_for_workspace",
     "list_tags_for_workspace",
     "list_user_enrollments",
@@ -201,6 +206,7 @@ __all__ = [
     "update_tag",
     "update_tag_group",
     "update_user_role",
+    "update_workspace_sharing",
     "upsert_user_on_login",
     "verify_schema",
     "workspaces_with_documents",

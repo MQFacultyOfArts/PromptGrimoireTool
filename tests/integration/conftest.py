@@ -24,6 +24,7 @@ from promptgrimoire.export.preamble import build_annotation_preamble
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine
+    from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,27 @@ async def reset_db_engine_per_test() -> AsyncGenerator[None]:
 
     if _state.engine is not None:
         await close_db()
+
+
+# =============================================================================
+# Workspace Test Helpers
+# =============================================================================
+
+
+async def enable_workspace_sharing(workspace_id: UUID) -> None:
+    """Set shared_with_class=True on a workspace.
+
+    Convenience helper for integration tests that need to enable
+    peer sharing on a workspace without raw session manipulation.
+    """
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import Workspace
+
+    async with get_session() as session:
+        ws = await session.get(Workspace, workspace_id)
+        assert ws is not None
+        ws.shared_with_class = True
+        session.add(ws)
 
 
 # =============================================================================

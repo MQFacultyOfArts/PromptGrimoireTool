@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from sqlmodel import select
@@ -125,6 +125,11 @@ class PlacementContext:
 
     True = owner can share with other students.
     """
+    anonymous_sharing: bool = False
+    """Resolved anonymity setting for this workspace.
+
+    True = author names hidden from peer viewers.
+    """
     allow_tag_creation: bool = True
     """Resolved tag creation permission.
 
@@ -191,7 +196,7 @@ async def get_placement_context(workspace_id: UUID) -> PlacementContext:
         return loose
 
 
-def _resolve_tristate(override: bool | None, default: bool) -> bool:
+def resolve_tristate(override: bool | None, default: bool) -> bool:
     """Resolve a tri-state activity setting against its course default.
 
     Activity-level overrides (True/False) win; None inherits the course default.
@@ -227,13 +232,16 @@ async def _resolve_activity_placement(
         week_title=week.title,
         course_code=course.code,
         course_name=course.name,
-        copy_protection=_resolve_tristate(
+        copy_protection=resolve_tristate(
             activity.copy_protection, course.default_copy_protection
         ),
-        allow_sharing=_resolve_tristate(
+        allow_sharing=resolve_tristate(
             activity.allow_sharing, course.default_allow_sharing
         ),
-        allow_tag_creation=_resolve_tristate(
+        anonymous_sharing=resolve_tristate(
+            activity.anonymous_sharing, course.default_anonymous_sharing
+        ),
+        allow_tag_creation=resolve_tristate(
             activity.allow_tag_creation, course.default_allow_tag_creation
         ),
         course_id=course.id,
@@ -244,7 +252,11 @@ async def _resolve_course_placement(
     session: AsyncSession,
     course_id: UUID,
 ) -> PlacementContext:
-    """Resolve Course placement. Falls back to loose on orphan."""
+    """Resolve Course placement. Falls back to loose on orphan.
+
+    Propagates all course-level defaults (copy_protection, allow_sharing,
+    anonymous_sharing) since there is no Activity to override them.
+    """
     course = await session.get(Course, course_id)
     if course is None:
         return PlacementContext(placement_type="loose")
@@ -252,6 +264,9 @@ async def _resolve_course_placement(
         placement_type="course",
         course_code=course.code,
         course_name=course.name,
+        copy_protection=course.default_copy_protection,
+        allow_sharing=course.default_allow_sharing,
+        anonymous_sharing=course.default_anonymous_sharing,
     )
 
 
@@ -541,6 +556,7 @@ def _replay_crdt_state(
             author=hl["author"],
             para_ref=hl.get("para_ref", ""),
             document_id=remapped_doc_id,
+            user_id=hl.get("user_id"),
         )
         highlight_id_map[old_hl_id] = new_hl_id
 
@@ -550,6 +566,7 @@ def _replay_crdt_state(
                 highlight_id=new_hl_id,
                 author=comment["author"],
                 text=comment["text"],
+                user_id=comment.get("user_id"),
             )
 
     # Clone general notes
@@ -707,3 +724,76 @@ async def clone_workspace_from_activity(
         await session.flush()
         await session.refresh(clone)
         return clone, doc_id_map
+
+
+async def _update_workspace_fields(
+    workspace_id: UUID,
+    **fields: Any,
+) -> Workspace:
+    """Fetch a workspace, apply field updates, and persist.
+
+    Shared implementation for single-field update functions. Handles
+    the fetch-or-raise, timestamp bump, flush, and refresh boilerplate.
+
+    Args:
+        workspace_id: The workspace UUID.
+        **fields: Field name/value pairs to set on the workspace.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if not workspace:
+            msg = f"Workspace {workspace_id} not found"
+            raise ValueError(msg)
+        for attr, value in fields.items():
+            setattr(workspace, attr, value)
+        workspace.updated_at = datetime.now(UTC)
+        session.add(workspace)
+        await session.flush()
+        await session.refresh(workspace)
+        return workspace
+
+
+async def update_workspace_sharing(
+    workspace_id: UUID,
+    shared_with_class: bool,
+) -> Workspace:
+    """Update a workspace's class sharing status.
+
+    Args:
+        workspace_id: The workspace UUID.
+        shared_with_class: Whether to share with class.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    return await _update_workspace_fields(
+        workspace_id, shared_with_class=shared_with_class
+    )
+
+
+async def update_workspace_title(
+    workspace_id: UUID,
+    title: str | None,
+) -> Workspace:
+    """Update a workspace's display title.
+
+    Args:
+        workspace_id: The workspace UUID.
+        title: New title, or None to clear.
+
+    Returns:
+        The updated Workspace.
+
+    Raises:
+        ValueError: If workspace not found.
+    """
+    return await _update_workspace_fields(workspace_id, title=title)

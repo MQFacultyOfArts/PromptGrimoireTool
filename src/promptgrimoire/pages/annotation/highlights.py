@@ -234,6 +234,7 @@ async def _add_highlight(state: PageState, tag: str) -> None:
             text=highlighted_text,
             author=state.user_name,
             document_id=str(state.document_id),
+            user_id=state.user_id,
         )
 
         # Schedule persistence

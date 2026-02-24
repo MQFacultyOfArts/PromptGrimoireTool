@@ -150,6 +150,11 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with allow_sharing=NULL.
     """
+    default_anonymous_sharing: bool = Field(default=False)
+    """Course-level default for anonymous sharing.
+
+    Inherited by activities with anonymous_sharing=NULL.
+    """
     default_allow_tag_creation: bool = Field(default=True)
     """Course-level default for tag creation.
 
@@ -286,6 +291,11 @@ class Activity(SQLModel, table=True):
 
     None=inherit from course, True=allowed, False=disallowed.
     """
+    anonymous_sharing: bool | None = Field(default=None)
+    """Tri-state anonymity control.
+
+    None=inherit from course, True=on, False=off.
+    """
     allow_tag_creation: bool | None = Field(default=None)
     """Tri-state tag creation control.
 
@@ -331,6 +341,8 @@ class Workspace(SQLModel, table=True):
     next_tag_order: int = Field(default=0)
     next_group_order: int = Field(default=0)
     enable_save_as_draft: bool = Field(default=False)
+    title: str | None = Field(default=None, sa_column=Column(sa.Text(), nullable=True))
+    shared_with_class: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

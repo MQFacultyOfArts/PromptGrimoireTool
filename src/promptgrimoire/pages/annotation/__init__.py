@@ -8,33 +8,36 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (17 authored modules):
+Package structure (20 authored modules):
     __init__             Core types, globals, route definition
     broadcast            Multi-client sync and remote presence
     cards                Annotation card UI components
     content_form         Document upload/paste form
     css                  CSS styles and tag toolbar
     document             Document rendering and selection wiring
+    header               Workspace header, placement chip, sharing, copy protection
     highlights           Highlight CRUD and rendering
     organise             Organise tab (tag columns, drag-and-drop)
     pdf_export           PDF export orchestration
+    placement            Placement dialog (course/activity assignment)
     respond              Respond tab (reference panel, editor)
+    sharing              Sharing controls and per-user sharing dialog
     tag_import           Tag import from other activities
     tag_management       Tag/group management dialog orchestrator
     tag_management_rows  Tag/group row rendering and deletion
     tag_management_save  Tag/group save-on-blur handlers
     tag_quick_create     Quick tag creation dialog and colour picker
     tags                 Tag definitions and colour mapping
-    workspace            Workspace header, tabs, and view orchestration
+    workspace            Workspace tabs, view orchestration, organise drag
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string.templatelib import Interpolation, Template
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from nicegui import ui
@@ -99,6 +102,8 @@ class _RemotePresence:
     selection_end: int | None = None
     has_milkdown_editor: bool = False
     user_id: str | None = None
+    viewer_is_privileged: bool = False
+    is_owner: bool = False
 
     async def invoke_callback(self) -> None:
         """Run the callback inside this client's NiceGUI slot context.
@@ -167,6 +172,9 @@ def _render_js(template: Template) -> str:
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
+PermissionLevel = Literal["viewer", "peer", "editor", "owner"]
+
+
 @dataclass
 class PageState:
     """Per-page state for annotation workspace."""
@@ -177,7 +185,17 @@ class PageState:
     selection_start: int | None = None
     selection_end: int | None = None
     user_name: str = "Anonymous"
+    user_id: str | None = None  # Stytch user ID for ownership checks
     user_color: str = "#666"  # Client color for cursor display
+    # Permission capabilities (Phase 4 -- workspace sharing)
+    effective_permission: PermissionLevel = "viewer"
+    can_annotate: bool = field(init=False)  # peer, editor, owner
+    can_upload: bool = field(init=False)  # editor, owner
+    can_manage_acl: bool = field(init=False)  # owner only
+    is_owner: bool = field(init=False)  # shorthand for permission == "owner"
+    is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
+    viewer_is_privileged: bool = False  # instructor / admin bypass
+    privileged_user_ids: frozenset[str] = field(default_factory=frozenset)
     # UI elements set during page build
     highlight_style: ui.element | None = None
     highlight_menu: ui.element | None = None
@@ -221,6 +239,24 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+
+    def __post_init__(self) -> None:
+        """Derive capability booleans from effective_permission."""
+        perm = self.effective_permission
+        self.is_owner = perm == "owner"
+        self.can_annotate = perm in ("peer", "editor", "owner")
+        self.can_upload = perm in ("editor", "owner")
+        self.can_manage_acl = self.is_owner
+
+    def can_delete_content(self, content_user_id: str | None) -> bool:
+        """Whether the current user may delete content owned by content_user_id.
+
+        Returns True when the viewer is the content creator or a
+        privileged user (instructor / admin).  Workspace owners who are
+        not privileged may only delete their own content.
+        """
+        is_own = self.user_id is not None and content_user_id == self.user_id
+        return is_own or self.viewer_is_privileged
 
     def tag_colours(self) -> dict[str, str]:
         """Build tag key -> hex colour mapping from tag_info_list."""

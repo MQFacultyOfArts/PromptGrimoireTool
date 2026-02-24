@@ -280,8 +280,11 @@ def _build_span_tag(
                     para_ref = f"[{para_num}]"
             annot_parts.append(format_annot_latex(hl, para_ref=para_ref))
         annots_latex = "".join(annot_parts)
-        # Use single quotes for the attribute since LaTeX uses braces/backslashes
-        open_tag += f" data-annots='{annots_latex}'"
+        # Use single quotes for the attribute since LaTeX uses braces/backslashes.
+        # Apostrophes in comment text must be escaped to avoid breaking the
+        # single-quoted HTML attribute (discovered via #97 E2E test).
+        annots_latex_safe = annots_latex.replace("'", "&#39;")
+        open_tag += f" data-annots='{annots_latex_safe}'"
 
     open_tag += ">"
     close_tag = "</span>"

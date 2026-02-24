@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
 
@@ -102,6 +104,261 @@ class TestHighlights:
         highlight = doc.get_highlight(highlight_id)
         assert highlight is not None
         assert highlight["para_ref"] == ""
+
+
+class TestHighlightUserId:
+    """Tests for user_id field on highlights (AC3.3)."""
+
+    def test_add_highlight_stores_user_id(self) -> None:
+        """add_highlight with user_id should store it in the dict."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+            user_id="user-abc-123",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["user_id"] == "user-abc-123"
+
+    def test_add_highlight_user_id_defaults_to_none(self) -> None:
+        """add_highlight without user_id should store None (backwards compat)."""
+        doc = AnnotationDocument("test-doc")
+
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+        )
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["user_id"] is None
+
+
+class TestCommentUserId:
+    """Tests for user_id field on comments (AC3.3)."""
+
+    def test_add_comment_stores_user_id(self) -> None:
+        """add_comment with user_id should store it in the comment dict."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        comment_id = doc.add_comment(
+            hl_id, "Commenter", "Nice work", user_id="user-xyz"
+        )
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight.get("comments", [])
+        assert len(comments) == 1
+        comment = comments[0]
+        assert comment["id"] == comment_id
+        assert comment["user_id"] == "user-xyz"
+        assert comment["author"] == "Commenter"
+        assert comment["text"] == "Nice work"
+        assert "created_at" in comment
+
+    def test_add_comment_user_id_defaults_to_none(self) -> None:
+        """add_comment without user_id should store None (backwards compat)."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "Commenter", "Some comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight.get("comments", [])
+        assert len(comments) == 1
+        assert comments[0]["user_id"] is None
+
+    def test_comment_dict_has_all_required_fields(self) -> None:
+        """Comment dict must contain user_id, author, text, created_at (AC3.3)."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "Author1", "Comment text", user_id="user-1")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comment = highlight["comments"][0]
+        required_keys = {"id", "user_id", "author", "text", "created_at"}
+        assert required_keys.issubset(comment.keys())
+
+
+class TestCommentChronology:
+    """Tests for comment ordering and legacy display (AC3.1, AC3.2, AC3.7)."""
+
+    def test_add_comment_appends_to_list(self) -> None:
+        """AC3.1: add_comment appends to the highlight's comments list."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "User1", "First comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight["comments"]) == 1
+        assert highlight["comments"][0]["text"] == "First comment"
+
+    def test_two_comments_chronological_order(self) -> None:
+        """AC3.2: Multiple comments appear in chronological order."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "User1", "First")
+        doc.add_comment(hl_id, "User2", "Second")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comments = highlight["comments"]
+        assert len(comments) == 2
+        assert comments[0]["text"] == "First"
+        assert comments[1]["text"] == "Second"
+        # Verify chronological by created_at
+        assert comments[0]["created_at"] <= comments[1]["created_at"]
+
+    def test_legacy_highlight_no_user_id_has_author(self) -> None:
+        """AC3.7: Highlight without user_id uses stored author value."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "OldAuthor")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        # user_id defaults to None
+        assert highlight["user_id"] is None
+        # author is preserved
+        assert highlight["author"] == "OldAuthor"
+
+    def test_legacy_comment_no_user_id_has_author(self) -> None:
+        """AC3.7: Comment without user_id uses stored author value."""
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author")
+
+        doc.add_comment(hl_id, "LegacyCommenter", "old comment")
+
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        comment = highlight["comments"][0]
+        assert comment["user_id"] is None
+        assert comment["author"] == "LegacyCommenter"
+
+    def test_missing_author_defaults_to_unknown(self) -> None:
+        """AC3.7: get on missing author key returns 'Unknown'."""
+        # Simulate a legacy comment dict without author key
+        comment: dict[str, Any] = {"id": "c1", "text": "old"}
+        assert comment.get("author", "Unknown") == "Unknown"
+
+
+class TestDeleteCommentOwnership:
+    """Tests for delete_comment ownership guard (AC3.4, AC3.5, AC1.5, AC1.8)."""
+
+    def _setup_doc_with_comment(
+        self,
+        comment_user_id: str | None = "user-commenter",
+    ) -> tuple[AnnotationDocument, str, str]:
+        """Helper: create doc with one highlight and one comment.
+
+        Returns (doc, highlight_id, comment_id).
+        """
+        doc = AnnotationDocument("test-doc")
+        hl_id = doc.add_highlight(0, 5, "tag", "text", "author", user_id="user-owner")
+        comment_id = doc.add_comment(
+            hl_id, "Commenter", "A comment", user_id=comment_user_id
+        )
+        assert comment_id is not None
+        return doc, hl_id, comment_id
+
+    def test_creator_can_delete_own_comment(self) -> None:
+        """AC3.4 / AC1.5: Creator (matching user_id) can delete own comment."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-commenter"
+        )
+
+        assert result is True
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight.get("comments", [])) == 0
+
+    def test_workspace_owner_cannot_delete_others_comment(self) -> None:
+        """Bug 3: Workspace owner (non-privileged) cannot delete others' comments."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-other")
+
+        assert result is False
+
+    def test_privileged_user_can_delete_any_comment(self) -> None:
+        """Privileged user (instructor/admin) can delete any comment."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-other", is_privileged=True
+        )
+
+        assert result is True
+
+    def test_peer_cannot_delete_others_comment(self) -> None:
+        """AC1.8: Peer (non-matching user_id, not owner/privileged) cannot delete."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-other")
+
+        assert result is False
+        # Comment should still be there
+        highlight = doc.get_highlight(hl_id)
+        assert highlight is not None
+        assert len(highlight.get("comments", [])) == 1
+
+    def test_peer_can_delete_own_comment(self) -> None:
+        """AC1.5: Peer can delete own comment (matching user_id)."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-commenter"
+        )
+
+        assert result is True
+
+    def test_legacy_comment_without_user_id_only_privileged_can_delete(self) -> None:
+        """Legacy comment (user_id=None) can only be deleted by privileged user."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment(comment_user_id=None)
+
+        # Regular user cannot delete
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id="user-anyone")
+        assert result is False
+
+        # Privileged user can delete
+        result = doc.delete_comment(
+            hl_id, comment_id, requesting_user_id="user-anyone", is_privileged=True
+        )
+        assert result is True
+
+    def test_no_requesting_user_id_denied(self) -> None:
+        """Without requesting_user_id, deletion is denied."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        result = doc.delete_comment(hl_id, comment_id, requesting_user_id=None)
+
+        assert result is False
+
+    def test_backwards_compat_no_ownership_args(self) -> None:
+        """delete_comment without ownership args denies by default."""
+        doc, hl_id, comment_id = self._setup_doc_with_comment()
+
+        # No ownership params -- should deny (safe default)
+        result = doc.delete_comment(hl_id, comment_id)
+
+        assert result is False
 
 
 class TestTagOrder:

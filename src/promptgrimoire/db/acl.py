@@ -19,10 +19,12 @@ from promptgrimoire.db.models import (
     Course,
     CourseEnrollment,
     Permission,
+    User,
     Week,
     Workspace,
 )
 from promptgrimoire.db.roles import get_staff_roles
+from promptgrimoire.db.workspaces import resolve_tristate
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -221,19 +223,21 @@ async def list_activity_workspaces(
 async def _derive_enrollment_permission(
     session: AsyncSession, workspace_id: UUID, user_id: UUID
 ) -> str | None:
-    """Derive permission from course enrollment for staff roles.
+    """Derive permission from course enrollment.
 
     Resolves Workspace -> (Activity -> Week ->) Course hierarchy.
-    Checks CourseEnrollment for instructor/coordinator/tutor role.
-    Returns Course.default_instructor_permission if staff, None otherwise.
+    Staff roles get Course.default_instructor_permission.
+    Students get "peer" if the activity allows sharing and the workspace
+    has opted in via shared_with_class.
     """
     # Find workspace
     workspace = await session.get(Workspace, workspace_id)
     if workspace is None:
         return None
 
-    # Resolve course_id from workspace placement
-    course_id: UUID | None = None
+    # Resolve Course and optional Activity from workspace placement
+    course: Course | None = None
+    activity: Activity | None = None
 
     if workspace.activity_id is not None:
         # Activity-placed: Activity -> Week -> Course
@@ -241,19 +245,18 @@ async def _derive_enrollment_permission(
         if activity is not None:
             week = await session.get(Week, activity.week_id)
             if week is not None:
-                course_id = week.course_id
+                course = await session.get(Course, week.course_id)
     elif workspace.course_id is not None:
         # Course-placed: direct
-        course_id = workspace.course_id
+        course = await session.get(Course, workspace.course_id)
 
-    # Loose workspaces (no activity_id, no course_id): no enrollment derivation
-    if course_id is None:
+    # Loose workspaces or broken hierarchy: no enrollment derivation
+    if course is None:
         return None
 
-    # Check enrollment with staff role
     enrollment_result = await session.exec(
         select(CourseEnrollment).where(
-            CourseEnrollment.course_id == course_id,
+            CourseEnrollment.course_id == course.id,
             CourseEnrollment.user_id == user_id,
         )
     )
@@ -261,16 +264,22 @@ async def _derive_enrollment_permission(
     if enrollment is None:
         return None
 
-    # Staff roles get derived access; students do not
+    # Staff roles get derived instructor access
     staff_roles = await get_staff_roles()
-    if enrollment.role not in staff_roles:
-        return None
+    if enrollment.role in staff_roles:
+        return course.default_instructor_permission
 
-    # Return course's default instructor permission
-    course = await session.get(Course, course_id)
-    if course is None:
-        return None
-    return course.default_instructor_permission
+    # Student peer path: enrolled + allow_sharing resolved + shared_with_class
+    if workspace.shared_with_class:
+        activity_override = activity.allow_sharing if activity is not None else None
+        allow_sharing = resolve_tristate(
+            activity_override, course.default_allow_sharing
+        )
+
+        if allow_sharing:
+            return "peer"
+
+    return None
 
 
 async def _resolve_permission_with_session(
@@ -280,10 +289,10 @@ async def _resolve_permission_with_session(
 ) -> str | None:
     """Internal: resolve permission using an existing session.
 
-    Two-step hybrid resolution:
+    Hybrid resolution:
     1. Explicit ACL lookup: query ACLEntry for (workspace_id, user_id).
     2. Enrollment-derived: resolve Workspace -> Activity -> Week -> Course
-       hierarchy, check CourseEnrollment for staff role.
+       hierarchy, check CourseEnrollment for staff/student role.
     3. If both apply, the higher Permission.level wins.
     4. Default deny: return None.
     """
@@ -303,14 +312,14 @@ async def _resolve_permission_with_session(
 
     # Step 3: Highest wins
     if explicit and derived_permission:
-        explicit_level_result = await session.exec(
-            select(Permission.level).where(Permission.name == explicit.permission)
+        level_result = await session.exec(
+            select(Permission.name, Permission.level).where(
+                Permission.name.in_([explicit.permission, derived_permission])  # type: ignore[union-attr]  -- Column has in_
+            )
         )
-        derived_level_result = await session.exec(
-            select(Permission.level).where(Permission.name == derived_permission)
-        )
-        e_level = explicit_level_result.one()
-        d_level = derived_level_result.one()
+        levels = dict(level_result.all())
+        e_level = levels[explicit.permission]
+        d_level = levels[derived_permission]
         return explicit.permission if e_level >= d_level else derived_permission
 
     if explicit:
@@ -429,3 +438,159 @@ async def grant_share(
         await session.flush()
         await session.refresh(acl_entry)
         return acl_entry
+
+
+async def get_privileged_user_ids_for_workspace(
+    workspace_id: UUID,
+) -> frozenset[str]:
+    """Return user IDs of privileged users in this workspace's course context.
+
+    Finds the course containing this workspace (via activity/week or
+    direct course_id), then returns the string-form ``User.id`` for:
+    - Users enrolled with a staff role (``CourseRoleRef.is_staff=True``)
+    - Org-level admins (``User.is_admin=True``)
+
+    These IDs match the ``user_id`` stored in CRDT annotations,
+    allowing callers to determine whether an annotation author
+    is privileged without per-author DB queries.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return frozenset()
+
+        # Resolve course_id from workspace placement
+        course_id = workspace.course_id
+        if course_id is None and workspace.activity_id is not None:
+            activity = await session.get(Activity, workspace.activity_id)
+            if activity is not None:
+                week = await session.get(Week, activity.week_id)
+                if week is not None:
+                    course_id = week.course_id
+
+        staff_ids: set[str] = set()
+
+        if course_id is not None:
+            staff_roles = await get_staff_roles()
+            result = await session.exec(
+                select(CourseEnrollment.user_id).where(
+                    CourseEnrollment.course_id == course_id,
+                    CourseEnrollment.role.in_(staff_roles),  # type: ignore[union-attr]  -- Column has in_
+                )
+            )
+            staff_ids = {str(uid) for uid in result.all()}
+
+        # Also include org-level admins
+        admin_result = await session.exec(
+            select(User.id).where(User.is_admin == True)  # noqa: E712
+        )
+        admin_ids = {str(uid) for uid in admin_result.all()}
+
+        return frozenset(staff_ids | admin_ids)
+
+
+async def list_peer_workspaces(
+    activity_id: UUID, exclude_user_id: UUID
+) -> list[Workspace]:
+    """List workspaces in an activity that have opted into peer sharing.
+
+    Returns workspaces where shared_with_class=True for the given
+    activity, excluding:
+    - Template workspaces (Activity.template_workspace_id)
+    - The requesting user's own workspaces (owner ACL entries)
+
+    This is a direct query for the peer discovery UI (Phase 6).
+    It does NOT check enrollment or allow_sharing -- the caller
+    is responsible for gating visibility.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The Activity UUID to find shared workspaces for.
+    exclude_user_id : UUID
+        The requesting user's UUID (their own workspaces excluded).
+
+    Returns
+    -------
+    list[Workspace]
+        Shared workspaces, ordered by created_at.
+    """
+    async with get_session() as session:
+        # Find template workspace ID for this activity
+        activity = await session.get(Activity, activity_id)
+        template_id = activity.template_workspace_id if activity else None
+
+        # Subquery: workspace IDs owned by the requesting user
+        owned_subq = (
+            select(ACLEntry.workspace_id)
+            .where(
+                ACLEntry.user_id == exclude_user_id,
+                ACLEntry.permission == "owner",
+            )
+            .scalar_subquery()
+        )
+
+        # Main query
+        stmt = (
+            select(Workspace)
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.shared_with_class == True,  # noqa: E712
+            )
+            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]  -- Column has not_in
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
+        )
+
+        # Exclude template workspace
+        if template_id is not None:
+            stmt = stmt.where(Workspace.id != template_id)
+
+        result = await session.exec(stmt)
+        return list(result.all())
+
+
+async def list_peer_workspaces_with_owners(
+    activity_id: UUID, exclude_user_id: UUID
+) -> list[tuple[Workspace, str, UUID]]:
+    """List shared peer workspaces with owner display names.
+
+    Same filtering as ``list_peer_workspaces`` but joins with
+    ACLEntry + User to return owner info in a single query.
+
+    Returns
+    -------
+    list[tuple[Workspace, str, UUID]]
+        (workspace, owner_display_name, owner_user_id) tuples,
+        ordered by created_at.
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        template_id = activity.template_workspace_id if activity else None
+
+        owned_subq = (
+            select(ACLEntry.workspace_id)
+            .where(
+                ACLEntry.user_id == exclude_user_id,
+                ACLEntry.permission == "owner",
+            )
+            .scalar_subquery()
+        )
+
+        stmt = (
+            select(Workspace, User.display_name, ACLEntry.user_id)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
+            .join(User, User.id == ACLEntry.user_id)  # type: ignore[arg-type]  -- SQLAlchemy join stubs
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.shared_with_class == True,  # noqa: E712
+                ACLEntry.permission == "owner",
+            )
+            .where(Workspace.id.not_in(owned_subq))  # type: ignore[union-attr]
+            .order_by(Workspace.created_at)  # type: ignore[arg-type]
+        )
+
+        if template_id is not None:
+            stmt = stmt.where(Workspace.id != template_id)
+
+        rows = await session.exec(stmt)
+        return [(row[0], row[1], row[2]) for row in rows.all()]

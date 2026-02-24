@@ -32,6 +32,14 @@ def pytest_configure(config: pytest.Config) -> None:
     When running pytest directly (not via CLI), ensure the database is
     already migrated and clean, or use the db_schema_guard fixture.
     """
+    # SQLModel 0.0.32 marks session.execute() as deprecated in favour of
+    # session.exec(), but DELETE/UPDATE DML and text() queries require
+    # execute().  The deprecation message is multi-line (starts with an
+    # emoji), so we use (?s) to let . match newlines.
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:(?s).*session\.exec\(\).*:DeprecationWarning",
+    )
 
 
 # Canary UUID for database rebuild detection

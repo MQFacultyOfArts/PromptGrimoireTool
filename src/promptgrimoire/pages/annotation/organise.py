@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.elements.sortable import Sortable
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ def _build_highlight_card(
     highlight: dict[str, Any],
     tag_colour: str,
     display_tag_name: str,
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
 ) -> ui.card:
     """Render a single highlight card inside a tag column.
@@ -61,6 +64,7 @@ def _build_highlight_card(
         highlight: Highlight data dict from CRDT.
         tag_colour: Hex colour for the left border.
         display_tag_name: Human-readable tag name.
+        state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
             the highlight in Tab 1.
 
@@ -68,7 +72,7 @@ def _build_highlight_card(
         The created ui.card element.
     """
     highlight_id = highlight.get("id", "")
-    author = highlight.get("author", "Unknown")
+    raw_author = highlight.get("author", "Unknown")
     start_char: int = highlight.get("start_char", 0)
     end_char: int = highlight.get("end_char", 0)
     full_text = highlight.get("text", "")
@@ -101,16 +105,39 @@ def _build_highlight_card(
                     "flat dense size=xs"
                 ).tooltip("Locate in document").classes("sortable-ignore")
 
-        ui.label(f"by {author}").classes("text-xs text-gray-500")
+        # Anonymise highlight author
+        hl_user_id = highlight.get("user_id")
+        display_author = anonymise_author(
+            author=raw_author,
+            user_id=hl_user_id,
+            viewing_user_id=state.user_id,
+            anonymous_sharing=state.is_anonymous,
+            viewer_is_privileged=state.viewer_is_privileged,
+            author_is_privileged=(
+                hl_user_id is not None and hl_user_id in state.privileged_user_ids
+            ),
+        )
+        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if snippet:
             ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
         if comments:
             ui.separator().classes("my-1")
             for comment in comments:
-                comment_author = comment.get("author", "Unknown")
+                raw_c_author = comment.get("author", "Unknown")
                 comment_text = comment.get("text", "")
+                c_uid = comment.get("user_id")
+                display_c_author = anonymise_author(
+                    author=raw_c_author,
+                    user_id=c_uid,
+                    viewing_user_id=state.user_id,
+                    anonymous_sharing=state.is_anonymous,
+                    viewer_is_privileged=state.viewer_is_privileged,
+                    author_is_privileged=(
+                        c_uid is not None and c_uid in state.privileged_user_ids
+                    ),
+                )
                 with ui.row().classes("w-full gap-1 items-start"):
-                    ui.label(f"{comment_author}:").classes(
+                    ui.label(f"{display_c_author}:").classes(
                         "text-xs font-semibold text-gray-600 flex-shrink-0"
                     )
                     ui.label(comment_text).classes("text-xs text-gray-700")
@@ -125,6 +152,7 @@ def _build_tag_column(
     highlights: list[dict[str, Any]],
     ordered_ids: list[str],
     on_sort_end: Callable[[GenericEventArguments], Any] | None,
+    state: PageState,
     on_locate: Callable[..., Any] | None = None,
 ) -> ui.column:
     """Render a single tag column with header and highlight cards.
@@ -140,6 +168,7 @@ def _build_tag_column(
         highlights: All highlights assigned to this tag.
         ordered_ids: Ordered highlight IDs from CRDT tag_order.
         on_sort_end: Callback for sort-end events (None to disable drag).
+        state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
 
@@ -181,7 +210,11 @@ def _build_tag_column(
             for hid in ordered_ids:
                 if hid in hl_by_id:
                     _build_highlight_card(
-                        hl_by_id[hid], tag_colour, tag_name, on_locate
+                        hl_by_id[hid],
+                        tag_colour,
+                        tag_name,
+                        state,
+                        on_locate,
                     )
                     rendered_ids.add(hid)
 
@@ -189,7 +222,7 @@ def _build_tag_column(
             for hl in highlights:
                 hid = hl.get("id", "")
                 if hid not in rendered_ids:
-                    _build_highlight_card(hl, tag_colour, tag_name, on_locate)
+                    _build_highlight_card(hl, tag_colour, tag_name, state, on_locate)
 
             # Empty state hint (inside sortable so column is a valid drop target)
             if not highlights:
@@ -207,6 +240,7 @@ def render_organise_tab(
     *,
     on_sort_end: (Callable[[GenericEventArguments], Any] | None) = None,
     on_locate: Callable[..., Any] | None = None,
+    state: PageState,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
@@ -225,6 +259,7 @@ def render_organise_tab(
         on_sort_end: Callback for SortableJS sort-end events.
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
+        state: Page state for anonymisation context.
     """
     # Save scroll position before clearing (h-scroll across columns, v-scroll
     # within the panel). Uses data-testid selector since the element is rebuilt.
@@ -277,6 +312,7 @@ def render_organise_tab(
                 highlights_for_tag,
                 ordered_ids,
                 on_sort_end,
+                state,
                 on_locate,
             )
 
@@ -290,6 +326,7 @@ def render_organise_tab(
                 untagged_highlights,
                 ordered_ids,
                 on_sort_end,
+                state,
                 on_locate,
             )
 

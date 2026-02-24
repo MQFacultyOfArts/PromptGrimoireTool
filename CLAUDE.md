@@ -4,7 +4,7 @@
 
 PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, annotation, and sharing in educational contexts. Based on the pedagogical framework from "Teaching the Unknown" (Ballsun-Stanton & Torrington, 2025).
 
-**Target:** Session 1 2026 (Feb 23)
+**Target:** Session 1 2026 (Feb 27)
 
 ## Use Cases
 

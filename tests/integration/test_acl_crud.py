@@ -292,7 +292,9 @@ class TestCascadeDeleteUser:
         workspace = await create_workspace()
         await grant_permission(workspace.id, user.id, "viewer")
 
-        # Delete the user directly via session
+        # Delete the user directly via session.  session.execute is correct
+        # for DELETE — session.exec is SELECT-only.  The SQLModel
+        # DeprecationWarning is suppressed globally in pyproject.toml.
         async with get_session() as session:
             # ty: SQLModel column comparison returns expression, not bool
             stmt = delete(User).where(User.id == user_id)  # type: ignore[arg-type]

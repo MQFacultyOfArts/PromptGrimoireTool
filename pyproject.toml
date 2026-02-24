@@ -30,6 +30,7 @@ dependencies = [
     "selectolax>=0.4.6",
     "emoji>=2.0.0",
     "lxml>=6.0",
+    "coolname>=3.0.0",
 ]
 
 [project.scripts]
@@ -37,6 +38,8 @@ promptgrimoire = "promptgrimoire:main"
 test-changed = "promptgrimoire.cli:test_changed"
 test-all = "promptgrimoire.cli:test_all"
 test-e2e = "promptgrimoire.cli:test_e2e"
+test-e2e-slow = "promptgrimoire.cli:test_e2e_slow"
+test-e2e-noretry = "promptgrimoire.cli:test_e2e_noretry"
 test-e2e-changed = "promptgrimoire.cli:test_e2e_changed"
 test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
 seed-data = "promptgrimoire.cli:seed_data"
@@ -137,10 +140,7 @@ markers = [
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
 filterwarnings = [
-    # SQLModel marks session.execute() as deprecated in favour of session.exec(),
-    # but text() queries require execute() — exec() overloads don't accept TextClause.
-    "ignore::DeprecationWarning:promptgrimoire.db.tags",
-    "ignore::DeprecationWarning:promptgrimoire.db.acl",
+    # SQLModel session.execute() warning handled in tests/conftest.py
 ]
 
 [tool.ty.src]

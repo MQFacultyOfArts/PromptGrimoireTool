@@ -129,6 +129,7 @@ def _set_session_user(
         "session_token": session_token,
         "roles": roles,
         "name": name,
+        "display_name": name,
         "auth_method": auth_method,
         "user_id": str(user_id) if user_id else None,
         "is_admin": is_admin,

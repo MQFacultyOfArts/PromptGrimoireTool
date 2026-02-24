@@ -223,6 +223,7 @@ class AnnotationDocument:
         para_ref: str = "",
         origin_client_id: str | None = None,
         document_id: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Add a new highlight to the document.
 
@@ -235,6 +236,7 @@ class AnnotationDocument:
             para_ref: Paragraph reference string (e.g., "[3]", "[3]-[4]").
             origin_client_id: Client making the change (for echo prevention).
             document_id: Optional workspace document UUID for multi-document workspaces.
+            user_id: Stytch user ID of the author (None for legacy/anonymous).
 
         Returns:
             The generated highlight ID.
@@ -251,6 +253,7 @@ class AnnotationDocument:
                 "tag": tag,
                 "text": text,
                 "author": author,
+                "user_id": user_id,
                 "para_ref": para_ref,
                 "created_at": datetime.now(UTC).isoformat(),
                 "comments": [],  # Will be converted to Array by pycrdt
@@ -435,6 +438,7 @@ class AnnotationDocument:
         author: str,
         text: str,
         origin_client_id: str | None = None,
+        user_id: str | None = None,
     ) -> str | None:
         """Add a comment to a highlight's thread.
 
@@ -443,6 +447,7 @@ class AnnotationDocument:
             author: Display name of the comment author.
             text: Comment text content.
             origin_client_id: Client making the change (for echo prevention).
+            user_id: Stytch user ID of the comment author (None for legacy/anonymous).
 
         Returns:
             The generated comment ID, or None if highlight not found.
@@ -457,6 +462,7 @@ class AnnotationDocument:
             comment = {
                 "id": comment_id,
                 "author": author,
+                "user_id": user_id,
                 "text": text,
                 "created_at": datetime.now(UTC).isoformat(),
             }
@@ -476,33 +482,52 @@ class AnnotationDocument:
         self,
         highlight_id: str,
         comment_id: str,
+        requesting_user_id: str | None = None,
+        is_privileged: bool = False,
         origin_client_id: str | None = None,
     ) -> bool:
         """Delete a comment from a highlight's thread.
 
+        Enforces ownership: only the comment creator or a privileged
+        user (instructor/admin) may delete.  Workspace owners who are
+        not privileged may only delete their own comments.
+
         Args:
             highlight_id: ID of the highlight.
             comment_id: ID of the comment to delete.
-            origin_client_id: Client making the change (for echo prevention).
+            requesting_user_id: Stytch user ID of the requester.
+            is_privileged: Whether the requester is instructor/admin.
+            origin_client_id: Client making the change (echo prevention).
 
         Returns:
-            True if comment was found and deleted.
+            True if comment was authorised and deleted.
         """
         highlight = self.highlights.get(highlight_id)
         if highlight is None:
             return False
 
+        # Find the target comment for authorisation check
+        comments = list(highlight.get("comments", []))
+        target = next((c for c in comments if c.get("id") == comment_id), None)
+        if target is None:
+            return False
+
+        # Authorisation guard
+        if not is_privileged:
+            comment_owner = target.get("user_id")
+            if (
+                requesting_user_id is None
+                or comment_owner is None
+                or comment_owner != requesting_user_id
+            ):
+                return False
+
         token = _origin_var.set(origin_client_id)
         try:
-            comments = list(highlight.get("comments", []))
-            original_len = len(comments)
-            comments = [c for c in comments if c.get("id") != comment_id]
-
-            if len(comments) < original_len:
-                highlight["comments"] = comments
-                self.highlights[highlight_id] = highlight
-                return True
-            return False
+            remaining = [c for c in comments if c.get("id") != comment_id]
+            highlight["comments"] = remaining
+            self.highlights[highlight_id] = highlight
+            return True
         finally:
             _origin_var.reset(token)
 
@@ -607,10 +632,7 @@ class AnnotationDocumentRegistry:
         Returns:
             True if document was found and removed.
         """
-        if doc_id in self._documents:
-            del self._documents[doc_id]
-            return True
-        return False
+        return self._documents.pop(doc_id, None) is not None
 
     def list_ids(self) -> list[str]:
         """List all document IDs in the registry."""

@@ -7,12 +7,13 @@ and CourseRoleRef (course_role) reference tables with CHECK and UNIQUE
 constraints.
 
 Acceptance Criteria:
-- AC1.1: Permission table has owner/30, editor/20, viewer/10
+- AC1.1: Permission table has owner/30, editor/20, peer/15, viewer/10
 - AC1.2: CourseRoleRef has coordinator/40, instructor/30, tutor/20,
   student/10
 - AC1.3: Seed data exists from migration (no seed-data script)
 - AC1.4: Duplicate name INSERT rejected (PK constraint)
 - AC1.5: Level CHECK (1-100) and UNIQUE constraints enforced
+- workspace-sharing-97.AC1.1: peer permission with level 15
 """
 
 from __future__ import annotations
@@ -62,13 +63,13 @@ class TestSeedDataFromMigration:
 class TestPermissionSeedData:
     """Verify Permission table seed data from migration.
 
-    AC1.1: owner/30, editor/20, viewer/10.
+    AC1.1: owner/30, editor/20, peer/15, viewer/10.
     AC1.3: Data present without running seed-data script.
     """
 
     @pytest.mark.asyncio
-    async def test_contains_exactly_three_rows(self) -> None:
-        """Permission table has exactly 3 seeded rows."""
+    async def test_contains_exactly_four_rows(self) -> None:
+        """Permission table has exactly 4 seeded rows."""
         from sqlmodel import select
 
         from promptgrimoire.db.engine import get_session
@@ -77,7 +78,7 @@ class TestPermissionSeedData:
         async with get_session() as session:
             rows = (await session.exec(select(Permission))).all()
 
-        assert len(rows) == 3
+        assert len(rows) == 4
 
     @pytest.mark.asyncio
     async def test_owner_permission(self) -> None:
@@ -130,6 +131,41 @@ class TestPermissionSeedData:
 
         assert row is not None
         assert row.level == 10
+
+
+class TestPeerPermission:
+    """Verify peer permission row exists from migration.
+
+    workspace-sharing-97.AC1.1: Permission table contains 'peer' with level 15.
+    """
+
+    @pytest.mark.asyncio
+    async def test_peer_permission_exists(self) -> None:
+        """Permission 'peer' exists with level 15."""
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Permission
+
+        async with get_session() as session:
+            row = (
+                await session.exec(select(Permission).where(Permission.name == "peer"))
+            ).one_or_none()
+
+        assert row is not None
+        assert row.level == 15
+
+    @pytest.mark.asyncio
+    async def test_peer_level_uniqueness(self) -> None:
+        """Level 15 is unique — inserting another row with level 15 fails."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Permission
+
+        with pytest.raises(IntegrityError):
+            async with get_session() as session:
+                dup = Permission(name="dup_peer_level", level=15)
+                session.add(dup)
+                await session.flush()
 
 
 class TestCourseRoleRefSeedData:

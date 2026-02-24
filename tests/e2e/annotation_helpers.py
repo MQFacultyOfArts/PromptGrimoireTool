@@ -16,13 +16,12 @@ import gzip
 import os
 import re
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from playwright.sync_api import Locator, Page
 
 # Legal Case Brief tag seed data
@@ -272,6 +271,43 @@ def _create_workspace_via_db(
         _seed_tags_for_workspace(workspace_id)
 
     return workspace_id
+
+
+def get_user_id_by_email(email: str) -> str:
+    """Return a user's UUID (as string) from their email.
+
+    Uses a direct sync DB query so sync Playwright tests can resolve
+    deterministic anonymised labels for assertions.
+
+    Args:
+        email: User email address.
+
+    Returns:
+        User UUID as a string.
+
+    Raises:
+        RuntimeError: If DATABASE__URL is missing or user is not found.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": email.lower()},
+        ).first()
+    engine.dispose()
+
+    if not row:
+        msg = f"User not found in DB: {email}"
+        raise RuntimeError(msg)
+    return str(row[0])
 
 
 def select_chars(page: Page, start_char: int, end_char: int) -> None:
@@ -610,3 +646,174 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
             f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
         )
         raise type(exc)(msg) from None
+
+
+# ---------------------------------------------------------------------------
+# Comment helpers
+# ---------------------------------------------------------------------------
+
+
+def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> None:
+    """Add a comment to an annotation card via the Post button.
+
+    Args:
+        page: Playwright page with an annotation workspace loaded.
+        text: Comment text to post.
+        card_index: 0-based index of the annotation card.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+
+    comment_input = card.locator("input[placeholder='Add comment...']")
+    comment_input.fill(text)
+    card.get_by_role("button", name="Post").click()
+
+    card.locator("[data-testid='comment']", has_text=text).wait_for(
+        state="visible", timeout=10000
+    )
+
+
+def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:
+    """Get author names from comments on an annotation card.
+
+    Args:
+        page: Playwright page with an annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+
+    Returns:
+        List of author display names in DOM order.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+    labels = card.locator("[data-testid='comment-author']")
+    return [labels.nth(i).inner_text() for i in range(labels.count())]
+
+
+def count_comment_delete_buttons(page: Page, *, card_index: int = 0) -> int:
+    """Count visible delete buttons on an annotation card.
+
+    Args:
+        page: Playwright page with an annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+
+    Returns:
+        Number of delete buttons visible.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+    return card.locator("[data-testid='comment-delete']").count()
+
+
+# ---------------------------------------------------------------------------
+# Sharing helpers
+# ---------------------------------------------------------------------------
+
+
+def toggle_share_with_class(page: Page) -> None:
+    """Toggle the 'Share with class' switch on.
+
+    Waits for the toggle to be visible and clicks it if not
+    already enabled.  Expects the annotation workspace page.
+    """
+    toggle = page.locator('[data-testid="share-with-class-toggle"]')
+    toggle.wait_for(state="visible", timeout=5000)
+    if toggle.get_attribute("aria-checked") != "true":
+        toggle.click()
+    page.wait_for_timeout(500)
+
+
+def clone_activity_workspace(
+    page: Page,
+    app_server: str,
+    course_id: str,
+    activity_title: str,
+) -> str:
+    """Navigate to course, clone activity workspace.
+
+    Args:
+        page: Authenticated Playwright page.
+        app_server: Base URL of the test server.
+        course_id: UUID string of the course.
+        activity_title: Title of the activity to clone.
+
+    Returns:
+        workspace_id as string.
+    """
+    page.goto(f"{app_server}/courses/{course_id}")
+
+    label = page.get_by_text(activity_title)
+    label.wait_for(state="visible", timeout=10000)
+    card = label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
+    card.get_by_role("button", name="Start Activity").first.click()
+
+    page.wait_for_url(
+        re.compile(r"/annotation\?workspace_id="),
+        timeout=15000,
+    )
+    wait_for_text_walker(page, timeout=15000)
+
+    return page.url.split("workspace_id=")[1].split("&")[0]
+
+
+# ---------------------------------------------------------------------------
+# PDF export
+# ---------------------------------------------------------------------------
+
+
+def export_pdf_text(page: Page) -> str:
+    """Click Export PDF, download, extract text via pymupdf.
+
+    Args:
+        page: Playwright page with annotation workspace loaded.
+
+    Returns:
+        Extracted text from the PDF with soft-hyphen breaks removed.
+
+    Raises:
+        pytest.skip: If export times out (TinyTeX not installed).
+    """
+    import pytest
+    from playwright.sync_api import (
+        TimeoutError as PlaywrightTimeoutError,
+    )
+
+    try:
+        with page.expect_download(timeout=120000) as dl:
+            page.get_by_role("button", name="Export PDF").click()
+
+        download = dl.value
+        pdf_path = download.path()
+        pdf_bytes = Path(pdf_path).read_bytes()
+        assert len(pdf_bytes) > 5_000, f"PDF too small: {len(pdf_bytes)} bytes"
+
+        import pymupdf
+
+        doc = pymupdf.open(pdf_path)
+        pdf_text = "".join(p.get_text() for p in doc)
+        doc.close()
+
+        return re.sub(r"-\n", "", pdf_text)
+    except PlaywrightTimeoutError:
+        pytest.skip("PDF export timed out (TinyTeX not installed?)")
+
+
+def export_annotation_tex_text(page: Page) -> str:
+    """Click Export PDF and return the downloaded TeX source.
+
+    The E2E server monkey-patches ``compile_latex`` to a no-op, so clicking
+    Export PDF produces a ``.tex`` file instead of a ``.pdf``.  This exercises
+    the **exact same data-gathering path** as the real export (PageState with
+    live CRDT), avoiding stale-data bugs from separate API endpoints.
+
+    Args:
+        page: Playwright page with an annotation workspace loaded.
+
+    Returns:
+        Generated LaTeX source as text.
+    """
+    with page.expect_download(timeout=60000) as dl:
+        page.get_by_role("button", name="Export PDF").click()
+
+    download = dl.value
+    tex_path = download.path()
+    return Path(tex_path).read_text(encoding="utf-8")

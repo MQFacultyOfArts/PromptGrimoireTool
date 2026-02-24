@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.db.workspaces import PlacementContext
-from promptgrimoire.pages.annotation.workspace import (
-    _inject_copy_protection,
-    _render_workspace_header,
+from promptgrimoire.pages.annotation.header import (
+    inject_copy_protection,
+    render_workspace_header,
 )
 
 
@@ -142,35 +142,35 @@ class TestCopyProtectionInactiveStates:
 
 
 class TestInjectCopyProtectionFunction:
-    """Verify _inject_copy_protection exists with correct signature."""
+    """Verify inject_copy_protection exists with correct signature."""
 
     def test_is_not_async(self) -> None:
-        """_inject_copy_protection is sync (ui.run_javascript is fire-and-forget)."""
-        assert not inspect.iscoroutinefunction(_inject_copy_protection)
+        """inject_copy_protection is sync (ui.run_javascript is fire-and-forget)."""
+        assert not inspect.iscoroutinefunction(inject_copy_protection)
 
     def test_accepts_no_parameters(self) -> None:
         """Function takes no parameters — it's a fire-and-forget JS injection."""
-        sig = inspect.signature(_inject_copy_protection)
+        sig = inspect.signature(inject_copy_protection)
         assert len(sig.parameters) == 0
 
 
 class TestRenderWorkspaceHeaderSignature:
-    """Verify _render_workspace_header accepts protect parameter."""
+    """Verify render_workspace_header accepts protect parameter."""
 
     def test_has_protect_parameter(self) -> None:
-        """_render_workspace_header has a protect keyword parameter."""
-        sig = inspect.signature(_render_workspace_header)
+        """render_workspace_header has a protect keyword parameter."""
+        sig = inspect.signature(render_workspace_header)
         assert "protect" in sig.parameters
 
     def test_protect_defaults_to_false(self) -> None:
         """protect parameter defaults to False for backward compatibility."""
-        sig = inspect.signature(_render_workspace_header)
+        sig = inspect.signature(render_workspace_header)
         param = sig.parameters["protect"]
         assert param.default is False
 
 
 class TestPrintSuppressionInjection:
-    """Verify _inject_copy_protection injects print suppression CSS and message.
+    """Verify inject_copy_protection injects print suppression CSS and message.
 
     Verifies AC4.6: CSS @media print hides content and shows message,
     Ctrl+P intercept reuses showToast from the IIFE.
@@ -181,13 +181,13 @@ class TestPrintSuppressionInjection:
 
     @pytest.fixture()
     def _mock_ui(self) -> Iterator[dict[str, MagicMock]]:
-        """Mock the three NiceGUI UI calls used by _inject_copy_protection."""
+        """Mock the three NiceGUI UI calls used by inject_copy_protection."""
         with (
             patch(
-                "promptgrimoire.pages.annotation.workspace.ui.run_javascript"
+                "promptgrimoire.pages.annotation.header.ui.run_javascript"
             ) as mock_js,
-            patch("promptgrimoire.pages.annotation.workspace.ui.add_css") as mock_css,
-            patch("promptgrimoire.pages.annotation.workspace.ui.html") as mock_html,
+            patch("promptgrimoire.pages.annotation.header.ui.add_css") as mock_css,
+            patch("promptgrimoire.pages.annotation.header.ui.html") as mock_html,
         ):
             yield {"js": mock_js, "css": mock_css, "html": mock_html}
 
@@ -195,7 +195,7 @@ class TestPrintSuppressionInjection:
         self, _mock_ui: dict[str, MagicMock]
     ) -> None:
         """ui.add_css is called to inject @media print CSS."""
-        _inject_copy_protection()
+        inject_copy_protection()
         _mock_ui["css"].assert_called_once()
         css_arg = _mock_ui["css"].call_args[0][0]
         assert "@media print" in css_arg
@@ -203,14 +203,14 @@ class TestPrintSuppressionInjection:
 
     def test_html_message_div_injected(self, _mock_ui: dict[str, MagicMock]) -> None:
         """ui.html is called to inject hidden print message div."""
-        _inject_copy_protection()
+        inject_copy_protection()
         _mock_ui["html"].assert_called_once()
         html_arg = _mock_ui["html"].call_args[0][0]
         assert "copy-protection-print-message" in html_arg
         assert "Printing is disabled" in html_arg
 
     def test_no_css_or_html_when_not_called(self) -> None:
-        """When _inject_copy_protection is NOT called, no CSS/HTML injection.
+        """When inject_copy_protection is NOT called, no CSS/HTML injection.
 
         This verifies the conditional boundary: the if-protect guard in
         _render_workspace_view controls whether injection happens at all.

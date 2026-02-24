@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from nicegui import app, ui
 
+from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import (
     PageState,
@@ -32,6 +33,29 @@ if TYPE_CHECKING:
     from nicegui import Client
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_broadcast_label(
+    *,
+    sender_name: str,
+    sender_user_id: str | None,
+    receiver_user_id: str | None,
+    is_anonymous: bool,
+    receiver_is_privileged: bool,
+    sender_is_privileged: bool = False,
+) -> str:
+    """Resolve the display label for a sender as seen by a specific receiver.
+
+    Delegates to ``anonymise_author`` with the receiver's context.
+    """
+    return anonymise_author(
+        author=sender_name,
+        user_id=sender_user_id,
+        viewing_user_id=receiver_user_id,
+        anonymous_sharing=is_anonymous,
+        viewer_is_privileged=receiver_is_privileged,
+        author_is_privileged=sender_is_privileged,
+    )
 
 
 def _get_user_color(user_name: str) -> str:
@@ -121,18 +145,30 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         clients = _workspace_presence.get(workspace_key, {})
         if client_id in clients:
             clients[client_id].cursor_char = char_index
-        if char_index is not None:
-            name = state.user_name
-            color = state.user_color
+        if char_index is None:
+            js = _render_js(t"removeRemoteCursor({client_id})")
+            await _broadcast_js_to_others(workspace_key, client_id, js)
+            return
+        color = state.user_color
+        for cid, presence in list(clients.items()):
+            if cid == client_id or presence.nicegui_client is None:
+                continue
+            name = resolve_broadcast_label(
+                sender_name=state.user_name,
+                sender_user_id=state.user_id,
+                receiver_user_id=presence.user_id,
+                is_anonymous=state.is_anonymous,
+                receiver_is_privileged=presence.viewer_is_privileged,
+                sender_is_privileged=state.viewer_is_privileged,
+            )
             js = _render_js(
                 t"renderRemoteCursor("
                 t"document.getElementById('doc-container')"
                 t", {client_id}, {char_index}"
                 t", {name}, {color})"
             )
-        else:
-            js = _render_js(t"removeRemoteCursor({client_id})")
-        await _broadcast_js_to_others(workspace_key, client_id, js)
+            with contextlib.suppress(Exception):
+                await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_cursor = broadcast_cursor
 
@@ -142,15 +178,27 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         if client_id in clients:
             clients[client_id].selection_start = start
             clients[client_id].selection_end = end
-        if start is not None and end is not None:
-            name = state.user_name
-            color = state.user_color
+        if start is None or end is None:
+            js = _render_js(t"removeRemoteSelection({client_id})")
+            await _broadcast_js_to_others(workspace_key, client_id, js)
+            return
+        color = state.user_color
+        for cid, presence in list(clients.items()):
+            if cid == client_id or presence.nicegui_client is None:
+                continue
+            name = resolve_broadcast_label(
+                sender_name=state.user_name,
+                sender_user_id=state.user_id,
+                receiver_user_id=presence.user_id,
+                is_anonymous=state.is_anonymous,
+                receiver_is_privileged=presence.viewer_is_privileged,
+                sender_is_privileged=state.viewer_is_privileged,
+            )
             js = _render_js(
                 t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
             )
-        else:
-            js = _render_js(t"removeRemoteSelection({client_id})")
-        await _broadcast_js_to_others(workspace_key, client_id, js)
+            with contextlib.suppress(Exception):
+                await presence.nicegui_client.run_javascript(js, timeout=2.0)
 
     state.broadcast_selection = broadcast_selection
 
@@ -181,6 +229,8 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         nicegui_client=client,
         callback=handle_update_from_other,
         user_id=client_user_id,
+        viewer_is_privileged=state.viewer_is_privileged,
+        is_owner=state.is_owner,
     )
     logger.info(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
@@ -193,28 +243,37 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
     _update_user_count(state)
     _notify_other_clients(workspace_key, client_id)
 
-    # Send existing remote cursors/selections to newly connected client
+    # Send existing remote cursors/selections to newly connected client,
+    # resolving names per-receiver for anonymisation.
     for cid, presence in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid == client_id:
             continue
+        resolved_name = resolve_broadcast_label(
+            sender_name=presence.name,
+            sender_user_id=presence.user_id,
+            receiver_user_id=state.user_id,
+            is_anonymous=state.is_anonymous,
+            receiver_is_privileged=state.viewer_is_privileged,
+            sender_is_privileged=presence.viewer_is_privileged,
+        )
         if presence.cursor_char is not None:
             char = presence.cursor_char
-            name = presence.name
             color = presence.color
             js = _render_js(
                 t"renderRemoteCursor("
                 t"document.getElementById('doc-container')"
                 t", {cid}, {char}"
-                t", {name}, {color})"
+                t", {resolved_name}, {color})"
             )
             ui.run_javascript(js)
         if presence.selection_start is not None and presence.selection_end is not None:
             s_start = presence.selection_start
             s_end = presence.selection_end
-            name = presence.name
             color = presence.color
             js = _render_js(
-                t"renderRemoteSelection({cid}, {s_start}, {s_end}, {name}, {color})"
+                t"renderRemoteSelection("
+                t"{cid}, {s_start}, {s_end},"
+                t" {resolved_name}, {color})"
             )
             ui.run_javascript(js)
 

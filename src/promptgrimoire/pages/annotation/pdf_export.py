@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.db.workspace_documents import get_document
 from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
@@ -24,6 +25,64 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 
 logger = logging.getLogger(__name__)
+
+
+def _anonymise_dict_author(
+    d: dict[str, object],
+    *,
+    viewing_user_id: str,
+    anonymous_sharing: bool,
+    viewer_is_privileged: bool,
+    privileged_user_ids: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    """Return a shallow copy of *d* with its ``author`` field anonymised."""
+    out = dict(d)
+    uid = str(d["user_id"]) if d.get("user_id") else None
+    out["author"] = anonymise_author(
+        author=str(d.get("author", "Unknown")),
+        user_id=uid,
+        viewing_user_id=viewing_user_id,
+        anonymous_sharing=anonymous_sharing,
+        viewer_is_privileged=viewer_is_privileged,
+        author_is_privileged=(uid is not None and uid in privileged_user_ids),
+    )
+    return out
+
+
+def anonymise_highlights(
+    highlights: list[dict[str, object]],
+    *,
+    viewing_user_id: str,
+    anonymous_sharing: bool,
+    viewer_is_privileged: bool,
+    privileged_user_ids: frozenset[str] = frozenset(),
+) -> list[dict[str, object]]:
+    """Return a deep copy of highlights with author names anonymised.
+
+    Applies ``anonymise_author`` to both highlight-level and comment-level
+    author fields. Does not mutate the input list.
+    """
+    anon_kw = {
+        "viewing_user_id": viewing_user_id,
+        "anonymous_sharing": anonymous_sharing,
+        "viewer_is_privileged": viewer_is_privileged,
+        "privileged_user_ids": privileged_user_ids,
+    }
+    result: list[dict[str, object]] = []
+    for hl in highlights:
+        new_hl = _anonymise_dict_author(hl, **anon_kw)  # type: ignore[arg-type]
+        comments = hl.get("comments")
+        if isinstance(comments, list):
+            new_comments: list[object] = []
+            for comment in comments:
+                if isinstance(comment, dict):
+                    typed: dict[str, object] = comment  # type: ignore[assignment]
+                    new_comments.append(_anonymise_dict_author(typed, **anon_kw))  # type: ignore[arg-type]
+                else:
+                    new_comments.append(comment)
+            new_hl["comments"] = new_comments
+        result.append(new_hl)
+    return result
 
 
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
@@ -43,8 +102,16 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     await asyncio.sleep(0)
 
     try:
-        # Get highlights for this document
+        # Get highlights for this document, anonymising if needed
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
+        if state.is_anonymous and state.user_id:
+            highlights = anonymise_highlights(
+                highlights,
+                viewing_user_id=state.user_id,
+                anonymous_sharing=True,
+                viewer_is_privileged=state.viewer_is_privileged,
+                privileged_user_ids=state.privileged_user_ids,
+            )
 
         doc = await get_document(state.document_id)
         if doc is None or not doc.content:

@@ -87,13 +87,14 @@ async def update_activity(
     description: str | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear description)
     copy_protection: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     allow_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
+    anonymous_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     allow_tag_creation: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
 ) -> Activity | None:
     """Update activity details.
 
     Use description=None to clear it.
-    Use copy_protection=None / allow_sharing=None / allow_tag_creation=None
-    to reset to inherit from course.
+    Use copy_protection=None / allow_sharing=None / anonymous_sharing=None /
+    allow_tag_creation=None to reset to inherit from course.
     Omit any parameter (or pass ...) to leave it unchanged.
     """
     async with get_session() as session:
@@ -109,6 +110,8 @@ async def update_activity(
             activity.copy_protection = copy_protection
         if allow_sharing is not ...:
             activity.allow_sharing = allow_sharing
+        if anonymous_sharing is not ...:
+            activity.anonymous_sharing = anonymous_sharing
         if allow_tag_creation is not ...:
             activity.allow_tag_creation = allow_tag_creation
 

@@ -294,42 +294,40 @@ class TestTranslationStudent:
                         page.get_by_role("button", name="Export PDF").click()
 
                     download = download_info.value
-                    pdf_bytes = Path(download.path()).read_bytes()
+                    dl_path = Path(download.path())
+                    content_bytes = dl_path.read_bytes()
 
-                    # Verify PDF size (substantial with LaTeX content)
-                    assert len(pdf_bytes) > 20_000, (
-                        f"PDF too small: {len(pdf_bytes)} bytes"
+                    # E2E server may produce .tex (fast mode) or .pdf (slow mode)
+                    is_pdf = content_bytes[:5] == b"%PDF-"
+
+                    if is_pdf:
+                        assert len(content_bytes) > 20_000, (
+                            f"PDF too small: {len(content_bytes)} bytes"
+                        )
+                        import pymupdf
+
+                        doc = pymupdf.open(dl_path)
+                        text = "".join(p.get_text() for p in doc)
+                        doc.close()
+                        text = re.sub(r"-\n", "", text)
+                    else:
+                        text = content_bytes.decode("utf-8")
+
+                    # UUID comment string must appear
+                    assert comment_uuid in text, (
+                        "Comment UUID not found in exported content"
                     )
 
-                    # Extract text from PDF via pymupdf for content verification
-                    import pymupdf
-
-                    doc = pymupdf.open(download.path())
-                    pdf_text = "".join(pdf_page.get_text() for pdf_page in doc)
-                    doc.close()
-
-                    # Normalise: LaTeX may soft-hyphenate long tokens at line
-                    # breaks (e.g. "abc-\ndef" → "abcdef").  Strip these so
-                    # UUID searches work regardless of line position.
-                    pdf_text = re.sub(r"-\n", "", pdf_text)
-
-                    # UUID comment string must appear (ASCII, always findable)
-                    assert comment_uuid in pdf_text, (
-                        "Comment UUID not found in PDF text"
-                    )
-
-                    # CJK characters may be encoded differently in PDF
-                    # content streams, so UUID verification is the primary
-                    # assertion. Check for CJK as best-effort.
-                    has_cjk = any(
-                        char in pdf_text for char in "\u7ef4\u57fa\u767e\u79d1"
-                    )
-                    if not has_cjk:
-                        # Not a failure -- CJK encoding in PDFs varies
+                    # CJK characters: always present in .tex source,
+                    # may be encoded differently in PDF content streams.
+                    has_cjk = any(char in text for char in "\u7ef4\u57fa\u767e\u79d1")
+                    if is_pdf and not has_cjk:
                         pytest.skip(
                             "CJK chars not found in PDF text extraction "
                             "(encoding may differ); UUID verification passed"
                         )
+                    elif not is_pdf:
+                        assert has_cjk, "CJK chars not found in TeX source"
 
                 except PlaywrightTimeoutError:
                     pytest.skip("PDF export timed out (TinyTeX not installed?)")

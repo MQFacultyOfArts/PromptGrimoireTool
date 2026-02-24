@@ -619,6 +619,22 @@ _wd_thread = threading.Thread(target=_watchdog_loop, daemon=True)
 _wd_thread.start()
 # --- End watchdog ---
 
+# --- Optionally monkey-patch compile_latex to skip latexmk ---
+# When E2E_SKIP_LATEXMK=1 (the default for test-e2e), the Export PDF button
+# produces a .tex file instead of a .pdf.  This exercises the EXACT same
+# data-gathering path as real export (PageState with live CRDT) while
+# avoiding the ~10s latexmk cost per test.
+# Set E2E_SKIP_LATEXMK=0 for full PDF compilation (test-e2e-slow).
+if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
+    async def _compile_latex_noop(tex_path, output_dir=None):
+        return tex_path
+
+    import promptgrimoire.export.pdf as _pdf_mod
+    import promptgrimoire.export.pdf_export as _pdf_export_mod
+    _pdf_mod.compile_latex = _compile_latex_noop
+    _pdf_export_mod.compile_latex = _compile_latex_noop
+# --- End monkey-patch ---
+
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 
@@ -674,6 +690,7 @@ async def _diagnostics():
         "asyncio_tasks": len(all_tasks),
         "asyncio_task_names": _task_summary(all_tasks),
     }
+
 
 def _task_summary(tasks):
     # Summarise asyncio tasks by coroutine/callback name.
@@ -1666,6 +1683,65 @@ def test_e2e() -> None:
     finally:
         if pyspy_process is not None:
             _stop_pyspy(pyspy_process)
+        _stop_e2e_server(server_process)
+    sys.exit(exit_code)
+
+
+def test_e2e_slow() -> None:
+    """Run E2E tests with full PDF compilation (latexmk).
+
+    Same as ``test-e2e`` but sets ``E2E_SKIP_LATEXMK=0`` so the server
+    runs real latexmk.  Tests that click Export PDF will receive actual
+    PDF files. Requires TinyTeX.
+
+    Extra arguments forwarded to pytest.
+    """
+    os.environ["E2E_SKIP_LATEXMK"] = "0"
+    test_e2e()
+
+
+def test_e2e_noretry() -> None:
+    """Run E2E tests with no retries and fail-fast (-x).
+
+    Same server lifecycle as ``test-e2e`` but skips ``--reruns`` and
+    ``_retry_e2e_tests_in_isolation``.  Useful for debugging failing
+    tests where retries waste time.
+
+    Extra arguments forwarded to pytest.
+    """
+    import socket
+
+    from promptgrimoire.config import get_settings
+
+    get_settings()
+
+    _pre_test_db_cleanup()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
+
+    os.environ["E2E_BASE_URL"] = url
+
+    exit_code = 1
+    try:
+        exit_code = _run_pytest(
+            title=f"E2E Debug (no retries, -x) — server {url}",
+            log_path=Path("test-e2e.log"),
+            default_args=[
+                "-m",
+                "e2e",
+                "-x",
+                "-v",
+                "--tb=short",
+                "--log-cli-level=WARNING",
+            ],
+        )
+    finally:
         _stop_e2e_server(server_process)
     sys.exit(exit_code)
 

@@ -397,32 +397,32 @@ class TestLawStudent:
                     with page.expect_download(timeout=120000) as download_info:
                         page.get_by_role("button", name="Export PDF").click()
 
-                    # Get downloaded PDF
                     download = download_info.value
-                    pdf_bytes = Path(download.path()).read_bytes()
+                    dl_path = Path(download.path())
+                    content_bytes = dl_path.read_bytes()
 
-                    # Verify PDF size (should be substantial)
-                    assert len(pdf_bytes) > 20_000, (
-                        f"PDF too small: {len(pdf_bytes)} bytes"
-                    )
+                    # E2E server may produce .tex (fast mode) or .pdf (slow mode)
+                    is_pdf = content_bytes[:5] == b"%PDF-"
 
-                    # Extract text from PDF via pymupdf for content verification
-                    import pymupdf
+                    if is_pdf:
+                        assert len(content_bytes) > 20_000, (
+                            f"PDF too small: {len(content_bytes)} bytes"
+                        )
+                        import pymupdf
 
-                    doc = pymupdf.open(download.path())
-                    pdf_text = "".join(pdf_page.get_text() for pdf_page in doc)
-                    doc.close()
+                        doc = pymupdf.open(dl_path)
+                        text = "".join(p.get_text() for p in doc)
+                        doc.close()
 
-                    # Normalise: LaTeX may soft-hyphenate long tokens at line
-                    # breaks (e.g. "abc-\ndef" → "abcdef").  Strip these so
-                    # UUID searches work regardless of line position.
-                    import re
+                        import re
 
-                    pdf_text = re.sub(r"-\n", "", pdf_text)
+                        text = re.sub(r"-\n", "", text)
+                    else:
+                        text = content_bytes.decode("utf-8")
 
-                    # Verify comment UUIDs in extracted PDF text
-                    assert uuid1 in pdf_text, "First comment UUID not found in PDF"
-                    assert uuid2 in pdf_text, "Second comment UUID not found in PDF"
+                    # Verify comment UUIDs in exported content
+                    assert uuid1 in text, "First comment UUID not found"
+                    assert uuid2 in text, "Second comment UUID not found"
 
                 except PlaywrightTimeoutError:
                     pytest.skip("PDF export timed out (TinyTeX not installed?)")

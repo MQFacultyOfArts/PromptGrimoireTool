@@ -16,7 +16,7 @@ from coolname.loader import load_config
 
 # Load coolname config once at module level.
 _COOLNAME_CONFIG = load_config(
-    pathlib.Path(__import__("coolname").__file__).parent / "data"  # type: ignore[arg-type]
+    pathlib.Path(__import__("coolname").__file__).parent / "data"
 )
 
 
@@ -28,7 +28,7 @@ def _adjective_animal_label(user_id: str) -> str:
     (e.g. "Crystal Peccary").
     """
     seed = int.from_bytes(hashlib.sha256(user_id.encode()).digest()[:8])
-    gen = RandomGenerator(_COOLNAME_CONFIG, random.Random(seed))
+    gen = RandomGenerator(_COOLNAME_CONFIG, random.Random(seed))  # nosec B311 — deterministic slug, not crypto
     slug = gen.generate_slug(2)
     return slug.replace("-", " ").title()
 

@@ -130,16 +130,16 @@ def add_activity(page: Page, *, title: str, description: str = "") -> None:
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
 
 
-def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
-    """Open course settings dialog and set copy protection.
+def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) -> None:
+    """Open course settings dialog and set a toggle by label.
 
     The settings dialog is opened via the gear icon button on the
-    course detail page header.  It contains a switch labelled
-    "Default copy protection".
+    course detail page header.
 
     Args:
         page: Authenticated Playwright page on a course detail page.
-        enabled: Whether copy protection should be on or off.
+        toggle_label: Text label of the toggle to set.
+        enabled: Whether the toggle should be on or off.
     """
     # Click the settings gear icon button — NiceGUI icon-only buttons have no
     # accessible name, so locate via the Material Icon text inside the button.
@@ -154,7 +154,7 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
     # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component.
     # Quasar manages state via Vue reactivity; the hidden checkbox's checked
     # property is unreliable. Use aria-checked on the inner div instead.
-    toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
+    toggle = page.locator(".q-toggle").filter(has_text=toggle_label)
 
     is_currently_on = toggle.get_attribute("aria-checked") == "true"
     if is_currently_on != enabled:
@@ -164,6 +164,13 @@ def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
 
     # Wait for the dialog to close and success notification
     dialog_title.wait_for(state="hidden", timeout=5000)
+
+
+def configure_course_copy_protection(page: Page, *, enabled: bool) -> None:
+    """Open course settings dialog and set copy protection."""
+    configure_course_setting(
+        page, toggle_label="Default copy protection", enabled=enabled
+    )
 
 
 def enrol_student(page: Page, *, email: str) -> None:

@@ -230,6 +230,7 @@ def _render_inline_title_edit(
         except Exception:
             logger.exception("Failed to save workspace title for %s", workspace_id)
             ui.notify("Failed to save title", type="negative")
+            title_input.value = original_title
             title_input.props(remove="outlined", add="readonly borderless")
             _state["editing"] = False
         finally:

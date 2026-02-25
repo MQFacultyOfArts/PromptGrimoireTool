@@ -11,7 +11,7 @@ This document maps every acceptance criterion from the [design plan](../../desig
 | Phase 1 | FTS infrastructure (indexes, extraction, query helper) | Implemented |
 | Phase 2 | Load-test fixture (1100-student dataset) | Implemented |
 | Phase 3 | Navigator SQL query (UNION ALL data loader, integration tests) | Implemented |
-| Phase 4 | Navigator page (core rendering, navigation, clone) | Planned |
+| Phase 4 | Navigator page (core rendering, navigation, clone) | Implemented |
 | Phase 5 | Search (server-side FTS with debounce) | Planned |
 | Phase 6 | Inline title rename | Planned |
 | Phase 7 | Cursor pagination UI (infinite scroll) | Planned |
@@ -36,15 +36,15 @@ This document maps every acceptance criterion from the [design plan](../../desig
 | AC ID | Description | Test Type | Test File | Phase/Task | Status |
 |-------|-------------|-----------|-----------|------------|--------|
 | AC1.1 | Student sees "My Work" with owned workspaces grouped by unit > week > activity | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
-| AC1.1 | (UI rendering) Sections render with correct grouping and headers | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
+| AC1.1 | (UI rendering) Sections render with correct grouping and headers | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
 | AC1.2 | Student sees "Unstarted Work" with published activities not yet started | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
-| AC1.2 | (UI rendering) Unstarted Work section visible with activity entries | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
+| AC1.2 | (UI rendering) Unstarted Work section visible with activity entries | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
 | AC1.3 | Student sees "Shared With Me" with editor/viewer ACL workspaces | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
 | AC1.4 | Student sees "Shared in [Unit]" with peer workspaces grouped by anonymised student | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Partial |
 | AC1.5 | Instructor sees "Shared in [Unit]" with all student workspaces by real student name | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
 | AC1.6 | Loose workspaces (no activity) appear under "Unsorted" in student grouping | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
 | AC1.7 | Empty sections hidden (produce zero rows) | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
-| AC1.7 | (UI rendering) Empty sections not rendered in DOM | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
+| AC1.7 | (UI rendering) Empty sections not rendered in DOM | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
 | AC1.8 | Multi-enrolled student sees separate "Shared in [Unit]" per unit | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Covered |
 
 **Notes on AC1.4 (Partial):** Phase 3 tests verify the raw query returns correct rows with `owner_display_name` for the peer section. Anonymisation is applied at the rendering layer (Python, not SQL), so the integration test verifies data correctness but not the anonymised display. Full verification requires E2E testing (Phase 4 Task 4) or human verification.
@@ -53,11 +53,11 @@ This document maps every acceptance criterion from the [design plan](../../desig
 
 | AC ID | Description | Test Type | Test File | Phase/Task | Status |
 |-------|-------------|-----------|-----------|------------|--------|
-| AC2.1 | Title click navigates to `/annotation?workspace_id=<uuid>` | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
-| AC2.2 | Action button (Resume/Open/View) navigates to workspace | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
-| AC2.3 | [Start] on unstarted activity clones template and navigates | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 5 | Planned |
+| AC2.1 | Title click navigates to `/annotation?workspace_id=<uuid>` | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
+| AC2.2 | Action button (Resume/Open/View) navigates to workspace | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
+| AC2.3 | [Start] on unstarted activity clones template and navigates | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 5 | Covered |
 | AC2.4 | Each workspace entry shows `updated_at` | Integration | `tests/integration/test_navigator_loader.py` | Phase 3 / Task 3 | Partial |
-| AC2.5 | Unauthenticated user redirected to login | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Planned |
+| AC2.5 | Unauthenticated user redirected to login | E2E | `tests/e2e/test_navigator.py` | Phase 4 / Task 4 | Covered |
 
 **Notes on AC2.4 (Partial):** Phase 3 integration tests verify that `updated_at` is present in the query output. The visual rendering of the date (formatted display on each workspace entry) is verified via E2E or manual inspection in Phase 4.
 
@@ -144,9 +144,9 @@ This document maps every acceptance criterion from the [design plan](../../desig
 
 | AC ID | Description | Verification Approach | Phase | Status |
 |-------|-------------|----------------------|-------|--------|
-| AC1.4 | Anonymised student names in "Shared in [Unit]" | Visually verify student section shows pseudonyms, not real names. Compare with database `user.display_name` to confirm anonymisation applied. | Phase 4 | Pending |
-| AC2.4 | Workspace entry shows `updated_at` as formatted date | Visually inspect workspace entries on the navigator. Verify each shows a human-readable date/relative time. Cross-check against database `workspace.updated_at`. | Phase 4 | Pending |
-| AC2.5 | Unauthenticated user redirected to login | Open navigator URL in incognito browser. Verify redirect to Stytch login page, not navigator content. | Phase 4 | Pending |
+| AC1.4 | Anonymised student names in "Shared in [Unit]" | Visually verify student section shows pseudonyms, not real names. Compare with database `user.display_name` to confirm anonymisation applied. | Phase 4 | Verified |
+| AC2.4 | Workspace entry shows `updated_at` as formatted date | Visually inspect workspace entries on the navigator. Verify each shows a human-readable date/relative time. Cross-check against database `workspace.updated_at`. | Phase 4 | Verified |
+| AC2.5 | Unauthenticated user redirected to login | Open navigator URL in incognito browser. Verify redirect to Stytch login page, not navigator content. | Phase 4 | Verified |
 | AC3.1 | Search debounce behaviour feels responsive | Type a search query. Verify results appear after a brief pause (not instant, not sluggish). Confirm no intermediate flickering. | Phase 5 | Pending |
 | AC5.5 | 1100+ students renders without degradation | Run against Phase 2 load-test data. Scroll through instructor view of large unit. Verify: no UI freezing, infinite scroll works, page remains responsive. Measure initial load time (<2s target). | Phase 7 | Pending |
 | AC6.3 | No global header bar on annotation page | Open an annotation workspace. Verify the annotation page layout is unchanged -- only a small home icon added to the tab bar, no new header bar or structural change. | Phase 8 | Pending |
@@ -176,17 +176,18 @@ This document maps every acceptance criterion from the [design plan](../../desig
 **Test files:**
 - `tests/integration/test_navigator_loader.py` -- All four sections, permission filtering, cursor pagination, multi-unit enrolment, loose workspaces, empty sections, 1100+ student scale
 
-### Phase 4: Navigator Page Core (Planned)
+### Phase 4: Navigator Page Core (Implemented)
 
 **Acceptance criteria covered:** AC1.1-AC1.8 (UI rendering); AC2.1, AC2.2, AC2.3, AC2.5 (navigation); AC5.1, AC5.4 (initial load rendering).
 
-**Planned test files:**
+**Test files:**
 - `tests/e2e/test_navigator.py` -- Phase 4 Tasks 4-5:
   - Unauthenticated redirect to login (AC2.5)
   - My Work section renders with workspace entries (AC1.1)
   - Unstarted Work section visible (AC1.2)
   - Empty sections not rendered (AC1.7)
   - Title click navigates to annotation page (AC2.1)
+  - Action button (Resume/Open/View) navigates to workspace (AC2.2)
   - Start button clones and navigates (AC2.3)
   - After Start, activity moves from Unstarted to My Work
 
@@ -248,10 +249,10 @@ This document maps every acceptance criterion from the [design plan](../../desig
 | Category | Count |
 |----------|-------|
 | Acceptance criteria (total, excluding removed AC3.3) | 34 |
-| Fully covered by Phases 1-3 automated tests (data layer) | 16 |
-| Partially covered by Phases 1-3 automated tests | 4 |
-| Planned for Phases 4-8 automated tests | 14 |
-| Requiring human verification (in addition to automated tests) | 8 |
+| Fully covered by Phases 1-4 automated tests | 23 |
+| Partially covered by automated tests | 4 |
+| Planned for Phases 5-8 automated tests | 7 |
+| Requiring human verification (in addition to automated tests) | 8 (3 verified) |
 
 **Phase 1 covers:** AC8 (FTS infrastructure) fully, AC3.2 and AC3.4 partially (query layer only).
 

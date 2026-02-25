@@ -632,6 +632,7 @@ async def clone_workspace_from_activity(
         clone = Workspace(
             activity_id=activity_id,
             enable_save_as_draft=template.enable_save_as_draft,
+            title=activity.title,
         )
         session.add(clone)
         await session.flush()

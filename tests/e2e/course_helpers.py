@@ -197,7 +197,7 @@ def enrol_student(page: Page, *, email: str) -> None:
     )
 
     # Navigate back to course detail page
-    page.get_by_role("button", name="Back to Course").click()
+    page.get_by_role("button", name="Back to Unit").click()
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
 
 

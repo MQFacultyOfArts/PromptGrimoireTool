@@ -291,6 +291,22 @@ class TestNavigator:
                     f"Expected /annotation in URL, got: {page.url}"
                 )
 
+            with subtests.test(msg="action_button_navigates"):
+                # AC2.2: clicking Resume/Open/View button navigates to workspace
+                page.goto(f"{app_server}/")
+                page.wait_for_timeout(2000)
+
+                action_btn = page.locator(".navigator-action-btn").first
+                expect(action_btn).to_be_visible(timeout=5000)
+                action_btn.click()
+                page.wait_for_url(
+                    re.compile(rf"workspace_id={workspace_id}"),
+                    timeout=10000,
+                )
+                assert "/annotation" in page.url, (
+                    f"Expected /annotation in URL, got: {page.url}"
+                )
+
         finally:
             page.goto("about:blank")
             page.close()

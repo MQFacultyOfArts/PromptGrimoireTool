@@ -69,7 +69,7 @@ async def create_tag_group(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        result = await session.execute(
+        result = await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text(
                 "UPDATE workspace SET next_group_order = next_group_order + 1 "
                 "WHERE id = :ws_id RETURNING next_group_order - 1"
@@ -211,7 +211,7 @@ async def create_tag(
     await _check_tag_creation_permission(workspace_id)
 
     async with get_session() as session:
-        result = await session.execute(
+        result = await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text(
                 "UPDATE workspace SET next_tag_order = next_tag_order + 1 "
                 "WHERE id = :ws_id RETURNING next_tag_order - 1"
@@ -380,7 +380,7 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
         await session.flush()
 
         # Sync counter so next create_tag() uses the correct index
-        await session.execute(
+        await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text("UPDATE workspace SET next_tag_order = :count WHERE id = :ws_id"),
             {"count": len(tag_ids), "ws_id": str(workspace_id)},
         )
@@ -416,7 +416,7 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
         await session.flush()
 
         # Sync counter so next create_tag_group() uses the correct index
-        await session.execute(
+        await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text("UPDATE workspace SET next_group_order = :count WHERE id = :ws_id"),
             {"count": len(group_ids), "ws_id": str(workspace_id)},
         )
@@ -517,7 +517,7 @@ async def import_tags_from_activity(
         # Uses GREATEST to handle the case where tags already exist.
         imported_tag_count = len(new_tags)
         imported_group_count = len(group_id_map)
-        await session.execute(
+        await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text(
                 "UPDATE workspace SET "
                 "next_tag_order = GREATEST(next_tag_order, :tag_count), "

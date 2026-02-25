@@ -52,7 +52,7 @@ async def grant_permission(
             constraint="uq_acl_entry_workspace_user",
             set_={"permission": stmt.excluded.permission},
         )
-        await session.execute(stmt)
+        await session.execute(stmt)  # type: ignore[deprecated]  -- upsert requires execute()
         await session.flush()
 
         entry = await session.exec(

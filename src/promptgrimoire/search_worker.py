@@ -42,7 +42,7 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
         # guard on the UPDATE (AND search_dirty = true) is the actual
         # correctness mechanism — it prevents two workers from both clearing
         # the flag.  Double extraction is possible but harmless (idempotent).
-        result = await session.execute(
+        result = await session.execute(  # type: ignore[deprecated]  -- raw SQL requires execute()
             text(
                 "SELECT id, crdt_state FROM workspace "
                 "WHERE search_dirty = true "
@@ -57,7 +57,7 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
         try:
             # Build tag_names mapping for this workspace
             async with get_session() as session:
-                tag_result = await session.execute(
+                tag_result = await session.execute(  # type: ignore[deprecated]  -- raw SQL
                     text("SELECT id, name FROM tag WHERE workspace_id = :ws_id"),
                     {"ws_id": str(workspace_id)},
                 )
@@ -76,7 +76,7 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
             # read and this write, the flag is NOT cleared here -- the worker
             # will re-process the workspace on the next poll cycle.
             async with get_session() as session:
-                await session.execute(
+                await session.execute(  # type: ignore[deprecated]  -- raw SQL
                     text(
                         "UPDATE workspace "
                         "SET search_text = :search_text, search_dirty = false "

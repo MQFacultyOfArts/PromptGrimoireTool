@@ -116,14 +116,24 @@ async def _build_peer_map(
 
 def _tri_state_options(on_label: str = "On", off_label: str = "Off") -> dict[str, str]:
     """Build a tri-state options dict for activity settings selects."""
-    return {"inherit": "Inherit from course", "on": on_label, "off": off_label}
+    return {"inherit": "Inherit from unit", "on": on_label, "off": off_label}
 
 
 # (UI label, model attribute name, on_label, off_label)
 _ACTIVITY_TRI_STATE_FIELDS: list[tuple[str, str, str, str]] = [
-    ("Copy protection", "copy_protection", "On", "Off"),
-    ("Allow sharing", "allow_sharing", "Allowed", "Not allowed"),
-    ("Allow tag creation", "allow_tag_creation", "Allowed", "Not allowed"),
+    ("Copy protection (overrides unit default)", "copy_protection", "On", "Off"),
+    (
+        "Allow sharing (overrides unit default)",
+        "allow_sharing",
+        "Allowed",
+        "Not allowed",
+    ),
+    (
+        "Allow tag creation (overrides unit default)",
+        "allow_tag_creation",
+        "Allowed",
+        "Not allowed",
+    ),
 ]
 
 # (UI label, model attribute name)
@@ -135,7 +145,7 @@ _COURSE_DEFAULT_FIELDS: list[tuple[str, str]] = [
 ]
 
 _ANONYMOUS_SHARING_OPTIONS: dict[str, str] = {
-    "inherit": "Inherit from course",
+    "inherit": "Inherit from unit",
     "on": "Anonymous",
     "off": "Named",
 }
@@ -184,7 +194,7 @@ async def open_course_settings(course: Course) -> None:
     _COURSE_DEFAULT_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
-        ui.label("Course Settings").classes("text-lg font-bold")
+        ui.label(f"Unit Settings: {course.name}").classes("text-lg font-bold")
 
         switches: dict[str, ui.switch] = {}
         for label, attr in _COURSE_DEFAULT_FIELDS:
@@ -201,7 +211,7 @@ async def open_course_settings(course: Course) -> None:
                 for _, attr in _COURSE_DEFAULT_FIELDS:
                     setattr(course, attr, kwargs[attr])
                 dialog.close()
-                ui.notify("Course settings saved", type="positive")
+                ui.notify("Unit settings saved", type="positive")
 
             ui.button("Save", on_click=save).props("color=primary")
 
@@ -215,7 +225,7 @@ async def open_activity_settings(activity: Activity) -> None:
     _ACTIVITY_TRI_STATE_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
-        ui.label("Activity Settings").classes("text-lg font-bold")
+        ui.label(f"Activity Settings: {activity.title}").classes("text-lg font-bold")
 
         selects: dict[str, ui.select] = {}
         for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
@@ -228,7 +238,7 @@ async def open_activity_settings(activity: Activity) -> None:
         anon_select = ui.select(
             options=_ANONYMOUS_SHARING_OPTIONS,
             value=_model_to_ui(activity.anonymous_sharing),
-            label="Anonymity",
+            label="Anonymity (overrides unit default)",
         ).classes("w-full")
 
         with ui.row().classes("w-full justify-end gap-2"):
@@ -284,7 +294,7 @@ async def _check_auth() -> bool:
     return True
 
 
-@page_route("/courses", title="Courses", icon="school", order=20)
+@page_route("/courses", title="Units", icon="school", order=20)
 async def courses_list_page() -> None:
     """List courses page."""
     if not await _check_auth():
@@ -303,7 +313,7 @@ async def courses_list_page() -> None:
         ).classes("text-red-500")
         return
 
-    ui.label("Courses").classes("text-2xl font-bold mb-4")
+    ui.label("Units").classes("text-2xl font-bold mb-4")
 
     # Get enrolled courses for this user
     enrollments = await list_user_enrollments(user_id)
@@ -313,16 +323,16 @@ async def courses_list_page() -> None:
     is_instructor = _is_admin() or any(e.role in _MANAGER_ROLES for e in enrollments)
 
     if is_instructor:
-        ui.button(
-            "New Course", on_click=lambda: ui.navigate.to("/courses/new")
-        ).classes("mb-4")
+        ui.button("New Unit", on_click=lambda: ui.navigate.to("/courses/new")).classes(
+            "mb-4"
+        )
 
     # List courses user is enrolled in
     courses = await list_courses()
     enrolled_courses = [c for c in courses if c.id in enrollment_map]
 
     if not enrolled_courses:
-        ui.label("You are not enrolled in any courses.").classes("text-gray-500")
+        ui.label("You are not enrolled in any units.").classes("text-gray-500")
     else:
         with ui.column().classes("gap-2 w-full max-w-2xl"):
             for course in enrolled_courses:
@@ -362,10 +372,10 @@ async def create_course_page() -> None:
         ).classes("text-red-500")
         return
 
-    ui.label("Create New Course").classes("text-2xl font-bold mb-4")
+    ui.label("Create New Unit").classes("text-2xl font-bold mb-4")
 
-    code = ui.input("Course Code", placeholder="e.g., LAWS1100").classes("w-64")
-    name = ui.input("Course Name", placeholder="e.g., Contracts").classes("w-64")
+    code = ui.input("Unit Code", placeholder="e.g., LAWS1100").classes("w-64")
+    name = ui.input("Unit Name", placeholder="e.g., Contracts").classes("w-64")
     semester = ui.input("Semester", placeholder="e.g., 2025-S1").classes("w-64")
 
     async def submit() -> None:
@@ -386,7 +396,7 @@ async def create_course_page() -> None:
             role="coordinator",
         )
 
-        ui.notify(f"Created course: {course.code}", type="positive")
+        ui.notify(f"Created unit: {course.code}", type="positive")
         ui.navigate.to(f"/courses/{course.id}")
 
     with ui.row().classes("gap-2 mt-4"):
@@ -409,7 +419,7 @@ async def course_detail_page(course_id: str) -> None:
     try:
         cid = UUID(course_id)
     except ValueError:
-        ui.label("Invalid course ID").classes("text-red-500")
+        ui.label("Invalid unit ID").classes("text-red-500")
         return
 
     # Track this client for broadcasting updates
@@ -419,7 +429,7 @@ async def course_detail_page(course_id: str) -> None:
 
     course = await get_course_by_id(cid)
     if not course:
-        ui.label("Course not found").classes("text-red-500")
+        ui.label("Unit not found").classes("text-red-500")
         return
 
     user_id = _get_user_id()
@@ -432,7 +442,7 @@ async def course_detail_page(course_id: str) -> None:
     enrollment = await get_enrollment(course_id=cid, user_id=user_id)
 
     if not enrollment:
-        ui.label("You are not enrolled in this course").classes("text-red-500")
+        ui.label("You are not enrolled in this unit").classes("text-red-500")
         return
 
     # Permission levels:
@@ -453,7 +463,7 @@ async def course_detail_page(course_id: str) -> None:
             ui.button(
                 icon="settings",
                 on_click=lambda: open_course_settings(course),
-            ).props("flat round").tooltip("Course settings")
+            ).props("flat round").tooltip("Settings")
 
     ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 
@@ -512,9 +522,9 @@ async def course_detail_page(course_id: str) -> None:
                     on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
                 ).props("flat dense size=sm color=secondary")
                 ui.button(
-                    icon="tune",
+                    icon="settings",
                     on_click=lambda a=act: open_activity_settings(a),
-                ).props("flat round dense size=sm").tooltip("Activity settings")
+                ).props("flat round dense size=sm").tooltip("Settings")
 
             if act.id in user_workspace_map:
                 # User already has a workspace — show Resume
@@ -681,12 +691,12 @@ async def create_week_page(course_id: str) -> None:
     try:
         cid = UUID(course_id)
     except ValueError:
-        ui.label("Invalid course ID").classes("text-red-500")
+        ui.label("Invalid unit ID").classes("text-red-500")
         return
 
     course = await get_course_by_id(cid)
     if not course:
-        ui.label("Course not found").classes("text-red-500")
+        ui.label("Unit not found").classes("text-red-500")
         return
 
     user_id = _get_user_id()
@@ -752,12 +762,12 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         cid = UUID(course_id)
         wid = UUID(week_id)
     except ValueError:
-        ui.label("Invalid course or week ID").classes("text-red-500")
+        ui.label("Invalid unit or week ID").classes("text-red-500")
         return
 
     course = await get_course_by_id(cid)
     if not course:
-        ui.label("Course not found").classes("text-red-500")
+        ui.label("Unit not found").classes("text-red-500")
         return
 
     user_id = _get_user_id()
@@ -820,12 +830,12 @@ async def manage_enrollments_page(course_id: str) -> None:
     try:
         cid = UUID(course_id)
     except ValueError:
-        ui.label("Invalid course ID").classes("text-red-500")
+        ui.label("Invalid unit ID").classes("text-red-500")
         return
 
     course = await get_course_by_id(cid)
     if not course:
-        ui.label("Course not found").classes("text-red-500")
+        ui.label("Unit not found").classes("text-red-500")
         return
 
     user_id = _get_user_id()
@@ -929,5 +939,5 @@ async def manage_enrollments_page(course_id: str) -> None:
     await enrollments_list()
 
     ui.button(
-        "Back to Course", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
+        "Back to Unit", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
     ).classes("mt-4")

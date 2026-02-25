@@ -61,9 +61,9 @@ class TestTriStateOptions:
         """Option keys are 'inherit', 'on', 'off'."""
         assert set(_tri_state_options().keys()) == {"inherit", "on", "off"}
 
-    def test_inherit_label_mentions_course(self) -> None:
-        """Inherit option label mentions 'course' for clarity."""
-        assert "course" in _tri_state_options()["inherit"].lower()
+    def test_inherit_label_mentions_unit(self) -> None:
+        """Inherit option label mentions 'unit' for clarity."""
+        assert "unit" in _tri_state_options()["inherit"].lower()
 
     def test_custom_labels(self) -> None:
         """Custom on/off labels are used in the returned dict."""

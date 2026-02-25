@@ -465,46 +465,9 @@ class TestSharedInUnit:
             ws = data["student_workspaces"][student.id]
             assert ws.id in shared_ws_ids
 
-    @pytest.mark.asyncio
-    async def test_instructor_sees_zero_workspace_students(self) -> None:
-        """Instructor sees students with no workspaces as NULL rows.
-
-        Verifies AC1.5 (zero-workspace students).
-        """
-        from promptgrimoire.db.courses import enroll_user
-        from promptgrimoire.db.navigator import load_navigator_page
-        from promptgrimoire.db.users import create_user
-
-        data = await _make_nav_data()
-        instructor = data["instructor"]
-
-        # Add a student with zero workspaces
-        tag = uuid4().hex[:8]
-        empty_student = await create_user(
-            email=f"nav-empty-{tag}@test.local",
-            display_name=f"Empty Student {tag}",
-        )
-        await enroll_user(
-            course_id=data["course"].id,
-            user_id=empty_student.id,
-            role="student",
-        )
-
-        rows, _ = await load_navigator_page(
-            user_id=instructor.id,
-            is_privileged=True,
-            enrolled_course_ids=[data["course"].id],
-        )
-
-        shared_rows = [r for r in rows if r.section == "shared_in_unit"]
-        # Find the zero-workspace student row
-        zero_ws_rows = [
-            r
-            for r in shared_rows
-            if r.owner_user_id == empty_student.id and r.workspace_id is None
-        ]
-        assert len(zero_ws_rows) == 1
-        assert zero_ws_rows[0].owner_display_name == empty_student.display_name
+    # Zero-workspace student rows removed from navigator query — now served
+    # by db.courses.list_students_without_workspaces() on the course detail page.
+    # See #198 for proper analytics page.
 
 
 # ===========================================================================

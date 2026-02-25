@@ -298,7 +298,7 @@ class TestCascadeDeleteUser:
         async with get_session() as session:
             # ty: SQLModel column comparison returns expression, not bool
             stmt = delete(User).where(User.id == user_id)  # type: ignore[arg-type]
-            await session.execute(stmt)  # type: ignore[deprecated]  -- delete requires execute()
+            await session.execute(stmt)
 
         # Verify ACL entries for this user are gone
         async with get_session() as session:

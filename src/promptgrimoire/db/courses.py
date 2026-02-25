@@ -358,7 +358,7 @@ async def list_students_without_workspaces(
     for a proper analytics page.
     """
     async with get_session() as session:
-        result = await session.execute(  # type: ignore[deprecated]
+        result = await session.execute(
             text(_ZERO_WORKSPACE_SQL),
             {"course_id": course_id},
         )

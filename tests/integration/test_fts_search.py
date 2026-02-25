@@ -98,7 +98,7 @@ async def _create_workspace_with_document(
 
     if search_text is not None:
         async with get_session() as session:
-            await session.execute(  # type: ignore[deprecated]  -- raw SQL
+            await session.execute(
                 text(
                     "UPDATE workspace "
                     "SET search_text = :search_text, "

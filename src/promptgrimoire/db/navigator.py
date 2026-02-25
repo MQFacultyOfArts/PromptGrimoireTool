@@ -299,9 +299,7 @@ async def load_navigator_page(
     async with get_session() as session:
         # session.exec() does not support raw text() SQL; must use
         # the underlying SQLAlchemy execute().
-        result = await session.execute(  # type: ignore[deprecated]
-            _NAVIGATOR_SQL, params
-        )
+        result = await session.execute(_NAVIGATOR_SQL, params)
         raw_rows = result.fetchall()
 
     # Detect next page

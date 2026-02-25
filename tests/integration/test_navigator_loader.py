@@ -932,7 +932,7 @@ class TestScaleLoadTest:
 
         # Guard: check load-test data is present
         async with get_session() as session:
-            ws_count_result = await session.execute(  # type: ignore[deprecated]
+            ws_count_result = await session.execute(
                 select(func.count()).select_from(Workspace)
             )
             ws_count = ws_count_result.scalar()

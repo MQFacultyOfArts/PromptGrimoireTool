@@ -144,6 +144,12 @@ filterwarnings = [
     # SQLModel session.execute() warning handled in tests/conftest.py
 ]
 
+[tool.ty.rules]
+# SQLModel marks session.execute as @deprecated, recommending session.exec.
+# But exec cannot handle raw text SQL, upserts, deletes, or locking clauses.
+# Raw SQL is a core pattern in this codebase, so suppress globally. See #199.
+deprecated = "ignore"
+
 [tool.ty.src]
 exclude = ["alembic/"]
 

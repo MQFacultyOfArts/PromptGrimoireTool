@@ -394,27 +394,17 @@ class TestNavigator:
                 page.goto(f"{app_server}/")
                 page.wait_for_timeout(2000)
 
-                # "My Work" section header should be visible
-                section_headers = page.locator(".navigator-section-header")
-                header_texts = [
-                    section_headers.nth(i).inner_text()
-                    for i in range(section_headers.count())
-                ]
+                header_texts = _get_section_header_texts(page)
                 assert "My Work" in header_texts, (
                     f"Expected 'My Work' in section headers, got: {header_texts}"
                 )
 
             with subtests.test(msg="workspace_entry_visible"):
-                # The workspace link should be present with data-workspace-id
                 ws_link = page.locator(f'[data-workspace-id="{workspace_id}"]')
                 expect(ws_link).to_be_visible(timeout=5000)
 
             with subtests.test(msg="empty_sections_absent"):
-                # "Unstarted Work" should NOT appear (student not enrolled)
-                header_texts = [
-                    section_headers.nth(i).inner_text()
-                    for i in range(section_headers.count())
-                ]
+                header_texts = _get_section_header_texts(page)
                 assert "Unstarted Work" not in header_texts, (
                     "Unstarted Work should not appear for unenrolled student"
                 )
@@ -505,11 +495,7 @@ class TestNavigator:
                 student_page.goto(f"{app_server}/")
                 student_page.wait_for_timeout(2000)
 
-                section_headers = student_page.locator(".navigator-section-header")
-                header_texts = [
-                    section_headers.nth(i).inner_text()
-                    for i in range(section_headers.count())
-                ]
+                header_texts = _get_section_header_texts(student_page)
                 assert "Unstarted Work" in header_texts, (
                     f"Expected 'Unstarted Work' in section headers, got: {header_texts}"
                 )

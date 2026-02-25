@@ -79,7 +79,7 @@ _ACTION_LABELS: dict[str | None, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# CSS for search snippets (Phase 5, Task 3)
+# CSS for search snippets
 # ---------------------------------------------------------------------------
 
 _SEARCH_SNIPPET_CSS = """\
@@ -210,22 +210,18 @@ def _render_workspace_entry(
             if show_owner and owner_label:
                 ui.label(f"by {owner_label}").classes("text-xs text-gray-400")
 
-            # Snippet (Phase 5, Task 2: render as HTML for <mark> tags)
-            if (
-                snippets
-                and row.workspace_id is not None
-                and row.workspace_id in snippets
-            ):
-                # sanitize=False: the only HTML tags injected into the
-                # snippet are the literal strings "<mark>" and "</mark>",
-                # both hardcoded as StartSel/StopSel in _HEADLINE_OPTIONS
-                # (db/search.py).  The surrounding plain text comes from
-                # regexp_replace stripping all HTML tags from the source
-                # content before it reaches ts_headline.  No user-supplied
-                # HTML can survive into the snippet.
-                ui.html(snippets[row.workspace_id], sanitize=False).classes(
-                    "navigator-snippet"
-                )
+            # Render search snippet as HTML for <mark> highlight tags.
+            # sanitize=False is safe: the only HTML injected is the
+            # literal "<mark>"/"</mark>" hardcoded in _HEADLINE_OPTIONS
+            # (db/search.py); regexp_replace strips all other tags before
+            # ts_headline runs.
+            snippet_html = (
+                (snippets or {}).get(row.workspace_id)
+                if row.workspace_id is not None
+                else None
+            )
+            if snippet_html is not None:
+                ui.html(snippet_html, sanitize=False).classes("navigator-snippet")
 
         # Right side: date + action button
         with ui.column().classes("items-end gap-1"):
@@ -431,9 +427,9 @@ async def _render_sections_impl(
     enrolled_course_ids:
         Course IDs the user is enrolled in.
     next_cursor:
-        Pagination cursor for more pages (Phase 7).
+        Pagination cursor for more pages.
     snippets:
-        workspace_id -> snippet HTML for search (Phase 5).
+        workspace_id -> snippet HTML for search results.
     """
     grouped = _group_rows_by_section(rows)
 
@@ -472,7 +468,7 @@ async def _render_sections_impl(
 
 
 # ---------------------------------------------------------------------------
-# Search behaviour (Phase 5, Task 1)
+# Search behaviour
 # ---------------------------------------------------------------------------
 
 
@@ -510,16 +506,25 @@ def _setup_search(
     """
     _debounce: dict[str, Timer | None] = {"timer": None}
 
-    def _restore_full_view() -> None:
+    def _refresh(
+        rows: list[NavigatorRow],
+        *,
+        cursor: NavigatorCursor | None = None,
+        snippets: dict[UUID, str] | None = None,
+    ) -> None:
+        """Refresh sections with the given rows, clearing stale UI."""
         no_results_container.clear()
         render_sections_refresh(
-            rows=all_rows,
+            rows=rows,
             user_id=user_id,
             is_privileged=is_privileged,
             enrolled_course_ids=enrolled_course_ids,
-            next_cursor=next_cursor,
-            snippets=None,
+            next_cursor=cursor,
+            snippets=snippets,
         )
+
+    def _restore_full_view() -> None:
+        _refresh(all_rows, cursor=next_cursor)
 
     def _clear_search() -> None:
         search_input.set_value("")
@@ -537,25 +542,9 @@ def _setup_search(
         filtered = [r for r in all_rows if r.workspace_id in matched_ids]
 
         if filtered:
-            no_results_container.clear()
-            render_sections_refresh(
-                rows=filtered,
-                user_id=user_id,
-                is_privileged=is_privileged,
-                enrolled_course_ids=enrolled_course_ids,
-                next_cursor=None,
-                snippets=snippets,
-            )
+            _refresh(filtered, snippets=snippets)
         else:
-            render_sections_refresh(
-                rows=[],
-                user_id=user_id,
-                is_privileged=is_privileged,
-                enrolled_course_ids=enrolled_course_ids,
-                next_cursor=None,
-                snippets=None,
-            )
-            no_results_container.clear()
+            _refresh([])
             with (
                 no_results_container,
                 ui.column().classes("w-full items-center mt-8 gap-2"),
@@ -671,10 +660,8 @@ async def navigator_page() -> None:
         )
 
     with page_layout("Home"), ui.column().classes("w-full max-w-4xl mx-auto"):
-        # Search snippet CSS (Phase 5, Task 3)
         ui.add_css(_SEARCH_SNIPPET_CSS)
 
-        # Search input (Phase 5, Task 1)
         search_input = (
             ui.input(placeholder="Search titles and content...")
             .classes("w-full mb-4 navigator-search-input")

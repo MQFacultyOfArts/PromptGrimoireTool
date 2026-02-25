@@ -46,6 +46,7 @@ seed-data = "promptgrimoire.cli:seed_data"
 set-admin = "promptgrimoire.cli:set_admin"
 manage-users = "promptgrimoire.cli:manage_users"
 show-export-log = "promptgrimoire.cli:show_export_log"
+load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [build-system]
 requires = ["hatchling"]

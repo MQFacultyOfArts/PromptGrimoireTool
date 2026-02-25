@@ -34,6 +34,7 @@ from promptgrimoire.db.courses import (
     get_enrollment,
     list_course_enrollments,
     list_courses,
+    list_students_without_workspaces,
     list_user_enrollments,
     unenroll_user,
     update_course,
@@ -660,6 +661,19 @@ async def course_detail_page(course_id: str) -> None:
                         ).props("flat dense size=sm").classes("ml-4 mt-1")
 
     await weeks_list()
+
+    # Students with no workspaces (staff only)
+    if can_view_drafts:
+        no_work = await list_students_without_workspaces(cid)
+        if no_work:
+            with ui.expansion(
+                f"Students with no work ({len(no_work)})",
+                icon="warning",
+            ).classes("w-full max-w-2xl mt-4"):
+                with ui.element("ul").classes("ml-4"):
+                    for name, email in no_work:
+                        with ui.element("li"):
+                            ui.label(f"{name} ({email})")
 
     # Register this client for receiving broadcasts
     if cid not in _course_clients:

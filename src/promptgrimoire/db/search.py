@@ -148,7 +148,9 @@ async def search_workspace_content(
     """  # nosec B608
 
     async with get_session() as session:
-        result = await session.execute(text(combined_sql), params)
+        result = await session.execute(  # type: ignore[deprecated]
+            text(combined_sql), params
+        )
         rows = result.fetchall()
 
     return [

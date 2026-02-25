@@ -61,7 +61,9 @@ def _fill_template_workspace(page: Page) -> None:
     ).click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
 
-    content_input = page.get_by_placeholder(re.compile(r"paste|content", re.IGNORECASE))
+    content_input = page.get_by_placeholder(
+        "Paste HTML content or type plain text here..."
+    )
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill("Navigator test content for template workspace.")
 

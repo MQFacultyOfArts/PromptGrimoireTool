@@ -329,6 +329,7 @@ async def _render_simple_section(
     section_key: str,
     section_rows: list[NavigatorRow],
     user_id: UUID,
+    is_privileged: bool,
     snippets: dict[UUID, str] | None,
 ) -> None:
     """Render a non-shared_in_unit section."""
@@ -341,7 +342,18 @@ async def _render_simple_section(
         if section_key == "unstarted":
             _render_unstarted_entry(row, user_id)
         elif section_key == "shared_with_me":
-            owner_label = row.owner_display_name or ""
+            # Anonymise owner names for shared_with_me just like shared_in_unit.
+            # Students should not see real names of workspace owners.
+            # anonymous_sharing=True enables the anonymisation path;
+            # viewer_is_privileged bypasses it for instructors/admins.
+            owner_label = anonymise_author(
+                author=row.owner_display_name or "Unknown",
+                user_id=(str(row.owner_user_id) if row.owner_user_id else None),
+                viewing_user_id=str(user_id),
+                anonymous_sharing=True,
+                viewer_is_privileged=is_privileged,
+                author_is_privileged=False,
+            )
             _render_workspace_entry(
                 row,
                 show_owner=True,
@@ -352,12 +364,12 @@ async def _render_simple_section(
             _render_workspace_entry(row, snippets=snippets)
 
 
-async def _render_sections(
+async def _render_sections_impl(
     rows: list[NavigatorRow],
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    next_cursor: NavigatorCursor | None = None,  # noqa: ARG001
+    next_cursor: NavigatorCursor | None = None,  # noqa: ARG001 -- Phase 7 pagination
     snippets: dict[UUID, str] | None = None,
 ) -> None:
     """Render all navigator sections from the given rows.
@@ -411,6 +423,7 @@ async def _render_sections(
                     section_key,
                     section_rows,
                     user_id,
+                    is_privileged,
                     snippets,
                 )
 
@@ -454,6 +467,44 @@ async def navigator_page() -> None:
         enrolled_course_ids=enrolled_course_ids,
     )
 
+    # Page-level state for Phase 7 infinite scroll.  Stored in a mutable
+    # container so Phase 7's scroll handler (defined in the same scope) can
+    # append new rows and call _render_sections.refresh() without reloading
+    # the entire page.
+    page_state: dict[str, object] = {
+        "rows": rows,
+        "next_cursor": next_cursor,
+        "user_id": user_id,
+        "is_privileged": is_privileged,
+        "enrolled_course_ids": enrolled_course_ids,
+    }
+
+    @ui.refreshable
+    async def _render_sections(
+        rows: list[NavigatorRow],
+        user_id: UUID,
+        is_privileged: bool,
+        enrolled_course_ids: list[UUID],
+        next_cursor: NavigatorCursor | None = None,
+        snippets: dict[UUID, str] | None = None,
+    ) -> None:
+        """Refreshable section renderer.
+
+        Wraps ``_render_sections_impl`` so Phase 5 (search) and Phase 7
+        (infinite scroll) can call ``_render_sections.refresh()`` with
+        updated rows without reconstructing the entire page.  ``page_state``
+        (captured via closure) keeps the accumulated rows and cursor so
+        Phase 7 can append before refreshing.
+        """
+        await _render_sections_impl(
+            rows=rows,
+            user_id=user_id,
+            is_privileged=is_privileged,
+            enrolled_course_ids=enrolled_course_ids,
+            next_cursor=next_cursor,
+            snippets=snippets,
+        )
+
     with page_layout("Home"), ui.column().classes("w-full max-w-4xl mx-auto"):
         if not rows:
             ui.label("No workspaces yet.").classes("text-gray-500 mt-4")
@@ -466,3 +517,7 @@ async def navigator_page() -> None:
                 next_cursor=next_cursor,
                 snippets=None,
             )
+
+    # Suppress unused-variable warning: page_state is intentionally kept in
+    # scope for Phase 7's scroll handler to mutate.
+    _ = page_state

@@ -15,6 +15,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from rich.console import Console
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.config import get_settings
@@ -411,6 +412,13 @@ async def _find_or_create_course(
 ) -> tuple[Course, bool]:
     """Find an existing course by code+semester or create a new one.
 
+    Sequential-only assumption: this function is always called from
+    _seed_courses(), which iterates courses one at a time in a single
+    async task. Concurrent callers could both see no existing course and
+    both attempt create_course(), producing a unique-constraint violation.
+    If that ever happens the IntegrityError is caught and the existing
+    row is re-fetched so the caller still gets a valid Course object.
+
     Returns:
         (Course, created) where created is True if newly created.
     """
@@ -422,7 +430,21 @@ async def _find_or_create_course(
         if existing:
             return existing, False
 
-    course = await create_course(code=code, name=name, semester=semester)
+    try:
+        course = await create_course(code=code, name=name, semester=semester)
+    except IntegrityError:
+        # Lost the race — another caller created it between our check and our
+        # insert.  Re-fetch the row that won.
+        async with get_session() as session:
+            result = await session.exec(
+                select(Course)
+                .where(Course.code == code)
+                .where(Course.semester == semester)
+            )
+            existing = result.first()
+            if existing is None:
+                raise  # Unexpected — re-raise so the error is visible.
+            return existing, False
 
     # Set sharing defaults
     async with get_session() as session:
@@ -514,21 +536,23 @@ async def _ensure_activities_for_course(
     activity_defs = ACTIVITY_DEFS.get(code, [])
     course_activities: list[tuple[Activity, UUID]] = []
 
-    # Check existing activities
+    # Check existing activities.
+    # Key on (week_id, title) so the same title in two different weeks is not
+    # incorrectly treated as already-existing.
     async with get_session() as session:
         existing_acts = await session.exec(
             select(Activity).where(
-                Activity.week_id.in_([w.id for w in week_map.values()])  # type: ignore[union-attr]
+                Activity.week_id.in_([w.id for w in week_map.values()])  # type: ignore[union-attr]  # SQLAlchemy column expression
             )
         )
-        existing_act_titles = {a.title for a in existing_acts.all()}
+        existing_act_keys = {(a.week_id, a.title) for a in existing_acts.all()}
 
     for week_num, act_title in activity_defs:
         week = week_map.get(week_num)
         if week is None or not week.is_published:
             continue
 
-        if act_title in existing_act_titles:
+        if (week.id, act_title) in existing_act_keys:
             async with get_session() as session:
                 result = await session.exec(
                     select(Activity)
@@ -601,7 +625,7 @@ async def _check_workspace_exists(activity_id: UUID, user_id: UUID) -> bool:
     async with get_session() as session:
         result = await session.exec(
             select(Workspace.id)
-            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
             .where(
                 Workspace.activity_id == activity_id,
                 ACLEntry.user_id == user_id,
@@ -748,27 +772,44 @@ async def _create_loose_workspace(
     return ws_id, num_docs
 
 
+# Cache of course_code -> course_id resolved via the activity hierarchy.
+# The Activity->Week->Course mapping is static during a load-test run, so
+# there is no need to hit the database more than once per course code.
+_course_id_cache: dict[str, UUID | None] = {}
+
+
 async def _resolve_course_id_for_code(
     course_code: str,
     course_activities: dict[str, list[tuple[Activity, UUID]]],
 ) -> UUID | None:
     """Resolve a course_id from a course code via the activity hierarchy.
 
-    Uses the first activity in the course to traverse Activity -> Week -> Course.
+    Uses the first activity in the course to traverse Activity -> Week -> Course
+    in a single JOIN query.  Results are cached so repeated calls for the same
+    course_code cost zero additional round-trips (the mapping is static during
+    a load-test run).
+
     Returns None if the course has no activities or the hierarchy is broken.
     """
+    if course_code in _course_id_cache:
+        return _course_id_cache[course_code]
+
     acts = course_activities.get(course_code, [])
     if not acts:
+        _course_id_cache[course_code] = None
         return None
+
     activity_for_course = acts[0][0]
     async with get_session() as session:
-        act_obj = await session.get(Activity, activity_for_course.id)
-        if act_obj is None:
-            return None
-        week_obj = await session.get(Week, act_obj.week_id)
-        if week_obj is None:
-            return None
-        return week_obj.course_id
+        result = await session.exec(
+            select(Week.course_id)
+            .join(Activity, Activity.week_id == Week.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
+            .where(Activity.id == activity_for_course.id)
+        )
+        course_id = result.first()
+
+    _course_id_cache[course_code] = course_id
+    return course_id
 
 
 async def _create_loose_workspaces_for_student(
@@ -925,9 +966,9 @@ async def _seed_acl_shares(
             # Find non-template activity workspaces in this course
             result = await session.exec(
                 select(Workspace.id, ACLEntry.user_id, Week.course_id)
-                .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]
-                .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
-                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+                .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
+                .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
+                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
                 .where(
                     Week.course_id == course.id,
                     ACLEntry.permission == "owner",
@@ -984,14 +1025,16 @@ async def _print_summary(
 
     # Count from database for accuracy
     async with get_session() as session:
+        # Use "lt-%" to include instructors (lt-instructor-*) and admin
+        # (lt-admin@test.local) in addition to students (loadtest-*).
         user_result = await session.exec(
-            select(User.id).where(User.email.like("loadtest-%@test.local"))  # type: ignore[union-attr]
+            select(User.id).where(User.email.like("lt-%@test.local"))  # type: ignore[union-attr]  # SQLAlchemy column expression
         )
         db_user_count = len(user_result.all())
 
         enrollment_result = await session.exec(
             select(CourseEnrollment.id).where(
-                CourseEnrollment.course_id.in_(  # type: ignore[union-attr]
+                CourseEnrollment.course_id.in_(  # type: ignore[union-attr]  # SQLAlchemy column expression
                     [c.id for c in courses.values()]
                 )
             )
@@ -1000,7 +1043,7 @@ async def _print_summary(
 
     total_activities = sum(len(acts) for acts in course_activities.values())
 
-    console.print(f"  Users: {db_user_count}")
+    console.print(f"  Users (load-test, incl. instructors/admin): {db_user_count}")
     console.print(f"  Courses: {len(courses)}")
     console.print(f"  Enrollments: {db_enrollment_count}")
     console.print(f"  Activities: {total_activities}")
@@ -1113,7 +1156,7 @@ async def _seed_students(
 
     for cdef in COURSE_DEFS:
         code = str(cdef["code"])
-        count = int(cdef["student_count"])  # type: ignore[arg-type]
+        count = int(cdef["student_count"])  # type: ignore[arg-type]  # dict value is typed as object; int() is safe here
         s_range = _student_range_for_course(code, count)
 
         enrolled_count = 0

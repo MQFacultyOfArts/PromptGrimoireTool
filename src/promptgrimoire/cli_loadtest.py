@@ -20,6 +20,7 @@ from rich.console import Console
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
+from promptgrimoire.auth.mock import _email_to_member_id
 from promptgrimoire.config import get_settings
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 from promptgrimoire.db.acl import grant_permission
@@ -222,6 +223,7 @@ def build_crdt_state(
     tag_ids: list[str],
     student_name: str,
     content_length: int,
+    user_id: str | None = None,
 ) -> bytes:
     """Build a CRDT annotation state with highlights, comments, and a response draft.
 
@@ -234,6 +236,9 @@ def build_crdt_state(
         student_name: Display name of the student (highlight/comment author).
         content_length: Character length of the document content, used to
             position highlights within valid bounds.
+        user_id: Stytch-style member ID for the student. Without this, the
+            annotation page shows "Unknown" for all highlights and comments
+            because ``anonymise_author`` treats missing user_id as legacy data.
 
     Returns:
         Serialized pycrdt state bytes.
@@ -259,6 +264,7 @@ def build_crdt_state(
             text=text,
             author=student_name,
             document_id=document_id,
+            user_id=user_id,
         )
         highlight_ids.append(hl_id)
 
@@ -270,6 +276,7 @@ def build_crdt_state(
                 highlight_id=hl_id,
                 author=student_name,
                 text=random.choice(COMMENT_POOL),  # nosec B311
+                user_id=user_id,
             )
 
     # Response draft
@@ -717,6 +724,7 @@ async def _create_student_activity_workspace(
             tag_ids=tag_ids,
             student_name=user.display_name or user.email,
             content_length=first_doc_content_len,
+            user_id=_email_to_member_id(user.email),
         )
         await save_workspace_crdt_state(ws_id, crdt_bytes)
 
@@ -785,6 +793,7 @@ async def _create_loose_workspace(
             tag_ids=tag_ids,
             student_name=user.display_name or user.email,
             content_length=first_doc_content_len,
+            user_id=_email_to_member_id(user.email),
         )
         await save_workspace_crdt_state(ws_id, crdt_bytes)
 

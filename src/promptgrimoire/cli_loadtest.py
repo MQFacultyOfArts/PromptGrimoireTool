@@ -217,7 +217,7 @@ LOOSE_WORKSPACE_TITLES: list[str] = [
 
 def build_crdt_state(
     document_id: str,
-    tag_names: list[str],
+    tag_ids: list[str],
     student_name: str,
     content_length: int,
 ) -> bytes:
@@ -225,7 +225,10 @@ def build_crdt_state(
 
     Args:
         document_id: UUID string of the workspace document to annotate.
-        tag_names: Tag names from the activity template (for highlight tags).
+        tag_ids: Tag UUID strings from the workspace (for highlight tag values).
+            These must be Tag.id UUID strings, not tag names, because the
+            annotation UI resolves tag display info via ``tag_options`` which
+            maps ``str(tag.id)`` -> ``tag.name``.
         student_name: Display name of the student (highlight/comment author).
         content_length: Character length of the document content, used to
             position highlights within valid bounds.
@@ -244,7 +247,7 @@ def build_crdt_state(
             break
         start = random.randint(0, max(0, content_length - 20))  # nosec B311
         end = min(start + random.randint(10, 50), content_length)  # nosec B311
-        tag = random.choice(tag_names) if tag_names else "General"  # nosec B311
+        tag = random.choice(tag_ids) if tag_ids else ""  # nosec B311
         text = f"highlighted text by {student_name}"
 
         hl_id = doc.add_highlight(
@@ -391,11 +394,6 @@ TAG_GROUP_DEFS: list[tuple[str, str | None, list[tuple[str, str]]]] = [
     ),
 ]
 
-# Flat list of tag names for CRDT highlight assignment
-ALL_TAG_NAMES: list[str] = [
-    tag_name for _, _, tags in TAG_GROUP_DEFS for tag_name, _ in tags
-]
-
 
 # ---------------------------------------------------------------------------
 # Async helpers
@@ -457,19 +455,28 @@ async def _find_or_create_course(
     return course, True
 
 
-async def _seed_tags_for_template(workspace_id: UUID) -> None:
-    """Seed tag groups and tags into an activity template workspace.
+async def _seed_tags_for_template(workspace_id: UUID) -> list[str]:
+    """Seed tag groups and tags into a workspace and return Tag UUID strings.
 
-    Idempotent: skips if TagGroups already exist for the workspace.
+    Idempotent: if TagGroups already exist for the workspace, fetches and
+    returns the existing Tag UUIDs instead of inserting duplicates.
+
+    Returns:
+        List of Tag UUID strings (str(tag.id)) for use in CRDT highlights.
     """
     async with get_session() as session:
         result = await session.exec(
             select(TagGroup).where(TagGroup.workspace_id == workspace_id)
         )
         if result.first() is not None:
-            return  # Already seeded
+            # Already seeded — fetch and return existing Tag UUIDs
+            tag_result = await session.exec(
+                select(Tag).where(Tag.workspace_id == workspace_id)
+            )
+            return [str(t.id) for t in tag_result.all()]
 
     async with get_session() as session:
+        tag_ids: list[str] = []
         tag_count = 0
         for group_idx, (group_name, group_color, tags) in enumerate(TAG_GROUP_DEFS):
             group = TagGroup(
@@ -491,9 +498,9 @@ async def _seed_tags_for_template(workspace_id: UUID) -> None:
                     order_index=tag_idx,
                 )
                 session.add(tag)
+                await session.flush()
+                tag_ids.append(str(tag.id))
                 tag_count += 1
-
-        await session.flush()
 
         workspace = await session.get(Workspace, workspace_id)
         if workspace:
@@ -501,6 +508,8 @@ async def _seed_tags_for_template(workspace_id: UUID) -> None:
             workspace.next_group_order = len(TAG_GROUP_DEFS)
             session.add(workspace)
             await session.flush()
+
+    return tag_ids
 
 
 async def _ensure_weeks(code: str, course: Course) -> dict[int, Week]:
@@ -695,11 +704,15 @@ async def _create_student_activity_workspace(
             first_doc_id = str(new_doc.id)
             first_doc_content_len = len(content)
 
+    # Seed tags into this student workspace so the annotation UI can resolve
+    # highlight tag UUIDs against Tag records in the same workspace.
+    tag_ids = await _seed_tags_for_template(ws_id)
+
     # Build and save CRDT state using first document
     if first_doc_id and first_doc_content_len > 0:
         crdt_bytes = build_crdt_state(
             document_id=first_doc_id,
-            tag_names=ALL_TAG_NAMES,
+            tag_ids=tag_ids,
             student_name=user.display_name or user.email,
             content_length=first_doc_content_len,
         )
@@ -759,11 +772,15 @@ async def _create_loose_workspace(
             first_doc_id = str(new_doc.id)
             first_doc_content_len = len(content)
 
+    # Seed tags into this loose workspace so the annotation UI can resolve
+    # highlight tag UUIDs against Tag records in the same workspace.
+    tag_ids = await _seed_tags_for_template(ws_id)
+
     # Build and save CRDT state
     if first_doc_id and first_doc_content_len > 0:
         crdt_bytes = build_crdt_state(
             document_id=first_doc_id,
-            tag_names=ALL_TAG_NAMES,
+            tag_ids=tag_ids,
             student_name=user.display_name or user.email,
             content_length=first_doc_content_len,
         )

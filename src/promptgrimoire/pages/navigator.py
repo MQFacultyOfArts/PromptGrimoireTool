@@ -25,6 +25,7 @@ from promptgrimoire.config import get_settings
 from promptgrimoire.db.courses import get_course_by_id, list_user_enrollments
 from promptgrimoire.db.engine import init_db
 from promptgrimoire.db.navigator import NavigatorRow, load_navigator_page
+from promptgrimoire.db.search import search_workspace_content
 from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
@@ -34,10 +35,22 @@ from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from nicegui.elements.input import Input
+    from nicegui.elements.timer import Timer
+
     from promptgrimoire.db.models import Course
     from promptgrimoire.db.navigator import NavigatorCursor
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_SEARCH_DEBOUNCE_SECONDS = 0.5
+_SEARCH_MIN_CHARS = 3
 
 # ---------------------------------------------------------------------------
 # Section display names and render order
@@ -64,6 +77,29 @@ _ACTION_LABELS: dict[str | None, str] = {
     "viewer": "View",
     "peer": "View",
 }
+
+# ---------------------------------------------------------------------------
+# CSS for search snippets (Phase 5, Task 3)
+# ---------------------------------------------------------------------------
+
+_SEARCH_SNIPPET_CSS = """\
+.navigator-snippet {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #555;
+    background: #f8f9fa;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-top: 4px;
+}
+.navigator-snippet mark {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: 600;
+}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -174,14 +210,16 @@ def _render_workspace_entry(
             if show_owner and owner_label:
                 ui.label(f"by {owner_label}").classes("text-xs text-gray-400")
 
-            # Snippet (for search results, Phase 5)
+            # Snippet (Phase 5, Task 2: render as HTML for <mark> tags)
             if (
                 snippets
                 and row.workspace_id is not None
                 and row.workspace_id in snippets
             ):
-                ui.label(snippets[row.workspace_id]).classes(
-                    "text-xs text-gray-500 mt-1"
+                # sanitize=False: snippet HTML is from ts_headline with
+                # HTML-stripped content (regexp_replace in search SQL).
+                ui.html(snippets[row.workspace_id], sanitize=False).classes(
+                    "navigator-snippet"
                 )
 
         # Right side: date + action button
@@ -429,6 +467,119 @@ async def _render_sections_impl(
 
 
 # ---------------------------------------------------------------------------
+# Search behaviour (Phase 5, Task 1)
+# ---------------------------------------------------------------------------
+
+
+def _setup_search(
+    *,
+    all_rows: list[NavigatorRow],
+    user_id: UUID,
+    is_privileged: bool,
+    enrolled_course_ids: list[UUID],
+    next_cursor: NavigatorCursor | None,
+    render_sections_refresh: Callable[..., object],
+    no_results_container: ui.column,
+    search_input: Input,
+) -> Callable[[object], None]:
+    """Wire up debounced FTS search and return the on-change handler.
+
+    Extracted from ``navigator_page`` to keep that function under the
+    PLR0915 statement limit.
+
+    Parameters
+    ----------
+    all_rows:
+        The full (unfiltered) list of NavigatorRow from the initial load.
+    render_sections_refresh:
+        The ``.refresh()`` method on the ``@ui.refreshable`` sections.
+    no_results_container:
+        A ``ui.column`` where "no results" messaging is rendered.
+    search_input:
+        The ``ui.input`` element for clearing its value on reset.
+
+    Returns
+    -------
+    The event handler to attach to the search input's
+    ``update:model-value`` event.
+    """
+    _debounce: dict[str, Timer | None] = {"timer": None}
+
+    def _restore_full_view() -> None:
+        no_results_container.clear()
+        render_sections_refresh(
+            rows=all_rows,
+            user_id=user_id,
+            is_privileged=is_privileged,
+            enrolled_course_ids=enrolled_course_ids,
+            next_cursor=next_cursor,
+            snippets=None,
+        )
+
+    def _clear_search() -> None:
+        search_input.set_value("")
+        _restore_full_view()
+
+    async def _do_search(query: str) -> None:
+        results = await search_workspace_content(query, limit=50)
+        matched_ids = {r.workspace_id for r in results}
+        snippets = {r.workspace_id: r.snippet for r in results}
+        filtered = [r for r in all_rows if r.workspace_id in matched_ids]
+
+        if filtered:
+            no_results_container.clear()
+            render_sections_refresh(
+                rows=filtered,
+                user_id=user_id,
+                is_privileged=is_privileged,
+                enrolled_course_ids=enrolled_course_ids,
+                next_cursor=None,
+                snippets=snippets,
+            )
+        else:
+            render_sections_refresh(
+                rows=[],
+                user_id=user_id,
+                is_privileged=is_privileged,
+                enrolled_course_ids=enrolled_course_ids,
+                next_cursor=None,
+                snippets=None,
+            )
+            no_results_container.clear()
+            with (
+                no_results_container,
+                ui.column().classes("w-full items-center mt-8 gap-2"),
+            ):
+                ui.label("No workspaces match your search.").classes(
+                    "text-gray-500 navigator-no-results"
+                )
+                ui.button(
+                    "Clear search",
+                    on_click=_clear_search,
+                ).props("flat color=primary").classes("navigator-clear-search-btn")
+
+    def _on_search_change(e: object) -> None:
+        if _debounce["timer"] is not None:
+            _debounce["timer"].cancel()
+            _debounce["timer"] = None
+
+        query = getattr(e, "value", "") or ""
+        query = query.strip()
+
+        if len(query) < _SEARCH_MIN_CHARS:
+            _restore_full_view()
+            return
+
+        _debounce["timer"] = ui.timer(
+            _SEARCH_DEBOUNCE_SECONDS,
+            lambda q=query: _do_search(q),
+            once=True,
+        )
+
+    return _on_search_change
+
+
+# ---------------------------------------------------------------------------
 # Page route
 # ---------------------------------------------------------------------------
 
@@ -506,6 +657,32 @@ async def navigator_page() -> None:
         )
 
     with page_layout("Home"), ui.column().classes("w-full max-w-4xl mx-auto"):
+        # Search snippet CSS (Phase 5, Task 3)
+        ui.add_css(_SEARCH_SNIPPET_CSS)
+
+        # Search input (Phase 5, Task 1)
+        search_input = (
+            ui.input(placeholder="Search titles and content...")
+            .classes("w-full mb-4 navigator-search-input")
+            .props("outlined dense clearable")
+        )
+
+        # Container for no-results message
+        no_results_container = ui.column().classes("w-full")
+
+        # Wire up search behaviour
+        on_search_change = _setup_search(
+            all_rows=rows,
+            user_id=user_id,
+            is_privileged=is_privileged,
+            enrolled_course_ids=enrolled_course_ids,
+            next_cursor=next_cursor,
+            render_sections_refresh=_render_sections.refresh,
+            no_results_container=no_results_container,
+            search_input=search_input,
+        )
+        search_input.on("update:model-value", on_search_change)
+
         if not rows:
             ui.label("No workspaces yet.").classes("text-gray-500 mt-4")
         else:

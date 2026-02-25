@@ -12,7 +12,7 @@ This document maps every acceptance criterion from the [design plan](../../desig
 | Phase 2 | Load-test fixture (1100-student dataset) | Implemented |
 | Phase 3 | Navigator SQL query (UNION ALL data loader, integration tests) | Implemented |
 | Phase 4 | Navigator page (core rendering, navigation, clone) | Implemented |
-| Phase 5 | Search (server-side FTS with debounce) | Planned |
+| Phase 5 | Search (server-side FTS with debounce) | Implementation done (Tasks 1-3), E2E tests planned (Task 4) |
 | Phase 6 | Inline title rename | Planned |
 | Phase 7 | Cursor pagination UI (infinite scroll) | Planned |
 | Phase 8 | Navigation chrome and i18n | Planned |

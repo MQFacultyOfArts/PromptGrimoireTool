@@ -19,6 +19,7 @@ from sqlmodel import select
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+from promptgrimoire.db.acl import grant_permission
 from promptgrimoire.db.activities import create_activity
 from promptgrimoire.db.courses import (
     DuplicateEnrollmentError,
@@ -27,17 +28,26 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import get_session, init_db
 from promptgrimoire.db.models import (
+    ACLEntry,
     Activity,
     Course,
+    CourseEnrollment,
     Tag,
     TagGroup,
     User,
     Week,
     Workspace,
+    WorkspaceDocument,
 )
 from promptgrimoire.db.users import find_or_create_user
 from promptgrimoire.db.weeks import create_week
-from promptgrimoire.db.workspace_documents import add_document
+from promptgrimoire.db.workspace_documents import add_document, list_documents
+from promptgrimoire.db.workspaces import (
+    create_workspace,
+    place_workspace_in_activity,
+    place_workspace_in_course,
+    save_workspace_crdt_state,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -225,7 +235,7 @@ def build_crdt_state(
     doc = AnnotationDocument(doc_id=document_id)
 
     # 2-5 highlights
-    num_highlights = random.randint(2, 5)  # nosec B311 — test fixture, not crypto
+    num_highlights = random.randint(2, 5)  # nosec B311 -- test fixture, not crypto
     highlight_ids: list[str] = []
 
     for _ in range(num_highlights):
@@ -578,6 +588,430 @@ async def _create_weeks_and_activities(
 
 
 # ---------------------------------------------------------------------------
+# Workspace generation helpers (Task 3)
+# ---------------------------------------------------------------------------
+
+
+async def _check_workspace_exists(activity_id: UUID, user_id: UUID) -> bool:
+    """Check if a workspace already exists for a student+activity pair.
+
+    Looks for a workspace with the given activity_id that has an owner
+    ACL entry for the given user.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(Workspace.id)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        return result.first() is not None
+
+
+async def _get_template_documents(
+    template_workspace_id: UUID,
+) -> list[WorkspaceDocument]:
+    """Retrieve documents from a template workspace for cloning."""
+    return await list_documents(template_workspace_id)
+
+
+async def _create_student_activity_workspace(
+    activity: Activity,
+    user: User,
+    template_docs: list[WorkspaceDocument],
+) -> tuple[UUID, int]:
+    """Create a student workspace for an activity, cloning template documents.
+
+    Returns:
+        (workspace_id, document_count) for the created workspace.
+    """
+    workspace = await create_workspace()
+    ws_id = workspace.id
+
+    # Place in activity and set title
+    await place_workspace_in_activity(ws_id, activity.id)
+    async with get_session() as session:
+        ws = await session.get(Workspace, ws_id)
+        if ws:
+            ws.title = activity.title
+            # ~20% chance of shared_with_class
+            if random.random() < 0.2:  # nosec B311
+                ws.shared_with_class = True
+            session.add(ws)
+            await session.flush()
+
+    # Owner ACL
+    await grant_permission(ws_id, user.id, "owner")
+
+    # Clone documents with slight variation
+    doc_count = 0
+    first_doc_id: str | None = None
+    first_doc_content_len = 0
+
+    for tmpl_doc in template_docs:
+        # Swap one paragraph from the pool for variation
+        content = tmpl_doc.content
+        if random.random() < 0.3:  # nosec B311 -- 30% chance of variation
+            extra_para = random.choice(DOCUMENT_PARAGRAPHS)  # nosec B311
+            content = content + "\n" + extra_para
+
+        new_doc = await add_document(
+            workspace_id=ws_id,
+            type=tmpl_doc.type,
+            content=content,
+            source_type=tmpl_doc.source_type,
+            title=tmpl_doc.title,
+        )
+        doc_count += 1
+
+        if first_doc_id is None:
+            first_doc_id = str(new_doc.id)
+            first_doc_content_len = len(content)
+
+    # Build and save CRDT state using first document
+    if first_doc_id and first_doc_content_len > 0:
+        crdt_bytes = build_crdt_state(
+            document_id=first_doc_id,
+            tag_names=ALL_TAG_NAMES,
+            student_name=user.display_name or user.email,
+            content_length=first_doc_content_len,
+        )
+        await save_workspace_crdt_state(ws_id, crdt_bytes)
+
+    return ws_id, doc_count
+
+
+async def _create_loose_workspace(
+    user: User,
+    course_id: UUID,
+) -> tuple[UUID, int]:
+    """Create a loose workspace (no activity) for a student in a course.
+
+    Returns:
+        (workspace_id, document_count) for the created workspace.
+    """
+    workspace = await create_workspace()
+    ws_id = workspace.id
+
+    # Place in course (loose -- no activity)
+    await place_workspace_in_course(ws_id, course_id)
+
+    # Set title from pool
+    title = random.choice(LOOSE_WORKSPACE_TITLES)  # nosec B311
+    async with get_session() as session:
+        ws = await session.get(Workspace, ws_id)
+        if ws:
+            ws.title = title
+            session.add(ws)
+            await session.flush()
+
+    # Owner ACL
+    await grant_permission(ws_id, user.id, "owner")
+
+    # Add 1-2 documents
+    num_docs = random.randint(1, 2)  # nosec B311
+    paragraphs = random.sample(  # nosec B311
+        DOCUMENT_PARAGRAPHS, min(num_docs * 2, len(DOCUMENT_PARAGRAPHS))
+    )
+
+    first_doc_id: str | None = None
+    first_doc_content_len = 0
+
+    for doc_idx in range(num_docs):
+        start = doc_idx * 2
+        content = "\n".join(paragraphs[start : start + 2])
+        new_doc = await add_document(
+            workspace_id=ws_id,
+            type="source",
+            content=content,
+            source_type="html",
+            title=f"Notes {doc_idx + 1}",
+        )
+
+        if first_doc_id is None:
+            first_doc_id = str(new_doc.id)
+            first_doc_content_len = len(content)
+
+    # Build and save CRDT state
+    if first_doc_id and first_doc_content_len > 0:
+        crdt_bytes = build_crdt_state(
+            document_id=first_doc_id,
+            tag_names=ALL_TAG_NAMES,
+            student_name=user.display_name or user.email,
+            content_length=first_doc_content_len,
+        )
+        await save_workspace_crdt_state(ws_id, crdt_bytes)
+
+    return ws_id, num_docs
+
+
+async def _resolve_course_id_for_code(
+    course_code: str,
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+) -> UUID | None:
+    """Resolve a course_id from a course code via the activity hierarchy.
+
+    Uses the first activity in the course to traverse Activity -> Week -> Course.
+    Returns None if the course has no activities or the hierarchy is broken.
+    """
+    acts = course_activities.get(course_code, [])
+    if not acts:
+        return None
+    activity_for_course = acts[0][0]
+    async with get_session() as session:
+        act_obj = await session.get(Activity, activity_for_course.id)
+        if act_obj is None:
+            return None
+        week_obj = await session.get(Week, act_obj.week_id)
+        if week_obj is None:
+            return None
+        return week_obj.course_id
+
+
+async def _create_loose_workspaces_for_student(
+    user: User,
+    enrolled_codes: list[str],
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+) -> tuple[int, int]:
+    """Create loose workspaces for a single student.
+
+    Rolls 1d6-2 for count, picks random enrolled courses for placement.
+
+    Returns:
+        (loose_workspace_count, document_count)
+    """
+    loose_count = roll_1d6_minus_2()
+    if loose_count == 0 or not enrolled_codes:
+        return 0, 0
+
+    ws_count = 0
+    doc_count = 0
+
+    for _ in range(loose_count):
+        course_code = random.choice(enrolled_codes)  # nosec B311
+        course_id = await _resolve_course_id_for_code(course_code, course_activities)
+        if course_id is None:
+            continue
+
+        _, docs = await _create_loose_workspace(user, course_id)
+        ws_count += 1
+        doc_count += docs
+
+    return ws_count, doc_count
+
+
+async def _seed_student_workspaces(
+    all_students: dict[str, User],
+    student_courses: dict[str, list[str]],
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+) -> tuple[int, int, int, int]:
+    """Phase 5: Create student activity workspaces and loose workspaces.
+
+    Returns:
+        (activity_workspace_count, loose_workspace_count,
+         total_document_count, shared_with_class_count)
+    """
+    console.print("\n[bold cyan]Phase 5: Student Workspaces[/]")
+
+    activity_ws_count = 0
+    loose_ws_count = 0
+    total_doc_count = 0
+    shared_count = 0
+
+    # Pre-fetch template documents for each activity to avoid repeated queries
+    template_doc_cache: dict[UUID, list[WorkspaceDocument]] = {}
+    for acts in course_activities.values():
+        for _activity, tmpl_id in acts:
+            if tmpl_id not in template_doc_cache:
+                template_doc_cache[tmpl_id] = await _get_template_documents(tmpl_id)
+
+    student_list = list(all_students.items())
+    total_students = len(student_list)
+
+    for idx, (email, user) in enumerate(student_list):
+        enrolled_codes = student_courses.get(email, [])
+
+        # Activity workspaces
+        for code in enrolled_codes:
+            activities = course_activities.get(code, [])
+            for activity, tmpl_id in activities:
+                # 70% chance of creating a workspace
+                if random.random() > 0.7:  # nosec B311
+                    continue
+
+                # Idempotency check
+                if await _check_workspace_exists(activity.id, user.id):
+                    continue
+
+                ws_id, doc_count = await _create_student_activity_workspace(
+                    activity=activity,
+                    user=user,
+                    template_docs=template_doc_cache[tmpl_id],
+                )
+                activity_ws_count += 1
+                total_doc_count += doc_count
+
+                # Check shared_with_class status
+                async with get_session() as session:
+                    ws = await session.get(Workspace, ws_id)
+                    if ws and ws.shared_with_class:
+                        shared_count += 1
+
+        # Loose workspaces
+        loose, docs = await _create_loose_workspaces_for_student(
+            user, enrolled_codes, course_activities
+        )
+        loose_ws_count += loose
+        total_doc_count += docs
+
+        # Progress reporting every 100 students
+        if (idx + 1) % 100 == 0 or idx + 1 == total_students:
+            console.print(
+                f"  [green]Progress:[/] {idx + 1}/{total_students} students "
+                f"({activity_ws_count} activity ws, {loose_ws_count} loose ws)"
+            )
+
+    console.print(
+        f"  [green]Activity workspaces:[/] {activity_ws_count}\n"
+        f"  [green]Loose workspaces:[/] {loose_ws_count}\n"
+        f"  [green]Documents:[/] {total_doc_count}\n"
+        f"  [green]Shared with class:[/] {shared_count}"
+    )
+
+    return activity_ws_count, loose_ws_count, total_doc_count, shared_count
+
+
+# ---------------------------------------------------------------------------
+# ACL shares (Task 4)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_acl_shares(
+    all_students: dict[str, User],
+    student_courses: dict[str, list[str]],
+    courses: dict[str, Course],
+) -> int:
+    """Phase 6: Add explicit ACL shares between students.
+
+    Selects ~50 random student workspaces and grants editor/viewer
+    permission to 1-2 other students in the same course.
+
+    Returns:
+        Number of ACL shares created.
+    """
+    console.print("\n[bold cyan]Phase 6: ACL Shares[/]")
+
+    share_count = 0
+
+    # Build course_id -> list of student Users mapping
+    course_students: dict[UUID, list[User]] = {}
+    for email, codes in student_courses.items():
+        user = all_students[email]
+        for code in codes:
+            if code in courses:
+                cid = courses[code].id
+                course_students.setdefault(cid, []).append(user)
+
+    # Collect activity-linked student workspaces (not templates, not loose)
+    candidate_workspaces: list[
+        tuple[UUID, UUID, UUID]
+    ] = []  # (workspace_id, owner_user_id, course_id)
+
+    for _course_code, course in courses.items():
+        async with get_session() as session:
+            # Find non-template activity workspaces in this course
+            result = await session.exec(
+                select(Workspace.id, ACLEntry.user_id, Week.course_id)
+                .join(Activity, Workspace.activity_id == Activity.id)  # type: ignore[arg-type]
+                .join(Week, Activity.week_id == Week.id)  # type: ignore[arg-type]
+                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]
+                .where(
+                    Week.course_id == course.id,
+                    ACLEntry.permission == "owner",
+                    Workspace.id != Activity.template_workspace_id,
+                )
+            )
+            for ws_id, owner_id, cid in result.all():
+                candidate_workspaces.append((ws_id, owner_id, cid))
+
+    if not candidate_workspaces:
+        console.print("  [yellow]No candidate workspaces for sharing[/]")
+        return 0
+
+    # Select ~50 random workspaces
+    sample_size = min(50, len(candidate_workspaces))
+    selected = random.sample(candidate_workspaces, sample_size)  # nosec B311
+
+    for ws_id, owner_id, course_id in selected:
+        students_in_course = course_students.get(course_id, [])
+        # Filter out the owner
+        eligible = [s for s in students_in_course if s.id != owner_id]
+        if not eligible:
+            continue
+
+        # Grant to 1-2 other students
+        num_shares = random.randint(1, min(2, len(eligible)))  # nosec B311
+        recipients = random.sample(eligible, num_shares)  # nosec B311
+
+        for recipient in recipients:
+            perm = random.choice(["editor", "viewer"])  # nosec B311
+            await grant_permission(ws_id, recipient.id, perm)
+            share_count += 1
+
+    console.print(f"  [green]ACL shares created:[/] {share_count}")
+    return share_count
+
+
+# ---------------------------------------------------------------------------
+# Summary (Task 4)
+# ---------------------------------------------------------------------------
+
+
+async def _print_summary(
+    courses: dict[str, Course],
+    course_activities: dict[str, list[tuple[Activity, UUID]]],
+    activity_ws_count: int,
+    loose_ws_count: int,
+    total_doc_count: int,
+    share_count: int,
+    shared_with_class_count: int,
+) -> None:
+    """Print final load-test data summary with counts from the database."""
+    console.print("\n[bold green]Load test data summary:[/]")
+
+    # Count from database for accuracy
+    async with get_session() as session:
+        user_result = await session.exec(
+            select(User.id).where(User.email.like("loadtest-%@test.local"))  # type: ignore[union-attr]
+        )
+        db_user_count = len(user_result.all())
+
+        enrollment_result = await session.exec(
+            select(CourseEnrollment.id).where(
+                CourseEnrollment.course_id.in_(  # type: ignore[union-attr]
+                    [c.id for c in courses.values()]
+                )
+            )
+        )
+        db_enrollment_count = len(enrollment_result.all())
+
+    total_activities = sum(len(acts) for acts in course_activities.values())
+
+    console.print(f"  Users: {db_user_count}")
+    console.print(f"  Courses: {len(courses)}")
+    console.print(f"  Enrollments: {db_enrollment_count}")
+    console.print(f"  Activities: {total_activities}")
+    console.print(f"  Workspaces (activity): {activity_ws_count}")
+    console.print(f"  Workspaces (loose): {loose_ws_count}")
+    console.print(f"  Documents: {total_doc_count}")
+    console.print(f"  ACL shares: {share_count}")
+    console.print(f"  Workspaces with shared_with_class: {shared_with_class_count}")
+
+
+# ---------------------------------------------------------------------------
 # Main async phases
 # ---------------------------------------------------------------------------
 
@@ -720,17 +1154,32 @@ async def _async_load_test_data() -> None:
 
     courses = await _seed_courses()
     await _seed_instructors(courses)
-    _all_students, _student_courses, total_student_count = await _seed_students(courses)
+    all_students, student_courses, _total_student_count = await _seed_students(courses)
 
     console.print("\n[bold cyan]Phase 4: Weeks & Activities[/]")
     course_activities = await _create_weeks_and_activities(courses)
 
-    console.print("\n[bold green]Load-test courses, users, and enrollments created.[/]")
-    console.print(f"  Courses: {len(courses)}")
-    console.print(f"  Instructors: {len(INSTRUCTOR_DEFS)}")
-    console.print(f"  Students: {total_student_count}")
-    total_activities = sum(len(acts) for acts in course_activities.values())
-    console.print(f"  Activities: {total_activities}")
+    # Phase 5: Student workspaces
+    (
+        activity_ws_count,
+        loose_ws_count,
+        total_doc_count,
+        shared_with_class_count,
+    ) = await _seed_student_workspaces(all_students, student_courses, course_activities)
+
+    # Phase 6: ACL shares
+    share_count = await _seed_acl_shares(all_students, student_courses, courses)
+
+    # Summary
+    await _print_summary(
+        courses=courses,
+        course_activities=course_activities,
+        activity_ws_count=activity_ws_count,
+        loose_ws_count=loose_ws_count,
+        total_doc_count=total_doc_count,
+        share_count=share_count,
+        shared_with_class_count=shared_with_class_count,
+    )
 
 
 # ---------------------------------------------------------------------------

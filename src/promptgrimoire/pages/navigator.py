@@ -30,6 +30,7 @@ from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
     get_user_workspace_for_activity,
+    update_workspace_title,
 )
 from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
@@ -172,6 +173,85 @@ def _group_by_owner(
 # ---------------------------------------------------------------------------
 
 
+def _render_inline_title_edit(
+    row: NavigatorRow,
+) -> None:
+    """Render an inline-editable title input with pencil icon for owners.
+
+    The input starts in readonly/borderless mode (looks like plain text).
+    Clicking the pencil icon switches to editable/outlined mode.
+    Enter or blur saves; Escape cancels.
+    Clicking the readonly input itself navigates to the workspace.
+    """
+    workspace_id = row.workspace_id
+    assert workspace_id is not None  # caller guarantees this
+    url = _workspace_url(workspace_id)
+
+    display_title = row.title or row.activity_title or "Untitled"
+    original_title = display_title
+
+    title_input = (
+        ui.input(value=display_title)
+        .classes("text-base font-medium text-primary navigator-title-input")
+        .props("readonly borderless dense")
+        .props(f'data-workspace-id="{workspace_id}"')
+    )
+
+    # Track whether we are in edit mode and whether a save is in flight.
+    _state: dict[str, object] = {"editing": False, "saving": False}
+
+    # --- Pencil icon (edit trigger) ---
+    async def _activate_edit(_e: object) -> None:
+        nonlocal original_title
+        if _state["editing"]:
+            return
+        _state["editing"] = True
+        original_title = title_input.value
+        title_input.props(remove="readonly borderless", add="outlined")
+        title_input.run_method("focus")
+        title_input.run_method("select")
+
+    ui.icon("edit", size="xs").classes(
+        "cursor-pointer text-gray-400 hover:text-primary navigator-edit-title-btn"
+    ).on("click", _activate_edit).props(f'data-testid="edit-title-{workspace_id}"')
+
+    # --- Save handler (Enter / blur) ---
+    async def _save_title(_e: object) -> None:
+        if not _state["editing"] or _state["saving"]:
+            return
+        _state["saving"] = True
+        try:
+            new_title = title_input.value.strip() or None
+            assert workspace_id is not None
+            await update_workspace_title(workspace_id, new_title)
+            # Update display: if cleared, show fallback
+            title_input.value = new_title or row.activity_title or "Untitled"
+            title_input.props(remove="outlined", add="readonly borderless")
+            _state["editing"] = False
+        finally:
+            _state["saving"] = False
+
+    title_input.on("keydown.enter", _save_title)
+    title_input.on("blur", _save_title)
+
+    # --- Cancel handler (Escape) ---
+    async def _cancel_edit(_e: object) -> None:
+        if not _state["editing"]:
+            return
+        title_input.value = original_title
+        title_input.props(remove="outlined", add="readonly borderless")
+        _state["editing"] = False
+
+    title_input.on("keydown.escape", _cancel_edit)
+
+    # --- Navigate on click when readonly ---
+    async def _navigate_on_click(_e: object) -> None:
+        if not _state["editing"]:
+            ui.navigate.to(url)
+
+    title_input.on("click", _navigate_on_click)
+
+
 def _render_workspace_entry(
     row: NavigatorRow,
     *,
@@ -189,7 +269,11 @@ def _render_workspace_entry(
             # Title row
             with ui.row().classes("items-center gap-2"):
                 title = row.title or row.activity_title or "Untitled"
-                if row.workspace_id is not None:
+                if row.workspace_id is not None and row.permission == "owner":
+                    # Owner: inline-editable title with pencil icon
+                    _render_inline_title_edit(row)
+                elif row.workspace_id is not None:
+                    # Non-owner: clickable link
                     ui.link(
                         title,
                         _workspace_url(row.workspace_id),

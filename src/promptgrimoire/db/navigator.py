@@ -237,7 +237,10 @@ WITH nav AS (
     AND owner_acl.user_id != :user_id
     AND (
       :is_privileged = true
-      OR w.shared_with_class = true
+      OR (
+        w.shared_with_class = true
+        AND c.default_allow_sharing = true
+      )
     )
 
 )

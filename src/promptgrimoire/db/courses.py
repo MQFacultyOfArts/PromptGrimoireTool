@@ -354,7 +354,7 @@ async def list_students_without_workspaces(
     activity-placed or loose workspaces in the given course.
     Staff roles are excluded.
 
-    See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/TBD
+    See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/198
     for a proper analytics page.
     """
     async with get_session() as session:

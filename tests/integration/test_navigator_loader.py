@@ -575,6 +575,66 @@ class TestLooseWorkspaces:
         shared_ws_ids = {r.workspace_id for r in shared_rows}
         assert data["loose_workspace"].id in shared_ws_ids
 
+    @pytest.mark.asyncio
+    async def test_loose_workspace_hidden_when_sharing_disabled(self) -> None:
+        """Loose workspace hidden from student when course sharing disabled.
+
+        Loose workspaces have no activity-level allow_sharing tristate, so
+        the course default_allow_sharing gates student visibility. When
+        default_allow_sharing=False, a peer's shared loose workspace must
+        not appear in shared_in_unit for a student.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+        from promptgrimoire.db.navigator import load_navigator_page
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            place_workspace_in_course,
+        )
+
+        tag = uuid4().hex[:8]
+        course = await create_course(
+            code=f"NL{tag[:5].upper()}", name=f"No Share {tag}", semester="2026-S1"
+        )
+        async with get_session() as session:
+            session.add(course)
+            course.default_allow_sharing = False
+            await session.flush()
+
+        owner = await create_user(
+            email=f"loose-owner-{tag}@test.local", display_name=f"Owner {tag}"
+        )
+        await enroll_user(course_id=course.id, user_id=owner.id, role="student")
+
+        peer = await create_user(
+            email=f"loose-peer-{tag}@test.local", display_name=f"Peer {tag}"
+        )
+        await enroll_user(course_id=course.id, user_id=peer.id, role="student")
+
+        ws = await create_workspace()
+        await place_workspace_in_course(ws.id, course.id)
+        await grant_permission(ws.id, owner.id, "owner")
+        async with get_session() as session:
+            ws_obj = await session.get(Workspace, ws.id)
+            assert ws_obj is not None
+            ws_obj.shared_with_class = True
+            ws_obj.title = "Shared Loose"
+            session.add(ws_obj)
+
+        rows, _ = await load_navigator_page(
+            user_id=peer.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+
+        shared_ws_ids = {r.workspace_id for r in rows if r.section == "shared_in_unit"}
+        assert ws.id not in shared_ws_ids, (
+            "Loose workspace should be hidden when course sharing is disabled"
+        )
+
 
 # ===========================================================================
 # Empty sections (AC1.7)

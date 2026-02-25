@@ -470,6 +470,17 @@ def _build_mock_login_section() -> None:
                 on_click=login_as,
             ).classes("w-full mb-1").props("flat")
 
+        ui.separator().classes("my-2")
+        ui.label("Or log in as any email:").classes("text-sm text-yellow-700")
+        custom_email = ui.input("Email address").classes("w-full")
+
+        def login_as_custom() -> None:
+            if custom_email.value:
+                token = f"mock-token-{custom_email.value}"
+                ui.navigate.to(f"/auth/callback?{urlencode({'token': token})}")
+
+        ui.button("Log in", on_click=login_as_custom).classes("w-full").props("flat")
+
 
 @ui.page("/login")
 async def login_page() -> None:

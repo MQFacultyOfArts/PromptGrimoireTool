@@ -1,7 +1,7 @@
 """E2E tests for the workspace navigator page.
 
 Verifies the navigator page at ``/`` renders workspace sections correctly,
-handles authentication, and provides workspace navigation.
+handles authentication, provides workspace navigation, and supports search.
 
 Acceptance Criteria:
 - workspace-navigator-196.AC2.5: Unauthenticated redirect to login
@@ -10,10 +10,15 @@ Acceptance Criteria:
 - workspace-navigator-196.AC1.7: Empty sections not rendered in DOM
 - workspace-navigator-196.AC2.1: Title click navigates to annotation page
 - workspace-navigator-196.AC2.3: Start button clones and navigates
+- workspace-navigator-196.AC3.2: FTS fires at >=3 chars with snippet
+- workspace-navigator-196.AC3.5: Clearing search restores full unfiltered list
+- workspace-navigator-196.AC3.6: No results shows message with clear option
+- workspace-navigator-196.AC8.4: Short queries (<3 chars) do not trigger FTS
 
 Traceability:
 - Issue: #196 (Workspace Navigator)
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_04.md
+- Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_05.md
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ from tests.e2e.course_helpers import (
 )
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page
+    from playwright.sync_api import Browser, Locator, Page
     from pytest_subtests import SubTests
 
 
@@ -157,6 +162,145 @@ def _student_start_and_verify(
         student_page.goto("about:blank")
         student_page.close()
         student_ctx.close()
+
+
+def _clear_search_input(page: Page, search_input: Locator) -> None:
+    """Clear the search input by selecting all text and deleting it."""
+    search_input.click()
+    page.keyboard.press("Control+a")
+    page.keyboard.press("Backspace")
+
+
+def _type_in_search(
+    page: Page,
+    search_input: Locator,
+    text: str,
+) -> None:
+    """Type text into the search input using keyboard events.
+
+    Uses click + select-all + delete + type to ensure Quasar's
+    ``update:model-value`` Vue event fires correctly
+    (Playwright's ``fill()`` may not trigger it).
+    """
+    search_input.click()
+    page.keyboard.press("Control+a")
+    page.keyboard.press("Backspace")
+    page.keyboard.type(text, delay=30)
+
+
+def _search_subtests(
+    page: Page,
+    app_server: str,
+    *,
+    subtests: SubTests,
+    workspace_id_a: str,
+    workspace_id_b: str,
+    search_query_a: str,
+    nonsense_query: str,
+) -> None:
+    """Run search sub-assertions to keep test method under PLR0915 limit.
+
+    Extracted from ``test_search_filters_and_restores``.
+
+    Parameters
+    ----------
+    search_query_a:
+        Full search term that matches workspace A's content.
+        Must be a complete word (PostgreSQL FTS uses stemming,
+        not prefix matching).
+    """
+    # Navigate to navigator page and wait for render
+    page.goto(f"{app_server}/")
+    page.wait_for_timeout(2000)
+
+    # Verify both workspaces are visible initially
+    ws_a = page.locator(f'[data-workspace-id="{workspace_id_a}"]')
+    ws_b = page.locator(f'[data-workspace-id="{workspace_id_b}"]')
+    expect(ws_a).to_be_visible(timeout=5000)
+    expect(ws_b).to_be_visible(timeout=5000)
+
+    # Locate the search input (NiceGUI ui.input -> nested <input>)
+    search_input = page.locator(".navigator-search-input input")
+    expect(search_input).to_be_visible(timeout=5000)
+
+    # --- AC8.4: Short query does NOT trigger FTS ---
+    with subtests.test(msg="short_query_no_filter"):
+        _type_in_search(page, search_input, "ab")
+        # Wait longer than the debounce (500ms) + render time
+        page.wait_for_timeout(1500)
+
+        # Both workspaces should still be visible (no filtering)
+        expect(ws_a).to_be_visible(timeout=3000)
+        expect(ws_b).to_be_visible(timeout=3000)
+
+        # No "no results" message should appear
+        no_results = page.locator(".navigator-no-results")
+        expect(no_results).to_have_count(0)
+
+    # Clear search before next sub-test
+    _clear_search_input(page, search_input)
+    page.wait_for_timeout(1000)
+
+    # --- AC3.2: FTS fires at 3+ chars, filters, shows snippet ---
+    with subtests.test(msg="fts_filters_with_snippet"):
+        _type_in_search(page, search_input, search_query_a)
+        # Wait for debounce (500ms) + DB query + render
+        page.wait_for_timeout(3000)
+
+        # Workspace A should be visible (matches query)
+        expect(ws_a).to_be_visible(timeout=5000)
+
+        # Workspace B should NOT be visible (does not match)
+        expect(ws_b).to_have_count(0, timeout=5000)
+
+        # A snippet should be rendered with <mark> tags
+        snippet = page.locator(".navigator-snippet")
+        expect(snippet.first).to_be_visible(timeout=5000)
+
+    # --- AC3.5: Clearing search restores full view ---
+    with subtests.test(msg="clear_restores_full_view"):
+        _clear_search_input(page, search_input)
+        # Wait for restore
+        page.wait_for_timeout(2000)
+
+        # Both workspaces should be visible again
+        expect(ws_a).to_be_visible(timeout=5000)
+        expect(ws_b).to_be_visible(timeout=5000)
+
+        # No snippets should be visible
+        snippets = page.locator(".navigator-snippet")
+        expect(snippets).to_have_count(0, timeout=3000)
+
+    # --- AC3.6: No results shows message, Clear button restores ---
+    with subtests.test(msg="no_results_shows_message"):
+        _type_in_search(page, search_input, nonsense_query)
+        # Wait for debounce + query + render
+        page.wait_for_timeout(3000)
+
+        # "No workspaces match" message should appear
+        no_results = page.locator(".navigator-no-results")
+        expect(no_results).to_be_visible(timeout=5000)
+
+        # Neither workspace should be visible
+        expect(ws_a).to_have_count(0, timeout=3000)
+        expect(ws_b).to_have_count(0, timeout=3000)
+
+    with subtests.test(msg="clear_button_restores"):
+        # Click the "Clear search" button
+        clear_btn = page.locator(".navigator-clear-search-btn")
+        expect(clear_btn).to_be_visible(timeout=3000)
+        clear_btn.click()
+
+        # Wait for restore
+        page.wait_for_timeout(2000)
+
+        # Both workspaces should reappear
+        expect(ws_a).to_be_visible(timeout=5000)
+        expect(ws_b).to_be_visible(timeout=5000)
+
+        # No results message should be gone
+        no_results = page.locator(".navigator-no-results")
+        expect(no_results).to_have_count(0, timeout=3000)
 
 
 def _setup_course_with_activity(
@@ -437,3 +581,63 @@ class TestNavigator:
             activity_title=activity_title,
             subtests=subtests,
         )
+
+    def test_search_filters_and_restores(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC3.2, AC3.5, AC3.6, AC8.4: Search filters, restores, and handles edge cases.
+
+        Steps:
+        1. Create two workspaces with distinct content for the same user.
+        2. Navigate to /.
+        3. AC8.4: Type 2 chars -- verify no filtering (both workspaces visible).
+        4. AC3.2: Type 3+ chars matching one workspace's content. Wait for
+           debounce. Verify only matching workspace visible with snippet.
+        5. AC3.5: Clear search. Verify full unfiltered view returns.
+        6. AC3.6: Type a query matching nothing. Verify "No workspaces match"
+           message. Click "Clear search" button. Verify full view returns.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            uid = uuid4().hex[:8]
+            email = f"nav-search-{uid}@test.example.edu.au"
+            _authenticate_page(page, app_server, email=email)
+
+            # Use complete English words so PostgreSQL FTS can match
+            # them. FTS stems and does not support prefix matching,
+            # so partial words like "zygomo" won't match.
+            # Each workspace uses a unique marker phrase.
+            marker_a = f"xylophone{uid}"
+            marker_b = f"marimba{uid}"
+
+            workspace_id_a = _create_workspace_via_db(
+                user_email=email,
+                html_content=(f"<p>The {marker_a} flower has bilateral symmetry.</p>"),
+                seed_tags=False,
+            )
+            workspace_id_b = _create_workspace_via_db(
+                user_email=email,
+                html_content=(f"<p>A {marker_b} approach to economics.</p>"),
+                seed_tags=False,
+            )
+
+            _search_subtests(
+                page,
+                app_server,
+                subtests=subtests,
+                workspace_id_a=workspace_id_a,
+                workspace_id_b=workspace_id_b,
+                # Search for the full marker word so FTS can match it
+                search_query_a=marker_a,
+                nonsense_query=f"xyznonexistent{uid}",
+            )
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()

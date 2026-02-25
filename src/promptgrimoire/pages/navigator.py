@@ -563,7 +563,11 @@ def _setup_search(
             _debounce["timer"].cancel()
             _debounce["timer"] = None
 
-        query = getattr(e, "value", "") or ""
+        # GenericEventArguments from update:model-value passes the
+        # new value as ``args`` (a raw string), not ``value``.
+        query = getattr(e, "args", None) or ""
+        if not isinstance(query, str):
+            query = ""
         query = query.strip()
 
         if len(query) < _SEARCH_MIN_CHARS:

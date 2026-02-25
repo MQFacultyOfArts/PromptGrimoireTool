@@ -267,8 +267,9 @@ class TestFTSMalformedQuery:
             "<p>Legal analysis of the workplace injury case</p>"
         )
 
-        # websearch_to_tsquery should handle this gracefully
-        results = await search_workspace_content("legal", workspace_ids=[ws_id])
+        # websearch_to_tsquery silently drops the trailing operator instead of
+        # raising an error, so this must return results as if "legal" were searched.
+        results = await search_workspace_content("legal &", workspace_ids=[ws_id])
         assert len(results) >= 1
 
 

@@ -123,6 +123,8 @@ Container for documents and CRDT state. Unit of collaboration.
 | `shared_with_class` | BOOLEAN | NOT NULL, default FALSE |
 | `next_tag_order` | INTEGER | NOT NULL, default 0 |
 | `next_group_order` | INTEGER | NOT NULL, default 0 |
+| `search_text` | TEXT | nullable — materialised CRDT content for FTS |
+| `search_dirty` | BOOLEAN | NOT NULL, default TRUE — worker queue flag |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 | | | CHECK: `activity_id` and `course_id` mutually exclusive |
@@ -130,6 +132,10 @@ Container for documents and CRDT state. Unit of collaboration.
 **`title`**: Optional display name for the workspace. Length limit enforced at UI layer (SQLModel `table=True` classes do not execute Pydantic validators).
 
 **`shared_with_class`**: Student opt-in flag for peer discovery. When `TRUE` and the activity allows sharing, other enrolled students can browse and view this workspace.
+
+**`search_text`**: Intentional 3NF violation for FTS performance. Stores the materialised plain-text representation of the workspace's CRDT state (annotations, tag names, highlights). Maintained asynchronously by the search extraction worker (`search_worker.py`), not computed at query time. `NULL` when no CRDT extraction has run yet.
+
+**`search_dirty`**: Worker queue flag. Set to `TRUE` by `save_workspace_crdt_state()` on every CRDT save; cleared to `FALSE` by the extraction worker after successfully updating `search_text`. Ensures eventual consistency without a separate queue table.
 
 **Placement**: A workspace can be placed in an Activity OR a Course, never both. Enforced by Pydantic validator + DB CHECK constraint (`ck_workspace_placement_exclusivity`). A workspace with neither is "loose".
 
@@ -153,6 +159,38 @@ Document within a workspace.
 **`type`**: Domain string — "source", "draft", "ai_conversation".
 
 **`source_type`**: Content format — "html", "rtf", "docx", "pdf", "text".
+
+## FTS Indexes
+
+Two GIN expression indexes support full-text search.
+
+### Index naming convention
+
+Expression indexes use the `idx_` prefix; simple column indexes use `ix_` (SQLAlchemy's default). This distinction is intentional and documents that expression indexes require a different rebuild procedure (see CONCURRENTLY note in the migration).
+
+### `idx_workspace_document_fts`
+
+```sql
+CREATE INDEX idx_workspace_document_fts
+  ON workspace_document
+  USING gin(to_tsvector('english', regexp_replace(content, '<[^>]+>', ' ', 'g')));
+```
+
+Strips HTML tags from `content` before indexing so tag markup does not pollute search results.
+
+**HTML stripping limitation:** `regexp_replace(content, '<[^>]+>', ' ', 'g')` removes tag syntax (`<p>`, `<b>`, etc.) but does NOT strip HTML entities (`&amp;`, `&lt;`, `&#39;`, etc.) or the text content of `<script>`/`<style>` blocks. This is acceptable because the input pipeline uses selectolax to sanitise HTML before storage — entities are decoded and script/style blocks are removed at ingest time. Raw untrusted HTML is never stored directly in `content`.
+
+### `idx_workspace_search_text_fts`
+
+```sql
+CREATE INDEX idx_workspace_search_text_fts
+  ON workspace
+  USING gin(to_tsvector('english', COALESCE(search_text, '')));
+```
+
+Indexes the materialised CRDT text. `COALESCE(search_text, '')` ensures `NULL` (not yet extracted) is treated as an empty document rather than excluded from the index.
+
+**Rebuilding on a populated database:** Use `CREATE INDEX CONCURRENTLY` to avoid a full table lock. CONCURRENTLY requires autocommit mode and must be run outside an Alembic migration — execute manually via psql.
 
 ## Annotation Tag Tables
 

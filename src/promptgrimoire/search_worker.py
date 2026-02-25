@@ -35,12 +35,14 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
     processed = 0
 
     async with get_session() as session:
-        # Fetch dirty workspaces
+        # Fetch dirty workspaces.  FOR UPDATE SKIP LOCKED prevents concurrent
+        # workers from double-processing the same rows.
         result = await session.execute(
             text(
                 "SELECT id, crdt_state FROM workspace "
                 "WHERE search_dirty = true "
-                "LIMIT :batch_size"
+                "LIMIT :batch_size "
+                "FOR UPDATE SKIP LOCKED"
             ),
             {"batch_size": batch_size},
         )
@@ -65,13 +67,16 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
             crdt_bytes: bytes | None = bytes(crdt_state) if crdt_state else None
             extracted_text = extract_searchable_text(crdt_bytes, tag_names)
 
-            # Update workspace
+            # Update workspace.  The CAS guard (AND search_dirty = true) ensures
+            # that if a concurrent CRDT save set search_dirty = true between the
+            # read and this write, the flag is NOT cleared here -- the worker
+            # will re-process the workspace on the next poll cycle.
             async with get_session() as session:
                 await session.execute(
                     text(
                         "UPDATE workspace "
                         "SET search_text = :search_text, search_dirty = false "
-                        "WHERE id = :ws_id"
+                        "WHERE id = :ws_id AND search_dirty = true"
                     ),
                     {"search_text": extracted_text, "ws_id": str(workspace_id)},
                 )

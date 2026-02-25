@@ -346,6 +346,9 @@ class Workspace(SQLModel, table=True):
     search_text: str | None = Field(
         default=None, sa_column=Column(sa.Text(), nullable=True)
     )
+    # server_default="true" (string) matches the existing pattern in this file
+    # (see CourseRoleRef.is_staff above which uses server_default="false").
+    # The migration uses sa.text("true") which is equivalent at the DB level.
     search_dirty: bool = Field(
         default=True,
         sa_column=Column(sa.Boolean(), nullable=False, server_default="true"),

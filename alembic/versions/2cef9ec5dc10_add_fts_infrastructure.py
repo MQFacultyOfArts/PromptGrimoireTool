@@ -35,7 +35,12 @@ def upgrade() -> None:
         ),
     )
 
-    # GIN expression index on workspace_document.content (HTML-stripped)
+    # GIN expression index on workspace_document.content (HTML-stripped).
+    # NOTE: If re-creating this index on a populated database, use
+    # CREATE INDEX CONCURRENTLY to avoid a full table lock.  CONCURRENTLY
+    # requires autocommit mode (run outside a transaction block) and cannot
+    # be used inside an Alembic migration directly -- execute it manually
+    # via psql with: CREATE INDEX CONCURRENTLY idx_workspace_document_fts ...
     op.execute(
         "CREATE INDEX idx_workspace_document_fts "
         "ON workspace_document "
@@ -43,7 +48,8 @@ def upgrade() -> None:
         "regexp_replace(content, '<[^>]+>', ' ', 'g')))"
     )
 
-    # GIN expression index on workspace.search_text (CRDT-sourced text)
+    # GIN expression index on workspace.search_text (CRDT-sourced text).
+    # Same CONCURRENTLY note applies -- see comment above.
     op.execute(
         "CREATE INDEX idx_workspace_search_text_fts "
         "ON workspace "

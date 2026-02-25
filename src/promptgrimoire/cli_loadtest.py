@@ -4,7 +4,8 @@ Creates courses, users, enrollments, weeks, activities, and student workspaces
 at realistic scale (1100 students) for SQL query validation and FTS testing.
 
 Usage:
-    uv run load-test-data
+    uv run load-test-data              # full 1100-student dataset
+    uv run load-test-data --validate   # 1 of each entity for smoke test
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import asyncio
 import random
 import sys
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 from rich.console import Console
 from sqlalchemy.exc import IntegrityError
@@ -1208,6 +1210,162 @@ async def _seed_students(
     return all_students, student_courses, total_student_count
 
 
+async def _validate_ensure_week(course: Course) -> Week:
+    """Ensure a single published week exists for the validation course.
+
+    Idempotent: returns the existing week if one is already present.
+    """
+    async with get_session() as session:
+        result = await session.exec(select(Week).where(Week.course_id == course.id))
+        existing = result.first()
+    if existing:
+        return existing
+
+    week = await create_week(
+        course_id=course.id, week_number=1, title="Validation Week"
+    )
+    async with get_session() as session:
+        session.add(week)
+        week.is_published = True
+        await session.flush()
+        await session.refresh(week)
+    return week
+
+
+async def _validate_ensure_activity(week: Week) -> tuple[Activity, UUID]:
+    """Ensure a single activity with template docs+tags exists for validation.
+
+    Returns:
+        (Activity, template_workspace_id)
+    """
+    async with get_session() as session:
+        result = await session.exec(select(Activity).where(Activity.week_id == week.id))
+        existing_activity = result.first()
+
+    if existing_activity:
+        console.print(
+            f"  [yellow]Exists:[/] Activity '{existing_activity.title}' "
+            f"(tmpl={existing_activity.template_workspace_id})"
+        )
+        return existing_activity, existing_activity.template_workspace_id
+
+    activity = await create_activity(week_id=week.id, title="Validate Annotation")
+    tmpl_id = activity.template_workspace_id
+
+    content = DOCUMENT_PARAGRAPHS[0] + "\n" + DOCUMENT_PARAGRAPHS[1]
+    await add_document(
+        workspace_id=tmpl_id,
+        type="source",
+        content=content,
+        source_type="html",
+        title="Validation Document",
+    )
+    await _seed_tags_for_template(tmpl_id)
+    console.print(f"  [green]Created:[/] Activity '{activity.title}' (tmpl={tmpl_id})")
+    return activity, tmpl_id
+
+
+async def _validate_ensure_student_workspace(
+    activity: Activity,
+    tmpl_id: UUID,
+    student: User,
+) -> UUID | None:
+    """Ensure a student workspace exists for the validation activity.
+
+    Returns:
+        The workspace UUID (existing or newly created).
+    """
+    if await _check_workspace_exists(activity.id, student.id):
+        async with get_session() as session:
+            result = await session.exec(
+                select(Workspace.id)
+                .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  # SQLAlchemy join expression, not a plain column
+                .where(
+                    Workspace.activity_id == activity.id,
+                    ACLEntry.user_id == student.id,
+                    ACLEntry.permission == "owner",
+                )
+            )
+            ws_id = result.first()
+        console.print(f"  [yellow]Exists:[/] Student workspace (id={ws_id})")
+        return ws_id
+
+    template_docs = await _get_template_documents(tmpl_id)
+    ws_id, doc_count = await _create_student_activity_workspace(
+        activity=activity,
+        user=student,
+        template_docs=template_docs,
+    )
+    console.print(
+        f"  [green]Created:[/] Student workspace (id={ws_id}, {doc_count} docs)"
+    )
+    return ws_id
+
+
+async def _validate_enroll(
+    email: str,
+    display_name: str,
+    course: Course,
+    role: str,
+) -> User:
+    """Find-or-create a user and enroll them in the validation course."""
+    user, created = await find_or_create_user(email=email, display_name=display_name)
+    status = "[green]Created" if created else "[yellow]Exists"
+    console.print(f"  {status}:[/] {email}")
+    try:
+        await enroll_user(course_id=course.id, user_id=user.id, role=role)
+        console.print(f"    [green]Enrolled:[/] {role}")
+    except DuplicateEnrollmentError:
+        console.print("    [yellow]Already enrolled[/]")
+    return user
+
+
+async def _async_validate() -> None:
+    """Create a minimal dataset (1 of each entity) for quick smoke testing.
+
+    Idempotent: reuses existing entities if the validation course already
+    exists. Prints the annotation URL and login email at the end.
+    """
+    await init_db()
+    console.print("[bold]Creating validation dataset...[/]\n")
+
+    course, course_created = await _find_or_create_course(
+        code="LT-VALIDATE",
+        name="Validation Course (Load Test)",
+        semester="2026-LT",
+        default_allow_sharing=True,
+        default_anonymous_sharing=True,
+    )
+    status = "[green]Created" if course_created else "[yellow]Exists"
+    console.print(f"  {status}:[/] LT-VALIDATE (id={course.id})")
+
+    await _validate_enroll(
+        "loadtest-validate-instructor@test.local",
+        "Prof. Validate (LT)",
+        course,
+        "coordinator",
+    )
+    student = await _validate_enroll(
+        "loadtest-validate@test.local",
+        "Validate Student (LT)",
+        course,
+        "student",
+    )
+
+    week = await _validate_ensure_week(course)
+    console.print(f"  [green]Week:[/] {week.title} (id={week.id})")
+
+    activity, tmpl_id = await _validate_ensure_activity(week)
+    ws_id = await _validate_ensure_student_workspace(activity, tmpl_id, student)
+
+    url = f"http://127.0.0.1:8080/annotation?{urlencode({'workspace_id': str(ws_id)})}"
+    console.print(
+        f"\n[bold green]Validation workspace created. Open in browser:[/]"
+        f"\n  {url}"
+        f"\n\n  Log in as: [bold]loadtest-validate@test.local[/]"
+    )
+
+
 async def _async_load_test_data() -> None:
     """Main async entry point for load-test data generation."""
     await init_db()
@@ -1255,10 +1413,14 @@ def load_test_data() -> None:
     realistic scale (1100 students). Idempotent: safe to run repeatedly.
 
     Usage:
-        uv run load-test-data
+        uv run load-test-data              # full 1100-student dataset
+        uv run load-test-data --validate   # 1 of each entity for smoke test
     """
     if not get_settings().database.url:
         console.print("[red]Error:[/] DATABASE__URL not set")
         sys.exit(1)
 
-    asyncio.run(_async_load_test_data())
+    if "--validate" in sys.argv:
+        asyncio.run(_async_validate())
+    else:
+        asyncio.run(_async_load_test_data())

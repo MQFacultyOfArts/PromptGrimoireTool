@@ -13,7 +13,7 @@ Search is layered. From the first keystroke, client-side JavaScript filters what
 The home page (`/`) serves as the primary way students and instructors find, resume, and discover work across all activity types (annotation, roleplay, future LLM playground).
 
 1. **Navigator page** at `/` (replaces current index page) — a prominent search box followed by four sections as a single scrollable list: My Work, Unstarted Work, Shared With Me, and Shared in [Unit] (per enrolled unit). Every published activity from every enrolled unit appears.
-2. **Search** — client-side title/metadata filter from character 1, PostgreSQL FTS on document content from character 3 with debounce. FTS results show `ts_headline` snippets explaining why a result matched. Instructor search also matches student names.
+2. **Search** — client-side title/metadata filter from character 1, PostgreSQL FTS on document content from character 3 with debounce. FTS results show `ts_headline` snippets explaining why a result matched.
 3. **Workspace titles** — pencil icon for inline rename on the navigator. New workspaces default to the activity name. Title click navigates to the workspace (not rename).
 4. **Navigation chrome** — home icon on the annotation tab bar (and other pages) to return to navigator. No global header bar imposed on pages that don't want one. Navigator itself has a minimal top line (identity, logout).
 5. **i18n: "Unit" not "Course"** — UI labels display "Unit" throughout the application (MQ terminology). Implemented as a configurable label, defaulting to "Unit."
@@ -50,7 +50,6 @@ The home page (`/`) serves as the primary way students and instructors find, res
 ### workspace-navigator-196.AC3: Search
 - **workspace-navigator-196.AC3.1 Success:** Typing filters visible workspaces by title, unit code, and activity name instantly (client-side)
 - **workspace-navigator-196.AC3.2 Success:** At >=3 characters, FTS fires (with debounce) and surfaces content matches with `ts_headline` snippet
-- **workspace-navigator-196.AC3.3 Success:** Instructor search matches student display names
 - **workspace-navigator-196.AC3.4 Success:** FTS results that weren't visible from title match show a content snippet explaining the match
 - **workspace-navigator-196.AC3.5 Edge:** Clearing search restores full unfiltered list
 - **workspace-navigator-196.AC3.6 Edge:** Search with no results shows "No workspaces match" with clear option

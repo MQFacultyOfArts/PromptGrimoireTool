@@ -486,7 +486,6 @@ async def _seed_tags_for_template(workspace_id: UUID) -> list[str]:
 
     async with get_session() as session:
         tag_ids: list[str] = []
-        tag_count = 0
         for group_idx, (group_name, group_color, tags) in enumerate(TAG_GROUP_DEFS):
             group = TagGroup(
                 workspace_id=workspace_id,
@@ -509,11 +508,10 @@ async def _seed_tags_for_template(workspace_id: UUID) -> list[str]:
                 session.add(tag)
                 await session.flush()
                 tag_ids.append(str(tag.id))
-                tag_count += 1
 
         workspace = await session.get(Workspace, workspace_id)
         if workspace:
-            workspace.next_tag_order = tag_count
+            workspace.next_tag_order = len(tag_ids)
             workspace.next_group_order = len(TAG_GROUP_DEFS)
             session.add(workspace)
             await session.flush()
@@ -660,28 +658,51 @@ async def _get_template_documents(
     return await list_documents(template_workspace_id)
 
 
+async def _seed_tags_and_crdt_state(
+    workspace_id: UUID,
+    user: User,
+    first_doc_id: str | None,
+    first_doc_content_len: int,
+) -> None:
+    """Seed tags into a workspace and build+save CRDT annotation state.
+
+    Shared finalisation step for both activity and loose workspaces.
+    Skipped when no document was created (first_doc_id is None).
+    """
+    tag_ids = await _seed_tags_for_template(workspace_id)
+
+    if first_doc_id and first_doc_content_len > 0:
+        crdt_bytes = build_crdt_state(
+            document_id=first_doc_id,
+            tag_ids=tag_ids,
+            student_name=user.display_name or user.email,
+            content_length=first_doc_content_len,
+            user_id=_email_to_member_id(user.email),
+        )
+        await save_workspace_crdt_state(workspace_id, crdt_bytes)
+
+
 async def _create_student_activity_workspace(
     activity: Activity,
     user: User,
     template_docs: list[WorkspaceDocument],
-) -> tuple[UUID, int]:
+) -> tuple[UUID, int, bool]:
     """Create a student workspace for an activity, cloning template documents.
 
     Returns:
-        (workspace_id, document_count) for the created workspace.
+        (workspace_id, document_count, shared_with_class) for the created workspace.
     """
     workspace = await create_workspace()
     ws_id = workspace.id
 
     # Place in activity and set title
     await place_workspace_in_activity(ws_id, activity.id)
+    shared_with_class = random.random() < 0.2  # nosec B311 -- ~20% chance
     async with get_session() as session:
         ws = await session.get(Workspace, ws_id)
         if ws:
             ws.title = activity.title
-            # ~20% chance of shared_with_class
-            if random.random() < 0.2:  # nosec B311
-                ws.shared_with_class = True
+            ws.shared_with_class = shared_with_class
             session.add(ws)
             await session.flush()
 
@@ -713,22 +734,9 @@ async def _create_student_activity_workspace(
             first_doc_id = str(new_doc.id)
             first_doc_content_len = len(content)
 
-    # Seed tags into this student workspace so the annotation UI can resolve
-    # highlight tag UUIDs against Tag records in the same workspace.
-    tag_ids = await _seed_tags_for_template(ws_id)
+    await _seed_tags_and_crdt_state(ws_id, user, first_doc_id, first_doc_content_len)
 
-    # Build and save CRDT state using first document
-    if first_doc_id and first_doc_content_len > 0:
-        crdt_bytes = build_crdt_state(
-            document_id=first_doc_id,
-            tag_ids=tag_ids,
-            student_name=user.display_name or user.email,
-            content_length=first_doc_content_len,
-            user_id=_email_to_member_id(user.email),
-        )
-        await save_workspace_crdt_state(ws_id, crdt_bytes)
-
-    return ws_id, doc_count
+    return ws_id, doc_count, shared_with_class
 
 
 async def _create_loose_workspace(
@@ -782,20 +790,7 @@ async def _create_loose_workspace(
             first_doc_id = str(new_doc.id)
             first_doc_content_len = len(content)
 
-    # Seed tags into this loose workspace so the annotation UI can resolve
-    # highlight tag UUIDs against Tag records in the same workspace.
-    tag_ids = await _seed_tags_for_template(ws_id)
-
-    # Build and save CRDT state
-    if first_doc_id and first_doc_content_len > 0:
-        crdt_bytes = build_crdt_state(
-            document_id=first_doc_id,
-            tag_ids=tag_ids,
-            student_name=user.display_name or user.email,
-            content_length=first_doc_content_len,
-            user_id=_email_to_member_id(user.email),
-        )
-        await save_workspace_crdt_state(ws_id, crdt_bytes)
+    await _seed_tags_and_crdt_state(ws_id, user, first_doc_id, first_doc_content_len)
 
     return ws_id, num_docs
 
@@ -915,19 +910,15 @@ async def _seed_student_workspaces(
                 if await _check_workspace_exists(activity.id, user.id):
                     continue
 
-                ws_id, doc_count = await _create_student_activity_workspace(
+                _ws_id, doc_count, is_shared = await _create_student_activity_workspace(
                     activity=activity,
                     user=user,
                     template_docs=template_doc_cache[tmpl_id],
                 )
                 activity_ws_count += 1
                 total_doc_count += doc_count
-
-                # Check shared_with_class status
-                async with get_session() as session:
-                    ws = await session.get(Workspace, ws_id)
-                    if ws and ws.shared_with_class:
-                        shared_count += 1
+                if is_shared:
+                    shared_count += 1
 
         # Loose workspaces
         loose, docs = await _create_loose_workspaces_for_student(
@@ -1300,7 +1291,7 @@ async def _validate_ensure_student_workspace(
         return ws_id
 
     template_docs = await _get_template_documents(tmpl_id)
-    ws_id, doc_count = await _create_student_activity_workspace(
+    ws_id, doc_count, _shared = await _create_student_activity_workspace(
         activity=activity,
         user=student,
         template_docs=template_docs,

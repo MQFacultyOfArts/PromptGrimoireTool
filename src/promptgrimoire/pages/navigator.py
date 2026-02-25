@@ -222,10 +222,14 @@ def _render_inline_title_edit(
         _state["saving"] = True
         try:
             new_title = title_input.value.strip() or None
-            assert workspace_id is not None
             await update_workspace_title(workspace_id, new_title)
             # Update display: if cleared, show fallback
             title_input.value = new_title or row.activity_title or "Untitled"
+            title_input.props(remove="outlined", add="readonly borderless")
+            _state["editing"] = False
+        except Exception:
+            logger.exception("Failed to save workspace title for %s", workspace_id)
+            ui.notify("Failed to save title", type="negative")
             title_input.props(remove="outlined", add="readonly borderless")
             _state["editing"] = False
         finally:

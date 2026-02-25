@@ -1,7 +1,8 @@
 """E2E tests for the workspace navigator page.
 
 Verifies the navigator page at ``/`` renders workspace sections correctly,
-handles authentication, provides workspace navigation, and supports search.
+handles authentication, provides workspace navigation, supports search,
+and supports inline title rename.
 
 Acceptance Criteria:
 - workspace-navigator-196.AC2.5: Unauthenticated redirect to login
@@ -14,11 +15,17 @@ Acceptance Criteria:
 - workspace-navigator-196.AC3.5: Clearing search restores full unfiltered list
 - workspace-navigator-196.AC3.6: No results shows message with clear option
 - workspace-navigator-196.AC8.4: Short queries (<3 chars) do not trigger FTS
+- workspace-navigator-196.AC4.1: Pencil icon activates inline title edit
+- workspace-navigator-196.AC4.2: Enter or blur saves the new title
+- workspace-navigator-196.AC4.3: Escape cancels edit without saving
+- workspace-navigator-196.AC4.4: New workspaces default title to activity name
+- workspace-navigator-196.AC4.5: Pencil click does not navigate
 
 Traceability:
 - Issue: #196 (Workspace Navigator)
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_04.md
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_05.md
+- Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_06.md
 """
 
 from __future__ import annotations
@@ -299,6 +306,169 @@ def _search_subtests(
         # No results message should be gone
         no_results = page.locator(".navigator-no-results")
         expect(no_results).to_have_count(0, timeout=3000)
+
+
+def _locate_title_elements(
+    page: Page,
+    workspace_id: str,
+) -> tuple[Locator, Locator]:
+    """Locate pencil icon and native title ``<input>`` for a workspace.
+
+    NiceGUI ``.props('data-workspace-id="..."')`` on a ``ui.input`` places
+    the attribute on the **native** ``<input>`` element inside Quasar's
+    q-input component (not on the outer ``<label>`` root).
+
+    Returns
+    -------
+    (pencil, native_input):
+        pencil: The edit-title icon button.
+        native_input: The native ``<input>`` element.  Call
+            ``.input_value()`` / ``.fill()`` / ``.press()`` directly.
+            To check Quasar field classes (``q-field--outlined``,
+            ``q-field--borderless``), use ``_get_quasar_root()``.
+    """
+    pencil = page.locator(f'[data-testid="edit-title-{workspace_id}"]')
+    native_input = page.locator(f'[data-workspace-id="{workspace_id}"]')
+    return pencil, native_input
+
+
+def _get_quasar_root(native_input: Locator) -> Locator:
+    """Navigate from native ``<input>`` up to the Quasar q-input root.
+
+    Quasar q-input renders as ``<label class="q-field ..."> ... <input>``.
+    The root ``<label>`` carries Quasar state classes like
+    ``q-field--outlined`` and ``q-field--borderless``.
+    """
+    return native_input.locator("xpath=ancestor::label[contains(@class, 'q-field')]")
+
+
+def _rename_edit_subtests(
+    page: Page,
+    *,
+    subtests: SubTests,
+    workspace_id: str,
+    pencil: Locator,
+    native: Locator,
+) -> str:
+    """Run pencil-click, escape, and enter-save sub-assertions.
+
+    Returns the new title saved via Enter (needed for persistence check).
+
+    Parameters
+    ----------
+    native:
+        Locator for the native ``<input>`` element (carries
+        ``data-workspace-id``).  Use ``_get_quasar_root()`` to
+        reach the Quasar ``<label>`` for class assertions.
+    """
+    q_root = _get_quasar_root(native)
+
+    # --- AC4.5: Pencil click does NOT navigate ---
+    with subtests.test(msg="pencil_click_no_navigate"):
+        expect(pencil).to_be_visible(timeout=5000)
+        current_url = page.url
+        pencil.click()
+        page.wait_for_timeout(500)
+        assert page.url == current_url, (
+            f"Pencil click should not navigate. "
+            f"URL changed from {current_url} to {page.url}"
+        )
+
+    # --- AC4.1: Input becomes editable after pencil click ---
+    with subtests.test(msg="input_becomes_editable"):
+        # Quasar adds "q-field--outlined" when outlined prop is set
+        # and removes "q-field--borderless" when borderless is removed.
+        classes = q_root.get_attribute("class") or ""
+        assert "q-field--outlined" in classes, (
+            f"Expected outlined after pencil click, classes: {classes}"
+        )
+
+    # --- AC4.3: Escape cancels edit ---
+    with subtests.test(msg="escape_cancels_edit"):
+        original_value = native.input_value()
+        native.fill("Title That Should Be Cancelled")
+        page.wait_for_timeout(200)
+        native.press("Escape")
+        page.wait_for_timeout(500)
+
+        reverted = native.input_value()
+        assert reverted == original_value, (
+            f"Expected revert to '{original_value}' after Escape, got '{reverted}'"
+        )
+        classes_after = q_root.get_attribute("class") or ""
+        assert "q-field--borderless" in classes_after, (
+            f"Expected borderless after Escape, classes: {classes_after}"
+        )
+
+    # --- AC4.2 (Enter): Save via Enter ---
+    # Reload to get a clean component state after the Escape test.
+    # The Escape handler resets editing=False and restores readonly props,
+    # but a subsequent pencil click may race with pending blur events.
+    new_title = f"Renamed Title {workspace_id[:8]}"
+    with subtests.test(msg="enter_saves_title"):
+        page.reload()
+        page.wait_for_timeout(2000)
+        # Re-locate after reload
+        pencil = page.locator(f'[data-testid="edit-title-{workspace_id}"]')
+        native = page.locator(f'[data-workspace-id="{workspace_id}"]')
+        q_root = _get_quasar_root(native)
+
+        pencil.click()
+        expect(native).to_be_editable(timeout=5000)
+        native.fill(new_title)
+        page.wait_for_timeout(200)
+        native.press("Enter")
+        page.wait_for_timeout(1000)
+
+        saved = native.input_value()
+        assert saved == new_title, f"Expected '{new_title}' after Enter, got '{saved}'"
+        classes_after = q_root.get_attribute("class") or ""
+        assert "q-field--borderless" in classes_after, (
+            f"Expected borderless after save, classes: {classes_after}"
+        )
+
+    return new_title
+
+
+def _rename_persist_and_blur_subtests(
+    page: Page,
+    *,
+    subtests: SubTests,
+    workspace_id: str,
+    expected_title: str,
+) -> None:
+    """Verify title persistence after refresh and blur-save."""
+    # --- Persistence after refresh ---
+    with subtests.test(msg="title_persists_after_refresh"):
+        page.reload()
+        page.wait_for_timeout(2000)
+        native = page.locator(f'[data-workspace-id="{workspace_id}"]')
+        expect(native).to_be_visible(timeout=5000)
+        persisted = native.input_value()
+        assert persisted == expected_title, (
+            f"Expected '{expected_title}' after refresh, got '{persisted}'"
+        )
+
+    # --- AC4.2 (blur): Save via blur ---
+    with subtests.test(msg="blur_saves_title"):
+        pencil = page.locator(f'[data-testid="edit-title-{workspace_id}"]')
+        native = page.locator(f'[data-workspace-id="{workspace_id}"]')
+        pencil.click()
+        # Wait for async handler to remove readonly
+        expect(native).to_be_editable(timeout=5000)
+
+        blur_title = f"Blur Saved {workspace_id[:8]}"
+        native.fill(blur_title)
+        page.wait_for_timeout(200)
+
+        # Click elsewhere to trigger blur
+        page.locator(".navigator-section-header").first.click()
+        page.wait_for_timeout(1000)
+
+        blur_value = native.input_value()
+        assert blur_value == blur_title, (
+            f"Expected '{blur_title}' after blur, got '{blur_value}'"
+        )
 
 
 def _setup_course_with_activity(
@@ -625,3 +795,144 @@ class TestNavigator:
             page.goto("about:blank")
             page.close()
             context.close()
+
+    def test_inline_title_rename(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC4.1-AC4.3, AC4.5: Inline title rename via pencil icon.
+
+        Steps:
+        1. Authenticate and create an owned workspace via DB.
+        2. Navigate to /.
+        3. AC4.5: Click pencil -- URL does not change.
+        4. AC4.1: Verify input switches to editable (outlined).
+        5. AC4.3: Type new title, press Escape -- reverts.
+        6. AC4.2: Type new title, press Enter -- saves.
+        7. Refresh page -- title persists.
+        8. AC4.2: Type title, blur -- saves.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            uid = uuid4().hex[:8]
+            email = f"nav-rename-{uid}@test.example.edu.au"
+            _authenticate_page(page, app_server, email=email)
+
+            workspace_id = _create_workspace_via_db(
+                user_email=email,
+                html_content="<p>Rename test content</p>",
+                seed_tags=False,
+            )
+
+            page.goto(f"{app_server}/")
+            page.wait_for_timeout(2000)
+
+            pencil, native_input = _locate_title_elements(page, workspace_id)
+
+            new_title = _rename_edit_subtests(
+                page,
+                subtests=subtests,
+                workspace_id=workspace_id,
+                pencil=pencil,
+                native=native_input,
+            )
+
+            _rename_persist_and_blur_subtests(
+                page,
+                subtests=subtests,
+                workspace_id=workspace_id,
+                expected_title=new_title,
+            )
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    def test_default_title_on_start(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC4.4: Cloned workspace defaults title to activity name.
+
+        Steps:
+        1. Instructor creates course with published activity.
+        2. Student is enrolled.
+        3. Student clicks Start on the activity.
+        4. Student navigates back to /.
+        5. Verify workspace title matches the activity title.
+        """
+        uid = uuid4().hex[:8]
+        student_email = f"nav-deftitle-{uid}@test.example.edu.au"
+        activity_title = f"Annotate Becky Bennett {uid}"
+
+        # --- Instructor sets up course ---
+        instructor_ctx = browser.new_context()
+        instructor_page = instructor_ctx.new_page()
+
+        try:
+            with subtests.test(msg="instructor_creates_course"):
+                _authenticate_page(
+                    instructor_page,
+                    app_server,
+                    email="instructor@uni.edu",
+                )
+                _setup_course_with_activity(
+                    instructor_page,
+                    app_server,
+                    course_code=f"DEFT-{uid}",
+                    course_name=f"Default Title Test {uid}",
+                    activity_title=activity_title,
+                    student_email=student_email,
+                )
+        finally:
+            instructor_page.goto("about:blank")
+            instructor_page.close()
+            instructor_ctx.close()
+
+        # --- Student: Start activity, then check title ---
+        student_ctx = browser.new_context()
+        student_page = student_ctx.new_page()
+
+        try:
+            _authenticate_page(student_page, app_server, email=student_email)
+
+            with subtests.test(msg="start_activity"):
+                student_page.goto(f"{app_server}/")
+                student_page.wait_for_timeout(2000)
+
+                start_btn = student_page.locator(".navigator-start-btn").first
+                expect(start_btn).to_be_visible(timeout=5000)
+                start_btn.click()
+
+                student_page.wait_for_url(
+                    re.compile(r"/annotation\?workspace_id="),
+                    timeout=15000,
+                )
+
+            with subtests.test(msg="title_matches_activity"):
+                student_page.goto(f"{app_server}/")
+                student_page.wait_for_timeout(2000)
+
+                # The workspace title input should display the
+                # activity title as the default.  The NiceGUI wrapper
+                # div has .navigator-title-input; the native <input>
+                # is nested inside the Quasar q-input within it.
+                wrapper = student_page.locator(".navigator-title-input")
+                expect(wrapper.first).to_be_visible(timeout=5000)
+                native = wrapper.first.locator("input").first
+                title_value = native.input_value()
+                assert title_value == activity_title, (
+                    f"Expected default title '{activity_title}', got '{title_value}'"
+                )
+
+        finally:
+            student_page.goto("about:blank")
+            student_page.close()
+            student_ctx.close()

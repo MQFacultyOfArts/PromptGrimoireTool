@@ -120,6 +120,7 @@ WITH nav AS (
   JOIN week wk ON wk.id = a.week_id
   JOIN course c ON c.id = wk.course_id
   WHERE wk.is_published = true
+    AND (wk.visible_from IS NULL OR wk.visible_from <= NOW())
     AND c.id = ANY(:enrolled_course_ids)
     AND NOT EXISTS (
       SELECT 1

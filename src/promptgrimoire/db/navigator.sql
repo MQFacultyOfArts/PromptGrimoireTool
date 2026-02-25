@@ -75,6 +75,7 @@ WITH nav AS (
   JOIN week wk ON wk.id = a.week_id
   JOIN course c ON c.id = wk.course_id
   WHERE wk.is_published = true
+    AND (wk.visible_from IS NULL OR wk.visible_from <= NOW())
     AND c.id = ANY(:enrolled_course_ids)
     AND NOT EXISTS (
       SELECT 1
@@ -132,7 +133,6 @@ WITH nav AS (
   --
   -- Instructor view (is_privileged=TRUE):
   --   ALL non-template student workspaces in enrolled courses.
-  --   Plus students with zero workspaces (workspace_id=NULL rows).
   --
   -- Activity-placed workspaces:
   SELECT

@@ -66,7 +66,12 @@ async def _create_student_with_workspace(
     activity_id: UUID,
     share_with_class: bool,
 ) -> tuple:
-    """Create a student, enrol, and give them an owned workspace. Returns (user, ws)."""
+    """Create a student, enrol, and give them an owned workspace.
+
+    Returns (user, ws) where ws is the workspace as created — callers
+    should use ws.id rather than relying on ws attributes being current
+    after subsequent mutations (e.g. title/shared_with_class updates).
+    """
     from promptgrimoire.db.acl import grant_permission
     from promptgrimoire.db.courses import enroll_user
     from promptgrimoire.db.engine import get_session
@@ -306,6 +311,57 @@ class TestUnstarted:
 
         unstarted_act_ids = {r.activity_id for r in rows if r.section == "unstarted"}
         assert data["unpublished_activity"].id not in unstarted_act_ids
+
+    @pytest.mark.asyncio
+    async def test_future_visible_from_excluded(self) -> None:
+        """Published week with future visible_from hides activities from unstarted.
+
+        A week can be published but time-locked by visible_from. Students must
+        not see activities from such weeks before release.
+
+        Verifies: Critical fix for missing visible_from check in unstarted leg.
+        """
+        import datetime as dt
+
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Week
+        from promptgrimoire.db.navigator import load_navigator_page
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week
+
+        tag = uuid4().hex[:8]
+        course = await create_course(
+            code=f"VF{tag[:5].upper()}", name=f"VisFrom Test {tag}", semester="2026-S1"
+        )
+        week = await create_week(
+            course_id=course.id, week_number=1, title="Future Week"
+        )
+        tomorrow = dt.datetime.now(dt.UTC) + dt.timedelta(days=1)
+        async with get_session() as session:
+            wk = await session.get(Week, week.id)
+            assert wk is not None
+            wk.is_published = True
+            wk.visible_from = tomorrow
+            session.add(wk)
+
+        activity = await create_activity(week_id=week.id, title=f"Future Act {tag}")
+        student = await create_user(
+            email=f"vf-{tag}@test.local", display_name=f"VF {tag}"
+        )
+        await enroll_user(course_id=course.id, user_id=student.id, role="student")
+
+        rows, _ = await load_navigator_page(
+            user_id=student.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+
+        unstarted_act_ids = {r.activity_id for r in rows if r.section == "unstarted"}
+        assert activity.id not in unstarted_act_ids, (
+            "Time-locked activity appeared in unstarted before visible_from date"
+        )
 
     @pytest.mark.asyncio
     async def test_started_activity_not_unstarted(self) -> None:

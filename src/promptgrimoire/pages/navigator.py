@@ -216,8 +216,13 @@ def _render_workspace_entry(
                 and row.workspace_id is not None
                 and row.workspace_id in snippets
             ):
-                # sanitize=False: snippet HTML is from ts_headline with
-                # HTML-stripped content (regexp_replace in search SQL).
+                # sanitize=False: the only HTML tags injected into the
+                # snippet are the literal strings "<mark>" and "</mark>",
+                # both hardcoded as StartSel/StopSel in _HEADLINE_OPTIONS
+                # (db/search.py).  The surrounding plain text comes from
+                # regexp_replace stripping all HTML tags from the source
+                # content before it reaches ts_headline.  No user-supplied
+                # HTML can survive into the snippet.
                 ui.html(snippets[row.workspace_id], sanitize=False).classes(
                     "navigator-snippet"
                 )
@@ -521,7 +526,12 @@ def _setup_search(
         _restore_full_view()
 
     async def _do_search(query: str) -> None:
-        results = await search_workspace_content(query, limit=50)
+        try:
+            results = await search_workspace_content(query, limit=50)
+        except Exception:
+            logger.exception("Search failed for query %r", query)
+            ui.notify("Search failed. Try again.", type="warning")
+            return
         matched_ids = {r.workspace_id for r in results}
         snippets = {r.workspace_id: r.snippet for r in results}
         filtered = [r for r in all_rows if r.workspace_id in matched_ids]

@@ -182,9 +182,7 @@ def _type_in_search(
     ``update:model-value`` Vue event fires correctly
     (Playwright's ``fill()`` may not trigger it).
     """
-    search_input.click()
-    page.keyboard.press("Control+a")
-    page.keyboard.press("Backspace")
+    _clear_search_input(page, search_input)
     page.keyboard.type(text, delay=30)
 
 

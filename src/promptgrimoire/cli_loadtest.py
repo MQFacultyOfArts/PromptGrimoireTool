@@ -1025,10 +1025,11 @@ async def _print_summary(
 
     # Count from database for accuracy
     async with get_session() as session:
-        # Use "lt-%" to include instructors (lt-instructor-*) and admin
-        # (lt-admin@test.local) in addition to students (loadtest-*).
+        # All load-test users share @test.local domain (students: loadtest-*,
+        # instructors: lt-instructor-*, admin: lt-admin). Seed data uses
+        # @uni.edu and @example.com, so this won't over-count.
         user_result = await session.exec(
-            select(User.id).where(User.email.like("lt-%@test.local"))  # type: ignore[union-attr]  # SQLAlchemy column expression
+            select(User.id).where(User.email.like("%@test.local"))  # type: ignore[union-attr]  # SQLAlchemy column expression
         )
         db_user_count = len(user_result.all())
 

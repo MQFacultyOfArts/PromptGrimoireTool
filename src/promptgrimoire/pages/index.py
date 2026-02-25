@@ -30,7 +30,7 @@ async def index_page() -> None:
             ui.markdown("""
 Use the **navigation menu** (☰) to access:
 
-- **Courses** - View and manage your course enrollments
+- **Units** - View and manage your unit enrollments
 - **Roleplay** - AI-powered roleplay scenarios
 - **Session Logs** - Review past session transcripts
 - **Case Tool** - Legal case analysis (requires database)

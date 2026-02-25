@@ -185,7 +185,7 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     page.locator("button").filter(
         has=page.locator("i.q-icon", has_text="settings")
     ).click()
-    dialog_title = page.get_by_text("Course Settings", exact=True)
+    dialog_title = page.get_by_text("Unit Settings:")
     dialog_title.wait_for(state="visible", timeout=5000)
 
     toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")

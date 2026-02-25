@@ -148,7 +148,7 @@ def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) ->
     ).click()
 
     # Wait for the dialog to appear
-    dialog_title = page.get_by_text("Course Settings", exact=True)
+    dialog_title = page.get_by_text("Unit Settings:")
     dialog_title.wait_for(state="visible", timeout=5000)
 
     # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component.

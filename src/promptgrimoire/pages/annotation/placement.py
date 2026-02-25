@@ -59,7 +59,7 @@ def _build_activity_cascade(
     """
 
     course_select = (
-        ui.select(options=course_options, label="Course", with_input=True)
+        ui.select(options=course_options, label="Unit", with_input=True)
         .classes("w-full")
         .props('data-testid="placement-course"')
     )
@@ -127,7 +127,7 @@ def _build_course_only_select(
     """
 
     course_only_select = (
-        ui.select(options=course_options, label="Course", with_input=True)
+        ui.select(options=course_options, label="Unit", with_input=True)
         .classes("w-full")
         .props('data-testid="placement-course-only"')
     )
@@ -155,7 +155,7 @@ async def _apply_placement(
         aid = selected.get("activity")
         if aid is None:
             ui.notify(
-                "Please select a course, week, and activity",
+                "Please select a unit, week, and activity",
                 type="warning",
             )
             return False
@@ -165,10 +165,10 @@ async def _apply_placement(
     if mode_value == "course":
         cid = selected.get("course_only")
         if cid is None:
-            ui.notify("Please select a course", type="warning")
+            ui.notify("Please select a unit", type="warning")
             return False
         await place_workspace_in_course(workspace_id, cid)
-        ui.notify("Workspace associated with course", type="positive")
+        ui.notify("Workspace associated with unit", type="positive")
         return True
     return False
 
@@ -204,7 +204,7 @@ async def show_placement_dialog(
             options={
                 "loose": "Unplaced",
                 "activity": "Place in Activity",
-                "course": "Associate with Course",
+                "course": "Associate with Unit",
             },
             value=initial_mode,
         ).props('data-testid="placement-mode"')

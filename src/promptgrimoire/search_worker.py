@@ -35,8 +35,13 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
     processed = 0
 
     async with get_session() as session:
-        # Fetch dirty workspaces.  FOR UPDATE SKIP LOCKED prevents concurrent
-        # workers from double-processing the same rows.
+        # Fetch dirty workspaces.  FOR UPDATE SKIP LOCKED prevents two workers
+        # from selecting the same batch simultaneously.  The lock is released
+        # when this session commits (before processing begins), so concurrent
+        # workers starting later may still pick up the same rows.  The CAS
+        # guard on the UPDATE (AND search_dirty = true) is the actual
+        # correctness mechanism — it prevents two workers from both clearing
+        # the flag.  Double extraction is possible but harmless (idempotent).
         result = await session.execute(
             text(
                 "SELECT id, crdt_state FROM workspace "

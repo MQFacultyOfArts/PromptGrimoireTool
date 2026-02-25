@@ -324,6 +324,7 @@ async def save_workspace_crdt_state(workspace_id: UUID, crdt_state: bytes) -> bo
         if workspace:
             workspace.crdt_state = crdt_state
             workspace.updated_at = datetime.now(UTC)
+            workspace.search_dirty = True
             session.add(workspace)
             return True
         return False

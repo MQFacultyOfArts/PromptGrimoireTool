@@ -192,20 +192,15 @@ def extract_searchable_text(
 
     # Extract from highlights: text, resolved tags, comments
     for highlight in doc.get_all_highlights():
-        hl_text = highlight.get("text", "")
-        if hl_text:
-            parts.append(str(hl_text))
+        if hl_text := highlight.get("text", ""):
+            parts.append(hl_text)
 
-        tag_raw = highlight.get("tag", "")
-        if tag_raw:
-            tag_str = str(tag_raw)
-            resolved = tag_names.get(tag_str, tag_str)
-            parts.append(resolved)
+        if tag := highlight.get("tag", ""):
+            parts.append(tag_names.get(tag, tag))
 
         for comment in highlight.get("comments", []):
-            comment_text = comment.get("text", "")
-            if comment_text:
-                parts.append(str(comment_text))
+            if comment_text := comment.get("text", ""):
+                parts.append(comment_text)
 
     # Response draft markdown (Tab 3)
     response_draft = doc.get_response_draft_markdown()

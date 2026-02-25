@@ -53,23 +53,22 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
         )
         rows = result.fetchall()
 
-    for row in rows:
-        workspace_id = row[0]
-        crdt_state = row[1]
-
+    for workspace_id, crdt_state in rows:
         try:
             # Build tag_names mapping for this workspace
-            tag_names: dict[str, str] = {}
             async with get_session() as session:
                 tag_result = await session.execute(
                     text("SELECT id, name FROM tag WHERE workspace_id = :ws_id"),
                     {"ws_id": str(workspace_id)},
                 )
-                for tag_row in tag_result.fetchall():
-                    tag_names[str(tag_row[0])] = tag_row[1]
+                tag_names = {
+                    str(tag_row[0]): tag_row[1] for tag_row in tag_result.fetchall()
+                }
 
             # Extract searchable text
-            crdt_bytes: bytes | None = bytes(crdt_state) if crdt_state else None
+            crdt_bytes: bytes | None = (
+                bytes(crdt_state) if crdt_state is not None else None
+            )
             extracted_text = extract_searchable_text(crdt_bytes, tag_names)
 
             # Update workspace.  The CAS guard (AND search_dirty = true) ensures

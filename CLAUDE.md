@@ -179,6 +179,7 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 - No `# type: ignore` without explanation
 - Prefer composition over inheritance
 - Keep functions small and focused
+- **Terminology: "Unit" not "Course"** — Australian universities use "unit" for what other systems call "course". All user-facing UI text must say "Unit" (e.g. "Unit Settings", "New Unit", "Inherit from unit"). Code identifiers (`course`, `course_id`), URL paths (`/courses/`), and model/table names remain unchanged.
 
 ## Critical, for autonomous mode
 

@@ -2056,9 +2056,11 @@ async def _cmd_admin(
     if remove:
         await db_set_admin(user.id, False)
         con.print(f"[green]Removed[/] admin from '{email}' (local DB).")
+        await _update_stytch_metadata(user, {"is_admin": False}, console=con)
     else:
         await db_set_admin(user.id, True)
         con.print(f"[green]Granted[/] admin to '{email}' (local DB).")
+        await _update_stytch_metadata(user, {"is_admin": True}, console=con)
 
 
 async def _cmd_instructor(

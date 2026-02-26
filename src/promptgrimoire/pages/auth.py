@@ -160,6 +160,8 @@ async def _upsert_local_user(
     stytch_member_id: str,
     display_name: str | None = None,
     roles: list[str] | None = None,
+    *,
+    force_admin: bool = False,
 ) -> tuple[UUID | None, bool]:
     """Upsert user in local database if configured.
 
@@ -168,6 +170,8 @@ async def _upsert_local_user(
         stytch_member_id: Stytch member_id from auth.
         display_name: Optional name from Stytch.
         roles: List of Stytch roles (checks for "stytch_admin").
+        force_admin: If True, set is_admin regardless of Stytch roles
+            (used when trusted_metadata.is_admin is set).
 
     Returns:
         Tuple of (user_id, is_admin) or (None, False) if DB not configured.
@@ -176,8 +180,8 @@ async def _upsert_local_user(
         logger.debug("DATABASE__URL not configured, skipping user upsert")
         return None, False
 
-    # Check if user has admin role from Stytch
-    is_admin = "stytch_admin" in (roles or [])
+    # Check if user has admin role from Stytch or metadata
+    is_admin = force_admin or "stytch_admin" in (roles or [])
 
     try:
         await init_db()
@@ -566,11 +570,17 @@ async def _handle_sso_callback(token: str | None) -> None:
         derived_roles = derive_roles_from_metadata(result.trusted_metadata)
         all_roles = list(dict.fromkeys([*result.roles, *derived_roles]))
 
+        # Check if trusted_metadata flags this user as admin
+        metadata_admin = bool(
+            result.trusted_metadata and result.trusted_metadata.get("is_admin")
+        )
+
         user_id, is_admin = await _upsert_local_user(
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
             roles=all_roles,
+            force_admin=metadata_admin,
         )
         _set_session_user(
             email=result.email or "",

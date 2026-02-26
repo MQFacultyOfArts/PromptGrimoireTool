@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 
 from nicegui import events, ui
 
+from promptgrimoire.config import get_settings
 from promptgrimoire.db.workspace_documents import add_document
 from promptgrimoire.input_pipeline.html_input import (
     detect_content_type,
@@ -647,9 +648,12 @@ def _render_add_content_form(workspace_id: UUID) -> None:
             ui.notify(f"Failed to process file: {exc}", type="negative")
 
     # File upload for HTML, RTF, DOCX, PDF, TXT, Markdown files
-    ui.upload(
-        label="Or upload a file",
-        on_upload=handle_file_upload,
-        auto_upload=True,
-        max_file_size=10 * 1024 * 1024,  # 10 MB limit
-    ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes("w-full")
+    if get_settings().features.enable_file_upload:
+        ui.upload(
+            label="Or upload a file",
+            on_upload=handle_file_upload,
+            auto_upload=True,
+            max_file_size=10 * 1024 * 1024,  # 10 MB limit
+        ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes(
+            "w-full"
+        )

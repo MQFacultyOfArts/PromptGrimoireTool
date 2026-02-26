@@ -18,6 +18,7 @@ from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
 from promptgrimoire.models import Character, Session
+from promptgrimoire.pages.layout import require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
@@ -166,10 +167,16 @@ def _setup_session(
     return session, client, log_path
 
 
-@page_route("/roleplay", title="Roleplay", icon="chat", order=30)
+@page_route(
+    "/roleplay", title="Roleplay", icon="chat", order=30, requires_roleplay=True
+)
 async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many statements
     """Roleplay chat page."""
     await ui.context.client.connected()
+
+    # Feature flag guard -- require roleplay enabled
+    if not require_roleplay_enabled():
+        return
 
     # Auth guard -- require login
     auth_user = app.storage.user.get("auth_user")

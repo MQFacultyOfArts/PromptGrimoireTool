@@ -15,6 +15,7 @@ from pathlib import Path
 from nicegui import ui
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.pages.layout import require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
 
 logger = logging.getLogger(__name__)
@@ -96,10 +97,16 @@ def _render_turn(i: int, turn: dict) -> None:
                 _render_metadata(extra)
 
 
-@page_route("/logs", title="Session Logs", icon="description", order=40)
+@page_route(
+    "/logs", title="Session Logs", icon="description", order=40, requires_roleplay=True
+)
 async def logs_page() -> None:
     """Log viewer page."""
     await ui.context.client.connected()
+
+    # Feature flag guard -- require roleplay enabled
+    if not require_roleplay_enabled():
+        return
 
     ui.label("Session Log Viewer").classes("text-h4 mb-4")
 

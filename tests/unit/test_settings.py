@@ -21,6 +21,7 @@ from promptgrimoire.config import (
     AppConfig,
     DatabaseConfig,
     DevConfig,
+    FeaturesConfig,
     LlmConfig,
     Settings,
     StytchConfig,
@@ -146,6 +147,90 @@ class TestTypeValidation:
         assert s.llm.lorebook_token_budget == 0
         assert s.database.url is None
         assert s.stytch.project_id == ""
+
+
+# ---------------------------------------------------------------------------
+# Feature flags (FeaturesConfig)
+# ---------------------------------------------------------------------------
+class TestFeaturesConfig:
+    """Feature flag defaults and Settings integration."""
+
+    def test_defaults_all_enabled(self) -> None:
+        """Feature flags default to True (current behaviour preserved)."""
+        cfg = FeaturesConfig()
+        assert cfg.enable_roleplay is True
+        assert cfg.enable_file_upload is True
+
+    def test_disable_via_constructor(self) -> None:
+        """Feature flags can be explicitly disabled."""
+        cfg = FeaturesConfig(enable_roleplay=False, enable_file_upload=False)
+        assert cfg.enable_roleplay is False
+        assert cfg.enable_file_upload is False
+
+    def test_bool_coercion_from_string(self) -> None:
+        """Feature flags coerce string values to bool (env var style)."""
+        cfg = FeaturesConfig(
+            enable_roleplay="false",  # type: ignore[arg-type]
+            enable_file_upload="true",  # type: ignore[arg-type]
+        )
+        assert cfg.enable_roleplay is False
+        assert cfg.enable_file_upload is True
+
+    def test_settings_features_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Settings.features defaults to all-enabled FeaturesConfig."""
+        for key in list(os.environ):
+            if key.startswith("FEATURES__"):
+                monkeypatch.delenv(key, raising=False)
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.features.enable_roleplay is True
+        assert s.features.enable_file_upload is True
+
+    def test_settings_features_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Settings reads FEATURES__ env vars to disable flags."""
+        monkeypatch.setenv("FEATURES__ENABLE_ROLEPLAY", "false")
+        monkeypatch.setenv("FEATURES__ENABLE_FILE_UPLOAD", "false")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.features.enable_roleplay is False
+        assert s.features.enable_file_upload is False
+
+
+# ---------------------------------------------------------------------------
+# Page registry: roleplay feature flag filtering
+# ---------------------------------------------------------------------------
+class TestPageRegistryRoleplayFlag:
+    """Verify get_visible_pages respects requires_roleplay."""
+
+    def test_roleplay_page_hidden_when_disabled(self) -> None:
+        """Pages with requires_roleplay=True are excluded when flag is False."""
+        from promptgrimoire.pages.registry import get_visible_pages
+
+        all_pages = get_visible_pages(
+            user={"email": "test@example.com"},
+            demos_enabled=False,
+            roleplay_enabled=True,
+        )
+        filtered = get_visible_pages(
+            user={"email": "test@example.com"},
+            demos_enabled=False,
+            roleplay_enabled=False,
+        )
+        roleplay_routes = {p.route for p in all_pages if p.requires_roleplay}
+        filtered_routes = {p.route for p in filtered}
+        assert roleplay_routes, "Expected at least one requires_roleplay page"
+        assert roleplay_routes.isdisjoint(filtered_routes)
+
+    def test_roleplay_page_shown_when_enabled(self) -> None:
+        """Pages with requires_roleplay=True are included when flag is True."""
+        from promptgrimoire.pages.registry import get_visible_pages
+
+        pages = get_visible_pages(
+            user={"email": "test@example.com"},
+            demos_enabled=False,
+            roleplay_enabled=True,
+        )
+        roleplay_routes = {p.route for p in pages if p.requires_roleplay}
+        assert "/roleplay" in roleplay_routes
+        assert "/logs" in roleplay_routes
 
 
 # ---------------------------------------------------------------------------

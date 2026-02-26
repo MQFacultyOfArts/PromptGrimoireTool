@@ -639,9 +639,9 @@ def _setup_search(
     ) -> None:
         """Refresh sections with the given rows, clearing stale UI."""
         no_results_container.clear()
-        user_id: UUID = page_state["user_id"]  # type: ignore[assignment]
-        is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]
-        enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]
+        user_id: UUID = page_state["user_id"]  # type: ignore[assignment]  # always UUID
+        is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]  # always bool
+        enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]  # always list[UUID]
         render_sections_refresh(
             rows=rows,
             user_id=user_id,
@@ -652,8 +652,8 @@ def _setup_search(
         )
 
     def _restore_full_view() -> None:
-        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
-        next_cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
+        next_cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]  # always NavigatorCursor | None
         page_state["search_active"] = False
         _refresh(all_rows, cursor=next_cursor)
 
@@ -668,7 +668,7 @@ def _setup_search(
             logger.exception("Search failed for query %r", query)
             ui.notify("Search failed. Try again.", type="warning")
             return
-        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
         matched_ids = {r.workspace_id for r in results}
         snippets = {r.workspace_id: r.snippet for r in results}
         filtered = [r for r in all_rows if r.workspace_id in matched_ids]
@@ -753,7 +753,9 @@ async def _build_navigator_ui(
         scroll_container = (
             ui.column()
             .classes("w-full navigator-scroll-area")
-            .style("overflow-y: auto; height: calc(100vh - 64px)")
+            .style(
+                "overflow-y: auto; height: calc(100vh - 64px)"
+            )  # 64px = Quasar QHeader height
         )
         # Native DOM scroll events carry scrollTop/scrollHeight/clientHeight
         # on event.target, not as direct event properties.  NiceGUI's args
@@ -782,7 +784,7 @@ async def _build_navigator_ui(
             # Wire up search behaviour
             on_search_change = _setup_search(
                 page_state=page_state,
-                render_sections_refresh=render_sections.refresh,  # type: ignore[attr-defined]
+                render_sections_refresh=render_sections.refresh,  # type: ignore[attr-defined]  # @ui.refreshable adds .refresh()
                 no_results_container=no_results_container,
                 search_input=search_input,
             )
@@ -886,8 +888,9 @@ async def navigator_page() -> None:
         """Load more rows when the user scrolls near the bottom.
 
         Called by the native ``scroll`` event on the overflow-y container.
-        NiceGUI's ``args`` parameter extracts scrollTop, scrollHeight,
-        and clientHeight from the DOM event without raw JavaScript.
+        A ``js_handler`` on the scroll event extracts scrollTop,
+        scrollHeight, and clientHeight from ``event.target`` and emits
+        them as positional args to this handler.
 
         Guards: loading, no cursor, search active, editing active.
         """
@@ -920,12 +923,12 @@ async def navigator_page() -> None:
 
         page_state["loading"] = True
         try:
-            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
-            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
+            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
+            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]  # always NavigatorCursor | None
             new_rows, new_cursor = await load_navigator_page(
-                user_id=page_state["user_id"],  # type: ignore[arg-type]
-                is_privileged=page_state["is_privileged"],  # type: ignore[arg-type]
-                enrolled_course_ids=page_state["enrolled_course_ids"],  # type: ignore[arg-type]
+                user_id=page_state["user_id"],  # type: ignore[arg-type]  # always UUID
+                is_privileged=page_state["is_privileged"],  # type: ignore[arg-type]  # always bool
+                enrolled_course_ids=page_state["enrolled_course_ids"],  # type: ignore[arg-type]  # always list[UUID]
                 cursor=cursor,
                 limit=50,
             )

@@ -1284,6 +1284,134 @@ class TestNavigator:
 
 
 # ===========================================================================
+# Phase 8: Navigation chrome (AC6)
+# ===========================================================================
+
+
+class TestNavigationChrome:
+    """Tests for home icon navigation buttons on all pages."""
+
+    @pytest.mark.e2e
+    def test_annotation_home_icon_navigates_to_navigator(
+        self, browser: Browser, app_server: str
+    ) -> None:
+        """AC6.1: Home icon on annotation tab bar navigates to /."""
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            email = _authenticate_page(page, app_server)
+
+            # Create a workspace to navigate to annotation page
+            workspace_id = _create_workspace_via_db(
+                user_email=email,
+                html_content="<p>Home icon test content</p>",
+            )
+
+            # Go to annotation page
+            page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+            page.wait_for_timeout(3000)  # wait for page to load
+
+            # Find and click home button
+            home_btn = page.get_by_role("button", name="home")
+            expect(home_btn.first).to_be_visible(timeout=5000)
+            home_btn.first.click()
+
+            # Verify navigation to /
+            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
+            assert page.url.rstrip("/").endswith(app_server.rstrip("/")), (
+                f"Expected to navigate to /, got {page.url}"
+            )
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    @pytest.mark.e2e
+    def test_annotation_no_global_header_bar(
+        self, browser: Browser, app_server: str
+    ) -> None:
+        """AC6.3: No global header bar imposed on annotation page.
+
+        Verify the home icon is a small flat button, not a new header bar.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            email = _authenticate_page(page, app_server)
+            workspace_id = _create_workspace_via_db(
+                user_email=email,
+                html_content="<p>Layout check content</p>",
+            )
+
+            page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+            page.wait_for_timeout(3000)
+
+            # The home button should exist
+            home_btn = page.get_by_role("button", name="home")
+            expect(home_btn.first).to_be_visible(timeout=5000)
+
+            # The button should be flat (not elevated, no background)
+            # Check it has 'flat' in its Quasar props
+            btn_element = home_btn.first
+            btn_classes = btn_element.get_attribute("class") or ""
+            assert "q-btn--flat" in btn_classes, (
+                f"Home button should be flat. Classes: {btn_classes}"
+            )
+
+            # Verify tabs still exist and work normally
+            tabs = page.locator(".q-tabs")
+            expect(tabs.first).to_be_visible(timeout=5000)
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    @pytest.mark.e2e
+    def test_roleplay_home_icon_navigates_to_navigator(
+        self, browser: Browser, app_server: str
+    ) -> None:
+        """AC6.2: Home icon on roleplay page navigates to /."""
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            _authenticate_page(page, app_server)
+            page.goto(f"{app_server}/roleplay")
+            page.wait_for_timeout(2000)
+
+            home_btn = page.get_by_role("button", name="home")
+            expect(home_btn.first).to_be_visible(timeout=5000)
+            home_btn.first.click()
+
+            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    @pytest.mark.e2e
+    def test_courses_home_icon_navigates_to_navigator(
+        self, browser: Browser, app_server: str
+    ) -> None:
+        """AC6.2: Home icon on courses list page navigates to /."""
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            _authenticate_page(page, app_server)
+            page.goto(f"{app_server}/courses")
+            page.wait_for_timeout(2000)
+
+            home_btn = page.get_by_role("button", name="home")
+            expect(home_btn.first).to_be_visible(timeout=5000)
+            home_btn.first.click()
+
+            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+
+# ===========================================================================
 # Phase 8: i18n terminology (AC7)
 # ===========================================================================
 

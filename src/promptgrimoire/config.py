@@ -76,6 +76,13 @@ class AppConfig(BaseModel):
     latexmk_path: str = ""
 
 
+class FeaturesConfig(BaseModel):
+    """Feature flags for enabling/disabling application capabilities."""
+
+    enable_roleplay: bool = True
+    enable_file_upload: bool = True
+
+
 class DevConfig(BaseModel):
     """Development and testing toggles."""
 
@@ -212,6 +219,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = DatabaseConfig()
     llm: LlmConfig = LlmConfig()
     app: AppConfig = AppConfig()
+    features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
 
     @model_validator(mode="after")

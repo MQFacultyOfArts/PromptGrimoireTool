@@ -31,6 +31,15 @@ def demos_enabled() -> bool:
     return get_settings().dev.enable_demo_pages
 
 
+def roleplay_enabled() -> bool:
+    """Check if roleplay is enabled via feature flag.
+
+    Returns:
+        True if FEATURES__ENABLE_ROLEPLAY is set to true.
+    """
+    return get_settings().features.enable_roleplay
+
+
 def require_demo_enabled() -> bool:
     """Check if demos are enabled, show error if not.
 
@@ -45,6 +54,24 @@ def require_demo_enabled() -> bool:
     ui.label("Set DEV__ENABLE_DEMO_PAGES=true in your environment to enable.").classes(
         "text-body1 text-grey-7"
     )
+    ui.button("Go Home", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
+    return False
+
+
+def require_roleplay_enabled() -> bool:
+    """Check if roleplay is enabled, show error if not.
+
+    Use at the start of roleplay pages to gate access.
+
+    Returns:
+        True if roleplay is enabled, False otherwise.
+    """
+    if roleplay_enabled():
+        return True
+    ui.label("Roleplay is disabled").classes("text-h5 text-red-500")
+    ui.label(
+        "Set FEATURES__ENABLE_ROLEPLAY=true in your environment to enable."
+    ).classes("text-body1 text-grey-7")
     ui.button("Go Home", on_click=lambda: ui.navigate.to("/")).classes("mt-4")
     return False
 
@@ -100,7 +127,9 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
 
         with ui.list().props("padding"):
             # Build navigation dynamically from page registry
-            pages_by_cat = get_pages_by_category(user, demos_enabled())
+            pages_by_cat = get_pages_by_category(
+                user, demos_enabled(), roleplay_enabled()
+            )
 
             # Category display config
             category_labels = {

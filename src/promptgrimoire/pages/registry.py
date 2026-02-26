@@ -26,6 +26,7 @@ class PageMeta:
     requires_auth: bool = True
     requires_admin: bool = False
     requires_demo: bool = False
+    requires_roleplay: bool = False
     order: int = field(default=100)
 
 
@@ -42,6 +43,7 @@ def page_route(
     requires_auth: bool = True,
     requires_admin: bool = False,
     requires_demo: bool = False,
+    requires_roleplay: bool = False,
     order: int = 100,
 ) -> Callable:
     """Decorator to register a page with navigation metadata.
@@ -74,6 +76,7 @@ def page_route(
             requires_auth=requires_auth,
             requires_admin=requires_admin,
             requires_demo=requires_demo,
+            requires_roleplay=requires_roleplay,
             order=order,
         )
         _page_registry[route] = meta
@@ -85,12 +88,14 @@ def page_route(
 def get_visible_pages(
     user: dict | None,
     demos_enabled: bool,
+    roleplay_enabled: bool = True,
 ) -> list[PageMeta]:
     """Get pages visible to the current user, sorted by category and order.
 
     Args:
         user: Current user dict from session, or None if not authenticated.
         demos_enabled: Whether ENABLE_DEMO_PAGES flag is set.
+        roleplay_enabled: Whether FEATURES__ENABLE_ROLEPLAY flag is set.
 
     Returns:
         List of PageMeta for pages the user can access.
@@ -116,6 +121,10 @@ def get_visible_pages(
         if meta.requires_demo and not demos_enabled:
             continue
 
+        # Check roleplay requirement
+        if meta.requires_roleplay and not roleplay_enabled:
+            continue
+
         visible.append(meta)
 
     # Sort by category order, then by order field
@@ -128,17 +137,19 @@ def get_visible_pages(
 def get_pages_by_category(
     user: dict | None,
     demos_enabled: bool,
+    roleplay_enabled: bool = True,
 ) -> dict[str, list[PageMeta]]:
     """Get visible pages grouped by category.
 
     Args:
         user: Current user dict from session, or None if not authenticated.
         demos_enabled: Whether ENABLE_DEMO_PAGES flag is set.
+        roleplay_enabled: Whether FEATURES__ENABLE_ROLEPLAY flag is set.
 
     Returns:
         Dict mapping category names to lists of PageMeta.
     """
-    pages = get_visible_pages(user, demos_enabled)
+    pages = get_visible_pages(user, demos_enabled, roleplay_enabled)
     by_category: dict[str, list[PageMeta]] = {}
 
     for page in pages:

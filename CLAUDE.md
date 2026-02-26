@@ -172,17 +172,6 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 
 `check_workspace_access(workspace_id, auth_user)` in `auth/__init__.py` resolves effective permission for a workspace. Resolution order: unauthenticated returns `None`; admins get `"owner"` (bypass); others go through `resolve_permission()` which checks explicit ACL then enrollment-derived access, highest wins, default deny.
 
-## Feature Flags
-
-`FeaturesConfig` sub-model (prefix `FEATURES__`) in `config.py`. Both default `true`.
-
-| Flag | Effect when `false` |
-|------|-------------------|
-| `FEATURES__ENABLE_ROLEPLAY` | Hides `/roleplay` and `/logs` from nav; page-level guard blocks direct access |
-| `FEATURES__ENABLE_FILE_UPLOAD` | Hides file upload widget in annotation content form; paste/text area remains |
-
-Page-level gating uses `requires_roleplay=True` on `@page_route` (nav filtering) plus `require_roleplay_enabled()` guard in the page function (direct URL protection). Pattern mirrors `requires_demo` / `require_demo_enabled()`.
-
 ## Conventions
 
 - Type hints on all functions

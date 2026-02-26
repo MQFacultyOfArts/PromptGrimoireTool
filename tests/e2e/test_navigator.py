@@ -189,15 +189,13 @@ def _create_workspaces_bulk(
 
     Returns a list of workspace_id strings.
     """
-    import os
     import uuid
 
     from sqlalchemy import create_engine, text
 
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        msg = "DATABASE__URL not configured"
-        raise RuntimeError(msg)
+    from promptgrimoire.config import get_settings
+
+    db_url = str(get_settings().database.url)
     sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
     engine = create_engine(sync_url)
 
@@ -259,36 +257,28 @@ def _create_workspaces_bulk(
 def _scroll_navigator_to_bottom(page: Page) -> None:
     """Scroll the navigator scroll area to the bottom.
 
-    Uses JavaScript to set scrollTop on the Quasar scroll area's
-    inner container, which triggers the ``on_scroll`` callback.
+    The navigator uses a plain ``overflow-y: auto`` div (not Quasar
+    QScrollArea), so ``scrollTop`` can be set directly on the element.
+    ``evaluate()`` is required because Playwright has no native API to
+    set ``scrollTop`` on an arbitrary scrollable div.
+
+    Explicitly dispatches a ``scroll`` event after setting ``scrollTop``
+    to ensure NiceGUI's event listener picks up the change.
     """
     page.locator(".navigator-scroll-area").evaluate(
-        """el => {
-            const container = el.querySelector('.q-scrollarea__container');
-            if (container) {
-                container.scrollTop = container.scrollHeight;
-            }
-        }"""
+        "el => { el.scrollTop = el.scrollHeight;"
+        " el.dispatchEvent(new Event('scroll')); }"
     )
 
 
 def _scroll_navigator_to_top(page: Page) -> None:
     """Scroll the navigator scroll area to the top.
 
-    Uses Quasar's setScrollPosition API via the scroll area's
-    ``__vue__`` component to properly update internal state,
-    ensuring child elements are clickable after scroll.
-    Falls back to raw scrollTop if the Quasar API is unavailable.
+    Sets ``scrollTop`` to 0 and dispatches a scroll event so the
+    NiceGUI event handler fires.
     """
     page.locator(".navigator-scroll-area").evaluate(
-        """el => {
-            const container = el.querySelector('.q-scrollarea__container');
-            if (container) {
-                container.scrollTop = 0;
-                // Also dispatch a scroll event so Quasar updates
-                container.dispatchEvent(new Event('scroll'));
-            }
-        }"""
+        "el => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); }"
     )
 
 
@@ -1233,7 +1223,7 @@ class TestNavigator:
                 # in headless mode when many cards fill the scroll area.
                 _scroll_navigator_to_top(page)
                 page.wait_for_timeout(500)
-                search_input.evaluate("el => el.focus()")
+                search_input.focus()
                 page.keyboard.type(marker, delay=30)
                 # Wait for debounce (500ms) + DB query + render
                 page.wait_for_timeout(3000)
@@ -1258,7 +1248,7 @@ class TestNavigator:
             # --- Clear search restores paginated view ---
             with subtests.test(msg="clear_search_restores_pagination"):
                 # Clear search via JS focus + Ctrl+A + Backspace
-                search_input.evaluate("el => el.focus()")
+                search_input.focus()
                 page.keyboard.press("Control+a")
                 page.keyboard.press("Backspace")
                 page.wait_for_timeout(2000)
@@ -1277,7 +1267,11 @@ class TestNavigator:
             with subtests.test(msg="scroll_after_clear_loads_more"):
                 before_scroll = _count_workspace_entries(page)
                 _scroll_navigator_to_bottom(page)
-                page.wait_for_timeout(3000)
+                # Timer polls every 500ms; allow time for poll + DB + render.
+                # Re-scroll after a pause in case content grew from the first load.
+                page.wait_for_timeout(2000)
+                _scroll_navigator_to_bottom(page)
+                page.wait_for_timeout(2000)
 
                 after_scroll = _count_workspace_entries(page)
                 assert after_scroll > before_scroll, (

@@ -39,7 +39,7 @@ from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from nicegui.elements.input import Input
     from nicegui.elements.timer import Timer
@@ -85,6 +85,19 @@ _ACTION_LABELS: dict[str | None, str] = {
 # ---------------------------------------------------------------------------
 # CSS for search snippets
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# CSS overrides for navigator layout
+# ---------------------------------------------------------------------------
+
+# Remove the page_layout padding wrapper — the inner column provides
+# its own padding.  This avoids double-padding and ensures the scroll
+# container fills the full width.
+_NAVIGATOR_LAYOUT_CSS = """\
+.q-pa-md:has(> .navigator-scroll-area) {
+    padding: 0;
+}
+"""
 
 _SEARCH_SNIPPET_CSS = """\
 .navigator-snippet {
@@ -704,6 +717,91 @@ def _setup_search(
 
 
 # ---------------------------------------------------------------------------
+# UI builder (extracted to keep navigator_page under PLR0915 limit)
+# ---------------------------------------------------------------------------
+
+
+async def _build_navigator_ui(
+    *,
+    page_state: dict[str, object],
+    handle_scroll: Callable[..., object],
+    render_sections: Callable[..., Awaitable[None]],
+    rows: list[NavigatorRow],
+    user_id: UUID,
+    is_privileged: bool,
+    enrolled_course_ids: list[UUID],
+    next_cursor: NavigatorCursor | None,
+) -> None:
+    """Build the navigator page DOM.
+
+    Uses a plain scrollable column instead of Quasar QScrollArea.
+    QScrollArea's absolute positioning causes Playwright's
+    ``elementFromPoint()`` to return ancestor layout elements as
+    pointer-event interceptors.  A standard ``overflow-y: auto`` div
+    avoids this entirely.
+
+    The scroll event uses ``js_handler`` with ``emit()`` to extract
+    ``scrollTop``, ``scrollHeight``, and ``clientHeight`` from the
+    event target.  NiceGUI's ``args`` filter only works on direct
+    properties of the event payload; native DOM scroll events carry
+    these values on ``event.target``, not the event itself.
+    """
+    with page_layout("Home"):
+        ui.add_css(_NAVIGATOR_LAYOUT_CSS)
+        ui.add_css(_SEARCH_SNIPPET_CSS)
+
+        scroll_container = (
+            ui.column()
+            .classes("w-full navigator-scroll-area")
+            .style("overflow-y: auto; height: calc(100vh - 64px)")
+        )
+        # Native DOM scroll events carry scrollTop/scrollHeight/clientHeight
+        # on event.target, not as direct event properties.  NiceGUI's args
+        # filter only works on direct properties, so we use js_handler to
+        # extract the values and emit() them to the server.
+        scroll_container.on(
+            "scroll",
+            handle_scroll,
+            throttle=0.3,
+            js_handler="(event) => emit("
+            "event.target.scrollTop,"
+            " event.target.scrollHeight,"
+            " event.target.clientHeight)",
+        )
+
+        with scroll_container, ui.column().classes("w-full max-w-4xl mx-auto q-pa-md"):
+            search_input = (
+                ui.input(placeholder="Search titles and content...")
+                .classes("w-full mb-4 navigator-search-input")
+                .props("outlined dense clearable")
+            )
+
+            # Container for no-results message
+            no_results_container = ui.column().classes("w-full")
+
+            # Wire up search behaviour
+            on_search_change = _setup_search(
+                page_state=page_state,
+                render_sections_refresh=render_sections.refresh,  # type: ignore[attr-defined]
+                no_results_container=no_results_container,
+                search_input=search_input,
+            )
+            search_input.on("update:model-value", on_search_change)
+
+            if not rows:
+                ui.label("No workspaces yet.").classes("text-gray-500 mt-4")
+            else:
+                await render_sections(
+                    rows=rows,
+                    user_id=user_id,
+                    is_privileged=is_privileged,
+                    enrolled_course_ids=enrolled_course_ids,
+                    next_cursor=next_cursor,
+                    snippets=None,
+                )
+
+
+# ---------------------------------------------------------------------------
 # Page route
 # ---------------------------------------------------------------------------
 
@@ -787,24 +885,37 @@ async def navigator_page() -> None:
     async def _handle_scroll(e: object) -> None:
         """Load more rows when the user scrolls near the bottom.
 
-        Guards:
-        - ``loading``: prevents concurrent fetches during rapid scrolling.
-        - ``search_active``: search results are not paginated.
-        - ``editing_active``: an inline title edit is in progress;
-          refreshing sections would destroy the edit UI (proleptic
-          concern from Phase 6 review).
-        - ``next_cursor is None``: all rows already loaded (AC5.4).
+        Called by the native ``scroll`` event on the overflow-y container.
+        NiceGUI's ``args`` parameter extracts scrollTop, scrollHeight,
+        and clientHeight from the DOM event without raw JavaScript.
+
+        Guards: loading, no cursor, search active, editing active.
         """
-        if page_state["loading"]:
+        # Consolidate all guards into a single check.
+        if (
+            page_state["loading"]
+            or page_state["next_cursor"] is None
+            or page_state["search_active"]
+            or page_state["editing_active"]
+        ):
             return
-        vertical_pct = getattr(e, "vertical_percentage", None)
-        if vertical_pct is None or vertical_pct < 0.9:
+
+        # Extract scroll position from NiceGUI event args.
+        event_args = getattr(e, "args", None)
+        if (
+            not event_args
+            or not isinstance(event_args, (list, tuple))
+            or len(event_args) < 3
+        ):
             return
-        if page_state["next_cursor"] is None:
+        scroll_top, scroll_height, client_height = (
+            event_args[0],
+            event_args[1],
+            event_args[2],
+        )
+        if not scroll_height or client_height >= scroll_height:
             return
-        if page_state["search_active"]:
-            return
-        if page_state["editing_active"]:
+        if (scroll_top + client_height) / scroll_height < 0.9:
             return
 
         page_state["loading"] = True
@@ -831,46 +942,13 @@ async def navigator_page() -> None:
         finally:
             page_state["loading"] = False
 
-    # The scroll area needs a bounded viewport so on_scroll fires.
-    # page_layout yields inside a plain div (no flex/height constraints),
-    # so we cannot use flexbox to fill remaining space.  Instead, set an
-    # explicit height on the scroll area using calc(100vh - header).
-    # The Quasar header with q-py-xs is ~50px; 64px provides safe margin.
-    with (
-        page_layout("Home"),
-        ui.scroll_area(on_scroll=_handle_scroll)
-        .classes("w-full navigator-scroll-area")
-        .style("height: calc(100vh - 64px)"),
-        ui.column().classes("w-full max-w-4xl mx-auto q-pa-md"),
-    ):
-        ui.add_css(_SEARCH_SNIPPET_CSS)
-
-        search_input = (
-            ui.input(placeholder="Search titles and content...")
-            .classes("w-full mb-4 navigator-search-input")
-            .props("outlined dense clearable")
-        )
-
-        # Container for no-results message
-        no_results_container = ui.column().classes("w-full")
-
-        # Wire up search behaviour
-        on_search_change = _setup_search(
-            page_state=page_state,
-            render_sections_refresh=_render_sections.refresh,
-            no_results_container=no_results_container,
-            search_input=search_input,
-        )
-        search_input.on("update:model-value", on_search_change)
-
-        if not rows:
-            ui.label("No workspaces yet.").classes("text-gray-500 mt-4")
-        else:
-            await _render_sections(
-                rows=rows,
-                user_id=user_id,
-                is_privileged=is_privileged,
-                enrolled_course_ids=enrolled_course_ids,
-                next_cursor=next_cursor,
-                snippets=None,
-            )
+    await _build_navigator_ui(
+        page_state=page_state,
+        handle_scroll=_handle_scroll,
+        render_sections=_render_sections,
+        rows=rows,
+        user_id=user_id,
+        is_privileged=is_privileged,
+        enrolled_course_ids=enrolled_course_ids,
+        next_cursor=next_cursor,
+    )

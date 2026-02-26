@@ -547,10 +547,14 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     # Three-tab container (Phase 1: three-tab UI)
     state.initialised_tabs = {"Annotate"}
 
-    with ui.tabs().classes("w-full") as tabs:
-        ui.tab("Annotate")
-        ui.tab("Organise")
-        ui.tab("Respond")
+    with ui.row().classes("w-full items-center"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
+        with ui.tabs().classes("w-full") as tabs:
+            ui.tab("Annotate")
+            ui.tab("Organise")
+            ui.tab("Respond")
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

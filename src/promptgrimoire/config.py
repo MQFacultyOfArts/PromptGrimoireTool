@@ -83,6 +83,12 @@ class FeaturesConfig(BaseModel):
     enable_file_upload: bool = True
 
 
+class I18nConfig(BaseModel):
+    """Internationalisation labels."""
+
+    unit_label: str = "Unit"
+
+
 class DevConfig(BaseModel):
     """Development and testing toggles."""
 
@@ -221,6 +227,7 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
+    i18n: I18nConfig = I18nConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

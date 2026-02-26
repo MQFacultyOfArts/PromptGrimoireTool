@@ -442,7 +442,11 @@ async def _render_shared_in_unit(
         if not course_rows:
             continue
         course = course_cache.get(course_id)
-        course_name = course.name if course else course_rows[0].course_name or "Unit"
+        course_name = (
+            course.name
+            if course
+            else course_rows[0].course_name or get_settings().i18n.unit_label
+        )
         ui.label(f"Shared in {course_name}").classes(
             "text-xl font-bold mt-6 mb-2 navigator-section-header"
         )

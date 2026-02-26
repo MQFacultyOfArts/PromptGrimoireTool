@@ -494,13 +494,8 @@ async def login_page() -> None:
     _build_github_oauth_section()
 
 
-@ui.page("/auth/callback")
-async def magic_link_callback() -> None:
-    """Handle magic link callback and authenticate the token."""
-    logger.info("Magic link callback received")
-    token = _get_query_param("token")
-
-    # CRIT-3: Validate token before processing
+async def _handle_magic_link_callback(token: str | None) -> None:
+    """Authenticate a magic link token and establish session."""
     if not _validate_token(token):
         logger.warning("Magic link callback: invalid or missing token")
         ui.label("Invalid or missing token").classes("text-xl text-red-500")
@@ -508,26 +503,22 @@ async def magic_link_callback() -> None:
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
-    # Show loading while processing
     ui.label("Authenticating...").classes("text-xl")
     ui.spinner()
 
-    # Type narrowing: _validate_token already checked token is not None
-    assert token is not None
+    assert token is not None  # _validate_token guarantees this
 
     logger.debug("Authenticating magic link token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_magic_link(token=token)
 
     if result.success:
-        # Upsert user in local database
         user_id, is_admin = await _upsert_local_user(
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
             roles=result.roles,
         )
-
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -547,13 +538,8 @@ async def magic_link_callback() -> None:
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 
-@ui.page("/auth/sso/callback")
-async def sso_callback() -> None:
-    """Handle SSO callback and authenticate the token."""
-    logger.info("SSO callback received")
-    token = _get_query_param("token")
-
-    # CRIT-3: Validate token before processing
+async def _handle_sso_callback(token: str | None) -> None:
+    """Authenticate an SSO token and establish session."""
     if not _validate_token(token):
         logger.warning("SSO callback: invalid or missing token")
         ui.label("Invalid or missing SSO token").classes("text-xl text-red-500")
@@ -564,26 +550,22 @@ async def sso_callback() -> None:
     ui.label("Processing SSO login...").classes("text-xl")
     ui.spinner()
 
-    # Type narrowing: _validate_token already checked token is not None
-    assert token is not None
+    assert token is not None  # _validate_token guarantees this
 
     logger.debug("Authenticating SSO token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_sso(token=token)
 
     if result.success:
-        # Derive app roles from AAF metadata and merge with Stytch roles
         derived_roles = derive_roles_from_metadata(result.trusted_metadata)
         all_roles = list(dict.fromkeys([*result.roles, *derived_roles]))
 
-        # Upsert user in local database
         user_id, is_admin = await _upsert_local_user(
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
             roles=all_roles,
         )
-
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -603,13 +585,8 @@ async def sso_callback() -> None:
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 
-@ui.page("/auth/oauth/callback")
-async def oauth_callback() -> None:
-    """Handle OAuth callback and authenticate the token."""
-    logger.info("OAuth callback received")
-    token = _get_query_param("token")
-
-    # CRIT-3: Validate token before processing
+async def _handle_oauth_callback(token: str | None) -> None:
+    """Authenticate an OAuth token and establish session."""
     if not _validate_token(token):
         logger.warning("OAuth callback: invalid or missing token")
         ui.label("Invalid or missing OAuth token").classes("text-xl text-red-500")
@@ -620,22 +597,19 @@ async def oauth_callback() -> None:
     ui.label("Processing login...").classes("text-xl")
     ui.spinner()
 
-    # Type narrowing: _validate_token already checked token is not None
-    assert token is not None
+    assert token is not None  # _validate_token guarantees this
 
     logger.debug("Authenticating OAuth token (length=%d)", len(token))
     auth_client = get_auth_client()
     result = await auth_client.authenticate_oauth(token=token)
 
     if result.success:
-        # Upsert user in local database
         user_id, is_admin = await _upsert_local_user(
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
             roles=result.roles,
         )
-
         _set_session_user(
             email=result.email or "",
             member_id=result.member_id or "",
@@ -653,6 +627,47 @@ async def oauth_callback() -> None:
         ui.label(f"Error: {result.error}").classes("text-red-500")
         ui.notify(f"OAuth authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
+
+
+@ui.page("/auth/callback")
+async def auth_callback() -> None:
+    """Handle Stytch authentication callback (magic link, SSO, or OAuth).
+
+    Stytch redirects all auth flows to the default redirect URL with a
+    ``stytch_token_type`` query parameter indicating the token type.
+    This handler inspects that parameter and dispatches accordingly.
+    """
+    token_type = _get_query_param("stytch_token_type")
+    token = _get_query_param("token")
+
+    logger.info(
+        "Auth callback received: stytch_token_type=%s",
+        token_type,
+    )
+
+    if token_type == "sso":
+        await _handle_sso_callback(token)
+        return
+    if token_type in ("oauth", "discovery_oauth"):
+        await _handle_oauth_callback(token)
+        return
+
+    # Default: magic link (token_type is "magic_links" or absent)
+    await _handle_magic_link_callback(token)
+
+
+@ui.page("/auth/sso/callback")
+async def sso_callback() -> None:
+    """Handle direct SSO callback (fallback route)."""
+    logger.info("SSO callback received (direct route)")
+    await _handle_sso_callback(_get_query_param("token"))
+
+
+@ui.page("/auth/oauth/callback")
+async def oauth_callback() -> None:
+    """Handle direct OAuth callback (fallback route)."""
+    logger.info("OAuth callback received (direct route)")
+    await _handle_oauth_callback(_get_query_param("token"))
 
 
 @ui.page("/protected")

@@ -2,7 +2,7 @@
 
 Verifies the navigator page at ``/`` renders workspace sections correctly,
 handles authentication, provides workspace navigation, supports search,
-and supports inline title rename.
+supports inline title rename, and supports infinite scroll pagination.
 
 Acceptance Criteria:
 - workspace-navigator-196.AC2.5: Unauthenticated redirect to login
@@ -20,12 +20,17 @@ Acceptance Criteria:
 - workspace-navigator-196.AC4.3: Escape cancels edit without saving
 - workspace-navigator-196.AC4.4: New workspaces default title to activity name
 - workspace-navigator-196.AC4.5: Pencil click does not navigate
+- workspace-navigator-196.AC5.1: Initial load shows first 50 rows
+- workspace-navigator-196.AC5.2: Infinite scroll loads more rows into correct sections
+- workspace-navigator-196.AC5.4: Fewer than 50 rows -- no additional loading
+- workspace-navigator-196.AC5.5: Multi-page scroll without duplicates
 
 Traceability:
 - Issue: #196 (Workspace Navigator)
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_04.md
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_05.md
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_06.md
+- Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_07.md
 """
 
 from __future__ import annotations
@@ -169,6 +174,132 @@ def _student_start_and_verify(
         student_page.goto("about:blank")
         student_page.close()
         student_ctx.close()
+
+
+def _create_workspaces_bulk(
+    user_email: str,
+    count: int,
+    *,
+    content_prefix: str = "Bulk workspace content",
+) -> list[str]:
+    """Create multiple workspaces via a single DB transaction.
+
+    Much faster than calling ``_create_workspace_via_db`` in a loop
+    because it reuses a single engine and transaction.
+
+    Returns a list of workspace_id strings.
+    """
+    import os
+    import uuid
+
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    workspace_ids: list[str] = []
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            msg = f"User not found in DB: {user_email}"
+            raise RuntimeError(msg)
+        user_id = row[0]
+
+        for i in range(count):
+            workspace_id = str(uuid.uuid4())
+            doc_id = str(uuid.uuid4())
+            workspace_ids.append(workspace_id)
+
+            conn.execute(
+                text(
+                    "INSERT INTO workspace"
+                    " (id, enable_save_as_draft, created_at, updated_at)"
+                    " VALUES (CAST(:id AS uuid), false, now(), now())"
+                ),
+                {"id": workspace_id},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO workspace_document"
+                    " (id, workspace_id, type, content,"
+                    "  source_type, order_index, created_at)"
+                    " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                    " :type, :content, :source_type, 0, now())"
+                ),
+                {
+                    "id": doc_id,
+                    "ws": workspace_id,
+                    "type": "source",
+                    "content": f"<p>{content_prefix} {i}</p>",
+                    "source_type": "text",
+                },
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO acl_entry"
+                    " (id, workspace_id, user_id, permission, created_at)"
+                    " VALUES (gen_random_uuid(),"
+                    " CAST(:ws AS uuid), :uid, 'owner', now())"
+                ),
+                {"ws": workspace_id, "uid": user_id},
+            )
+
+    engine.dispose()
+    return workspace_ids
+
+
+def _scroll_navigator_to_bottom(page: Page) -> None:
+    """Scroll the navigator scroll area to the bottom.
+
+    Uses JavaScript to set scrollTop on the Quasar scroll area's
+    inner container, which triggers the ``on_scroll`` callback.
+    """
+    page.locator(".navigator-scroll-area").evaluate(
+        """el => {
+            const container = el.querySelector('.q-scrollarea__container');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }"""
+    )
+
+
+def _scroll_navigator_to_top(page: Page) -> None:
+    """Scroll the navigator scroll area to the top.
+
+    Uses Quasar's setScrollPosition API via the scroll area's
+    ``__vue__`` component to properly update internal state,
+    ensuring child elements are clickable after scroll.
+    Falls back to raw scrollTop if the Quasar API is unavailable.
+    """
+    page.locator(".navigator-scroll-area").evaluate(
+        """el => {
+            const container = el.querySelector('.q-scrollarea__container');
+            if (container) {
+                container.scrollTop = 0;
+                // Also dispatch a scroll event so Quasar updates
+                container.dispatchEvent(new Event('scroll'));
+            }
+        }"""
+    )
+
+
+def _count_workspace_entries(page: Page) -> int:
+    """Count visible workspace entries on the navigator page.
+
+    Counts elements with ``data-workspace-id`` attribute (workspace
+    entries in My Work, Shared With Me, Shared in Unit sections).
+    Does not count unstarted activity entries.
+    """
+    return page.locator("[data-workspace-id]").count()
 
 
 def _clear_search_input(page: Page, search_input: Locator) -> None:
@@ -936,3 +1067,225 @@ class TestNavigator:
             student_page.goto("about:blank")
             student_page.close()
             student_ctx.close()
+
+    def test_infinite_scroll_loads_more_rows(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC5.1, AC5.2, AC5.5: Infinite scroll pagination loads more rows.
+
+        Sub-tests:
+        1. Create 60 workspaces. Initial load shows ~50. Scroll loads more.
+        2. No duplicate workspace IDs after scrolling.
+        3. Multiple scrolls load all 60 rows.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            uid = uuid4().hex[:8]
+            email = f"nav-scroll-{uid}@test.example.edu.au"
+            _authenticate_page(page, app_server, email=email)
+
+            # --- AC5.1 + AC5.2: more than 50 rows, scroll loads more ---
+            with subtests.test(msg="initial_load_capped_at_50"):
+                _create_workspaces_bulk(email, 60, content_prefix=f"Scroll test {uid}")
+                page.goto(f"{app_server}/")
+                page.wait_for_timeout(3000)
+
+                initial_count = _count_workspace_entries(page)
+                assert initial_count <= 50, (
+                    f"Expected at most 50 entries on initial load, got {initial_count}"
+                )
+                assert initial_count >= 40, (
+                    f"Expected at least 40 entries on initial load, got {initial_count}"
+                )
+
+            with subtests.test(msg="scroll_loads_more"):
+                _scroll_navigator_to_bottom(page)
+                # Wait for async load + re-render
+                page.wait_for_timeout(3000)
+
+                after_scroll_count = _count_workspace_entries(page)
+                assert after_scroll_count > initial_count, (
+                    f"Expected more rows after scroll. "
+                    f"Before: {initial_count}, after: {after_scroll_count}"
+                )
+
+            # --- AC5.5: no duplicate workspace IDs ---
+            with subtests.test(msg="no_duplicate_entries"):
+                all_ws_ids = page.locator("[data-workspace-id]").evaluate_all(
+                    "els => els.map(el => el.getAttribute('data-workspace-id'))"
+                )
+                unique_ids = set(all_ws_ids)
+                assert len(unique_ids) == len(all_ws_ids), (
+                    f"Duplicate workspace IDs found. "
+                    f"Total: {len(all_ws_ids)}, unique: {len(unique_ids)}"
+                )
+
+            # --- AC5.5: scroll again to load remaining rows ---
+            with subtests.test(msg="scroll_loads_all_rows"):
+                # Keep scrolling until all 60 rows are loaded
+                for _ in range(5):
+                    _scroll_navigator_to_bottom(page)
+                    page.wait_for_timeout(2000)
+
+                final_count = _count_workspace_entries(page)
+                assert final_count == 60, (
+                    f"Expected all 60 rows after multiple scrolls, got {final_count}"
+                )
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    def test_infinite_scroll_no_extra_load_under_50(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC5.4: Fewer than 50 rows -- no additional loading on scroll.
+
+        Creates 10 workspaces, verifies all are visible, scrolls to bottom,
+        verifies count unchanged.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            uid = uuid4().hex[:8]
+            email = f"nav-noscroll-{uid}@test.example.edu.au"
+            _authenticate_page(page, app_server, email=email)
+
+            _create_workspaces_bulk(email, 10, content_prefix=f"NoScroll {uid}")
+
+            page.goto(f"{app_server}/")
+            page.wait_for_timeout(3000)
+
+            with subtests.test(msg="all_rows_visible"):
+                initial_count = _count_workspace_entries(page)
+                assert initial_count == 10, f"Expected 10 entries, got {initial_count}"
+
+            with subtests.test(msg="scroll_no_additional_load"):
+                _scroll_navigator_to_bottom(page)
+                page.wait_for_timeout(2000)
+
+                after_count = _count_workspace_entries(page)
+                assert after_count == 10, (
+                    f"Expected count unchanged at 10 after scroll, got {after_count}"
+                )
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    def test_pagination_disabled_during_search(
+        self,
+        browser: Browser,
+        app_server: str,
+        subtests: SubTests,
+    ) -> None:
+        """AC5.2 (search interaction): Pagination disabled during search.
+
+        Steps:
+        1. Create 60 workspaces (triggers pagination).
+        2. Type a search query that matches a subset.
+        3. Scroll to bottom -- verify no extra rows loaded.
+        4. Clear search -- verify full paginated view restores.
+        5. Scroll to bottom -- verify pagination resumes.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            uid = uuid4().hex[:8]
+            email = f"nav-searchpag-{uid}@test.example.edu.au"
+            _authenticate_page(page, app_server, email=email)
+
+            # Create 57 generic workspaces + 3 with a searchable marker.
+            marker = f"searchpagmarker{uid}"
+            _create_workspaces_bulk(email, 57, content_prefix=f"Generic content {uid}")
+            # Create 3 workspaces with a searchable marker word
+            for i in range(3):
+                _create_workspace_via_db(
+                    user_email=email,
+                    html_content=f"<p>The {marker} document number {i}.</p>",
+                    seed_tags=False,
+                )
+
+            page.goto(f"{app_server}/")
+            page.wait_for_timeout(3000)
+
+            # Variables shared across subtests
+            search_count = 0
+
+            search_input = page.locator(".navigator-search-input input")
+            expect(search_input).to_be_visible(timeout=5000)
+
+            # --- Search filters to subset ---
+            with subtests.test(msg="search_filters_results"):
+                # Focus search input via JS to avoid pointer interception
+                # in headless mode when many cards fill the scroll area.
+                _scroll_navigator_to_top(page)
+                page.wait_for_timeout(500)
+                search_input.evaluate("el => el.focus()")
+                page.keyboard.type(marker, delay=30)
+                # Wait for debounce (500ms) + DB query + render
+                page.wait_for_timeout(3000)
+
+                search_count = _count_workspace_entries(page)
+                assert search_count <= 3, (
+                    f"Expected at most 3 search results, got {search_count}"
+                )
+
+            # --- Scroll during search does NOT load more ---
+            with subtests.test(msg="scroll_during_search_no_load"):
+                _scroll_navigator_to_bottom(page)
+                page.wait_for_timeout(2000)
+
+                after_scroll_count = _count_workspace_entries(page)
+                assert after_scroll_count == search_count, (
+                    f"Expected no additional rows during search. "
+                    f"Before scroll: {search_count}, "
+                    f"after: {after_scroll_count}"
+                )
+
+            # --- Clear search restores paginated view ---
+            with subtests.test(msg="clear_search_restores_pagination"):
+                # Clear search via JS focus + Ctrl+A + Backspace
+                search_input.evaluate("el => el.focus()")
+                page.keyboard.press("Control+a")
+                page.keyboard.press("Backspace")
+                page.wait_for_timeout(2000)
+
+                restored_count = _count_workspace_entries(page)
+                assert restored_count >= 40, (
+                    f"Expected restored paginated view (>=40 entries), "
+                    f"got {restored_count}"
+                )
+                assert restored_count <= 50, (
+                    f"Expected restored view to show at most 50 (one page), "
+                    f"got {restored_count}"
+                )
+
+            # --- Scroll after clearing search loads more ---
+            with subtests.test(msg="scroll_after_clear_loads_more"):
+                before_scroll = _count_workspace_entries(page)
+                _scroll_navigator_to_bottom(page)
+                page.wait_for_timeout(3000)
+
+                after_scroll = _count_workspace_entries(page)
+                assert after_scroll > before_scroll, (
+                    f"Expected more rows after scroll post-clear. "
+                    f"Before: {before_scroll}, after: {after_scroll}"
+                )
+
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()

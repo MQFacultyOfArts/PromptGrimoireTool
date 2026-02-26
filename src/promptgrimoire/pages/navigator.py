@@ -832,15 +832,15 @@ async def navigator_page() -> None:
             page_state["loading"] = False
 
     # The scroll area needs a bounded viewport so on_scroll fires.
-    # Use CSS flex to fill remaining space below the page_layout header.
+    # page_layout yields inside a plain div (no flex/height constraints),
+    # so we cannot use flexbox to fill remaining space.  Instead, set an
+    # explicit height on the scroll area using calc(100vh - header).
+    # The Quasar header with q-py-xs is ~50px; 64px provides safe margin.
     with (
         page_layout("Home"),
-        ui.element("div")
-        .classes("w-full")
-        .style("flex: 1; overflow: hidden; display: flex; flex-direction: column"),
         ui.scroll_area(on_scroll=_handle_scroll)
         .classes("w-full navigator-scroll-area")
-        .style("flex: 1"),
+        .style("height: calc(100vh - 64px)"),
         ui.column().classes("w-full max-w-4xl mx-auto q-pa-md"),
     ):
         ui.add_css(_SEARCH_SNIPPET_CSS)

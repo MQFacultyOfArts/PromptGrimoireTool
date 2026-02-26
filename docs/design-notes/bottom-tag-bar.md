@@ -36,6 +36,18 @@ Move the annotation tag toolbar from fixed-top to fixed-bottom, and normalise th
 
 Bottom-anchored tag bar matches the annotation workflow better: user selects text in the document (middle of screen), then eyes drop to the tag bar at the bottom to pick a tag. Current flow requires eyes to jump to the top and back down.
 
+## Highlight Menu and Selection Interaction
+
+The floating highlight menu (`document.py:_build_highlight_menu`) is a `fixed z-50` card that appears when the user selects text and vanishes when selection is cleared. With the tag bar moving to `bottom: 0` at `z-index: 100`, these interact:
+
+- **Overlap risk**: The highlight menu could render behind or overlap the bottom tag bar. May need to constrain the highlight menu's vertical position so it stays above the toolbar, or switch to positioning it near the selection rather than fixed.
+- **Click guard**: `document.py:86-88` prevents selection-clearing on tag toolbar clicks via `e.target.closest('[data-testid="tag-toolbar"]')`. This is selector-based so it survives the move. No change needed.
+- **Scroll-sync**: `setupCardPositioning('doc-container', 'annotations-container', 8)` positions annotation cards relative to their highlights. The available vertical space changes — the sidebar's effective bottom boundary is now `toolbar height` pixels higher. The JS function may need a bottom-offset parameter.
+
+## Layout Wrapper Padding
+
+`document.py:223-226` has an explicit `padding-top: 60px` on the two-column layout wrapper to compensate for the fixed top toolbar. This must become `padding-bottom` instead (and the value may change if toolbar height differs at the bottom).
+
 ## Files to Touch
 
 | File | Change |
@@ -44,9 +56,11 @@ Bottom-anchored tag bar matches the annotation workflow better: user selects tex
 | `pages/annotation/css.py` | Add bottom padding to `.doc-container` and `.annotations-sidebar` |
 | `pages/annotation/__init__.py` | Remove inline title label |
 | `pages/annotation/workspace.py` | Remove workspace UUID label, adjust header row positioning |
-| `pages/annotation/document.py` | Verify no top-padding hacks that compensate for the old toolbar position |
+| `pages/annotation/document.py` | `padding-top: 60px` → `padding-bottom`; review highlight menu z-index interaction |
+| `static/annotation-card-sync.js` | `setupCardPositioning` may need bottom-offset param for sidebar boundary |
 
 ## Open Questions
 
 - Exact toolbar height for bottom padding calc — currently dynamic based on tag count and wrapping. May need a CSS variable or a fixed min-height.
 - Whether the workspace UUID should appear anywhere (useful for debugging/support, possibly a tooltip or footer element).
+- Highlight menu positioning strategy: keep it `fixed` but constrain to above the toolbar, or switch to positioning near the text selection (which is more conventional but harder to implement).

@@ -9,8 +9,8 @@ they reveal where the test suite is redundant or incomplete.
 > **Scope:** This file covers tests added or modified on the
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
 > css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
-> and 95-annotation-tags branches. Existing tests from before these
-> branches are not yet documented here.
+> 95-annotation-tags, and workspace-navigator-196 branches.
+> Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
 
@@ -2340,3 +2340,565 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Drop it again (second time, should not raise)
 
 **Verifies:** Dropping a non-existent database is safe (IF EXISTS)
+
+## CRDT Text Extraction (FTS)
+
+### None crdt_state returns empty string
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextNone::test_none_crdt_state_returns_empty_string
+1. Call extract_searchable_text with crdt_state=None and empty tag_names
+2. Assert result is empty string
+
+**Verifies:** AC8.5 -- None CRDT state is a no-op, returns empty string
+
+### Highlight text included in extraction
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextHighlights::test_highlight_text_included
+1. Build CRDT state with one highlight containing text "negligence claim"
+2. Call extract_searchable_text
+3. Assert "negligence claim" appears in result
+
+**Verifies:** Highlighted source text is extracted for FTS indexing
+
+### Multiple highlights all included
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextHighlights::test_multiple_highlights_all_included
+1. Build CRDT state with two highlights ("first highlight", "second highlight")
+2. Call extract_searchable_text
+3. Assert both highlight texts appear in result
+
+**Verifies:** All highlights are extracted, not just the first
+
+### Tag UUID resolved to display name
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextTagResolution::test_tag_uuid_resolved_to_name
+1. Generate a random UUID, build CRDT state with highlight using that UUID as tag
+2. Call extract_searchable_text with tag_names mapping UUID to "Jurisdiction"
+3. Assert "Jurisdiction" appears in result
+
+**Verifies:** Tag UUIDs are resolved to human-readable names via the tag_names dict
+
+### Unresolved tag passes through as-is
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextTagResolution::test_tag_uuid_not_in_tag_names_passes_through
+1. Build CRDT state with highlight using tag string "BriefTag:damages"
+2. Call extract_searchable_text with empty tag_names
+3. Assert "BriefTag:damages" appears in result
+
+**Verifies:** Legacy/unknown tag strings are included verbatim (fallback behaviour)
+
+### Comment text included
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextComments::test_comment_text_included
+1. Build CRDT state with highlight that has one comment
+2. Call extract_searchable_text
+3. Assert comment text appears in result
+
+**Verifies:** Comments on highlights are extracted for FTS
+
+### Multiple comments all included
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextComments::test_multiple_comments_all_included
+1. Build CRDT state with highlight that has two comments
+2. Call extract_searchable_text
+3. Assert both comment texts appear in result
+
+**Verifies:** All comments on a highlight are extracted, not just the first
+
+### Response draft markdown included
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextResponseDraft::test_response_draft_included
+1. Build CRDT state with response_draft_markdown content
+2. Call extract_searchable_text
+3. Assert draft content appears in result
+
+**Verifies:** Response draft (Tab 3) content is indexed
+
+### General notes included
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextGeneralNotes::test_general_notes_included
+1. Build CRDT state with general_notes content
+2. Call extract_searchable_text
+3. Assert notes content appears in result
+
+**Verifies:** General notes are indexed
+
+### All sources combined
+**File:** tests/unit/test_search_extraction.py::TestExtractSearchableTextCombined::test_all_sources_combined
+1. Build CRDT state with highlight (text + tag + comment), general notes, and response draft
+2. Call extract_searchable_text with tag_names mapping
+3. Assert all five content pieces appear in result
+
+**Verifies:** Extraction combines all annotation content sources into one searchable string
+
+## Navigator Data Loader (Integration)
+
+### Owned workspaces appear in my_work
+**File:** tests/integration/test_navigator_loader.py::TestMyWork::test_owned_workspaces_appear
+1. Create course/week/activity/student hierarchy
+2. Call load_navigator_page for student
+3. Filter rows to section="my_work"
+4. Assert student's workspace ID is present
+5. Assert context columns (activity_title, week_title, course_id, permission="owner")
+
+**Verifies:** AC1.1 -- owned workspaces appear with full context in my_work section
+
+### Template workspaces excluded from my_work
+**File:** tests/integration/test_navigator_loader.py::TestMyWork::test_template_excluded_from_my_work
+1. Create hierarchy (activity has a template workspace)
+2. Call load_navigator_page for student
+3. Assert template_workspace_id NOT in my_work rows
+
+**Verifies:** Template workspaces (used for cloning) are invisible in the navigator
+
+### Unstarted activities appear
+**File:** tests/integration/test_navigator_loader.py::TestUnstarted::test_unstarted_activities_appear
+1. Create published week + activity, enrol student, no workspace created
+2. Call load_navigator_page
+3. Assert activity appears in section="unstarted"
+
+**Verifies:** AC1.2 -- published activities without a student workspace show as unstarted
+
+### Unpublished activity excluded
+**File:** tests/integration/test_navigator_loader.py::TestUnstarted::test_unpublished_activity_excluded
+1. Create unpublished activity
+2. Call load_navigator_page
+3. Assert unpublished activity NOT in unstarted rows
+
+**Verifies:** Unpublished activities are invisible to students
+
+### Future visible_from excluded
+**File:** tests/integration/test_navigator_loader.py::TestUnstarted::test_future_visible_from_excluded
+1. Create published week with visible_from set to tomorrow
+2. Call load_navigator_page
+3. Assert future activity NOT in unstarted rows
+
+**Verifies:** Activities with future visible_from dates are hidden
+
+### Started activity not unstarted
+**File:** tests/integration/test_navigator_loader.py::TestUnstarted::test_started_activity_not_unstarted
+1. Create activity, then create student workspace for that activity
+2. Call load_navigator_page
+3. Assert activity NOT in unstarted rows (it moved to my_work)
+
+**Verifies:** Once a student creates a workspace, the activity leaves the unstarted section
+
+### Shared editor appears in shared_with_me
+**File:** tests/integration/test_navigator_loader.py::TestSharedWithMe::test_shared_editor_appears
+1. Create two students; student A owns workspace, grant editor to student B
+2. Call load_navigator_page for student B
+3. Assert workspace appears in section="shared_with_me" with permission="editor"
+
+**Verifies:** Explicit ACL sharing surfaces workspaces in shared_with_me section
+
+### Student sees peer shared workspaces
+**File:** tests/integration/test_navigator_loader.py::TestSharedInUnit::test_student_sees_peer_shared_workspaces
+1. Create course with sharing enabled, two students with workspaces shared_with_class=true
+2. Call load_navigator_page for student 1
+3. Assert student 2's workspace appears in section="shared_in_unit"
+
+**Verifies:** Class-shared peer workspaces visible in shared_in_unit section
+
+### Own workspace excluded from shared_in_unit
+**File:** tests/integration/test_navigator_loader.py::TestSharedInUnit::test_student_own_workspace_excluded
+1. Create hierarchy with two students sharing
+2. Call load_navigator_page for student
+3. Assert student's OWN workspace NOT in shared_in_unit rows
+
+**Verifies:** A student never sees their own workspace in the "shared in unit" section
+
+### Sharing disabled excludes peers
+**File:** tests/integration/test_navigator_loader.py::TestSharedInUnit::test_sharing_disabled_excludes_peers
+1. Create course with allow_sharing=false
+2. Call load_navigator_page for non-privileged student
+3. Assert shared_in_unit is empty
+
+**Verifies:** Course-level sharing toggle prevents peer visibility
+
+### Instructor sees all student workspaces
+**File:** tests/integration/test_navigator_loader.py::TestSharedInUnit::test_instructor_sees_all_student_workspaces
+1. Create course with sharing disabled, two students, instructor enrolled
+2. Call load_navigator_page for instructor with is_privileged=true
+3. Assert all student workspaces appear in shared_in_unit
+
+**Verifies:** Privileged users (instructors) see all student work regardless of sharing settings
+
+### Loose workspace in my_work
+**File:** tests/integration/test_navigator_loader.py::TestLooseWorkspaces::test_loose_workspace_in_my_work
+1. Create workspace placed in course (not activity), owned by student
+2. Call load_navigator_page
+3. Assert loose workspace appears in my_work
+
+**Verifies:** Workspaces placed directly in a course (no activity) appear in owner's my_work
+
+### Loose workspace in shared_in_unit for instructor
+**File:** tests/integration/test_navigator_loader.py::TestLooseWorkspaces::test_loose_workspace_in_shared_in_unit_for_instructor
+1. Create loose workspace shared_with_class, owned by student
+2. Call load_navigator_page for instructor (privileged)
+3. Assert workspace appears in shared_in_unit
+
+**Verifies:** Loose course-level workspaces appear in peer/instructor views
+
+### Loose workspace hidden when sharing disabled
+**File:** tests/integration/test_navigator_loader.py::TestLooseWorkspaces::test_loose_workspace_hidden_when_sharing_disabled
+1. Create course with sharing disabled, student's loose workspace shared_with_class
+2. Call load_navigator_page for another non-privileged student
+3. Assert workspace NOT in shared_in_unit
+
+**Verifies:** Sharing toggle applies to loose workspaces too
+
+### Empty sections produce zero rows
+**File:** tests/integration/test_navigator_loader.py::TestEmptySections::test_empty_sections_produce_zero_rows
+1. Create a fresh user with no workspaces or enrolments
+2. Call load_navigator_page
+3. Assert zero rows returned
+
+**Verifies:** AC1.7 -- users with no data get an empty result, no errors
+
+### Multi-course shared_in_unit
+**File:** tests/integration/test_navigator_loader.py::TestMultiCourseEnrollment::test_multi_course_shared_in_unit
+1. Create two courses, each with students sharing work
+2. Enrol an observer in both courses
+3. Call load_navigator_page with both enrolled_course_ids
+4. Assert shared workspaces from both courses appear
+
+**Verifies:** Multi-course enrolment surfaces peer work across all courses
+
+### Pagination: fewer than limit returns no cursor
+**File:** tests/integration/test_navigator_loader.py::TestCursorPagination::test_fewer_than_limit_no_cursor
+1. Create fewer workspaces than the limit
+2. Call load_navigator_page
+3. Assert next_cursor is None
+
+**Verifies:** No pagination cursor when all data fits in one page
+
+### Pagination returns cursor and next page
+**File:** tests/integration/test_navigator_loader.py::TestCursorPagination::test_pagination_returns_cursor
+1. Create more workspaces than page limit
+2. Call load_navigator_page with small limit
+3. Assert next_cursor is not None
+4. Call again with cursor
+5. Assert second page has rows, no overlap with first
+
+**Verifies:** Keyset pagination cursor correctly advances through pages
+
+### Pagination no duplicates
+**File:** tests/integration/test_navigator_loader.py::TestCursorPagination::test_pagination_no_duplicates
+1. Create many workspaces
+2. Paginate through all pages collecting row_ids
+3. Assert no duplicates in collected IDs
+4. Assert total equals expected count
+
+**Verifies:** AC5.5 -- keyset pagination never produces duplicate rows
+
+### Activity sharing override
+**File:** tests/integration/test_navigator_loader.py::TestActivitySharingOverride::test_activity_sharing_false_overrides_course_true
+1. Create course with sharing enabled
+2. Set activity.allow_sharing = false
+3. Call load_navigator_page for non-privileged peer
+4. Assert shared_in_unit is empty
+
+**Verifies:** Activity-level allow_sharing=false overrides course-level default
+
+### Scale query performance
+**File:** tests/integration/test_navigator_loader.py::TestScaleLoadTest::test_instructor_query_at_scale
+1. Skip if no load-test data present
+2. Find an instructor enrolled in a course
+3. Call load_navigator_page
+4. Assert query returns results without timeout
+
+**Verifies:** AC5.5 -- navigator query performs acceptably at scale with load-test data
+
+## FTS Search (Integration)
+
+### search_dirty set on CRDT save
+**File:** tests/integration/test_fts_search.py::TestSearchDirtyOnCRDTSave::test_search_dirty_set_on_crdt_save
+1. Create workspace
+2. Build CRDT state with a highlight, call save_workspace_crdt_state
+3. Reload workspace
+4. Assert search_dirty is True
+
+**Verifies:** CRDT saves mark workspace for FTS re-extraction
+
+### HTML stripped from document search
+**File:** tests/integration/test_fts_search.py::TestFTSHTMLStripping::test_html_stripped_from_document_search
+1. Create workspace with HTML document containing "brown fox" inside <b> tags
+2. Call search_navigator for "brown fox"
+3. Assert workspace appears in results
+
+**Verifies:** HTML tags are stripped by the GIN index expression before FTS matching
+
+### Snippet contains mark tags
+**File:** tests/integration/test_fts_search.py::TestFTSSnippetHighlighting::test_snippet_contains_mark_tags
+1. Create workspace with document about "negligence"
+2. Search for "negligence"
+3. Assert snippet contains <mark> and </mark> tags
+
+**Verifies:** ts_headline wraps matched terms in <mark> for UI highlighting
+
+### Two-char query returns empty
+**File:** tests/integration/test_fts_search.py::TestFTSShortQueryGuard::test_two_char_query_returns_empty
+1. Call search_navigator with query "ab" (2 chars)
+2. Assert empty result list
+
+**Verifies:** Short query guard rejects queries under 3 characters
+
+### Whitespace-only query returns empty
+**File:** tests/integration/test_fts_search.py::TestFTSShortQueryGuard::test_whitespace_only_query_returns_empty
+1. Call search_navigator with query "   " (whitespace only)
+2. Assert empty result list
+
+**Verifies:** Whitespace-only queries are rejected
+
+### Empty query returns empty
+**File:** tests/integration/test_fts_search.py::TestFTSShortQueryGuard::test_empty_query_returns_empty
+1. Call search_navigator with empty string
+2. Assert empty result list
+
+**Verifies:** Empty string queries are rejected
+
+### Empty content no error
+**File:** tests/integration/test_fts_search.py::TestFTSEmptyContent::test_empty_content_no_error
+1. Create workspace with empty document content
+2. Search for "anything"
+3. Assert workspace NOT in results (no error thrown)
+
+**Verifies:** AC8.5 -- empty documents produce valid empty tsvectors, no SQL errors
+
+### Document content match returns snippet
+**File:** tests/integration/test_fts_search.py::TestFTSContentMatches::test_search_returns_snippet_for_document
+1. Create workspace with document about "duty of care"
+2. Search for "duty of care"
+3. Assert matching result with non-empty snippet
+
+**Verifies:** FTS returns results with snippets for document content matches
+
+### CRDT search_text match
+**File:** tests/integration/test_fts_search.py::TestFTSContentMatches::test_search_crdt_search_text
+1. Create workspace with unrelated document content but search_text about "statute of limitations"
+2. Search for "statute limitations"
+3. Assert workspace found via search_text field
+
+**Verifies:** FTS searches both workspace_document.content AND workspace.search_text
+
+### Malformed query handled gracefully
+**File:** tests/integration/test_fts_search.py::TestFTSMalformedQuery::test_malformed_query_no_error
+1. Create workspace with legal content
+2. Search for "legal &" (trailing operator)
+3. Assert results returned, no SQL error
+
+**Verifies:** websearch_to_tsquery gracefully handles malformed input
+
+### ACL restricts search results
+**File:** tests/integration/test_fts_search.py::TestFTSACLRestriction::test_other_users_workspaces_not_visible
+1. User A creates workspace with "negligence"
+2. User B creates workspace with "negligence"
+3. Search as User A for "negligence"
+4. Assert User A's workspace in results, User B's workspace NOT in results
+
+**Verifies:** FTS search is ACL-scoped -- users only see their own visible workspaces
+
+### More matches rank higher
+**File:** tests/integration/test_fts_search.py::TestFTSRelevanceOrdering::test_more_matches_rank_higher
+1. User creates workspace 1 with "negligence" once
+2. User creates workspace 2 with "negligence" repeated 4 times
+3. Search for "negligence"
+4. Assert workspace 2 ranks before workspace 1 in results
+
+**Verifies:** ts_rank orders results by relevance (more term occurrences = higher rank)
+
+### NULL search_text no error
+**File:** tests/integration/test_fts_search.py::TestFTSNullSearchText::test_null_search_text_no_error
+1. Create workspace with document content but search_text left as NULL
+2. Search for unrelated term
+3. Assert no error, workspace not in results
+
+**Verifies:** NULL search_text handled via COALESCE in index expression, no SQL errors
+
+## Load-Test CRDT Tag Validity (Integration)
+
+### Highlight tags are valid UUIDs
+**File:** tests/integration/test_loadtest_crdt_validity.py::TestLoadtestCrdtTagValidity::test_highlight_tags_are_valid_uuids
+1. Create workspace, seed tags, build CRDT state via build_crdt_state
+2. Deserialise CRDT, get all highlights
+3. For each highlight, parse tag value as UUID
+4. Assert round-trip (str -> UUID -> str) matches
+
+**Verifies:** build_crdt_state stores UUID strings (not tag names) in highlight tag fields
+
+### Highlight tag UUIDs are from seed
+**File:** tests/integration/test_loadtest_crdt_validity.py::TestLoadtestCrdtTagValidity::test_highlight_tag_uuids_are_from_seed
+1. Build CRDT fixture (workspace + seeded tags + highlights)
+2. Collect tag_ids from seed
+3. For each highlight, assert tag value is in seeded tag_id set
+
+**Verifies:** All tag UUIDs in highlights came from _seed_tags_for_template, not fabricated
+
+### Highlight tag UUIDs exist in database
+**File:** tests/integration/test_loadtest_crdt_validity.py::TestLoadtestCrdtTagValidity::test_highlight_tag_uuids_exist_in_database
+1. Build CRDT fixture
+2. Query Tag table for workspace's tags
+3. Assert every highlight tag UUID exists as a row in the database
+
+**Verifies:** Tag UUIDs in CRDT highlights reference real Tag rows (foreign key integrity)
+
+## I18n Configuration (Unit)
+
+### Default unit_label is "Unit"
+**File:** tests/unit/test_config.py::TestI18nConfig::test_default_unit_label_is_unit
+1. Clear environment and create Settings
+2. Assert settings.i18n.unit_label == "Unit"
+
+**Verifies:** The i18n unit_label defaults to "Unit" (Australian terminology)
+
+### Override unit_label
+**File:** tests/unit/test_config.py::TestI18nConfig::test_override_unit_label
+1. Create I18nConfig with unit_label="Course"
+2. Assert unit_label == "Course"
+
+**Verifies:** I18nConfig accepts custom unit_label values
+
+### Override via environment variable
+**File:** tests/unit/test_config.py::TestI18nConfig::test_override_via_settings
+1. Set I18N__UNIT_LABEL="Subject" in environment
+2. Create Settings
+3. Assert settings.i18n.unit_label == "Subject"
+
+**Verifies:** Unit label is configurable via nested environment variable
+
+## Navigator (E2E)
+
+### Unauthenticated redirect
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_unauthenticated_redirect
+1. Navigate to / without authentication
+2. Assert redirect to /login
+
+**Verifies:** AC2.5 -- unauthenticated access redirects to login
+
+### My Work section renders with owned workspace
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_navigator_renders_my_work
+1. Authenticate as student, create owned workspace via DB
+2. Navigate to /
+3. Assert "My Work" section header visible
+4. Assert workspace entry visible with data-workspace-id attribute
+5. Assert empty sections ("Unstarted Work", "Shared With Me") absent
+6. Click workspace title, assert navigation to /annotation?workspace_id=...
+7. Navigate back, click action button, assert same navigation
+
+**Verifies:** AC1.1, AC1.7, AC2.1, AC2.2 -- My Work section renders, empty sections hidden, clicks navigate
+
+### Unstarted Work section renders
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_navigator_renders_unstarted_work
+1. Instructor creates course with published activity via UI
+2. Student is enrolled
+3. Student navigates to /
+4. Assert "Unstarted Work" section header visible
+5. Assert activity title visible
+6. Assert Start button visible
+
+**Verifies:** AC1.2 -- enrolled students see published activities they haven't started
+
+### Start button clones and navigates
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_start_activity_clones_and_navigates
+1. Instructor creates course with published activity + template
+2. Student navigates to /
+3. Click Start on unstarted activity
+4. Assert navigation to /annotation?workspace_id=...
+5. Navigate back to /
+6. Assert activity now under "My Work", not "Unstarted Work"
+
+**Verifies:** AC2.3 -- Start clones template, navigates to annotation, moves activity to My Work
+
+### Search filters and restores
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_search_filters_and_restores
+1. Create two workspaces with unique marker content
+2. Navigate to /
+3. Type 2-char query -- assert no filtering (both visible)
+4. Type full marker matching one workspace -- assert only match visible with snippet
+5. Clear search -- assert full unfiltered view returns
+6. Type nonsense query -- assert "No workspaces match" message
+7. Click "Clear search" -- assert full view returns
+
+**Verifies:** AC3.2, AC3.5, AC3.6, AC8.4 -- search debounce, filtering, restore, empty state
+
+### Inline title rename
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_inline_title_rename
+1. Create owned workspace, navigate to /
+2. Click pencil icon -- assert URL unchanged (AC4.5)
+3. Assert input switches to editable/outlined mode (AC4.1)
+4. Type new title, press Escape -- assert revert (AC4.3)
+5. Type new title, press Enter -- assert save (AC4.2)
+6. Refresh page -- assert title persists
+7. Type title, blur -- assert save on blur (AC4.2)
+
+**Verifies:** AC4.1-AC4.3, AC4.5 -- inline title editing with save/revert/persist
+
+### Default title on start
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_default_title_on_start
+1. Instructor creates course with activity titled "Annotate Becky Bennett"
+2. Student clicks Start
+3. Navigate back to /
+4. Assert workspace title input value equals activity title
+
+**Verifies:** AC4.4 -- cloned workspace defaults its title to the activity name
+
+### Infinite scroll loads more rows
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_infinite_scroll_loads_more_rows
+1. Create 60 workspaces for one user
+2. Navigate to / -- assert initial load is 40-50 entries
+3. Scroll to bottom -- assert more entries loaded
+4. Assert no duplicate workspace IDs
+5. Keep scrolling -- assert all 60 rows eventually loaded
+
+**Verifies:** AC5.1, AC5.2, AC5.5 -- keyset pagination via infinite scroll, no duplicates
+
+### No extra load under 50
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_infinite_scroll_no_extra_load_under_50
+1. Create 10 workspaces
+2. Navigate to / -- assert all 10 visible
+3. Scroll to bottom -- assert count unchanged
+
+**Verifies:** AC5.4 -- no spurious pagination when all data fits in one page
+
+### Pagination disabled during search
+**File:** tests/e2e/test_navigator.py::TestNavigator::test_pagination_disabled_during_search
+1. Create 60 workspaces (57 generic + 3 with marker)
+2. Type marker in search -- assert 3 or fewer results
+3. Scroll to bottom during search -- assert no extra rows loaded
+4. Clear search -- assert paginated view restores (40-50 entries)
+5. Scroll after clear -- assert pagination resumes (more rows loaded)
+
+**Verifies:** AC5.2 -- search replaces pagination; clearing search restores it
+
+### Annotation home icon navigates to navigator
+**File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_annotation_home_icon_navigates_to_navigator
+1. Authenticate, create workspace, navigate to /annotation page
+2. Find home button (role="button", name="home")
+3. Click home button
+4. Assert navigation to /
+
+**Verifies:** AC6.1 -- home icon on annotation tab bar returns to navigator
+
+### Annotation page has no global header bar
+**File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_annotation_no_global_header_bar
+1. Navigate to annotation page
+2. Assert home button is visible and has q-btn--flat class
+3. Assert tabs still exist and are visible
+
+**Verifies:** AC6.3 -- home icon is a small flat button, not an intrusive header bar
+
+### Roleplay home icon navigates to navigator
+**File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_roleplay_home_icon_navigates_to_navigator
+1. Navigate to /roleplay
+2. Click home button
+3. Assert navigation to /
+
+**Verifies:** AC6.2 -- home icon on roleplay page returns to navigator
+
+### Courses home icon navigates to navigator
+**File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_courses_home_icon_navigates_to_navigator
+1. Navigate to /courses
+2. Click home button
+3. Assert navigation to /
+
+**Verifies:** AC6.2 -- home icon on courses page returns to navigator
+
+### Navigator displays "Unit" not "Course"
+**File:** tests/e2e/test_navigator.py::TestI18nTerminology::test_navigator_displays_unit_not_course
+1. Authenticate, navigate to /
+2. Extract all visible text from page body
+3. Search for "Course" or "Courses" (case-sensitive, word boundary)
+4. Assert no matches found
+
+**Verifies:** AC7.1 -- no user-facing text on navigator contains "Course" (uses "Unit" per AU convention)

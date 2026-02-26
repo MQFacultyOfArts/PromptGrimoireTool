@@ -7,6 +7,9 @@ Renders all workspaces for the authenticated user across four sections:
   3. Shared With Me -- workspaces shared via explicit ACL
   4. Shared in [Unit] -- peer workspaces in enrolled courses
 
+Supports infinite scroll pagination: initial 50 rows, then more as the
+user scrolls near the bottom of the scroll area.
+
 Route: /
 """
 
@@ -175,6 +178,7 @@ def _group_by_owner(
 
 def _render_inline_title_edit(
     row: NavigatorRow,
+    page_state: dict[str, object] | None = None,
 ) -> None:
     """Render an inline-editable title input with pencil icon for owners.
 
@@ -182,10 +186,17 @@ def _render_inline_title_edit(
     Clicking the pencil icon switches to editable/outlined mode.
     Enter or blur saves; Escape cancels.
     Clicking the readonly input itself navigates to the workspace.
+
+    Parameters
+    ----------
+    page_state:
+        If provided, ``editing_active`` is set to ``True`` while an edit
+        is in progress.  The infinite scroll handler checks this flag to
+        avoid refreshing sections (which would destroy the edit UI)
+        during an active rename.
     """
     workspace_id = row.workspace_id
     assert workspace_id is not None  # caller guarantees this
-    url = _workspace_url(workspace_id)
 
     display_title = row.title or row.activity_title or "Untitled"
     original_title = display_title
@@ -193,8 +204,7 @@ def _render_inline_title_edit(
     title_input = (
         ui.input(value=display_title)
         .classes("text-base font-medium text-primary navigator-title-input")
-        .props("readonly borderless dense")
-        .props(f'data-workspace-id="{workspace_id}"')
+        .props(f'readonly borderless dense data-workspace-id="{workspace_id}"')
     )
 
     _state: dict[str, object] = {"editing": False, "saving": False}
@@ -203,13 +213,16 @@ def _render_inline_title_edit(
         """Return the input to readonly/borderless mode."""
         title_input.props(remove="outlined", add="readonly borderless")
         _state["editing"] = False
+        if page_state is not None:
+            page_state["editing_active"] = False
 
-    # --- Pencil icon (edit trigger) ---
     async def _activate_edit(_e: object) -> None:
         nonlocal original_title
         if _state["editing"]:
             return
         _state["editing"] = True
+        if page_state is not None:
+            page_state["editing_active"] = True
         original_title = title_input.value
         title_input.props(remove="readonly borderless", add="outlined")
         title_input.run_method("focus")
@@ -219,7 +232,6 @@ def _render_inline_title_edit(
         "cursor-pointer text-gray-400 hover:text-primary navigator-edit-title-btn"
     ).on("click", _activate_edit).props(f'data-testid="edit-title-{workspace_id}"')
 
-    # --- Save handler (Enter / blur) ---
     async def _save_title(_e: object) -> None:
         if not _state["editing"] or _state["saving"]:
             return
@@ -239,7 +251,6 @@ def _render_inline_title_edit(
     title_input.on("keydown.enter", _save_title)
     title_input.on("blur", _save_title)
 
-    # --- Cancel handler (Escape) ---
     async def _cancel_edit(_e: object) -> None:
         if not _state["editing"]:
             return
@@ -247,13 +258,14 @@ def _render_inline_title_edit(
         _deactivate()
 
     title_input.on("keydown.escape", _cancel_edit)
-
-    # --- Navigate on click when readonly ---
-    async def _navigate_on_click(_e: object) -> None:
-        if not _state["editing"]:
-            ui.navigate.to(url)
-
-    title_input.on("click", _navigate_on_click)
+    title_input.on(
+        "click",
+        lambda _e: (
+            ui.navigate.to(_workspace_url(workspace_id))
+            if not _state["editing"]
+            else None
+        ),
+    )
 
 
 def _render_workspace_entry(
@@ -262,6 +274,7 @@ def _render_workspace_entry(
     show_owner: bool = False,
     owner_label: str = "",
     snippets: dict[UUID, str] | None = None,
+    page_state: dict[str, object] | None = None,
 ) -> None:
     """Render a single workspace entry as a card row."""
     with (
@@ -275,7 +288,7 @@ def _render_workspace_entry(
                 title = row.title or row.activity_title or "Untitled"
                 if row.workspace_id is not None and row.permission == "owner":
                     # Owner: inline-editable title with pencil icon
-                    _render_inline_title_edit(row)
+                    _render_inline_title_edit(row, page_state=page_state)
                 elif row.workspace_id is not None:
                     # Non-owner: clickable link
                     ui.link(
@@ -411,6 +424,7 @@ async def _render_shared_in_unit(
     user_id: UUID,
     is_privileged: bool,
     snippets: dict[UUID, str] | None,
+    page_state: dict[str, object] | None = None,
 ) -> None:
     """Render shared_in_unit sections grouped by course and owner."""
     by_course = _group_shared_in_unit_by_course(shared_in_unit_rows)
@@ -437,7 +451,9 @@ async def _render_shared_in_unit(
             loose = [r for r in owner_rows if r.activity_id is None]
 
             for row in placed:
-                _render_workspace_entry(row, show_owner=False, snippets=snippets)
+                _render_workspace_entry(
+                    row, show_owner=False, snippets=snippets, page_state=page_state
+                )
 
             if loose:
                 ui.label("Unsorted").classes(
@@ -449,6 +465,7 @@ async def _render_shared_in_unit(
                         row,
                         show_owner=False,
                         snippets=snippets,
+                        page_state=page_state,
                     )
 
 
@@ -458,6 +475,7 @@ async def _render_simple_section(
     user_id: UUID,
     is_privileged: bool,
     snippets: dict[UUID, str] | None,
+    page_state: dict[str, object] | None = None,
 ) -> None:
     """Render a non-shared_in_unit section."""
     display_name = _SECTION_DISPLAY_NAMES.get(section_key, section_key)
@@ -486,9 +504,10 @@ async def _render_simple_section(
                 show_owner=True,
                 owner_label=owner_label,
                 snippets=snippets,
+                page_state=page_state,
             )
         else:
-            _render_workspace_entry(row, snippets=snippets)
+            _render_workspace_entry(row, snippets=snippets, page_state=page_state)
 
 
 async def _render_sections_impl(
@@ -496,8 +515,9 @@ async def _render_sections_impl(
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    next_cursor: NavigatorCursor | None = None,  # noqa: ARG001 -- Phase 7 pagination
+    next_cursor: NavigatorCursor | None = None,  # noqa: ARG001 -- kept for refreshable signature
     snippets: dict[UUID, str] | None = None,
+    page_state: dict[str, object] | None = None,
 ) -> None:
     """Render all navigator sections from the given rows.
 
@@ -518,6 +538,9 @@ async def _render_sections_impl(
         Pagination cursor for more pages.
     snippets:
         workspace_id -> snippet HTML for search results.
+    page_state:
+        Mutable page state dict.  Threaded to ``_render_inline_title_edit``
+        so the ``editing_active`` flag can block scroll-triggered refreshes.
     """
     grouped = _group_rows_by_section(rows)
 
@@ -542,6 +565,7 @@ async def _render_sections_impl(
                     user_id,
                     is_privileged,
                     snippets,
+                    page_state=page_state,
                 )
         else:
             section_rows = grouped.get(section_key, [])
@@ -552,6 +576,7 @@ async def _render_sections_impl(
                     user_id,
                     is_privileged,
                     snippets,
+                    page_state=page_state,
                 )
 
 
@@ -562,11 +587,7 @@ async def _render_sections_impl(
 
 def _setup_search(
     *,
-    all_rows: list[NavigatorRow],
-    user_id: UUID,
-    is_privileged: bool,
-    enrolled_course_ids: list[UUID],
-    next_cursor: NavigatorCursor | None,
+    page_state: dict[str, object],
     render_sections_refresh: Callable[..., object],
     no_results_container: ui.column,
     search_input: Input,
@@ -578,8 +599,11 @@ def _setup_search(
 
     Parameters
     ----------
-    all_rows:
-        The full (unfiltered) list of NavigatorRow from the initial load.
+    page_state:
+        Mutable dict holding ``rows``, ``next_cursor``, ``user_id``,
+        ``is_privileged``, ``enrolled_course_ids``, and ``search_active``.
+        Search reads accumulated rows (including those loaded via infinite
+        scroll) and sets ``search_active`` to control scroll pagination.
     render_sections_refresh:
         The ``.refresh()`` method on the ``@ui.refreshable`` sections.
     no_results_container:
@@ -602,6 +626,9 @@ def _setup_search(
     ) -> None:
         """Refresh sections with the given rows, clearing stale UI."""
         no_results_container.clear()
+        user_id: UUID = page_state["user_id"]  # type: ignore[assignment]
+        is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]
+        enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]
         render_sections_refresh(
             rows=rows,
             user_id=user_id,
@@ -612,6 +639,9 @@ def _setup_search(
         )
 
     def _restore_full_view() -> None:
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+        next_cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
+        page_state["search_active"] = False
         _refresh(all_rows, cursor=next_cursor)
 
     def _clear_search() -> None:
@@ -625,9 +655,12 @@ def _setup_search(
             logger.exception("Search failed for query %r", query)
             ui.notify("Search failed. Try again.", type="warning")
             return
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
         matched_ids = {r.workspace_id for r in results}
         snippets = {r.workspace_id: r.snippet for r in results}
         filtered = [r for r in all_rows if r.workspace_id in matched_ids]
+
+        page_state["search_active"] = True
 
         if filtered:
             _refresh(filtered, snippets=snippets)
@@ -709,16 +742,18 @@ async def navigator_page() -> None:
         enrolled_course_ids=enrolled_course_ids,
     )
 
-    # Page-level state for Phase 7 infinite scroll.  Stored in a mutable
-    # container so Phase 7's scroll handler (defined in the same scope) can
-    # append new rows and call _render_sections.refresh() without reloading
-    # the entire page.
+    # Page-level state for infinite scroll.  Stored in a mutable container
+    # so the scroll handler and search closures can read/write the same
+    # accumulated rows and cursor without reloading the entire page.
     page_state: dict[str, object] = {
         "rows": rows,
         "next_cursor": next_cursor,
         "user_id": user_id,
         "is_privileged": is_privileged,
         "enrolled_course_ids": enrolled_course_ids,
+        "search_active": False,
+        "loading": False,
+        "editing_active": False,
     }
 
     @ui.refreshable
@@ -732,11 +767,10 @@ async def navigator_page() -> None:
     ) -> None:
         """Refreshable section renderer.
 
-        Wraps ``_render_sections_impl`` so Phase 5 (search) and Phase 7
-        (infinite scroll) can call ``_render_sections.refresh()`` with
-        updated rows without reconstructing the entire page.  ``page_state``
-        (captured via closure) keeps the accumulated rows and cursor so
-        Phase 7 can append before refreshing.
+        Wraps ``_render_sections_impl`` so search and infinite scroll
+        can call ``_render_sections.refresh()`` with updated rows without
+        reconstructing the entire page.  ``page_state`` is captured via
+        closure and threaded to inline edit handlers.
         """
         await _render_sections_impl(
             rows=rows,
@@ -745,9 +779,70 @@ async def navigator_page() -> None:
             enrolled_course_ids=enrolled_course_ids,
             next_cursor=next_cursor,
             snippets=snippets,
+            page_state=page_state,
         )
 
-    with page_layout("Home"), ui.column().classes("w-full max-w-4xl mx-auto"):
+    # --- Infinite scroll handler ---
+
+    async def _handle_scroll(e: object) -> None:
+        """Load more rows when the user scrolls near the bottom.
+
+        Guards:
+        - ``loading``: prevents concurrent fetches during rapid scrolling.
+        - ``search_active``: search results are not paginated.
+        - ``editing_active``: an inline title edit is in progress;
+          refreshing sections would destroy the edit UI (proleptic
+          concern from Phase 6 review).
+        - ``next_cursor is None``: all rows already loaded (AC5.4).
+        """
+        if page_state["loading"]:
+            return
+        vertical_pct = getattr(e, "vertical_percentage", None)
+        if vertical_pct is None or vertical_pct < 0.9:
+            return
+        if page_state["next_cursor"] is None:
+            return
+        if page_state["search_active"]:
+            return
+        if page_state["editing_active"]:
+            return
+
+        page_state["loading"] = True
+        try:
+            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
+            new_rows, new_cursor = await load_navigator_page(
+                user_id=page_state["user_id"],  # type: ignore[arg-type]
+                is_privileged=page_state["is_privileged"],  # type: ignore[arg-type]
+                enrolled_course_ids=page_state["enrolled_course_ids"],  # type: ignore[arg-type]
+                cursor=cursor,
+                limit=50,
+            )
+            accumulated_rows.extend(new_rows)
+            page_state["next_cursor"] = new_cursor
+            _render_sections.refresh(
+                rows=accumulated_rows,
+                user_id=page_state["user_id"],
+                is_privileged=page_state["is_privileged"],
+                enrolled_course_ids=page_state["enrolled_course_ids"],
+                next_cursor=new_cursor,
+                snippets=None,
+            )
+        finally:
+            page_state["loading"] = False
+
+    # The scroll area needs a bounded viewport so on_scroll fires.
+    # Use CSS flex to fill remaining space below the page_layout header.
+    with (
+        page_layout("Home"),
+        ui.element("div")
+        .classes("w-full")
+        .style("flex: 1; overflow: hidden; display: flex; flex-direction: column"),
+        ui.scroll_area(on_scroll=_handle_scroll)
+        .classes("w-full navigator-scroll-area")
+        .style("flex: 1"),
+        ui.column().classes("w-full max-w-4xl mx-auto q-pa-md"),
+    ):
         ui.add_css(_SEARCH_SNIPPET_CSS)
 
         search_input = (
@@ -761,11 +856,7 @@ async def navigator_page() -> None:
 
         # Wire up search behaviour
         on_search_change = _setup_search(
-            all_rows=rows,
-            user_id=user_id,
-            is_privileged=is_privileged,
-            enrolled_course_ids=enrolled_course_ids,
-            next_cursor=next_cursor,
+            page_state=page_state,
             render_sections_refresh=_render_sections.refresh,
             no_results_container=no_results_container,
             search_input=search_input,
@@ -783,7 +874,3 @@ async def navigator_page() -> None:
                 next_cursor=next_cursor,
                 snippets=None,
             )
-
-    # Suppress unused-variable warning: page_state is intentionally kept in
-    # scope for Phase 7's scroll handler to mutate.
-    _ = page_state

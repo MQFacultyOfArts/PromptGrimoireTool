@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
-from promptgrimoire.auth.anonymise import anonymise_author
+from promptgrimoire.auth.anonymise import (
+    anonymise_author,
+)  # used by _get_owner_display_name
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.courses import get_course_by_id
 from promptgrimoire.pages.navigator._cards import (
@@ -33,27 +35,23 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-async def _get_owner_display_name(
+def _get_owner_display_name(
     row: NavigatorRow,
     user_id: UUID,
     is_privileged: bool,
-    course: Course | None,
 ) -> str:
-    """Resolve the display name, applying anonymisation."""
-    author = row.owner_display_name or "Unknown"
+    """Resolve the display name, applying anonymisation.
 
-    if course is None:
-        return author
-
-    anonymous_sharing = course.default_anonymous_sharing
-
+    Uses the resolved anonymous_sharing flag from the SQL query
+    (COALESCE of activity-level and course-level defaults).
+    """
     return anonymise_author(
-        author=author,
+        author=row.owner_display_name or "Unknown",
         user_id=(str(row.owner_user_id) if row.owner_user_id else None),
         viewing_user_id=str(user_id),
-        anonymous_sharing=anonymous_sharing,
+        anonymous_sharing=row.anonymous_sharing,
         viewer_is_privileged=is_privileged,
-        author_is_privileged=False,
+        author_is_privileged=row.owner_is_privileged,
     )
 
 
@@ -89,8 +87,8 @@ async def _render_shared_in_unit(
 
         by_owner_groups = group_by_owner(course_rows)
         for _owner_id, owner_rows in by_owner_groups.items():
-            display_name = await _get_owner_display_name(
-                owner_rows[0], user_id, is_privileged, course
+            display_name = _get_owner_display_name(
+                owner_rows[0], user_id, is_privileged
             )
             ui.label(display_name).classes(
                 "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
@@ -136,14 +134,7 @@ async def _render_simple_section(
         if section_key == "unstarted":
             render_unstarted_entry(row, user_id)
         elif section_key == "shared_with_me":
-            owner_label = anonymise_author(
-                author=row.owner_display_name or "Unknown",
-                user_id=(str(row.owner_user_id) if row.owner_user_id else None),
-                viewing_user_id=str(user_id),
-                anonymous_sharing=True,
-                viewer_is_privileged=is_privileged,
-                author_is_privileged=False,
-            )
+            owner_label = _get_owner_display_name(row, user_id, is_privileged)
             render_workspace_entry(
                 row,
                 show_owner=True,
@@ -285,8 +276,8 @@ async def _append_shared_in_unit(
         for owner_id, owner_rows in by_owner_groups.items():
             owner_key = (course_id, owner_id)
             if owner_key not in rendered_owners:
-                display_name = await _get_owner_display_name(
-                    owner_rows[0], user_id, is_privileged, course_cache.get(course_id)
+                display_name = _get_owner_display_name(
+                    owner_rows[0], user_id, is_privileged
                 )
                 ui.label(display_name).classes(
                     "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
@@ -331,14 +322,7 @@ def _append_simple_section(
         if section_key == "unstarted":
             render_unstarted_entry(row, user_id)
         elif section_key == "shared_with_me":
-            owner_label = anonymise_author(
-                author=row.owner_display_name or "Unknown",
-                user_id=(str(row.owner_user_id) if row.owner_user_id else None),
-                viewing_user_id=str(user_id),
-                anonymous_sharing=True,
-                viewer_is_privileged=is_privileged,
-                author_is_privileged=False,
-            )
+            owner_label = _get_owner_display_name(row, user_id, is_privileged)
             render_workspace_entry(
                 row, show_owner=True, owner_label=owner_label, page_state=page_state
             )

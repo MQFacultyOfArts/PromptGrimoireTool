@@ -46,6 +46,8 @@ class NavigatorRow:
     owner_display_name: str | None
     permission: str | None
     shared_with_class: bool
+    anonymous_sharing: bool
+    owner_is_privileged: bool
     sort_key: datetime
     row_id: UUID
 
@@ -84,6 +86,10 @@ WITH nav AS (
     u.display_name            AS owner_display_name,
     'owner'::text             AS permission,
     w.shared_with_class       AS shared_with_class,
+    COALESCE(a.anonymous_sharing,
+      c.default_anonymous_sharing, false
+    )                         AS anonymous_sharing,
+    false                     AS owner_is_privileged,  -- viewer privilege separate
     w.updated_at              AS sort_key,
     w.id                      AS row_id
   FROM workspace w
@@ -117,6 +123,8 @@ WITH nav AS (
     NULL::text                AS owner_display_name,
     NULL::text                AS permission,
     false                     AS shared_with_class,
+    false                     AS anonymous_sharing,
+    false                     AS owner_is_privileged,  -- no owner yet
     a.created_at              AS sort_key,
     a.id                      AS row_id
   FROM activity a
@@ -154,6 +162,15 @@ WITH nav AS (
     owner_u.display_name      AS owner_display_name,
     acl.permission            AS permission,
     w.shared_with_class       AS shared_with_class,
+    COALESCE(a.anonymous_sharing,
+      c.default_anonymous_sharing, false
+    )                         AS anonymous_sharing,
+    (owner_u.is_admin OR EXISTS (
+      SELECT 1 FROM course_enrollment ce
+      JOIN course_role cr ON cr.name = ce.role
+      WHERE ce.user_id = owner_acl.user_id
+        AND cr.is_staff = true
+    ))                        AS owner_is_privileged,
     w.updated_at              AS sort_key,
     w.id                      AS row_id
   FROM workspace w
@@ -187,6 +204,16 @@ WITH nav AS (
     owner_u.display_name      AS owner_display_name,
     'peer'::text              AS permission,
     w.shared_with_class       AS shared_with_class,
+    COALESCE(a.anonymous_sharing,
+      c.default_anonymous_sharing, false
+    )                         AS anonymous_sharing,
+    (owner_u.is_admin OR EXISTS (
+      SELECT 1 FROM course_enrollment ce
+      JOIN course_role cr ON cr.name = ce.role
+      WHERE ce.user_id = owner_acl.user_id
+        AND ce.course_id = c.id
+        AND cr.is_staff = true
+    ))                        AS owner_is_privileged,
     w.updated_at              AS sort_key,
     w.id                      AS row_id
   FROM workspace w
@@ -228,6 +255,15 @@ WITH nav AS (
     owner_u.display_name      AS owner_display_name,
     'peer'::text              AS permission,
     w.shared_with_class       AS shared_with_class,
+    COALESCE(c.default_anonymous_sharing, false
+    )                         AS anonymous_sharing,
+    (owner_u.is_admin OR EXISTS (
+      SELECT 1 FROM course_enrollment ce
+      JOIN course_role cr ON cr.name = ce.role
+      WHERE ce.user_id = owner_acl.user_id
+        AND ce.course_id = c.id
+        AND cr.is_staff = true
+    ))                        AS owner_is_privileged,
     w.updated_at              AS sort_key,
     w.id                      AS row_id
   FROM workspace w
@@ -337,31 +373,35 @@ LIMIT :lim
 )
 
 
+def _row_from_tuple(row: Any) -> NavigatorRow:
+    """Map a single positional SQLAlchemy Row to a NavigatorRow."""
+    return NavigatorRow(
+        section=row[0],
+        section_priority=row[1],
+        workspace_id=row[2],
+        activity_id=row[3],
+        activity_title=row[4],
+        week_title=row[5],
+        week_number=row[6],
+        course_id=row[7],
+        course_code=row[8],
+        course_name=row[9],
+        title=row[10],
+        updated_at=row[11],
+        owner_user_id=row[12],
+        owner_display_name=row[13],
+        permission=row[14],
+        shared_with_class=row[15],
+        anonymous_sharing=row[16],
+        owner_is_privileged=row[17],
+        sort_key=row[18],
+        row_id=row[19],
+    )
+
+
 def _rows_from_raw(raw_rows: Sequence[Any]) -> list[NavigatorRow]:
     """Map positional SQLAlchemy Row tuples to NavigatorRow dataclasses."""
-    return [
-        NavigatorRow(
-            section=row[0],
-            section_priority=row[1],
-            workspace_id=row[2],
-            activity_id=row[3],
-            activity_title=row[4],
-            week_title=row[5],
-            week_number=row[6],
-            course_id=row[7],
-            course_code=row[8],
-            course_name=row[9],
-            title=row[10],
-            updated_at=row[11],
-            owner_user_id=row[12],
-            owner_display_name=row[13],
-            permission=row[14],
-            shared_with_class=row[15],
-            sort_key=row[16],
-            row_id=row[17],
-        )
-        for row in raw_rows
-    ]
+    return [_row_from_tuple(row) for row in raw_rows]
 
 
 def _base_params(
@@ -475,31 +515,13 @@ async def search_navigator(
         result = await session.execute(_SEARCH_SQL, params)
         raw_rows = result.fetchall()
 
-    # Columns: 18 NavigatorRow fields + snippet + rank
+    # NavigatorRow fields followed by snippet + rank from the FTS join
+    nav_field_count = len(dataclasses.fields(NavigatorRow))
     return [
         SearchHit(
-            row=NavigatorRow(
-                section=r[0],
-                section_priority=r[1],
-                workspace_id=r[2],
-                activity_id=r[3],
-                activity_title=r[4],
-                week_title=r[5],
-                week_number=r[6],
-                course_id=r[7],
-                course_code=r[8],
-                course_name=r[9],
-                title=r[10],
-                updated_at=r[11],
-                owner_user_id=r[12],
-                owner_display_name=r[13],
-                permission=r[14],
-                shared_with_class=r[15],
-                sort_key=r[16],
-                row_id=r[17],
-            ),
-            snippet=str(r[18]),
-            rank=float(r[19]),
+            row=_row_from_tuple(r),
+            snippet=str(r[nav_field_count]),
+            rank=float(r[nav_field_count + 1]),
         )
         for r in raw_rows
     ]

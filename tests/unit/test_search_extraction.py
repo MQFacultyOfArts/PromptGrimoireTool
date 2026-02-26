@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.db.search import extract_searchable_text
+from promptgrimoire.db.crdt_extraction import extract_searchable_text
 
 
 def _build_crdt_state(

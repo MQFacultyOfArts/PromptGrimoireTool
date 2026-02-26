@@ -557,7 +557,7 @@ async def _handle_sso_callback(token: str | None) -> None:
     result = await auth_client.authenticate_sso(token=token)
 
     if result.success:
-        logger.info(
+        logger.debug(
             "SSO auth success: email=%s, roles=%s, trusted_metadata=%s",
             result.email,
             result.roles,

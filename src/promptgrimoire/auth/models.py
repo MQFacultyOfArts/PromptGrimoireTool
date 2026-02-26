@@ -7,6 +7,7 @@ providing a consistent interface between the real Stytch client and mock.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class AuthResult:
         email: The member's email address.
         name: The member's display name (from Stytch).
         roles: List of role IDs assigned to the member.
+        trusted_metadata: IdP attributes from Stytch (e.g. AAF affiliation).
         error: Error type if authentication failed.
     """
 
@@ -50,6 +52,7 @@ class AuthResult:
     email: str | None = None
     name: str | None = None
     roles: list[str] = field(default_factory=list)
+    trusted_metadata: dict[str, Any] | None = None
     error: str | None = None
 
 

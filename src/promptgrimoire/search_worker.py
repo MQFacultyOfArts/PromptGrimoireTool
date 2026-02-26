@@ -12,13 +12,13 @@ import logging
 
 from sqlalchemy import text
 
+from promptgrimoire.db.crdt_extraction import extract_searchable_text
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.search import extract_searchable_text
 
 logger = logging.getLogger(__name__)
 
 
-async def process_dirty_workspaces(batch_size: int = 50) -> int:
+async def process_dirty_workspaces(batch_size: int = 500) -> int:
     """Process workspaces with search_dirty=True.
 
     For each dirty workspace:
@@ -99,20 +99,30 @@ async def process_dirty_workspaces(batch_size: int = 50) -> int:
     return processed
 
 
-async def start_search_worker(interval_seconds: float = 30.0) -> None:
+async def start_search_worker(
+    interval_seconds: float = 30.0,
+    batch_size: int = 500,
+) -> None:
     """Start the background search extraction worker.
 
-    Runs process_dirty_workspaces() in a loop with the given interval
-    between iterations. Catches and logs exceptions per iteration
-    to prevent the loop from crashing.
+    Runs process_dirty_workspaces() in a loop.  When a batch is full
+    (processed == batch_size), loops immediately to drain the queue.
+    Only sleeps when a batch comes back short (queue drained).
 
-    Args:
-        interval_seconds: Sleep duration between polling cycles.
+    Parameters
+    ----------
+    interval_seconds : float
+        Sleep duration between polling cycles when queue is drained.
+    batch_size : int
+        Maximum workspaces per batch.
     """
     logger.info("Search extraction worker started (interval=%.1fs)", interval_seconds)
     while True:
         try:
-            await process_dirty_workspaces()
+            processed = await process_dirty_workspaces(batch_size=batch_size)
+            if processed >= batch_size:
+                # Batch was full — likely more work waiting.  Loop immediately.
+                continue
         except Exception:
             logger.exception("Search extraction worker iteration failed")
         await asyncio.sleep(interval_seconds)

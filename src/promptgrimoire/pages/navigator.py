@@ -753,10 +753,9 @@ async def _build_navigator_ui(
         scroll_container = (
             ui.column()
             .classes("w-full navigator-scroll-area")
-            .style(
-                "overflow-y: auto; height: calc(100vh - 64px)"
-            )  # 64px = Quasar QHeader height
-        )
+            .style("overflow-y: auto; height: calc(100vh - 64px)")
+        )  # 64px = Quasar QHeader height
+        scroll_container._props["id"] = "navigator-scroll"
         scroll_container.on(
             "scroll",
             handle_scroll,
@@ -924,6 +923,11 @@ async def navigator_page() -> None:
             )
             accumulated_rows.extend(new_rows)
             page_state["next_cursor"] = new_cursor
+            # Save scroll position before refresh destroys/recreates DOM
+            ui.run_javascript(
+                "window._navScroll = "
+                "(document.getElementById('navigator-scroll') || {}).scrollTop || 0;"
+            )
             _render_sections.refresh(
                 rows=accumulated_rows,
                 user_id=user_id,
@@ -931,6 +935,14 @@ async def navigator_page() -> None:
                 enrolled_course_ids=enrolled_course_ids,
                 next_cursor=new_cursor,
                 snippets=None,
+            )
+            # Restore scroll position after DOM rebuild
+            ui.run_javascript(
+                "setTimeout(function() {"
+                "  var el = document.getElementById('navigator-scroll');"
+                "  if (el && window._navScroll)"
+                "    el.scrollTop = window._navScroll;"
+                "}, 50);"
             )
         finally:
             page_state["loading"] = False

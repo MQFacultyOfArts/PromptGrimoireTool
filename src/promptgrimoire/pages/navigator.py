@@ -83,11 +83,7 @@ _ACTION_LABELS: dict[str | None, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# CSS for search snippets
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# CSS overrides for navigator layout
+# CSS
 # ---------------------------------------------------------------------------
 
 # Remove the page_layout padding wrapper — the inner column provides
@@ -757,10 +753,6 @@ async def _build_navigator_ui(
                 "overflow-y: auto; height: calc(100vh - 64px)"
             )  # 64px = Quasar QHeader height
         )
-        # Native DOM scroll events carry scrollTop/scrollHeight/clientHeight
-        # on event.target, not as direct event properties.  NiceGUI's args
-        # filter only works on direct properties, so we use js_handler to
-        # extract the values and emit() them to the server.
         scroll_container.on(
             "scroll",
             handle_scroll,
@@ -894,7 +886,6 @@ async def navigator_page() -> None:
 
         Guards: loading, no cursor, search active, editing active.
         """
-        # Consolidate all guards into a single check.
         if (
             page_state["loading"]
             or page_state["next_cursor"] is None
@@ -903,7 +894,6 @@ async def navigator_page() -> None:
         ):
             return
 
-        # Extract scroll position from NiceGUI event args.
         event_args = getattr(e, "args", None)
         if (
             not event_args
@@ -911,11 +901,7 @@ async def navigator_page() -> None:
             or len(event_args) < 3
         ):
             return
-        scroll_top, scroll_height, client_height = (
-            event_args[0],
-            event_args[1],
-            event_args[2],
-        )
+        scroll_top, scroll_height, client_height = event_args[:3]
         if not scroll_height or client_height >= scroll_height:
             return
         if (scroll_top + client_height) / scroll_height < 0.9:
@@ -926,9 +912,9 @@ async def navigator_page() -> None:
             accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
             cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]  # always NavigatorCursor | None
             new_rows, new_cursor = await load_navigator_page(
-                user_id=page_state["user_id"],  # type: ignore[arg-type]  # always UUID
-                is_privileged=page_state["is_privileged"],  # type: ignore[arg-type]  # always bool
-                enrolled_course_ids=page_state["enrolled_course_ids"],  # type: ignore[arg-type]  # always list[UUID]
+                user_id=user_id,
+                is_privileged=is_privileged,
+                enrolled_course_ids=enrolled_course_ids,
                 cursor=cursor,
                 limit=50,
             )
@@ -936,9 +922,9 @@ async def navigator_page() -> None:
             page_state["next_cursor"] = new_cursor
             _render_sections.refresh(
                 rows=accumulated_rows,
-                user_id=page_state["user_id"],
-                is_privileged=page_state["is_privileged"],
-                enrolled_course_ids=page_state["enrolled_course_ids"],
+                user_id=user_id,
+                is_privileged=is_privileged,
+                enrolled_course_ids=enrolled_course_ids,
                 next_cursor=new_cursor,
                 snippets=None,
             )

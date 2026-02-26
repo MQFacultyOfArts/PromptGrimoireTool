@@ -254,31 +254,21 @@ def _create_workspaces_bulk(
     return workspace_ids
 
 
-def _scroll_navigator_to_bottom(page: Page) -> None:
-    """Scroll the navigator scroll area to the bottom.
+def _scroll_navigator(page: Page, *, to: str) -> None:
+    """Scroll the navigator scroll area via JS and dispatch a scroll event.
 
-    The navigator uses a plain ``overflow-y: auto`` div (not Quasar
-    QScrollArea), so ``scrollTop`` can be set directly on the element.
     ``evaluate()`` is required because Playwright has no native API to
     set ``scrollTop`` on an arbitrary scrollable div.
 
-    Explicitly dispatches a ``scroll`` event after setting ``scrollTop``
-    to ensure NiceGUI's event listener picks up the change.
+    Parameters
+    ----------
+    to:
+        ``"bottom"`` or ``"top"``.
     """
+    scroll_value = "el.scrollHeight" if to == "bottom" else "0"
     page.locator(".navigator-scroll-area").evaluate(
-        "el => { el.scrollTop = el.scrollHeight;"
+        f"el => {{ el.scrollTop = {scroll_value};"
         " el.dispatchEvent(new Event('scroll')); }"
-    )
-
-
-def _scroll_navigator_to_top(page: Page) -> None:
-    """Scroll the navigator scroll area to the top.
-
-    Sets ``scrollTop`` to 0 and dispatches a scroll event so the
-    NiceGUI event handler fires.
-    """
-    page.locator(".navigator-scroll-area").evaluate(
-        "el => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); }"
     )
 
 
@@ -1094,7 +1084,7 @@ class TestNavigator:
                 )
 
             with subtests.test(msg="scroll_loads_more"):
-                _scroll_navigator_to_bottom(page)
+                _scroll_navigator(page, to="bottom")
                 # Wait for async load + re-render
                 page.wait_for_timeout(3000)
 
@@ -1119,7 +1109,7 @@ class TestNavigator:
             with subtests.test(msg="scroll_loads_all_rows"):
                 # Keep scrolling until all 60 rows are loaded
                 for _ in range(5):
-                    _scroll_navigator_to_bottom(page)
+                    _scroll_navigator(page, to="bottom")
                     page.wait_for_timeout(2000)
 
                 final_count = _count_workspace_entries(page)
@@ -1161,7 +1151,7 @@ class TestNavigator:
                 assert initial_count == 10, f"Expected 10 entries, got {initial_count}"
 
             with subtests.test(msg="scroll_no_additional_load"):
-                _scroll_navigator_to_bottom(page)
+                _scroll_navigator(page, to="bottom")
                 page.wait_for_timeout(2000)
 
                 after_count = _count_workspace_entries(page)
@@ -1221,7 +1211,7 @@ class TestNavigator:
             with subtests.test(msg="search_filters_results"):
                 # Focus search input via JS to avoid pointer interception
                 # in headless mode when many cards fill the scroll area.
-                _scroll_navigator_to_top(page)
+                _scroll_navigator(page, to="top")
                 page.wait_for_timeout(500)
                 search_input.focus()
                 page.keyboard.type(marker, delay=30)
@@ -1235,7 +1225,7 @@ class TestNavigator:
 
             # --- Scroll during search does NOT load more ---
             with subtests.test(msg="scroll_during_search_no_load"):
-                _scroll_navigator_to_bottom(page)
+                _scroll_navigator(page, to="bottom")
                 page.wait_for_timeout(2000)
 
                 after_scroll_count = _count_workspace_entries(page)
@@ -1266,11 +1256,11 @@ class TestNavigator:
             # --- Scroll after clearing search loads more ---
             with subtests.test(msg="scroll_after_clear_loads_more"):
                 before_scroll = _count_workspace_entries(page)
-                _scroll_navigator_to_bottom(page)
+                _scroll_navigator(page, to="bottom")
                 # Timer polls every 500ms; allow time for poll + DB + render.
                 # Re-scroll after a pause in case content grew from the first load.
                 page.wait_for_timeout(2000)
-                _scroll_navigator_to_bottom(page)
+                _scroll_navigator(page, to="bottom")
                 page.wait_for_timeout(2000)
 
                 after_scroll = _count_workspace_entries(page)

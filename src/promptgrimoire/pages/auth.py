@@ -557,6 +557,12 @@ async def _handle_sso_callback(token: str | None) -> None:
     result = await auth_client.authenticate_sso(token=token)
 
     if result.success:
+        logger.info(
+            "SSO auth success: email=%s, roles=%s, trusted_metadata=%s",
+            result.email,
+            result.roles,
+            result.trusted_metadata,
+        )
         derived_roles = derive_roles_from_metadata(result.trusted_metadata)
         all_roles = list(dict.fromkeys([*result.roles, *derived_roles]))
 

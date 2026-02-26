@@ -314,7 +314,11 @@ async def courses_list_page() -> None:
         ).classes("text-red-500")
         return
 
-    ui.label("Units").classes("text-2xl font-bold mb-4")
+    with ui.row().classes("items-center mb-4 gap-2"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
+        ui.label("Units").classes("text-2xl font-bold")
 
     # Get enrolled courses for this user
     enrollments = await list_user_enrollments(user_id)
@@ -455,6 +459,9 @@ async def course_detail_page(course_id: str) -> None:
 
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/courses")).props(
             "flat round"
         )

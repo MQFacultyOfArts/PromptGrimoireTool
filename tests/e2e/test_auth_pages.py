@@ -58,18 +58,27 @@ class TestLoginPage:
             expect(fresh_page.get_by_test_id("send-magic-link-btn")).to_be_visible()
             expect(fresh_page.get_by_test_id("sso-login-btn")).to_be_visible()
 
-        # --- Subtest: magic link send with valid email ---
+        # --- Subtest: magic link send with valid MQ email ---
         with subtests.test(msg="magic_link_send_success"):
-            fresh_page.get_by_test_id("email-input").fill("test@example.com")
+            fresh_page.get_by_test_id("email-input").fill("test@mq.edu.au")
             fresh_page.get_by_test_id("send-magic-link-btn").click()
             expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 
         # Reload for next test
         fresh_page.goto(f"{app_server}/login")
 
-        # --- Subtest: magic link accepts arbitrary email ---
-        with subtests.test(msg="magic_link_arbitrary_email"):
+        # --- Subtest: magic link rejects non-MQ email ---
+        with subtests.test(msg="magic_link_domain_rejected"):
             fresh_page.get_by_test_id("email-input").fill("arbitrary@anywhere.com")
+            fresh_page.get_by_test_id("send-magic-link-btn").click()
+            expect(fresh_page.get_by_text("Macquarie University email")).to_be_visible()
+
+        # Reload for next test
+        fresh_page.goto(f"{app_server}/login")
+
+        # --- Subtest: magic link accepts MQ student email ---
+        with subtests.test(msg="magic_link_student_email"):
+            fresh_page.get_by_test_id("email-input").fill("student@students.mq.edu.au")
             fresh_page.get_by_test_id("send-magic-link-btn").click()
             expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
 

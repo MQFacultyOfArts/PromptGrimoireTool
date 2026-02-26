@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 # Time to display error message before redirecting (seconds)
 _ERROR_DISPLAY_SECONDS = 0.5
 
+# Allowed email domains for magic link login
+_ALLOWED_MAGIC_LINK_DOMAINS: frozenset[str] = frozenset(
+    {"mq.edu.au", "students.mq.edu.au"}
+)
+
+
+def _is_allowed_magic_link_domain(email: str) -> bool:
+    """Check if email domain is in the allowed set for magic links."""
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1].lower().strip()
+    return domain in _ALLOWED_MAGIC_LINK_DOMAINS
+
+
 # Browser feature gate: blocks unsupported browsers before any annotation code runs.
 # Checks for CSS Custom Highlight API support ('highlights' in CSS).
 # On unsupported browsers, creates a full-page overlay covering the login UI.
@@ -241,6 +255,14 @@ def _build_magic_link_section() -> None:
                 ui.notify("Please enter an email address", type="warning")
                 return
 
+            if not _is_allowed_magic_link_domain(email):
+                ui.notify(
+                    "Please use your Macquarie University email"
+                    " (@mq.edu.au or @students.mq.edu.au)",
+                    type="warning",
+                )
+                return
+
             logger.info("Magic link requested for email=%s", email)
 
             auth_client = get_auth_client()
@@ -363,6 +385,59 @@ def _build_github_oauth_section() -> None:
         ).props('data-testid="github-login-btn"').classes("w-full")
 
 
+def _build_google_oauth_section() -> None:
+    """Build the Google OAuth login section."""
+    with ui.card().classes("w-96 p-4"):
+        ui.label("Google Login").classes("text-lg font-semibold mb-2")
+
+        def start_google_oauth() -> None:
+            logger.info("Google OAuth login button clicked")
+            auth_client = get_auth_client()
+            settings = get_settings()
+
+            if not settings.stytch.public_token:
+                logger.error("STYTCH__PUBLIC_TOKEN not configured")
+                ui.notify("Google login not configured", type="negative")
+                return
+
+            if not settings.stytch.default_org_id:
+                logger.error("STYTCH__DEFAULT_ORG_ID not configured")
+                ui.notify("Google login not configured", type="negative")
+                return
+
+            callback_url = f"{settings.app.base_url}/auth/oauth/callback"
+            logger.info(
+                "Starting Google OAuth: org_id=%s, callback=%s",
+                settings.stytch.default_org_id,
+                callback_url,
+            )
+
+            result = auth_client.get_oauth_start_url(
+                provider="google",
+                public_token=settings.stytch.public_token,
+                organization_id=settings.stytch.default_org_id,
+                login_redirect_url=callback_url,
+            )
+
+            if result.success and result.redirect_url:
+                logger.info(
+                    "Google OAuth redirect URL: %s",
+                    result.redirect_url,
+                )
+                ui.navigate.to(result.redirect_url)
+            else:
+                logger.warning("Google OAuth start failed: %s", result.error)
+                ui.notify(
+                    f"Google login error: {result.error}",
+                    type="negative",
+                )
+
+        ui.button(
+            "Login with Google",
+            on_click=start_google_oauth,
+        ).props('data-testid="google-login-btn"').classes("w-full")
+
+
 def _build_mock_login_section() -> None:
     """Build mock login section for testing (only when DEV__AUTH_MOCK=true)."""
     with ui.card().classes("w-96 p-4 bg-yellow-50 border-yellow-200"):
@@ -394,7 +469,7 @@ def _build_mock_login_section() -> None:
 
 @ui.page("/login")
 async def login_page() -> None:
-    """Login page with magic link, SSO, and GitHub OAuth options."""
+    """Login page with AAF SSO, Google OAuth, magic link, and GitHub OAuth."""
     user = _get_session_user()
     if user:
         ui.navigate.to("/")
@@ -410,9 +485,11 @@ async def login_page() -> None:
         _build_mock_login_section()
         ui.label("— or —").classes("my-4")
 
-    _build_magic_link_section()
-    ui.label("— or —").classes("my-4")
     _build_sso_section()
+    ui.label("— or —").classes("my-4")
+    _build_google_oauth_section()
+    ui.label("— or —").classes("my-4")
+    _build_magic_link_section()
     ui.label("— or —").classes("my-4")
     _build_github_oauth_section()
 
@@ -529,7 +606,7 @@ async def sso_callback() -> None:
 @ui.page("/auth/oauth/callback")
 async def oauth_callback() -> None:
     """Handle OAuth callback and authenticate the token."""
-    logger.info("OAuth callback received (GitHub)")
+    logger.info("OAuth callback received")
     token = _get_query_param("token")
 
     # CRIT-3: Validate token before processing
@@ -540,7 +617,7 @@ async def oauth_callback() -> None:
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
 
-    ui.label("Processing GitHub login...").classes("text-xl")
+    ui.label("Processing login...").classes("text-xl")
     ui.spinner()
 
     # Type narrowing: _validate_token already checked token is not None
@@ -566,7 +643,7 @@ async def oauth_callback() -> None:
             session_token=result.session_token or "",
             roles=result.roles,
             name=result.name,
-            auth_method="github",
+            auth_method="oauth",
             user_id=user_id,
             is_admin=is_admin,
         )
@@ -574,7 +651,7 @@ async def oauth_callback() -> None:
     else:
         logger.warning("OAuth auth failed: %s", result.error)
         ui.label(f"Error: {result.error}").classes("text-red-500")
-        ui.notify(f"GitHub authentication failed: {result.error}", type="negative")
+        ui.notify(f"OAuth authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
 

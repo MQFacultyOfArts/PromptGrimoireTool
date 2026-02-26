@@ -9,8 +9,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from promptgrimoire.auth.models import (
         AuthResult,
+        MemberUpdateResult,
         OAuthStartResult,
         SendResult,
         SessionResult,
@@ -120,5 +123,23 @@ class AuthClientProtocol(Protocol):
 
         Returns:
             AuthResult with session info if successful.
+        """
+        ...
+
+    async def update_member_trusted_metadata(
+        self,
+        organization_id: str,
+        member_id: str,
+        trusted_metadata: dict[str, Any],
+    ) -> MemberUpdateResult:
+        """Update a member's trusted_metadata in Stytch.
+
+        Args:
+            organization_id: The Stytch organization ID.
+            member_id: The Stytch member ID.
+            trusted_metadata: Metadata dict to set on the member.
+
+        Returns:
+            MemberUpdateResult indicating success or failure.
         """
         ...

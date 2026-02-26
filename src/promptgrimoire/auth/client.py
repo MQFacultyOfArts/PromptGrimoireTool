@@ -16,6 +16,7 @@ from stytch.core.response_base import StytchError
 
 from promptgrimoire.auth.models import (
     AuthResult,
+    MemberUpdateResult,
     OAuthStartResult,
     SendResult,
     SessionResult,
@@ -343,6 +344,42 @@ class StytchB2BClient:
                 extra={"error_type": e.details.error_type},
             )
             return AuthResult(
+                success=False,
+                error=e.details.error_type,
+            )
+
+    async def update_member_trusted_metadata(
+        self,
+        organization_id: str,
+        member_id: str,
+        trusted_metadata: dict[str, Any],
+    ) -> MemberUpdateResult:
+        """Update a member's trusted_metadata in Stytch.
+
+        Args:
+            organization_id: The Stytch organization ID.
+            member_id: The Stytch member ID.
+            trusted_metadata: Metadata dict to set on the member.
+
+        Returns:
+            MemberUpdateResult indicating success or failure.
+        """
+        try:
+            await self._client.organizations.members.update_async(
+                organization_id=organization_id,
+                member_id=member_id,
+                trusted_metadata=trusted_metadata,
+            )
+            return MemberUpdateResult(success=True)
+        except StytchError as e:
+            logger.warning(
+                "Member metadata update failed",
+                extra={
+                    "member_id": member_id,
+                    "error_type": e.details.error_type,
+                },
+            )
+            return MemberUpdateResult(
                 success=False,
                 error=e.details.error_type,
             )

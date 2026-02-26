@@ -80,6 +80,19 @@ class SessionResult:
 
 
 @dataclass(frozen=True)
+class MemberUpdateResult:
+    """Result of updating a Stytch member.
+
+    Attributes:
+        success: Whether the update succeeded.
+        error: Error type if the operation failed.
+    """
+
+    success: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class SSOStartResult:
     """Result of starting an SSO flow.
 

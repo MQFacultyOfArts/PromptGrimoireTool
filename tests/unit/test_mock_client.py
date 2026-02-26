@@ -144,6 +144,14 @@ class TestMockAuthenticateSSO:
         assert result.success is False
         assert result.error == "invalid_token"
 
+    async def test_sso_returns_trusted_metadata(self, client):
+        """AC4.6: Mock SSO returns trusted_metadata with AAF attributes."""
+        result = await client.authenticate_sso(token=MOCK_VALID_SSO_TOKEN)
+
+        assert result.trusted_metadata is not None
+        assert "eduperson_affiliation" in result.trusted_metadata
+        assert "schac_home_organization" in result.trusted_metadata
+
 
 class TestMockValidateSession:
     """Tests for MockAuthClient.validate_session."""

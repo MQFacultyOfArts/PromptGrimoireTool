@@ -260,6 +260,74 @@ class TestAuthenticateSSO:
         assert result.name == "SSO User"
         assert "role-instructor" in result.roles
 
+    async def test_authenticate_sso_passes_trusted_metadata(self, mock_stytch_client):
+        """AC4.6: trusted_metadata from Stytch response flows through."""
+        from promptgrimoire.auth.client import StytchB2BClient
+
+        mock_member = MagicMock()
+        mock_member.email_address = "aaf-user@uni.edu"
+        mock_member.name = "SSO User"
+        mock_member.trusted_metadata = {
+            "eduperson_affiliation": "staff",
+            "schac_home_organization": "mq.edu.au",
+        }
+
+        mock_role = MagicMock()
+        mock_role.role_id = "stytch_member"
+
+        mock_session = MagicMock()
+        mock_session.roles = [mock_role]
+
+        mock_response = MagicMock()
+        mock_response.member_id = "member-sso-456"
+        mock_response.organization_id = "org-uni"
+        mock_response.session_token = "sso-session-token"
+        mock_response.session_jwt = "sso-jwt"
+        mock_response.member = mock_member
+        mock_response.member_session = mock_session
+
+        mock_stytch_client.sso.authenticate_async = AsyncMock(
+            return_value=mock_response
+        )
+
+        client = StytchB2BClient(project_id="proj-123", secret="secret-123")
+        result = await client.authenticate_sso(token="sso-token")
+
+        assert result.success is True
+        assert result.trusted_metadata == {
+            "eduperson_affiliation": "staff",
+            "schac_home_organization": "mq.edu.au",
+        }
+
+    async def test_authenticate_sso_missing_trusted_metadata(self, mock_stytch_client):
+        """trusted_metadata gracefully handles missing attribute."""
+        from promptgrimoire.auth.client import StytchB2BClient
+
+        mock_member = MagicMock(spec=["email_address", "name"])
+        mock_member.email_address = "user@uni.edu"
+        mock_member.name = "User"
+
+        mock_session = MagicMock()
+        mock_session.roles = []
+
+        mock_response = MagicMock()
+        mock_response.member_id = "member-789"
+        mock_response.organization_id = "org-uni"
+        mock_response.session_token = "session"
+        mock_response.session_jwt = "jwt"
+        mock_response.member = mock_member
+        mock_response.member_session = mock_session
+
+        mock_stytch_client.sso.authenticate_async = AsyncMock(
+            return_value=mock_response
+        )
+
+        client = StytchB2BClient(project_id="proj-123", secret="secret-123")
+        result = await client.authenticate_sso(token="sso-token")
+
+        assert result.success is True
+        assert result.trusted_metadata is None
+
     async def test_authenticate_sso_invalid_token(self, mock_stytch_client):
         """Handles invalid SSO token."""
         from stytch.core.response_base import StytchError

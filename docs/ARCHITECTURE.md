@@ -86,35 +86,24 @@ doc.observe(on_doc_change)
 
 ### 3. Stytch (Authentication)
 
-**Decision needed: B2C vs B2B**
+**Decision: B2B** (decided 2026-02-26, see `docs/design-plans/2026-02-26-aaf-oidc-auth-188-189.md`)
 
-Option A: **B2C + Custom RBAC**
+B2B is required because Stytch B2C cannot connect to custom OIDC providers. AAF (Australian Access Federation) requires a generic OIDC connection, which is B2B-only. The app uses a single Stytch organisation.
 
-- Simpler auth flow
-- We manage classes/roles in our DB
-- More flexibility
+**Login hierarchy:**
 
-```python
-# B2C flow
-client = stytch.Client(project_id, secret)
-await client.magic_links.email.login_or_create_async(email=email, ...)
-# Then check our DB for class membership/roles
-```
+| Priority | Method | Audience |
+|----------|--------|----------|
+| Primary | AAF OIDC (SSO) | All MQ staff + students |
+| Backstop | Google OAuth | Students who can't AAF |
+| Back-backstop | Magic Link | Edge cases (domain-restricted to MQ) |
+| Dev/admin | GitHub OAuth | Developer access |
 
-Option B: **B2B (Organizations as Classes)**
-
-- Stytch manages org membership
-- Built-in RBAC
-- Invitations handled
-
-```python
-# B2B flow
-await client.organizations.members.create_async(
-    organization_id=class_id,
-    email_address=email,
-    roles=["student"]
-)
-```
+**Key components:**
+- `AuthClientProtocol` — provider-agnostic interface for auth clients
+- `AuthResult` — returned by all auth paths, carries `trusted_metadata` from IdP
+- `derive_roles_from_metadata()` — maps AAF `eduperson_affiliation` to app roles
+- B2C fallback documented in `docs/b2c-fallback.md` if B2B proves unworkable
 
 ### 4. SQLModel + PostgreSQL (Persistence)
 

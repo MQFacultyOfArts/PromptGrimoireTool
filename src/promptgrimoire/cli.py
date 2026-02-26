@@ -1863,6 +1863,15 @@ def _build_user_parser():
         "--name", default=None, help="Display name (default: derived from email)"
     )
 
+    # instructor
+    instr_p = sub.add_parser(
+        "instructor", help="Set or remove instructor status (updates Stytch)"
+    )
+    instr_p.add_argument("email", help="User email address")
+    instr_p.add_argument(
+        "--remove", action="store_true", help="Remove instructor status"
+    )
+
     return parser
 
 
@@ -1991,13 +2000,54 @@ async def _cmd_show(
     con.print(table)
 
 
+async def _update_stytch_metadata(
+    user,
+    trusted_metadata: dict,
+    *,
+    console: Console,
+) -> bool:
+    """Update a user's trusted_metadata in Stytch.
+
+    Returns True on success, False if Stytch is not configured or update fails.
+    """
+    from promptgrimoire.auth import get_auth_client
+    from promptgrimoire.config import get_settings
+
+    settings = get_settings()
+    if not settings.stytch.default_org_id:
+        console.print(
+            "[yellow]Warning:[/] STYTCH__DEFAULT_ORG_ID not set, skipping Stytch update"
+        )
+        return False
+
+    if not user.stytch_member_id:
+        console.print(
+            f"[yellow]Warning:[/] No stytch_member_id for '{user.email}'. "
+            "User must log in via SSO first."
+        )
+        return False
+
+    auth_client = get_auth_client()
+    result = await auth_client.update_member_trusted_metadata(
+        organization_id=settings.stytch.default_org_id,
+        member_id=user.stytch_member_id,
+        trusted_metadata=trusted_metadata,
+    )
+
+    if result.success:
+        console.print(f"[green]Updated Stytch[/] trusted_metadata for '{user.email}'")
+        return True
+    console.print(f"[red]Stytch update failed:[/] {result.error}")
+    return False
+
+
 async def _cmd_admin(
     email: str,
     *,
     remove: bool = False,
     console: Console | None = None,
 ) -> None:
-    """Set or remove admin status for a user."""
+    """Set or remove admin status for a user (local DB + Stytch)."""
     from promptgrimoire.db.users import set_admin as db_set_admin
 
     con = console or globals()["console"]
@@ -2005,10 +2055,37 @@ async def _cmd_admin(
 
     if remove:
         await db_set_admin(user.id, False)
-        con.print(f"[green]Removed[/] admin from '{email}'.")
+        con.print(f"[green]Removed[/] admin from '{email}' (local DB).")
+        await _update_stytch_metadata(user, {"is_admin": False}, console=con)
     else:
         await db_set_admin(user.id, True)
-        con.print(f"[green]Granted[/] admin to '{email}'.")
+        con.print(f"[green]Granted[/] admin to '{email}' (local DB).")
+        await _update_stytch_metadata(user, {"is_admin": True}, console=con)
+
+
+async def _cmd_instructor(
+    email: str,
+    *,
+    remove: bool = False,
+    console: Console | None = None,
+) -> None:
+    """Set or remove instructor status via Stytch trusted_metadata."""
+    con = console or globals()["console"]
+    user = await _require_user(email, con)
+
+    if remove:
+        metadata = {"eduperson_affiliation": ""}
+    else:
+        metadata = {"eduperson_affiliation": "staff"}
+
+    success = await _update_stytch_metadata(user, metadata, console=con)
+    if success:
+        action = "Removed" if remove else "Granted"
+        con.print(f"[green]{action}[/] instructor for '{email}'.")
+    elif not remove:
+        con.print(
+            "[dim]Tip: user must log in via SSO once before instructor can be set.[/]"
+        )
 
 
 async def _cmd_enroll(
@@ -2093,6 +2170,7 @@ def manage_users() -> None:
         show <email>      Show user details and enrollments
         create <email>    Create a new user (--name for display name)
         admin <email>     Set user as admin (--remove to unset)
+        instructor <email>  Set instructor via Stytch metadata (--remove to unset)
         enroll <email> <code> <semester>  Enroll user in course
         unenroll <email> <code> <semester>  Remove from course
         role <email> <code> <semester> <role>  Change role
@@ -2136,6 +2214,8 @@ def manage_users() -> None:
                 )
             case "create":
                 await _cmd_create(args.email, name=args.name)
+            case "instructor":
+                await _cmd_instructor(args.email, remove=args.remove)
 
     asyncio.run(_run())
 

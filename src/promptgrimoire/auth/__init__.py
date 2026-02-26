@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
@@ -34,6 +35,35 @@ from promptgrimoire.auth.protocol import AuthClientProtocol
 from promptgrimoire.db.acl import resolve_permission
 
 _PRIVILEGED_ROLES = frozenset({"instructor", "stytch_admin"})
+_STAFF_AFFILIATIONS: frozenset[str] = frozenset({"staff", "faculty"})
+
+
+def derive_roles_from_metadata(
+    trusted_metadata: dict[str, Any] | None,
+) -> list[str]:
+    """Map IdP attributes to app roles.
+
+    Reads eduperson_affiliation from trusted_metadata.
+    AAF sends affiliations as semicolon-delimited string
+    (e.g. "staff;faculty"). staff/faculty → ["instructor"].
+    Otherwise → [].
+    """
+    if not trusted_metadata:
+        return []
+    affiliation_raw = trusted_metadata.get("eduperson_affiliation")
+    if not affiliation_raw:
+        return []
+    if isinstance(affiliation_raw, list):
+        affiliations = {
+            a.strip().lower() for a in affiliation_raw if isinstance(a, str)
+        }
+    elif isinstance(affiliation_raw, str):
+        affiliations = {a.strip().lower() for a in affiliation_raw.split(";")}
+    else:
+        return []
+    if affiliations & _STAFF_AFFILIATIONS:
+        return ["instructor"]
+    return []
 
 
 def is_privileged_user(auth_user: dict[str, object] | None) -> bool:
@@ -97,6 +127,7 @@ __all__ = [
     "SessionResult",
     "check_workspace_access",
     "clear_config_cache",
+    "derive_roles_from_metadata",
     "get_auth_client",
     "is_privileged_user",
 ]

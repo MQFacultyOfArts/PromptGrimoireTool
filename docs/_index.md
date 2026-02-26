@@ -8,8 +8,9 @@ library references during development.
 
 ## aaf
 
-- [AAF OIDC integration - endpoints, scopes, claims, and registration process](aaf/oidc-integration.md)
+- [AAF OIDC integration - endpoints, scopes, claims, registration, skipDS, and attribute-based authorisation](aaf/oidc-integration.md)
 - [AAF Rapid IdP - SAML identity provider for Australian research/education](aaf/rapid-idp.md)
+- [AAF test federation - free registration, test endpoints, VHO, Rapid IdP, development workflow](aaf/test-federation.md)
 
 ## alembic
 
@@ -106,7 +107,8 @@ library references during development.
 - [Stytch Python SDK - magic links, sessions, async support](stytch/python-sdk.md)
 - [RBAC guide - roles, permissions, default resources, role assignment](stytch/rbac-guide.md)
 - [Stytch RBAC model - resources, roles, permissions](stytch/rbac.md)
-- [OIDC SSO connections - integrate external identity providers](stytch/sso-oidc.md)
+- [Stytch B2B SSO OIDC testing - sandbox setup, connection lifecycle, test IdP strategies, JIT provisioning](stytch/sso-oidc-testing.md)
+- [OIDC SSO connections - integrate external identity providers via Stytch, including AAF OIDC](stytch/sso-oidc.md)
 - [SSO overview - SAML/OIDC setup, external connections, IdP configuration](stytch/sso-overview.md)
 - [SAML SSO connections - integrate SAML identity providers including AAF](stytch/sso-saml.md)
 - [Testing guide - E2E testing, sandbox values, test credentials](stytch/testing.md)

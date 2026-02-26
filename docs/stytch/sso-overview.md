@@ -140,10 +140,14 @@ Configure JIT provisioning and role assignments for external connections.
 ## PromptGrimoire Strategy
 
 **For Australian universities (AAF):**
-1. Create one Organization per class
-2. Configure SAML connection with AAF Rapid IdP
-3. Use external connections to share AAF across multiple classes
+1. Create one Organization per class/unit
+2. Configure **OIDC connection** with AAF Central (`identity_provider: "generic"`)
+3. Use external connections to share AAF across multiple units
+4. AAF Central endpoints: see [AAF OIDC Integration](../aaf/oidc-integration.md)
+
+**Fallback**: If OIDC via AAF Central proves problematic, AAF Rapid Connect (JWT-based) is the backup path — see [SAML Connection](sso-saml.md).
 
 **Alternative auth:**
 - Magic links as fallback for users outside AAF
-- Useful for guest instructors, external collaborators
+- GitHub OAuth for external collaborators
+- Useful for guest instructors, international participants

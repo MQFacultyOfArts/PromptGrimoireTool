@@ -1,13 +1,25 @@
 ---
-source: https://tutorials.aaf.edu.au/openid-connect-integration
-fetched: 2025-01-15
+source: https://tutorials.aaf.edu.au/openid-connect-integration, https://central.aaf.edu.au/.well-known/openid-configuration
+fetched: 2026-02-26
 library: aaf
-summary: AAF OIDC integration - endpoints, scopes, claims, and registration process
+summary: AAF OIDC integration - endpoints, scopes, claims, registration, skipDS, and attribute-based authorisation
 ---
 
 # AAF OpenID Connect Integration
 
-AAF supports OpenID Connect (OIDC) connectivity and operates an OpenID Provider (OP) that authenticates users across AAF subscriber Identity Providers.
+AAF operates an OpenID Provider (OP) via **AAF Central** that authenticates users across AAF subscriber Identity Providers. This is the recommended modern integration path (over SAML/Rapid Connect).
+
+## Production Endpoints
+
+```text
+Discovery:     https://central.aaf.edu.au/.well-known/openid-configuration
+Issuer:        https://central.aaf.edu.au
+Authorization: https://central.aaf.edu.au/oidc/authorize
+Token:         https://central.aaf.edu.au/oidc/token
+UserInfo:      https://central.aaf.edu.au/oidc/userinfo
+JWKS:          https://central.aaf.edu.au/oidc/jwks
+Service Docs:  https://central.aaf.edu.au/oidc/documentation
+```
 
 ## Test Federation Endpoints
 
@@ -22,9 +34,14 @@ JWKS:          https://central.test.aaf.edu.au/oidc/jwks
 
 ## Supported Configuration
 
-- **Response Types**: Authorization code flow only
-- **Token Auth Methods**: Client secret basic and POST
+- **Response Types**: `code` (authorization code flow only)
+- **Grant Types**: `authorization_code`
+- **Token Auth Methods**: `client_secret_basic`, `client_secret_post`
 - **ID Token Signing**: RS256
+- **UserInfo Signing**: RS256
+- **Subject Types**: public
+- **Response Modes**: query
+- **PKCE Support**: S256, plain
 
 ## Available Scopes and Claims
 
@@ -88,6 +105,52 @@ Services can configure which scopes they request through the "Scopes" tab on the
 
 To enable eduGAIN functionality (access to international research federations), contact AAF support. Note: eduGAIN is only available in production, not the test environment.
 
+## Standard OIDC Flow
+
+Five-step authorization code flow:
+
+1. RP (Client) sends authorization request to AAF Central OP
+2. OP authenticates the end-user via their home institution IdP
+3. OP responds with an ID Token and Access Token
+4. RP sends Access Token to the UserInfo endpoint
+5. UserInfo endpoint returns claims about the end-user
+
+## Skipping the Discovery Service (SkipDS)
+
+By default, AAF shows a discovery service page where users select their institution. To bypass this and send users directly to a specific IdP:
+
+Add the `entityID` parameter (URL-encoded) to the authorization request:
+
+```
+GET /oidc/authorize?client_id=123456789
+    &redirect_uri=https://example.com/aaf/callback
+    &nonce=123456
+    &state=6789
+    &entityID=https%3A%2F%2Fvho.aaf.edu.au%2Fidp%2Fshibboleth
+```
+
+This is useful for deploying within a single institution (e.g. Macquarie University) — configure one login button that skips straight to MQ's IdP.
+
+**Limitation**: Requires the ability to add extra authorization parameters to the OIDC flow. If using Stytch SSO, this parameter must be passable through Stytch's SSO start flow.
+
+## Attribute-Based Authorisation
+
+Key attributes for access control decisions:
+
+| Attribute | Use Case |
+|-----------|----------|
+| `eduPersonEntitlement` | User's rights to specific resources (IdP-delegated authorisation) |
+| `eduPersonAffiliation` | Organisational relationship (student, staff, faculty, member) — good for site-licence access |
+| `eduPersonScopedAffiliation` | Multivalued affiliation with institution scope — use when SP needs domain confirmation |
+| `schacHomeOrganization` | Home institution identifier — institutional context |
+| `mail` | Communication only (not for authorisation) |
+
+**Demo app**: https://oidc-demo.aaf.edu.au/ — view actual attribute releases from your institution.
+
+## Macquarie University
+
+MQ has adopted AAF's Rapid IdP as their cloud identity solution. MQ users authenticate via OneID. See: https://aaf.edu.au/project/macquarie-university-rapid-idp/
+
 ## Support
 
 - Email: support@aaf.edu.au
@@ -98,3 +161,6 @@ To enable eduGAIN functionality (access to international research federations), 
 
 - [OpenID OIDC Core Spec](https://openid.net/specs/openid-connect-core-1_0.html)
 - [AAF Tutorials](https://tutorials.aaf.edu.au/)
+- [AAF OIDC Demo App](https://oidc-demo.aaf.edu.au/)
+- [AAF Federation Manager (test)](https://manager.test.aaf.edu.au/)
+- [AAF Federation Manager (production)](https://manager.aaf.edu.au/)

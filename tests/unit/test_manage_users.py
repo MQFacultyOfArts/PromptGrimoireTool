@@ -279,12 +279,18 @@ class TestCmdAdmin:
         with (
             patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock_get,
             patch(f"{_USERS}.set_admin", new_callable=AsyncMock) as mock_set,
+            patch(
+                "promptgrimoire.cli._update_stytch_metadata",
+                new_callable=AsyncMock,
+            ) as mock_stytch,
         ):
             mock_get.return_value = user
             mock_set.return_value = user
+            mock_stytch.return_value = True
             await _cmd_admin(user.email, console=con)
 
         mock_set.assert_called_once_with(user.id, True)
+        mock_stytch.assert_called_once_with(user, {"is_admin": True}, console=con)
 
     @pytest.mark.anyio
     async def test_admin_remove(self) -> None:
@@ -296,12 +302,18 @@ class TestCmdAdmin:
         with (
             patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock_get,
             patch(f"{_USERS}.set_admin", new_callable=AsyncMock) as mock_set,
+            patch(
+                "promptgrimoire.cli._update_stytch_metadata",
+                new_callable=AsyncMock,
+            ) as mock_stytch,
         ):
             mock_get.return_value = user
             mock_set.return_value = user
+            mock_stytch.return_value = True
             await _cmd_admin(user.email, remove=True, console=con)
 
         mock_set.assert_called_once_with(user.id, False)
+        mock_stytch.assert_called_once_with(user, {"is_admin": False}, console=con)
 
 
 class TestCmdEnroll:

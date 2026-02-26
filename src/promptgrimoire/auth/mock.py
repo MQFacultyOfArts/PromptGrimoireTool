@@ -9,10 +9,12 @@ Supports arbitrary users - any email can request a magic link and authenticate.
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 from urllib.parse import urlencode
 
 from promptgrimoire.auth.models import (
     AuthResult,
+    MemberUpdateResult,
     OAuthStartResult,
     SendResult,
     SessionResult,
@@ -175,6 +177,10 @@ class MockAuthClient:
                 email="aaf-user@uni.edu",
                 name="SSO User",
                 roles=["stytch_member", "instructor"],
+                trusted_metadata={
+                    "eduperson_affiliation": "staff",
+                    "schac_home_organization": "uni.edu",
+                },
             )
         return AuthResult(
             success=False,
@@ -313,6 +319,29 @@ class MockAuthClient:
     def get_sent_magic_links(self) -> list[dict]:
         """Return list of magic links that were 'sent' (for test assertions)."""
         return self._sent_magic_links.copy()
+
+    async def update_member_trusted_metadata(
+        self,
+        organization_id: str,  # noqa: ARG002
+        member_id: str,
+        trusted_metadata: dict[str, Any],
+    ) -> MemberUpdateResult:
+        """Mock updating a member's trusted_metadata.
+
+        Stores metadata in memory for test assertions.
+
+        Args:
+            organization_id: The organization ID.
+            member_id: The member ID.
+            trusted_metadata: Metadata dict to set.
+
+        Returns:
+            MemberUpdateResult - always succeeds.
+        """
+        if not hasattr(self, "_member_metadata"):
+            self._member_metadata: dict[str, dict[str, Any]] = {}
+        self._member_metadata[member_id] = trusted_metadata
+        return MemberUpdateResult(success=True)
 
     def clear_sent_magic_links(self) -> None:
         """Clear the list of sent magic links."""

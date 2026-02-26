@@ -6,14 +6,14 @@
 
 The Workspace Navigator replaces the current home page with a structured, searchable dashboard that gives every user — student or instructor — a single place to find all their work. The page is organised into four sections rendered as one scrollable list: work the user owns, activities they have not yet started, workspaces explicitly shared with them by a peer or instructor, and workspaces shared across each enrolled unit. The sections are role-aware: instructors see real student names and all student workspaces (paginated); students see anonymised peer names and only workspaces peers have chosen to share.
 
-Search is layered. From the first keystroke, client-side JavaScript filters what is already on screen — no server round-trip. When the query reaches three characters, a debounced PostgreSQL full-text search runs against document content and surfaces matches the title filter would have missed, with a highlighted snippet explaining why each result matched. Supporting infrastructure includes a generated `tsvector` column on the document table (with a GIN index) built from HTML-stripped content, and a single consolidated data-loader query that fetches everything the page needs in one pass. New interaction patterns introduced here — inline workspace rename and cursor-based pagination for the instructor roster — have no existing precedent in the codebase and are documented as new conventions.
+Search uses server-side PostgreSQL full-text search exclusively. When the query reaches three characters, a debounced FTS query runs against document content and surfaces matches with a highlighted snippet explaining why each result matched. Supporting infrastructure includes a generated `tsvector` column on the document table (with a GIN index) built from HTML-stripped content, and a single consolidated data-loader query that fetches everything the page needs in one pass. New interaction patterns introduced here — inline workspace rename and cursor-based pagination for the instructor roster — have no existing precedent in the codebase and are documented as new conventions.
 
 ## Definition of Done
 
 The home page (`/`) serves as the primary way students and instructors find, resume, and discover work across all activity types (annotation, roleplay, future LLM playground).
 
 1. **Navigator page** at `/` (replaces current index page) — a prominent search box followed by four sections as a single scrollable list: My Work, Unstarted Work, Shared With Me, and Shared in [Unit] (per enrolled unit). Every published activity from every enrolled unit appears.
-2. **Search** — client-side title/metadata filter from character 1, PostgreSQL FTS on document content from character 3 with debounce. FTS results show `ts_headline` snippets explaining why a result matched.
+2. **Search** — server-side PostgreSQL FTS on document content from character 3 with debounce. FTS results show `ts_headline` snippets explaining why a result matched.
 3. **Workspace titles** — pencil icon for inline rename on the navigator. New workspaces default to the activity name. Title click navigates to the workspace (not rename).
 4. **Navigation chrome** — home icon on the annotation tab bar (and other pages) to return to navigator. No global header bar imposed on pages that don't want one. Navigator itself has a minimal top line (identity, logout).
 5. **i18n: "Unit" not "Course"** — UI labels display "Unit" throughout the application (MQ terminology). Implemented as a configurable label, defaulting to "Unit."
@@ -48,9 +48,9 @@ The home page (`/`) serves as the primary way students and instructors find, res
 - **workspace-navigator-196.AC2.5 Failure:** Unauthenticated user redirected to login, not shown navigator
 
 ### workspace-navigator-196.AC3: Search
-- **workspace-navigator-196.AC3.1 Success:** Typing filters visible workspaces by title, unit code, and activity name instantly (client-side)
-- **workspace-navigator-196.AC3.2 Success:** At >=3 characters, FTS fires (with debounce) and surfaces content matches with `ts_headline` snippet
-- **workspace-navigator-196.AC3.4 Success:** FTS results that weren't visible from title match show a content snippet explaining the match
+- **workspace-navigator-196.AC3.1 Success:** At >=3 characters, server-side FTS fires (with 500ms debounce) and filters workspaces by title and content
+- **workspace-navigator-196.AC3.2 Success:** FTS results show `ts_headline` snippet explaining why each result matched
+- **workspace-navigator-196.AC3.4 Success:** Queries <3 characters do not trigger FTS
 - **workspace-navigator-196.AC3.5 Edge:** Clearing search restores full unfiltered list
 - **workspace-navigator-196.AC3.6 Edge:** Search with no results shows "No workspaces match" with clear option
 
@@ -102,12 +102,12 @@ The home page (`/`) serves as the primary way students and instructors find, res
 - **ts_headline**: A PostgreSQL function that returns a short excerpt from a document with query-matching terms wrapped in highlight tags.
 - **to_tsquery / to_tsvector**: PostgreSQL functions that convert a search string or document text into a normalised lexeme representation for full-text matching.
 - **tsvector**: A PostgreSQL data type that stores a pre-processed, lexeme-indexed representation of text. Stored as a generated column so it is automatically maintained when source content changes.
-- **ui.refreshable**: A NiceGUI decorator that marks a component function as re-renderable in-place without a full page reload.
+- **ui.refreshable**: A NiceGUI decorator that marks a component function as re-renderable in-place without a full page reload. Used for search (which legitimately replaces all content). NOT used for infinite scroll pagination — that uses container append to preserve scroll position.
 - **Unit**: The MQ (Macquarie University) term for what the codebase calls a "Course." The navigator introduces a configurable label so this terminology can be used in the UI.
 
 ## Architecture
 
-The navigator is a single NiceGUI page at `/` that loads all workspace data for the authenticated user and renders it as a searchable, sectioned list. Search has two tiers: instant client-side filtering and server-side PostgreSQL FTS.
+The navigator is a single NiceGUI page at `/` that loads all workspace data for the authenticated user and renders it as a searchable, sectioned list. Search uses server-side PostgreSQL FTS exclusively.
 
 ### Components
 
@@ -123,7 +123,7 @@ The navigator is a single NiceGUI page at `/` that loads all workspace data for 
 
 ```
 Login → / (navigator)
-         ├── Search box (client-side filter from char 1, FTS from char 3)
+         ├── Search box (server-side FTS from char 3)
          ├── My Work (owner workspaces with activity context)
          ├── Unstarted Work (enrolled activities minus started)
          ├── Shared With Me (editor/viewer ACL entries)
@@ -137,12 +137,13 @@ Home icon        → / (navigator)
 
 ### Search architecture
 
-| Tier | Trigger | Mechanism | Latency |
-|------|---------|-----------|---------|
-| Client-side filter | Every keystroke | JavaScript hides non-matching DOM elements by title, unit code, activity name, student name | <1ms |
-| Server-side FTS | >=3 chars + 500ms debounce | `SELECT workspace_id, ts_headline(...) FROM workspace_document WHERE search_vector @@ to_tsquery(...)` | ~50-200ms |
+Server-side PostgreSQL FTS only. No client-side JavaScript filtering tier — PostgreSQL is more reliable and the latency is acceptable for interactive use.
 
-FTS results that weren't visible from the client-side filter reappear with a content snippet underneath, explaining the match.
+| Trigger | Mechanism | Latency |
+|---------|-----------|---------|
+| >=3 chars + 500ms debounce | `SELECT workspace_id, ts_headline(...) FROM workspace_document WHERE search_vector @@ to_tsquery(...)` | ~50-200ms |
+
+FTS results show a content snippet underneath each match, explaining why it matched.
 
 ### Instructor vs student view
 
@@ -220,16 +221,15 @@ Anonymisation handled by existing `anonymise_author()`. Visibility filtering han
 <!-- START_PHASE_4 -->
 ### Phase 4: Search
 
-**Goal:** Two-tier search — client-side instant filter and server-side FTS.
+**Goal:** Server-side PostgreSQL FTS search.
 
 **Components:**
-- Client-side JavaScript filter: on every keystroke, hides workspace cards whose title/unit/activity/student name doesn't match. Injected via `ui.add_body_html` or inline `ui.run_javascript`.
-- Server-side FTS trigger: fires at >=3 characters with 500ms debounce. Calls FTS query helper from Phase 1. Results that weren't visible from client-side filter reappear with a `ts_headline` snippet rendered below the workspace title.
+- Server-side FTS: fires at >=3 characters with 500ms debounce. Calls FTS query helper from Phase 1. Matching workspaces rendered with a `ts_headline` snippet below the workspace title. Sections container is cleared and re-rendered with filtered results (scroll reset is acceptable for search since the user initiated a new query).
 - Search input placeholder: "Search titles and content..."
 
 **Dependencies:** Phase 1 (FTS query helper), Phase 3 (navigator page to wire into).
 
-**Done when:** Client-side filter responds instantly to typing. FTS fires after 3 chars + debounce and surfaces content matches with snippets. Search across all sections works. Empty results show "No workspaces match" with clear-filter option.
+**Done when:** FTS fires after 3 chars + debounce and surfaces content matches with snippets. Search across all sections works. Empty results show "No workspaces match" with clear-filter option. Clearing search restores the full paginated view.
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->
@@ -254,7 +254,7 @@ Anonymisation handled by existing `anonymise_author()`. Visibility filtering han
 
 **Components:**
 - Initial page load fetches first 50 rows from `load_navigator_page`. Scroll or "Load more" trigger fetches next page using the cursor returned from the previous page.
-- Page appends new rows into the correct section containers as they arrive (NiceGUI dynamic rendering via `@ui.refreshable` or container append).
+- Page appends new rows into the existing section containers as they arrive (NiceGUI `with container:` append — no DOM destruction, scroll position preserved naturally).
 - Students with no workspaces (instructor view) appear at the end of the "Shared in [Unit]" section after all workspace-bearing students.
 
 **Dependencies:** Phase 2 (data loader with cursor support), Phase 3 (navigator page).
@@ -288,7 +288,5 @@ Anonymisation handled by existing `anonymise_author()`. Visibility filtering han
 **Future accommodation:** The four-section layout accommodates new workspace types (LLM playground, roleplay sessions) without structural changes — they appear in "My Work" like any other workspace, distinguished by activity type or a type badge.
 
 **MVP priority ordering:** Phases 2, 3, 7 (data loader, core page, chrome/i18n) are MVP-critical — students need to find and open their work. Phases 1, 4, 5, 6 (FTS, search, rename, pagination) are high-value but can ship incrementally after launch if time is tight.
-
-**Client-side filter + NiceGUI re-render:** When FTS results arrive and the page adds new DOM elements, client-side JS filter state must be re-applied. The annotation page works around similar issues with `ui.add_body_html` for script injection. Implementation should account for this interaction.
 
 **FTS HTML stripping limitation:** The `regexp_replace` approach strips tags but does not decode HTML entities (`&amp;`, `&nbsp;`). These will be indexed as literal strings. Acceptable for MVP search quality — content from the input pipeline is well-formed HTML from selectolax, not arbitrary user input.

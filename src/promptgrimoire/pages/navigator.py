@@ -528,7 +528,6 @@ async def _render_sections_impl(
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    next_cursor: NavigatorCursor | None = None,  # noqa: ARG001 -- kept for refreshable signature
     snippets: dict[UUID, str] | None = None,
     page_state: dict[str, object] | None = None,
 ) -> None:
@@ -537,23 +536,9 @@ async def _render_sections_impl(
     Groups rows by section and renders them in fixed order.
     Empty sections produce no output (AC1.7).
 
-    Parameters
-    ----------
-    rows:
-        All NavigatorRow objects to render.
-    user_id:
-        The authenticated user's UUID.
-    is_privileged:
-        Whether the user has instructor/admin privileges.
-    enrolled_course_ids:
-        Course IDs the user is enrolled in.
-    next_cursor:
-        Pagination cursor for more pages.
-    snippets:
-        workspace_id -> snippet HTML for search results.
-    page_state:
-        Mutable page state dict.  Threaded to ``_render_inline_title_edit``
-        so the ``editing_active`` flag can block scroll-triggered refreshes.
+    Called for the initial page render and for search results (after
+    clearing the sections container).  NOT called for infinite scroll
+    appends — those use ``_append_new_rows`` to preserve scroll position.
     """
     grouped = _group_rows_by_section(rows)
 
@@ -594,6 +579,195 @@ async def _render_sections_impl(
 
 
 # ---------------------------------------------------------------------------
+# Header tracking for append-only infinite scroll
+# ---------------------------------------------------------------------------
+
+
+def _reset_header_tracking(page_state: dict[str, object]) -> None:
+    """Reset header tracking state for a full re-render."""
+    page_state["rendered_sections"] = set()
+    page_state["rendered_courses"] = set()
+    page_state["rendered_owners"] = set()
+    page_state["rendered_unsorted"] = set()
+
+
+def _record_rendered_headers(
+    rows: list[NavigatorRow],
+    page_state: dict[str, object],
+) -> None:
+    """Record which section/course/owner headers were rendered.
+
+    Called after a full render so that subsequent append-only scroll
+    loads know which headers already exist in the DOM.
+    """
+    rendered_sections: set[str] = page_state["rendered_sections"]  # type: ignore[assignment]
+    rendered_courses: set[UUID] = page_state["rendered_courses"]  # type: ignore[assignment]
+    rendered_owners: set[tuple[UUID, UUID | None]] = page_state["rendered_owners"]  # type: ignore[assignment]
+
+    rendered_unsorted: set[tuple[UUID, UUID | None]] = page_state["rendered_unsorted"]  # type: ignore[assignment]
+
+    for row in rows:
+        rendered_sections.add(row.section)
+        if row.section == "shared_in_unit" and row.course_id is not None:
+            rendered_courses.add(row.course_id)
+            rendered_owners.add((row.course_id, row.owner_user_id))
+            if row.activity_id is None:
+                rendered_unsorted.add((row.course_id, row.owner_user_id))
+
+
+async def _append_shared_in_unit(
+    shared_rows: list[NavigatorRow],
+    *,
+    user_id: UUID,
+    is_privileged: bool,
+    enrolled_course_ids: list[UUID],
+    page_state: dict[str, object],
+) -> None:
+    """Append shared_in_unit rows, adding course/owner headers as needed."""
+    rendered_courses: set[UUID] = page_state["rendered_courses"]  # type: ignore[assignment]
+    rendered_owners: set[tuple[UUID, UUID | None]] = page_state["rendered_owners"]  # type: ignore[assignment]
+    rendered_unsorted: set[tuple[UUID, UUID | None]] = page_state["rendered_unsorted"]  # type: ignore[assignment]
+    course_cache: dict[UUID, Course] = page_state.get("course_cache", {})  # type: ignore[assignment]
+
+    # Pre-load any courses not yet cached
+    needed = {r.course_id for r in shared_rows if r.course_id is not None}
+    for cid in needed - set(course_cache.keys()):
+        course = await get_course_by_id(cid)
+        if course is not None:
+            course_cache[cid] = course
+    page_state["course_cache"] = course_cache
+
+    by_course = _group_shared_in_unit_by_course(shared_rows)
+    for course_id in enrolled_course_ids:
+        course_rows = by_course.get(course_id, [])
+        if not course_rows:
+            continue
+
+        if course_id not in rendered_courses:
+            course = course_cache.get(course_id)
+            course_name = (
+                course.name
+                if course
+                else course_rows[0].course_name or get_settings().i18n.unit_label
+            )
+            ui.label(f"Shared in {course_name}").classes(
+                "text-xl font-bold mt-6 mb-2 navigator-section-header"
+            )
+            rendered_courses.add(course_id)
+
+        by_owner = _group_by_owner(course_rows)
+        for owner_id, owner_rows in by_owner.items():
+            owner_key = (course_id, owner_id)
+            if owner_key not in rendered_owners:
+                display_name = await _get_owner_display_name(
+                    owner_rows[0], user_id, is_privileged, course_cache.get(course_id)
+                )
+                ui.label(display_name).classes(
+                    "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
+                )
+                rendered_owners.add(owner_key)
+
+            placed = [r for r in owner_rows if r.activity_id is not None]
+            loose = [r for r in owner_rows if r.activity_id is None]
+
+            for row in placed:
+                _render_workspace_entry(row, show_owner=False, page_state=page_state)
+            if loose:
+                if owner_key not in rendered_unsorted:
+                    ui.label("Unsorted").classes(
+                        "text-xs font-medium mt-2 mb-1 ml-4 "
+                        "text-gray-400 navigator-unsorted-label"
+                    )
+                    rendered_unsorted.add(owner_key)
+                for row in loose:
+                    _render_workspace_entry(
+                        row, show_owner=False, page_state=page_state
+                    )
+
+
+def _append_simple_section(
+    section_key: str,
+    section_rows: list[NavigatorRow],
+    *,
+    user_id: UUID,
+    is_privileged: bool,
+    page_state: dict[str, object],
+) -> None:
+    """Append rows for a non-shared_in_unit section, adding header if needed."""
+    rendered_sections: set[str] = page_state["rendered_sections"]  # type: ignore[assignment]
+
+    if section_key not in rendered_sections:
+        display_name = _SECTION_DISPLAY_NAMES.get(section_key, section_key)
+        ui.label(display_name).classes(
+            "text-xl font-bold mt-6 mb-2 navigator-section-header"
+        )
+        rendered_sections.add(section_key)
+
+    for row in section_rows:
+        if section_key == "unstarted":
+            _render_unstarted_entry(row, user_id)
+        elif section_key == "shared_with_me":
+            owner_label = anonymise_author(
+                author=row.owner_display_name or "Unknown",
+                user_id=(str(row.owner_user_id) if row.owner_user_id else None),
+                viewing_user_id=str(user_id),
+                anonymous_sharing=True,
+                viewer_is_privileged=is_privileged,
+                author_is_privileged=False,
+            )
+            _render_workspace_entry(
+                row, show_owner=True, owner_label=owner_label, page_state=page_state
+            )
+        else:
+            _render_workspace_entry(row, page_state=page_state)
+
+
+async def _append_new_rows(
+    new_rows: list[NavigatorRow],
+    *,
+    user_id: UUID,
+    is_privileged: bool,
+    enrolled_course_ids: list[UUID],
+    page_state: dict[str, object],
+    sections_container: ui.column,
+) -> None:
+    """Append newly loaded rows to the existing sections container.
+
+    Renders only the *new* rows, adding section/course/owner headers
+    only when they haven't been rendered yet.  The keyset cursor
+    guarantees rows arrive in sort order, so new rows always continue
+    from where the previous page ended.
+
+    Scroll position is preserved naturally because the existing DOM
+    is never destroyed — new elements are appended at the bottom.
+    """
+    grouped = _group_rows_by_section(new_rows)
+
+    with sections_container:
+        for section_key in _SECTION_ORDER:
+            if section_key == "shared_in_unit":
+                shared_rows = grouped.get("shared_in_unit", [])
+                if shared_rows:
+                    await _append_shared_in_unit(
+                        shared_rows,
+                        user_id=user_id,
+                        is_privileged=is_privileged,
+                        enrolled_course_ids=enrolled_course_ids,
+                        page_state=page_state,
+                    )
+            else:
+                section_rows = grouped.get(section_key, [])
+                if section_rows:
+                    _append_simple_section(
+                        section_key,
+                        section_rows,
+                        user_id=user_id,
+                        is_privileged=is_privileged,
+                        page_state=page_state,
+                    )
+
+
+# ---------------------------------------------------------------------------
 # Search behaviour
 # ---------------------------------------------------------------------------
 
@@ -601,10 +775,10 @@ async def _render_sections_impl(
 def _setup_search(
     *,
     page_state: dict[str, object],
-    render_sections_refresh: Callable[..., object],
+    sections_container: ui.column,
     no_results_container: ui.column,
     search_input: Input,
-) -> Callable[[object], None]:
+) -> Callable[..., Awaitable[None]]:
     """Wire up debounced FTS search and return the on-change handler.
 
     Extracted from ``navigator_page`` to keep that function under the
@@ -617,8 +791,9 @@ def _setup_search(
         ``is_privileged``, ``enrolled_course_ids``, and ``search_active``.
         Search reads accumulated rows (including those loaded via infinite
         scroll) and sets ``search_active`` to control scroll pagination.
-    render_sections_refresh:
-        The ``.refresh()`` method on the ``@ui.refreshable`` sections.
+    sections_container:
+        The ``ui.column`` that holds rendered section content.  Search
+        clears and re-renders this container; infinite scroll appends to it.
     no_results_container:
         A ``ui.column`` where "no results" messaging is rendered.
     search_input:
@@ -631,35 +806,44 @@ def _setup_search(
     """
     _debounce: dict[str, Timer | None] = {"timer": None}
 
-    def _refresh(
+    async def _rerender_all(
         rows: list[NavigatorRow],
         *,
-        cursor: NavigatorCursor | None = None,
         snippets: dict[UUID, str] | None = None,
     ) -> None:
-        """Refresh sections with the given rows, clearing stale UI."""
+        """Clear sections container and re-render all rows from scratch.
+
+        Used by search (to show filtered results) and search-clear
+        (to restore the full accumulated view).  Resets the header
+        tracking state so all section headers are re-created.
+        """
         no_results_container.clear()
-        user_id: UUID = page_state["user_id"]  # type: ignore[assignment]  # always UUID
-        is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]  # always bool
-        enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]  # always list[UUID]
-        render_sections_refresh(
-            rows=rows,
-            user_id=user_id,
-            is_privileged=is_privileged,
-            enrolled_course_ids=enrolled_course_ids,
-            next_cursor=cursor,
-            snippets=snippets,
-        )
+        sections_container.clear()
+        user_id: UUID = page_state["user_id"]  # type: ignore[assignment]
+        is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]
+        enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]
+        # Reset header tracking — full re-render creates all headers.
+        _reset_header_tracking(page_state)
+        with sections_container:
+            await _render_sections_impl(
+                rows=rows,
+                user_id=user_id,
+                is_privileged=is_privileged,
+                enrolled_course_ids=enrolled_course_ids,
+                snippets=snippets,
+                page_state=page_state,
+            )
+        # Record which headers were rendered so future appends skip them.
+        _record_rendered_headers(rows, page_state)
 
-    def _restore_full_view() -> None:
-        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
-        next_cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]  # always NavigatorCursor | None
+    async def _restore_full_view() -> None:
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
         page_state["search_active"] = False
-        _refresh(all_rows, cursor=next_cursor)
+        await _rerender_all(all_rows)
 
-    def _clear_search() -> None:
+    async def _clear_search() -> None:
         search_input.set_value("")
-        _restore_full_view()
+        await _restore_full_view()
 
     async def _do_search(query: str) -> None:
         try:
@@ -668,7 +852,7 @@ def _setup_search(
             logger.exception("Search failed for query %r", query)
             ui.notify("Search failed. Try again.", type="warning")
             return
-        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
+        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
         matched_ids = {r.workspace_id for r in results}
         snippets = {r.workspace_id: r.snippet for r in results}
         filtered = [r for r in all_rows if r.workspace_id in matched_ids]
@@ -676,9 +860,9 @@ def _setup_search(
         page_state["search_active"] = True
 
         if filtered:
-            _refresh(filtered, snippets=snippets)
+            await _rerender_all(filtered, snippets=snippets)
         else:
-            _refresh([])
+            await _rerender_all([])
             with (
                 no_results_container,
                 ui.column().classes("w-full items-center mt-8 gap-2"),
@@ -691,7 +875,7 @@ def _setup_search(
                     on_click=_clear_search,
                 ).props("flat color=primary").classes("navigator-clear-search-btn")
 
-    def _on_search_change(e: object) -> None:
+    async def _on_search_change(e: object) -> None:
         if _debounce["timer"] is not None:
             _debounce["timer"].cancel()
             _debounce["timer"] = None
@@ -704,7 +888,7 @@ def _setup_search(
         query = query.strip()
 
         if len(query) < _SEARCH_MIN_CHARS:
-            _restore_full_view()
+            await _restore_full_view()
             return
 
         _debounce["timer"] = ui.timer(
@@ -725,12 +909,10 @@ async def _build_navigator_ui(
     *,
     page_state: dict[str, object],
     handle_scroll: Callable[..., object],
-    render_sections: Callable[..., Awaitable[None]],
     rows: list[NavigatorRow],
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    next_cursor: NavigatorCursor | None,
 ) -> None:
     """Build the navigator page DOM.
 
@@ -745,6 +927,11 @@ async def _build_navigator_ui(
     event target.  NiceGUI's ``args`` filter only works on direct
     properties of the event payload; native DOM scroll events carry
     these values on ``event.target``, not the event itself.
+
+    Sections are rendered into a ``sections_container`` that is stored
+    in ``page_state``.  Infinite scroll *appends* new rows into this
+    container (preserving scroll position); search *clears* it and
+    re-renders from scratch (scroll reset is acceptable for search).
     """
     with page_layout("Home"):
         ui.add_css(_NAVIGATOR_LAYOUT_CSS)
@@ -755,7 +942,6 @@ async def _build_navigator_ui(
             .classes("w-full navigator-scroll-area")
             .style("overflow-y: auto; height: calc(100vh - 64px)")
         )  # 64px = Quasar QHeader height
-        scroll_container._props["id"] = "navigator-scroll"
         scroll_container.on(
             "scroll",
             handle_scroll,
@@ -776,10 +962,15 @@ async def _build_navigator_ui(
             # Container for no-results message
             no_results_container = ui.column().classes("w-full")
 
+            # Container for section content — infinite scroll appends
+            # here; search clears and re-renders.
+            sections_container = ui.column().classes("w-full")
+            page_state["sections_container"] = sections_container
+
             # Wire up search behaviour
             on_search_change = _setup_search(
                 page_state=page_state,
-                render_sections_refresh=render_sections.refresh,  # type: ignore[attr-defined]  # @ui.refreshable adds .refresh()
+                sections_container=sections_container,
                 no_results_container=no_results_container,
                 search_input=search_input,
             )
@@ -788,14 +979,17 @@ async def _build_navigator_ui(
             if not rows:
                 ui.label("No workspaces yet.").classes("text-gray-500 mt-4")
             else:
-                await render_sections(
-                    rows=rows,
-                    user_id=user_id,
-                    is_privileged=is_privileged,
-                    enrolled_course_ids=enrolled_course_ids,
-                    next_cursor=next_cursor,
-                    snippets=None,
-                )
+                # Initial render into sections_container
+                _reset_header_tracking(page_state)
+                with sections_container:
+                    await _render_sections_impl(
+                        rows=rows,
+                        user_id=user_id,
+                        is_privileged=is_privileged,
+                        enrolled_course_ids=enrolled_course_ids,
+                        page_state=page_state,
+                    )
+                _record_rendered_headers(rows, page_state)
 
 
 # ---------------------------------------------------------------------------
@@ -851,32 +1045,6 @@ async def navigator_page() -> None:
         "editing_active": False,
     }
 
-    @ui.refreshable
-    async def _render_sections(
-        rows: list[NavigatorRow],
-        user_id: UUID,
-        is_privileged: bool,
-        enrolled_course_ids: list[UUID],
-        next_cursor: NavigatorCursor | None = None,
-        snippets: dict[UUID, str] | None = None,
-    ) -> None:
-        """Refreshable section renderer.
-
-        Wraps ``_render_sections_impl`` so search and infinite scroll
-        can call ``_render_sections.refresh()`` with updated rows without
-        reconstructing the entire page.  ``page_state`` is captured via
-        closure and threaded to inline edit handlers.
-        """
-        await _render_sections_impl(
-            rows=rows,
-            user_id=user_id,
-            is_privileged=is_privileged,
-            enrolled_course_ids=enrolled_course_ids,
-            next_cursor=next_cursor,
-            snippets=snippets,
-            page_state=page_state,
-        )
-
     # --- Infinite scroll handler ---
 
     async def _handle_scroll(e: object) -> None:
@@ -912,8 +1080,8 @@ async def navigator_page() -> None:
 
         page_state["loading"] = True
         try:
-            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]  # always list[NavigatorRow]
-            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]  # always NavigatorCursor | None
+            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
             new_rows, new_cursor = await load_navigator_page(
                 user_id=user_id,
                 is_privileged=is_privileged,
@@ -923,26 +1091,16 @@ async def navigator_page() -> None:
             )
             accumulated_rows.extend(new_rows)
             page_state["next_cursor"] = new_cursor
-            # Save scroll position before refresh destroys/recreates DOM
-            ui.run_javascript(
-                "window._navScroll = "
-                "(document.getElementById('navigator-scroll') || {}).scrollTop || 0;"
-            )
-            _render_sections.refresh(
-                rows=accumulated_rows,
+            # Append only the new rows — existing DOM untouched,
+            # scroll position preserved naturally.
+            sections_container: ui.column = page_state["sections_container"]  # type: ignore[assignment]
+            await _append_new_rows(
+                new_rows,
                 user_id=user_id,
                 is_privileged=is_privileged,
                 enrolled_course_ids=enrolled_course_ids,
-                next_cursor=new_cursor,
-                snippets=None,
-            )
-            # Restore scroll position after DOM rebuild
-            ui.run_javascript(
-                "setTimeout(function() {"
-                "  var el = document.getElementById('navigator-scroll');"
-                "  if (el && window._navScroll)"
-                "    el.scrollTop = window._navScroll;"
-                "}, 50);"
+                page_state=page_state,
+                sections_container=sections_container,
             )
         finally:
             page_state["loading"] = False
@@ -950,10 +1108,8 @@ async def navigator_page() -> None:
     await _build_navigator_ui(
         page_state=page_state,
         handle_scroll=_handle_scroll,
-        render_sections=_render_sections,
         rows=rows,
         user_id=user_id,
         is_privileged=is_privileged,
         enrolled_course_ids=enrolled_course_ids,
-        next_cursor=next_cursor,
     )

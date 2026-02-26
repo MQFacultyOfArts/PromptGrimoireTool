@@ -831,7 +831,7 @@ async def process_input(
         content = _decode_bytes(content)
 
     input_size = len(content)
-    logger.info(
+    logger.debug(
         "[PIPELINE] Input: type=%s, size=%d bytes (%.1f KB)",
         source_type,
         input_size,
@@ -851,7 +851,7 @@ async def process_input(
         raise NotImplementedError(msg)
 
     html_size = len(html)
-    logger.info(
+    logger.debug(
         "[PIPELINE] After conversion: size=%d bytes (%.1f KB), ratio=%.1fx",
         html_size,
         html_size / 1024,
@@ -861,7 +861,7 @@ async def process_input(
     # Step 2: Preprocess (remove chrome, inject speaker labels)
     preprocessed = preprocess_for_export(html, platform_hint=platform_hint)
     preproc_size = len(preprocessed)
-    logger.info(
+    logger.debug(
         "[PIPELINE] After preprocess: size=%d bytes (%.1f KB), ratio=%.1fx",
         preproc_size,
         preproc_size / 1024,
@@ -876,7 +876,7 @@ async def process_input(
     # (Office apps use these for spacing, creates excessive whitespace)
     cleaned = _remove_empty_elements(stripped)
     final_size = len(cleaned)
-    logger.info(
+    logger.debug(
         "[PIPELINE] Final output: size=%d bytes (%.1f KB), ratio=%.1fx from input",
         final_size,
         final_size / 1024,

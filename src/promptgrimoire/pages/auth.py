@@ -267,7 +267,7 @@ def _build_magic_link_section() -> None:
                 )
                 return
 
-            logger.info("Magic link requested for email=%s", email)
+            logger.debug("Magic link requested for email=%s", email)
 
             auth_client = get_auth_client()
             settings = get_settings()
@@ -287,7 +287,7 @@ def _build_magic_link_section() -> None:
             )
 
             if result.success:
-                logger.info("Magic link sent successfully to %s", email)
+                logger.debug("Magic link sent successfully to %s", email)
                 ui.notify("Magic link sent! Check your email.", type="positive")
             else:
                 logger.warning("Magic link failed: %s", result.error)
@@ -305,7 +305,7 @@ def _build_sso_section() -> None:
         ui.label("University Login (AAF)").classes("text-lg font-semibold mb-2")
 
         def start_sso() -> None:
-            logger.info("SSO login button clicked (AAF)")
+            logger.debug("SSO login button clicked (AAF)")
             auth_client = get_auth_client()
             settings = get_settings()
 
@@ -319,7 +319,7 @@ def _build_sso_section() -> None:
                 ui.notify("SSO not configured", type="negative")
                 return
 
-            logger.info(
+            logger.debug(
                 "Starting SSO flow: connection_id=%s",
                 settings.stytch.sso_connection_id,
             )
@@ -330,7 +330,7 @@ def _build_sso_section() -> None:
             )
 
             if result.success and result.redirect_url:
-                logger.info("SSO redirect URL generated: %s", result.redirect_url)
+                logger.debug("SSO redirect URL generated: %s", result.redirect_url)
                 ui.navigate.to(result.redirect_url)
             else:
                 logger.warning("SSO start failed: %s", result.error)
@@ -348,7 +348,7 @@ def _build_github_oauth_section() -> None:
         ui.label("GitHub Login").classes("text-lg font-semibold mb-2")
 
         def start_github_oauth() -> None:
-            logger.info("GitHub OAuth login button clicked")
+            logger.debug("GitHub OAuth login button clicked")
             auth_client = get_auth_client()
             settings = get_settings()
 
@@ -363,7 +363,7 @@ def _build_github_oauth_section() -> None:
                 return
 
             callback_url = f"{settings.app.base_url}/auth/oauth/callback"
-            logger.info(
+            logger.debug(
                 "Starting GitHub OAuth: org_id=%s, callback=%s",
                 settings.stytch.default_org_id,
                 callback_url,
@@ -377,7 +377,7 @@ def _build_github_oauth_section() -> None:
             )
 
             if result.success and result.redirect_url:
-                logger.info("GitHub OAuth redirect URL: %s", result.redirect_url)
+                logger.debug("GitHub OAuth redirect URL: %s", result.redirect_url)
                 ui.navigate.to(result.redirect_url)
             else:
                 logger.warning("GitHub OAuth start failed: %s", result.error)
@@ -395,7 +395,7 @@ def _build_google_oauth_section() -> None:
         ui.label("Google Login").classes("text-lg font-semibold mb-2")
 
         def start_google_oauth() -> None:
-            logger.info("Google OAuth login button clicked")
+            logger.debug("Google OAuth login button clicked")
             auth_client = get_auth_client()
             settings = get_settings()
 
@@ -410,7 +410,7 @@ def _build_google_oauth_section() -> None:
                 return
 
             callback_url = f"{settings.app.base_url}/auth/oauth/callback"
-            logger.info(
+            logger.debug(
                 "Starting Google OAuth: org_id=%s, callback=%s",
                 settings.stytch.default_org_id,
                 callback_url,
@@ -424,7 +424,7 @@ def _build_google_oauth_section() -> None:
             )
 
             if result.success and result.redirect_url:
-                logger.info(
+                logger.debug(
                     "Google OAuth redirect URL: %s",
                     result.redirect_url,
                 )
@@ -656,7 +656,7 @@ async def auth_callback() -> None:
     token_type = _get_query_param("stytch_token_type")
     token = _get_query_param("token")
 
-    logger.info(
+    logger.debug(
         "Auth callback received: stytch_token_type=%s",
         token_type,
     )
@@ -675,14 +675,14 @@ async def auth_callback() -> None:
 @ui.page("/auth/sso/callback")
 async def sso_callback() -> None:
     """Handle direct SSO callback (fallback route)."""
-    logger.info("SSO callback received (direct route)")
+    logger.debug("SSO callback received (direct route)")
     await _handle_sso_callback(_get_query_param("token"))
 
 
 @ui.page("/auth/oauth/callback")
 async def oauth_callback() -> None:
     """Handle direct OAuth callback (fallback route)."""
-    logger.info("OAuth callback received (direct route)")
+    logger.debug("OAuth callback received (direct route)")
     await _handle_oauth_callback(_get_query_param("token"))
 
 

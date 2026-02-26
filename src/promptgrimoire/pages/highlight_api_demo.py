@@ -181,7 +181,7 @@ async def highlight_api_demo() -> None:
                 "comments": [],
             }
         )
-        logger.info("Highlight: %s [%d:%d]", tag, start, end)
+        logger.debug("Highlight: %s [%d:%d]", tag, start, end)
         await _push_highlights()
 
     ui.on("hl_demo_selection", on_selection)

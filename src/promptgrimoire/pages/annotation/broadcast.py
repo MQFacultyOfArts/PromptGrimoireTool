@@ -232,7 +232,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
         viewer_is_privileged=state.viewer_is_privileged,
         is_owner=state.is_owner,
     )
-    logger.info(
+    logger.debug(
         "CLIENT_REGISTERED: ws=%s client=%s total=%d",
         workspace_key,
         client_id[:8],

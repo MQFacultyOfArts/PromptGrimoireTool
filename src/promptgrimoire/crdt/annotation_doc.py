@@ -601,7 +601,7 @@ class AnnotationDocumentRegistry:
             workspace = await get_workspace(workspace_id)
             if workspace and workspace.crdt_state:
                 doc.apply_update(workspace.crdt_state)
-                logger.info("Loaded workspace %s from database", workspace_id)
+                logger.debug("Loaded workspace %s from database", workspace_id)
         except Exception:
             logger.exception("Failed to load workspace %s from database", workspace_id)
 

@@ -63,7 +63,7 @@ def _get_or_create_doc(doc_id: str) -> Doc:
     if doc_id not in _documents:
         _documents[doc_id] = Doc()
         _connected_clients.setdefault(doc_id, {})
-        logger.info("CRDT_DOC_CREATED doc_id=%s", doc_id)
+        logger.debug("CRDT_DOC_CREATED doc_id=%s", doc_id)
     return _documents[doc_id]
 
 
@@ -140,7 +140,7 @@ async def milkdown_spike_page() -> None:
 
     # Register this client for broadcast
     _connected_clients.setdefault(_SPIKE_DOC_ID, {})[client_id] = client
-    logger.info(
+    logger.debug(
         "CLIENT_REGISTERED doc_id=%s client_id=%s total=%d",
         _SPIKE_DOC_ID,
         client_id,
@@ -151,7 +151,7 @@ async def milkdown_spike_page() -> None:
         """Clean up client from the broadcast registry on disconnect."""
         clients = _connected_clients.get(_SPIKE_DOC_ID, {})
         clients.pop(client_id, None)
-        logger.info(
+        logger.debug(
             "CLIENT_DISCONNECTED doc_id=%s client_id=%s remaining=%d",
             _SPIKE_DOC_ID,
             client_id,
@@ -217,7 +217,7 @@ async def milkdown_spike_page() -> None:
         if len(full_state) > 2:
             # >2 bytes means the doc has real content (empty doc is 2 bytes)
             client.run_javascript(f"window._applyRemoteUpdate('{b64_state}')")
-            logger.info(
+            logger.debug(
                 "FULL_STATE_SYNC doc_id=%s to_client=%s bytes=%d",
                 _SPIKE_DOC_ID,
                 client_id,

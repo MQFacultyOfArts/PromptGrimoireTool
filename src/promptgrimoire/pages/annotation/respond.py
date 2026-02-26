@@ -534,7 +534,7 @@ async def render_respond_tab(
         # >2 bytes means the doc has real content (empty doc is 2 bytes)
         b64_state = base64.b64encode(full_state).decode("ascii")
         ui.context.client.run_javascript(f"window._applyRemoteUpdate('{b64_state}')")
-        logger.info(
+        logger.debug(
             "RESPOND_FULL_STATE_SYNC ws=%s to_client=%s bytes=%d",
             workspace_key,
             client_id[:8],

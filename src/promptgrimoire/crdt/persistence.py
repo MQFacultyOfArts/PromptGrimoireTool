@@ -130,7 +130,7 @@ class PersistenceManager:
 
             if success:
                 self._workspace_dirty.pop(workspace_id, None)
-                logger.info("Persisted workspace %s", workspace_id)
+                logger.debug("Persisted workspace %s", workspace_id)
             else:
                 logger.warning("Workspace %s not found for persistence", workspace_id)
 
@@ -190,7 +190,7 @@ class PersistenceManager:
         task = self._workspace_pending_saves.pop(workspace_id, None)
         if task is not None and not task.done():
             task.cancel()
-        logger.info(
+        logger.debug(
             "Evicted workspace %s (doc %s) from persistence", workspace_id, doc_id
         )
 

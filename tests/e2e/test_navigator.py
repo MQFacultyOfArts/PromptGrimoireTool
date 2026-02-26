@@ -2,7 +2,9 @@
 
 Verifies the navigator page at ``/`` renders workspace sections correctly,
 handles authentication, provides workspace navigation, supports search,
-supports inline title rename, and supports infinite scroll pagination.
+supports inline title rename, supports infinite scroll pagination,
+verifies navigation chrome (home icon) on all pages, and uses correct
+i18n terminology.
 
 Acceptance Criteria:
 - workspace-navigator-196.AC2.5: Unauthenticated redirect to login
@@ -24,6 +26,11 @@ Acceptance Criteria:
 - workspace-navigator-196.AC5.2: Infinite scroll loads more rows into correct sections
 - workspace-navigator-196.AC5.4: Fewer than 50 rows -- no additional loading
 - workspace-navigator-196.AC5.5: Multi-page scroll without duplicates
+- workspace-navigator-196.AC6.1: Home icon on annotation tab bar navigates to /
+- workspace-navigator-196.AC6.2: Home icon on roleplay and courses pages navigates to /
+- workspace-navigator-196.AC6.3: No global header bar imposed on annotation page
+- workspace-navigator-196.AC7.1: All user-facing text displays "Unit" not "Course"
+- workspace-navigator-196.AC7.2: Label configurable via pydantic-settings
 
 Traceability:
 - Issue: #196 (Workspace Navigator)
@@ -31,6 +38,7 @@ Traceability:
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_05.md
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_06.md
 - Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_07.md
+- Design: docs/implementation-plans/2026-02-24-workspace-navigator-196/phase_08.md
 """
 
 from __future__ import annotations
@@ -1269,6 +1277,50 @@ class TestNavigator:
                     f"Before: {before_scroll}, after: {after_scroll}"
                 )
 
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+
+# ===========================================================================
+# Phase 8: i18n terminology (AC7)
+# ===========================================================================
+
+
+class TestI18nTerminology:
+    """Tests for i18n unit label terminology."""
+
+    @pytest.mark.e2e
+    def test_navigator_displays_unit_not_course(
+        self, browser: Browser, app_server: str
+    ) -> None:
+        """AC7.1: No user-facing text contains 'Course'.
+
+        The codebase uses 'Unit' instead of 'Course' in all
+        user-facing text. This test verifies no regression by
+        checking page text content.
+        """
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            _authenticate_page(page, app_server)
+            page.goto(f"{app_server}/")
+            page.wait_for_timeout(3000)
+
+            # Get all text content from the page body
+            body_text = page.locator("body").inner_text()
+
+            # inner_text() returns only visible text, so URLs,
+            # CSS classes, and JS identifiers are excluded.
+            # Check for standalone "Course" or "Courses".
+            course_matches = re.findall(r"\bCourses?\b", body_text)
+            assert not course_matches, (
+                f"Found 'Course' in navigator page text. "
+                f"All user-facing text should use 'Unit'. "
+                f"Matches: {course_matches}. "
+                f"Context: ...{body_text[:500]}..."
+            )
         finally:
             page.goto("about:blank")
             page.close()

@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 from nicegui import app, ui
 
-from promptgrimoire.auth import get_auth_client
+from promptgrimoire.auth import derive_roles_from_metadata, get_auth_client
 from promptgrimoire.config import get_settings
 from promptgrimoire.db import init_db, upsert_user_on_login
 
@@ -495,12 +495,16 @@ async def sso_callback() -> None:
     result = await auth_client.authenticate_sso(token=token)
 
     if result.success:
+        # Derive app roles from AAF metadata and merge with Stytch roles
+        derived_roles = derive_roles_from_metadata(result.trusted_metadata)
+        all_roles = list(dict.fromkeys([*result.roles, *derived_roles]))
+
         # Upsert user in local database
         user_id, is_admin = await _upsert_local_user(
             email=result.email or "",
             stytch_member_id=result.member_id or "",
             display_name=result.name,
-            roles=result.roles,
+            roles=all_roles,
         )
 
         _set_session_user(
@@ -508,7 +512,7 @@ async def sso_callback() -> None:
             member_id=result.member_id or "",
             organization_id=result.organization_id or "",
             session_token=result.session_token or "",
-            roles=result.roles,
+            roles=all_roles,
             name=result.name,
             auth_method="sso_aaf",
             user_id=user_id,

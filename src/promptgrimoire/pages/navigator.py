@@ -197,8 +197,12 @@ def _render_inline_title_edit(
         .props(f'data-workspace-id="{workspace_id}"')
     )
 
-    # Track whether we are in edit mode and whether a save is in flight.
     _state: dict[str, object] = {"editing": False, "saving": False}
+
+    def _deactivate() -> None:
+        """Return the input to readonly/borderless mode."""
+        title_input.props(remove="outlined", add="readonly borderless")
+        _state["editing"] = False
 
     # --- Pencil icon (edit trigger) ---
     async def _activate_edit(_e: object) -> None:
@@ -223,17 +227,13 @@ def _render_inline_title_edit(
         try:
             new_title = title_input.value.strip() or None
             await update_workspace_title(workspace_id, new_title)
-            # Update display: if cleared, show fallback
             title_input.value = new_title or row.activity_title or "Untitled"
-            title_input.props(remove="outlined", add="readonly borderless")
-            _state["editing"] = False
         except Exception:
             logger.exception("Failed to save workspace title for %s", workspace_id)
             ui.notify("Failed to save title", type="negative")
             title_input.value = original_title
-            title_input.props(remove="outlined", add="readonly borderless")
-            _state["editing"] = False
         finally:
+            _deactivate()
             _state["saving"] = False
 
     title_input.on("keydown.enter", _save_title)
@@ -244,8 +244,7 @@ def _render_inline_title_edit(
         if not _state["editing"]:
             return
         title_input.value = original_title
-        title_input.props(remove="outlined", add="readonly borderless")
-        _state["editing"] = False
+        _deactivate()
 
     title_input.on("keydown.escape", _cancel_edit)
 

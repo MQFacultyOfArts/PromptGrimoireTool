@@ -175,6 +175,10 @@ class MockAuthClient:
                 email="aaf-user@uni.edu",
                 name="SSO User",
                 roles=["stytch_member", "instructor"],
+                trusted_metadata={
+                    "eduperson_affiliation": "staff",
+                    "schac_home_organization": "uni.edu",
+                },
             )
         return AuthResult(
             success=False,

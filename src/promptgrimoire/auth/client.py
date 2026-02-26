@@ -190,6 +190,7 @@ class StytchB2BClient:
                 email=response.member.email_address,
                 name=getattr(response.member, "name", None),
                 roles=roles,
+                trusted_metadata=getattr(response.member, "trusted_metadata", None),
             )
         except StytchError as e:
             logger.warning(

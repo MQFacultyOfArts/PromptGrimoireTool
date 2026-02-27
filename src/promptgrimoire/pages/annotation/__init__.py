@@ -273,6 +273,7 @@ from promptgrimoire.pages.annotation.workspace import (  # noqa: E402
     _create_workspace_and_redirect,
     _render_workspace_view,
 )
+from promptgrimoire.pages.layout import page_layout  # noqa: E402
 from promptgrimoire.pages.registry import page_route  # noqa: E402
 
 
@@ -308,7 +309,8 @@ async def annotation_page(client: Client) -> None:
     if workspace_id:
         ws = await get_workspace(workspace_id)
 
-    with ui.column().classes("w-full p-4"):
+    heading = ws.title if ws and ws.title else "Annotation Workspace"
+    with page_layout(heading):
         if workspace_id:
             logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
             await _render_workspace_view(workspace_id, client, ws)

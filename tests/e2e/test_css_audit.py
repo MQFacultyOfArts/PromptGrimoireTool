@@ -96,14 +96,19 @@ class TestLayoutCorrectness:
         assert abs((box["y"] + box["height"]) - viewport["height"]) <= 1
 
     def test_content_not_obscured_by_toolbar(self, annotation_page: Page) -> None:
-        """Layout wrapper bottom edge is at or above toolbar top."""
-        layout = annotation_page.locator("#annotation-layout-wrapper")
+        """Document content bottom is above toolbar top.
+
+        Uses #doc-container (actual content) rather than the layout
+        wrapper, because the wrapper's padding-bottom intentionally
+        extends into the toolbar zone.
+        """
+        doc = annotation_page.locator("#doc-container")
         toolbar = annotation_page.locator("#tag-toolbar-wrapper")
-        layout_box = layout.bounding_box()
+        doc_box = doc.bounding_box()
         toolbar_box = toolbar.bounding_box()
-        assert layout_box is not None
+        assert doc_box is not None
         assert toolbar_box is not None
-        content_bottom = layout_box["y"] + layout_box["height"]
+        content_bottom = doc_box["y"] + doc_box["height"]
         toolbar_top = toolbar_box["y"]
         assert content_bottom <= toolbar_top + 1  # 1px tolerance
 

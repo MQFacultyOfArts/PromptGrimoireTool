@@ -34,6 +34,7 @@ from promptgrimoire.db.courses import (
     get_enrollment,
     list_course_enrollments,
     list_courses,
+    list_students_without_workspaces,
     list_user_enrollments,
     unenroll_user,
     update_course,
@@ -313,7 +314,11 @@ async def courses_list_page() -> None:
         ).classes("text-red-500")
         return
 
-    ui.label("Units").classes("text-2xl font-bold mb-4")
+    with ui.row().classes("items-center mb-4 gap-2"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
+        ui.label("Units").classes("text-2xl font-bold")
 
     # Get enrolled courses for this user
     enrollments = await list_user_enrollments(user_id)
@@ -454,6 +459,9 @@ async def course_detail_page(course_id: str) -> None:
 
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/courses")).props(
             "flat round"
         )
@@ -660,6 +668,19 @@ async def course_detail_page(course_id: str) -> None:
                         ).props("flat dense size=sm").classes("ml-4 mt-1")
 
     await weeks_list()
+
+    # Students with no workspaces (staff only)
+    if can_view_drafts:
+        no_work = await list_students_without_workspaces(cid)
+        if no_work:
+            with ui.expansion(
+                f"Students with no work ({len(no_work)})",
+                icon="warning",
+            ).classes("w-full max-w-2xl mt-4"):
+                with ui.element("ul").classes("ml-4"):
+                    for name, email in no_work:
+                        with ui.element("li"):
+                            ui.label(f"{name} ({email})")
 
     # Register this client for receiving broadcasts
     if cid not in _course_clients:

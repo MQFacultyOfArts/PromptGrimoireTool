@@ -61,6 +61,7 @@ from promptgrimoire.pages.annotation.tags import workspace_tags
 if TYPE_CHECKING:
     from nicegui import Client
 
+    from promptgrimoire.db.models import Workspace
     from promptgrimoire.pages.annotation import PermissionLevel
 
 logger = logging.getLogger(__name__)
@@ -290,14 +291,18 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
 
 async def _resolve_workspace_context(
     workspace_id: UUID,
+    workspace: Workspace | None = None,
 ) -> tuple[PageState, PlacementContext, bool, bool, bool] | None:
     """Resolve workspace, ACL, placement context, and build PageState.
 
     Returns (state, ctx, protect, can_create_tags, shared_with_class)
     or None if the request was handled (redirect/error) and rendering
     should stop.
+
+    Pass a pre-fetched ``workspace`` to avoid a redundant DB round-trip.
     """
-    workspace = await get_workspace(workspace_id)
+    if workspace is None:
+        workspace = await get_workspace(workspace_id)
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500")
         ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
@@ -510,9 +515,13 @@ async def _build_tab_panels(
     logger.debug("[RENDER] tab panels built, workspace=%s", workspace_id)
 
 
-async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
+async def _render_workspace_view(
+    workspace_id: UUID,
+    client: Client,
+    workspace: Workspace | None = None,
+) -> None:
     """Render the workspace content view with documents or add content form."""
-    result = await _resolve_workspace_context(workspace_id)
+    result = await _resolve_workspace_context(workspace_id, workspace)
     if result is None:
         return
     state, ctx, protect, can_create_tags, shared_with_class = result
@@ -547,10 +556,14 @@ async def _render_workspace_view(workspace_id: UUID, client: Client) -> None:
     # Three-tab container (Phase 1: three-tab UI)
     state.initialised_tabs = {"Annotate"}
 
-    with ui.tabs().classes("w-full") as tabs:
-        ui.tab("Annotate")
-        ui.tab("Organise")
-        ui.tab("Respond")
+    with ui.row().classes("w-full items-center"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
+        with ui.tabs().classes("w-full") as tabs:
+            ui.tab("Annotate")
+            ui.tab("Organise")
+            ui.tab("Respond")
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

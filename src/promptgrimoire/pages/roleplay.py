@@ -186,7 +186,11 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
 
     state: dict = {"session": None, "client": None, "log_path": None}
 
-    ui.label("SillyTavern Roleplay").classes("text-h4 mb-4")
+    with ui.row().classes("items-center mb-4 gap-2"):
+        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
+            "flat round"
+        ).tooltip("Home")
+        ui.label("SillyTavern Roleplay").classes("text-h4")
 
     # Upload section
     with ui.card().classes("w-full mb-4") as upload_card:
@@ -206,7 +210,7 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
                     return
 
                 # Write to temp file for parsing
-                tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")
+                tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
                 tmp_path.write_bytes(content)
 
                 character, lorebook_entries = parse_character_card(tmp_path)

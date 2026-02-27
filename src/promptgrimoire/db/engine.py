@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _pool_logger = logging.getLogger(f"{__name__}.pool")
+_pool_logger.setLevel(logging.INFO)
 
 
 def _pool_status(pool: object) -> str:

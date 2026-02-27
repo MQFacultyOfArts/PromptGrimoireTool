@@ -117,17 +117,29 @@ def main() -> None:
 
     # Database lifecycle hooks (only if DATABASE__URL is configured)
     if settings.database.url:
+        import asyncio
+
         from promptgrimoire.crdt.persistence import get_persistence_manager
         from promptgrimoire.db import close_db, get_engine, init_db, verify_schema
+        from promptgrimoire.search_worker import start_search_worker
+
+        _search_worker_task: asyncio.Task[None] | None = None
 
         @app.on_startup
         async def startup() -> None:
+            nonlocal _search_worker_task
             await init_db()
             await verify_schema(get_engine())
+            _search_worker_task = asyncio.create_task(start_search_worker())
             print("Database connected")
 
         @app.on_shutdown
         async def shutdown() -> None:
+            nonlocal _search_worker_task
+            # Cancel search worker before shutdown
+            if _search_worker_task is not None:
+                _search_worker_task.cancel()
+                _search_worker_task = None
             # Persist all dirty CRDT documents before closing DB
             await get_persistence_manager().persist_all_dirty_workspaces()
             await close_db()
@@ -138,7 +150,7 @@ def main() -> None:
     print(f"PromptGrimoire v{get_version_string()}")
     print(f"Starting application on http://0.0.0.0:{port}")
 
-    ui.run(host="0.0.0.0", port=port, reload=True, storage_secret=storage_secret)
+    ui.run(host="0.0.0.0", port=port, reload=True, storage_secret=storage_secret)  # nosec B104
 
 
 if __name__ in {"__main__", "__mp_main__"}:

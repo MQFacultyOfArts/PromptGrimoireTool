@@ -113,15 +113,19 @@ src/promptgrimoire/
 ├── input_pipeline/      # HTML input processing (see docs/input-pipeline.md)
 ├── pages/               # NiceGUI page routes
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
+│   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)
 │   ├── courses.py       # Course management
 │   └── roleplay.py      # AI roleplay / client interview
 ├── export/              # PDF/LaTeX export (see docs/export.md)
 ├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)
 │   ├── acl.py           # ACL operations (grant, revoke, resolve, share)
+│   ├── crdt_extraction.py # Pure CRDT-to-text extraction for FTS indexing
+│   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit
 │   ├── roles.py         # Cached staff role queries
 │   └── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 ├── crdt/                # pycrdt collaboration logic
+├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 └── static/              # JS/CSS assets
 
 tests/
@@ -157,6 +161,10 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design decisions in [docs/database.md](docs/database.md).
 
 12 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry.
+
+### Full-Text Search (FTS)
+
+`workspace.search_text` stores materialised CRDT content (highlights, tags, comments, notes) for FTS. `workspace.search_dirty` is a boolean queue flag set on every CRDT save, cleared by the background `search_worker`. Two GIN expression indexes (`idx_workspace_document_fts`, `idx_workspace_search_text_fts`) power `search_navigator()` in `db/navigator.py`. See [docs/database.md](docs/database.md) for index naming convention.
 
 ### Key Rules
 

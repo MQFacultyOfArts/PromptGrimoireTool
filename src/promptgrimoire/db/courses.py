@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
@@ -321,3 +322,44 @@ async def update_user_role(
         await session.flush()
         await session.refresh(enrollment)
         return enrollment
+
+
+_ZERO_WORKSPACE_SQL = """\
+SELECT u.display_name, u.email
+FROM course_enrollment ce
+JOIN "user" u ON u.id = ce.user_id
+JOIN course_role cr ON cr.name = ce.role
+WHERE ce.course_id = :course_id
+  AND cr.is_staff = false
+  AND NOT EXISTS (
+    SELECT 1
+    FROM acl_entry acl
+    JOIN workspace w ON w.id = acl.workspace_id
+    LEFT JOIN activity a ON a.id = w.activity_id
+    LEFT JOIN week wk ON wk.id = a.week_id
+    WHERE acl.user_id = ce.user_id
+      AND acl.permission = 'owner'
+      AND (wk.course_id = ce.course_id OR w.course_id = ce.course_id)
+  )
+ORDER BY u.display_name
+"""
+
+
+async def list_students_without_workspaces(
+    course_id: UUID,
+) -> list[tuple[str, str]]:
+    """List students enrolled in a course who own no workspaces.
+
+    Returns (display_name, email) tuples for students with zero
+    activity-placed or loose workspaces in the given course.
+    Staff roles are excluded.
+
+    See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/198
+    for a proper analytics page.
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            text(_ZERO_WORKSPACE_SQL),
+            {"course_id": course_id},
+        )
+        return [(row[0], row[1]) for row in result.all()]

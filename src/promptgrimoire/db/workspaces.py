@@ -324,6 +324,7 @@ async def save_workspace_crdt_state(workspace_id: UUID, crdt_state: bytes) -> bo
         if workspace:
             workspace.crdt_state = crdt_state
             workspace.updated_at = datetime.now(UTC)
+            workspace.search_dirty = True
             session.add(workspace)
             return True
         return False
@@ -631,6 +632,7 @@ async def clone_workspace_from_activity(
         clone = Workspace(
             activity_id=activity_id,
             enable_save_as_draft=template.enable_save_as_draft,
+            title=activity.title,
         )
         session.add(clone)
         await session.flush()
@@ -796,4 +798,4 @@ async def update_workspace_title(
     Raises:
         ValueError: If workspace not found.
     """
-    return await _update_workspace_fields(workspace_id, title=title)
+    return await _update_workspace_fields(workspace_id, title=title, search_dirty=True)

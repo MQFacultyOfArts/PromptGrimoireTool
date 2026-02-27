@@ -1,0 +1,53 @@
+/* Navigator page layout */
+
+/* NiceGUI's .nicegui-content (on <q-page>) defaults to align-items: flex-start,
+   which shrinks children to content width. Override to stretch so the
+   navigator wrapper fills the full page width. */
+.nicegui-content:has(.navigator-scroll-area) {
+    align-items: stretch !important;
+    padding: 0 !important;
+}
+
+.q-pa-lg:has(> .navigator-scroll-area) {
+    padding: 0 !important;
+}
+
+.navigator-scroll-area {
+    overflow-y: scroll !important;
+    height: calc(100vh - var(--q-header-height, 64px)) !important;
+    padding-top: 16px;
+}
+
+.navigator-content-column {
+    width: min(100%, 73rem) !important;
+}
+
+/* Workspace title inputs — stretch to fill row, pointer when readonly */
+.navigator-title-input {
+    flex-grow: 1 !important;
+    min-width: 12rem !important;
+}
+
+.navigator-title-input input[readonly] {
+    cursor: pointer !important;
+}
+
+/* Search result snippets */
+
+.navigator-snippet {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #555;
+    background: #f8f9fa;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-top: 4px;
+}
+
+.navigator-snippet mark {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: 600;
+}

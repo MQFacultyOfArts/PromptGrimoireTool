@@ -93,6 +93,22 @@ class TestCloneDocuments:
         assert clone.id != activity.template_workspace_id
 
     @pytest.mark.asyncio
+    async def test_clone_defaults_title_to_activity_name(self) -> None:
+        """Clone sets workspace title to the activity's title.
+
+        Verifies workspace-navigator-196.AC4.4.
+        """
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
+
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        assert clone.title == activity.title
+        assert clone.title == "Cloneable Activity"
+
+    @pytest.mark.asyncio
     async def test_cloned_docs_preserve_fields(self) -> None:
         """Cloned documents preserve content, type, source_type, title, order_index.
 

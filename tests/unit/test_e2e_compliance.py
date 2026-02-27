@@ -41,6 +41,10 @@ ALLOWED_JS_FILES = {
     # inspection for remote presence indicators require page.evaluate() — no
     # Playwright native API exists for CSS Custom Highlight API introspection.
     "test_remote_presence_e2e.py",
+    # Navigator infinite scroll tests: Playwright has no native API to
+    # set scrollTop on a scrollable div. evaluate() is needed to scroll
+    # the navigator container to trigger the infinite scroll handler.
+    "test_navigator.py",
 }
 
 

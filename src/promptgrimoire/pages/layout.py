@@ -156,5 +156,5 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
     menu_btn.on("click", drawer.toggle)
 
     # Main content area with padding
-    with ui.element("div").classes("q-pa-md"):
+    with ui.element("div").classes("q-pa-lg"):
         yield

@@ -1,0 +1,14 @@
+-- Navigator SQL reference
+--
+-- The authoritative query lives in navigator.py (_NAV_CTE string).
+-- This file is no longer maintained separately to prevent drift.
+--
+-- The CTE produces 20 columns per row:
+--   section, section_priority, workspace_id, activity_id, activity_title,
+--   week_title, week_number, course_id, course_code, course_name,
+--   title, updated_at, owner_user_id, owner_display_name, permission,
+--   shared_with_class, anonymous_sharing, owner_is_privileged,
+--   sort_key, row_id
+--
+-- See NavigatorRow dataclass in navigator.py for field types.
+-- See _NAVIGATOR_SQL for the paginated query and _SEARCH_SQL for FTS.

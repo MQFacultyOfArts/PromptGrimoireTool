@@ -267,6 +267,7 @@ class PageState:
 # Section 3: Submodule imports (types above are now available)
 # ---------------------------------------------------------------------------
 
+from promptgrimoire.db.workspaces import get_workspace  # noqa: E402
 from promptgrimoire.pages.annotation.css import _setup_page_styles  # noqa: E402
 from promptgrimoire.pages.annotation.workspace import (  # noqa: E402
     _create_workspace_and_redirect,
@@ -302,12 +303,19 @@ async def annotation_page(client: Client) -> None:
         except ValueError:
             ui.notify("Invalid workspace ID", type="negative")
 
+    # Resolve display title from workspace DB record
+    heading = "Annotation Workspace"
+    if workspace_id:
+        ws = await get_workspace(workspace_id)
+        if ws and ws.title:
+            heading = ws.title
+
     with ui.column().classes("w-full p-4"):
-        ui.label("Annotation Workspace").classes("text-2xl font-bold mb-4")
+        ui.label(heading).classes("text-2xl font-bold mb-4")
 
         if workspace_id:
             logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
-            await _render_workspace_view(workspace_id, client)
+            await _render_workspace_view(workspace_id, client, ws)
             logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
         else:
             # Show create workspace form

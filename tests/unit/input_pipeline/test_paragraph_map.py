@@ -18,8 +18,9 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     detect_source_numbering,
 )
 
-# Inline extract_text_from_html to avoid circular import in tests.
-# Uses identical logic to html_input.extract_text_from_html.
+# Mirrors html_input.extract_text_from_html exactly. If that function changes,
+# this must change too. Direct import avoided due to circular import through
+# export pipeline.
 _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 _BLOCK_TAGS = frozenset(
     (
@@ -53,7 +54,12 @@ _WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
 
 
 def _extract_text(html: str) -> str:
-    """Minimal inline extract_text_from_html for test assertions."""
+    """Inline copy of html_input.extract_text_from_html for test assertions.
+
+    Mirrors html_input.extract_text_from_html exactly. If that function
+    changes, this must change too. Direct import avoided due to circular
+    import through export pipeline.
+    """
     if not html:
         return ""
     tree = LexborHTMLParser(html)
@@ -159,6 +165,14 @@ class TestAutoNumberParagraphs:
         assert len(result) == 1
         # Whitespace-only <p> produces a space at offset 0, then "Real content" at 1
         assert result[1] == 1
+
+    def test_ac1_6b_truly_empty_block_skipped(self) -> None:
+        """AC1.6: Truly empty <p></p> (no children) is not numbered."""
+        html = "<p></p><p>Real</p>"
+        result = build_paragraph_map(html, auto_number=True)
+        # Only "Real" gets a number; the empty <p> must not be counted
+        assert len(result) == 1
+        assert 1 in result.values()
 
     def test_ac1_7_markdown_style_br_br(self) -> None:
         """AC1.7: Pasted markdown with br-br breaks produces sensible numbering."""

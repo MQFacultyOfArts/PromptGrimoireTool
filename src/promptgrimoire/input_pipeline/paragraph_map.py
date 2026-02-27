@@ -36,6 +36,8 @@ def _has_nonwhitespace_text(node: Any) -> bool:
     text = node.text(deep=True)
     if text is None:
         return False
+    if not text:
+        return False
     return not _WHITESPACE_RUN.fullmatch(text)
 
 

@@ -14,7 +14,7 @@
 
 .navigator-scroll-area {
     overflow-y: scroll !important;
-    height: calc(100vh - 64px) !important;  /* 64px = Quasar QHeader */
+    height: calc(100vh - var(--q-header-height, 64px)) !important;
     padding-top: 16px;
 }
 

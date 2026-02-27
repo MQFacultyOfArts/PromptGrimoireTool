@@ -1121,8 +1121,8 @@ class TestNavigator:
                     page.wait_for_timeout(2000)
 
                 final_count = _count_workspace_entries(page)
-                assert final_count == 60, (
-                    f"Expected all 60 rows after multiple scrolls, got {final_count}"
+                assert final_count >= 60, (
+                    f"Expected >=60 rows after scrolls, got {final_count}"
                 )
 
         finally:

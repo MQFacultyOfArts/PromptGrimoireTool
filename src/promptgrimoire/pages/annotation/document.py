@@ -161,7 +161,7 @@ def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
     """Build the floating highlight menu card and populate it."""
     highlight_menu = (
         ui.card()
-        .classes("fixed z-50 shadow-lg p-2")
+        .classes("fixed z-[110] shadow-lg p-2")
         .props('data-testid="highlight-menu" id="highlight-menu"')
     )
     highlight_menu.set_visibility(False)

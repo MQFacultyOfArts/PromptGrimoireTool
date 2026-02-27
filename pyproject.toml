@@ -48,6 +48,7 @@ manage-users = "promptgrimoire.cli:manage_users"
 show-export-log = "promptgrimoire.cli:show_export_log"
 make-docs = "promptgrimoire.cli:make_docs"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
+backfill-paragraph-maps = "promptgrimoire.cli_backfill:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -115,6 +116,9 @@ ignore = [
 ]
 "src/promptgrimoire/cli.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
+]
+"src/promptgrimoire/cli_backfill.py" = [
+    "PLC0415",  # Late imports to avoid circular dependencies with input_pipeline
 ]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block

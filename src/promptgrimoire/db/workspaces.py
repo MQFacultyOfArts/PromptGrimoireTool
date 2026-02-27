@@ -664,6 +664,8 @@ async def clone_workspace_from_activity(
                 source_type=tmpl_doc.source_type,
                 title=tmpl_doc.title,
                 order_index=tmpl_doc.order_index,
+                auto_number_paragraphs=tmpl_doc.auto_number_paragraphs,
+                paragraph_map=tmpl_doc.paragraph_map,
             )
             session.add(cloned_doc)
             await session.flush()

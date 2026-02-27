@@ -101,3 +101,69 @@ class TestWorkspaceDocumentParagraphFields:
         reloaded = await _reload_document(db_session, doc.id)
 
         assert reloaded.auto_number_paragraphs is False
+
+
+class TestCloneParagraphFields:
+    """Verify clone_workspace_from_activity propagates paragraph numbering fields."""
+
+    @pytest.mark.asyncio
+    async def test_clone_copies_auto_number_paragraphs_and_paragraph_map(
+        self,
+    ) -> None:
+        """Cloned document inherits paragraph numbering fields from template.
+
+        Regression test for the DBA HALT: clone function was silently dropping
+        auto_number_paragraphs and paragraph_map, reverting clones to defaults.
+        """
+        from uuid import uuid4
+
+        from promptgrimoire.db.activities import create_activity
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import WorkspaceDocument
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.weeks import create_week, publish_week
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        tag = uuid4().hex[:8]
+
+        course = await create_course(
+            code=f"C{tag[:6].upper()}", name="Para Clone Test", semester="2026-S1"
+        )
+        week = await create_week(course_id=course.id, week_number=1, title="Week 1")
+        await publish_week(week.id)
+        activity = await create_activity(week_id=week.id, title="Para Activity")
+
+        student = await create_user(
+            email=f"para-{tag}@test.local", display_name=f"Para {tag}"
+        )
+        await enroll_user(course_id=course.id, user_id=student.id, role="student")
+
+        # Add a template document with non-default paragraph fields
+        test_map: dict[str, int] = {"0": 1, "45": 2, "100": 3}
+        async with get_session() as session:
+            tmpl_doc = WorkspaceDocument(
+                workspace_id=activity.template_workspace_id,
+                type="source",
+                content="<p><span>AustLII</span></p>",
+                source_type="html",
+                auto_number_paragraphs=False,
+                paragraph_map=test_map,
+            )
+            session.add(tmpl_doc)
+
+        # Clone the workspace
+        _clone, doc_id_map = await clone_workspace_from_activity(
+            activity.id, student.id
+        )
+
+        # Retrieve the cloned document and verify fields propagated
+        cloned_doc_id = doc_id_map[tmpl_doc.id]
+        async with get_session() as session:
+            result = await session.execute(
+                select(WorkspaceDocument).where(WorkspaceDocument.id == cloned_doc_id)
+            )
+            cloned_doc = result.scalar_one()
+
+        assert cloned_doc.auto_number_paragraphs is False
+        assert cloned_doc.paragraph_map == {"0": 1, "45": 2, "100": 3}

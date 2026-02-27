@@ -66,7 +66,7 @@ rodney js --local "
   ]);
 "
 rodney key --local "Control+v"
-sleep 1
+rodney sleep 1 --local
 rodney waitstable --local
 take_screenshot "04_content_pasted"
 add_image "04_content_pasted"
@@ -128,7 +128,7 @@ note "Comments appear below each highlight in the sidebar. Use comments to recor
 note "## Step 7: Organising by Tag"
 note "Switch to the Organise tab to view your annotations grouped by tag."
 rodney click --local '[data-testid="tab-organise"]'
-wait_for '[data-testid="tab-organise"]' 'Organise tab loaded'
+wait_for '[data-testid="organise-columns"]' 'Organise tab loaded'
 rodney waitstable --local
 take_screenshot "07_organise_tab"
 add_image "07_organise_tab"

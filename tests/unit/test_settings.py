@@ -136,6 +136,8 @@ class TestTypeValidation:
                 "DATABASE",
                 "LLM",
                 "APP",
+                "FEATURES",
+                "I18N",
                 "DEV",
             ):
                 monkeypatch.delenv(key, raising=False)
@@ -155,43 +157,54 @@ class TestTypeValidation:
 class TestFeaturesConfig:
     """Feature flag defaults and Settings integration."""
 
-    def test_defaults_all_enabled(self) -> None:
-        """Feature flags default to True (current behaviour preserved)."""
+    def test_defaults(self) -> None:
+        """Feature flag defaults: roleplay/file_upload on, multi_document off."""
         cfg = FeaturesConfig()
         assert cfg.enable_roleplay is True
         assert cfg.enable_file_upload is True
+        assert cfg.enable_multi_document is False
 
-    def test_disable_via_constructor(self) -> None:
-        """Feature flags can be explicitly disabled."""
-        cfg = FeaturesConfig(enable_roleplay=False, enable_file_upload=False)
+    def test_override_via_constructor(self) -> None:
+        """Feature flags can be explicitly set."""
+        cfg = FeaturesConfig(
+            enable_roleplay=False,
+            enable_file_upload=False,
+            enable_multi_document=True,
+        )
         assert cfg.enable_roleplay is False
         assert cfg.enable_file_upload is False
+        assert cfg.enable_multi_document is True
 
     def test_bool_coercion_from_string(self) -> None:
         """Feature flags coerce string values to bool (env var style)."""
         cfg = FeaturesConfig(
             enable_roleplay="false",  # type: ignore[arg-type]
             enable_file_upload="true",  # type: ignore[arg-type]
+            enable_multi_document="true",  # type: ignore[arg-type]
         )
         assert cfg.enable_roleplay is False
         assert cfg.enable_file_upload is True
+        assert cfg.enable_multi_document is True
 
     def test_settings_features_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Settings.features defaults to all-enabled FeaturesConfig."""
+        """Settings.features uses FeaturesConfig defaults."""
         for key in list(os.environ):
             if key.startswith("FEATURES__"):
                 monkeypatch.delenv(key, raising=False)
         s = Settings(_env_file=None)  # type: ignore[call-arg]
         assert s.features.enable_roleplay is True
         assert s.features.enable_file_upload is True
+        assert s.features.enable_multi_document is False
 
-    def test_settings_features_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Settings reads FEATURES__ env vars to disable flags."""
+    def test_settings_features_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Settings reads FEATURES__ env vars to override defaults."""
         monkeypatch.setenv("FEATURES__ENABLE_ROLEPLAY", "false")
         monkeypatch.setenv("FEATURES__ENABLE_FILE_UPLOAD", "false")
+        monkeypatch.setenv("FEATURES__ENABLE_MULTI_DOCUMENT", "true")
         s = Settings(_env_file=None)  # type: ignore[call-arg]
         assert s.features.enable_roleplay is False
         assert s.features.enable_file_upload is False
+        assert s.features.enable_multi_document is True
 
 
 # ---------------------------------------------------------------------------

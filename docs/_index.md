@@ -86,6 +86,10 @@ library references during development.
 - [pycrdt usage guide - CRDT data types, sync, transactions, observers](pycrdt/usage.md)
 - [pycrdt WebSocket sync patterns for real-time collaboration](pycrdt/websocket-sync.md)
 
+## rodney
+
+- [Rodney CLI Reference](rodney/cli-reference.md)
+
 ## ruff
 
 - [Pre-commit integration guide for Ruff linter and formatter](ruff/pre-commit.md)

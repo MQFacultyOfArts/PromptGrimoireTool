@@ -53,10 +53,14 @@ async def _render_import_section(
     with ui.column().classes("w-full").props("data-testid=tag-import-section"):
         ui.label("Import tags from another activity").classes("text-sm font-bold mt-2")
         with ui.row().classes("items-center gap-2"):
-            activity_select = ui.select(
-                options=activity_options,
-                label="Source activity",
-            ).classes("w-64")
+            activity_select = (
+                ui.select(
+                    options=activity_options,
+                    label="Source activity",
+                )
+                .classes("w-64")
+                .props('data-testid="tag-import-source-select"')
+            )
 
             async def _import_from_activity() -> None:
                 if not activity_select.value:

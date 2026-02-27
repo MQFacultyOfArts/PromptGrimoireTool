@@ -561,9 +561,9 @@ async def _render_workspace_view(
             "flat round"
         ).tooltip("Home")
         with ui.tabs().classes("w-full") as tabs:
-            ui.tab("Annotate")
-            ui.tab("Organise")
-            ui.tab("Respond")
+            ui.tab("Annotate").props('data-testid="tab-annotate"')
+            ui.tab("Organise").props('data-testid="tab-organise"')
+            ui.tab("Respond").props('data-testid="tab-respond"')
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

@@ -70,7 +70,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     content_input = (
         ui.editor(placeholder="Paste HTML content or type plain text here...")
         .classes("w-full min-h-32")
-        .props("toolbar=[]")
+        .props('toolbar=[] data-testid="content-editor"')
     )  # Hide toolbar for minimal UI
 
     # Intercept paste, strip CSS client-side, store cleaned HTML.
@@ -598,9 +598,9 @@ def _render_add_content_form(workspace_id: UUID) -> None:
             logger.exception("Failed to add document")
             ui.notify(f"Failed to add document: {exc}", type="negative")
 
-    ui.button("Add Document", on_click=handle_add_document).classes(
-        "bg-green-500 text-white mt-2"
-    )
+    ui.button("Add Document", on_click=handle_add_document).props(
+        'data-testid="add-document-btn"'
+    ).classes("bg-green-500 text-white mt-2")
 
     async def handle_file_upload(upload_event: events.UploadEventArguments) -> None:
         """Handle file upload through HTML pipeline."""

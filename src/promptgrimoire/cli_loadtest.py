@@ -52,7 +52,7 @@ from promptgrimoire.db.workspaces import (
     place_workspace_in_course,
     save_workspace_crdt_state,
 )
-from promptgrimoire.input_pipeline.paragraph_map import build_paragraph_map
+from promptgrimoire.input_pipeline.paragraph_map import build_paragraph_map_for_json
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -592,10 +592,7 @@ async def _ensure_activities_for_course(
         for doc_idx in range(num_docs):
             start = doc_idx * 2
             content = "\n".join(paragraphs[start : start + 2])
-            para_map = {
-                str(k): v
-                for k, v in build_paragraph_map(content, auto_number=True).items()
-            }
+            para_map = build_paragraph_map_for_json(content, auto_number=True)
             await add_document(
                 workspace_id=tmpl_id,
                 type="source",
@@ -727,9 +724,7 @@ async def _create_student_activity_workspace(
             extra_para = random.choice(DOCUMENT_PARAGRAPHS)  # nosec B311
             content = content + "\n" + extra_para
 
-        para_map = {
-            str(k): v for k, v in build_paragraph_map(content, auto_number=True).items()
-        }
+        para_map = build_paragraph_map_for_json(content, auto_number=True)
         new_doc = await add_document(
             workspace_id=ws_id,
             type=tmpl_doc.type,
@@ -788,9 +783,7 @@ async def _create_loose_workspace(
     for doc_idx in range(num_docs):
         start = doc_idx * 2
         content = "\n".join(paragraphs[start : start + 2])
-        para_map = {
-            str(k): v for k, v in build_paragraph_map(content, auto_number=True).items()
-        }
+        para_map = build_paragraph_map_for_json(content, auto_number=True)
         new_doc = await add_document(
             workspace_id=ws_id,
             type="source",
@@ -1267,9 +1260,7 @@ async def _validate_ensure_activity(week: Week) -> tuple[Activity, UUID]:
     tmpl_id = activity.template_workspace_id
 
     content = DOCUMENT_PARAGRAPHS[0] + "\n" + DOCUMENT_PARAGRAPHS[1]
-    para_map = {
-        str(k): v for k, v in build_paragraph_map(content, auto_number=True).items()
-    }
+    para_map = build_paragraph_map_for_json(content, auto_number=True)
     await add_document(
         workspace_id=tmpl_id,
         type="source",

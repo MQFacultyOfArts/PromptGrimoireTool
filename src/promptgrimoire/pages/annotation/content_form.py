@@ -19,7 +19,7 @@ from promptgrimoire.input_pipeline.html_input import (
     process_input,
 )
 from promptgrimoire.input_pipeline.paragraph_map import (
-    build_paragraph_map,
+    build_paragraph_map_for_json,
     detect_source_numbering,
 )
 from promptgrimoire.pages.dialogs import show_content_type_dialog
@@ -73,9 +73,7 @@ def _detect_paragraph_numbering(
         persistence (map keys converted to strings for JSON storage).
     """
     auto_number = not detect_source_numbering(processed_html)
-    raw_map = build_paragraph_map(processed_html, auto_number=auto_number)
-    # build_paragraph_map returns dict[int, int]; JSON requires string keys
-    para_map: dict[str, int] = {str(k): v for k, v in raw_map.items()}
+    para_map = build_paragraph_map_for_json(processed_html, auto_number=auto_number)
     return auto_number, para_map
 
 

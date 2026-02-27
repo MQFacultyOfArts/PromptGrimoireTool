@@ -175,6 +175,30 @@ def build_paragraph_map(
     return state.result
 
 
+def build_paragraph_map_for_json(
+    html: str,
+    *,
+    auto_number: bool = True,
+) -> dict[str, int]:
+    """Build a paragraph map with string keys suitable for JSON storage.
+
+    Thin wrapper around ``build_paragraph_map()`` that converts the
+    ``int`` char-offset keys to ``str``, as required by PostgreSQL
+    JSONB and JavaScript ``Object`` keys.
+
+    Args:
+        html: Document HTML (clean, no char-span wrappers).
+        auto_number: If ``True``, assign sequential paragraph
+            numbers.  If ``False``, use ``<li value="N">``
+            attributes (source-number mode).
+
+    Returns:
+        Mapping from char offset (as string) to paragraph number.
+    """
+    raw = build_paragraph_map(html, auto_number=auto_number)
+    return {str(k): v for k, v in raw.items()}
+
+
 def detect_source_numbering(html: str) -> bool:
     """Detect whether *html* uses explicit source paragraph numbering.
 

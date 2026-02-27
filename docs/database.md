@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-22
+**Last updated:** 2026-02-28
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -367,7 +367,7 @@ Workspaces are isolated silos identified by UUID.
 
 1. Creates new Workspace with `activity_id` set and `enable_save_as_draft` copied
 2. Creates ACLEntry granting `"owner"` permission to `user_id`
-3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index) with new UUIDs
+3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index, auto_number_paragraphs, paragraph_map) with new UUIDs
 4. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
 5. Copies all TagGroups and Tags with new UUIDs, builds `group_id_map` and `tag_id_map`
 6. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped and `tag` field remapped via `tag_id_map`, `tag_order` keys remapped, comments are preserved, general notes are copied, client metadata is NOT cloned

@@ -33,6 +33,10 @@ library references during development.
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
 
+## design-notes
+
+- [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
+
 ## lark
 
 - [Using Lark as a standalone lexer (tokenizer only, no parsing)](lark/lexer-usage.md)

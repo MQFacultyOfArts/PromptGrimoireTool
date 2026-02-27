@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Education",
 ]
 dependencies = [
-    "nicegui==3.6.1",  # pinned: 3.7.x re-renders elements on listener change, destroying JS event wiring
+    "nicegui==3.8.0",  # pinned: 3.8.0 includes our upstream fixes (#5805, #5806, #5749)
     "sqlmodel>=0.0.22",
     "pycrdt>=0.10",
     "stytch>=11.0",

@@ -796,17 +796,6 @@ async def _hand_loop_to_watchdog():
 import time as _time
 from nicegui import Client as _Client
 
-# Monkey-patch Outbox.stop() to wake the sleeping loop immediately.
-# Without this, the outbox loop lingers for up to 1s in
-# asyncio.wait_for(Event.wait(), timeout=1.0) after stop() is called.
-from nicegui.outbox import Outbox as _Outbox
-_orig_outbox_stop = _Outbox.stop
-def _fast_outbox_stop(self):
-    _orig_outbox_stop(self)
-    if self._enqueue_event is not None:
-        self._enqueue_event.set()
-_Outbox.stop = _fast_outbox_stop
-
 _orig_delete = _Client.delete
 _delete_logger = logging.getLogger("e2e.client_delete")
 def _timed_delete(self):

@@ -303,16 +303,12 @@ async def annotation_page(client: Client) -> None:
         except ValueError:
             ui.notify("Invalid workspace ID", type="negative")
 
-    # Resolve display title from workspace DB record
-    heading = "Annotation Workspace"
+    # Pre-fetch workspace record for _render_workspace_view
+    ws = None
     if workspace_id:
         ws = await get_workspace(workspace_id)
-        if ws and ws.title:
-            heading = ws.title
 
     with ui.column().classes("w-full p-4"):
-        ui.label(heading).classes("text-2xl font-bold mb-4")
-
         if workspace_id:
             logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
             await _render_workspace_view(workspace_id, client, ws)

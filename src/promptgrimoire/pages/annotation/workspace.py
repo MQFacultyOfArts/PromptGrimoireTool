@@ -538,7 +538,6 @@ async def _render_workspace_view(
     _setup_client_sync(workspace_id, client, state)
     can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
-    ui.label(f"Workspace: {workspace_id}").classes("text-gray-600 text-sm")
     await render_workspace_header(
         state,
         workspace_id,

@@ -63,7 +63,7 @@ async def show_content_type_dialog(
             ui.button(
                 "Confirm",
                 on_click=lambda: dialog.submit(selected_type),
-            ).props("color=primary")
+            ).props('color=primary data-testid="confirm-content-type-btn"')
 
     dialog.open()
     result = await dialog

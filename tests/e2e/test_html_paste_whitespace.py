@@ -82,8 +82,7 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
     Ctrl+V to trigger the paste event handler.
     """
     # Focus the editor
-    editor_selector = ".q-editor__content"
-    editor = page.locator(editor_selector)
+    editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
@@ -137,7 +136,7 @@ class TestHTMLPasteWhitespace:
         page.screenshot(path=str(SCREENSHOT_DIR / "02_after_paste_editor.png"))
 
         # Check that paste was captured (placeholder message appears)
-        editor = page.locator(".q-editor__content")
+        editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
         # Should show "Content pasted" placeholder, not raw HTML
         expect(editor).to_contain_text("Content pasted", timeout=3000)
 

@@ -151,7 +151,9 @@ def _build_comments_section(
     # Comment input -- only for users who can annotate
     if state.can_annotate:
         comment_input = (
-            ui.input(placeholder="Add comment...").props("dense").classes("w-full mt-2")
+            ui.input(placeholder="Add comment...")
+            .props('dense data-testid="comment-input"')
+            .classes("w-full mt-2")
         )
 
         async def add_comment(
@@ -248,9 +250,9 @@ def _build_card_header(
                 tag_options,
                 value=tag_str,
                 on_change=on_tag_change,
-            ).props("dense borderless").classes("text-sm font-bold").style(
-                f"color: {color}; min-width: 120px;"
-            )
+            ).props('dense borderless data-testid="tag-select"').classes(
+                "text-sm font-bold"
+            ).style(f"color: {color}; min-width: 120px;")
         else:
             # Static tag label for viewers
             display_tag = tag_str.replace("_", " ").title()

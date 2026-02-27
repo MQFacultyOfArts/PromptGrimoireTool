@@ -62,7 +62,16 @@ def inject_copy_protection() -> None:
     and shows a "Printing is disabled" message instead.
     """
     _selectors = '#doc-container, [data-testid="respond-reference-panel"]'
-    ui.run_javascript(f"setupCopyProtection({_selectors!r})")
+    # On SPA navigations, annotation-copy-protection.js may not be loaded yet
+    # (ui.add_body_html only injects on full page loads).  Stash the selectors
+    # so the dynamic loader in document.py can call setupCopyProtection later.
+    ui.run_javascript(
+        f"if (typeof setupCopyProtection === 'function') {{"
+        f"  setupCopyProtection({_selectors!r});"
+        f"}} else {{"
+        f"  window._pendingCopyProtection = {_selectors!r};"
+        f"}}"
+    )
     ui.add_css(_COPY_PROTECTION_PRINT_CSS)
     ui.html(_COPY_PROTECTION_PRINT_MESSAGE, sanitize=False)
 

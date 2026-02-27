@@ -69,7 +69,7 @@ class TestTabHeaders:
         page = workspace_page
 
         # Assert three tab elements exist
-        tabs = page.locator("role=tab")
+        tabs = page.locator("[data-testid^='tab-']")
         expect(tabs).to_have_count(3, timeout=5000)
 
         # Verify tab names

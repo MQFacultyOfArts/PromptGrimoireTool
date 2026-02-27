@@ -188,7 +188,7 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
 
     with ui.row().classes("items-center mb-4 gap-2"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         ui.label("SillyTavern Roleplay").classes("text-h4")
 

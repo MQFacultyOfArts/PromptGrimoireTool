@@ -195,7 +195,9 @@ async def open_course_settings(course: Course) -> None:
     _COURSE_DEFAULT_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
-        ui.label(f"Unit Settings: {course.name}").classes("text-lg font-bold")
+        ui.label(f"Unit Settings: {course.name}").classes("text-lg font-bold").props(
+            'data-testid="course-settings-title"'
+        )
 
         switches: dict[str, ui.switch] = {}
         for label, attr in _COURSE_DEFAULT_FIELDS:
@@ -214,7 +216,9 @@ async def open_course_settings(course: Course) -> None:
                 dialog.close()
                 ui.notify("Unit settings saved", type="positive")
 
-            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-course-settings-btn"'
+            )
 
     dialog.open()
 
@@ -226,7 +230,9 @@ async def open_activity_settings(activity: Activity) -> None:
     _ACTIVITY_TRI_STATE_FIELDS config.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
-        ui.label(f"Activity Settings: {activity.title}").classes("text-lg font-bold")
+        ui.label(f"Activity Settings: {activity.title}").classes(
+            "text-lg font-bold"
+        ).props('data-testid="activity-settings-title"')
 
         selects: dict[str, ui.select] = {}
         for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
@@ -258,7 +264,9 @@ async def open_activity_settings(activity: Activity) -> None:
                 dialog.close()
                 ui.notify("Activity settings saved", type="positive")
 
-            ui.button("Save", on_click=save).props("color=primary")
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-activity-settings-btn"'
+            )
 
     dialog.open()
 
@@ -316,7 +324,7 @@ async def courses_list_page() -> None:
 
     with ui.row().classes("items-center mb-4 gap-2"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         ui.label("Units").classes("text-2xl font-bold")
 
@@ -379,9 +387,21 @@ async def create_course_page() -> None:
 
     ui.label("Create New Unit").classes("text-2xl font-bold mb-4")
 
-    code = ui.input("Unit Code", placeholder="e.g., LAWS1100").classes("w-64")
-    name = ui.input("Unit Name", placeholder="e.g., Contracts").classes("w-64")
-    semester = ui.input("Semester", placeholder="e.g., 2025-S1").classes("w-64")
+    code = (
+        ui.input("Unit Code", placeholder="e.g., LAWS1100")
+        .classes("w-64")
+        .props('data-testid="course-code-input"')
+    )
+    name = (
+        ui.input("Unit Name", placeholder="e.g., Contracts")
+        .classes("w-64")
+        .props('data-testid="course-name-input"')
+    )
+    semester = (
+        ui.input("Semester", placeholder="e.g., 2025-S1")
+        .classes("w-64")
+        .props('data-testid="course-semester-input"')
+    )
 
     async def submit() -> None:
         if not code.value or not name.value or not semester.value:
@@ -405,7 +425,7 @@ async def create_course_page() -> None:
         ui.navigate.to(f"/courses/{course.id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit)
+        ui.button("Create", on_click=submit).props('data-testid="create-course-btn"')
         ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props("flat")
 
 
@@ -460,7 +480,7 @@ async def course_detail_page(course_id: str) -> None:
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/courses")).props(
             "flat round"
@@ -471,7 +491,7 @@ async def course_detail_page(course_id: str) -> None:
             ui.button(
                 icon="settings",
                 on_click=lambda: open_course_settings(course),
-            ).props("flat round").tooltip("Settings")
+            ).props('flat round data-testid="course-settings-btn"').tooltip("Settings")
 
     ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 
@@ -481,11 +501,11 @@ async def course_detail_page(course_id: str) -> None:
             ui.button(
                 "Add Week",
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
-            )
+            ).props('data-testid="add-week-btn"')
             ui.button(
                 "Manage Enrollments",
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
-            ).props("flat")
+            ).props('flat data-testid="manage-enrollments-btn"')
 
     # Weeks list - refreshable for in-place updates
     ui.label("Weeks").classes("text-xl font-semibold mb-2")
@@ -532,7 +552,9 @@ async def course_detail_page(course_id: str) -> None:
                 ui.button(
                     icon="settings",
                     on_click=lambda a=act: open_activity_settings(a),
-                ).props("flat round dense size=sm").tooltip("Settings")
+                ).props(
+                    'flat round dense size=sm data-testid="activity-settings-btn"'
+                ).tooltip("Settings")
 
             if act.id in user_workspace_map:
                 # User already has a workspace — show Resume
@@ -617,7 +639,7 @@ async def course_detail_page(course_id: str) -> None:
                                         _broadcast_weeks_refresh(cid, client_id)
 
                                     ui.button("Unpublish", on_click=unpub).props(
-                                        "flat dense"
+                                        'flat dense data-testid="unpublish-week-btn"'
                                     )
                                 else:
 
@@ -627,7 +649,7 @@ async def course_detail_page(course_id: str) -> None:
                                         _broadcast_weeks_refresh(cid, client_id)
 
                                     ui.button("Publish", on_click=pub).props(
-                                        "flat dense"
+                                        'flat dense data-testid="publish-week-btn"'
                                     )
 
                     # Activity list under each week
@@ -665,7 +687,9 @@ async def course_detail_page(course_id: str) -> None:
                             on_click=lambda wid=week.id: ui.navigate.to(
                                 f"/courses/{course_id}/weeks/{wid}/activities/new"
                             ),
-                        ).props("flat dense size=sm").classes("ml-4 mt-1")
+                        ).props(
+                            'flat dense size=sm data-testid="add-activity-btn"'
+                        ).classes("ml-4 mt-1")
 
     await weeks_list()
 
@@ -739,11 +763,15 @@ async def create_week_page(course_id: str) -> None:
 
     ui.label(f"Add Week to {course.code}").classes("text-2xl font-bold mb-4")
 
-    week_number = ui.number("Week Number", value=next_week_num, min=1, max=52).classes(
-        "w-32"
+    week_number = (
+        ui.number("Week Number", value=next_week_num, min=1, max=52)
+        .classes("w-32")
+        .props('data-testid="week-number-input"')
     )
-    title = ui.input("Title", placeholder="e.g., Introduction to Contracts").classes(
-        "w-64"
+    title = (
+        ui.input("Title", placeholder="e.g., Introduction to Contracts")
+        .classes("w-64")
+        .props('data-testid="week-title-input"')
     )
 
     async def submit() -> None:
@@ -761,7 +789,7 @@ async def create_week_page(course_id: str) -> None:
         ui.navigate.to(f"/courses/{course_id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit)
+        ui.button("Create", on_click=submit).props('data-testid="create-week-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
         ).props("flat")
@@ -806,13 +834,19 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
 
     ui.label(f"Add Activity to {course.code}").classes("text-2xl font-bold mb-4")
 
-    title = ui.input(
-        "Title", placeholder="e.g., Annotate Becky Bennett Interview"
-    ).classes("w-96")
-    description = ui.textarea(
-        "Description (optional)",
-        placeholder="Markdown description of the activity",
-    ).classes("w-96")
+    title = (
+        ui.input("Title", placeholder="e.g., Annotate Becky Bennett Interview")
+        .classes("w-96")
+        .props('data-testid="activity-title-input"')
+    )
+    description = (
+        ui.textarea(
+            "Description (optional)",
+            placeholder="Markdown description of the activity",
+        )
+        .classes("w-96")
+        .props('data-testid="activity-description-input"')
+    )
 
     async def submit() -> None:
         if not title.value:
@@ -830,7 +864,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         ui.navigate.to(f"/courses/{course_id}")
 
     with ui.row().classes("gap-2 mt-4"):
-        ui.button("Create", on_click=submit)
+        ui.button("Create", on_click=submit).props('data-testid="create-activity-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
         ).props("flat")
@@ -921,12 +955,20 @@ async def manage_enrollments_page(course_id: str) -> None:
         ).classes("text-sm text-gray-500 mb-2")
         all_roles = list(await get_all_roles())
         with ui.row().classes("gap-2 items-end"):
-            new_email = ui.input("Email Address").classes("w-64")
-            new_role = ui.select(
-                options=all_roles,
-                value="student",
-                label="Role",
-            ).classes("w-32")
+            new_email = (
+                ui.input("Email Address")
+                .classes("w-64")
+                .props('data-testid="enrollment-email-input"')
+            )
+            new_role = (
+                ui.select(
+                    options=all_roles,
+                    value="student",
+                    label="Role",
+                )
+                .classes("w-32")
+                .props('data-testid="enrollment-role-select"')
+            )
 
             async def add_enrollment() -> None:
                 if not new_email.value:
@@ -954,11 +996,13 @@ async def manage_enrollments_page(course_id: str) -> None:
                 except Exception as e:
                     ui.notify(f"Failed to enroll: {e}", type="negative")
 
-            ui.button("Add", on_click=add_enrollment)
+            ui.button("Add", on_click=add_enrollment).props(
+                'data-testid="add-enrollment-btn"'
+            )
 
     # Render the enrollments list
     await enrollments_list()
 
     ui.button(
         "Back to Unit", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
-    ).classes("mt-4")
+    ).props('data-testid="back-to-unit-btn"').classes("mt-4")

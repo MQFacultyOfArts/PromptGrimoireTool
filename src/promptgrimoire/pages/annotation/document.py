@@ -244,6 +244,11 @@ async def _render_document_with_highlights(
         # Load annotation-highlight.js for CSS Custom Highlight API support.
         # This script provides walkTextNodes(), applyHighlights(),
         # clearHighlights(), and setupAnnotationSelection().
+        #
+        # add_body_html injects into the initial HTML template served on
+        # full page loads.  On SPA navigations (ui.navigate.to) the script
+        # tags are NOT added to the already-loaded DOM, so we also load
+        # them dynamically as a fallback.
         ui.add_body_html('<script src="/static/annotation-highlight.js"></script>')
         ui.add_body_html('<script src="/static/annotation-card-sync.js"></script>')
         ui.add_body_html(
@@ -251,19 +256,40 @@ async def _render_document_with_highlights(
         )
 
         # Initialise text walker, apply highlights, and set up selection
-        # detection after DOM is ready. Uses setTimeout to ensure the script
-        # has loaded and the HTML element is rendered.
+        # detection after scripts are loaded.  The dynamic loader handles
+        # SPA navigations where add_body_html scripts are absent.
         highlight_json = _RawJS(_build_highlight_json(state))
         init_js = _render_js(
-            t"setTimeout(function() {{"
-            t"  const c = document.getElementById('doc-container');"
-            t"  if (!c) return;"
-            t"  window._textNodes = walkTextNodes(c);"
-            t"  applyHighlights(c, {highlight_json});"
-            t"  setupAnnotationSelection('doc-container', function(sel) {{"
-            t"    emitEvent('selection_made', sel);"
+            t"(function() {{"
+            t"  var SCRIPTS = ["
+            t"    '/static/annotation-highlight.js',"
+            t"    '/static/annotation-card-sync.js',"
+            t"    '/static/annotation-copy-protection.js'"
+            t"  ];"
+            t"  function init() {{"
+            t"    var c = document.getElementById('doc-container');"
+            t"    if (!c) return;"
+            t"    window._textNodes = walkTextNodes(c);"
+            t"    applyHighlights(c, {highlight_json});"
+            t"    setupAnnotationSelection('doc-container', function(sel) {{"
+            t"      emitEvent('selection_made', sel);"
+            t"    }});"
+            t"    if (window._pendingCopyProtection) {{"
+            t"      setupCopyProtection(window._pendingCopyProtection);"
+            t"      delete window._pendingCopyProtection;"
+            t"    }}"
+            t"  }}"
+            t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"
+            t"  var loaded = 0;"
+            t"  SCRIPTS.forEach(function(src) {{"
+            t"    var s = document.createElement('script');"
+            t"    s.src = src;"
+            t"    s.onload = function() {{"
+            t"      if (++loaded === SCRIPTS.length) init();"
+            t"    }};"
+            t"    document.body.appendChild(s);"
             t"  }});"
-            t"}}, 100);"
+            t"}})();"
         )
         ui.run_javascript(init_js)
 

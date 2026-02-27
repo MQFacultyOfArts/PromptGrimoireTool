@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-02-18*
+*Last updated: 2026-02-27*
 
 ## TDD is Mandatory
 
@@ -44,6 +44,26 @@ Each method uses **pytest-subtests** for checkpoint assertions within a shared b
 | `annotation_helpers.py` | `select_chars()`, `create_highlight()`, `setup_workspace_with_content()`, `wait_for_text_walker()` |
 | `course_helpers.py` | `create_course()`, `add_week()`, `add_activity()`, `enrol_student()`, `publish_week()`, `configure_course_copy_protection()` |
 | `conftest.py` | `app_server` fixture (NiceGUI server lifecycle), `fresh_page`, `_authenticate_page()`, cleanup endpoint |
+
+### Locator Strategy
+
+All interactable UI elements must have `data-testid` attributes. E2E tests must locate elements via `get_by_test_id()` rather than visible text, placeholders, or Quasar CSS classes.
+
+**NiceGUI-specific behaviour:** `ui.input().props('data-testid="foo"')` places the attribute directly on the native `<input>` element, not on a wrapper `<div>`. This means `get_by_test_id("foo").fill(value)` works directly — do not chain `.locator("input")`.
+
+```python
+# Good — data-testid targets the native element
+page.get_by_test_id("course-code-input").fill("LAWS1100")
+page.get_by_test_id("add-week-btn").click()
+page.get_by_test_id("tab-organise").click()
+
+# Bad — fragile, breaks when text/placeholder/class changes
+page.get_by_placeholder("e.g., LAWS1100").fill("LAWS1100")
+page.get_by_role("button", name="Add Week").click()
+page.get_by_text("Organise", exact=True).click()
+```
+
+When adding new UI elements, add `data-testid` in the source and use `get_by_test_id` in tests. Convention: kebab-case, descriptive (`course-settings-btn`, `enrollment-email-input`, `tab-respond`).
 
 ### Common E2E Pitfalls
 

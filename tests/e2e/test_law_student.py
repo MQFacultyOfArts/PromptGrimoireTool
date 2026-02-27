@@ -101,7 +101,7 @@ class TestLawStudent:
 
             with subtests.test(msg="respond_tab_empty_state"):
                 # Check what the Respond tab looks like before any annotations
-                page.get_by_text("Respond", exact=True).click()
+                page.get_by_test_id("tab-respond").click()
 
                 editor = page.locator("[data-testid='milkdown-editor-container']")
                 expect(editor).to_be_visible(timeout=10000)
@@ -112,7 +112,7 @@ class TestLawStudent:
                 expect(no_highlights).to_contain_text("No highlights yet")
 
                 # Return to Annotate tab to start highlighting
-                page.get_by_text("Annotate", exact=True).click()
+                page.get_by_test_id("tab-annotate").click()
                 wait_for_text_walker(page, timeout=10000)
 
             with subtests.test(msg="highlight_with_legal_tag"):
@@ -132,7 +132,7 @@ class TestLawStudent:
                 page.locator("[data-testid='annotation-card']").first.click()
 
                 # Find comment input and add comment
-                comment_input = page.get_by_placeholder("Add comment").first
+                comment_input = page.get_by_test_id("comment-input").first
                 comment_input.fill(uuid1)
 
                 # Post comment
@@ -160,7 +160,7 @@ class TestLawStudent:
                 page.locator("[data-testid='annotation-card']").nth(1).click()
 
                 # Find comment input on second card
-                comment_input = page.get_by_placeholder("Add comment").nth(1)
+                comment_input = page.get_by_test_id("comment-input").nth(1)
                 comment_input.fill(uuid2)
 
                 # Post second comment
@@ -174,7 +174,7 @@ class TestLawStudent:
             with subtests.test(msg="change_tag_via_dropdown"):
                 # Select first card's tag dropdown
                 first_card = page.locator("[data-testid='annotation-card']").first
-                tag_select = first_card.locator(".q-select").first
+                tag_select = first_card.get_by_test_id("tag-select")
 
                 # Click dropdown to open menu
                 tag_select.click()
@@ -214,7 +214,7 @@ class TestLawStudent:
                 # absolutely-positioned cards. The input is empty (no comment
                 # posted on this card).
                 third_card = page.locator("[data-testid='annotation-card']").nth(2)
-                comment_input = third_card.get_by_placeholder("Add comment")
+                comment_input = third_card.get_by_test_id("comment-input")
                 comment_input.click()
                 comment_input.press("1")
 
@@ -263,7 +263,7 @@ class TestLawStudent:
 
             with subtests.test(msg="organise_tab"):
                 # Click Organise tab
-                page.get_by_text("Organise", exact=True).click()
+                page.get_by_test_id("tab-organise").click()
 
                 # Wait for organise content to render
                 page.wait_for_timeout(1000)
@@ -311,7 +311,7 @@ class TestLawStudent:
                 page.wait_for_timeout(1000)
 
                 # Verify Annotate tab is now active
-                annotate_tab = page.locator("role=tab").nth(0)
+                annotate_tab = page.get_by_test_id("tab-annotate")
                 expect(annotate_tab).to_have_attribute(
                     "aria-selected", "true", timeout=3000
                 )
@@ -323,16 +323,16 @@ class TestLawStudent:
 
             with subtests.test(msg="organise_return_after_warp"):
                 # Return to Organise tab — content should still be rendered
-                page.get_by_text("Organise", exact=True).click()
+                page.get_by_test_id("tab-organise").click()
                 page.wait_for_timeout(500)
                 columns = page.locator('[data-testid="organise-columns"]')
                 expect(columns).to_be_visible(timeout=3000)
-                organise_tab = page.locator("role=tab").nth(1)
+                organise_tab = page.get_by_test_id("tab-organise")
                 expect(organise_tab).to_have_attribute("aria-selected", "true")
 
             with subtests.test(msg="respond_tab"):
                 # Click Respond tab
-                page.get_by_text("Respond", exact=True).click()
+                page.get_by_test_id("tab-respond").click()
 
                 # Verify Milkdown editor loads
                 editor = page.locator("[data-testid='milkdown-editor-container']")
@@ -368,14 +368,14 @@ class TestLawStudent:
                 page.wait_for_timeout(1000)
 
                 # Verify Annotate tab is now active
-                annotate_tab = page.locator("role=tab").nth(0)
+                annotate_tab = page.get_by_test_id("tab-annotate")
                 expect(annotate_tab).to_have_attribute(
                     "aria-selected", "true", timeout=3000
                 )
 
             with subtests.test(msg="reload_persistence"):
                 # Return to Annotate tab
-                page.get_by_text("Annotate", exact=True).click()
+                page.get_by_test_id("tab-annotate").click()
 
                 # Reload page
                 page.reload()

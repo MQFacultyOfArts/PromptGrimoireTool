@@ -470,12 +470,12 @@ def setup_workspace_with_content(
     page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
-    content_input = page.get_by_placeholder(re.compile("paste|content", re.IGNORECASE))
+    content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.fill(content)
-    page.get_by_role("button", name=re.compile("add|submit", re.IGNORECASE)).click()
+    page.get_by_test_id("add-document-btn").click()
 
     # Confirm the content type dialog
-    confirm_btn = page.get_by_role("button", name=re.compile("confirm", re.IGNORECASE))
+    confirm_btn = page.get_by_test_id("confirm-content-type-btn")
     confirm_btn.wait_for(state="visible", timeout=5000)
     confirm_btn.click()
 
@@ -575,7 +575,7 @@ def _load_fixture_via_paste(
         html_content = fixture_path.read_text(encoding="utf-8")
 
     # Focus the editor
-    editor = page.locator(".q-editor__content")
+    editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
     expect(editor).to_be_visible()
     editor.click()
 
@@ -638,12 +638,23 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
             raise
         # Capture diagnostic state for debugging
         url = page.url
-        doc_html = page.evaluate(
-            "() => { const d = document.getElementById('doc-container');"
-            " return d ? d.innerHTML.substring(0, 200) : 'NO #doc-container'; }"
+        diag = page.evaluate(
+            "() => {"
+            " const d = document.getElementById('doc-container');"
+            " return {"
+            "   doc: d ? d.innerHTML.substring(0, 200) : 'NO #doc-container',"
+            "   walkDefined: typeof walkTextNodes !== 'undefined',"
+            "   textNodes: window._textNodes ? window._textNodes.length : null,"
+            "   scripts: Array.from(document.querySelectorAll('script[src]'))"
+            "     .map(s => s.src).filter(s => s.includes('annotation'))"
+            " }; }"
         )
         msg = (
-            f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
+            f"Text walker timeout ({timeout}ms). URL: {url}"
+            f" doc-container: {diag['doc']!r}"
+            f" walkTextNodes defined: {diag['walkDefined']}"
+            f" _textNodes: {diag['textNodes']}"
+            f" annotation scripts: {diag['scripts']}"
         )
         raise type(exc)(msg) from None
 
@@ -664,7 +675,7 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
     card.wait_for(state="visible", timeout=10000)
 
-    comment_input = card.locator("input[placeholder='Add comment...']")
+    comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
     card.get_by_role("button", name="Post").click()
 

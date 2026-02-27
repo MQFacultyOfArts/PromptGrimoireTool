@@ -1,6 +1,6 @@
 # Copy Protection
 
-*Last updated: 2026-02-17*
+*Last updated: 2026-02-27*
 
 Per-activity copy protection prevents students from copying, cutting, dragging, or printing annotated content. Instructors and admins bypass it.
 
@@ -15,7 +15,8 @@ Per-activity copy protection prevents students from copying, cutting, dragging, 
 
 When `protect=True` and user is not privileged:
 
-- **JS injection** (`_inject_copy_protection()` in `annotation/workspace.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
+- **JS injection** (`inject_copy_protection()` in `annotation/header.py`): Intercepts `copy`, `cut`, `contextmenu`, `dragstart` events on `#doc-container`, organise columns, and respond reference panel. Intercepts `paste` on Milkdown editor. Intercepts `Ctrl+P`/`Cmd+P`. Shows Quasar toast notification.
+- **SPA navigation deferred setup:** `header.py` renders before `document.py` loads annotation scripts. On SPA navigations (`ui.navigate.to()`), `setupCopyProtection` may not be defined yet. The injection checks `typeof setupCopyProtection === 'function'` — if undefined, it stores selectors in `window._pendingCopyProtection` for `document.py`'s dynamic loader to pick up after scripts load. See [e2e-debugging.md](e2e-debugging.md#nicegui-spa-navigation-script-loading).
 - **CSS print suppression**: `@media print` hides `.q-tab-panels`, shows "Printing is disabled" message.
 - **Lock icon chip**: Amber "Protected" chip with lock icon in workspace header.
 

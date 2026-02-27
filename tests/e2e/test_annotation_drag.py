@@ -46,14 +46,14 @@ pytestmark_db = pytest.mark.skipif(
 
 def _switch_to_organise(page: Page) -> None:
     """Click the Organise tab and wait for columns to render."""
-    page.locator("role=tab").nth(1).click()
+    page.get_by_test_id("tab-organise").click()
     page.wait_for_timeout(500)
     expect(page.locator('[data-testid="organise-columns"]')).to_be_visible(timeout=5000)
 
 
 def _switch_to_annotate(page: Page) -> None:
     """Click the Annotate tab and wait for it to be active."""
-    page.locator("role=tab").nth(0).click()
+    page.get_by_test_id("tab-annotate").click()
     page.wait_for_timeout(300)
 
 
@@ -304,7 +304,7 @@ class TestDragBetweenColumns:
         expect(sidebar_card).to_be_visible(timeout=3000)
 
         # The tag dropdown should reflect "Procedural History" tag
-        tag_select = sidebar_card.locator(".q-select").first
+        tag_select = sidebar_card.get_by_test_id("tag-select")
         expect(tag_select).to_be_visible(timeout=5000)
         expect(tag_select).to_contain_text("Procedural History", timeout=5000)
 

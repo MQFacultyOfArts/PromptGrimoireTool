@@ -23,6 +23,8 @@ async def add_document(
     content: str,
     source_type: str,
     title: str | None = None,
+    auto_number_paragraphs: bool = True,
+    paragraph_map: dict[str, int] | None = None,
 ) -> WorkspaceDocument:
     """Add a document to a workspace.
 
@@ -34,6 +36,10 @@ async def add_document(
         content: HTML content with character-level spans.
         source_type: Content type - "html", "rtf", "docx", "pdf", or "text".
         title: Optional document title.
+        auto_number_paragraphs: True for auto-number mode (default),
+            False for source-number mode (AustLII documents).
+        paragraph_map: Char-offset to paragraph-number mapping.
+            Defaults to ``{}`` if not provided.
 
     Returns:
         The created WorkspaceDocument.
@@ -55,6 +61,8 @@ async def add_document(
             source_type=source_type,
             title=title,
             order_index=next_index,
+            auto_number_paragraphs=auto_number_paragraphs,
+            paragraph_map=paragraph_map if paragraph_map is not None else {},
         )
         session.add(doc)
         await session.flush()

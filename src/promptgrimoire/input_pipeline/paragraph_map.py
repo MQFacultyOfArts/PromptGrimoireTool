@@ -34,8 +34,6 @@ _PARA_TAGS = frozenset(("p", "li", "blockquote", "div"))
 def _has_nonwhitespace_text(node: Any) -> bool:
     """Check whether *node* contains any non-whitespace text content."""
     text = node.text(deep=True)
-    if text is None:
-        return False
     if not text:
         return False
     return not _WHITESPACE_RUN.fullmatch(text)

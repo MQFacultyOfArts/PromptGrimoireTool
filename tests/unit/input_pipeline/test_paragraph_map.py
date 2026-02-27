@@ -18,9 +18,8 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     detect_source_numbering,
 )
 
-# Mirrors html_input.extract_text_from_html exactly. If that function changes,
-# this must change too. Direct import avoided due to circular import through
-# export pipeline.
+# Direct import of extract_text_from_html avoided due to circular import
+# through export pipeline; constants and helper duplicated here instead.
 _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 _BLOCK_TAGS = frozenset(
     (
@@ -56,9 +55,8 @@ _WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
 def _extract_text(html: str) -> str:
     """Inline copy of html_input.extract_text_from_html for test assertions.
 
-    Mirrors html_input.extract_text_from_html exactly. If that function
-    changes, this must change too. Direct import avoided due to circular
-    import through export pipeline.
+    Must stay in sync with html_input.extract_text_from_html if that
+    function's traversal logic changes.
     """
     if not html:
         return ""
@@ -291,7 +289,7 @@ class TestCharOffsetAlignment:
         text = _extract_text(html)
         result = build_paragraph_map(html, auto_number=True)
         # Paragraph 1 starts at 'A' (offset 0)
-        assert text[result.keys().__iter__().__next__()] == "A"
+        assert text[next(iter(result))] == "A"
         offsets = sorted(result.keys())
         assert text[offsets[0]] == "A"
         assert text[offsets[1]] == "B"

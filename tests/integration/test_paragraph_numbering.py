@@ -38,13 +38,16 @@ class TestWorkspaceDocumentParagraphFields:
             source_type="text",
         )
         db_session.add(doc)
-        await db_session.flush()
+        await db_session.commit()
 
-        # Reload by ID to get server-applied defaults
-        await db_session.refresh(doc)
+        # Reload in a fresh query to exercise the full DB round-trip
+        result = await db_session.execute(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == doc.id)
+        )
+        reloaded = result.scalar_one()
 
-        assert doc.auto_number_paragraphs is True
-        assert doc.paragraph_map == {}
+        assert reloaded.auto_number_paragraphs is True
+        assert reloaded.paragraph_map == {}
 
     @pytest.mark.asyncio
     async def test_paragraph_map_round_trip(self, db_session: AsyncSession) -> None:

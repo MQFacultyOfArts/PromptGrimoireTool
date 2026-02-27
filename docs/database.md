@@ -154,11 +154,17 @@ Document within a workspace.
 | `source_type` | VARCHAR(20) | NOT NULL |
 | `order_index` | INTEGER | NOT NULL, default 0 |
 | `title` | VARCHAR(500) | nullable |
+| `auto_number_paragraphs` | BOOLEAN | NOT NULL, default TRUE |
+| `paragraph_map` | JSON | NOT NULL, default '{}' |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`type`**: Domain string — "source", "draft", "ai_conversation".
 
 **`source_type`**: Content format — "html", "rtf", "docx", "pdf", "text".
+
+**`auto_number_paragraphs`**: When `TRUE`, the annotation page generates sequential paragraph numbers and renders them as left-margin labels. When `FALSE`, the document uses its own embedded numbering (e.g. AustLII judgments already carry paragraph numbers).
+
+**`paragraph_map`**: Intentional denormalisation for performance. Stores a materialised JSON mapping of character offsets to paragraph numbers, derived from the document `content` at import time. Avoids recomputing the map on every page render. Similar to `workspace.search_text` — a computed value stored for read performance rather than normalised derivation at query time. Updated by the input pipeline when content changes; never computed at query time.
 
 ## FTS Indexes
 

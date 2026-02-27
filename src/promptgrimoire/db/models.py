@@ -381,6 +381,10 @@ class WorkspaceDocument(SQLModel, table=True):
         order_index: Display order within workspace.
         title: Optional document title.
         created_at: Timestamp when document was added.
+        auto_number_paragraphs: True = auto-number mode (default), False = source-number
+            mode (AustLII documents with ``<li value>`` attributes).
+        paragraph_map: Maps char-offset (string key) to paragraph number. Empty dict
+            is the safe default for documents without a computed map.
     """
 
     __tablename__ = "workspace_document"
@@ -394,6 +398,14 @@ class WorkspaceDocument(SQLModel, table=True):
     title: str | None = Field(default=None, max_length=500)
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+    auto_number_paragraphs: bool = Field(
+        default=True,
+        sa_column=Column(sa.Boolean(), nullable=False, server_default="true"),
+    )
+    paragraph_map: dict[str, int] = Field(
+        default_factory=dict,
+        sa_column=Column(sa.JSON(), nullable=False, server_default="{}"),
     )
 
 

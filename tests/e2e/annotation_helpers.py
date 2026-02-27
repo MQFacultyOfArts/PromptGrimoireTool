@@ -310,6 +310,48 @@ def get_user_id_by_email(email: str) -> str:
     return str(row[0])
 
 
+def navigate_home_via_drawer(page: Page) -> None:
+    """Navigate to ``/`` using the shared ``page_layout`` nav drawer.
+
+    Opens the drawer via the header menu button if it isn't already
+    visible, then clicks the "Home" nav item.  Pages that use
+    ``page_layout()`` get this drawer automatically.
+
+    Args:
+        page: Playwright page with ``page_layout`` rendered.
+    """
+    home_link = page.locator(".q-item").filter(has_text="Home")
+    if not home_link.first.is_visible():
+        page.locator(".q-header .q-btn").first.click()
+        page.wait_for_timeout(500)
+    expect(home_link.first).to_be_visible(timeout=5000)
+    home_link.first.click()
+
+
+def scroll_to_char(page: Page, char_offset: int) -> None:
+    """Scroll the document so that the given character offset is visible.
+
+    Uses ``scrollToCharOffset()`` from annotation-highlight.js.
+    After scrolling, waits briefly for card positioning to update
+    (cards are hidden when their highlight is off-screen).
+
+    Args:
+        page: Playwright page.
+        char_offset: Character index to scroll into view.
+    """
+    wait_for_text_walker(page, timeout=10000)
+    page.evaluate(
+        """(charIdx) => {
+            const c = document.getElementById('doc-container');
+            if (!c) return;
+            const nodes = walkTextNodes(c);
+            scrollToCharOffset(nodes, charIdx, charIdx);
+        }""",
+        char_offset,
+    )
+    page.wait_for_timeout(500)
+
+
 def select_chars(page: Page, start_char: int, end_char: int) -> None:
     """Select a character range using mouse events.
 

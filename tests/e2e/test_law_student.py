@@ -45,6 +45,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
+    scroll_to_char,
     select_chars,
     wait_for_text_walker,
 )
@@ -172,8 +173,14 @@ class TestLawStudent:
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="change_tag_via_dropdown"):
+                # Scroll first highlight back into view so card positioning
+                # makes the card visible (cards are hidden when their
+                # highlight is off-screen).
+                scroll_to_char(page, 10)
+
                 # Select first card's tag dropdown
                 first_card = page.locator("[data-testid='annotation-card']").first
+                expect(first_card).to_be_visible(timeout=5000)
                 tag_select = first_card.get_by_test_id("tag-select")
 
                 # Click dropdown to open menu
@@ -213,10 +220,15 @@ class TestLawStudent:
                 # It is at the bottom of the stack and not overlapped by other
                 # absolutely-positioned cards. The input is empty (no comment
                 # posted on this card).
+                # Scroll the third card's highlight range into view first
+                # (card positioning hides cards whose highlights are off-screen).
+                scroll_to_char(page, 200)
+
                 third_card = page.locator("[data-testid='annotation-card']").nth(2)
+                expect(third_card).to_be_visible(timeout=5000)
                 comment_input = third_card.get_by_test_id("comment-input")
                 comment_input.click()
-                comment_input.press("1")
+                page.keyboard.press("1")
 
                 # Character appears in input field
                 expect(comment_input).to_have_value("1")
@@ -234,7 +246,10 @@ class TestLawStudent:
                     == highlight_count
                 )
 
-                # Clear the input for subsequent tests
+                # Clear the input for subsequent tests (re-scroll in case
+                # card positioning hid the card during the wait above).
+                scroll_to_char(page, 200)
+                expect(third_card).to_be_visible(timeout=5000)
                 comment_input.fill("")
 
             with subtests.test(msg="letter_key_no_highlight"):

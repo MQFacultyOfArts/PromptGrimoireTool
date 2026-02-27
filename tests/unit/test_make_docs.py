@@ -81,19 +81,56 @@ class TestMakeDocsServerLifecycle:
 
 
 class TestMakeDocsCleanup:
-    """AC1.2: Server is stopped even when a script fails."""
+    """AC1.2: Server and Rodney are stopped even when a script fails."""
 
     def test_make_docs_stops_server_on_script_failure(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        # Make the first subprocess.run (script) return non-zero
-        mocks["run"].return_value = MagicMock(returncode=1)
+        # Make script calls fail (but not rodney start/stop)
+        def _run_side_effect(cmd, **_kwargs):
+            result = MagicMock(returncode=0)
+            if cmd[0] == "bash":
+                result.returncode = 1
+            return result
+
+        mocks["run"].side_effect = _run_side_effect
 
         with pytest.raises(SystemExit):
             cli_module.make_docs()
 
         # _stop_e2e_server must still be called
         mocks["stop"].assert_called_once_with(mocks["process"])
+
+        # rodney stop --local must be called in finally block
+        rodney_stop_calls = [
+            c for c in mocks["run"].call_args_list if c[0][0][:2] == ["rodney", "stop"]
+        ]
+        assert len(rodney_stop_calls) == 1
+
+
+class TestMakeDocsRodneyLifecycle:
+    """Rodney start/stop lifecycle is correct."""
+
+    def test_make_docs_rodney_start_stop_lifecycle(self, _mock_happy_path):
+        mocks = _mock_happy_path
+
+        cli_module.make_docs()
+
+        all_calls = mocks["run"].call_args_list
+        cmd_summaries = [c[0][0][:2] for c in all_calls]
+
+        # rodney start --local called
+        assert ["rodney", "start"] in cmd_summaries
+
+        # rodney stop --local called
+        assert ["rodney", "stop"] in cmd_summaries
+
+        # start before scripts, stop after
+        start_idx = cmd_summaries.index(["rodney", "start"])
+        stop_idx = cmd_summaries.index(["rodney", "stop"])
+        script_indices = [i for i, c in enumerate(cmd_summaries) if c[0] == "bash"]
+        assert all(start_idx < si for si in script_indices)
+        assert all(stop_idx > si for si in script_indices)
 
 
 class TestMakeDocsDependencyChecks:

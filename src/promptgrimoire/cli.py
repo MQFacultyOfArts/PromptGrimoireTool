@@ -2635,6 +2635,9 @@ def make_docs() -> None:
         ("docs/guides/student-workflow.md", "docs/guides/student-workflow.pdf"),
     ]
 
+    # --- Start Rodney browser ------------------------------------------------
+    subprocess.run(["rodney", "start", "--local"], check=True, cwd=project_root)
+
     try:
         # --- Run capture scripts ---------------------------------------------
         for script in scripts:
@@ -2666,4 +2669,5 @@ def make_docs() -> None:
             console.print(f"[green]Generated:[/] {pdf_path}")
 
     finally:
+        subprocess.run(["rodney", "stop", "--local"], check=False, cwd=project_root)
         _stop_e2e_server(server_process)

@@ -52,3 +52,15 @@ require_js() {
   fi
   echo "$result"
 }
+
+# Wait for a specific element to appear and become visible.
+# On failure, captures an error screenshot and prints context.
+wait_for() {
+  local selector="$1"
+  local context="${2:-$selector}"
+  if ! rodney wait --local "$selector"; then
+    echo "FAILED waiting for: $context (selector: $selector)" >&2
+    rodney screenshot --local -w 1280 -h 800 "$SCREENSHOT_DIR/ERROR_$(date +%s).png" 2>/dev/null || true
+    return 1
+  fi
+}

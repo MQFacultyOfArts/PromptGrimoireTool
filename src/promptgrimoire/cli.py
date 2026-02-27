@@ -2640,10 +2640,14 @@ def make_docs() -> None:
         subprocess.run(["rodney", "start", "--local"], check=True, cwd=project_root)
 
         # --- Run capture scripts ---------------------------------------------
+        script_env = os.environ.copy()
+        script_env["ROD_TIMEOUT"] = "15"
+
         for script in scripts:
             result = subprocess.run(
                 ["bash", script, base_url],
                 cwd=project_root,
+                env=script_env,
                 check=False,
             )
             if result.returncode != 0:

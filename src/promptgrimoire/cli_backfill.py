@@ -32,6 +32,7 @@ async def _backfill(*, dry_run: bool) -> None:
     """Run the backfill against the database."""
     # Deferred imports to avoid circular import through
     # input_pipeline.__init__ -> html_input -> export -> highlight_spans
+    from sqlalchemy import String, cast
     from sqlmodel import col, select
 
     from promptgrimoire.db.engine import get_session, init_db
@@ -50,10 +51,12 @@ async def _backfill(*, dry_run: bool) -> None:
 
     async with get_session() as session:
         # Fetch all documents with empty paragraph_map.
-        # JSON '{}' is the default; we match it with a cast comparison.
+        # Use cast(column, String) == '{}' for a reliable JSON comparison;
+        # comparing a JSON column to a Python dict via == is unreliable across
+        # SQLAlchemy/driver versions and JSON storage representations.
         stmt = (
             select(WorkspaceDocument)
-            .where(col(WorkspaceDocument.paragraph_map) == {})
+            .where(cast(col(WorkspaceDocument.paragraph_map), String) == "{}")
             .order_by(col(WorkspaceDocument.created_at))
         )
         results = await session.exec(stmt)

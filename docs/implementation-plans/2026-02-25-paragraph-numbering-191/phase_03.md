@@ -235,6 +235,14 @@ Add a `pyproject.toml` script entry:
 backfill-paragraph-maps = "scripts.backfill_paragraph_maps:main"
 ```
 
+> **Implementation deviation:** The entry point above was changed from
+> `scripts.backfill_paragraph_maps:main` to `promptgrimoire.cli_backfill:main`
+> because `scripts/` is not an installable Python package and cannot be
+> referenced by a `pyproject.toml` entry point. The script logic lives in
+> `src/promptgrimoire/cli_backfill.py` (following the `cli_loadtest.py`
+> pattern); `scripts/backfill_paragraph_maps.py` is a thin standalone wrapper
+> for direct invocation outside of `uv run`.
+
 **Verification:**
 ```bash
 uv run backfill-paragraph-maps --dry-run

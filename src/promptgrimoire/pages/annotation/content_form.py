@@ -74,7 +74,7 @@ def _detect_paragraph_numbering(
     """
     auto_number = not detect_source_numbering(processed_html)
     raw_map = build_paragraph_map(processed_html, auto_number=auto_number)
-    # Model stores dict[str, int] because JSON keys are strings.
+    # build_paragraph_map returns dict[int, int]; JSON requires string keys
     para_map: dict[str, int] = {str(k): v for k, v in raw_map.items()}
     return auto_number, para_map
 

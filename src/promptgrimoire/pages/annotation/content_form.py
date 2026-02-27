@@ -18,6 +18,10 @@ from promptgrimoire.input_pipeline.html_input import (
     detect_content_type,
     process_input,
 )
+from promptgrimoire.input_pipeline.paragraph_map import (
+    build_paragraph_map,
+    detect_source_numbering,
+)
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 if TYPE_CHECKING:
@@ -59,6 +63,27 @@ def _get_file_preview(
         return f"[Binary file: {filename}]"
 
 
+def _detect_paragraph_numbering(
+    processed_html: str,
+) -> tuple[bool, dict[str, int]]:
+    """Detect paragraph numbering mode and build the paragraph map.
+
+    Returns:
+        Tuple of (auto_number_paragraphs, paragraph_map) ready for
+        persistence (map keys converted to strings for JSON storage).
+    """
+    auto_number = not detect_source_numbering(processed_html)
+    raw_map = build_paragraph_map(processed_html, auto_number=auto_number)
+    # Model stores dict[str, int] because JSON keys are strings.
+    para_map: dict[str, int] = {str(k): v for k, v in raw_map.items()}
+    return auto_number, para_map
+
+
+def _annotation_url(workspace_id: UUID) -> str:
+    """Build the annotation page URL for a workspace."""
+    return f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+
+
 def _render_add_content_form(workspace_id: UUID) -> None:
     """Render the add content form with editor and file upload.
 
@@ -75,8 +100,10 @@ def _render_add_content_form(workspace_id: UUID) -> None:
 
     # Intercept paste, strip CSS client-side, store cleaned HTML.
     # Browsers include computed CSS (2.7MB for 32KB text). Strip it here.
-    paste_var = f"_pastedHtml_{content_input.id}"
-    platform_var = f"_platformHint_{content_input.id}"
+    paste_var, platform_var = (
+        f"_pastedHtml_{content_input.id}",
+        f"_platformHint_{content_input.id}",
+    )
     ui.add_body_html(f"""
     <script>
         window.{paste_var} = null;
@@ -809,18 +836,19 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                 source_type=confirmed_type,
                 platform_hint=platform_hint,
             )
+            auto_number, para_map = _detect_paragraph_numbering(processed_html)
             await add_document(
                 workspace_id=workspace_id,
                 type="source",
                 content=processed_html,
                 source_type=confirmed_type,
                 title=None,
+                auto_number_paragraphs=auto_number,
+                paragraph_map=para_map,
             )
             content_input.value = ""
             ui.notify("Document added successfully", type="positive")
-            ui.navigate.to(
-                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-            )
+            ui.navigate.to(_annotation_url(workspace_id))
         except Exception as exc:
             logger.exception("Failed to add document")
             ui.notify(f"Failed to add document: {exc}", type="negative")
@@ -865,9 +893,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                 title=filename,
             )
             ui.notify(f"Uploaded: {filename}", type="positive")
-            ui.navigate.to(
-                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-            )
+            ui.navigate.to(_annotation_url(workspace_id))
         except NotImplementedError as not_impl_err:
             ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
         except Exception as exc:

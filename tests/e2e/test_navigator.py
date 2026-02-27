@@ -1312,7 +1312,7 @@ class TestNavigationChrome:
             page.wait_for_timeout(3000)  # wait for page to load
 
             # Find and click home button
-            home_btn = page.get_by_role("button", name="home")
+            home_btn = page.get_by_test_id("home-btn")
             expect(home_btn.first).to_be_visible(timeout=5000)
             home_btn.first.click()
 
@@ -1347,7 +1347,7 @@ class TestNavigationChrome:
             page.wait_for_timeout(3000)
 
             # The home button should exist
-            home_btn = page.get_by_role("button", name="home")
+            home_btn = page.get_by_test_id("home-btn")
             expect(home_btn.first).to_be_visible(timeout=5000)
 
             # The button should be flat (not elevated, no background)
@@ -1378,7 +1378,7 @@ class TestNavigationChrome:
             page.goto(f"{app_server}/roleplay")
             page.wait_for_timeout(2000)
 
-            home_btn = page.get_by_role("button", name="home")
+            home_btn = page.get_by_test_id("home-btn")
             expect(home_btn.first).to_be_visible(timeout=5000)
             home_btn.first.click()
 
@@ -1400,7 +1400,7 @@ class TestNavigationChrome:
             page.goto(f"{app_server}/courses")
             page.wait_for_timeout(2000)
 
-            home_btn = page.get_by_role("button", name="home")
+            home_btn = page.get_by_test_id("home-btn")
             expect(home_btn.first).to_be_visible(timeout=5000)
             home_btn.first.click()
 

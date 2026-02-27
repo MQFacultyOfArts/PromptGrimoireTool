@@ -558,7 +558,7 @@ async def _render_workspace_view(
 
     with ui.row().classes("w-full items-center"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         with ui.tabs().classes("w-full") as tabs:
             ui.tab("Annotate").props('data-testid="tab-annotate"')

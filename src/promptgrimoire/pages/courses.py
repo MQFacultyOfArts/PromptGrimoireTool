@@ -324,7 +324,7 @@ async def courses_list_page() -> None:
 
     with ui.row().classes("items-center mb-4 gap-2"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         ui.label("Units").classes("text-2xl font-bold")
 
@@ -480,7 +480,7 @@ async def course_detail_page(course_id: str) -> None:
     # Header
     with ui.row().classes("items-center gap-4 mb-4"):
         ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            "flat round"
+            'flat round data-testid="home-btn"'
         ).tooltip("Home")
         ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/courses")).props(
             "flat round"

@@ -87,20 +87,33 @@ def _nav_item(label: str, route: str, icon: str | None = None) -> None:
 
 
 @contextmanager
-def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
+def page_layout(
+    title: str = "PromptGrimoire",
+    *,
+    drawer_open: bool = True,
+    footer: bool = False,
+) -> Iterator[ui.element | None]:
     """Context manager for consistent page layout with header and nav drawer.
 
-    Usage:
+    Usage::
+
         @ui.page("/my-page")
         async def my_page():
-            with page_layout("My Page"):
+            with page_layout("My Page") as footer_el:
                 ui.label("Page content here")
+
+    When ``footer=True``, a Quasar ``q-footer`` is created and yielded.
+    The caller can populate it later with ``with footer_el:``.  The footer
+    integrates with Quasar's layout system, so ``q-page`` automatically
+    adds padding-bottom — no manual ``position: fixed`` needed.
 
     Args:
         title: Page title shown in header.
+        drawer_open: Whether the nav drawer starts open.
+        footer: Whether to create a Quasar footer element.
 
     Yields:
-        Context for page content.
+        The footer element when ``footer=True``, otherwise ``None``.
     """
     user = _get_session_user()
 
@@ -120,8 +133,18 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
                 "flat color=white"
             ).tooltip("Logout")
 
+    # Create footer (Quasar q-footer: fixed bottom, auto-pads q-page)
+    footer_el: ui.element | None = None
+    if footer:
+        footer_el = (
+            ui.footer()
+            .classes("bg-gray-100 py-1 px-4")
+            .props('id="tag-toolbar-wrapper"')
+            .style("box-shadow: 0 -2px 4px rgba(0,0,0,0.1);")
+        )
+
     # Create left drawer
-    with ui.left_drawer().classes("bg-grey-2") as drawer:
+    with ui.left_drawer(value=drawer_open).classes("bg-grey-2") as drawer:
         ui.label("Navigation").classes("text-h6 q-pa-md")
         ui.separator()
 
@@ -155,6 +178,6 @@ def page_layout(title: str = "PromptGrimoire") -> Iterator[None]:
     # Connect menu button to drawer
     menu_btn.on("click", drawer.toggle)
 
-    # Main content area with padding
-    with ui.element("div").classes("q-pa-lg"):
-        yield
+    # Yield footer element (if any) to caller.
+    # No wrapper div — pages manage their own padding and layout.
+    yield footer_el

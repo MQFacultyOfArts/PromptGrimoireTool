@@ -64,19 +64,26 @@ class TestStructuralCssProperties:
         expect(toolbar).to_have_css("bottom", "0px")
 
     def test_toolbar_box_shadow_upward(self, annotation_page: Page) -> None:
-        """Toolbar shadow projects upward."""
+        """Toolbar shadow projects upward (set via inline style on q-footer)."""
         toolbar = annotation_page.locator("#tag-toolbar-wrapper")
         expect(toolbar).to_have_css("box-shadow", "rgba(0, 0, 0, 0.1) 0px -2px 4px 0px")
 
     def test_compact_button_padding(self, annotation_page: Page) -> None:
-        """Compact buttons have tighter padding than Quasar default."""
-        btn = annotation_page.locator(".q-btn.compact-btn").first
+        """Compact buttons in toolbar have tighter padding than Quasar default."""
+        # Select toolbar buttons specifically (not highlight menu buttons
+        # which have their own inline padding override)
+        btn = annotation_page.locator("#tag-toolbar-wrapper .q-btn.compact-btn").first
         expect(btn).to_have_css("padding", "0px 6px")
 
     def test_highlight_menu_z_index(self, annotation_page: Page) -> None:
         """Highlight menu z-index is above toolbar (110 > 100)."""
         menu = annotation_page.locator("#highlight-menu")
         expect(menu).to_have_css("z-index", "110")
+
+    def test_sidebar_position_relative(self, annotation_page: Page) -> None:
+        """Annotations sidebar uses relative positioning for card layout."""
+        sidebar = annotation_page.locator(".annotations-sidebar")
+        expect(sidebar).to_have_css("position", "relative")
 
 
 class TestLayoutCorrectness:
@@ -96,21 +103,24 @@ class TestLayoutCorrectness:
         assert abs((box["y"] + box["height"]) - viewport["height"]) <= 1
 
     def test_content_not_obscured_by_toolbar(self, annotation_page: Page) -> None:
-        """Document content bottom is above toolbar top.
+        """Document content is not obscured by the bottom toolbar.
 
-        Uses #doc-container (actual content) rather than the layout
-        wrapper, because the wrapper's padding-bottom intentionally
-        extends into the toolbar zone.
+        With Quasar footer (``q-footer``), the ``q-page`` element
+        automatically adds padding-bottom so content scrolls clear.
+        We verify the last paragraph's bottom edge is above the toolbar.
         """
-        doc = annotation_page.locator("#doc-container")
         toolbar = annotation_page.locator("#tag-toolbar-wrapper")
-        doc_box = doc.bounding_box()
         toolbar_box = toolbar.bounding_box()
-        assert doc_box is not None
         assert toolbar_box is not None
-        content_bottom = doc_box["y"] + doc_box["height"]
-        toolbar_top = toolbar_box["y"]
-        assert content_bottom <= toolbar_top + 1  # 1px tolerance
+
+        # Scroll to bottom of document to check last content is visible
+        last_p = annotation_page.locator(".doc-container p").last
+        last_p.scroll_into_view_if_needed()
+        p_box = last_p.bounding_box()
+        assert p_box is not None
+
+        # Last paragraph bottom should be above toolbar top
+        assert p_box["y"] + p_box["height"] <= toolbar_box["y"] + 2  # 2px tolerance
 
     def test_no_inline_title(self, annotation_page: Page) -> None:
         """No text-2xl font-bold heading in page content area (AC2.1)."""

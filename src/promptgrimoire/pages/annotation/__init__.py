@@ -310,10 +310,10 @@ async def annotation_page(client: Client) -> None:
         ws = await get_workspace(workspace_id)
 
     heading = ws.title if ws and ws.title else "Annotation Workspace"
-    with page_layout(heading):
+    with page_layout(heading, drawer_open=False, footer=True) as footer_el:
         if workspace_id:
             logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
-            await _render_workspace_view(workspace_id, client, ws)
+            await _render_workspace_view(workspace_id, client, ws, footer=footer_el)
             logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
         else:
             # Show create workspace form

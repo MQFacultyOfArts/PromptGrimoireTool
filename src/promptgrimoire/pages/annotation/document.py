@@ -180,6 +180,7 @@ async def _render_document_with_highlights(
     *,
     on_add_click: Any | None = None,
     on_manage_click: Any | None = None,
+    footer: Any | None = None,
 ) -> None:
     """Render a document with highlight support."""
     state.document_id = doc.id
@@ -210,6 +211,7 @@ async def _render_document_with_highlights(
             handle_tag_click,
             on_add_click=on_add_click,
             on_manage_click=on_manage_click,
+            footer=footer,
         )
 
     # Highlight creation menu (popup with abbreviated tag buttons)
@@ -219,14 +221,15 @@ async def _render_document_with_highlights(
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading
-    # padding-bottom for fixed bottom toolbar (60px initial;
-    # ResizeObserver adjusts dynamically)
+    # When using Quasar footer, q-page handles padding automatically.
+    # Fallback: manual padding-bottom for fixed-position toolbar.
+    pb = "" if footer is not None else "padding-bottom: 60px; "
     layout_wrapper = (
         ui.element("div")
         .props('id="annotation-layout-wrapper"')
         .style(
             "position: relative; display: flex; gap: 1.5rem; "
-            "width: 90%; max-width: 1600px; margin: 0 auto; padding-bottom: 60px; "
+            f"width: 90%; max-width: 1600px; margin: 0 auto; {pb}"
             "min-height: calc(100vh - 250px);"
         )
     )
@@ -282,6 +285,9 @@ async def _render_document_with_highlights(
             t"    if (window._pendingCopyProtection) {{"
             t"      setupCopyProtection(window._pendingCopyProtection);"
             t"      delete window._pendingCopyProtection;"
+            t"    }}"
+            t"    if (typeof initToolbarObserver === 'function') {{"
+            t"      initToolbarObserver();"
             t"    }}"
             t"  }}"
             t"  if (typeof walkTextNodes === 'function') {{ init(); return; }}"

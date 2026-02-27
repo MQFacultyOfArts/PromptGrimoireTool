@@ -166,7 +166,7 @@ _PAGE_CSS = """
         white-space: pre-wrap;
     }
 
-    /* Compact tag toolbar in header */
+    /* Compact tag toolbar in bottom bar */
     .tag-toolbar-compact {
         display: flex;
         flex-wrap: wrap;
@@ -343,8 +343,17 @@ def _build_tag_toolbar(
     *,
     on_add_click: Any | None = None,
     on_manage_click: Any | None = None,
+    footer: Any | None = None,
 ) -> Any:
-    """Build fixed tag toolbar from DB-backed tag list.
+    """Build tag toolbar from DB-backed tag list.
+
+    When *footer* is a Quasar ``q-footer`` element (from ``ui.footer()``),
+    the toolbar content is rendered inside it.  Quasar's layout system
+    handles fixed positioning and ``q-page`` padding automatically —
+    no manual ``position: fixed`` or ``padding-bottom`` needed.
+
+    When *footer* is ``None``, the toolbar creates its own fixed-position
+    wrapper div (legacy fallback for pages without a Quasar layout).
 
     Tags are visually grouped by ``TagInfo.group_name``: each group gets
     a rounded bubble background with a small label, separated by horizontal
@@ -356,24 +365,29 @@ def _build_tag_toolbar(
         on_add_click: Optional callback for the "+" quick-create button.
             Hidden when ``None`` (tag creation not allowed).
         on_manage_click: Optional callback for the gear (manage) button.
+        footer: Optional Quasar footer element to render inside.
 
     Returns:
-        The toolbar row element.
+        The toolbar container element.
     """
     # Partition tags into groups preserving order
     groups: dict[str | None, list[tuple[int, TagInfo]]] = {}
     for i, ti in enumerate(tag_info_list):
         groups.setdefault(ti.group_name, []).append((i, ti))
 
-    toolbar_wrapper = (
-        ui.element("div")
-        .classes("bg-gray-100 py-1 px-4")
-        .props('id="tag-toolbar-wrapper"')
-        .style(
-            "position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; "
-            "box-shadow: 0 -2px 4px rgba(0,0,0,0.1);"
+    # Use the Quasar footer when available; fall back to a fixed-position div.
+    if footer is not None:
+        toolbar_wrapper = footer
+    else:
+        toolbar_wrapper = (
+            ui.element("div")
+            .classes("bg-gray-100 py-1 px-4")
+            .props('id="tag-toolbar-wrapper"')
+            .style(
+                "position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; "
+                "box-shadow: 0 -2px 4px rgba(0,0,0,0.1);"
+            )
         )
-    )
     with (
         toolbar_wrapper,
         ui.row()

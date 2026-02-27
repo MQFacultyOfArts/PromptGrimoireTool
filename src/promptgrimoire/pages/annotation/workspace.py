@@ -199,7 +199,7 @@ def _setup_organise_drag(state: PageState) -> None:
             state.crdt_doc.set_tag_order(
                 target_tag, current_order, origin_client_id=state.client_id
             )
-            ui.notify("Reordered", type="info", position="bottom")
+            ui.notify("Reordered", type="info")
         else:
             # Cross-column move: reassign tag and update orders
             state.crdt_doc.move_highlight_to_tag(
@@ -361,17 +361,17 @@ def _create_tag_callbacks(
         """Clear and rebuild the tag toolbar after tag mutations."""
         if state.toolbar_container is not None:
             state.toolbar_container.clear()
-            with state.toolbar_container:
 
-                async def _tag_click(key: str) -> None:
-                    await _add_highlight(state, key)
+            async def _tag_click(key: str) -> None:
+                await _add_highlight(state, key)
 
-                _build_tag_toolbar(
-                    state.tag_info_list or [],
-                    _tag_click,
-                    on_add_click=(on_add_tag if can_create_tags else None),
-                    on_manage_click=on_manage_tags,
-                )
+            _build_tag_toolbar(
+                state.tag_info_list or [],
+                _tag_click,
+                on_add_click=(on_add_tag if can_create_tags else None),
+                on_manage_click=on_manage_tags,
+                footer=state.toolbar_container,
+            )
 
     async def on_add_tag() -> None:
         await open_quick_create(state)
@@ -450,6 +450,7 @@ async def _build_tab_panels(
     on_add_tag: Any,
     on_manage_tags: Any,
     can_create_tags: bool,
+    footer: Any | None = None,
 ) -> None:
     """Build the three tab panels and store panel refs on ``state``.
 
@@ -484,6 +485,7 @@ async def _build_tab_panels(
                     crdt_doc,
                     on_add_click=(on_add_tag if can_create_tags else None),
                     on_manage_click=on_manage_tags,
+                    footer=footer,
                 )
                 logger.debug("[RENDER] document rendered")
 
@@ -520,6 +522,8 @@ async def _render_workspace_view(
     workspace_id: UUID,
     client: Client,
     workspace: Workspace | None = None,
+    *,
+    footer: Any | None = None,
 ) -> None:
     """Render the workspace content view with documents or add content form."""
     result = await _resolve_workspace_context(workspace_id, workspace)
@@ -577,6 +581,7 @@ async def _render_workspace_view(
         on_add_tag=on_add_tag,
         on_manage_tags=on_manage_tags,
         can_create_tags=can_create_tags,
+        footer=footer,
     )
 
     # Inject copy protection JS after tab container is built (Phase 4)

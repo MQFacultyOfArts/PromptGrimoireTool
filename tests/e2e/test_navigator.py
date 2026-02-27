@@ -52,6 +52,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
+    navigate_home_via_drawer,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -1370,7 +1371,12 @@ class TestNavigationChrome:
     def test_roleplay_home_icon_navigates_to_navigator(
         self, browser: Browser, app_server: str
     ) -> None:
-        """AC6.2: Home icon on roleplay page navigates to /."""
+        """AC6.2: Nav drawer Home link on roleplay page navigates to /."""
+        from promptgrimoire.config import get_settings
+
+        if not get_settings().features.enable_roleplay:
+            pytest.skip("roleplay feature flag disabled")
+
         context = browser.new_context()
         page = context.new_page()
         try:
@@ -1378,9 +1384,8 @@ class TestNavigationChrome:
             page.goto(f"{app_server}/roleplay")
             page.wait_for_timeout(2000)
 
-            home_btn = page.get_by_test_id("home-btn")
-            expect(home_btn.first).to_be_visible(timeout=5000)
-            home_btn.first.click()
+            # Navigate home via the shared page_layout nav drawer.
+            navigate_home_via_drawer(page)
 
             page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
         finally:

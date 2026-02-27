@@ -18,7 +18,7 @@ from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
 from promptgrimoire.models import Character, Session
-from promptgrimoire.pages.layout import require_roleplay_enabled
+from promptgrimoire.pages.layout import page_layout, require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
@@ -186,110 +186,107 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
 
     state: dict = {"session": None, "client": None, "log_path": None}
 
-    with ui.row().classes("items-center mb-4 gap-2"):
-        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            'flat round data-testid="home-btn"'
-        ).tooltip("Home")
-        ui.label("SillyTavern Roleplay").classes("text-h4")
+    with page_layout("Roleplay"):
+        # Upload section
+        with ui.card().classes("w-full mb-4") as upload_card:
+            ui.label("Load Character Card").classes("text-h6")
 
-    # Upload section
-    with ui.card().classes("w-full mb-4") as upload_card:
-        ui.label("Load Character Card").classes("text-h6")
+            # CRIT-6: Maximum upload size limit to prevent DoS
+            max_upload_size = 100 * 1024 * 1024  # 100 MB
 
-        # CRIT-6: Maximum upload size limit to prevent DoS
-        max_upload_size = 100 * 1024 * 1024  # 100 MB
+            async def handle_upload(e) -> None:
+                tmp_path = None
+                try:
+                    content = await e.file.read()
 
-        async def handle_upload(e) -> None:
-            tmp_path = None
-            try:
-                content = await e.file.read()
+                    # CRIT-6: Check upload size before processing
+                    if len(content) > max_upload_size:
+                        ui.notify("File too large (max 100MB)", type="negative")
+                        return
 
-                # CRIT-6: Check upload size before processing
-                if len(content) > max_upload_size:
-                    ui.notify("File too large (max 100MB)", type="negative")
-                    return
+                    # Write to temp file for parsing
+                    tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
+                    tmp_path.write_bytes(content)
 
-                # Write to temp file for parsing
-                tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
-                tmp_path.write_bytes(content)
+                    character, lorebook_entries = parse_character_card(tmp_path)
+                    user_name = user_name_input.value or "User"
 
-                character, lorebook_entries = parse_character_card(tmp_path)
-                user_name = user_name_input.value or "User"
-
-                session, client, log_path = _setup_session(
-                    character, lorebook_entries, user_name
-                )
-
-                state["session"] = session
-                state["client"] = client
-                state["log_path"] = log_path
-
-                upload_card.visible = False
-                chat_card.visible = True
-
-                char_name_label.text = character.name
-                scenario_label.text = substitute_placeholders(
-                    character.scenario or "No scenario",
-                    char_name=character.name,
-                    user_name=user_name,
-                )
-
-                # Render initial messages
-                _render_messages(session, chat_container, scroll_area)
-
-                ui.notify(f"Loaded {character.name}")
-
-            except ValueError as ve:
-                ui.notify(str(ve), type="negative")
-            except Exception as ex:
-                ui.notify(f"Failed to load: {ex}", type="negative")
-            finally:
-                # Clean up temp file
-                if tmp_path and tmp_path.exists():
-                    tmp_path.unlink()
-
-        user_name_input = ui.input(
-            label="Your name (used as {{user}})", value=_get_default_user_name()
-        ).classes("w-64 mb-2")
-
-        ui.upload(
-            label="Drop character card JSON here",
-            on_upload=handle_upload,
-            auto_upload=True,
-        ).classes("w-full").props('accept=".json"')
-
-    # Chat section
-    with ui.card().classes("w-full") as chat_card:
-        chat_card.visible = False
-
-        with ui.row().classes("w-full items-center mb-2"):
-            char_name_label = ui.label("").classes("text-h5")
-        scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
-
-        with ui.scroll_area().classes("w-full h-96 border rounded p-4") as scroll_area:
-            chat_container = ui.column().classes("w-full gap-3")
-
-        with ui.row().classes("w-full mt-4"):
-            message_input = (
-                ui.input(placeholder="Type your message...")
-                .classes("flex-grow")
-                .props("outlined")
-            )
-
-            async def on_send() -> None:
-                if state["session"]:
-                    await _handle_send(
-                        state["session"],
-                        state["client"],
-                        message_input,
-                        state["log_path"],
-                        chat_container,
-                        scroll_area,
-                        send_button,
+                    session, client, log_path = _setup_session(
+                        character, lorebook_entries, user_name
                     )
 
-            send_button = ui.button("Send", on_click=on_send).classes("ml-2")
-            message_input.on("keydown.enter", on_send)
+                    state["session"] = session
+                    state["client"] = client
+                    state["log_path"] = log_path
 
-    with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
-        ui.label("Log files are saved to: logs/sessions/")
+                    upload_card.visible = False
+                    chat_card.visible = True
+
+                    char_name_label.text = character.name
+                    scenario_label.text = substitute_placeholders(
+                        character.scenario or "No scenario",
+                        char_name=character.name,
+                        user_name=user_name,
+                    )
+
+                    # Render initial messages
+                    _render_messages(session, chat_container, scroll_area)
+
+                    ui.notify(f"Loaded {character.name}")
+
+                except ValueError as ve:
+                    ui.notify(str(ve), type="negative")
+                except Exception as ex:
+                    ui.notify(f"Failed to load: {ex}", type="negative")
+                finally:
+                    # Clean up temp file
+                    if tmp_path and tmp_path.exists():
+                        tmp_path.unlink()
+
+            user_name_input = ui.input(
+                label="Your name (used as {{user}})", value=_get_default_user_name()
+            ).classes("w-64 mb-2")
+
+            ui.upload(
+                label="Drop character card JSON here",
+                on_upload=handle_upload,
+                auto_upload=True,
+            ).classes("w-full").props('accept=".json"')
+
+        # Chat section
+        with ui.card().classes("w-full") as chat_card:
+            chat_card.visible = False
+
+            with ui.row().classes("w-full items-center mb-2"):
+                char_name_label = ui.label("").classes("text-h5")
+            scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
+
+            with ui.scroll_area().classes(
+                "w-full h-96 border rounded p-4"
+            ) as scroll_area:
+                chat_container = ui.column().classes("w-full gap-3")
+
+            with ui.row().classes("w-full mt-4"):
+                message_input = (
+                    ui.input(placeholder="Type your message...")
+                    .classes("flex-grow")
+                    .props("outlined")
+                )
+
+                async def on_send() -> None:
+                    if state["session"]:
+                        await _handle_send(
+                            state["session"],
+                            state["client"],
+                            message_input,
+                            state["log_path"],
+                            chat_container,
+                            scroll_area,
+                            send_button,
+                        )
+
+                send_button = ui.button("Send", on_click=on_send).classes("ml-2")
+                message_input.on("keydown.enter", on_send)
+
+        with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
+            ui.label("Log files are saved to: logs/sessions/")

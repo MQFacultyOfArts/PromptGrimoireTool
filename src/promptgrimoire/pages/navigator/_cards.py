@@ -27,19 +27,20 @@ if TYPE_CHECKING:
     from nicegui.elements.input import Input
 
     from promptgrimoire.db.navigator import NavigatorRow
+    from promptgrimoire.pages.navigator._helpers import PageState
 
 logger = logging.getLogger(__name__)
 
 
 def _update_row_title(
-    page_state: dict[str, object] | None,
+    page_state: PageState | None,
     workspace_id: UUID,
     new_title: str | None,
 ) -> None:
     """Replace the frozen NavigatorRow in page_state with an updated title."""
     if page_state is None:
         return
-    rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+    rows = page_state["rows"]
     for i, r in enumerate(rows):
         if r.workspace_id == workspace_id:
             rows[i] = dataclasses.replace(r, title=new_title)
@@ -52,7 +53,7 @@ async def _persist_title_change(
     title_input: Input,
     fallback_title: str,
     original_title: str,
-    page_state: dict[str, object] | None,
+    page_state: PageState | None,
 ) -> None:
     """Save a workspace title change to DB and sync in-memory state."""
     try:
@@ -73,7 +74,7 @@ def _wire_title_edit_handlers(
     pencil_icon: ui.icon,
     confirm_icon: ui.icon,
     cancel_icon: ui.icon,
-    page_state: dict[str, object] | None,
+    page_state: PageState | None,
 ) -> None:
     """Wire save/cancel handlers for an inline-editable title.
 
@@ -82,7 +83,8 @@ def _wire_title_edit_handlers(
     with a cancel click.
     """
     workspace_id = row.workspace_id
-    assert workspace_id is not None
+    if workspace_id is None:
+        return
     original_title = title_input.value
     _state: dict[str, object] = {"editing": False, "saving": False}
 
@@ -147,11 +149,12 @@ def _wire_title_edit_handlers(
 
 def render_inline_title_edit(
     row: NavigatorRow,
-    page_state: dict[str, object] | None = None,
+    page_state: PageState | None = None,
 ) -> None:
     """Render an inline-editable title input with pencil/check/cancel icons."""
     workspace_id = row.workspace_id
-    assert workspace_id is not None
+    if workspace_id is None:
+        return
 
     display_title = row.title or row.activity_title or "Untitled"
 
@@ -199,7 +202,7 @@ def render_workspace_entry(
     show_owner: bool = False,
     owner_label: str = "",
     snippets: dict[UUID, str] | None = None,
-    page_state: dict[str, object] | None = None,
+    page_state: PageState | None = None,
 ) -> None:
     """Render a single workspace entry as a card row."""
     with (
@@ -230,8 +233,9 @@ def render_workspace_entry(
             if show_owner and owner_label:
                 ui.label(f"by {owner_label}").classes("text-xs text-gray-400")
 
-            # sanitize=False is safe: only "<mark>"/"</mark>" from
-            # _HEADLINE_OPTIONS; regexp_replace strips other tags.
+            # sanitize=False is safe: ts_headline only inserts
+            # <mark>/<\/mark> tags from _HEADLINE_OPTIONS; source text
+            # is either HTML-stripped (documents) or plain (search_text).
             snippet_html = (
                 (snippets or {}).get(row.workspace_id)
                 if row.workspace_id is not None

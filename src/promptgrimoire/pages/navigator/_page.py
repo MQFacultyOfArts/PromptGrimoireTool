@@ -26,14 +26,14 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from promptgrimoire.db.navigator import NavigatorCursor
+    from promptgrimoire.pages.navigator._helpers import PageState
 
 _CSS_FILE = Path(__file__).resolve().parent.parent.parent / "static" / "navigator.css"
 
 
 async def _build_navigator_ui(
     *,
-    page_state: dict[str, object],
+    page_state: PageState,
     handle_scroll: Callable[..., object],
     rows: list[NavigatorRow],
     user_id: UUID,
@@ -125,16 +125,20 @@ async def navigator_page() -> None:
     user_id = UUID(user_id_str)
     is_privileged = is_privileged_user(user)
 
-    enrollments = await list_user_enrollments(user_id)
-    enrolled_course_ids = [e.course_id for e in enrollments]
+    try:
+        enrollments = await list_user_enrollments(user_id)
+        enrolled_course_ids = [e.course_id for e in enrollments]
 
-    rows, next_cursor = await load_navigator_page(
-        user_id=user_id,
-        is_privileged=is_privileged,
-        enrolled_course_ids=enrolled_course_ids,
-    )
+        rows, next_cursor = await load_navigator_page(
+            user_id=user_id,
+            is_privileged=is_privileged,
+            enrolled_course_ids=enrolled_course_ids,
+        )
+    except Exception:
+        ui.label("Failed to load workspaces. Please refresh.").classes("text-red-500")
+        return
 
-    page_state: dict[str, object] = {
+    page_state: PageState = {
         "rows": rows,
         "next_cursor": next_cursor,
         "user_id": user_id,
@@ -170,8 +174,8 @@ async def navigator_page() -> None:
 
         page_state["loading"] = True
         try:
-            accumulated_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
-            cursor: NavigatorCursor | None = page_state["next_cursor"]  # type: ignore[assignment]
+            accumulated_rows = page_state["rows"]
+            cursor = page_state["next_cursor"]
             new_rows, new_cursor = await load_navigator_page(
                 user_id=user_id,
                 is_privileged=is_privileged,
@@ -181,7 +185,7 @@ async def navigator_page() -> None:
             )
             accumulated_rows.extend(new_rows)
             page_state["next_cursor"] = new_cursor
-            sections_container: ui.column = page_state["sections_container"]  # type: ignore[assignment]
+            sections_container = page_state["sections_container"]
             await append_new_rows(
                 new_rows,
                 user_id=user_id,

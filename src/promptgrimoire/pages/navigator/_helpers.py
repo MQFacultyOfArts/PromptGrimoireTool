@@ -5,13 +5,49 @@ Styles are in static/navigator.css (not Python strings).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 from urllib.parse import urlencode
 
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from promptgrimoire.db.navigator import NavigatorRow
+    from nicegui import ui
+
+    from promptgrimoire.db.models import Course
+    from promptgrimoire.db.navigator import NavigatorCursor, NavigatorRow
+
+
+# ---------------------------------------------------------------------------
+# PageState TypedDict
+# ---------------------------------------------------------------------------
+
+
+class PageState(TypedDict):
+    """Mutable per-request state dict passed through the navigator UI tree.
+
+    Keys present at construction time are required; keys populated later
+    by helper functions (sections_container, rendered_*, course_cache)
+    are NotRequired.
+    """
+
+    # --- Set at construction in navigator_page() ---
+    rows: list[NavigatorRow]
+    next_cursor: NavigatorCursor | None
+    user_id: UUID
+    is_privileged: bool
+    enrolled_course_ids: list[UUID]
+    search_active: bool
+    loading: bool
+    editing_active: bool
+    # --- Set by _build_navigator_ui after DOM creation ---
+    sections_container: NotRequired[ui.column]
+    # --- Set by reset_header_tracking / record_rendered_headers ---
+    rendered_sections: NotRequired[set[str]]
+    rendered_courses: NotRequired[set[UUID]]
+    rendered_owners: NotRequired[set[tuple[UUID, UUID | None]]]
+    rendered_unsorted: NotRequired[set[tuple[UUID, UUID | None]]]
+    # --- Set lazily during append-only scroll ---
+    course_cache: NotRequired[dict[UUID, Course]]
 
 
 # ---------------------------------------------------------------------------

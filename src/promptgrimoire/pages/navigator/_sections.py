@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from promptgrimoire.db.models import Course
     from promptgrimoire.db.navigator import NavigatorRow
+    from promptgrimoire.pages.navigator._helpers import PageState
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ async def _render_shared_in_unit(
     user_id: UUID,
     is_privileged: bool,
     snippets: dict[UUID, str] | None,
-    page_state: dict[str, object] | None = None,
+    page_state: PageState | None = None,
 ) -> None:
     """Render shared_in_unit sections grouped by course and owner."""
     by_course = group_shared_in_unit_by_course(shared_in_unit_rows)
@@ -122,7 +123,7 @@ async def _render_simple_section(
     user_id: UUID,
     is_privileged: bool,
     snippets: dict[UUID, str] | None,
-    page_state: dict[str, object] | None = None,
+    page_state: PageState | None = None,
 ) -> None:
     """Render a non-shared_in_unit section."""
     display_name = SECTION_DISPLAY_NAMES.get(section_key, section_key)
@@ -152,7 +153,7 @@ async def render_sections(
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
     snippets: dict[UUID, str] | None = None,
-    page_state: dict[str, object] | None = None,
+    page_state: PageState | None = None,
 ) -> None:
     """Render all navigator sections from the given rows.
 
@@ -201,7 +202,7 @@ async def render_sections(
 # ---------------------------------------------------------------------------
 
 
-def reset_header_tracking(page_state: dict[str, object]) -> None:
+def reset_header_tracking(page_state: PageState) -> None:
     """Reset header tracking state for a full re-render."""
     page_state["rendered_sections"] = set()
     page_state["rendered_courses"] = set()
@@ -211,13 +212,13 @@ def reset_header_tracking(page_state: dict[str, object]) -> None:
 
 def record_rendered_headers(
     rows: list[NavigatorRow],
-    page_state: dict[str, object],
+    page_state: PageState,
 ) -> None:
     """Record which section/course/owner headers were rendered."""
-    rendered_sections: set[str] = page_state["rendered_sections"]  # type: ignore[assignment]
-    rendered_courses: set[UUID] = page_state["rendered_courses"]  # type: ignore[assignment]
-    rendered_owners: set[tuple[UUID, UUID | None]] = page_state["rendered_owners"]  # type: ignore[assignment]
-    rendered_unsorted: set[tuple[UUID, UUID | None]] = page_state["rendered_unsorted"]  # type: ignore[assignment]
+    rendered_sections = page_state["rendered_sections"]
+    rendered_courses = page_state["rendered_courses"]
+    rendered_owners = page_state["rendered_owners"]
+    rendered_unsorted = page_state["rendered_unsorted"]
 
     for row in rows:
         rendered_sections.add(row.section)
@@ -239,13 +240,13 @@ async def _append_shared_in_unit(
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    page_state: dict[str, object],
+    page_state: PageState,
 ) -> None:
     """Append shared_in_unit rows, adding course/owner headers as needed."""
-    rendered_courses: set[UUID] = page_state["rendered_courses"]  # type: ignore[assignment]
-    rendered_owners: set[tuple[UUID, UUID | None]] = page_state["rendered_owners"]  # type: ignore[assignment]
-    rendered_unsorted: set[tuple[UUID, UUID | None]] = page_state["rendered_unsorted"]  # type: ignore[assignment]
-    course_cache: dict[UUID, Course] = page_state.get("course_cache", {})  # type: ignore[assignment]
+    rendered_courses = page_state["rendered_courses"]
+    rendered_owners = page_state["rendered_owners"]
+    rendered_unsorted = page_state["rendered_unsorted"]
+    course_cache: dict[UUID, Course] = page_state.get("course_cache", {})
 
     needed = {r.course_id for r in shared_rows if r.course_id is not None}
     for cid in needed - set(course_cache.keys()):
@@ -306,10 +307,10 @@ def _append_simple_section(
     *,
     user_id: UUID,
     is_privileged: bool,
-    page_state: dict[str, object],
+    page_state: PageState,
 ) -> None:
     """Append rows for a non-shared_in_unit section, adding header if needed."""
-    rendered_sections: set[str] = page_state["rendered_sections"]  # type: ignore[assignment]
+    rendered_sections = page_state["rendered_sections"]
 
     if section_key not in rendered_sections:
         display_name = SECTION_DISPLAY_NAMES.get(section_key, section_key)
@@ -336,7 +337,7 @@ async def append_new_rows(
     user_id: UUID,
     is_privileged: bool,
     enrolled_course_ids: list[UUID],
-    page_state: dict[str, object],
+    page_state: PageState,
     sections_container: ui.column,
 ) -> None:
     """Append newly loaded rows to the existing sections container.

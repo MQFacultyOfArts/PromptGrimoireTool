@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.timer import Timer
 
+    from promptgrimoire.pages.navigator._helpers import PageState
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ async def rerender_all(
     rows: list[NavigatorRow],
     *,
     snippets: dict[UUID, str] | None = None,
-    page_state: dict[str, object],
+    page_state: PageState,
     sections_container: ui.column,
     no_results_container: ui.column,
 ) -> None:
@@ -41,11 +43,12 @@ async def rerender_all(
     Used by search (to show filtered results) and search-clear
     (to restore the full accumulated view).
     """
+    page_state["editing_active"] = False
     no_results_container.clear()
     sections_container.clear()
-    user_id: UUID = page_state["user_id"]  # type: ignore[assignment]
-    is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]
-    enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]
+    user_id = page_state["user_id"]
+    is_privileged = page_state["is_privileged"]
+    enrolled_course_ids = page_state["enrolled_course_ids"]
     reset_header_tracking(page_state)
     with sections_container:
         await render_sections(
@@ -62,15 +65,15 @@ async def rerender_all(
 async def _do_search(
     query: str,
     *,
-    page_state: dict[str, object],
+    page_state: PageState,
     sections_container: ui.column,
     no_results_container: ui.column,
     clear_search_callback: Callable[..., Awaitable[None]],
 ) -> None:
     """Execute FTS search via the single combined navigator query."""
-    user_id: UUID = page_state["user_id"]  # type: ignore[assignment]
-    is_privileged: bool = page_state["is_privileged"]  # type: ignore[assignment]
-    enrolled_course_ids: list[UUID] = page_state["enrolled_course_ids"]  # type: ignore[assignment]
+    user_id = page_state["user_id"]
+    is_privileged = page_state["is_privileged"]
+    enrolled_course_ids = page_state["enrolled_course_ids"]
 
     try:
         hits = await search_navigator(
@@ -120,7 +123,7 @@ async def _do_search(
 
 def setup_search(
     *,
-    page_state: dict[str, object],
+    page_state: PageState,
     sections_container: ui.column,
     no_results_container: ui.column,
     search_input: Input,
@@ -129,7 +132,7 @@ def setup_search(
     _debounce: dict[str, Timer | None] = {"timer": None}
 
     async def _restore_full_view() -> None:
-        all_rows: list[NavigatorRow] = page_state["rows"]  # type: ignore[assignment]
+        all_rows = page_state["rows"]
         page_state["search_active"] = False
         await rerender_all(
             all_rows,

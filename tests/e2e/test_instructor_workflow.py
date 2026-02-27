@@ -72,21 +72,15 @@ def _fill_template_workspace(page: Page) -> None:
     )
 
     # Fill content in the editor (QEditor with placeholder)
-    content_input = page.get_by_placeholder(re.compile(r"paste|content", re.IGNORECASE))
+    content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill("Becky Bennett suffered a workplace injury.")
 
     # Click "Add Document" button
-    page.get_by_role(
-        "button",
-        name=re.compile(r"add document", re.IGNORECASE),
-    ).click()
+    page.get_by_test_id("add-document-btn").click()
 
     # Confirm content type dialog
-    confirm_btn = page.get_by_role(
-        "button",
-        name=re.compile(r"confirm", re.IGNORECASE),
-    )
+    confirm_btn = page.get_by_test_id("confirm-content-type-btn")
     confirm_btn.wait_for(state="visible", timeout=5000)
     confirm_btn.click()
 
@@ -182,10 +176,8 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     Opens the settings dialog, checks the switch state, then
     closes the dialog via Cancel.
     """
-    page.locator("button:not(.q-btn--dense)").filter(
-        has=page.locator("i.q-icon", has_text="settings")
-    ).click()
-    dialog_title = page.get_by_text("Unit Settings:")
+    page.get_by_test_id("course-settings-btn").click()
+    dialog_title = page.get_by_test_id("course-settings-title")
     dialog_title.wait_for(state="visible", timeout=5000)
 
     toggle = page.locator(".q-toggle").filter(has_text="Default copy protection")
@@ -404,11 +396,11 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
     )
     activity_card.get_by_role("button", name=re.compile(r"Create Template")).click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
-    content_input = page.get_by_placeholder(re.compile(r"paste|content", re.IGNORECASE))
+    content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill("The court held that the duty of care was breached.")
-    page.get_by_role("button", name=re.compile(r"add document", re.IGNORECASE)).click()
-    confirm_btn = page.get_by_role("button", name=re.compile(r"confirm", re.IGNORECASE))
+    page.get_by_test_id("add-document-btn").click()
+    confirm_btn = page.get_by_test_id("confirm-content-type-btn")
     confirm_btn.wait_for(state="visible", timeout=5000)
     confirm_btn.click()
     wait_for_text_walker(page, timeout=15000)
@@ -423,7 +415,7 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
 
     import_section = dialog.locator("[data-testid='tag-import-section']")
     expect(import_section).to_be_visible(timeout=5000)
-    import_section.locator(".q-select").click()
+    import_section.get_by_test_id("tag-import-source-select").click()
     page.wait_for_timeout(300)
     page.locator(".q-item").filter(has_text="Annotate Becky").click()
     page.wait_for_timeout(300)
@@ -600,7 +592,7 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
     expect(first_card).to_be_visible(timeout=3000)
 
     # The card's tag select should show the tag name for shortcut "2"
-    first_card_select = first_card.locator(".q-select").first
+    first_card_select = first_card.get_by_test_id("tag-select")
     expect(first_card_select).to_contain_text(key2_tag_name, timeout=3000)
 
     # AC3.6: Press "3" with text selected — highlight created with tag at position 3
@@ -613,7 +605,7 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
 
     # The second card's tag select should show the tag name for shortcut "3"
     second_card = cards.nth(1)
-    second_card_select = second_card.locator(".q-select").first
+    second_card_select = second_card.get_by_test_id("tag-select")
     expect(second_card_select).to_contain_text(key3_tag_name, timeout=3000)
 
 
@@ -733,7 +725,7 @@ class TestInstructorWorkflow:
                     timeout=10000,
                 )
                 publish_week(page, "Introduction")
-                unpub_btn = page.get_by_role("button", name="Unpublish")
+                unpub_btn = page.get_by_test_id("unpublish-week-btn")
                 assert unpub_btn.is_visible(), "Unpublish button should be visible"
 
             # --- Bridge: instructor-to-student handoff ---

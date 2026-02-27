@@ -265,8 +265,8 @@ class TestNaughtyStudent:
                         page.wait_for_url(re.compile(r"workspace_id="))
 
                         # Fill content with the naughty string
-                        content_input = page.get_by_placeholder(
-                            re.compile("paste|content", re.IGNORECASE)
+                        content_input = page.get_by_test_id("content-editor").locator(
+                            ".q-editor__content"
                         )
                         content_input.fill(naughty_string)
                         page.get_by_role(
@@ -381,22 +381,18 @@ class TestNaughtyStudent:
                     timeout=10000,
                 )
 
-                content_input = instructor_page.get_by_placeholder(
-                    re.compile(r"paste|content", re.IGNORECASE)
-                )
+                content_input = instructor_page.get_by_test_id(
+                    "content-editor"
+                ).locator(".q-editor__content")
                 content_input.wait_for(state="visible", timeout=5000)
                 content_input.fill(
                     "This is protected content that students cannot copy."
                 )
 
-                instructor_page.get_by_role(
-                    "button", name=re.compile(r"add document", re.IGNORECASE)
-                ).click()
+                instructor_page.get_by_test_id("add-document-btn").click()
 
                 # Confirm content type dialog
-                confirm_btn = instructor_page.get_by_role(
-                    "button", name=re.compile(r"confirm", re.IGNORECASE)
-                )
+                confirm_btn = instructor_page.get_by_test_id("confirm-content-type-btn")
                 confirm_btn.wait_for(state="visible", timeout=5000)
                 confirm_btn.click()
 

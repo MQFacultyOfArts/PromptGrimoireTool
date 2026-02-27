@@ -48,12 +48,12 @@ def create_course(
     """
     page.goto(f"{app_server}/courses/new")
 
-    # The form uses placeholder text for identification
-    page.get_by_placeholder("e.g., LAWS1100").fill(code)
-    page.get_by_placeholder("e.g., Contracts").fill(name)
-    page.get_by_placeholder("e.g., 2025-S1").fill(semester)
+    # NiceGUI places data-testid directly on the native <input>, not a wrapper
+    page.get_by_test_id("course-code-input").fill(code)
+    page.get_by_test_id("course-name-input").fill(name)
+    page.get_by_test_id("course-semester-input").fill(semester)
 
-    page.get_by_role("button", name="Create").click()
+    page.get_by_test_id("create-course-btn").click()
 
     # Wait for redirect to course detail page
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
@@ -79,18 +79,17 @@ def add_week(
             the auto-suggested value.
         title: Week title (e.g. ``"Introduction to Contracts"``).
     """
-    page.get_by_role("button", name="Add Week").click()
+    page.get_by_test_id("add-week-btn").click()
 
     # Wait for the week creation page
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/weeks/new"), timeout=10000)
 
     if week_number is not None:
-        number_input = page.get_by_label("Week Number")
-        number_input.fill(str(week_number))
+        page.get_by_test_id("week-number-input").fill(str(week_number))
 
-    page.get_by_placeholder("e.g., Introduction to Contracts").fill(title)
+    page.get_by_test_id("week-title-input").fill(title)
 
-    page.get_by_role("button", name="Create").click()
+    page.get_by_test_id("create-week-btn").click()
 
     # Wait for redirect back to course detail page
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
@@ -109,7 +108,7 @@ def add_activity(page: Page, *, title: str, description: str = "") -> None:
         title: Activity title (e.g. ``"Annotate Becky"``).
         description: Optional activity description.
     """
-    page.get_by_role("button", name="Add Activity").click()
+    page.get_by_test_id("add-activity-btn").click()
 
     # Wait for the activity creation page
     page.wait_for_url(
@@ -117,14 +116,12 @@ def add_activity(page: Page, *, title: str, description: str = "") -> None:
         timeout=10000,
     )
 
-    page.get_by_placeholder("e.g., Annotate Becky Bennett Interview").fill(title)
+    page.get_by_test_id("activity-title-input").fill(title)
 
     if description:
-        page.get_by_placeholder("Markdown description of the activity").fill(
-            description
-        )
+        page.get_by_test_id("activity-description-input").fill(description)
 
-    page.get_by_role("button", name="Create").click()
+    page.get_by_test_id("create-activity-btn").click()
 
     # Wait for redirect back to course detail page
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
@@ -141,16 +138,10 @@ def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) ->
         toggle_label: Text label of the toggle to set.
         enabled: Whether the toggle should be on or off.
     """
-    # Click the course-level settings gear icon button — NiceGUI icon-only
-    # buttons have no accessible name, so locate via the Material Icon text
-    # inside the button.  Exclude .q-btn--dense to skip per-activity settings
-    # buttons (which use props("flat round dense size=sm")).
-    page.locator("button:not(.q-btn--dense)").filter(
-        has=page.locator("i.q-icon", has_text="settings")
-    ).click()
+    page.get_by_test_id("course-settings-btn").click()
 
     # Wait for the dialog to appear
-    dialog_title = page.get_by_text("Unit Settings:")
+    dialog_title = page.get_by_test_id("course-settings-title")
     dialog_title.wait_for(state="visible", timeout=5000)
 
     # NiceGUI ui.switch renders as Quasar q-toggle — scope to the component.
@@ -162,9 +153,9 @@ def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) ->
     if is_currently_on != enabled:
         toggle.click()
 
-    page.get_by_role("button", name="Save").click()
+    page.get_by_test_id("save-course-settings-btn").click()
 
-    # Wait for the dialog to close and success notification
+    # Wait for the dialog to close
     dialog_title.wait_for(state="hidden", timeout=5000)
 
 
@@ -186,12 +177,12 @@ def enrol_student(page: Page, *, email: str) -> None:
         page: Authenticated Playwright page on a course detail page.
         email: Student email address to enrol.
     """
-    page.get_by_role("button", name="Manage Enrollments").click()
+    page.get_by_test_id("manage-enrollments-btn").click()
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/enrollments"), timeout=10000)
 
-    page.get_by_label("Email Address").fill(email)
+    page.get_by_test_id("enrollment-email-input").fill(email)
 
-    page.get_by_role("button", name="Add").click()
+    page.get_by_test_id("add-enrollment-btn").click()
 
     # Wait for success notification
     page.get_by_text(re.compile(r"Enrollment added")).wait_for(
@@ -199,7 +190,7 @@ def enrol_student(page: Page, *, email: str) -> None:
     )
 
     # Navigate back to course detail page
-    page.get_by_role("button", name="Back to Unit").click()
+    page.get_by_test_id("back-to-unit-btn").click()
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
 
 
@@ -223,7 +214,7 @@ def publish_week(page: Page, week_title: str) -> None:
     card = week_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
 
     # Click the Publish button within that card
-    card.get_by_role("button", name="Publish").click()
+    card.get_by_test_id("publish-week-btn").click()
 
     # Wait for the button text to change to "Unpublish" (indicates success)
-    card.get_by_role("button", name="Unpublish").wait_for(state="visible", timeout=5000)
+    card.get_by_test_id("unpublish-week-btn").wait_for(state="visible", timeout=5000)

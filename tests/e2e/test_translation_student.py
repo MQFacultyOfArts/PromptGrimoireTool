@@ -76,7 +76,7 @@ def _post_comment_on_first_card(page: Page) -> str:
     comment_uuid = uuid4().hex
     card = page.locator(ANNOTATION_CARD).first
     card.click()
-    page.get_by_placeholder("Add comment").first.fill(comment_uuid)
+    page.get_by_test_id("comment-input").first.fill(comment_uuid)
     card.get_by_text("Post").click()
     expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
     return comment_uuid

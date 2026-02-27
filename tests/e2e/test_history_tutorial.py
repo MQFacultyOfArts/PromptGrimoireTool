@@ -95,7 +95,7 @@ class TestHistoryTutorial:
             page1.locator(ANNOTATION_CARD).first.click()
 
             # Fill and post comment
-            page1.get_by_placeholder("Add comment").first.fill(comment_uuid)
+            page1.get_by_test_id("comment-input").first.fill(comment_uuid)
             page1.locator(ANNOTATION_CARD).first.get_by_text("Post").click()
 
             # Verify comment appears on page1
@@ -110,7 +110,7 @@ class TestHistoryTutorial:
         with subtests.test(msg="student_a_changes_tag"):
             # Change first card's tag from Jurisdiction to Procedural History
             first_card = page1.locator(ANNOTATION_CARD).first
-            tag_select = first_card.locator(".q-select").first
+            tag_select = first_card.get_by_test_id("tag-select")
 
             # Open dropdown
             tag_select.click()
@@ -145,7 +145,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="cross_tab_organise_sync"):
             # Student B switches to Organise tab
-            page2.get_by_text("Organise", exact=True).click()
+            page2.get_by_test_id("tab-organise").click()
             page2.wait_for_timeout(1000)
             expect(page2.locator('[data-testid="organise-columns"]')).to_be_visible(
                 timeout=5000
@@ -163,7 +163,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="cross_tab_respond_sync"):
             # Student B switches to Respond tab
-            page2.get_by_text("Respond", exact=True).click()
+            page2.get_by_test_id("tab-respond").click()
             editor2 = page2.locator("[data-testid='milkdown-editor-container']")
             expect(editor2).to_be_visible(timeout=10000)
 
@@ -184,7 +184,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="warp_does_not_affect_other_user"):
             # Student A switches to Organise tab and clicks locate
-            page1.get_by_text("Organise", exact=True).click()
+            page1.get_by_test_id("tab-organise").click()
             page1.wait_for_timeout(1000)
 
             card = page1.locator('[data-testid="organise-card"]').first
@@ -193,18 +193,18 @@ class TestHistoryTutorial:
             page1.wait_for_timeout(1000)
 
             # Student A should be warped to Annotate tab
-            expect(page1.locator("role=tab").nth(0)).to_have_attribute(
+            expect(page1.get_by_test_id("tab-annotate")).to_have_attribute(
                 "aria-selected", "true", timeout=3000
             )
 
             # Student B should STILL be on Respond tab
-            expect(page2.locator("role=tab").nth(2)).to_have_attribute(
+            expect(page2.get_by_test_id("tab-respond")).to_have_attribute(
                 "aria-selected", "true", timeout=3000
             )
 
         with subtests.test(msg="respond_real_time_sync"):
             # Student A switches to Respond tab
-            page1.get_by_text("Respond", exact=True).click()
+            page1.get_by_test_id("tab-respond").click()
             editor1 = page1.locator("[data-testid='milkdown-editor-container']")
             expect(editor1).to_be_visible(timeout=10000)
 
@@ -231,7 +231,7 @@ class TestHistoryTutorial:
             )
 
             # Navigate to Respond tab
-            page2.get_by_text("Respond", exact=True).click()
+            page2.get_by_test_id("tab-respond").click()
             editor2 = page2.locator("[data-testid='milkdown-editor-container']")
             expect(editor2).to_be_visible(timeout=10000)
 

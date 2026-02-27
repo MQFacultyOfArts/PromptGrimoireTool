@@ -110,7 +110,7 @@ class TestOrganiseTabPerformance:
 
         # Click Organise tab and measure render time
         t_start = time.perf_counter()
-        page.locator("role=tab").nth(1).click()
+        page.get_by_test_id("tab-organise").click()
 
         # Wait for all organise cards to appear
         organise_cards = page.locator('[data-testid="organise-card"]')

@@ -99,15 +99,15 @@ def _fill_template_workspace(page: Page) -> None:
     ).click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
 
-    content_input = page.get_by_placeholder(re.compile(r"paste|content", re.IGNORECASE))
+    content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill(
         "The plaintiff suffered injury at the workplace on Tuesday morning."
     )
 
-    page.get_by_role("button", name=re.compile(r"add document", re.IGNORECASE)).click()
+    page.get_by_test_id("add-document-btn").click()
 
-    confirm = page.get_by_role("button", name=re.compile(r"confirm", re.IGNORECASE))
+    confirm = page.get_by_test_id("confirm-content-type-btn")
     confirm.wait_for(state="visible", timeout=5000)
     confirm.click()
 

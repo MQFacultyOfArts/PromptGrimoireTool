@@ -810,8 +810,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
         # Try to get pasted content from JS storage (bypasses websocket limit)
         stored = await ui.run_javascript(f"window.{paste_var}")
         platform_hint = await ui.run_javascript(f"window.{platform_var}")
-        content = stored if stored else content_input.value
-        from_paste = bool(stored)
+        content, from_paste = (stored, True) if stored else (content_input.value, False)
 
         if not content or not content.strip():
             ui.notify("Please enter or paste some content", type="warning")
@@ -885,12 +884,15 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                 source_type=confirmed_type,
                 platform_hint=None,
             )
+            auto_number, para_map = _detect_paragraph_numbering(processed_html)
             await add_document(
                 workspace_id=workspace_id,
                 type="source",
                 content=processed_html,
                 source_type=confirmed_type,
                 title=filename,
+                auto_number_paragraphs=auto_number,
+                paragraph_map=para_map,
             )
             ui.notify(f"Uploaded: {filename}", type="positive")
             ui.navigate.to(_annotation_url(workspace_id))

@@ -60,7 +60,7 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
         targetY: (cr.top - docRect.top) - cOff};
     }).filter(Boolean);
     cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
-    var hH = 60, vT = hH, vB = window.innerHeight;
+    var vT = 0, vB = window.innerHeight - (window._toolbarHeight || 60);
     var minY = 0;
     for (var i = 0; i < cardInfos.length; i++) {
       var info = cardInfos[i];
@@ -125,3 +125,19 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
     if (nodes) showHoverHighlight(nodes, sc, ec);
   });
 }
+
+// --- ResizeObserver: track toolbar height for layout padding + card sync ---
+(function initToolbarObserver() {
+  var toolbar = document.getElementById('tag-toolbar-wrapper');
+  var layout  = document.getElementById('annotation-layout-wrapper');
+  if (!toolbar || !layout) return;
+
+  var ro = new ResizeObserver(function(entries) {
+    for (var i = 0; i < entries.length; i++) {
+      var h = entries[i].target.offsetHeight;
+      window._toolbarHeight = h;
+      layout.style.paddingBottom = h + 'px';
+    }
+  });
+  ro.observe(toolbar);
+})();

@@ -51,6 +51,10 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run test-e2e`, which runs in serial fail-fast mode by default (`--parallel` for xdist). See [docs/testing.md](docs/testing.md).
 
+### E2E Locator Convention
+
+All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()` -- never locate by visible text, placeholder, or Quasar CSS classes. NiceGUI places `data-testid` directly on native elements (e.g. `<input>`), so `get_by_test_id("foo").fill(value)` works without chaining `.locator("input")`. See [docs/testing.md](docs/testing.md) for full details.
+
 ### Code Quality Hooks
 
 Claude Code hooks automatically run on every `.py` file write:

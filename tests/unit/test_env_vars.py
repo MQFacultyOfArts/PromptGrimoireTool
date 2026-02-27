@@ -248,6 +248,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "e2e" / "annotation_helpers.py",
     # This file itself references os.environ in test assertions/comments
     _TESTS_DIR / "unit" / "test_env_vars.py",
+    # make_docs test captures DEV__AUTH_MOCK env state at mock call time
+    _TESTS_DIR / "unit" / "test_make_docs.py",
 }
 
 

@@ -235,7 +235,7 @@ def _render_group_header(
         ui.icon("folder").classes("text-blue-600")
         group_name_input = (
             ui.input(value=group.name)
-            .props("maxlength=100")
+            .props(f"maxlength=100 data-testid=group-name-input-{group.id}")
             .classes("font-bold text-blue-800")
         )
         group_color_input = ui.color_input(

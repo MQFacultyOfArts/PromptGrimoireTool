@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 BASE_URL="$1"
 GUIDE_DIR="$(dirname "$SCRIPT_DIR")"
 DOC_PATH="$GUIDE_DIR/instructor-setup.md"
@@ -100,38 +101,52 @@ rodney waitstable --local
 rodney click --local '[data-testid="add-tag-group-btn"]'
 rodney waitstable --local
 
+# Helper: query JS and fail loudly if result is empty
+require_js() {
+    local desc="$1"
+    local js_expr="$2"
+    local result
+    result=$(rodney js --local "$js_expr")
+    if [ -z "$result" ]; then
+        echo "ERROR: $desc — JS query returned empty" >&2
+        exit 1
+    fi
+    echo "$result"
+}
+
 # Find the newly created group's header testid via JS
-GROUP_HEADER=$(rodney js --local 'document.querySelector("[data-testid^=\"tag-group-header-\"]")?.getAttribute("data-testid")' 2>/dev/null || echo "")
-if [ -n "$GROUP_HEADER" ]; then
-    GROUP_ID="${GROUP_HEADER#tag-group-header-}"
+GROUP_HEADER=$(require_js "tag group header after add-tag-group-btn click" \
+    'document.querySelector("[data-testid^=\"tag-group-header-\"]")?.getAttribute("data-testid")')
+GROUP_ID="${GROUP_HEADER#tag-group-header-}"
 
-    # Add first tag to this group
-    rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-    rodney waitstable --local
-    TAG_INPUT=$(rodney js --local 'document.querySelector("[data-testid^=\"tag-name-input-\"]")?.getAttribute("data-testid")' 2>/dev/null || echo "")
-    if [ -n "$TAG_INPUT" ]; then
-        rodney click --local "[data-testid=\"${TAG_INPUT}\"]"
-        rodney input --local "[data-testid=\"${TAG_INPUT}\"]" 'Source Text Features'
-    fi
+# Name the group
+rodney click --local "[data-testid=\"group-name-input-${GROUP_ID}\"]"
+rodney input --local "[data-testid=\"group-name-input-${GROUP_ID}\"]" 'Translation Analysis'
+rodney waitstable --local
 
-    # Add second tag
-    rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-    rodney waitstable --local
-    TAG_INPUT2=$(rodney js --local '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")' 2>/dev/null || echo "")
-    if [ -n "$TAG_INPUT2" ]; then
-        rodney click --local "[data-testid=\"${TAG_INPUT2}\"]"
-        rodney input --local "[data-testid=\"${TAG_INPUT2}\"]" 'Translation Strategy'
-    fi
+# Add first tag to this group
+rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
+rodney waitstable --local
+TAG_INPUT=$(require_js "first tag name input" \
+    'document.querySelector("[data-testid^=\"tag-name-input-\"]")?.getAttribute("data-testid")')
+rodney click --local "[data-testid=\"${TAG_INPUT}\"]"
+rodney input --local "[data-testid=\"${TAG_INPUT}\"]" 'Source Text Features'
 
-    # Add third tag
-    rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-    rodney waitstable --local
-    TAG_INPUT3=$(rodney js --local '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")' 2>/dev/null || echo "")
-    if [ -n "$TAG_INPUT3" ]; then
-        rodney click --local "[data-testid=\"${TAG_INPUT3}\"]"
-        rodney input --local "[data-testid=\"${TAG_INPUT3}\"]" 'Cultural Adaptation'
-    fi
-fi
+# Add second tag
+rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
+rodney waitstable --local
+TAG_INPUT2=$(require_js "second tag name input" \
+    '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")')
+rodney click --local "[data-testid=\"${TAG_INPUT2}\"]"
+rodney input --local "[data-testid=\"${TAG_INPUT2}\"]" 'Translation Strategy'
+
+# Add third tag
+rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
+rodney waitstable --local
+TAG_INPUT3=$(require_js "third tag name input" \
+    '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")')
+rodney click --local "[data-testid=\"${TAG_INPUT3}\"]"
+rodney input --local "[data-testid=\"${TAG_INPUT3}\"]" 'Cultural Adaptation'
 
 take_screenshot "05_tags_configured"
 add_image "05_tags_configured"
@@ -146,8 +161,8 @@ note "## Step 6: Enrolling Students"
 note "Provide your student email list to the PromptGrimoire administrator. They will enrol students in your unit using the management tools. Students will see the unit and its activities on their Navigator after enrolment."
 
 # Programmatically enrol the demo student for verification in step 7.
-uv run manage-users create "student-demo@test.example.edu.au" --name "Demo Student" 2>/dev/null || true
-uv run manage-users enroll "student-demo@test.example.edu.au" "TRAN8034" "S1 2026" 2>/dev/null || true
+(cd "$PROJECT_ROOT" && uv run manage-users create "student-demo@test.example.edu.au" --name "Demo Student") 2>/dev/null || true
+(cd "$PROJECT_ROOT" && uv run manage-users enroll "student-demo@test.example.edu.au" "TRAN8034" "S1 2026") 2>/dev/null || true
 
 # ── Step 7: Verify Student View ──────────────────────────────────
 note "## Step 7: Verifying the Student View"

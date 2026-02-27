@@ -304,6 +304,6 @@ def render_unstarted_entry(
 
                 aid = row.activity_id
                 ui.button("Start", on_click=_start_activity).props(
-                    f"flat dense size=sm color=primary"
+                    "flat dense size=sm color=primary"
                     f' data-testid="start-activity-btn-{aid}"'
                 ).classes("navigator-start-btn")

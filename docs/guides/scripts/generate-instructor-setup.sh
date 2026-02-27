@@ -76,6 +76,11 @@ note "Create an activity within the week. Students will create workspaces from t
 # Tag management is on the annotation page, not the courses page.
 # Navigate to home, start the activity to create a workspace,
 # then configure tags via the tag management dialog.
+#
+# The navigator's "Start" button only appears for activities in enrolled
+# courses, so enrol the instructor first.
+(cd "$PROJECT_ROOT" && uv run manage-users enroll "instructor@uni.edu" "TRAN8034" "S1 2026") 2>/dev/null || true
+
 note "## Step 5: Configuring Tags"
 note "Tags help students categorise their annotations. Configure tag groups and tags for the activity."
 

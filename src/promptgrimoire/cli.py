@@ -2635,10 +2635,10 @@ def make_docs() -> None:
         ("docs/guides/student-workflow.md", "docs/guides/student-workflow.pdf"),
     ]
 
-    # --- Start Rodney browser ------------------------------------------------
-    subprocess.run(["rodney", "start", "--local"], check=True, cwd=project_root)
-
     try:
+        # --- Start Rodney browser --------------------------------------------
+        subprocess.run(["rodney", "start", "--local"], check=True, cwd=project_root)
+
         # --- Run capture scripts ---------------------------------------------
         for script in scripts:
             result = subprocess.run(
@@ -2671,3 +2671,4 @@ def make_docs() -> None:
     finally:
         subprocess.run(["rodney", "stop", "--local"], check=False, cwd=project_root)
         _stop_e2e_server(server_process)
+        os.environ.pop("DEV__AUTH_MOCK", None)

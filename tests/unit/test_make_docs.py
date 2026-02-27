@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -53,8 +54,22 @@ def _mock_happy_path():
 class TestMakeDocsServerLifecycle:
     """AC1.1: Server starts with mock auth and a free port."""
 
-    def test_make_docs_starts_server_with_mock_auth(self, _mock_happy_path):
+    def test_make_docs_starts_server_with_mock_auth(
+        self, _mock_happy_path, monkeypatch
+    ):
         mocks = _mock_happy_path
+        monkeypatch.delenv("DEV__AUTH_MOCK", raising=False)
+
+        # Capture env state at the moment _start_e2e_server is called
+        captured_env: dict[str, str | None] = {}
+
+        original_start = mocks["start"]
+
+        def _capture_env_on_start(_port):
+            captured_env["DEV__AUTH_MOCK"] = os.environ.get("DEV__AUTH_MOCK")
+            return original_start.return_value
+
+        mocks["start"].side_effect = _capture_env_on_start
 
         cli_module.make_docs()
 
@@ -63,6 +78,9 @@ class TestMakeDocsServerLifecycle:
         (port,), _kwargs = mocks["start"].call_args
         assert isinstance(port, int)
         assert port > 0
+
+        # DEV__AUTH_MOCK was set before server started
+        assert captured_env["DEV__AUTH_MOCK"] == "true"
 
     def test_make_docs_invokes_scripts_with_base_url(self, _mock_happy_path):
         mocks = _mock_happy_path

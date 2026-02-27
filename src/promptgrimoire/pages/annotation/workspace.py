@@ -16,6 +16,7 @@ from uuid import UUID
 from nicegui import app, events, ui
 
 from promptgrimoire.auth import check_workspace_access, is_privileged_user
+from promptgrimoire.config import get_settings
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.acl import (
     get_privileged_user_ids_for_workspace,
@@ -487,8 +488,8 @@ async def _build_tab_panels(
                 logger.debug("[RENDER] document rendered")
 
                 # "Add Document" button for editors/owners with
-                # existing documents
-                if state.can_upload:
+                # existing documents (gated by multi-document flag)
+                if state.can_upload and get_settings().features.enable_multi_document:
                     with ui.expansion(
                         "Add Document",
                         icon="note_add",

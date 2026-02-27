@@ -189,7 +189,9 @@ def _build_comments_section(
                 if state.broadcast_update:
                     await state.broadcast_update()
 
-        ui.button("Post", on_click=add_comment).props("dense size=sm").classes("mt-1")
+        ui.button("Post", on_click=add_comment).props(
+            'dense size=sm data-testid="post-comment-btn"'
+        ).classes("mt-1")
 
 
 def _build_card_header(

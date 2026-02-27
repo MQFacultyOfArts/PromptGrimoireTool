@@ -2668,6 +2668,9 @@ def make_docs() -> None:
 
         # --- Convert Markdown to PDF via Pandoc ------------------------------
         for md_path, pdf_path in guides:
+            # --resource-path lets Pandoc resolve image paths relative to
+            # the markdown file's directory (not just the CWD).
+            md_dir = Path(md_path).parent
             result = subprocess.run(
                 [
                     "pandoc",
@@ -2675,6 +2678,7 @@ def make_docs() -> None:
                     "-o",
                     pdf_path,
                     "--pdf-engine=lualatex",
+                    f"--resource-path={md_dir}",
                 ],
                 cwd=project_root,
                 check=False,

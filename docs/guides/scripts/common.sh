@@ -30,15 +30,21 @@ note() {
 
 add_image() {
   local name="$1"
-  showboat image "$DOC_PATH" "$SCREENSHOT_DIR/${name}.png"
+  local caption="${2:-$name}"
+  # Use a relative path from the markdown file to the screenshot so Pandoc
+  # can resolve the image without relying on --resource-path or absolute paths.
+  local rel_dir
+  rel_dir=$(realpath --relative-to="$(dirname "$DOC_PATH")" "$SCREENSHOT_DIR")
+  showboat note "$DOC_PATH" "![${caption}](${rel_dir}/${name}.png)"
 }
 
 step() {
   local name="$1"
-  local text="$2"
-  note "## $text"
+  local heading="$2"
+  local caption="${3:-$heading}"
+  note "## $heading"
   take_screenshot "$name"
-  add_image "$name"
+  add_image "$name" "$caption"
 }
 
 require_js() {

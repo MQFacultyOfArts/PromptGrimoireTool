@@ -40,3 +40,15 @@ step() {
   take_screenshot "$name"
   add_image "$name"
 }
+
+require_js() {
+  local desc="$1"
+  local js_expr="$2"
+  local result
+  result=$(rodney js --local "$js_expr")
+  if [ -z "$result" ]; then
+    echo "ERROR: $desc — JS query returned empty" >&2
+    exit 1
+  fi
+  echo "$result"
+}

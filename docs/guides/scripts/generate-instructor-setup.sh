@@ -101,19 +101,6 @@ rodney waitstable --local
 rodney click --local '[data-testid="add-tag-group-btn"]'
 rodney waitstable --local
 
-# Helper: query JS and fail loudly if result is empty
-require_js() {
-    local desc="$1"
-    local js_expr="$2"
-    local result
-    result=$(rodney js --local "$js_expr")
-    if [ -z "$result" ]; then
-        echo "ERROR: $desc — JS query returned empty" >&2
-        exit 1
-    fi
-    echo "$result"
-}
-
 # Find the newly created group's header testid via JS
 GROUP_HEADER=$(require_js "tag group header after add-tag-group-btn click" \
     'document.querySelector("[data-testid^=\"tag-group-header-\"]")?.getAttribute("data-testid")')

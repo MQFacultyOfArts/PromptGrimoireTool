@@ -52,10 +52,13 @@ rodney waitstable --local
 
 # Simulate HTML paste using JS clipboard API
 # This mirrors the E2E test pattern from test_html_paste_whitespace.py
-SAMPLE_HTML='<div class="conversation"><div class="user"><p><strong>Human:</strong> What are the key challenges in translating legal documents between English and Japanese?</p></div><div class="assistant"><p><strong>Assistant:</strong> Legal translation between English and Japanese faces several key challenges:</p><ol><li><strong>Structural differences:</strong> Japanese legal writing uses longer sentences with nested clauses, while English prefers shorter, more direct constructions.</li><li><strong>Terminology gaps:</strong> Some legal concepts exist in one system but not the other. For example, the Japanese concept of <em>good faith</em> has nuances that differ from common law interpretations.</li><li><strong>Formality registers:</strong> Japanese legal language uses highly formal registers that have no direct English equivalent.</li></ol></div></div>'
+SAMPLE_HTML='<div class="conversation"><div class="user"><p><strong>Human:</strong> What are the key challenges in translating legal documents between English and Japanese?</p></div><div class="assistant"><p><strong>Assistant:</strong> Legal translation between English and Japanese faces several key challenges:</p><ol><li><strong>Structural differences:</strong> Japanese legal writing uses longer sentences with nested clauses, while English prefers shorter, more direct constructions.</li><li><strong>Terminology gaps:</strong> Some legal concepts exist in one system but not the other. For example, the Japanese concept of <em>good faith</em> (信義誠実) has nuances that differ from common law interpretations.</li><li><strong>Formality registers:</strong> Japanese legal language uses highly formal registers (です/ます or である style) that have no direct English equivalent.</li></ol></div></div>'
+
+# Escape backticks in the HTML so they don't break the JS template literal
+ESCAPED_HTML=$(printf '%s' "$SAMPLE_HTML" | sed 's/`/\\`/g')
 
 rodney js --local "
-  const html = $(printf '%s' "$SAMPLE_HTML" | sed "s/'/\\\\'/g");
+  const html = \`${ESCAPED_HTML}\`;
   const plain = html.replace(/<[^>]*>/g, '');
   await navigator.clipboard.write([
     new ClipboardItem({
@@ -78,29 +81,30 @@ note "Select text in the conversation to highlight it. A tag menu appears so you
 # Use JS to create a text selection in the document container.
 # The annotation page listens for selectionchange events and shows
 # the highlight menu when text is selected.
+# First verify the doc container and text content exist.
+require_js "doc container with text content" \
+    'document.querySelector("#doc-container p")?.textContent ? "ok" : ""'
+
 rodney js --local "
   const container = document.querySelector('#doc-container');
-  if (container) {
-    const textNode = container.querySelector('p')?.firstChild;
-    if (textNode) {
-      const range = document.createRange();
-      range.setStart(textNode, 0);
-      range.setEnd(textNode, Math.min(textNode.length, 50));
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      // Trigger selectionchange event for NiceGUI handler
-      document.dispatchEvent(new Event('selectionchange'));
-    }
-  }
+  const textNode = container.querySelector('p').firstChild;
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, Math.min(textNode.length, 50));
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.dispatchEvent(new Event('selectionchange'));
 "
 sleep 1
 rodney waitstable --local
 
-# Click the first tag button in the highlight menu to create the highlight
+# Verify highlight menu appeared, then click the first tag button
+require_js "highlight menu visible with tag buttons" \
+    'document.querySelector("[data-testid=\"highlight-menu\"] button") ? "ok" : ""'
+
 rodney js --local "
-  const btn = document.querySelector('[data-testid=\"highlight-menu\"] button');
-  if (btn) btn.click();
+  document.querySelector('[data-testid=\"highlight-menu\"] button').click();
 "
 sleep 1
 rodney waitstable --local

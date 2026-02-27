@@ -19,7 +19,7 @@ note "This guide walks through the student annotation workflow in PromptGrimoire
 authenticate_as "student-demo@test.example.edu.au"
 rodney open --local "$BASE_URL"
 rodney waitload --local
-rodney waitstable --local
+wait_for '.q-page' 'Navigator after login'
 step "01_login" "Step 1: Logging In"
 note "After logging in, you see the Navigator — your home page. Activities assigned by your instructor appear here."
 
@@ -35,9 +35,7 @@ note "## Step 3: Creating a Workspace"
 note "Click Start on the activity to create your workspace. The workspace inherits the tag configuration set by your instructor."
 # The testid includes the activity ID, so use prefix match
 rodney click --local '[data-testid^="start-activity-btn"]'
-rodney waitload --local
-rodney waitstable --local
-sleep 1  # Allow annotation page to fully render
+wait_for '[data-testid="content-editor"]' 'Annotation page loaded'
 take_screenshot "03_workspace_created"
 add_image "03_workspace_created"
 note "Your workspace is created. You are now on the annotation page with three tabs: Annotate, Organise, and Respond."
@@ -48,7 +46,7 @@ note "Copy your AI conversation from ChatGPT, Claude, or another tool. Then past
 
 # Click the content editor to focus it
 rodney click --local '[data-testid="content-editor"]'
-rodney waitstable --local
+wait_for '[data-testid="content-editor"]' 'Content editor focused'
 
 # Simulate HTML paste using JS clipboard API
 # This mirrors the E2E test pattern from test_html_paste_whitespace.py
@@ -96,8 +94,7 @@ rodney js --local "
   sel.addRange(range);
   document.dispatchEvent(new Event('selectionchange'));
 "
-sleep 1
-rodney waitstable --local
+wait_for '[data-testid="highlight-menu"]' 'Highlight tag menu appeared'
 
 # Verify highlight menu appeared, then click the first tag button
 require_js "highlight menu visible with tag buttons" \
@@ -106,7 +103,6 @@ require_js "highlight menu visible with tag buttons" \
 rodney js --local "
   document.querySelector('[data-testid=\"highlight-menu\"] button').click();
 "
-sleep 1
 rodney waitstable --local
 take_screenshot "05_highlight_created"
 add_image "05_highlight_created"
@@ -123,7 +119,6 @@ rodney waitstable --local
 rodney input --local "$COMMENT_INPUT" 'This passage highlights key structural differences between legal writing traditions.'
 # Press Enter to submit the comment
 rodney key --local "Enter"
-sleep 0.5
 rodney waitstable --local
 take_screenshot "06_comment_added"
 add_image "06_comment_added"
@@ -133,9 +128,8 @@ note "Comments appear below each highlight in the sidebar. Use comments to recor
 note "## Step 7: Organising by Tag"
 note "Switch to the Organise tab to view your annotations grouped by tag."
 rodney click --local '[data-testid="tab-organise"]'
-rodney waitload --local
+wait_for '[data-testid="tab-organise"]' 'Organise tab loaded'
 rodney waitstable --local
-sleep 0.5
 take_screenshot "07_organise_tab"
 add_image "07_organise_tab"
 note "The Organise tab shows your highlights in columns by tag. You can drag highlights between columns to reclassify them."
@@ -144,9 +138,7 @@ note "The Organise tab shows your highlights in columns by tag. You can drag hig
 note "## Step 8: Writing Your Response"
 note "Switch to the Respond tab to write your analysis. Your highlights appear in the reference panel on the right."
 rodney click --local '[data-testid="tab-respond"]'
-rodney waitload --local
-rodney waitstable --local
-sleep 1  # Allow Milkdown editor to initialise
+wait_for '[data-testid="milkdown-editor-container"]' 'Respond tab editor loaded'
 
 # Focus the Milkdown editor and type some content.
 # Milkdown renders inside a contenteditable div within the container.
@@ -156,7 +148,7 @@ rodney js --local "
     editor.focus();
   }
 "
-sleep 0.5
+wait_for '[data-testid="milkdown-editor-container"] [contenteditable]' 'Milkdown editor ready'
 # Use rodney input (real keyboard events via CDP) — NOT rodney key
 rodney input --local '[data-testid="milkdown-editor-container"] [contenteditable]' 'This analysis examines the translation challenges identified in the AI conversation. The key structural differences between English and Japanese legal writing highlight the importance of understanding both legal systems.'
 rodney waitstable --local

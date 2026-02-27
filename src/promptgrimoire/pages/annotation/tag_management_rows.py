@@ -459,10 +459,12 @@ def _render_tag_list_content(
         ui.button(
             "+ Add tag",
             on_click=lambda _e: on_add_tag(None),
-        ).props("flat dense").classes("text-xs ml-8 mt-1")
+        ).props('flat dense data-testid="add-ungrouped-tag-btn"').classes(
+            "text-xs ml-8 mt-1"
+        )
 
     # Add group button
     ui.separator().classes("my-2")
-    ui.button("+ Add group", on_click=on_add_group).props("flat dense").classes(
-        "text-xs"
-    )
+    ui.button("+ Add group", on_click=on_add_group).props(
+        'flat dense data-testid="add-tag-group-btn"'
+    ).classes("text-xs")

@@ -338,7 +338,7 @@ async def courses_list_page() -> None:
     if is_instructor:
         ui.button("New Unit", on_click=lambda: ui.navigate.to("/courses/new")).classes(
             "mb-4"
-        )
+        ).props('data-testid="new-unit-btn"')
 
     # List courses user is enrolled in
     courses = await list_courses()
@@ -354,6 +354,7 @@ async def courses_list_page() -> None:
                     ui.card()
                     .classes("w-full cursor-pointer hover:bg-gray-50")
                     .on("click", lambda c=course: ui.navigate.to(f"/courses/{c.id}"))
+                    .props(f'data-testid="course-card-{course.id}"')
                 ):
                     with ui.row().classes("items-center justify-between w-full"):
                         with ui.column().classes("gap-1"):
@@ -535,7 +536,11 @@ async def course_detail_page(course_id: str) -> None:
         peer_workspaces: list[tuple[str, str, str]] | None = None,
     ) -> None:
         """Render a single Activity row with template/start or resume buttons."""
-        with ui.row().classes("items-center gap-2"):
+        with (
+            ui.row()
+            .classes("items-center gap-2")
+            .props(f'data-testid="activity-row-{act.id}"')
+        ):
             ui.icon("assignment").classes("text-gray-400")
             ui.label(act.title).classes("text-sm font-medium")
 

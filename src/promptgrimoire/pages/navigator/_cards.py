@@ -302,6 +302,8 @@ def render_unstarted_entry(
 
                     ui.navigate.to(workspace_url(clone.id))
 
+                aid = row.activity_id
                 ui.button("Start", on_click=_start_activity).props(
-                    "flat dense size=sm color=primary"
+                    f"flat dense size=sm color=primary"
+                    f' data-testid="start-activity-btn-{aid}"'
                 ).classes("navigator-start-btn")

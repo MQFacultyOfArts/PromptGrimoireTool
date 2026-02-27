@@ -435,6 +435,7 @@ def _build_tag_toolbar(
                             icon="settings",
                             on_click=on_manage_click,
                         ).classes("compact-btn").props(
-                            "round dense flat color=grey-7",
+                            "round dense flat color=grey-7"
+                            ' data-testid="tag-settings-btn"',
                         ).tooltip("Manage tags")
     return toolbar_wrapper

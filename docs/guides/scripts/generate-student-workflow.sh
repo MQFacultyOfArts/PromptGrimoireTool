@@ -12,6 +12,11 @@ source "$SCRIPT_DIR/common.sh"
 
 mkdir -p "$SCREENSHOT_DIR"
 
+# Clean previous run artifacts so the script is re-runnable
+rm -f "$DOC_PATH"
+rm -rf "$SCREENSHOT_DIR"
+mkdir -p "$SCREENSHOT_DIR"
+
 showboat init "$DOC_PATH" "Student Workflow Guide"
 note "This guide walks through the student annotation workflow in PromptGrimoire."
 

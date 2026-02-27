@@ -304,6 +304,33 @@ def _fast_outbox_stop(self):
 _Outbox.stop = _fast_outbox_stop
 ```
 
+## NiceGUI SPA Navigation Script Loading
+
+### Problem
+
+`ui.add_body_html('<script src="..."></script>')` only injects `<script>` tags into the initial HTML template served on full page loads. On NiceGUI SPA navigations via `ui.navigate.to()`, the scripts are **not** added to the already-loaded DOM. This causes `walkTextNodes`, `setupAnnotationSelection`, and `setupCopyProtection` to be undefined when the annotation page is reached via SPA navigation (e.g. student clicking "Start Activity" on the courses page).
+
+### Fix (document.py + header.py)
+
+**Hybrid approach:** keep `ui.add_body_html` for full page loads, add dynamic `<script>` element creation as a fallback for SPA navigations. The init JS checks `typeof walkTextNodes === 'function'` — if defined, call init immediately (full page load); otherwise, dynamically create `<script>` elements and call init after all load.
+
+**Copy protection deferred setup:** `header.py` renders before `document.py` loads scripts. When `setupCopyProtection` isn't defined yet (SPA navigation), the call stores selectors in `window._pendingCopyProtection`. The dynamic loader in `document.py` checks for this flag and calls `setupCopyProtection` after scripts load.
+
+### Data-testid Attribute Placement
+
+NiceGUI places `data-testid` directly on the **native form element** (the `<input>`, `<textarea>`, etc.), not on a Quasar wrapper `<div>`. This means:
+
+```python
+# In source: ui.input("Name").props('data-testid="course-name-input"')
+# Renders as: <input data-testid="course-name-input" class="q-field__native" ...>
+
+# In tests — fill directly, no .locator("input") chain needed:
+page.get_by_test_id("course-name-input").fill("Contracts")  # correct
+page.get_by_test_id("course-name-input").locator("input").fill(...)  # WRONG — no <input> inside <input>
+```
+
+For `ui.editor()` (Quasar QEditor), the `data-testid` lands on the outer wrapper, so `.locator(".q-editor__content")` is still needed to reach the contenteditable area.
+
 ## NiceGUI Upstream Bugs
 
 ### Bug 1: `page.py` `task_wait_for_connection` leak

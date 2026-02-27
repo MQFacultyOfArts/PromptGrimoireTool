@@ -315,7 +315,7 @@ async def annotation_page(client: Client) -> None:
 
         if workspace_id:
             logger.debug("[PAGE] annotation_page: rendering workspace %s", workspace_id)
-            await _render_workspace_view(workspace_id, client)
+            await _render_workspace_view(workspace_id, client, ws)
             logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
         else:
             # Show create workspace form

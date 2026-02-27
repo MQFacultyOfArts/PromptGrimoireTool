@@ -17,7 +17,7 @@ All configuration is managed through `src/promptgrimoire/config.py` using pydant
 | `DATABASE__` | `DatabaseConfig` | `url` |
 | `LLM__` | `LlmConfig` | `api_key`, `model`, `thinking_budget`, `lorebook_token_budget` |
 | `APP__` | `AppConfig` | `port`, `storage_secret`, `log_dir`, `latexmk_path`, `base_url` |
-| `FEATURES__` | `FeaturesConfig` | `enable_roleplay`, `enable_file_upload` |
+| `FEATURES__` | `FeaturesConfig` | `enable_roleplay`, `enable_file_upload`, `enable_multi_document` |
 | `DEV__` | `DevConfig` | `auth_mock`, `enable_demo_pages`, `database_echo`, `test_database_url`, `branch_db_suffix` |
 | `STYTCH__` | `StytchConfig` | `project_id`, `secret`, `public_token`, `default_org_id`, `sso_connection_id` |
 

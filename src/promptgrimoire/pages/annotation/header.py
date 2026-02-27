@@ -119,7 +119,7 @@ async def render_workspace_header(
         export_btn = ui.button(
             "Export PDF",
             icon="picture_as_pdf",
-        ).props("color=primary")
+        ).props('color=primary data-testid="export-pdf-btn"')
 
         async def on_export_click() -> None:
             export_btn.disable()

@@ -338,7 +338,20 @@ function setupAnnotationSelection(containerId, emitCallback) {
             var menu = document.getElementById('highlight-menu');
             if (menu) {
                 var endRect = charOffsetToRect(textNodes, Math.max(endChar - 1, startChar));
-                menu.style.top = endRect.bottom + 8 + 'px';
+                // Menu is hidden when positioning runs; use conservative constant
+                var menuH = 120;
+                var toolbarH = window._toolbarHeight || 60;
+                var topPos = endRect.bottom + 8;
+
+                // Flip above selection if menu would overlap bottom toolbar
+                if (topPos + menuH > window.innerHeight - toolbarH) {
+                    var flipped = endRect.top - menuH - 8;
+                    if (flipped >= 0) {
+                        topPos = flipped;
+                    }
+                }
+
+                menu.style.top = topPos + 'px';
                 menu.style.left = endRect.left + 'px';
             }
             emitCallback({start_char: startChar, end_char: endChar});

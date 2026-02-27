@@ -17,8 +17,6 @@ note "This guide walks through the student annotation workflow in PromptGrimoire
 
 # ── Step 1: Login ────────────────────────────────────────────────
 authenticate_as "student-demo@test.example.edu.au"
-rodney open --local "$BASE_URL"
-rodney waitload --local
 wait_for '.q-page' 'Navigator after login'
 step "01_login" "Step 1: Logging In"
 note "After logging in, you see the Navigator — your home page. Activities assigned by your instructor appear here."
@@ -67,7 +65,6 @@ rodney js --local "
 "
 rodney key --local "Control+v"
 rodney sleep 1 --local
-rodney waitstable --local
 take_screenshot "04_content_pasted"
 add_image "04_content_pasted"
 note "After pasting, your conversation appears in the editor. PromptGrimoire automatically detects the conversation format."
@@ -103,7 +100,7 @@ require_js "highlight menu visible with tag buttons" \
 rodney js --local "
   document.querySelector('[data-testid=\"highlight-menu\"] button').click();
 "
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "05_highlight_created"
 add_image "05_highlight_created"
 note "Select text and click a tag in the popup menu to create a highlight. The text is colour-coded by tag."
@@ -115,11 +112,11 @@ note "Click on a highlighted section to select it, then type a comment in the si
 # Click on the comment input and type a comment
 COMMENT_INPUT='[data-testid="comment-input"]'
 rodney click --local "$COMMENT_INPUT"
-rodney waitstable --local
+rodney sleep 0.5 --local
 rodney input --local "$COMMENT_INPUT" 'This passage highlights key structural differences between legal writing traditions.'
 # Press Enter to submit the comment
 rodney key --local "Enter"
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "06_comment_added"
 add_image "06_comment_added"
 note "Comments appear below each highlight in the sidebar. Use comments to record your analysis."
@@ -129,7 +126,7 @@ note "## Step 7: Organising by Tag"
 note "Switch to the Organise tab to view your annotations grouped by tag."
 rodney click --local '[data-testid="tab-organise"]'
 wait_for '[data-testid="organise-columns"]' 'Organise tab loaded'
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "07_organise_tab"
 add_image "07_organise_tab"
 note "The Organise tab shows your highlights in columns by tag. You can drag highlights between columns to reclassify them."
@@ -151,7 +148,7 @@ rodney js --local "
 wait_for '[data-testid="milkdown-editor-container"] [contenteditable]' 'Milkdown editor ready'
 # Use rodney input (real keyboard events via CDP) — NOT rodney key
 rodney input --local '[data-testid="milkdown-editor-container"] [contenteditable]' 'This analysis examines the translation challenges identified in the AI conversation. The key structural differences between English and Japanese legal writing highlight the importance of understanding both legal systems.'
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "08_respond_tab"
 add_image "08_respond_tab"
 note "The Respond tab has a markdown editor on the left and your highlights as reference on the right. Write your analysis using the highlights as evidence."
@@ -160,8 +157,7 @@ note "The Respond tab has a markdown editor on the left and your highlights as r
 note "## Step 9: Exporting to PDF"
 note "Click Export PDF to generate a PDF of your complete annotation work."
 rodney click --local '[data-testid="export-pdf-btn"]'
-sleep 3  # Allow PDF generation to complete
-rodney waitstable --local
+rodney sleep 3 --local
 take_screenshot "09_export"
 add_image "09_export"
 note "The exported PDF includes your pasted conversation with highlights, comments, organised notes, and your written response."

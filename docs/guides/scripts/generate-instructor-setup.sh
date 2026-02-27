@@ -17,9 +17,7 @@ note "This guide walks through setting up a unit in PromptGrimoire for your clas
 
 # ── Step 1: Login and Navigator ──────────────────────────────────
 authenticate_as "instructor@uni.edu"
-rodney open --local "$BASE_URL"
-rodney waitload --local
-wait_for '.q-page' 'Navigator page container'
+# authenticate_as already waits for .q-page after auth redirect
 step "01_navigator" "Step 1: The Navigator (Home Page)"
 note "After logging in, you see the Navigator. As a new instructor with no units configured, it will be empty."
 
@@ -27,7 +25,6 @@ note "After logging in, you see the Navigator. As a new instructor with no units
 note "## Step 2: Creating a Unit"
 note "Navigate to Units and create a new unit for your class."
 rodney open --local "$BASE_URL/courses/new"
-rodney waitload --local
 wait_for '[data-testid="course-code-input"]' 'Create unit form'
 rodney input --local '[data-testid="course-code-input"]' 'TRAN8034'
 rodney input --local '[data-testid="course-name-input"]' 'Translation Technologies'
@@ -37,7 +34,6 @@ add_image "02a_create_unit_form"
 note "Enter the unit code, name, and semester, then click Create."
 
 rodney click --local '[data-testid="create-course-btn"]'
-rodney waitload --local
 wait_for '[data-testid="add-week-btn"]' 'Unit detail page'
 take_screenshot "02b_unit_created"
 add_image "02b_unit_created"
@@ -46,17 +42,15 @@ note "After creating the unit, you are taken to the unit detail page."
 # ── Step 3: Create Week and Publish ──────────────────────────────
 note "## Step 3: Adding a Week"
 rodney click --local '[data-testid="add-week-btn"]'
-rodney waitload --local
 wait_for '[data-testid="week-number-input"]' 'Week creation form'
 rodney input --local '[data-testid="week-number-input"]' '3'
 rodney input --local '[data-testid="week-title-input"]' 'Source Text Analysis'
 rodney click --local '[data-testid="create-week-btn"]'
-rodney waitload --local
 wait_for '[data-testid="publish-week-btn"]' 'Week publish button'
 note "Create a week by entering the week number and title."
 
 rodney click --local '[data-testid="publish-week-btn"]'
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "03_week_published"
 add_image "03_week_published"
 note "Publish the week to make it visible to students."
@@ -64,13 +58,11 @@ note "Publish the week to make it visible to students."
 # ── Step 4: Create Activity ──────────────────────────────────────
 note "## Step 4: Creating an Activity"
 rodney click --local '[data-testid="add-activity-btn"]'
-rodney waitload --local
-rodney waitstable --local
+wait_for '[data-testid="activity-title-input"]' 'Activity creation form'
 rodney input --local '[data-testid="activity-title-input"]' 'Source Text Analysis with AI'
 rodney input --local '[data-testid="activity-description-input"]' 'Analyse a source text using AI conversation tools, then annotate your conversation in the Grimoire.'
 rodney click --local '[data-testid="create-activity-btn"]'
-rodney waitload --local
-rodney waitstable --local
+rodney sleep 1 --local
 take_screenshot "04_activity_created"
 add_image "04_activity_created"
 note "Create an activity within the week. Students will create workspaces from this activity."
@@ -83,8 +75,7 @@ note "## Step 5: Configuring Tags"
 note "Tags help students categorise their annotations. Configure tag groups and tags for the activity."
 
 rodney open --local "$BASE_URL"
-rodney waitload --local
-rodney waitstable --local
+wait_for '.q-page' 'Navigator page'
 # Click "Start" on the unstarted activity to create a workspace
 # The testid includes the activity ID, so use prefix match
 rodney click --local '[data-testid^="start-activity-btn"]'
@@ -96,7 +87,7 @@ wait_for '[data-testid="add-tag-group-btn"]' 'Tag management dialog'
 
 # Add a tag group
 rodney click --local '[data-testid="add-tag-group-btn"]'
-rodney waitstable --local
+rodney sleep 1 --local
 
 # Find the newly created group's header testid via JS
 GROUP_HEADER=$(require_js "tag group header after add-tag-group-btn click" \
@@ -106,11 +97,11 @@ GROUP_ID="${GROUP_HEADER#tag-group-header-}"
 # Name the group
 rodney click --local "[data-testid=\"group-name-input-${GROUP_ID}\"]"
 rodney input --local "[data-testid=\"group-name-input-${GROUP_ID}\"]" 'Translation Analysis'
-rodney waitstable --local
+rodney sleep 0.5 --local
 
 # Add first tag to this group
 rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-rodney waitstable --local
+rodney sleep 1 --local
 TAG_INPUT=$(require_js "first tag name input" \
     'document.querySelector("[data-testid^=\"tag-name-input-\"]")?.getAttribute("data-testid")')
 rodney click --local "[data-testid=\"${TAG_INPUT}\"]"
@@ -118,7 +109,7 @@ rodney input --local "[data-testid=\"${TAG_INPUT}\"]" 'Source Text Features'
 
 # Add second tag
 rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-rodney waitstable --local
+rodney sleep 1 --local
 TAG_INPUT2=$(require_js "second tag name input" \
     '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")')
 rodney click --local "[data-testid=\"${TAG_INPUT2}\"]"
@@ -126,7 +117,7 @@ rodney input --local "[data-testid=\"${TAG_INPUT2}\"]" 'Translation Strategy'
 
 # Add third tag
 rodney click --local "[data-testid=\"group-add-tag-btn-${GROUP_ID}\"]"
-rodney waitstable --local
+rodney sleep 1 --local
 TAG_INPUT3=$(require_js "third tag name input" \
     '[...document.querySelectorAll("[data-testid^=\"tag-name-input-\"]")].pop()?.getAttribute("data-testid")')
 rodney click --local "[data-testid=\"${TAG_INPUT3}\"]"
@@ -138,7 +129,7 @@ note "Configure tag groups and tags. Students' workspaces will inherit this tag 
 
 # Close the tag management dialog
 rodney click --local '[data-testid="tag-management-done-btn"]'
-rodney waitstable --local
+rodney sleep 1 --local
 
 # ── Step 6: Enrollment Note ──────────────────────────────────────
 note "## Step 6: Enrolling Students"
@@ -152,9 +143,7 @@ note "Provide your student email list to the PromptGrimoire administrator. They 
 note "## Step 7: Verifying the Student View"
 note "Re-authenticate as a student to verify the activity is visible."
 authenticate_as "student-demo@test.example.edu.au"
-rodney open --local "$BASE_URL"
-rodney waitload --local
-wait_for '.q-page' 'Student navigator page'
+# authenticate_as already waits for .q-page after auth redirect
 take_screenshot "07_student_navigator"
 add_image "07_student_navigator"
 note "The student can see the unit and activity on their Navigator. They can click Start to create a workspace."

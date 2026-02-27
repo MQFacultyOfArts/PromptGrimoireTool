@@ -12,15 +12,15 @@ set -euo pipefail
 authenticate_as() {
   local email="$1"
   rodney open --local "$BASE_URL/auth/callback?token=mock-token-${email}"
-  rodney waitload --local
-  # Wait for redirect away from /auth/callback
-  sleep 1
-  rodney waitstable --local
+  # Auth callback does ui.navigate.to("/") — a SPA navigation.
+  # rodney waitload won't fire for SPA navigations (no browser load event).
+  # Instead, wait for the home page element to appear after redirect.
+  wait_for '.q-page' "Post-auth redirect for $email"
 }
 
 take_screenshot() {
   local name="$1"
-  rodney waitstable --local
+  rodney sleep 0.5 --local
   rodney screenshot --local -w 1280 -h 800 "$SCREENSHOT_DIR/${name}.png"
 }
 

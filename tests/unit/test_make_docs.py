@@ -183,3 +183,39 @@ class TestMakeDocsDependencyChecks:
             captured = capsys.readouterr()
             assert "showboat" in captured.out.lower()
             mock_start.assert_not_called()
+
+
+class TestMakeDocsErrorReporting:
+    """AC1.6: Script failure identifies the failing step with context."""
+
+    def test_make_docs_error_reports_script_name_and_context(
+        self, _mock_happy_path, capsys
+    ):
+        mocks = _mock_happy_path
+
+        # Make script calls fail with stderr containing wait_for context
+        def _run_side_effect(cmd, **_kwargs):
+            result = MagicMock()
+            if cmd[0] == "bash":
+                result.returncode = 1
+                result.stderr = (
+                    "FAILED waiting for: Create unit form "
+                    '(selector: [data-testid="course-code-input"])'
+                )
+                result.stdout = ""
+            else:
+                result.returncode = 0
+                result.stderr = ""
+                result.stdout = ""
+            return result
+
+        mocks["run"].side_effect = _run_side_effect
+
+        with pytest.raises(SystemExit):
+            cli_module.make_docs()
+
+        captured = capsys.readouterr()
+        # Should report which script failed
+        assert "generate-instructor-setup.sh" in captured.out
+        # Should include the wait_for context message
+        assert "FAILED waiting for: Create unit form" in captured.out

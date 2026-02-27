@@ -2643,15 +2643,27 @@ def make_docs() -> None:
         script_env = os.environ.copy()
         script_env["ROD_TIMEOUT"] = "15"
 
+        guide_dir = project_root / "docs" / "guides"
+
         for script in scripts:
             result = subprocess.run(
                 ["bash", script, base_url],
                 cwd=project_root,
                 env=script_env,
+                capture_output=True,
+                text=True,
                 check=False,
             )
             if result.returncode != 0:
-                console.print(f"[red]Error:[/] Script failed: {script}")
+                console.print(
+                    f"[red]Error:[/] {script} failed (exit {result.returncode})"
+                )
+                if result.stderr:
+                    console.print(result.stderr.rstrip())
+                # Find most recent error screenshot
+                error_shots = sorted(guide_dir.glob("screenshots/*/ERROR_*.png"))
+                if error_shots:
+                    console.print(f"[dim]Last error screenshot:[/] {error_shots[-1]}")
                 sys.exit(1)
 
         # --- Convert Markdown to PDF via Pandoc ------------------------------

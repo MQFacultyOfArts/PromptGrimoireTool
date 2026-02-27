@@ -41,6 +41,11 @@ test-e2e-server.log
 # E2E test screenshots (debug artifacts)
 tests/e2e/screenshots/
 
+# Documentation generation artefacts (uv run make-docs)
+docs/guides/screenshots/
+docs/guides/*.md
+docs/guides/*.pdf
+
 # Temporary output directory (experiments, exports)
 output/
 
@@ -49,6 +54,9 @@ output/
 
 # LibreOffice lock files
 .~lock.*#
+
+# Rodney browser automation state
+.rodney/
 
 # Git worktrees (parallel development)
 .worktrees/

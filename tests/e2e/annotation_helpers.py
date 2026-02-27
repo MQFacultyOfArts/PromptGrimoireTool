@@ -638,12 +638,23 @@ def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
             raise
         # Capture diagnostic state for debugging
         url = page.url
-        doc_html = page.evaluate(
-            "() => { const d = document.getElementById('doc-container');"
-            " return d ? d.innerHTML.substring(0, 200) : 'NO #doc-container'; }"
+        diag = page.evaluate(
+            "() => {"
+            " const d = document.getElementById('doc-container');"
+            " return {"
+            "   doc: d ? d.innerHTML.substring(0, 200) : 'NO #doc-container',"
+            "   walkDefined: typeof walkTextNodes !== 'undefined',"
+            "   textNodes: window._textNodes ? window._textNodes.length : null,"
+            "   scripts: Array.from(document.querySelectorAll('script[src]'))"
+            "     .map(s => s.src).filter(s => s.includes('annotation'))"
+            " }; }"
         )
         msg = (
-            f"Text walker timeout ({timeout}ms). URL: {url} doc-container: {doc_html!r}"
+            f"Text walker timeout ({timeout}ms). URL: {url}"
+            f" doc-container: {diag['doc']!r}"
+            f" walkTextNodes defined: {diag['walkDefined']}"
+            f" _textNodes: {diag['textNodes']}"
+            f" annotation scripts: {diag['scripts']}"
         )
         raise type(exc)(msg) from None
 

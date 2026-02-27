@@ -44,32 +44,49 @@ async def process_dirty_workspaces(batch_size: int = 500) -> int:
         # the flag.  Double extraction is possible but harmless (idempotent).
         result = await session.execute(
             text(
-                "SELECT id, crdt_state FROM workspace "
-                "WHERE search_dirty = true "
+                "SELECT w.id, w.crdt_state, "
+                "  COALESCE(w.title, '') AS ws_title, "
+                "  COALESCE(a.title, '') AS activity_title "
+                "FROM workspace w "
+                "LEFT JOIN activity a ON a.id = w.activity_id "
+                "WHERE w.search_dirty = true "
                 "LIMIT :batch_size "
-                "FOR UPDATE SKIP LOCKED"
+                "FOR UPDATE OF w SKIP LOCKED"
             ),
             {"batch_size": batch_size},
         )
         rows = result.fetchall()
 
-    for workspace_id, crdt_state in rows:
-        try:
-            # Build tag_names mapping for this workspace
-            async with get_session() as session:
-                tag_result = await session.execute(
-                    text("SELECT id, name FROM tag WHERE workspace_id = :ws_id"),
-                    {"ws_id": str(workspace_id)},
-                )
-                tag_names = {
-                    str(tag_row[0]): tag_row[1] for tag_row in tag_result.fetchall()
-                }
+    # Batch-fetch tags for all workspaces (fixes N+1 query per workspace)
+    ws_ids = [row[0] for row in rows]
+    tag_map: dict[str, dict[str, str]] = {str(ws_id): {} for ws_id in ws_ids}
+    if ws_ids:
+        async with get_session() as session:
+            tag_result = await session.execute(
+                text(
+                    "SELECT workspace_id, id, name FROM tag "
+                    "WHERE workspace_id = ANY(:ws_ids)"
+                ),
+                {"ws_ids": ws_ids},
+            )
+            for tag_row in tag_result.fetchall():
+                tag_map[str(tag_row[0])][str(tag_row[1])] = tag_row[2]
 
-            # Extract searchable text
+    for workspace_id, crdt_state, ws_title, activity_title in rows:
+        try:
+            tag_names = tag_map.get(str(workspace_id), {})
+
+            # Extract CRDT content and prepend titles so search_text
+            # contains everything needed for FTS (matching the GIN index
+            # on to_tsvector('english', COALESCE(search_text, ''))).
             crdt_bytes: bytes | None = (
                 bytes(crdt_state) if crdt_state is not None else None
             )
-            extracted_text = extract_searchable_text(crdt_bytes, tag_names)
+            crdt_text = extract_searchable_text(crdt_bytes, tag_names)
+            title_prefix = f"{ws_title} {activity_title}".strip()
+            extracted_text = (
+                f"{title_prefix}\n{crdt_text}" if title_prefix else crdt_text
+            )
 
             # Update workspace.  The CAS guard (AND search_dirty = true) ensures
             # that if a concurrent CRDT save set search_dirty = true between the

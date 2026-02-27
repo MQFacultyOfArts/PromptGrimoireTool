@@ -798,4 +798,4 @@ async def update_workspace_title(
     Raises:
         ValueError: If workspace not found.
     """
-    return await _update_workspace_fields(workspace_id, title=title)
+    return await _update_workspace_fields(workspace_id, title=title, search_dirty=True)

@@ -337,26 +337,17 @@ fts AS (
   UNION ALL
   SELECT w.id AS ws_id,
     ts_headline('english',
-      COALESCE(w.title, '') || ' '
-        || COALESCE(a.title, '') || ' '
-        || COALESCE(w.search_text, ''),
+      COALESCE(w.search_text, ''),
       websearch_to_tsquery('english', :query),
       '{_HEADLINE_OPTIONS}'
     ) AS snippet,
     ts_rank(
-      to_tsvector('english',
-        COALESCE(w.title, '') || ' '
-          || COALESCE(a.title, '') || ' '
-          || COALESCE(w.search_text, '')),
+      to_tsvector('english', COALESCE(w.search_text, '')),
       websearch_to_tsquery('english', :query)
     ) AS rank
   FROM workspace w
-  LEFT JOIN activity a ON a.id = w.activity_id
   WHERE w.id IN (SELECT workspace_id FROM visible_ws)
-    AND to_tsvector('english',
-      COALESCE(w.title, '') || ' '
-        || COALESCE(a.title, '') || ' '
-        || COALESCE(w.search_text, ''))
+    AND to_tsvector('english', COALESCE(w.search_text, ''))
       @@ websearch_to_tsquery('english', :query)
 ),
 best_fts AS (

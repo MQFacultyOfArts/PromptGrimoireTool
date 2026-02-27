@@ -804,6 +804,80 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Highlight deletion propagates to CSS Custom Highlight API cleanup
 
+## Bottom Toolbar CSS Audit (E2E)
+
+### Toolbar is fixed to viewport bottom
+**File:** tests/e2e/test_css_audit.py::TestStructuralCssProperties::test_toolbar_position_fixed_bottom
+1. Navigate to annotation workspace
+2. Locate `#tag-toolbar-wrapper` element
+3. Assert computed CSS `position: fixed` and `bottom: 0px`
+
+**Verifies:** Quasar q-footer keeps toolbar fixed at viewport bottom
+
+### Toolbar has upward box shadow
+**File:** tests/e2e/test_css_audit.py::TestStructuralCssProperties::test_toolbar_box_shadow_upward
+1. Locate `#tag-toolbar-wrapper`
+2. Assert computed box-shadow is `rgba(0,0,0,0.1) 0px -2px 4px 0px`
+
+**Verifies:** Shadow projects upward to visually separate toolbar from content
+
+### Compact button padding is tighter than Quasar default
+**File:** tests/e2e/test_css_audit.py::TestStructuralCssProperties::test_compact_button_padding
+1. Locate `.q-btn.compact-btn` inside `#tag-toolbar-wrapper`
+2. Assert computed padding is `0px 6px`
+
+**Verifies:** Custom `.compact-btn` CSS overrides Quasar's default button padding
+
+### Highlight menu z-index above toolbar
+**File:** tests/e2e/test_css_audit.py::TestStructuralCssProperties::test_highlight_menu_z_index
+1. Locate `#highlight-menu`
+2. Assert computed z-index is `110`
+
+**Verifies:** Highlight creation popup renders above the toolbar (z-index 110 > 100)
+
+### Sidebar uses relative positioning
+**File:** tests/e2e/test_css_audit.py::TestStructuralCssProperties::test_sidebar_position_relative
+1. Locate `.annotations-sidebar`
+2. Assert computed CSS `position: relative`
+
+**Verifies:** Annotation card sidebar is positioned relative (not fixed/absolute)
+
+### Toolbar bottom edge at viewport bottom
+**File:** tests/e2e/test_css_audit.py::TestLayoutCorrectness::test_toolbar_at_viewport_bottom
+1. Get bounding box of `#tag-toolbar-wrapper`
+2. Get viewport size
+3. Assert toolbar bottom edge equals viewport height (within 1px)
+
+**Verifies:** Toolbar visually occupies the bottom edge of the viewport
+
+### Content not obscured by toolbar
+**File:** tests/e2e/test_css_audit.py::TestLayoutCorrectness::test_content_not_obscured_by_toolbar
+1. Get toolbar bounding box
+2. Scroll to last paragraph in `.doc-container`
+3. Get last paragraph bounding box
+4. Assert paragraph bottom is above toolbar top (2px tolerance)
+
+**Verifies:** Quasar q-page padding prevents content from being hidden behind toolbar
+
+### No inline title heading
+**File:** tests/e2e/test_css_audit.py::TestLayoutCorrectness::test_no_inline_title
+1. Assert no element with classes `.text-2xl.font-bold` exists
+
+**Verifies:** Workspace title moved to header; no redundant inline heading
+
+### No UUID label visible
+**File:** tests/e2e/test_css_audit.py::TestLayoutCorrectness::test_no_uuid_label
+1. Assert no text matching `Workspace: <uuid>` pattern is visible
+
+**Verifies:** Raw workspace ID not exposed in UI
+
+### Header row renders after title removal
+**File:** tests/e2e/test_css_audit.py::TestLayoutCorrectness::test_header_row_visible
+1. Locate `[data-testid="user-count"]`
+2. Assert visible within 5s
+
+**Verifies:** Presence indicator still renders after inline title was removed
+
 ## Text Selection Detection (E2E)
 
 ### Selection produces correct char offsets
@@ -1083,6 +1157,22 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert none of them are async def (must use @pytest_asyncio.fixture instead)
 
 **Verifies:** No async fixtures use the sync decorator (prevents xdist event loop errors)
+
+### E2E Helper: navigate_home_via_drawer
+**File:** tests/e2e/annotation_helpers.py::navigate_home_via_drawer
+1. Check if "Home" nav item is visible
+2. If not, click header menu button to open nav drawer, wait 500ms
+3. Assert "Home" nav item visible, click it
+
+**Purpose:** Shared helper for navigating home via page_layout's nav drawer (replaces direct home button clicks)
+
+### E2E Helper: scroll_to_char
+**File:** tests/e2e/annotation_helpers.py::scroll_to_char
+1. Wait for text walker to be ready
+2. Call JS `walkTextNodes()` + `scrollToCharOffset()` with given char index
+3. Wait 500ms for card positioning to update
+
+**Purpose:** Scroll document to a character offset so annotation cards attached to that region become visible (cards hide when their highlight is off-screen)
 
 ## Database Bootstrap (ensure_database_exists return value)
 
@@ -2878,13 +2968,15 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** AC6.3 -- home icon is a small flat button, not an intrusive header bar
 
-### Roleplay home icon navigates to navigator
+### Roleplay nav drawer Home navigates to navigator
 **File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_roleplay_home_icon_navigates_to_navigator
-1. Navigate to /roleplay
-2. Click home button
-3. Assert navigation to /
+1. Skip if roleplay feature flag is disabled
+2. Authenticate, navigate to /roleplay
+3. Open nav drawer via header menu button (if not already visible)
+4. Click "Home" nav item in drawer
+5. Assert navigation to /
 
-**Verifies:** AC6.2 -- home icon on roleplay page returns to navigator
+**Verifies:** AC6.2 -- nav drawer Home link on roleplay page returns to navigator (roleplay now uses shared page_layout)
 
 ### Courses home icon navigates to navigator
 **File:** tests/e2e/test_navigator.py::TestNavigationChrome::test_courses_home_icon_navigates_to_navigator

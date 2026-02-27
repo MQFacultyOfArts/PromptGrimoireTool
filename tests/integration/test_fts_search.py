@@ -92,15 +92,18 @@ async def _create_owned_workspace_with_document(
 async def _search(
     query: str,
     user_id: UUID,
+    *,
+    is_privileged: bool = False,
+    enrolled_course_ids: list[UUID] | None = None,
 ) -> list[SearchHit]:
-    """Run search_navigator with minimal params (privileged, no enrollments)."""
+    """Run search_navigator with minimal params."""
     from promptgrimoire.db.navigator import search_navigator
 
     return await search_navigator(
         query,
         user_id=user_id,
-        is_privileged=True,
-        enrolled_course_ids=[],
+        is_privileged=is_privileged,
+        enrolled_course_ids=enrolled_course_ids or [],
     )
 
 
@@ -316,6 +319,70 @@ class TestFTSACLRestriction:
         ws_ids_in_results = {h.row.workspace_id for h in results}
         assert ws_a in ws_ids_in_results
         assert ws_b not in ws_ids_in_results
+
+    @pytest.mark.asyncio
+    async def test_privileged_sees_unshared_peer_workspace(self) -> None:
+        """Privileged user sees peer workspace even if not shared_with_class."""
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.courses import create_course, enroll_user
+        from promptgrimoire.db.models import WorkspaceDocument
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import create_workspace
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"instr-{tag}@test.local",
+            display_name=f"Instructor {tag}",
+        )
+        student = await create_user(
+            email=f"stud-{tag}@test.local",
+            display_name=f"Student {tag}",
+        )
+
+        course = await create_course(
+            code=f"C{tag}",
+            name=f"Course {tag}",
+            semester="2026-S1",
+        )
+        course_id = course.id
+        await enroll_user(course_id, instructor.id, role="student")
+        await enroll_user(course_id, student.id, role="student")
+
+        # Student workspace with searchable content, NOT shared
+        ws = await create_workspace()
+        await grant_permission(ws.id, student.id, "owner")
+        # Place workspace in the course
+        async with get_session() as session:
+            await session.execute(
+                text("UPDATE workspace SET course_id = :cid WHERE id = :ws_id"),
+                {"cid": course_id, "ws_id": ws.id},
+            )
+        async with get_session() as session:
+            session.add(
+                WorkspaceDocument(
+                    workspace_id=ws.id,
+                    type="source",
+                    content="<p>Tortfeasor liability analysis</p>",
+                    source_type="html",
+                )
+            )
+
+        # Non-privileged instructor: should NOT see unshared workspace
+        results = await _search(
+            "tortfeasor",
+            instructor.id,
+            enrolled_course_ids=[course_id],
+        )
+        assert not any(h.row.workspace_id == ws.id for h in results)
+
+        # Privileged instructor: SHOULD see all peer workspaces
+        results = await _search(
+            "tortfeasor",
+            instructor.id,
+            is_privileged=True,
+            enrolled_course_ids=[course_id],
+        )
+        assert any(h.row.workspace_id == ws.id for h in results)
 
 
 # ── Relevance ordering ────────────────────────────────────────────────

@@ -19,7 +19,7 @@ note "This guide walks through setting up a unit in PromptGrimoire for your clas
 authenticate_as "instructor@uni.edu"
 rodney open --local "$BASE_URL"
 rodney waitload --local
-rodney waitstable --local
+wait_for '.q-page' 'Navigator page container'
 step "01_navigator" "Step 1: The Navigator (Home Page)"
 note "After logging in, you see the Navigator. As a new instructor with no units configured, it will be empty."
 
@@ -28,7 +28,7 @@ note "## Step 2: Creating a Unit"
 note "Navigate to Units and create a new unit for your class."
 rodney open --local "$BASE_URL/courses/new"
 rodney waitload --local
-rodney waitstable --local
+wait_for '[data-testid="course-code-input"]' 'Create unit form'
 rodney input --local '[data-testid="course-code-input"]' 'TRAN8034'
 rodney input --local '[data-testid="course-name-input"]' 'Translation Technologies'
 rodney input --local '[data-testid="course-semester-input"]' 'S1 2026'
@@ -38,7 +38,7 @@ note "Enter the unit code, name, and semester, then click Create."
 
 rodney click --local '[data-testid="create-course-btn"]'
 rodney waitload --local
-rodney waitstable --local
+wait_for '[data-testid="add-week-btn"]' 'Unit detail page'
 take_screenshot "02b_unit_created"
 add_image "02b_unit_created"
 note "After creating the unit, you are taken to the unit detail page."
@@ -47,12 +47,12 @@ note "After creating the unit, you are taken to the unit detail page."
 note "## Step 3: Adding a Week"
 rodney click --local '[data-testid="add-week-btn"]'
 rodney waitload --local
-rodney waitstable --local
+wait_for '[data-testid="week-number-input"]' 'Week creation form'
 rodney input --local '[data-testid="week-number-input"]' '3'
 rodney input --local '[data-testid="week-title-input"]' 'Source Text Analysis'
 rodney click --local '[data-testid="create-week-btn"]'
 rodney waitload --local
-rodney waitstable --local
+wait_for '[data-testid="publish-week-btn"]' 'Week publish button'
 note "Create a week by entering the week number and title."
 
 rodney click --local '[data-testid="publish-week-btn"]'
@@ -88,14 +88,11 @@ rodney waitstable --local
 # Click "Start" on the unstarted activity to create a workspace
 # The testid includes the activity ID, so use prefix match
 rodney click --local '[data-testid^="start-activity-btn"]'
-rodney waitload --local
-rodney waitstable --local
-sleep 1  # Allow annotation page to fully render
+wait_for '[data-testid="content-editor"]' 'Annotation page editor'
 
 # Open tag management dialog from the toolbar
 rodney click --local '[data-testid="tag-settings-btn"]'
-sleep 0.5
-rodney waitstable --local
+wait_for '[data-testid="add-tag-group-btn"]' 'Tag management dialog'
 
 # Add a tag group
 rodney click --local '[data-testid="add-tag-group-btn"]'
@@ -157,7 +154,7 @@ note "Re-authenticate as a student to verify the activity is visible."
 authenticate_as "student-demo@test.example.edu.au"
 rodney open --local "$BASE_URL"
 rodney waitload --local
-rodney waitstable --local
+wait_for '.q-page' 'Student navigator page'
 take_screenshot "07_student_navigator"
 add_image "07_student_navigator"
 note "The student can see the unit and activity on their Navigator. They can click Start to create a workspace."

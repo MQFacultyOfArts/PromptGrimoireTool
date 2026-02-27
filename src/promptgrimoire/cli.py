@@ -2591,3 +2591,79 @@ def show_export_log() -> None:
             sys.exit(1)
         with console.pager():
             console.print(log_file.read_text())
+
+
+def make_docs() -> None:
+    """Generate user-facing documentation guides.
+
+    Starts a NiceGUI server with mock auth, runs Rodney/Showboat capture
+    scripts against it, then converts the resulting Markdown to PDF via
+    Pandoc with LuaLaTeX.
+    """
+    import socket
+
+    # --- Dependency checks ---------------------------------------------------
+    required_tools = ["rodney", "showboat", "pandoc"]
+    for tool in required_tools:
+        if shutil.which(tool) is None:
+            print(
+                f"Error: '{tool}' not found in PATH.\n"
+                f"Install {tool} before running make-docs."
+            )
+            sys.exit(1)
+
+    # --- DB setup & server lifecycle -----------------------------------------
+    _pre_test_db_cleanup()
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
+    os.environ["DEV__AUTH_MOCK"] = "true"
+    server_process = _start_e2e_server(port)
+
+    project_root = Path(__file__).resolve().parents[2]
+    base_url = f"http://localhost:{port}"
+
+    scripts = [
+        "docs/guides/scripts/generate-instructor-setup.sh",
+        "docs/guides/scripts/generate-student-workflow.sh",
+    ]
+
+    guides = [
+        ("docs/guides/instructor-setup.md", "docs/guides/instructor-setup.pdf"),
+        ("docs/guides/student-workflow.md", "docs/guides/student-workflow.pdf"),
+    ]
+
+    try:
+        # --- Run capture scripts ---------------------------------------------
+        for script in scripts:
+            result = subprocess.run(
+                ["bash", script, base_url],
+                cwd=project_root,
+                check=False,
+            )
+            if result.returncode != 0:
+                console.print(f"[red]Error:[/] Script failed: {script}")
+                sys.exit(1)
+
+        # --- Convert Markdown to PDF via Pandoc ------------------------------
+        for md_path, pdf_path in guides:
+            result = subprocess.run(
+                [
+                    "pandoc",
+                    md_path,
+                    "-o",
+                    pdf_path,
+                    "--pdf-engine=lualatex",
+                ],
+                cwd=project_root,
+                check=False,
+            )
+            if result.returncode != 0:
+                console.print(f"[red]Error:[/] Pandoc failed for: {md_path}")
+                sys.exit(1)
+            console.print(f"[green]Generated:[/] {pdf_path}")
+
+    finally:
+        _stop_e2e_server(server_process)

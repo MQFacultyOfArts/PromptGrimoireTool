@@ -116,9 +116,6 @@ ignore = [
 "src/promptgrimoire/cli.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]
-"src/promptgrimoire/cli_backfill.py" = [
-    "PLC0415",  # Deferred imports to avoid circular import through input_pipeline
-]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block
 ]

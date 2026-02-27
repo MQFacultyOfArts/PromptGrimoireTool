@@ -141,9 +141,11 @@ def configure_course_setting(page: Page, *, toggle_label: str, enabled: bool) ->
         toggle_label: Text label of the toggle to set.
         enabled: Whether the toggle should be on or off.
     """
-    # Click the settings gear icon button — NiceGUI icon-only buttons have no
-    # accessible name, so locate via the Material Icon text inside the button.
-    page.locator("button").filter(
+    # Click the course-level settings gear icon button — NiceGUI icon-only
+    # buttons have no accessible name, so locate via the Material Icon text
+    # inside the button.  Exclude .q-btn--dense to skip per-activity settings
+    # buttons (which use props("flat round dense size=sm")).
+    page.locator("button:not(.q-btn--dense)").filter(
         has=page.locator("i.q-icon", has_text="settings")
     ).click()
 

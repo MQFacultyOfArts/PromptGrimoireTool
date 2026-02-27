@@ -182,7 +182,7 @@ def _verify_copy_protection_enabled(page: Page) -> None:
     Opens the settings dialog, checks the switch state, then
     closes the dialog via Cancel.
     """
-    page.locator("button").filter(
+    page.locator("button:not(.q-btn--dense)").filter(
         has=page.locator("i.q-icon", has_text="settings")
     ).click()
     dialog_title = page.get_by_text("Unit Settings:")

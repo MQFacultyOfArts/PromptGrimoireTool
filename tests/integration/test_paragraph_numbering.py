@@ -103,6 +103,73 @@ class TestWorkspaceDocumentParagraphFields:
         assert reloaded.auto_number_paragraphs is False
 
 
+class TestAddDocumentWithParagraphFields:
+    """Verify add_document() persists paragraph numbering fields."""
+
+    @pytest.mark.asyncio
+    async def test_explicit_paragraph_fields_persist(
+        self,
+        db_session: AsyncSession,  # noqa: ARG002 — triggers DB URL setup
+    ) -> None:
+        """Explicit paragraph fields persist and round-trip."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            get_document,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        test_map: dict[str, int] = {
+            "0": 5,
+            "42": 6,
+            "110": 7,
+        }
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p><span>AustLII</span></p>",
+            source_type="html",
+            auto_number_paragraphs=False,
+            paragraph_map=test_map,
+        )
+
+        reloaded = await get_document(doc.id)
+        assert reloaded is not None
+        assert reloaded.auto_number_paragraphs is False
+        assert reloaded.paragraph_map == {
+            "0": 5,
+            "42": 6,
+            "110": 7,
+        }
+
+    @pytest.mark.asyncio
+    async def test_defaults_when_no_paragraph_args(
+        self,
+        db_session: AsyncSession,  # noqa: ARG002 — triggers DB URL setup
+    ) -> None:
+        """No paragraph args gives defaults (True, {})."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            get_document,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p><span>Plain</span></p>",
+            source_type="text",
+        )
+
+        reloaded = await get_document(doc.id)
+        assert reloaded is not None
+        assert reloaded.auto_number_paragraphs is True
+        assert reloaded.paragraph_map == {}
+
+
 class TestCloneParagraphFields:
     """Verify clone_workspace_from_activity propagates paragraph numbering fields."""
 

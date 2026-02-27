@@ -219,11 +219,16 @@ async def _render_document_with_highlights(
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading
-    # Add padding-top to account for fixed toolbar (approx 50px height)
-    layout_wrapper = ui.element("div").style(
-        "position: relative; display: flex; gap: 1.5rem; "
-        "width: 90%; max-width: 1600px; margin: 0 auto; padding-top: 60px; "
-        "min-height: calc(100vh - 250px);"
+    # padding-bottom for fixed bottom toolbar (60px initial;
+    # ResizeObserver adjusts dynamically)
+    layout_wrapper = (
+        ui.element("div")
+        .props('id="annotation-layout-wrapper"')
+        .style(
+            "position: relative; display: flex; gap: 1.5rem; "
+            "width: 90%; max-width: 1600px; margin: 0 auto; padding-bottom: 60px; "
+            "min-height: calc(100vh - 250px);"
+        )
     )
     with layout_wrapper:
         # Document content - proper readable width (~65% of layout)

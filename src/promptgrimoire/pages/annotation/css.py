@@ -175,8 +175,8 @@ _PAGE_CSS = """
     }
 
     /* Compact buttons */
-    .compact-btn {
-        padding: 2px 8px !important;
+    .q-btn.compact-btn {
+        padding: 0px 6px !important;
         min-height: 24px !important;
         font-size: 11px !important;
         vertical-align: middle !important;
@@ -368,9 +368,10 @@ def _build_tag_toolbar(
     toolbar_wrapper = (
         ui.element("div")
         .classes("bg-gray-100 py-1 px-4")
+        .props('id="tag-toolbar-wrapper"')
         .style(
-            "position: fixed; top: 0; left: 0; right: 0; z-index: 100; "
-            "box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+            "position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; "
+            "box-shadow: 0 -2px 4px rgba(0,0,0,0.1);"
         )
     )
     with (

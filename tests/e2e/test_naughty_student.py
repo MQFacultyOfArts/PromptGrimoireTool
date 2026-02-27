@@ -290,8 +290,8 @@ class TestNaughtyStudent:
 
                         # Core assertion: page didn't crash
                         # Verify known UI element is still visible
-                        heading = page.get_by_text("Annotation Workspace").first
-                        expect(heading).to_be_visible(timeout=5000)
+                        tab_label = page.get_by_text("Annotate").first
+                        expect(tab_label).to_be_visible(timeout=5000)
 
                         # Try to detect if text walker initialised
                         try:

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from selectolax.lexbor import LexborHTMLParser
 
 # Platform detection: must have both chakra-card class AND chatcraft.org text
+# ChatCraft exports browser-rendered HTML which always uses double-quoted attributes
 _CARD_PATTERN = re.compile(r'class="[^"]*chakra-card[^"]*"', re.IGNORECASE)
 
 # CSS selectors for ChatCraft chrome elements to remove
@@ -32,6 +33,7 @@ def _classify_speaker(title: str) -> str:
     Heuristic: model identifiers contain hyphens but no spaces
     (e.g. claude-sonnet-4, gpt-4). Human names have spaces.
     """
+    # Exact match: ChatCraft uses "System Prompt" (title-case) as of 2026-02
     if title == "System Prompt":
         return "system"
     if " " not in title and "-" in title:

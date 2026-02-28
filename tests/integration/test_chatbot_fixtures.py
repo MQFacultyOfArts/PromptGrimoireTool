@@ -119,6 +119,21 @@ class TestSpeakerLabelsInjected:
         assert "Assistant:" in latex, f"No Assistant: label in {fixture_name}"
 
     @pytest.mark.asyncio
+    async def test_system_label_in_chatcraft_latex(self) -> None:
+        """chatcraft_prd.html has a system prompt card; System: must appear in LaTeX.
+
+        ChatCraft is the only fixture with a system turn.  AC3.7 requires all
+        three speaker labels (User, Assistant, System) to be verified at the
+        integration level.
+        """
+        html = _load_fixture("chatcraft_prd.html")
+        html = _preprocess_chatbot_html(html)
+
+        latex = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        assert "System:" in latex, "chatcraft_prd.html must produce a System: label"
+
+    @pytest.mark.asyncio
     async def test_partial_conversation_has_user_label(self) -> None:
         """claude_maths.html has only a user message (placeholder fixture)."""
         html = _load_fixture("claude_maths.html")

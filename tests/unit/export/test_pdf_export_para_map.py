@@ -15,8 +15,9 @@ def _convert_paragraph_map(
 ) -> dict[int, int | None] | None:
     """Replicate the conversion logic from pdf_export._handle_pdf_export().
 
-    This is the exact pattern used at the call site:
-        {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+    SYNC: Must match the inline conversion in pdf_export.py (~line 153).
+    If the production conversion changes, update this helper to match.
+    Pattern: {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
     """
     return {int(k): v for k, v in raw_map.items()} if raw_map else None
 

@@ -2650,10 +2650,11 @@ def make_docs() -> None:
         os.environ.pop("DEV__AUTH_MOCK", None)
 
     # --- MkDocs build (HTML site) --------------------------------------------
-    subprocess.run(["uv", "run", "mkdocs", "build"], check=True)
+    project_root = Path(__file__).resolve().parents[2]
+    subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
 
     # --- Pandoc PDF generation -----------------------------------------------
-    guides_dir = Path("docs/guides")
+    guides_dir = project_root / "docs" / "guides"
     for guide_name in ("instructor-setup", "student-workflow"):
         md_path = guides_dir / f"{guide_name}.md"
         pdf_path = guides_dir / f"{guide_name}.pdf"

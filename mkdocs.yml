@@ -1,3 +1,6 @@
+# Transitional configuration: MkDocs 1.x + Material 9.x.
+# Material warns about MkDocs 2.0 incompatibility at build time.
+# This is expected -- the plan targets migration to Zensical (AC9.1).
 site_name: PromptGrimoire Guides
 theme:
   name: material

@@ -6,7 +6,7 @@ Covers acceptance criteria AC4.1-AC4.5, AC6.1, AC7.1, AC7.2, and AC8.1.
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -215,7 +215,7 @@ class TestMakeDocsCleanup:
 class TestMakeDocsMkdocsBuild:
     """AC6.1: mkdocs build is called after guide functions complete."""
 
-    def test_mkdocs_build_called(self, _mock_happy_path):
+    def test_mkdocs_build_called_with_cwd(self, _mock_happy_path):
         mocks = _mock_happy_path
 
         cli_module.make_docs()
@@ -226,7 +226,9 @@ class TestMakeDocsMkdocsBuild:
             if c[0][0][:3] == ["uv", "run", "mkdocs"]
         ]
         assert len(mkdocs_calls) == 1
-        assert mkdocs_calls[0] == call(["uv", "run", "mkdocs", "build"], check=True)
+        assert mkdocs_calls[0][0][0] == ["uv", "run", "mkdocs", "build"]
+        assert mkdocs_calls[0][1]["check"] is True
+        assert "cwd" in mkdocs_calls[0][1]
 
     def test_mkdocs_build_runs_after_guides(self, _mock_happy_path):
         mocks = _mock_happy_path

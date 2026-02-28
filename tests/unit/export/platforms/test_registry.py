@@ -54,11 +54,17 @@ class TestDiscoverHandlers:
 
         assert "openrouter" in _handlers
 
-    def test_discovers_all_handlers(self) -> None:
-        """Autodiscovery finds exactly 7 handlers."""
+    def test_discovers_chatcraft_handler(self) -> None:
+        """Autodiscovery finds ChatCraft handler."""
         from promptgrimoire.export.platforms import _handlers
 
-        assert len(_handlers) == 7
+        assert "chatcraft" in _handlers
+
+    def test_discovers_all_handlers(self) -> None:
+        """Autodiscovery finds exactly 8 handlers."""
+        from promptgrimoire.export.platforms import _handlers
+
+        assert len(_handlers) == 8
 
 
 class TestGetHandler:

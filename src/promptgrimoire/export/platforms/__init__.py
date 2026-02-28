@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 # Registry of platform handlers, populated by autodiscovery
 _handlers: dict[str, PlatformHandler] = {}
 
+# Role names are used verbatim in HTML attribute values.  They must be safe
+# for injection into a double-quoted HTML attribute string.
+_ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+
 
 @runtime_checkable
 class PlatformHandler(Protocol):
@@ -153,6 +157,9 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
         markers = handler.get_turn_markers()
 
         for role, pattern in markers.items():
+            if not _ROLE_NAME_RE.match(role):
+                msg = f"Role name {role!r} is not safe for HTML attribute injection"
+                raise ValueError(msg)
             result = re.sub(
                 pattern,
                 rf'<div data-speaker="{role}" class="speaker-turn"></div>\1',

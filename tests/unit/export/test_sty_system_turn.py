@@ -41,9 +41,6 @@ class TestSystemTurnLatexDefinitions:
         assert r"{systemturn}" in sty_content, (
             ".sty must define systemturn mdframed environment."
         )
-        assert "newmdenv" in sty_content and "systemturn" in sty_content, (
-            "systemturn must be defined via \\newmdenv."
-        )
 
     def test_systemturn_uses_systemcolor(self, sty_content: str) -> None:
         """The systemturn environment must use systemcolor for its border."""

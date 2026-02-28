@@ -49,18 +49,12 @@ def _assert_role_has_styling(
         f"LaTeX .sty is missing \\newmdenv definition ending with {sty_env}"
     )
 
-    # The Lua table uses bare identifiers as keys, e.g.  user = {
-    # Match the role as a table key (with optional whitespace around '=').
-    assert f"{role}" in lua_text, (
-        f"Lua filter speaker_roles table is missing key '{role}'"
-    )
-    # Stricter check: role appears as a key in the speaker_roles table
-    # (format: "  role_name  = {")
-    import re
-
-    lua_key_pattern = rf"^\s*{re.escape(role)}\s*="
-    assert re.search(lua_key_pattern, lua_text, re.MULTILINE), (
-        f"Lua filter speaker_roles table has no key entry for '{role}'"
+    # Check that the env field value for this role exists in the Lua table.
+    # Every speaker_roles entry has the form:  env = '<role>turn'
+    # This is unambiguous: it only appears inside speaker_roles entries,
+    # never in comments or unrelated variable assignments.
+    assert f"env = '{role}turn'" in lua_text, (
+        f"Lua filter speaker_roles table has no entry for '{role}'"
     )
 
 

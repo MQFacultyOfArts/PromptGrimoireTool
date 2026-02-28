@@ -195,7 +195,9 @@ function Div(elem)
     -- Close previous speaker turn environment if open
     if current_speaker then
       local prev_info = speaker_roles[current_speaker]
-      table.insert(result, pandoc.RawBlock('latex', '\\end{' .. prev_info.env .. '}'))
+      if prev_info then
+        table.insert(result, pandoc.RawBlock('latex', '\\end{' .. prev_info.env .. '}'))
+      end
     end
 
     -- Add spacing and label before the environment
@@ -282,7 +284,9 @@ function Pandoc(doc)
   -- If there's an open speaker turn, close it
   if current_speaker then
     local info = speaker_roles[current_speaker]
-    table.insert(doc.blocks, pandoc.RawBlock('latex', '\\end{' .. info.env .. '}'))
+    if info then
+      table.insert(doc.blocks, pandoc.RawBlock('latex', '\\end{' .. info.env .. '}'))
+    end
     current_speaker = nil  -- Reset state
   end
 

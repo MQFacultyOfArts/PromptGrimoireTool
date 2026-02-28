@@ -2621,14 +2621,15 @@ def make_docs() -> None:
         s.bind(("", 0))
         port = s.getsockname()[1]
 
+    # --- Server & Playwright lifecycle -----------------------------------------
     os.environ["DEV__AUTH_MOCK"] = "true"
-    server_process = _start_e2e_server(port)
-    base_url = f"http://localhost:{port}"
-
-    # --- Playwright launch & guide execution ---------------------------------
+    server_process = None
     pw = None
     browser = None
     try:
+        server_process = _start_e2e_server(port)
+        base_url = f"http://localhost:{port}"
+
         pw = sync_playwright().start()
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1280, "height": 800})
@@ -2641,5 +2642,6 @@ def make_docs() -> None:
             browser.close()
         if pw is not None:
             pw.stop()
-        _stop_e2e_server(server_process)
+        if server_process is not None:
+            _stop_e2e_server(server_process)
         os.environ.pop("DEV__AUTH_MOCK", None)

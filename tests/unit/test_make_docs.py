@@ -106,6 +106,28 @@ class TestMakeDocsServerLifecycle:
         assert base_url_arg.startswith("http://localhost:")
 
 
+class TestMakeDocsOutputProduction:
+    """AC4.3: Pipeline produces markdown files and screenshots."""
+
+    def test_produces_output_files(self, _mock_happy_path, tmp_path):
+        mocks = _mock_happy_path
+        md_file = tmp_path / "guides" / "instructor-setup.md"
+        screenshot = tmp_path / "guides" / "screenshots" / "instructor-setup-01.png"
+
+        def _create_instructor_output(_page, _base_url):
+            md_file.parent.mkdir(parents=True, exist_ok=True)
+            md_file.write_text("# Instructor Setup\n")
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            screenshot.write_bytes(b"PNG")
+
+        mocks["instructor"].side_effect = _create_instructor_output
+
+        cli_module.make_docs()
+
+        assert md_file.exists()
+        assert screenshot.exists()
+
+
 class TestMakeDocsGuideOrder:
     """AC4.2: Instructor guide runs before student guide."""
 

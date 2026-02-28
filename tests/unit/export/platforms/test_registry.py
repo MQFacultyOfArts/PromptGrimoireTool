@@ -48,11 +48,17 @@ class TestDiscoverHandlers:
 
         assert "wikimedia" in _handlers
 
-    def test_discovers_all_six_handlers(self) -> None:
-        """Autodiscovery finds exactly 6 handlers."""
+    def test_discovers_openrouter_handler(self) -> None:
+        """Autodiscovery finds OpenRouter handler."""
         from promptgrimoire.export.platforms import _handlers
 
-        assert len(_handlers) == 6
+        assert "openrouter" in _handlers
+
+    def test_discovers_all_handlers(self) -> None:
+        """Autodiscovery finds exactly 7 handlers."""
+        from promptgrimoire.export.platforms import _handlers
+
+        assert len(_handlers) == 7
 
 
 class TestGetHandler:

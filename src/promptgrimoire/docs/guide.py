@@ -56,11 +56,8 @@ class Guide:
         return re.sub(r"[^a-z0-9-]", "", slug)
 
     def __enter__(self) -> Self:
-        if self._output_dir is not None:
-            (self._output_dir / self._screenshot_subdir).mkdir(
-                parents=True, exist_ok=True
-            )
-        self._buffer.append(f"# {self._title}\n")
+        (self._output_dir / self._screenshot_subdir).mkdir(parents=True, exist_ok=True)
+        self._append(f"# {self._title}\n")
         return self
 
     def __exit__(
@@ -69,18 +66,21 @@ class Guide:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool:
-        if self._output_dir is not None:
-            md_path = self._output_dir / f"{self._slug}.md"
-            md_path.write_text("\n".join(self._buffer))
+        md_path = self._output_dir / f"{self._slug}.md"
+        md_path.write_text("\n".join(self._buffer))
         return False
 
     def step(self, heading: str) -> Step:
         """Create a ``Step`` context manager bound to this guide."""
         return Step(self, heading)
 
+    def _append(self, line: str) -> None:
+        """Append a line to the internal markdown buffer."""
+        self._buffer.append(line)
+
     def note(self, text: str) -> None:
         """Append a narrative paragraph to the markdown buffer."""
-        self._buffer.append(f"{text}\n")
+        self._append(f"{text}\n")
 
     def screenshot(
         self,
@@ -100,7 +100,7 @@ class Guide:
         capture_screenshot(
             self._page, path, highlight=highlight, focus=focus, trim=trim
         )
-        self._buffer.append(f"![{caption}]({self._screenshot_subdir}/{filename})\n")
+        self._append(f"![{caption}]({self._screenshot_subdir}/{filename})\n")
         return path
 
 
@@ -118,7 +118,7 @@ class Step:
         self._heading = heading
 
     def __enter__(self) -> Guide:
-        self._guide._buffer.append(f"## {self._heading}\n")
+        self._guide._append(f"## {self._heading}\n")
         return self._guide
 
     def __exit__(

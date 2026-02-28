@@ -116,7 +116,7 @@ def capture_screenshot(
     Path
         The *path* argument, for chaining convenience.
     """
-    style_handle = highlight_elements(page, highlight) if highlight else None
+    style_handle = highlight_elements(page, highlight)
 
     try:
         if focus is not None:
@@ -124,8 +124,7 @@ def capture_screenshot(
         else:
             image_bytes = page.screenshot()
     finally:
-        if style_handle is not None:
-            remove_highlight(page, style_handle)
+        remove_highlight(page, style_handle)
 
     if trim:
         image_bytes = trim_whitespace(image_bytes)

@@ -39,6 +39,26 @@ def _has_nonwhitespace_text(node: Any) -> bool:
     return not _WHITESPACE_RUN.fullmatch(text)
 
 
+def _collapse_text_node(node: Any) -> str | None:
+    """Return collapsed text for a text node, or ``None`` if it should be skipped.
+
+    Applies the same whitespace rules as ``extract_text_from_html()``:
+    skip empty text, skip whitespace-only text inside block elements,
+    and collapse whitespace runs to a single space.
+    """
+    text = node.text_content
+    if not text:
+        return None
+    parent = node.parent
+    if (
+        parent is not None
+        and parent.tag in _BLOCK_TAGS
+        and _WHITESPACE_RUN.fullmatch(text)
+    ):
+        return None
+    return _WHITESPACE_RUN.sub(" ", text)
+
+
 @dataclass
 class _WalkState:
     """Mutable state threaded through the paragraph-map walk."""
@@ -54,17 +74,9 @@ class _WalkState:
 
 def _handle_text_node(node: Any, state: _WalkState) -> None:
     """Process a text node, updating char offset and br-split state."""
-    text = node.text_content
-    if not text:
+    collapsed = _collapse_text_node(node)
+    if collapsed is None:
         return
-    parent = node.parent
-    if (
-        parent is not None
-        and parent.tag in _BLOCK_TAGS
-        and _WHITESPACE_RUN.fullmatch(text)
-    ):
-        return
-    collapsed = _WHITESPACE_RUN.sub(" ", text)
 
     # After 2+ consecutive <br>, this text starts a new
     # paragraph (br-br split within a block).
@@ -216,24 +228,16 @@ class _InjectState:
 
 def _inject_handle_text(node: Any, state: _InjectState) -> None:
     """Process a text node during injection, mirroring _handle_text_node."""
-    text = node.text_content
-    if not text:
+    collapsed = _collapse_text_node(node)
+    if collapsed is None:
         return
-    parent = node.parent
-    if (
-        parent is not None
-        and parent.tag in _BLOCK_TAGS
-        and _WHITESPACE_RUN.fullmatch(text)
-    ):
-        return
-    collapsed = _WHITESPACE_RUN.sub(" ", text)
 
     # br-br pseudo-paragraph: record for post-serialisation wrapping.
     # selectolax escapes HTML when replacing text nodes, so we must
     # do string-level insertion after the DOM is serialised.
     if state.consecutive_br >= 2 and state.char_offset in state.paragraph_map:
         para_num = state.paragraph_map[state.char_offset]
-        raw_text = node.html or text
+        raw_text = node.html or node.text_content
         state.br_br_wraps.append((raw_text, para_num))
 
     state.consecutive_br = 0

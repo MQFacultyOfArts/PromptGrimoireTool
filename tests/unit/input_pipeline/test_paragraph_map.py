@@ -315,10 +315,7 @@ class TestInjectParagraphAttributes:
     def test_ac4_2_source_numbered_li(self) -> None:
         """AC4.2: Source-numbered <li value> gets data-para from map."""
         html = '<ol><li value="5">Fifth</li><li value="10">Tenth</li></ol>'
-        # Build the real map to get correct offsets
-        para_map = {
-            str(k): v for k, v in build_paragraph_map(html, auto_number=False).items()
-        }
+        para_map = build_paragraph_map_for_json(html, auto_number=False)
         result = inject_paragraph_attributes(html, para_map)
         tree = LexborHTMLParser(result)
         items = tree.css("li[data-para]")
@@ -329,9 +326,7 @@ class TestInjectParagraphAttributes:
     def test_ac4_3_headers_not_attributed(self) -> None:
         """AC4.3: Headers do NOT get data-para attributes."""
         html = "<h1>Title</h1><p>Body</p>"
-        para_map = {
-            str(k): v for k, v in build_paragraph_map(html, auto_number=True).items()
-        }
+        para_map = build_paragraph_map_for_json(html, auto_number=True)
         result = inject_paragraph_attributes(html, para_map)
         tree = LexborHTMLParser(result)
         # Header must not have data-para
@@ -367,9 +362,7 @@ class TestInjectParagraphAttributes:
     def test_br_br_pseudo_paragraph(self) -> None:
         """br-br split text gets a <span data-para> wrapper."""
         html = "<p>Line one<br><br>Line two</p>"
-        para_map = {
-            str(k): v for k, v in build_paragraph_map(html, auto_number=True).items()
-        }
+        para_map = build_paragraph_map_for_json(html, auto_number=True)
         result = inject_paragraph_attributes(html, para_map)
         tree = LexborHTMLParser(result)
         # The <p> should have data-para for the first paragraph

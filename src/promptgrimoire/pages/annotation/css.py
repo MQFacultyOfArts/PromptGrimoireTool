@@ -61,6 +61,14 @@ _PAGE_CSS = """
         pointer-events: none;
     }
 
+    /* In ordered lists the native list marker already shows the number.
+       Suppress the grey data-para margin number to avoid overlap.
+       Covers both direct <li data-para> and wrapper <li> > <div data-para>. */
+    .doc-container ol > li[data-para]::before,
+    .doc-container ol > li > [data-para]::before {
+        content: none;
+    }
+
     /* Tables: proper table layout, container handles overflow */
     .doc-container table {
         border-collapse: collapse;

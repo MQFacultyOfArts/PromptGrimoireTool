@@ -27,9 +27,35 @@ from promptgrimoire.input_pipeline.html_input import (
     _WHITESPACE_RUN,
 )
 
-# Block elements that receive paragraph numbers in auto-number mode.
-# Headers (h1-h6) are explicitly excluded per AC1.5.
+# Block elements that participate in paragraph-map traversal.
+# Headers (h1-h6) are excluded per AC1.5.
+# <li> is included for source-number mode and walk-state management,
+# but skipped during auto-number counting (list items are sub-structure,
+# not discourse-level paragraphs).
 _PARA_TAGS = frozenset(("p", "li", "blockquote", "div"))
+
+# Tags inside _PARA_TAGS that are block-level.  Used to detect
+# wrapper divs: a <div> whose subtree contains any of these tags
+# is a structural wrapper, not a leaf paragraph.
+_INNER_BLOCK_TAGS = frozenset(
+    ("p", "li", "blockquote", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6")
+)
+
+
+def _is_block_wrapper(node: Any) -> bool:
+    """Return ``True`` if *node* contains block-level children.
+
+    Block wrappers (divs, blockquotes, etc. that contain nested block
+    elements) should not receive paragraph numbers because their
+    block-level descendants handle the paragraphing.  Only "leaf"
+    elements (those with direct text but no nested blocks) are paragraphs.
+    """
+    child = node.child
+    while child is not None:
+        if getattr(child, "tag", None) in _INNER_BLOCK_TAGS:
+            return True
+        child = child.next
+    return False
 
 
 def _has_nonwhitespace_text(node: Any) -> bool:
@@ -96,7 +122,19 @@ def _handle_para_tag(node: Any, tag: str, state: _WalkState) -> None:
     state.block_recorded = False
     state.consecutive_br = 0
 
+    # Block wrappers (containing block-level children) are structural —
+    # their block children handle the paragraphing.  Applies to any
+    # _PARA_TAGS element (div, blockquote, p), not just div.
+    # Exception: <li> in source-number mode provides the paragraph
+    # number from its HTML value attribute regardless of wrapper status.
+    if _is_block_wrapper(node) and (state.auto_number or tag != "li"):
+        return
+
     if state.auto_number:
+        # In auto-number mode, <li> items are sub-structure within a
+        # list, not discourse-level paragraphs worth numbering.
+        if tag == "li":
+            return
         if _has_nonwhitespace_text(node):
             state.current_para += 1
             state.result[state.char_offset] = state.current_para
@@ -250,6 +288,14 @@ def _inject_handle_para(node: Any, tag: str, state: _InjectState) -> None:
     state.current_block_tag = tag
     state.current_block_node = node
     state.consecutive_br = 0
+
+    # Mirror the filtering from _handle_para_tag: block wrappers are
+    # structural containers whose block children handle paragraphing,
+    # and only elements with actual text content should be labelled.
+    if _is_block_wrapper(node):
+        return
+    if not _has_nonwhitespace_text(node):
+        return
 
     # Set data-para on block elements whose char offset is in the map.
     if state.char_offset in state.paragraph_map:

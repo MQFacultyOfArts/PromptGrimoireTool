@@ -120,16 +120,40 @@ class TestAutoNumberParagraphs:
         assert result[11] == 3
 
     def test_ac1_2_mixed_block_elements(self) -> None:
-        """AC1.2: Mixed block elements (<p>, <blockquote>, <li>) all numbered."""
+        """AC1.2: <p> and <blockquote> numbered; <li> skipped in auto-number.
+
+        List items are sub-structure, not discourse-level paragraphs.
+        Only <p>, <blockquote>, and leaf <div> receive auto-numbers.
+        """
         html = "<p>Text</p><blockquote>Quote</blockquote><ul><li>Item</li></ul>"
         result = build_paragraph_map(html, auto_number=True)
-        assert len(result) == 3
-        values = sorted(result.values())
-        assert values == [1, 2, 3]
-        # "Text" at 0, "Quote" at 4, "Item" at 9
+        assert len(result) == 2
+        # "Text" at 0, "Quote" at 4; "Item" not numbered
         assert result[0] == 1
         assert result[4] == 2
-        assert result[9] == 3
+
+    def test_blockquote_wrapping_p_not_double_counted(self) -> None:
+        """Blockquote containing <p> children is a wrapper — only <p> gets numbered.
+
+        Regression: blockquote consumed a para number then <p> overwrote the
+        map entry, causing skipped numbers and double data-para attributes.
+        """
+        html = "<p>Before</p><blockquote><p>Quoted text</p></blockquote><p>After</p>"
+        result = build_paragraph_map(html, auto_number=True)
+        # Three paragraphs: "Before", "Quoted text", "After" — no skipped numbers
+        assert sorted(result.values()) == [1, 2, 3]
+
+    def test_blockquote_wrapping_multiple_p(self) -> None:
+        """Blockquote wrapping multiple <p> children — each <p> gets a number."""
+        html = "<blockquote><p>First quote</p><p>Second quote</p></blockquote>"
+        result = build_paragraph_map(html, auto_number=True)
+        assert sorted(result.values()) == [1, 2]
+
+    def test_leaf_blockquote_numbered(self) -> None:
+        """Blockquote with only text (no block children) gets a paragraph number."""
+        html = "<p>Before</p><blockquote>Direct quote text</blockquote><p>After</p>"
+        result = build_paragraph_map(html, auto_number=True)
+        assert sorted(result.values()) == [1, 2, 3]
 
     def test_ac1_3_br_br_creates_new_paragraph(self) -> None:
         """AC1.3: <br><br>+ sequences within a block create new paragraph numbers."""
@@ -387,6 +411,26 @@ class TestInjectParagraphAttributes:
         assert span.attributes["data-para"] == "2"
         # The entity should be preserved in the output
         assert "&amp;" in result or "& value" in span.text()
+
+    def test_blockquote_wrapping_p_no_double_attribute(self) -> None:
+        """Blockquote wrapping <p> — only the <p> gets data-para, not the blockquote.
+
+        Regression: both blockquote and inner <p> got data-para at the same
+        offset, causing overlapping paragraph numbers in the margin.
+        """
+        html = "<p>Before</p><blockquote><p>Quoted</p></blockquote><p>After</p>"
+        para_map = build_paragraph_map_for_json(html, auto_number=True)
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        # Only <p> elements should have data-para, not <blockquote>
+        bq_with_para = tree.css("blockquote[data-para]")
+        assert len(bq_with_para) == 0, (
+            f"Blockquote should NOT have data-para, found: "
+            f"{[bq.attributes for bq in bq_with_para]}"
+        )
+        p_with_para = tree.css("p[data-para]")
+        assert len(p_with_para) == 3
+        assert [p.attributes["data-para"] for p in p_with_para] == ["1", "2", "3"]
 
     def test_elements_not_in_map_unchanged(self) -> None:
         """Elements whose offsets are NOT in the map get no data-para."""

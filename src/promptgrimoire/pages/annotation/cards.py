@@ -210,6 +210,12 @@ def _build_para_ref_editor(
         highlight_id: ID of the highlight to update.
         para_ref: Current paragraph reference string.
     """
+    # Mutable container so finish_edit always falls back to the most recently
+    # saved value, not the stale value captured at construction time.
+    # If the user edits [3] → [3a] (saved), then opens again and clears the
+    # field, we must restore [3a], not [3].
+    current: list[str] = [para_ref]
+
     # Container holds label and input; only one visible at a time
     label = (
         ui.label(para_ref)
@@ -237,13 +243,14 @@ def _build_para_ref_editor(
         hid: str = highlight_id,
     ) -> None:
         new_value = (field.value or "").strip()
-        lbl.text = new_value if new_value else para_ref
+        lbl.text = new_value if new_value else current[0]
         lbl.set_visibility(True)
         field.set_visibility(False)
 
         # Only persist if value actually changed
-        if new_value and new_value != para_ref and state.crdt_doc is not None:
+        if new_value and new_value != current[0] and state.crdt_doc is not None:
             state.crdt_doc.update_highlight_para_ref(hid, new_value)
+            current[0] = new_value  # Track latest saved value for future edits
             pm = get_persistence_manager()
             pm.mark_dirty_workspace(
                 state.workspace_id,

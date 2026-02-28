@@ -442,11 +442,22 @@ class TestToggleParagraphNumbering:
     def test_toggle_does_not_modify_highlight_para_ref(self) -> None:
         """AC7.3: Toggling numbering mode leaves existing highlight para_ref intact.
 
-        The toggle handler calls ``update_document_paragraph_settings()`` and
-        rebuilds the paragraph map, but it does NOT call any CRDT update method
-        on existing highlights.  This test verifies that toggling the numbering
-        mode (simulated by rebuilding the map) does not alter the ``para_ref``
-        stored on CRDT highlights.
+        AC7.3 is verified at two levels:
+
+        1. **Structural (production code):** ``_handle_paragraph_toggle()`` in
+           ``header.py`` calls only ``build_paragraph_map_for_json()``,
+           ``update_document_paragraph_settings()``, and UI refresh helpers.
+           It contains no call to ``update_highlight_para_ref()`` or any other
+           CRDT mutation method on existing highlights.  The absence of that
+           call is the definitive guarantee — no toggle path can mutate
+           highlight ``para_ref`` values.
+
+        2. **Data-path (this test):** We simulate the rebuild step that the
+           toggle handler performs and verify that the CRDT highlights remain
+           unchanged.  This confirms that ``build_paragraph_map_for_json()``
+           itself is pure (it reads HTML, returns a dict, touches no CRDT state)
+           and that highlight ``para_ref`` values survive the toggle operation
+           end-to-end through the data model.
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.input_pipeline.paragraph_map import (

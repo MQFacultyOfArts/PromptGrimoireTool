@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
 
@@ -352,17 +354,6 @@ def scroll_to_char(page: Page, char_offset: int) -> None:
     page.wait_for_timeout(500)
 
 
-def select_chars(page: Page, start_char: int, end_char: int) -> None:
-    """Select a character range using mouse events.
-
-    Re-exported from :mod:`promptgrimoire.docs.helpers` for backwards
-    compatibility with existing E2E tests.
-    """
-    from promptgrimoire.docs.helpers import select_chars as _select_chars
-
-    _select_chars(page, start_char, end_char)
-
-
 def drag_sortable_item(source: Locator, target: Locator) -> None:
     """Drag a SortableJS item by its drag handle to the target.
 
@@ -585,17 +576,6 @@ def _load_fixture_via_paste(
         _seed_tags_for_workspace(workspace_id)
         page.reload()
         wait_for_text_walker(page, timeout=30000)
-
-
-def wait_for_text_walker(page: Page, *, timeout: int = 15000) -> None:
-    """Wait for the text walker to initialise (readiness gate).
-
-    Re-exported from :mod:`promptgrimoire.docs.helpers` for backwards
-    compatibility with existing E2E tests.
-    """
-    from promptgrimoire.docs.helpers import wait_for_text_walker as _wait
-
-    _wait(page, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------

@@ -177,7 +177,9 @@ def _step_highlight_text(page: Page, guide: Guide) -> None:
         tag_button = page.locator("[data-testid='tag-toolbar'] button").first
         tag_button.wait_for(state="visible", timeout=5000)
         tag_button.click()
-        page.wait_for_timeout(1000)
+        page.locator("[data-testid='annotation-card']").first.wait_for(
+            state="visible", timeout=5000
+        )
 
         g.screenshot(
             "Text highlighted and tagged with colour coding",
@@ -294,7 +296,7 @@ def _step_export_pdf(page: Page, guide: Guide) -> None:
 
         # Switch back to Annotate tab for the export button
         page.get_by_test_id("tab-annotate").click()
-        page.wait_for_timeout(500)
+        page.get_by_test_id("export-pdf-btn").wait_for(state="visible", timeout=5000)
 
         g.screenshot(
             "Export PDF button on the annotation page",

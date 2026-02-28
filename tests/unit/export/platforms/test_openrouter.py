@@ -38,7 +38,7 @@ class TestOpenRouterHandlerMatches:
     def test_does_not_match_gemini_html(self) -> None:
         """Handler does not match Gemini exports."""
         handler = OpenRouterHandler()
-        html = '<div class="conversation-container">Content</div>'
+        html = "<user-query>What is 2+2?</user-query><model-response>4</model-response>"
         assert handler.matches(html) is False
 
     def test_does_not_match_chatcraft_html(self) -> None:

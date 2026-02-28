@@ -19,6 +19,7 @@ from uuid import UUID
 
 from nicegui import app, ui
 
+from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import list_peer_workspaces_with_owners
@@ -284,12 +285,6 @@ def _get_user_id() -> UUID | None:
     return None
 
 
-def _is_admin() -> bool:
-    """Check if current user is an admin."""
-    user = _get_current_user()
-    return bool(user and user.get("is_admin"))
-
-
 def _is_db_available() -> bool:
     """Check if database is configured."""
     return bool(get_settings().database.url)
@@ -332,8 +327,10 @@ async def courses_list_page() -> None:
     enrollments = await list_user_enrollments(user_id)
     enrollment_map = {e.course_id: e for e in enrollments}
 
-    # Check if user is instructor in any course (or is org admin)
-    is_instructor = _is_admin() or any(e.role in _MANAGER_ROLES for e in enrollments)
+    # Check if user is privileged (admin/instructor Stytch role) or course manager
+    is_instructor = is_privileged_user(_get_current_user()) or any(
+        e.role in _MANAGER_ROLES for e in enrollments
+    )
 
     if is_instructor:
         ui.button("New Unit", on_click=lambda: ui.navigate.to("/courses/new")).classes(

@@ -158,6 +158,20 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 cr('_prompt_'), 'gi');
                             sp.a = new RegExp(
                                 cr('_markdown_'), 'gi');
+                        }} else if (/data-testid="playground-container"/.test(html)) {{
+                            window.{platform_var} = 'openrouter';
+                            sp.u = new RegExp(
+                                ar('data-testid="user-message"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-testid="assistant-message"'),
+                                'gi');
+                        }} else if (/chakra-card/.test(html)
+                            && /chatcraft\\.org/i.test(html)) {{
+                            window.{platform_var} = 'chatcraft';
+                            // Speaker labels injected in iframe
+                            // DOM section below — classification
+                            // requires span[title] inspection
                         }} else if (/mw-parser-output|mw-body-content/.test(html)) {{
                             window.{platform_var} = 'wikimedia';
                             // No speaker labels — wiki content
@@ -290,6 +304,49 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 iDoc.querySelectorAll(sel)
                                     .forEach(el => el.remove());
                             }}
+                        }}
+
+                        // Strip OpenRouter chrome
+                        if (window.{platform_var} === 'openrouter') {{
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll(
+                                '[data-testid="playground-composer"]'
+                            ).forEach(el => el.remove());
+                        }}
+
+                        // Strip ChatCraft chrome and classify speakers
+                        if (window.{platform_var} === 'chatcraft') {{
+                            const iDoc = iframe.contentDocument;
+                            // Remove sidebar chrome
+                            ['.chakra-accordion__item',
+                             'form',
+                             '.chakra-menu__menuitem'
+                            ].forEach(sel =>
+                                iDoc.querySelectorAll(sel)
+                                    .forEach(el => el.remove()));
+                            // Walk cards, classify speakers from
+                            // avatar span[title] attributes
+                            iDoc.querySelectorAll('.chakra-card')
+                                .forEach(card => {{
+                                const spans = card.querySelectorAll(
+                                    'span[title]');
+                                if (spans.length === 0) return;
+                                const title = spans[0]
+                                    .getAttribute('title') || '';
+                                let role;
+                                // Exact match for system prompt
+                                if (title === 'System Prompt') {{
+                                    role = 'system';
+                                // Model IDs have hyphens, no spaces
+                                }} else if (title.indexOf(' ') === -1
+                                    && title.indexOf('-') !== -1) {{
+                                    role = 'assistant';
+                                }} else {{
+                                    role = 'user';
+                                }}
+                                card.setAttribute(
+                                    'data-speaker', role);
+                            }});
                         }}
 
                         // Unwrap hyperlinks: replace <a href="url">text</a>

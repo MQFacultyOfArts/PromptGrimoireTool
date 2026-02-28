@@ -35,11 +35,30 @@ _PAGE_CSS = """
         font-size: 12pt;
         line-height: 1.6 !important;
         padding: 1rem;
+        padding-left: 3.5rem;  /* Extra space for paragraph numbers */
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         /* Allow horizontal scroll for wide content (tables) */
         overflow-x: auto;
+    }
+
+    /* Paragraph numbers in left margin (data-para attribute) */
+    .doc-container [data-para] {
+        position: relative;
+    }
+    .doc-container [data-para]::before {
+        content: attr(data-para);
+        position: absolute;
+        left: -3rem;
+        width: 2.5rem;
+        text-align: right;
+        font-family: "Fira Code", "Consolas", monospace;
+        font-size: 0.75rem;
+        color: #999;
+        line-height: inherit;
+        user-select: none;
+        pointer-events: none;
     }
 
     /* Tables: proper table layout, container handles overflow */

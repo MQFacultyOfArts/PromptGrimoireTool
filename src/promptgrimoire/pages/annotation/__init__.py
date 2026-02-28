@@ -225,6 +225,9 @@ class PageState:
     # Callback stored so _refresh_tag_state can rebuild the highlight menu
     # without re-wiring the on_tag_click closure.  Set by _build_highlight_menu.
     _highlight_menu_tag_click: Any = None
+    # Callback stored so _refresh_tag_state can rebuild the highlight menu
+    # with the "+ New" button.  Set by _build_highlight_menu.
+    _highlight_menu_on_add_click: Any = None
     # Reference to the Organise tab panel element for deferred rendering
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast

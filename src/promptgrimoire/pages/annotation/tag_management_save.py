@@ -53,8 +53,9 @@ async def _refresh_tag_state(
         )
 
         on_tag_click = getattr(state, "_highlight_menu_tag_click", None)
+        on_add_click = getattr(state, "_highlight_menu_on_add_click", None)
         if on_tag_click is not None:
-            _populate_highlight_menu(state, on_tag_click)
+            _populate_highlight_menu(state, on_tag_click, on_add_click=on_add_click)
 
     if reload_crdt and state.crdt_doc is not None:
         from promptgrimoire.db.workspaces import get_workspace  # noqa: PLC0415

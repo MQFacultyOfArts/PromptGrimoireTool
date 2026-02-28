@@ -110,11 +110,18 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.run_javascript(js_code)
 
 
-def _populate_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+def _populate_highlight_menu(
+    state: PageState, on_tag_click: Any, *, on_add_click: Any | None = None
+) -> None:
     """Populate the highlight menu card with abbreviated tag buttons.
 
     Clears existing content and rebuilds from ``state.tag_info_list``.
     Called on initial build and after tag list changes.
+
+    When *on_add_click* is provided (user has tag creation permission),
+    a "+ New" button is appended after all tag groups.  When no tags
+    exist and *on_add_click* is ``None``, the "No tags available" label
+    is shown with a tooltip directing the user to ask their instructor.
     """
     menu = state.highlight_menu
     if menu is None:
@@ -153,11 +160,31 @@ def _populate_highlight_menu(state: PageState, on_tag_click: Any) -> None:
                                     )
                             else:
                                 btn.tooltip(ti.name)
+
+                # Append "+ New" after all tag groups when permitted
+                if on_add_click is not None:
+                    ui.button("+ New", on_click=on_add_click).props(
+                        "flat dense color=grey-7"
+                    ).classes("text-sm").props(
+                        'data-testid="highlight-menu-new-tag"'
+                    ).tooltip("Create a new tag and apply it to your selection")
+        elif on_add_click is not None:
+            # Zero tags but user can create — show only the "+ New" button
+            ui.button("+ New", on_click=on_add_click).props(
+                "flat dense color=grey-7"
+            ).classes("text-sm").props('data-testid="highlight-menu-new-tag"').tooltip(
+                "Create a new tag and apply it to your selection"
+            )
         else:
-            ui.label("No tags available").classes("text-sm text-gray-600")
+            # Zero tags and no creation permission
+            ui.label("No tags available").classes("text-sm text-gray-600").tooltip(
+                "Ask your instructor to add tags to this activity"
+            )
 
 
-def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
+def _build_highlight_menu(
+    state: PageState, on_tag_click: Any, *, on_add_click: Any | None = None
+) -> None:
     """Build the floating highlight menu card and populate it."""
     highlight_menu = (
         ui.card()
@@ -167,10 +194,11 @@ def _build_highlight_menu(state: PageState, on_tag_click: Any) -> None:
     highlight_menu.set_visibility(False)
     state.highlight_menu = highlight_menu
 
-    # Store callback for rebuilds triggered by _refresh_tag_state
+    # Store callbacks for rebuilds triggered by _refresh_tag_state
     state._highlight_menu_tag_click = on_tag_click
+    state._highlight_menu_on_add_click = on_add_click
 
-    _populate_highlight_menu(state, on_tag_click)
+    _populate_highlight_menu(state, on_tag_click, on_add_click=on_add_click)
 
 
 async def _render_document_with_highlights(
@@ -217,7 +245,7 @@ async def _render_document_with_highlights(
     # Highlight creation menu (popup with abbreviated tag buttons)
     # Only built for users who can annotate
     if state.can_annotate:
-        _build_highlight_menu(state, handle_tag_click)
+        _build_highlight_menu(state, handle_tag_click, on_add_click=on_add_click)
 
     # Two-column layout: document (70%) + sidebar (30%)
     # Takes up 80-90% of screen width for comfortable reading

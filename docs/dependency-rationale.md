@@ -272,27 +272,32 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Classification:** Protective belt. Only needed for test infrastructure, not production.
 
-### showboat
+### ~~showboat~~ (TO BE REMOVED)
 
 **Added:** 2026-02-17
-**Revised:** 2026-02-27 — also used by `uv run make-docs` for user-facing documentation generation.
-**Design plans:** docs/design-plans/2026-02-17-showboat-e2e-demos.md, docs/design-plans/2026-02-27-user-docs-rodney-showboat-207.md
-**Claim:** CLI tool (Go binary on PyPI) for generating narrative documents with interleaved text and images. Used in two contexts: (1) E2E persona test demo docs via `tests/e2e/showboat_helpers.py`, (2) user-facing documentation generation via `docs/guides/scripts/`.
-**Evidence:** `tests/e2e/showboat_helpers.py` — `showboat_init()`, `showboat_note()`, `showboat_screenshot()` shell out to the `showboat` binary. `docs/guides/scripts/generate-*.sh` — call `showboat init`, `showboat note`, `showboat image` directly.
-**Serves:** Developers (confirmation of done), stakeholders (demo documents), instructors and students (user guides).
+**Revised:** 2026-02-28 — superseded by docs-platform-208 design. Will be removed in Phase 6.
+**Design plans:** docs/design-plans/2026-02-28-docs-platform-208.md (replacement)
+**Claim:** CLI tool (Go binary on PyPI) for generating narrative documents with interleaved text and images. Replaced by a Python Guide DSL using Playwright directly for browser automation and markdown generation.
 
-**Why not alternatives:** Showboat is purpose-built for agent-generated narrative documents. The alternative is hand-crafting Markdown with manual screenshot management, which defeats the automation purpose.
-
-**Classification:** Protective belt. Used in E2E test infrastructure and documentation generation. Gracefully degrades to no-op in E2E context; fails fast in make-docs context.
-
-### rodney (external — not managed by uv)
+### ~~rodney~~ (external — TO BE REMOVED)
 
 **Added:** 2026-02-27
-**Design plan:** docs/design-plans/2026-02-27-user-docs-rodney-showboat-207.md
-**Claim:** CLI browser automation tool (Go binary, installed via `go install`). Used by `docs/guides/scripts/` to drive Chrome for programmatic screenshots and UI interactions during documentation generation.
-**Evidence:** `docs/guides/scripts/generate-*.sh` — call `rodney navigate`, `rodney screenshot`, `rodney click`, `rodney type`, `rodney js`.
-**Serves:** Developers (documentation regeneration), instructors and students (user guide content).
+**Revised:** 2026-02-28 — superseded by docs-platform-208 design. Will be removed in Phase 6.
+**Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md (replacement)
+**Claim:** CLI browser automation tool (Go binary). Replaced by Playwright (already a project dependency) used directly from Python guide scripts.
 
-**Why not alternatives:** Rodney is designed for shell-scriptable browser automation — each CLI invocation is stateless against a persistent Chrome process. Playwright requires a programmatic test runner context. Since the documentation scripts are shell (not pytest), Rodney is the natural fit.
+### Pillow
 
-**Classification:** Protective belt. Only used in documentation generation scripts. Not a Python package — installed externally via `go install github.com/simonw/rodney@latest`.
+**Added:** 2026-02-28
+**Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md
+**Claim:** Image processing for whitespace trimming of screenshots captured during guide generation. `ImageChops.difference()` detects content bounds, `Image.crop()` removes empty margins.
+**Evidence:** `src/promptgrimoire/docs/screenshot.py` — `trim_whitespace()` function.
+**Serves:** Developers (guide authoring), end users (cleaner screenshots in documentation).
+
+### mkdocs-material
+
+**Added:** 2026-02-28
+**Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md
+**Claim:** Static site generator for HTML documentation. Renders guide markdown and screenshots into a themed HTML site deployable to GitHub Pages.
+**Evidence:** `mkdocs.yml` — site configuration. `src/promptgrimoire/cli.py` — `mkdocs build` invoked by `make_docs()`.
+**Serves:** Instructors and students (browsable user guides), developers (local preview via `mkdocs serve`).

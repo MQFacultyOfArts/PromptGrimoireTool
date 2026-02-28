@@ -45,6 +45,7 @@ tests/e2e/screenshots/
 docs/guides/screenshots/
 docs/guides/*.md
 docs/guides/*.pdf
+docs/guides/*.png
 
 # Temporary output directory (experiments, exports)
 output/

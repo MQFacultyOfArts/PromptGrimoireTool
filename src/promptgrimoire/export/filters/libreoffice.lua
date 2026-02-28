@@ -6,7 +6,14 @@
 --   - Speaker turns → mdframed environments with left border
 
 -- Global state for speaker turn tracking
-local current_speaker = nil  -- 'user' or 'assistant' or nil
+local current_speaker = nil  -- 'user' or 'assistant' or 'system' or nil
+
+-- Lookup table for speaker role → environment, label, colour
+local speaker_roles = {
+  user      = { env = 'userturn',      label = 'User:',      color = 'usercolor' },
+  assistant = { env = 'assistantturn', label = 'Assistant:', color = 'assistantcolor' },
+  system    = { env = 'systemturn',    label = 'System:',    color = 'systemcolor' },
+}
 
 -- Parse CSS margin value for a given property, return value and unit or nil
 -- Supports: in, cm, em, rem, px
@@ -180,17 +187,16 @@ function Div(elem)
   -- Note: Pandoc strips 'data-' prefix, so data-speaker becomes just 'speaker'
   local speaker = elem.attr.attributes['speaker']
   if speaker then
+    local role_info = speaker_roles[speaker]
+    if not role_info then return elem end  -- unknown role, pass through
+
     local result = {}
 
     -- Close previous speaker turn environment if open
     if current_speaker then
-      local prev_env = current_speaker == 'user' and 'userturn' or 'assistantturn'
-      table.insert(result, pandoc.RawBlock('latex', '\\end{' .. prev_env .. '}'))
+      local prev_info = speaker_roles[current_speaker]
+      table.insert(result, pandoc.RawBlock('latex', '\\end{' .. prev_info.env .. '}'))
     end
-
-    -- Emit speaker label
-    local label = speaker == 'user' and 'User:' or 'Assistant:'
-    local color = speaker == 'user' and 'usercolor' or 'assistantcolor'
 
     -- Add spacing and label before the environment
     table.insert(result, pandoc.RawBlock('latex', string.format([[
@@ -198,11 +204,10 @@ function Div(elem)
 \vspace{0.8\baselineskip}
 \noindent{\footnotesize\textcolor{%s}{\textbf{%s}}}
 \vspace{0.3\baselineskip}
-]], color, label)))
+]], role_info.color, role_info.label)))
 
     -- Open new speaker turn environment
-    local new_env = speaker == 'user' and 'userturn' or 'assistantturn'
-    table.insert(result, pandoc.RawBlock('latex', '\\begin{' .. new_env .. '}'))
+    table.insert(result, pandoc.RawBlock('latex', '\\begin{' .. role_info.env .. '}'))
 
     -- Update state
     current_speaker = speaker
@@ -276,8 +281,8 @@ function Pandoc(doc)
 
   -- If there's an open speaker turn, close it
   if current_speaker then
-    local env = current_speaker == 'user' and 'userturn' or 'assistantturn'
-    table.insert(doc.blocks, pandoc.RawBlock('latex', '\\end{' .. env .. '}'))
+    local info = speaker_roles[current_speaker]
+    table.insert(doc.blocks, pandoc.RawBlock('latex', '\\end{' .. info.env .. '}'))
     current_speaker = nil  -- Reset state
   end
 

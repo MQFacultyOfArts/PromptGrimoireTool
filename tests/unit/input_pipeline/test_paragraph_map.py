@@ -18,6 +18,7 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map_for_json,
     detect_source_numbering,
     inject_paragraph_attributes,
+    lookup_para_ref,
 )
 
 # Direct import of extract_text_from_html avoided due to circular import
@@ -397,3 +398,52 @@ class TestInjectParagraphAttributes:
         attributed = tree.css("[data-para]")
         assert len(attributed) == 1
         assert attributed[0].attributes["data-para"] == "1"
+
+
+class TestLookupParaRef:
+    """AC5: Annotation cards display paragraph references from char offsets."""
+
+    def test_ac5_1_single_paragraph(self) -> None:
+        """AC5.1: Highlight within one paragraph returns '[N]'."""
+        para_map = {"0": 1, "10": 2, "20": 3}
+        assert lookup_para_ref(para_map, start_char=10, end_char=15) == "[2]"
+
+    def test_ac5_2_spanning_paragraphs(self) -> None:
+        """AC5.2: Highlight spanning multiple paragraphs returns '[N]-[M]'."""
+        para_map = {"0": 1, "10": 2, "20": 3}
+        assert lookup_para_ref(para_map, start_char=10, end_char=25) == "[2]-[3]"
+
+    def test_ac5_4_before_first_paragraph(self) -> None:
+        """AC5.4: Highlight before first mapped paragraph returns empty string."""
+        para_map = {"10": 1, "20": 2}
+        assert lookup_para_ref(para_map, start_char=0, end_char=5) == ""
+
+    def test_empty_map(self) -> None:
+        """Empty paragraph map returns empty string."""
+        assert lookup_para_ref({}, start_char=0, end_char=10) == ""
+
+    def test_single_paragraph_map(self) -> None:
+        """Single-entry map returns '[1]' for any position at or after the offset."""
+        para_map = {"0": 1}
+        assert lookup_para_ref(para_map, start_char=5, end_char=15) == "[1]"
+
+    def test_exactly_at_boundary(self) -> None:
+        """Highlight starting exactly at a paragraph boundary gets that paragraph."""
+        para_map = {"0": 1, "10": 2, "20": 3}
+        assert lookup_para_ref(para_map, start_char=20, end_char=25) == "[3]"
+
+    def test_end_exactly_at_next_boundary(self) -> None:
+        """End exactly at next boundary includes that paragraph."""
+        para_map = {"0": 1, "10": 2, "20": 3}
+        # end_char=20 means bisect_right finds offset 20, so end lands in para 3
+        assert lookup_para_ref(para_map, start_char=5, end_char=20) == "[1]-[3]"
+
+    def test_source_numbered_gaps(self) -> None:
+        """Source-numbered map with gaps (e.g. [1], [5]) works correctly."""
+        para_map = {"0": 1, "50": 5, "100": 10}
+        assert lookup_para_ref(para_map, start_char=60, end_char=110) == "[5]-[10]"
+
+    def test_start_and_end_in_same_first_paragraph(self) -> None:
+        """Highlight fully within the first paragraph returns '[1]'."""
+        para_map = {"0": 1, "10": 2, "20": 3}
+        assert lookup_para_ref(para_map, start_char=0, end_char=5) == "[1]"

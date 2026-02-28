@@ -15,6 +15,7 @@ recommend which mode to use.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -388,6 +389,47 @@ def inject_paragraph_attributes(html: str, paragraph_map: dict[str, int]) -> str
     result = _apply_br_br_wraps(result, state.br_br_wraps)
 
     return result
+
+
+def lookup_para_ref(
+    paragraph_map: dict[str, int],
+    start_char: int,
+    end_char: int,
+) -> str:
+    """Compute a paragraph reference string from character offsets.
+
+    Uses the document's paragraph map (char-offset -> paragraph number)
+    to determine which paragraph(s) a highlight spans.
+
+    Args:
+        paragraph_map: Mapping from char offset (as string) to paragraph
+            number, as returned by ``build_paragraph_map_for_json()``.
+        start_char: Start character offset of the highlight.
+        end_char: End character offset of the highlight.
+
+    Returns:
+        ``"[N]"`` for a single-paragraph highlight, ``"[N]-[M]"`` for a
+        multi-paragraph highlight, or ``""`` if the map is empty or the
+        highlight falls before the first mapped paragraph.
+    """
+    if not paragraph_map:
+        return ""
+
+    sorted_offsets = sorted(int(k) for k in paragraph_map)
+
+    start_idx = bisect.bisect_right(sorted_offsets, start_char) - 1
+    if start_idx < 0:
+        return ""
+    start_para = paragraph_map[str(sorted_offsets[start_idx])]
+
+    end_idx = bisect.bisect_right(sorted_offsets, end_char) - 1
+    if end_idx < 0:
+        return ""
+    end_para = paragraph_map[str(sorted_offsets[end_idx])]
+
+    if start_para == end_para:
+        return f"[{start_para}]"
+    return f"[{start_para}]-[{end_para}]"
 
 
 def detect_source_numbering(html: str) -> bool:

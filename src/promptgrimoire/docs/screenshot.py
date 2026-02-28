@@ -2,6 +2,14 @@
 
 Provides utilities for the Guide DSL to capture annotated, trimmed
 screenshots during documentation generation via Playwright.
+
+Public API (exported via docs/__init__.py):
+    capture_screenshot  -- Full orchestration: highlight, capture, trim, write.
+    trim_whitespace     -- Pillow-based margin removal from PNG bytes.
+
+Internal helpers (not exported; used by capture_screenshot):
+    highlight_elements  -- Inject a <style> element into the live Playwright page.
+    remove_highlight    -- Remove a previously injected <style> element.
 """
 
 from __future__ import annotations
@@ -27,6 +35,10 @@ def trim_whitespace(image_bytes: bytes) -> bytes:
     the full image), returns the input bytes unchanged.
     """
     img = Image.open(io.BytesIO(image_bytes))
+    # Convert to RGB so ImageChops.difference() works for all input modes
+    # (e.g. palette-mode 'P' images).  Playwright always outputs RGB/RGBA,
+    # but this guard makes trim_whitespace robust to edge cases.
+    img = img.convert("RGB")
     bg = Image.new(img.mode, img.size, (255, 255, 255))
     diff = ImageChops.difference(img, bg)
     bbox = diff.getbbox()
@@ -67,6 +79,11 @@ def remove_highlight(page: Page, style_handle: ElementHandle | None) -> None:
     """
     if style_handle is None:
         return
+    # page.evaluate() with a JS arrow function is the documented Playwright way
+    # to call methods on ElementHandles that have no Python-side equivalent
+    # (ElementHandle has no .remove() method).  This is docs-generation library
+    # code — not an E2E test — so JS injection via evaluate() is appropriate and
+    # intentional.  See: https://playwright.dev/python/docs/api/class-page#page-evaluate
     page.evaluate("el => el.remove()", style_handle)
 
 

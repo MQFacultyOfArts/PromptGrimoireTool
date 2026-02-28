@@ -128,12 +128,7 @@ class TestHighlightElements:
         result = highlight_elements(mock_page, ["btn-save", "input-name"])
 
         mock_page.add_style_tag.assert_called_once()
-        css_arg = mock_page.add_style_tag.call_args
-        content = (
-            css_arg[1].get("content") or css_arg[0][0]
-            if css_arg[0]
-            else css_arg[1]["content"]
-        )
+        content = mock_page.add_style_tag.call_args.kwargs["content"]
 
         assert '[data-testid="btn-save"]' in content
         assert '[data-testid="input-name"]' in content
@@ -162,10 +157,7 @@ class TestHighlightElements:
 
         # Single style tag call (all selectors in one CSS block)
         mock_page.add_style_tag.assert_called_once()
-        content = (
-            mock_page.add_style_tag.call_args[1].get("content")
-            or mock_page.add_style_tag.call_args[0][0]
-        )
+        content = mock_page.add_style_tag.call_args.kwargs["content"]
         assert '[data-testid="a"]' in content
         assert '[data-testid="b"]' in content
         assert '[data-testid="c"]' in content

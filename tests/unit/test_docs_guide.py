@@ -187,6 +187,33 @@ class TestGuideContextManager:
         guide = Guide("Getting Started! (2026)", output_dir=tmp_path, page=mock_page)
         assert guide._slug == "getting-started-2026"
 
+    def test_step_exit_propagates_capture_exception(self, tmp_path: Path) -> None:
+        """Contract: Step.__exit__ propagates exceptions raised by guide.screenshot().
+
+        If auto-capture fails (e.g. Playwright crash), the exception propagates
+        to the caller rather than being silently swallowed.  Callers are
+        responsible for handling Playwright errors around Step context managers.
+        """
+        from promptgrimoire.docs.guide import Guide
+
+        mock_page = MagicMock()
+
+        with (
+            patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap,
+        ):
+            mock_cap.side_effect = RuntimeError("Playwright browser crashed")
+            with Guide("Test", tmp_path, mock_page) as guide:
+                # The RuntimeError from capture_screenshot should propagate out
+                try:
+                    with guide.step("Broken Step"):
+                        pass  # No error inside the step body
+                except RuntimeError as exc:
+                    assert "Playwright browser crashed" in str(exc)
+                else:
+                    raise AssertionError(
+                        "Expected RuntimeError to propagate from Step.__exit__"
+                    )
+
     def test_screenshot_counter_increments(self, tmp_path: Path) -> None:
         """Screenshot filenames use incrementing counter."""
         from promptgrimoire.docs.guide import Guide

@@ -128,5 +128,7 @@ class Step:
         exc_tb: TracebackType | None,
     ) -> bool:
         if exc_type is None:
+            # Auto-capture failures propagate — callers should handle Playwright
+            # errors (e.g. browser crash, page closed) raised by guide.screenshot().
             self._guide.screenshot(caption=self._heading)
         return False

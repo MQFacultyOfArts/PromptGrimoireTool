@@ -2598,15 +2598,18 @@ def make_docs() -> None:
 
     Starts a NiceGUI server with mock auth, launches Playwright to run
     guide scripts against it, producing markdown and screenshots.
+    Then builds an MkDocs Material HTML site and Pandoc PDFs.
     """
     import socket
+    import subprocess
+    from pathlib import Path
 
     from playwright.sync_api import sync_playwright
 
     from promptgrimoire.docs.scripts.instructor_setup import run_instructor_guide
     from promptgrimoire.docs.scripts.student_workflow import run_student_guide
 
-    # --- Dependency check (pandoc needed for PDF conversion in later phase) ---
+    # --- Dependency check ---
     if shutil.which("pandoc") is None:
         print(
             "Error: 'pandoc' not found in PATH.\n"
@@ -2645,3 +2648,23 @@ def make_docs() -> None:
         if server_process is not None:
             _stop_e2e_server(server_process)
         os.environ.pop("DEV__AUTH_MOCK", None)
+
+    # --- MkDocs build (HTML site) --------------------------------------------
+    subprocess.run(["uv", "run", "mkdocs", "build"], check=True)
+
+    # --- Pandoc PDF generation -----------------------------------------------
+    guides_dir = Path("docs/guides")
+    for guide_name in ("instructor-setup", "student-workflow"):
+        md_path = guides_dir / f"{guide_name}.md"
+        pdf_path = guides_dir / f"{guide_name}.pdf"
+        subprocess.run(
+            [
+                "pandoc",
+                "--pdf-engine=lualatex",
+                f"--resource-path={guides_dir}",
+                "-o",
+                str(pdf_path),
+                str(md_path),
+            ],
+            check=True,
+        )

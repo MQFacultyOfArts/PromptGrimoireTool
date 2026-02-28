@@ -1,12 +1,12 @@
 """Tests for make_docs() CLI function.
 
-Covers acceptance criteria AC4.1-AC4.5 and AC8.1.
+Covers acceptance criteria AC4.1-AC4.5, AC6.1, AC7.1, AC7.2, and AC8.1.
 """
 
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -17,8 +17,8 @@ import promptgrimoire.cli as cli_module
 def _mock_happy_path():
     """Patch all external dependencies so make_docs() can run to completion.
 
-    Mocks Playwright launch chain, guide functions, and server lifecycle.
-    Yields a dict of key mocks for assertions.
+    Mocks Playwright launch chain, guide functions, subprocess calls,
+    and server lifecycle. Yields a dict of key mocks for assertions.
     """
     mock_process = MagicMock(name="server_process")
     mock_page = MagicMock(name="page")
@@ -41,6 +41,7 @@ def _mock_happy_path():
         patch(
             "promptgrimoire.docs.scripts.student_workflow.run_student_guide"
         ) as mock_student,
+        patch("subprocess.run") as mock_subprocess_run,
     ):
         mock_sync_pw.return_value.start.return_value = mock_pw
         yield {
@@ -53,6 +54,7 @@ def _mock_happy_path():
             "sync_pw": mock_sync_pw,
             "instructor": mock_instructor,
             "student": mock_student,
+            "subprocess_run": mock_subprocess_run,
         }
 
 
@@ -208,3 +210,100 @@ class TestMakeDocsCleanup:
         cli_module.make_docs()
 
         assert os.environ.get("DEV__AUTH_MOCK") is None
+
+
+class TestMakeDocsMkdocsBuild:
+    """AC6.1: mkdocs build is called after guide functions complete."""
+
+    def test_mkdocs_build_called(self, _mock_happy_path):
+        mocks = _mock_happy_path
+
+        cli_module.make_docs()
+
+        mkdocs_calls = [
+            c
+            for c in mocks["subprocess_run"].call_args_list
+            if c[0][0][:3] == ["uv", "run", "mkdocs"]
+        ]
+        assert len(mkdocs_calls) == 1
+        assert mkdocs_calls[0] == call(["uv", "run", "mkdocs", "build"], check=True)
+
+    def test_mkdocs_build_runs_after_guides(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        call_order: list[str] = []
+
+        def _record_instructor(*_args, **_kwargs):
+            call_order.append("instructor")
+
+        def _record_student(*_args, **_kwargs):
+            call_order.append("student")
+
+        def _record_subprocess(cmd, **_kwargs):
+            if cmd[:3] == ["uv", "run", "mkdocs"]:
+                call_order.append("mkdocs")
+            elif cmd[0] == "pandoc":
+                call_order.append("pandoc")
+
+        mocks["instructor"].side_effect = _record_instructor
+        mocks["student"].side_effect = _record_student
+        mocks["subprocess_run"].side_effect = _record_subprocess
+
+        cli_module.make_docs()
+
+        assert "instructor" in call_order
+        assert "student" in call_order
+        assert "mkdocs" in call_order
+        mkdocs_idx = call_order.index("mkdocs")
+        assert call_order.index("instructor") < mkdocs_idx
+        assert call_order.index("student") < mkdocs_idx
+
+
+class TestMakeDocsPandocPdf:
+    """AC7.1, AC7.2: Pandoc generates PDFs with --resource-path."""
+
+    def test_pandoc_called_for_each_guide(self, _mock_happy_path):
+        mocks = _mock_happy_path
+
+        cli_module.make_docs()
+
+        pandoc_calls = [
+            c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
+        ]
+        assert len(pandoc_calls) == 2
+
+        input_files = [c[0][0][-1] for c in pandoc_calls]
+        assert any("instructor-setup.md" in f for f in input_files)
+        assert any("student-workflow.md" in f for f in input_files)
+
+    def test_pandoc_includes_resource_path(self, _mock_happy_path):
+        """AC7.2: --resource-path is critical for image resolution."""
+        mocks = _mock_happy_path
+
+        cli_module.make_docs()
+
+        pandoc_calls = [
+            c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
+        ]
+        for pandoc_call in pandoc_calls:
+            cmd = pandoc_call[0][0]
+            assert any(arg.startswith("--resource-path") for arg in cmd), (
+                f"Missing --resource-path in: {cmd}"
+            )
+
+    def test_pandoc_runs_after_mkdocs(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        call_order: list[str] = []
+
+        def _record_subprocess(cmd, **_kwargs):
+            if cmd[:3] == ["uv", "run", "mkdocs"]:
+                call_order.append("mkdocs")
+            elif cmd[0] == "pandoc":
+                call_order.append("pandoc")
+
+        mocks["subprocess_run"].side_effect = _record_subprocess
+
+        cli_module.make_docs()
+
+        assert "mkdocs" in call_order
+        assert "pandoc" in call_order
+        assert call_order.index("mkdocs") < call_order.index("pandoc")

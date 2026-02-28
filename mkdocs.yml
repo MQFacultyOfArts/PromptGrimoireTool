@@ -1,0 +1,9 @@
+site_name: PromptGrimoire Guides
+theme:
+  name: material
+docs_dir: docs/guides
+site_dir: docs/site
+nav:
+  - Home: index.md
+  - Instructor Setup: instructor-setup.md
+  - Student Workflow: student-workflow.md

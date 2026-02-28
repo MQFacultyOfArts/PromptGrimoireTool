@@ -43,9 +43,11 @@ tests/e2e/screenshots/
 
 # Documentation generation artefacts (uv run make-docs)
 docs/guides/screenshots/
-docs/guides/*.md
+docs/guides/instructor-setup.md
+docs/guides/student-workflow.md
 docs/guides/*.pdf
 docs/guides/*.png
+docs/site/
 
 # Temporary output directory (experiments, exports)
 output/

@@ -10,22 +10,27 @@ from promptgrimoire.input_pipeline.html_input import CONTENT_TYPES, ContentType
 async def show_content_type_dialog(
     detected_type: ContentType,
     preview: str = "",
-) -> ContentType | None:
+    source_numbering_detected: bool = False,
+) -> tuple[ContentType, bool] | None:
     """Show awaitable modal to confirm or override detected content type.
 
     Args:
         detected_type: The auto-detected content type to show as default.
         preview: Optional preview of the content (first ~200 chars).
+        source_numbering_detected: Whether source paragraph numbering
+            (e.g. AustLII ``<li value="N">``) was detected.  When ``True``,
+            the auto-number switch defaults to off and a hint label is shown.
 
     Returns:
-        Selected content type, or None if cancelled.
+        Tuple of ``(content_type, auto_number_paragraphs)``, or ``None``
+        if cancelled.
 
     Usage:
         detected = detect_content_type(content)
-        confirmed = await show_content_type_dialog(detected, preview=content[:200])
-        if confirmed is None:
+        result = await show_content_type_dialog(detected, preview=content[:200])
+        if result is None:
             return  # User cancelled
-        # Use confirmed type
+        confirmed_type, auto_number = result
     """
     # Build options dict for select
     type_options = {t: t.upper() for t in CONTENT_TYPES}
@@ -58,11 +63,21 @@ async def show_content_type_dialog(
             "HTML preserves formatting; Text treats content as plain text."
         ).classes("text-xs text-gray-500 mb-4")
 
+        auto_number = ui.switch(
+            "Auto-number paragraphs",
+            value=not source_numbering_detected,
+        ).props('data-testid="auto-number-switch"')
+
+        if source_numbering_detected:
+            ui.label("Source paragraph numbers detected").classes(
+                "text-xs text-amber-600"
+            )
+
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=lambda: dialog.submit(None)).props("flat")
             ui.button(
                 "Confirm",
-                on_click=lambda: dialog.submit(selected_type),
+                on_click=lambda: dialog.submit((selected_type, auto_number.value)),
             ).props('color=primary data-testid="confirm-content-type-btn"')
 
     dialog.open()

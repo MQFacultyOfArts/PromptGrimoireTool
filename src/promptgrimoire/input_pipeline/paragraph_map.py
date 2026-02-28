@@ -253,7 +253,13 @@ def _inject_handle_para(node: Any, tag: str, state: _InjectState) -> None:
 
 
 def _inject_walk(node: Any, state: _InjectState) -> None:
-    """Walk a DOM node for attribute injection, mirroring _walk."""
+    """Walk a DOM node for attribute injection.
+
+    Follows the same traversal logic as ``_walk`` but mutates the DOM
+    by setting ``data-para`` attributes via ``_inject_handle_para``.
+    Child iteration pre-captures ``next_child`` before recursion because
+    DOM mutation can invalidate sibling pointers in some selectolax builds.
+    """
     tag = node.tag
 
     if tag == "-text":
@@ -275,6 +281,10 @@ def _inject_walk(node: Any, state: _InjectState) -> None:
     if is_para_tag:
         _inject_handle_para(node, tag, state)
 
+    # Pre-capture next_child before recursion because _inject_handle_para
+    # mutates node attributes, which can invalidate child.next in some
+    # selectolax builds.  _walk does not mutate the DOM so it reads
+    # child.next after recursion instead.
     child = node.child
     while child is not None:
         next_child = child.next

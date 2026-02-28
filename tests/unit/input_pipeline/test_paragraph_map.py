@@ -15,6 +15,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map,
+    build_paragraph_map_for_json,
     detect_source_numbering,
     inject_paragraph_attributes,
 )
@@ -302,7 +303,7 @@ class TestInjectParagraphAttributes:
     def test_ac4_1_auto_numbered_paragraphs(self) -> None:
         """AC4.1: Auto-numbered HTML gets data-para on each <p>."""
         html = "<p>A</p><p>B</p><p>C</p>"
-        para_map = {"0": 1, "1": 2, "2": 3}
+        para_map = build_paragraph_map_for_json(html, auto_number=True)
         result = inject_paragraph_attributes(html, para_map)
         tree = LexborHTMLParser(result)
         paras = tree.css("p[data-para]")
@@ -379,6 +380,19 @@ class TestInjectParagraphAttributes:
         span = tree.css_first("span[data-para]")
         assert span is not None
         assert span.attributes["data-para"] == "2"
+
+    def test_br_br_pseudo_paragraph_with_html_entity(self) -> None:
+        """br-br text containing HTML entities gets wrapped correctly."""
+        html = "<p>Line one<br><br>Line &amp; value</p>"
+        para_map = build_paragraph_map_for_json(html, auto_number=True)
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        # The br-br pseudo-paragraph with entity should have a span wrapper
+        span = tree.css_first("span[data-para]")
+        assert span is not None
+        assert span.attributes["data-para"] == "2"
+        # The entity should be preserved in the output
+        assert "&amp;" in result or "& value" in span.text()
 
     def test_elements_not_in_map_unchanged(self) -> None:
         """Elements whose offsets are NOT in the map get no data-para."""

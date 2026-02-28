@@ -15,8 +15,19 @@ import contextlib
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from promptgrimoire.docs.guide import Guide
+
 if TYPE_CHECKING:
     from pathlib import Path
+
+_CAPTURE_PATCH = "promptgrimoire.docs.guide.capture_screenshot"
+
+
+def _read_guide_md(tmp_path: Path, slug: str = "test") -> str:
+    """Read the generated markdown file for a guide with the given slug."""
+    return (tmp_path / f"{slug}.md").read_text()
 
 
 class TestGuideContextManager:
@@ -24,12 +35,10 @@ class TestGuideContextManager:
 
     def test_creates_output_dir_and_writes_markdown(self, tmp_path: Path) -> None:
         """AC1.1: Guide creates output directory and writes .md file on exit."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
         output_dir = tmp_path / "guide-output"
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = output_dir / "screenshots" / "test.png"
             with Guide("Test Guide", output_dir, mock_page):
                 pass
@@ -46,53 +55,45 @@ class TestGuideContextManager:
 
     def test_step_appends_heading(self, tmp_path: Path) -> None:
         """AC1.2: Step appends ``## heading`` to the guide buffer on entry."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "shot.png"
             with Guide("Test", tmp_path, mock_page) as guide, guide.step("Login"):
                 pass
 
-        content = (tmp_path / "test.md").read_text()
+        content = _read_guide_md(tmp_path)
         assert "## Login\n" in content
 
     def test_note_appends_text(self, tmp_path: Path) -> None:
         """AC1.3: ``guide.note(text)`` appends narrative paragraphs to buffer."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "shot.png"
             with Guide("Test", tmp_path, mock_page) as guide:
                 guide.note("This is a paragraph.")
 
-        content = (tmp_path / "test.md").read_text()
+        content = _read_guide_md(tmp_path)
         assert "This is a paragraph.\n" in content
 
     def test_screenshot_appends_image_ref(self, tmp_path: Path) -> None:
         """AC1.4: ``guide.screenshot()`` appends ``![caption](path)`` to buffer."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "screenshots" / "test-01.png"
             with Guide("Test", tmp_path, mock_page) as guide:
                 guide.screenshot("Login page")
 
-        content = (tmp_path / "test.md").read_text()
+        content = _read_guide_md(tmp_path)
         assert "![Login page](screenshots/test-01.png)\n" in content
 
     def test_screenshot_calls_capture(self, tmp_path: Path) -> None:
         """AC1.4: screenshot() delegates to capture_screenshot with correct args."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "screenshots" / "test-01.png"
             with Guide("Test", tmp_path, mock_page) as guide:
                 guide.screenshot("cap", highlight=["btn"], focus="el", trim=False)
@@ -105,25 +106,20 @@ class TestGuideContextManager:
 
     def test_step_exit_auto_captures_screenshot(self, tmp_path: Path) -> None:
         """AC1.5: Step exit auto-captures a screenshot without explicit call."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "screenshots" / "test-01.png"
             with (
                 Guide("Test", tmp_path, mock_page) as guide,
                 guide.step("Do Something"),
             ):
-                pass  # No explicit screenshot call
+                pass
 
-        # capture_screenshot should have been called once (auto-capture)
         mock_cap.assert_called_once()
 
     def test_multiple_steps_produce_sequential_content(self, tmp_path: Path) -> None:
         """AC1.6: Multiple steps produce sequential headings and image refs."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
         call_count = 0
 
@@ -133,10 +129,7 @@ class TestGuideContextManager:
             return path
 
         with (
-            patch(
-                "promptgrimoire.docs.guide.capture_screenshot",
-                side_effect=_fake_capture,
-            ),
+            patch(_CAPTURE_PATCH, side_effect=_fake_capture),
             Guide("Test", tmp_path, mock_page) as guide,
         ):
             with guide.step("Step One") as g:
@@ -144,33 +137,26 @@ class TestGuideContextManager:
             with guide.step("Step Two") as g:
                 g.note("Second step text.")
 
-        content = (tmp_path / "test.md").read_text()
+        content = _read_guide_md(tmp_path)
 
         # Both headings present in order
         pos_one = content.index("## Step One\n")
         pos_two = content.index("## Step Two\n")
         assert pos_one < pos_two
 
-        # Both image references present
-        assert "test-01.png" in content
-        assert "test-02.png" in content
-
-        # Image refs in order
+        # Both image references present and in order
         pos_img1 = content.index("test-01.png")
         pos_img2 = content.index("test-02.png")
         assert pos_img1 < pos_img2
 
-        # Two screenshots captured (one per step exit)
         assert call_count == 2
 
     def test_step_does_not_capture_on_exception(self, tmp_path: Path) -> None:
         """Step exit does not auto-capture if an exception occurred."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
         with (
-            patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap,
+            patch(_CAPTURE_PATCH) as mock_cap,
             contextlib.suppress(ValueError),
         ):
             mock_cap.return_value = tmp_path / "screenshots" / "test-01.png"
@@ -181,8 +167,6 @@ class TestGuideContextManager:
 
     def test_slug_derivation(self, tmp_path: Path) -> None:
         """Slug derived from title: lowercase, hyphens, no special chars."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
         guide = Guide("Getting Started! (2026)", output_dir=tmp_path, page=mock_page)
         assert guide._slug == "getting-started-2026"
@@ -194,39 +178,27 @@ class TestGuideContextManager:
         to the caller rather than being silently swallowed.  Callers are
         responsible for handling Playwright errors around Step context managers.
         """
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with (
-            patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap,
-        ):
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.side_effect = RuntimeError("Playwright browser crashed")
-            with Guide("Test", tmp_path, mock_page) as guide:
-                # The RuntimeError from capture_screenshot should propagate out
-                try:
-                    with guide.step("Broken Step"):
-                        pass  # No error inside the step body
-                except RuntimeError as exc:
-                    assert "Playwright browser crashed" in str(exc)
-                else:
-                    raise AssertionError(
-                        "Expected RuntimeError to propagate from Step.__exit__"
-                    )
+            with (  # noqa: SIM117 — guide.step() depends on guide from Guide()
+                Guide("Test", tmp_path, mock_page) as guide,
+                pytest.raises(RuntimeError, match="Playwright browser crashed"),
+            ):
+                with guide.step("Broken Step"):
+                    pass
 
     def test_screenshot_counter_increments(self, tmp_path: Path) -> None:
         """Screenshot filenames use incrementing counter."""
-        from promptgrimoire.docs.guide import Guide
-
         mock_page = MagicMock()
 
-        with patch("promptgrimoire.docs.guide.capture_screenshot") as mock_cap:
+        with patch(_CAPTURE_PATCH) as mock_cap:
             mock_cap.return_value = tmp_path / "screenshots" / "dummy.png"
             with Guide("Test", tmp_path, mock_page) as guide:
                 guide.screenshot("first")
                 guide.screenshot("second")
 
-        # Two calls with incrementing filenames
         calls = mock_cap.call_args_list
         assert len(calls) == 2
         first_path = calls[0][0][1]  # second positional arg (path)

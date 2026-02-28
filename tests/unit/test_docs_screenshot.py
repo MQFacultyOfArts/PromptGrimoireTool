@@ -18,6 +18,13 @@ from unittest.mock import MagicMock
 
 from PIL import Image, ImageChops, ImageDraw
 
+from promptgrimoire.docs.screenshot import (
+    capture_screenshot,
+    highlight_elements,
+    remove_highlight,
+    trim_whitespace,
+)
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -68,8 +75,6 @@ class TestTrimWhitespace:
 
     def test_removes_white_margins(self) -> None:
         """AC3.1: Trimming removes empty margins from captured screenshots."""
-        from promptgrimoire.docs.screenshot import trim_whitespace
-
         raw = _make_png_with_margins(content_size=(50, 50), margin=20)
         trimmed = trim_whitespace(raw)
 
@@ -81,8 +86,6 @@ class TestTrimWhitespace:
 
     def test_retains_all_content(self) -> None:
         """AC3.2: Trimmed image retains all non-empty content (no content cropped)."""
-        from promptgrimoire.docs.screenshot import trim_whitespace
-
         raw = _make_png_with_margins(content_size=(50, 50), margin=20)
         trimmed = trim_whitespace(raw)
 
@@ -100,12 +103,9 @@ class TestTrimWhitespace:
 
     def test_no_margins_returns_unchanged(self) -> None:
         """AC3.3: Image with no whitespace margins is returned unchanged."""
-        from promptgrimoire.docs.screenshot import trim_whitespace
-
         raw = _make_png_no_margins(size=(50, 50), color=(128, 64, 32))
         trimmed = trim_whitespace(raw)
 
-        # Bytes should be identical
         assert trimmed == raw
 
 
@@ -119,8 +119,6 @@ class TestHighlightElements:
 
     def test_injects_css_for_test_ids(self) -> None:
         """AC2.1: CSS injection adds outline to data-testid elements."""
-        from promptgrimoire.docs.screenshot import highlight_elements
-
         mock_page = MagicMock()
         mock_handle = MagicMock()
         mock_page.add_style_tag.return_value = mock_handle
@@ -137,8 +135,6 @@ class TestHighlightElements:
 
     def test_remove_highlight_calls_evaluate(self) -> None:
         """AC2.2: Injected style element is removed after capture."""
-        from promptgrimoire.docs.screenshot import remove_highlight
-
         mock_page = MagicMock()
         mock_handle = MagicMock()
 
@@ -148,8 +144,6 @@ class TestHighlightElements:
 
     def test_multiple_elements_highlighted(self) -> None:
         """AC2.3: Multiple elements can be highlighted simultaneously."""
-        from promptgrimoire.docs.screenshot import highlight_elements
-
         mock_page = MagicMock()
         mock_page.add_style_tag.return_value = MagicMock()
 
@@ -164,8 +158,6 @@ class TestHighlightElements:
 
     def test_empty_test_ids_returns_none(self) -> None:
         """AC2.4: Highlighting with empty test_ids does not inject CSS."""
-        from promptgrimoire.docs.screenshot import highlight_elements
-
         mock_page = MagicMock()
 
         result = highlight_elements(mock_page, [])
@@ -175,8 +167,6 @@ class TestHighlightElements:
 
     def test_remove_highlight_none_handle_is_noop(self) -> None:
         """AC2.4: remove_highlight with None handle is a no-op."""
-        from promptgrimoire.docs.screenshot import remove_highlight
-
         mock_page = MagicMock()
 
         remove_highlight(mock_page, None)
@@ -194,8 +184,6 @@ class TestCaptureScreenshot:
 
     def test_full_page_capture_with_trim(self, tmp_path: Path) -> None:
         """Full-page screenshot is captured, trimmed, and written to path."""
-        from promptgrimoire.docs.screenshot import capture_screenshot
-
         test_png = _make_png_with_margins(content_size=(30, 30), margin=10)
         mock_page = MagicMock()
         mock_page.screenshot.return_value = test_png
@@ -212,8 +200,6 @@ class TestCaptureScreenshot:
 
     def test_capture_with_highlight_and_cleanup(self, tmp_path: Path) -> None:
         """Highlights are injected before capture and removed after."""
-        from promptgrimoire.docs.screenshot import capture_screenshot
-
         test_png = _make_png_no_margins()
         mock_page = MagicMock()
         mock_page.screenshot.return_value = test_png
@@ -230,8 +216,6 @@ class TestCaptureScreenshot:
 
     def test_capture_with_focus_uses_locator(self, tmp_path: Path) -> None:
         """Focus capture uses page.get_by_test_id().screenshot()."""
-        from promptgrimoire.docs.screenshot import capture_screenshot
-
         test_png = _make_png_no_margins()
         mock_page = MagicMock()
         mock_locator = MagicMock()
@@ -248,8 +232,6 @@ class TestCaptureScreenshot:
 
     def test_capture_no_trim(self, tmp_path: Path) -> None:
         """When trim=False, the image is written as-is."""
-        from promptgrimoire.docs.screenshot import capture_screenshot
-
         test_png = _make_png_with_margins(content_size=(30, 30), margin=10)
         mock_page = MagicMock()
         mock_page.screenshot.return_value = test_png

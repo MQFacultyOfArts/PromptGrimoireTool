@@ -211,6 +211,8 @@ class PageState:
     broadcast_selection: Any | None = None  # Callable to broadcast selection
     # Document content for text extraction
     document_chars: list[str] | None = None  # Characters by index
+    # Paragraph map for computing para_ref on highlights
+    paragraph_map: dict[str, int] = field(default_factory=dict)
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
     # Tab container references (Phase 1: three-tab UI)

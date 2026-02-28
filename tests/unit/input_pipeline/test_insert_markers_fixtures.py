@@ -55,6 +55,7 @@ _FIXTURES: list[tuple[str, bool]] = [
     ("scienceos_loc", False),
     ("scienceos_philsci", False),
     ("openrouter_fizzbuzz", False),
+    ("chatcraft_prd", False),
     ("translation_japanese_sample", True),
     ("translation_korean_sample", True),
     ("translation_spanish_sample", False),

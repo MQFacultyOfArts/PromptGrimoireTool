@@ -37,6 +37,8 @@ CHATBOT_FIXTURES = [
     "scienceos_philsci.html",
     # OpenRouter
     "openrouter_fizzbuzz.html",
+    # ChatCraft
+    "chatcraft_prd.html",
     # Legal document (not a chatbot, but tests chrome removal)
     "austlii.html",
     # Translation documents (test CJK character handling)
@@ -95,6 +97,7 @@ _COMPLETE_CONVERSATION_FIXTURES = [
     "google_gemini_debug.html",
     "openai_biblatex.html",
     "openrouter_fizzbuzz.html",
+    "chatcraft_prd.html",
 ]
 
 

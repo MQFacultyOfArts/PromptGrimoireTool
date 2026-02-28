@@ -422,9 +422,8 @@ def lookup_para_ref(
         return ""
     start_para = paragraph_map[str(sorted_offsets[start_idx])]
 
+    # end_char >= start_char, so end_idx >= start_idx >= 0; no guard needed.
     end_idx = bisect.bisect_right(sorted_offsets, end_char) - 1
-    if end_idx < 0:
-        return ""
     end_para = paragraph_map[str(sorted_offsets[end_idx])]
 
     if start_para == end_para:

@@ -34,25 +34,79 @@ from promptgrimoire.input_pipeline.html_input import (
 # not discourse-level paragraphs).
 _PARA_TAGS = frozenset(("p", "li", "blockquote", "div"))
 
-# Tags inside _PARA_TAGS that are block-level.  Used to detect
-# wrapper divs: a <div> whose subtree contains any of these tags
-# is a structural wrapper, not a leaf paragraph.
-_INNER_BLOCK_TAGS = frozenset(
-    ("p", "li", "blockquote", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6")
+# Known inline/phrasing tags.  Any immediate child element whose tag
+# is NOT in this set is treated as block-level, making the parent a
+# wrapper.  Using an inline allowlist (rather than a block blocklist)
+# correctly handles custom elements (e.g. <ms-cmark-node>) and HTML5
+# sectioning elements (<header>, <nav>, <main>) that would otherwise
+# slip through a blocklist.
+_INLINE_TAGS = frozenset(
+    (
+        "-text",
+        "a",
+        "abbr",
+        "acronym",
+        "b",
+        "bdi",
+        "bdo",
+        "big",
+        "br",
+        "cite",
+        "code",
+        "data",
+        "del",
+        "dfn",
+        "em",
+        "font",
+        "i",
+        "img",
+        "ins",
+        "kbd",
+        "label",
+        "mark",
+        "math",
+        "nobr",
+        "output",
+        "q",
+        "rp",
+        "rt",
+        "ruby",
+        "s",
+        "samp",
+        "small",
+        "span",
+        "strike",
+        "strong",
+        "sub",
+        "sup",
+        "svg",
+        "time",
+        "tt",
+        "u",
+        "var",
+        "wbr",
+    )
 )
 
 
 def _is_block_wrapper(node: Any) -> bool:
-    """Return ``True`` if *node* contains block-level children.
+    """Return ``True`` if *node* contains non-inline element children.
 
     Block wrappers (divs, blockquotes, etc. that contain nested block
-    elements) should not receive paragraph numbers because their
-    block-level descendants handle the paragraphing.  Only "leaf"
-    elements (those with direct text but no nested blocks) are paragraphs.
+    or unknown elements) should not receive paragraph numbers because
+    their block-level descendants handle the paragraphing.  Only "leaf"
+    elements (those with direct text and only inline children) are
+    paragraphs.
+
+    Uses an inline-tag allowlist: any child element not in ``_INLINE_TAGS``
+    is treated as potentially block-level.  This catches custom web
+    components (``<ms-cmark-node>``) and HTML5 sectioning elements
+    (``<header>``, ``<nav>``) that a block-tag blocklist would miss.
     """
     child = node.child
     while child is not None:
-        if getattr(child, "tag", None) in _INNER_BLOCK_TAGS:
+        tag = getattr(child, "tag", None)
+        if tag is not None and tag not in _INLINE_TAGS:
             return True
         child = child.next
     return False
@@ -259,6 +313,10 @@ class _InjectState:
     consecutive_br: int = 0
     current_block_node: Any = None
     current_block_tag: str | None = None
+    # Depth of the innermost ancestor that has been assigned data-para.
+    # When > 0, nested elements skip data-para to prevent doubles from
+    # malformed HTML where inline elements wrap block elements.
+    inside_labelled: int = 0
     # br-br pseudo-paragraphs need string-level wrapping after
     # serialisation because selectolax escapes HTML in replace_with
     # on text nodes.  Collect (text_content, para_num) tuples here.
@@ -297,6 +355,12 @@ def _inject_handle_para(node: Any, tag: str, state: _InjectState) -> None:
     if not _has_nonwhitespace_text(node):
         return
 
+    # Defence-in-depth: if an ancestor already has data-para, skip.
+    # This catches malformed HTML where inline elements (<span>) wrap
+    # block elements (<div>, <p>), hiding them from the wrapper check.
+    if state.inside_labelled > 0:
+        return
+
     # Set data-para on block elements whose char offset is in the map.
     if state.char_offset in state.paragraph_map:
         para_num = state.paragraph_map[state.char_offset]
@@ -332,6 +396,11 @@ def _inject_walk(node: Any, state: _InjectState) -> None:
     if is_para_tag:
         _inject_handle_para(node, tag, state)
 
+    # Track whether this node was labelled so descendants skip.
+    was_labelled = is_para_tag and node.attributes.get("data-para") is not None
+    if was_labelled:
+        state.inside_labelled += 1
+
     # Pre-capture next_child before recursion because _inject_handle_para
     # mutates node attributes, which can invalidate child.next in some
     # selectolax builds.  _walk does not mutate the DOM so it reads
@@ -341,6 +410,9 @@ def _inject_walk(node: Any, state: _InjectState) -> None:
         next_child = child.next
         _inject_walk(child, state)
         child = next_child
+
+    if was_labelled:
+        state.inside_labelled -= 1
 
     if is_para_tag:
         state.current_block_tag = prev_block_tag

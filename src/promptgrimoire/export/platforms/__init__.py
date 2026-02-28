@@ -58,7 +58,8 @@ class PlatformHandler(Protocol):
         """Return regex patterns for turn boundary detection.
 
         Returns:
-            Dict with 'user' and 'assistant' keys mapping to regex patterns.
+            Dict mapping role names (e.g. 'user', 'assistant', 'system')
+            to regex patterns. Each key becomes a data-speaker attribute value.
         """
         ...
 
@@ -151,22 +152,10 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     if handler and not already_has_labels:
         markers = handler.get_turn_markers()
 
-        # Inject user labels
-        user_pattern = markers.get("user")
-        if user_pattern:
+        for role, pattern in markers.items():
             result = re.sub(
-                user_pattern,
-                r'<div data-speaker="user" class="speaker-turn"></div>\1',
-                result,
-                flags=re.IGNORECASE,
-            )
-
-        # Inject assistant labels
-        assistant_pattern = markers.get("assistant")
-        if assistant_pattern:
-            result = re.sub(
-                assistant_pattern,
-                r'<div data-speaker="assistant" class="speaker-turn"></div>\1',
+                pattern,
+                rf'<div data-speaker="{role}" class="speaker-turn"></div>\1',
                 result,
                 flags=re.IGNORECASE,
             )

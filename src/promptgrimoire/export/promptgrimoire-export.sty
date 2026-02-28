@@ -76,6 +76,7 @@
 % Speaker colours for chatbot turn markers
 \definecolor{usercolor}{HTML}{4A90D9}
 \definecolor{assistantcolor}{HTML}{7B68EE}
+\definecolor{systemcolor}{HTML}{E65100}
 
 % =============================================================================
 % Speaker turn environments
@@ -108,6 +109,19 @@
   skipabove=0pt,
   skipbelow=0pt
 ]{assistantturn}
+\newmdenv[
+  topline=false,
+  bottomline=false,
+  rightline=false,
+  linewidth=3pt,
+  linecolor=systemcolor,
+  innerleftmargin=1em,
+  innerrightmargin=0pt,
+  innertopmargin=0pt,
+  innerbottommargin=0pt,
+  skipabove=0pt,
+  skipbelow=0pt
+]{systemturn}
 
 % =============================================================================
 % Annotation counter and macro

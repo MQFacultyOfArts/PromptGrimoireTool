@@ -9,7 +9,8 @@ they reveal where the test suite is redundant or incomplete.
 > **Scope:** This file covers tests added or modified on the
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
 > css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
-> 95-annotation-tags, and workspace-navigator-196 branches.
+> 95-annotation-tags, workspace-navigator-196, and
+> user-docs-rodney-showboat-207 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -2994,3 +2995,72 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Assert no matches found
 
 **Verifies:** AC7.1 -- no user-facing text on navigator contains "Course" (uses "Unit" per AU convention)
+
+## Documentation Generation (make-docs CLI)
+
+### Server starts with mock auth and a free port
+**File:** tests/unit/test_make_docs.py::TestMakeDocsServerLifecycle::test_make_docs_starts_server_with_mock_auth
+1. Delete DEV__AUTH_MOCK from environment
+2. Patch all external dependencies (shutil.which, server start/stop, subprocess.run)
+3. Capture environment state at the moment _start_e2e_server is called
+4. Call make_docs()
+5. Assert _start_e2e_server called once with an integer port > 0
+6. Assert DEV__AUTH_MOCK was "true" at the time the server started
+
+**Verifies:** AC1.1 -- make_docs sets mock auth before starting the E2E server on a random free port
+
+### Capture scripts receive base URL
+**File:** tests/unit/test_make_docs.py::TestMakeDocsServerLifecycle::test_make_docs_invokes_scripts_with_base_url
+1. Patch all external dependencies for happy path
+2. Call make_docs()
+3. Filter subprocess.run calls for those containing "generate-"
+4. Assert at least 2 script calls
+5. Assert each script call includes "http://localhost:<port>" as an argument
+
+**Verifies:** AC1.1 -- both capture scripts are invoked with the server's base URL
+
+### Server and Rodney stop on script failure
+**File:** tests/unit/test_make_docs.py::TestMakeDocsCleanup::test_make_docs_stops_server_on_script_failure
+1. Patch all external dependencies; make bash subprocess.run calls return exit code 1
+2. Call make_docs(), expect SystemExit
+3. Assert _stop_e2e_server was still called with the server process
+4. Assert "rodney stop --local" was called in the finally block
+
+**Verifies:** AC1.2 -- cleanup runs even when a capture script fails
+
+### Rodney start/stop lifecycle order
+**File:** tests/unit/test_make_docs.py::TestMakeDocsRodneyLifecycle::test_make_docs_rodney_start_stop_lifecycle
+1. Patch all external dependencies for happy path
+2. Call make_docs()
+3. Extract command summaries from all subprocess.run calls
+4. Assert "rodney start" precedes all "bash" (script) calls
+5. Assert "rodney stop" follows all "bash" (script) calls
+
+**Verifies:** Rodney browser is started before scripts run and stopped after they complete
+
+### Missing rodney causes early exit
+**File:** tests/unit/test_make_docs.py::TestMakeDocsDependencyChecks::test_make_docs_exits_if_rodney_missing
+1. Patch shutil.which to return None for "rodney"
+2. Call make_docs(), expect SystemExit with code 1
+3. Assert output mentions "rodney"
+4. Assert _start_e2e_server was never called
+
+**Verifies:** AC1.4 -- missing rodney binary is detected before starting the server
+
+### Missing showboat causes early exit
+**File:** tests/unit/test_make_docs.py::TestMakeDocsDependencyChecks::test_make_docs_exits_if_showboat_missing
+1. Patch shutil.which to return None for "showboat"
+2. Call make_docs(), expect SystemExit with code 1
+3. Assert output mentions "showboat"
+4. Assert _start_e2e_server was never called
+
+**Verifies:** AC1.5 -- missing showboat binary is detected before starting the server
+
+### Script failure reports context
+**File:** tests/unit/test_make_docs.py::TestMakeDocsErrorReporting::test_make_docs_error_reports_script_name_and_context
+1. Patch all external dependencies; make bash calls fail with stderr containing wait_for context
+2. Call make_docs(), expect SystemExit
+3. Assert output includes the failing script name ("generate-instructor-setup.sh")
+4. Assert output includes the wait_for failure context message
+
+**Verifies:** AC1.6 -- script failures report which script failed and include diagnostic context

@@ -154,26 +154,47 @@ _PAGE_CSS = """
     }
     .doc-container [data-speaker="user"]::before {
         content: "User:";
-        display: inline-block;
+        display: block;
+        width: fit-content;
         color: #1a5f7a;
         background: #e3f2fd;
         padding: 2px 8px;
         border-radius: 3px;
         font-weight: bold;
-        margin-bottom: 0.3em;
+        margin-bottom: 0.5em;
+        /* Reset [data-para]::before positioning when both attributes
+           are on the same element (speaker divs with bare text). */
+        position: static;
+        left: auto;
+        text-align: left;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        user-select: auto;
+        pointer-events: auto;
     }
     .doc-container [data-speaker="user"][data-speaker-name]::before {
         content: attr(data-speaker-name) ":";
     }
     .doc-container [data-speaker="assistant"]::before {
         content: "Assistant:";
-        display: inline-block;
+        display: block;
+        width: fit-content;
         color: #2e7d32;
         background: #e8f5e9;
         padding: 2px 8px;
         border-radius: 3px;
         font-weight: bold;
-        margin-bottom: 0.3em;
+        margin-bottom: 0.5em;
+        /* Reset [data-para]::before positioning (same as user). */
+        position: static;
+        left: auto;
+        text-align: left;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        user-select: auto;
+        pointer-events: auto;
     }
     .doc-container [data-speaker="assistant"][data-speaker-name]::before {
         content: attr(data-speaker-name) ":";

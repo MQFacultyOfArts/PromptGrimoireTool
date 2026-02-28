@@ -199,6 +199,183 @@ def build_paragraph_map_for_json(
     return {str(k): v for k, v in raw.items()}
 
 
+@dataclass
+class _InjectState:
+    """Mutable state for the attribute-injection walk."""
+
+    paragraph_map: dict[int, int]
+    char_offset: int = 0
+    consecutive_br: int = 0
+    current_block_node: Any = None
+    current_block_tag: str | None = None
+    # br-br pseudo-paragraphs need string-level wrapping after
+    # serialisation because selectolax escapes HTML in replace_with
+    # on text nodes.  Collect (text_content, para_num) tuples here.
+    br_br_wraps: list[tuple[str, int]] = field(default_factory=list)
+
+
+def _inject_handle_text(node: Any, state: _InjectState) -> None:
+    """Process a text node during injection, mirroring _handle_text_node."""
+    text = node.text_content
+    if not text:
+        return
+    parent = node.parent
+    if (
+        parent is not None
+        and parent.tag in _BLOCK_TAGS
+        and _WHITESPACE_RUN.fullmatch(text)
+    ):
+        return
+    collapsed = _WHITESPACE_RUN.sub(" ", text)
+
+    # br-br pseudo-paragraph: record for post-serialisation wrapping.
+    # selectolax escapes HTML when replacing text nodes, so we must
+    # do string-level insertion after the DOM is serialised.
+    if state.consecutive_br >= 2 and state.char_offset in state.paragraph_map:
+        para_num = state.paragraph_map[state.char_offset]
+        raw_text = node.html or text
+        state.br_br_wraps.append((raw_text, para_num))
+
+    state.consecutive_br = 0
+    state.char_offset += len(collapsed)
+
+
+def _inject_handle_para(node: Any, tag: str, state: _InjectState) -> None:
+    """Record the current block node for a _PARA_TAGS element during injection."""
+    state.current_block_tag = tag
+    state.current_block_node = node
+    state.consecutive_br = 0
+
+    # Set data-para on block elements whose char offset is in the map.
+    if state.char_offset in state.paragraph_map:
+        para_num = state.paragraph_map[state.char_offset]
+        node.attrs["data-para"] = str(para_num)
+
+
+def _inject_walk(node: Any, state: _InjectState) -> None:
+    """Walk a DOM node for attribute injection, mirroring _walk."""
+    tag = node.tag
+
+    if tag == "-text":
+        _inject_handle_text(node, state)
+        return
+
+    if tag in _STRIP_TAGS:
+        return
+
+    if tag == "br":
+        state.consecutive_br += 1
+        state.char_offset += 1
+        return
+
+    is_para_tag = tag in _PARA_TAGS
+    prev_block_tag = state.current_block_tag
+    prev_block_node = state.current_block_node
+
+    if is_para_tag:
+        _inject_handle_para(node, tag, state)
+
+    child = node.child
+    while child is not None:
+        next_child = child.next
+        _inject_walk(child, state)
+        child = next_child
+
+    if is_para_tag:
+        state.current_block_tag = prev_block_tag
+        state.current_block_node = prev_block_node
+
+
+def _apply_br_br_wraps(html: str, wraps: list[tuple[str, int]]) -> str:
+    """Wrap br-br pseudo-paragraph text in ``<span data-para="N">`` tags.
+
+    Searches for each text string in the serialised HTML and wraps it
+    with a span.  Processes in reverse document order to preserve
+    string offsets.
+    """
+    if not wraps:
+        return html
+
+    # Find positions (search sequentially to handle duplicates)
+    insertions: list[tuple[int, int, int]] = []  # (start, end, para_num)
+    search_from = 0
+    for raw_text, para_num in wraps:
+        idx = html.find(raw_text, search_from)
+        if idx != -1:
+            insertions.append((idx, idx + len(raw_text), para_num))
+            search_from = idx + len(raw_text)
+
+    # Apply in reverse order to preserve offsets
+    for start, end, para_num in reversed(insertions):
+        original = html[start:end]
+        html = (
+            html[:start]
+            + f'<span data-para="{para_num}">{original}</span>'
+            + html[end:]
+        )
+
+    return html
+
+
+def inject_paragraph_attributes(html: str, paragraph_map: dict[str, int]) -> str:
+    """Add ``data-para`` attributes to block elements for margin display.
+
+    Walks the DOM with the same traversal as ``build_paragraph_map()``
+    (identical char-offset accounting).  At each block element whose
+    char offset is a key in *paragraph_map*, adds
+    ``data-para="N"`` to that element.
+
+    For ``<br><br>+`` pseudo-paragraphs (text following two or more
+    ``<br>`` elements within a block), wraps the text in a
+    ``<span data-para="N">`` since there is no enclosing block element.
+    This uses string-level insertion after DOM serialisation because
+    selectolax escapes HTML when replacing text nodes.
+
+    If *paragraph_map* is empty, returns *html* unchanged without
+    parsing overhead.
+
+    Args:
+        html: Document HTML (clean, no char-span wrappers).
+        paragraph_map: Mapping from char offset (as string) to
+            paragraph number, as returned by
+            ``build_paragraph_map_for_json()``.
+
+    Returns:
+        Modified HTML with ``data-para`` attributes injected.
+    """
+    if not paragraph_map or not html:
+        return html
+
+    # Convert string keys to int for offset comparison.
+    int_map: dict[int, int] = {int(k): v for k, v in paragraph_map.items()}
+
+    tree = LexborHTMLParser(html)
+    body = tree.body
+    root = body if body else tree.root
+    if root is None:
+        return html
+
+    state = _InjectState(paragraph_map=int_map)
+
+    child = root.child
+    while child is not None:
+        next_child = child.next
+        _inject_walk(child, state)
+        child = next_child
+
+    # selectolax serialises the full document including <html><head><body>.
+    # Extract just the body inner content to match the input format.
+    body_node = tree.body
+    result = body_node.inner_html if body_node is not None else tree.html
+    if result is None:
+        return html
+
+    # Apply br-br pseudo-paragraph wraps via string insertion.
+    result = _apply_br_br_wraps(result, state.br_br_wraps)
+
+    return result
+
+
 def detect_source_numbering(html: str) -> bool:
     """Detect whether *html* uses explicit source paragraph numbering.
 

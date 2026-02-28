@@ -16,6 +16,7 @@ from selectolax.lexbor import LexborHTMLParser
 from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map,
     detect_source_numbering,
+    inject_paragraph_attributes,
 )
 
 # Direct import of extract_text_from_html avoided due to circular import
@@ -293,3 +294,99 @@ class TestCharOffsetAlignment:
         offsets = sorted(result.keys())
         assert text[offsets[0]] == "A"
         assert text[offsets[1]] == "B"
+
+
+class TestInjectParagraphAttributes:
+    """AC4: Paragraph numbers injected as data-para attributes for margin display."""
+
+    def test_ac4_1_auto_numbered_paragraphs(self) -> None:
+        """AC4.1: Auto-numbered HTML gets data-para on each <p>."""
+        html = "<p>A</p><p>B</p><p>C</p>"
+        para_map = {"0": 1, "1": 2, "2": 3}
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        paras = tree.css("p[data-para]")
+        assert len(paras) == 3
+        assert paras[0].attributes["data-para"] == "1"
+        assert paras[1].attributes["data-para"] == "2"
+        assert paras[2].attributes["data-para"] == "3"
+
+    def test_ac4_2_source_numbered_li(self) -> None:
+        """AC4.2: Source-numbered <li value> gets data-para from map."""
+        html = '<ol><li value="5">Fifth</li><li value="10">Tenth</li></ol>'
+        # Build the real map to get correct offsets
+        para_map = {
+            str(k): v for k, v in build_paragraph_map(html, auto_number=False).items()
+        }
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        items = tree.css("li[data-para]")
+        assert len(items) == 2
+        assert items[0].attributes["data-para"] == "5"
+        assert items[1].attributes["data-para"] == "10"
+
+    def test_ac4_3_headers_not_attributed(self) -> None:
+        """AC4.3: Headers do NOT get data-para attributes."""
+        html = "<h1>Title</h1><p>Body</p>"
+        para_map = {
+            str(k): v for k, v in build_paragraph_map(html, auto_number=True).items()
+        }
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        # Header must not have data-para
+        headers = tree.css("h1[data-para]")
+        assert len(headers) == 0
+        # Paragraph should have it
+        paras = tree.css("p[data-para]")
+        assert len(paras) == 1
+        assert paras[0].attributes["data-para"] == "1"
+
+    def test_empty_map_returns_unchanged(self) -> None:
+        """Empty paragraph map returns HTML unchanged (no parsing overhead)."""
+        html = "<p>Hello</p>"
+        result = inject_paragraph_attributes(html, {})
+        assert result == html
+
+    def test_empty_html_returns_unchanged(self) -> None:
+        """Empty HTML string returns unchanged."""
+        result = inject_paragraph_attributes("", {"0": 1})
+        assert result == ""
+
+    def test_data_para_values_are_strings(self) -> None:
+        """CSS attr() reads string values; data-para must be string."""
+        html = "<p>Text</p>"
+        para_map = {"0": 42}
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        p = tree.css_first("p[data-para]")
+        assert p is not None
+        # The attribute value is always a string in HTML
+        assert p.attributes["data-para"] == "42"
+
+    def test_br_br_pseudo_paragraph(self) -> None:
+        """br-br split text gets a <span data-para> wrapper."""
+        html = "<p>Line one<br><br>Line two</p>"
+        para_map = {
+            str(k): v for k, v in build_paragraph_map(html, auto_number=True).items()
+        }
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        # The <p> should have data-para for the first paragraph
+        p = tree.css_first("p[data-para]")
+        assert p is not None
+        assert p.attributes["data-para"] == "1"
+        # The br-br pseudo-paragraph should have a span wrapper
+        span = tree.css_first("span[data-para]")
+        assert span is not None
+        assert span.attributes["data-para"] == "2"
+
+    def test_elements_not_in_map_unchanged(self) -> None:
+        """Elements whose offsets are NOT in the map get no data-para."""
+        html = "<p>First</p><p>Second</p><p>Third</p>"
+        # Only map the first paragraph
+        para_map = {"0": 1}
+        result = inject_paragraph_attributes(html, para_map)
+        tree = LexborHTMLParser(result)
+        attributed = tree.css("[data-para]")
+        assert len(attributed) == 1
+        assert attributed[0].attributes["data-para"] == "1"

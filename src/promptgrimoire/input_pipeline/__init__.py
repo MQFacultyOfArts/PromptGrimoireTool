@@ -11,6 +11,7 @@ from promptgrimoire.input_pipeline.html_input import (
 from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map,
     detect_source_numbering,
+    inject_paragraph_attributes,
 )
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "detect_content_type",
     "detect_source_numbering",
     "extract_text_from_html",
+    "inject_paragraph_attributes",
     "insert_markers_into_dom",
     "process_input",
 ]

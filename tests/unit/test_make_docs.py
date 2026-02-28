@@ -1,4 +1,7 @@
-"""Tests for make_docs() CLI function."""
+"""Tests for make_docs() CLI function.
+
+Covers acceptance criteria AC4.1-AC4.5 and AC8.1.
+"""
 
 from __future__ import annotations
 
@@ -10,153 +13,137 @@ import pytest
 import promptgrimoire.cli as cli_module
 
 
-def _which_side_effect(*, missing: str | None = None) -> object:
-    """Return a side_effect callable for shutil.which.
-
-    When *missing* is set, that tool returns None; all others return a fake path.
-    """
-
-    def _side_effect(name: str) -> str | None:
-        if name == missing:
-            return None
-        return f"/usr/bin/{name}"
-
-    return _side_effect
-
-
 @pytest.fixture
 def _mock_happy_path():
     """Patch all external dependencies so make_docs() can run to completion.
 
-    Yields a dict of the key mocks for assertions.
+    Mocks Playwright launch chain, guide functions, and server lifecycle.
+    Yields a dict of key mocks for assertions.
     """
     mock_process = MagicMock(name="server_process")
+    mock_page = MagicMock(name="page")
+    mock_browser = MagicMock(name="browser")
+    mock_browser.new_page.return_value = mock_page
+    mock_pw = MagicMock(name="pw")
+    mock_pw.chromium.launch.return_value = mock_browser
 
     with (
-        patch("shutil.which", side_effect=_which_side_effect()),
+        patch("shutil.which", return_value="/usr/bin/pandoc"),
         patch.object(cli_module, "_pre_test_db_cleanup"),
         patch.object(
             cli_module, "_start_e2e_server", return_value=mock_process
         ) as mock_start,
         patch.object(cli_module, "_stop_e2e_server") as mock_stop,
-        patch("subprocess.run") as mock_run,
+        patch("playwright.sync_api.sync_playwright") as mock_sync_pw,
+        patch(
+            "promptgrimoire.docs.scripts.instructor_setup.run_instructor_guide"
+        ) as mock_instructor,
+        patch(
+            "promptgrimoire.docs.scripts.student_workflow.run_student_guide"
+        ) as mock_student,
     ):
-        # All subprocess.run calls succeed by default
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_sync_pw.return_value.start.return_value = mock_pw
         yield {
             "start": mock_start,
             "stop": mock_stop,
-            "run": mock_run,
             "process": mock_process,
+            "page": mock_page,
+            "browser": mock_browser,
+            "pw": mock_pw,
+            "sync_pw": mock_sync_pw,
+            "instructor": mock_instructor,
+            "student": mock_student,
         }
 
 
 class TestMakeDocsServerLifecycle:
-    """AC1.1: Server starts with mock auth and a free port."""
+    """AC4.1: Server starts with mock auth, Playwright launches, guides run."""
 
-    def test_make_docs_starts_server_with_mock_auth(
-        self, _mock_happy_path, monkeypatch
-    ):
+    def test_starts_server_with_mock_auth(self, _mock_happy_path, monkeypatch):
         mocks = _mock_happy_path
         monkeypatch.delenv("DEV__AUTH_MOCK", raising=False)
 
-        # Capture env state at the moment _start_e2e_server is called
         captured_env: dict[str, str | None] = {}
-
-        original_start = mocks["start"]
 
         def _capture_env_on_start(_port):
             captured_env["DEV__AUTH_MOCK"] = os.environ.get("DEV__AUTH_MOCK")
-            return original_start.return_value
+            return mocks["start"].return_value
 
         mocks["start"].side_effect = _capture_env_on_start
 
         cli_module.make_docs()
 
-        # _start_e2e_server called once with an integer port
         mocks["start"].assert_called_once()
-        (port,), _kwargs = mocks["start"].call_args
+        (port,), _ = mocks["start"].call_args
         assert isinstance(port, int)
         assert port > 0
-
-        # DEV__AUTH_MOCK was set before server started
         assert captured_env["DEV__AUTH_MOCK"] == "true"
 
-    def test_make_docs_invokes_scripts_with_base_url(self, _mock_happy_path):
+    def test_launches_playwright_with_correct_viewport(self, _mock_happy_path):
         mocks = _mock_happy_path
 
         cli_module.make_docs()
 
-        # At least two subprocess.run calls for the shell scripts
-        run_calls = mocks["run"].call_args_list
-        script_calls = [c for c in run_calls if "generate-" in str(c)]
-        assert len(script_calls) >= 2
+        mocks["sync_pw"].assert_called_once()
+        mocks["pw"].chromium.launch.assert_called_once()
+        mocks["browser"].new_page.assert_called_once_with(
+            viewport={"width": 1280, "height": 800}
+        )
 
-        # Each script call should receive the base_url as an argument
-        for c in script_calls:
-            args_list = c[0][0]  # positional arg 0, element 0
-            assert any("http://localhost:" in str(a) for a in args_list)
-
-
-class TestMakeDocsCleanup:
-    """AC1.2: Server and Rodney are stopped even when a script fails."""
-
-    def test_make_docs_stops_server_on_script_failure(self, _mock_happy_path):
+    def test_both_guides_called_with_page_and_base_url(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        # Make script calls fail (but not rodney start/stop)
-        def _run_side_effect(cmd, **_kwargs):
-            result = MagicMock(returncode=0)
-            if cmd[0] == "bash":
-                result.returncode = 1
-            return result
+        cli_module.make_docs()
 
-        mocks["run"].side_effect = _run_side_effect
+        mocks["instructor"].assert_called_once()
+        page_arg, base_url_arg = mocks["instructor"].call_args[0]
+        assert page_arg is mocks["page"]
+        assert base_url_arg.startswith("http://localhost:")
 
-        with pytest.raises(SystemExit):
+        mocks["student"].assert_called_once()
+        page_arg, base_url_arg = mocks["student"].call_args[0]
+        assert page_arg is mocks["page"]
+        assert base_url_arg.startswith("http://localhost:")
+
+
+class TestMakeDocsGuideOrder:
+    """AC4.2: Instructor guide runs before student guide."""
+
+    def test_instructor_runs_before_student(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        call_order: list[str] = []
+
+        def _record_instructor(*_args, **_kwargs):
+            call_order.append("instructor")
+
+        def _record_student(*_args, **_kwargs):
+            call_order.append("student")
+
+        mocks["instructor"].side_effect = _record_instructor
+        mocks["student"].side_effect = _record_student
+
+        cli_module.make_docs()
+
+        assert call_order == ["instructor", "student"]
+
+
+class TestMakeDocsErrorHandling:
+    """AC4.4: Guide exception propagates (non-zero exit)."""
+
+    def test_guide_exception_propagates(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        mocks["instructor"].side_effect = RuntimeError("Guide failed")
+
+        with pytest.raises(RuntimeError, match="Guide failed"):
             cli_module.make_docs()
-
-        # _stop_e2e_server must still be called
-        mocks["stop"].assert_called_once_with(mocks["process"])
-
-        # rodney stop --local must be called in finally block
-        rodney_stop_calls = [
-            c for c in mocks["run"].call_args_list if c[0][0][:2] == ["rodney", "stop"]
-        ]
-        assert len(rodney_stop_calls) == 1
-
-
-class TestMakeDocsRodneyLifecycle:
-    """Rodney start/stop lifecycle is correct."""
-
-    def test_make_docs_rodney_start_stop_lifecycle(self, _mock_happy_path):
-        mocks = _mock_happy_path
-
-        cli_module.make_docs()
-
-        all_calls = mocks["run"].call_args_list
-        cmd_summaries = [c[0][0][:2] for c in all_calls]
-
-        # rodney start --local called
-        assert ["rodney", "start"] in cmd_summaries
-
-        # rodney stop --local called
-        assert ["rodney", "stop"] in cmd_summaries
-
-        # start before scripts, stop after
-        start_idx = cmd_summaries.index(["rodney", "start"])
-        stop_idx = cmd_summaries.index(["rodney", "stop"])
-        script_indices = [i for i, c in enumerate(cmd_summaries) if c[0] == "bash"]
-        assert all(start_idx < si for si in script_indices)
-        assert all(stop_idx > si for si in script_indices)
 
 
 class TestMakeDocsDependencyChecks:
-    """AC1.4 / AC1.5: Missing tools cause early exit without starting server."""
+    """AC4.5: Missing pandoc causes early exit without starting server."""
 
-    def test_make_docs_exits_if_rodney_missing(self, capsys):
+    def test_exits_if_pandoc_missing(self, capsys):
         with (
-            patch("shutil.which", side_effect=_which_side_effect(missing="rodney")),
+            patch("shutil.which", return_value=None),
             patch.object(cli_module, "_pre_test_db_cleanup"),
             patch.object(cli_module, "_start_e2e_server") as mock_start,
             patch.object(cli_module, "_stop_e2e_server"),
@@ -166,56 +153,36 @@ class TestMakeDocsDependencyChecks:
 
             assert exc_info.value.code == 1
             captured = capsys.readouterr()
-            assert "rodney" in captured.out.lower()
-            mock_start.assert_not_called()
-
-    def test_make_docs_exits_if_showboat_missing(self, capsys):
-        with (
-            patch("shutil.which", side_effect=_which_side_effect(missing="showboat")),
-            patch.object(cli_module, "_pre_test_db_cleanup"),
-            patch.object(cli_module, "_start_e2e_server") as mock_start,
-            patch.object(cli_module, "_stop_e2e_server"),
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                cli_module.make_docs()
-
-            assert exc_info.value.code == 1
-            captured = capsys.readouterr()
-            assert "showboat" in captured.out.lower()
+            assert "pandoc" in captured.out.lower()
             mock_start.assert_not_called()
 
 
-class TestMakeDocsErrorReporting:
-    """AC1.6: Script failure identifies the failing step with context."""
+class TestMakeDocsCleanup:
+    """Playwright and server are cleaned up in all cases."""
 
-    def test_make_docs_error_reports_script_name_and_context(
-        self, _mock_happy_path, capsys
-    ):
+    def test_cleanup_on_success(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        # Make script calls fail with stderr containing wait_for context
-        def _run_side_effect(cmd, **_kwargs):
-            result = MagicMock()
-            if cmd[0] == "bash":
-                result.returncode = 1
-                result.stderr = (
-                    "FAILED waiting for: Create unit form "
-                    '(selector: [data-testid="course-code-input"])'
-                )
-                result.stdout = ""
-            else:
-                result.returncode = 0
-                result.stderr = ""
-                result.stdout = ""
-            return result
+        cli_module.make_docs()
 
-        mocks["run"].side_effect = _run_side_effect
+        mocks["browser"].close.assert_called_once()
+        mocks["pw"].stop.assert_called_once()
+        mocks["stop"].assert_called_once_with(mocks["process"])
 
-        with pytest.raises(SystemExit):
+    def test_cleanup_on_guide_failure(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        mocks["instructor"].side_effect = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
             cli_module.make_docs()
 
-        captured = capsys.readouterr()
-        # Should report which script failed
-        assert "generate-instructor-setup.sh" in captured.out
-        # Should include the wait_for context message
-        assert "FAILED waiting for: Create unit form" in captured.out
+        mocks["browser"].close.assert_called_once()
+        mocks["pw"].stop.assert_called_once()
+        mocks["stop"].assert_called_once_with(mocks["process"])
+
+    def test_env_var_cleared_after_completion(self, _mock_happy_path, monkeypatch):
+        monkeypatch.delenv("DEV__AUTH_MOCK", raising=False)
+
+        cli_module.make_docs()
+
+        assert os.environ.get("DEV__AUTH_MOCK") is None

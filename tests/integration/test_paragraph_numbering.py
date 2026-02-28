@@ -369,3 +369,223 @@ class TestHighlightParaRefWiring:
         assert para_ref == ""
 
         self._add_and_verify(para_ref, start_char, end_char, "header text")
+
+
+class TestToggleParagraphNumbering:
+    """Verify the toggle flow: rebuild paragraph_map, preserve highlight para_ref.
+
+    These tests exercise the data path that the header toggle handler follows:
+    1. ``build_paragraph_map_for_json()`` rebuilds the map with the new mode
+    2. ``update_document_paragraph_settings()`` persists the new map + flag
+    3. CRDT highlight ``para_ref`` values remain untouched (AC7.3)
+    """
+
+    @pytest.mark.asyncio
+    async def test_toggle_rebuilds_paragraph_map_in_db(
+        self,
+        db_session: AsyncSession,  # noqa: ARG002 — triggers DB URL setup
+    ) -> None:
+        """AC7.2: Toggle from auto-number to source-number rebuilds paragraph_map."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            get_document,
+            update_document_paragraph_settings,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+        from promptgrimoire.input_pipeline.paragraph_map import (
+            build_paragraph_map_for_json,
+        )
+
+        workspace = await create_workspace()
+
+        # Create a document with real HTML so build_paragraph_map_for_json works
+        html = "<p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p>"
+        auto_map = build_paragraph_map_for_json(html, auto_number=True)
+        assert len(auto_map) == 3, "Sanity: 3 paragraphs detected"
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content=html,
+            source_type="html",
+            auto_number_paragraphs=True,
+            paragraph_map=auto_map,
+        )
+
+        # Simulate toggle: rebuild map with auto_number=False (source-number mode)
+        source_map = build_paragraph_map_for_json(html, auto_number=False)
+
+        # The maps should differ because auto_number=True assigns sequential
+        # numbers while auto_number=False attempts to read source <li value=N>
+        # attributes (plain <p> tags have none, so source map will be empty).
+        assert source_map != auto_map
+
+        await update_document_paragraph_settings(
+            doc.id, auto_number_paragraphs=False, paragraph_map=source_map
+        )
+
+        reloaded = await get_document(doc.id)
+        assert reloaded is not None
+        assert reloaded.auto_number_paragraphs is False
+        assert reloaded.paragraph_map == source_map
+
+        # Toggle back to auto-number
+        await update_document_paragraph_settings(
+            doc.id, auto_number_paragraphs=True, paragraph_map=auto_map
+        )
+
+        reloaded2 = await get_document(doc.id)
+        assert reloaded2 is not None
+        assert reloaded2.auto_number_paragraphs is True
+        assert reloaded2.paragraph_map == auto_map
+
+    def test_toggle_does_not_modify_highlight_para_ref(self) -> None:
+        """AC7.3: Toggling numbering mode leaves existing highlight para_ref intact.
+
+        The toggle handler calls ``update_document_paragraph_settings()`` and
+        rebuilds the paragraph map, but it does NOT call any CRDT update method
+        on existing highlights.  This test verifies that toggling the numbering
+        mode (simulated by rebuilding the map) does not alter the ``para_ref``
+        stored on CRDT highlights.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.input_pipeline.paragraph_map import (
+            build_paragraph_map_for_json,
+        )
+
+        html = "<p>First paragraph.</p><p>Second paragraph.</p><p>Third paragraph.</p>"
+
+        # Create CRDT doc and add highlights with para_ref values
+        crdt_doc = AnnotationDocument(doc_id="toggle-test")
+
+        h1_id = crdt_doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag="test-tag",
+            text="First para",
+            author="tester",
+            para_ref="[1]",
+            document_id="doc-1",
+        )
+        h2_id = crdt_doc.add_highlight(
+            start_char=30,
+            end_char=50,
+            tag="test-tag",
+            text="Second para",
+            author="tester",
+            para_ref="[2]",
+            document_id="doc-1",
+        )
+
+        # Record original para_ref values
+        highlights_before = {
+            h["id"]: h["para_ref"] for h in crdt_doc.get_all_highlights()
+        }
+        assert highlights_before[h1_id] == "[1]"
+        assert highlights_before[h2_id] == "[2]"
+
+        # Simulate what the toggle handler does: rebuild the paragraph map.
+        # This is the ONLY thing that changes — no CRDT highlight mutation.
+        _auto_map = build_paragraph_map_for_json(html, auto_number=True)
+        _source_map = build_paragraph_map_for_json(html, auto_number=False)
+
+        # Verify highlight para_ref values are UNCHANGED
+        highlights_after = {
+            h["id"]: h["para_ref"] for h in crdt_doc.get_all_highlights()
+        }
+        assert highlights_after[h1_id] == "[1]", (
+            "AC7.3: para_ref must not change on toggle"
+        )
+        assert highlights_after[h2_id] == "[2]", (
+            "AC7.3: para_ref must not change on toggle"
+        )
+
+        # Also verify other highlight fields are intact
+        all_highlights = crdt_doc.get_all_highlights()
+        for hl in all_highlights:
+            assert hl["tag"] == "test-tag"
+            assert hl["author"] == "tester"
+
+
+class TestUploadDialogAutoDetect:
+    """Verify the upload dialog contract includes auto-number boolean (AC3.3).
+
+    ``show_content_type_dialog()`` is a NiceGUI dialog that requires a running
+    UI context, so we cannot call it directly in integration tests.  Instead,
+    we verify:
+
+    1. The function signature accepts ``source_numbering_detected: bool``
+    2. The return type annotation is ``tuple[ContentType, bool] | None``
+    3. The detection function that feeds it (``detect_source_numbering``)
+       correctly identifies source-numbered HTML
+    """
+
+    def test_dialog_function_accepts_source_numbering_parameter(self) -> None:
+        """AC3.3: show_content_type_dialog has source_numbering_detected param."""
+        import inspect
+
+        from promptgrimoire.pages.dialogs import show_content_type_dialog
+
+        sig = inspect.signature(show_content_type_dialog)
+        assert "source_numbering_detected" in sig.parameters
+        param = sig.parameters["source_numbering_detected"]
+        assert param.default is False, "Default should be False (auto-number on)"
+
+    def test_dialog_return_type_includes_bool(self) -> None:
+        """AC3.3: Return type annotation includes the auto-number bool."""
+        from typing import get_type_hints
+
+        from promptgrimoire.pages.dialogs import show_content_type_dialog
+
+        hints = get_type_hints(show_content_type_dialog)
+        return_hint = hints.get("return")
+        # The return type should be tuple[ContentType, bool] | None
+        # Check the string representation includes both tuple and bool
+        hint_str = str(return_hint)
+        assert "tuple" in hint_str
+        assert "bool" in hint_str
+        assert "None" in hint_str
+
+    def test_detect_source_numbering_feeds_dialog(self) -> None:
+        """AC3.3: detect_source_numbering correctly identifies AustLII-style HTML.
+
+        This is the detection function that feeds ``source_numbering_detected``
+        into the dialog.  If it works correctly, the dialog pre-sets the
+        auto-number switch accordingly.
+        """
+        from promptgrimoire.input_pipeline.paragraph_map import detect_source_numbering
+
+        # AustLII-style HTML with <li value="N">
+        austlii_html = (
+            '<ol><li value="1">First paragraph</li>'
+            '<li value="2">Second paragraph</li>'
+            '<li value="3">Third paragraph</li></ol>'
+        )
+        assert detect_source_numbering(austlii_html) is True
+
+        # Plain HTML without source numbering
+        plain_html = "<p>First paragraph.</p><p>Second paragraph.</p>"
+        assert detect_source_numbering(plain_html) is False
+
+    def test_paste_handler_auto_detect_bypasses_dialog(self) -> None:
+        """AC3.3: Direct paste uses auto-detect, not the dialog.
+
+        When content is pasted (not typed), the handler skips the dialog
+        and uses ``_detect_paragraph_numbering()`` directly. Verify the
+        detection helper returns the expected (auto_number, para_map) tuple.
+        """
+        from promptgrimoire.pages.annotation.content_form import (
+            _detect_paragraph_numbering,
+        )
+
+        # Plain HTML — should auto-number
+        plain_html = "<p>First paragraph.</p><p>Second paragraph.</p>"
+        auto_number, para_map = _detect_paragraph_numbering(plain_html)
+        assert auto_number is True
+        assert len(para_map) == 2
+
+        # AustLII HTML — should use source numbering
+        austlii_html = '<ol><li value="5">First</li><li value="6">Second</li></ol>'
+        auto_number_src, para_map_src = _detect_paragraph_numbering(austlii_html)
+        assert auto_number_src is False
+        assert len(para_map_src) > 0

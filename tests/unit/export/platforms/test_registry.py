@@ -215,6 +215,64 @@ class TestPreprocessForExport:
         assert "Hi there" in result
         assert "System prompt" in result
 
+    def test_rejects_unsafe_role_names(self) -> None:
+        """ValueError raised for role names unsafe for HTML."""
+        from unittest.mock import patch
+
+        import pytest
+
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        class UnsafeRoleHandler:
+            name: str = "unsafe-mock"
+
+            def matches(self, html: str) -> bool:  # noqa: ARG002
+                return True
+
+            def preprocess(self, tree: object) -> None:
+                pass
+
+            def get_turn_markers(self) -> dict[str, str]:
+                return {"invalid role!": r"(<div>)"}
+
+        with (
+            patch(
+                "promptgrimoire.export.platforms.get_handler",
+                return_value=UnsafeRoleHandler(),
+            ),
+            pytest.raises(ValueError, match="not safe for HTML attribute"),
+        ):
+            preprocess_for_export("<div>content</div>")
+
+    def test_rejects_uppercase_role_names(self) -> None:
+        """ValueError raised for uppercase role names."""
+        from unittest.mock import patch
+
+        import pytest
+
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        class UppercaseRoleHandler:
+            name: str = "uppercase-mock"
+
+            def matches(self, html: str) -> bool:  # noqa: ARG002
+                return True
+
+            def preprocess(self, tree: object) -> None:
+                pass
+
+            def get_turn_markers(self) -> dict[str, str]:
+                return {"UPPERCASE": r"(<div>)"}
+
+        with (
+            patch(
+                "promptgrimoire.export.platforms.get_handler",
+                return_value=UppercaseRoleHandler(),
+            ),
+            pytest.raises(ValueError, match="not safe for HTML attribute"),
+        ):
+            preprocess_for_export("<div>content</div>")
+
 
 class TestImportFailureHandling:
     """Tests for graceful handling of handler import failures."""

@@ -12,6 +12,7 @@ from typing import Any
 from nicegui import ui
 
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
+from promptgrimoire.input_pipeline.paragraph_map import inject_paragraph_attributes
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
 from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 from promptgrimoire.pages.annotation.css import (
@@ -281,7 +282,11 @@ async def _render_document_with_highlights(
             .props('id="doc-container"')
         )
         with doc_container:
-            ui.html(doc.content, sanitize=False)
+            # Inject data-para attributes for paragraph number margin display.
+            # paragraph_map comes from WorkspaceDocument; empty map is a no-op.
+            para_map = getattr(doc, "paragraph_map", None) or {}
+            rendered_html = inject_paragraph_attributes(doc.content, para_map)
+            ui.html(rendered_html, sanitize=False)
 
         # Load annotation-highlight.js for CSS Custom Highlight API support.
         # This script provides walkTextNodes(), applyHighlights(),

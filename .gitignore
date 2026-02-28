@@ -58,9 +58,6 @@ output/
 # LibreOffice lock files
 .~lock.*#
 
-# Rodney browser automation state
-.rodney/
-
 # Git worktrees (parallel development)
 .worktrees/
 .playwright-mcp/

@@ -102,7 +102,7 @@ uv run seed-data
 # Manage users, roles, and course enrollments
 uv run manage-users list|show|create|admin|enroll|unenroll|role
 
-# Generate user-facing documentation (requires rodney, showboat, pandoc)
+# Generate user-facing documentation (requires pandoc)
 uv run make-docs
 
 # Run the app
@@ -158,7 +158,6 @@ Detailed subsystem docs live in `docs/`. Key references:
 | [nicegui/lifecycle.md](docs/nicegui/lifecycle.md) | NiceGUI client lifecycle, on_disconnect vs on_delete |
 | [worktrees.md](docs/worktrees.md) | Git worktree setup, Serena memory management |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow diagrams, integration patterns |
-| [rodney/cli-reference.md](docs/rodney/cli-reference.md) | Rodney browser automation CLI (used by make-docs) |
 
 ### Documentation Caching
 

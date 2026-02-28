@@ -272,20 +272,6 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Classification:** Protective belt. Only needed for test infrastructure, not production.
 
-### ~~showboat~~ (TO BE REMOVED)
-
-**Added:** 2026-02-17
-**Revised:** 2026-02-28 — superseded by docs-platform-208 design. Will be removed in Phase 6.
-**Design plans:** docs/design-plans/2026-02-28-docs-platform-208.md (replacement)
-**Claim:** CLI tool (Go binary on PyPI) for generating narrative documents with interleaved text and images. Replaced by a Python Guide DSL using Playwright directly for browser automation and markdown generation.
-
-### ~~rodney~~ (external — TO BE REMOVED)
-
-**Added:** 2026-02-27
-**Revised:** 2026-02-28 — superseded by docs-platform-208 design. Will be removed in Phase 6.
-**Design plan:** docs/design-plans/2026-02-28-docs-platform-208.md (replacement)
-**Claim:** CLI browser automation tool (Go binary). Replaced by Playwright (already a project dependency) used directly from Python guide scripts.
-
 ### Pillow
 
 **Added:** 2026-02-28

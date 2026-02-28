@@ -163,8 +163,11 @@ def _create_demo_student() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _step_create_unit(page: Page, base_url: str, guide: Guide) -> None:
-    """Step 2: Navigate to /courses/new, fill form, submit."""
+def _step_create_unit(page: Page, base_url: str, guide: Guide) -> str:
+    """Step 2: Navigate to /courses/new, fill form, submit.
+
+    Returns the course detail URL for later navigation.
+    """
     with guide.step("Step 2: Creating a Unit") as g:
         g.note("Navigate to Units and create a new unit for your class.")
         page.goto(f"{base_url}/courses/new")
@@ -185,6 +188,7 @@ def _step_create_unit(page: Page, base_url: str, guide: Guide) -> None:
         g.note("Enter the unit code, name, and semester, then click Create.")
         page.get_by_test_id("create-course-btn").click()
         page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+    return page.url
 
 
 def _step_add_week(page: Page, guide: Guide) -> None:
@@ -256,8 +260,52 @@ def _step_configure_tags(page: Page, base_url: str, guide: Guide) -> None:
         _seed_template_tags("TRAN8034", "S1 2026")
 
 
+def _step_enrol_student(page: Page, course_url: str, guide: Guide) -> None:
+    """Step 6: Navigate to enrollment page and enrol a student."""
+    with guide.step("Step 6: Enrolling Students") as g:
+        g.note("Navigate to the unit's enrollment page to add students.")
+        # Navigate back to the course detail page
+        page.goto(course_url)
+        page.get_by_test_id("manage-enrollments-btn").wait_for(
+            state="visible", timeout=10000
+        )
+
+        page.get_by_test_id("manage-enrollments-btn").click()
+        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/enrollments"), timeout=10000)
+
+        page.get_by_test_id("enrollment-email-input").fill("student@uni.edu")
+        page.get_by_test_id("add-enrollment-btn").click()
+
+        # Wait for success notification
+        page.get_by_text(re.compile(r"Enrollment added")).wait_for(
+            state="visible", timeout=5000
+        )
+        g.screenshot(
+            "Enrollment page showing student added",
+            highlight=["enrollment-email-input", "add-enrollment-btn"],
+        )
+        g.note(
+            "Add student email addresses to enrol them in the unit. "
+            "Students will see the unit and its activities on their "
+            "Navigator after enrolment."
+        )
+
+        page.get_by_test_id("back-to-unit-btn").click()
+        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+
+        # Also enrol the demo student for step 7 verification
+        _create_demo_student()
+
+
 def _add_sample_content(page: Page) -> None:
-    """Add sample content so the tag toolbar renders."""
+    """Add sample content so the tag toolbar renders.
+
+    Uses ``.q-editor__content`` to locate Quasar QEditor's inner
+    content-editable div. This is a known exception to the data-testid
+    convention: Quasar renders this div internally and our code cannot
+    attach a data-testid to it. The same pattern is used in E2E tests
+    (annotation_helpers.py, test_instructor_workflow.py).
+    """
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill(
@@ -333,20 +381,13 @@ def run_instructor_guide(page: Page, base_url: str) -> None:
             )
 
         # Steps 2-5: course setup
-        _step_create_unit(page, base_url, guide)
+        course_url = _step_create_unit(page, base_url, guide)
         _step_add_week(page, guide)
         _step_create_activity(page, guide)
         _step_configure_tags(page, base_url, guide)
 
-        # Step 6: Enrolling Students
-        with guide.step("Step 6: Enrolling Students") as g:
-            g.note(
-                "Provide your student email list to the PromptGrimoire "
-                "administrator. They will enrol students in your unit "
-                "using the management tools. Students will see the unit "
-                "and its activities on their Navigator after enrolment."
-            )
-            _create_demo_student()
+        # Step 6: Enrollment UI
+        _step_enrol_student(page, course_url, guide)
 
         # Step 7: Verifying the Student View
         with guide.step("Step 7: Verifying the Student View") as g:

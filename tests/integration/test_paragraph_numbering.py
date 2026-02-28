@@ -1,4 +1,4 @@
-"""Integration tests for paragraph numbering model columns."""
+"""Integration tests for paragraph numbering model columns and highlight wiring."""
 
 from __future__ import annotations
 
@@ -234,3 +234,107 @@ class TestCloneParagraphFields:
 
         assert cloned_doc.auto_number_paragraphs is False
         assert cloned_doc.paragraph_map == {"0": 1, "45": 2, "100": 3}
+
+
+class TestHighlightParaRefWiring:
+    """Verify end-to-end wiring from paragraph_map through lookup to CRDT.
+
+    Simulates the data path in ``_add_highlight()`` (highlights.py):
+    1. ``lookup_para_ref(state.paragraph_map, start, end)`` computes a para_ref string
+    2. ``state.crdt_doc.add_highlight(..., para_ref=para_ref)`` stores it in CRDT
+    3. ``get_all_highlights()`` returns the stored para_ref
+
+    These tests exercise two independent subsystems (paragraph_map + CRDT) together,
+    without needing a NiceGUI page context or database connection.
+    """
+
+    def test_single_paragraph_highlight_has_para_ref(self) -> None:
+        """AC5.1: Highlight within paragraph 3 gets para_ref='[3]'."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
+
+        paragraph_map: dict[str, int] = {"0": 1, "50": 2, "120": 3}
+        start_char, end_char = 130, 145
+
+        # Compute para_ref the same way _add_highlight does
+        para_ref = lookup_para_ref(paragraph_map, start_char, end_char)
+        assert para_ref == "[3]"
+
+        # Store in CRDT and verify round-trip
+        doc = AnnotationDocument(doc_id="test-ws")
+        highlight_id = doc.add_highlight(
+            start_char=start_char,
+            end_char=end_char,
+            tag="test-tag",
+            text="sample text",
+            author="tester",
+            para_ref=para_ref,
+            document_id="doc-1",
+        )
+
+        highlights = doc.get_all_highlights()
+        assert len(highlights) == 1
+        assert highlights[0]["id"] == highlight_id
+        assert highlights[0]["para_ref"] == "[3]"
+
+    def test_multi_paragraph_highlight_has_range_para_ref(self) -> None:
+        """AC5.2: Highlight spanning paragraphs 2-4 gets para_ref='[2]-[4]'."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
+
+        paragraph_map: dict[str, int] = {
+            "0": 1,
+            "50": 2,
+            "120": 3,
+            "200": 4,
+            "300": 5,
+        }
+        # Starts in paragraph 2 (offset 50), ends in paragraph 4 (offset 200)
+        start_char, end_char = 60, 250
+
+        para_ref = lookup_para_ref(paragraph_map, start_char, end_char)
+        assert para_ref == "[2]-[4]"
+
+        doc = AnnotationDocument(doc_id="test-ws")
+        highlight_id = doc.add_highlight(
+            start_char=start_char,
+            end_char=end_char,
+            tag="test-tag",
+            text="spanning text",
+            author="tester",
+            para_ref=para_ref,
+            document_id="doc-1",
+        )
+
+        highlights = doc.get_all_highlights()
+        assert len(highlights) == 1
+        assert highlights[0]["id"] == highlight_id
+        assert highlights[0]["para_ref"] == "[2]-[4]"
+
+    def test_highlight_before_first_paragraph_has_empty_para_ref(self) -> None:
+        """AC5.4: Highlight before the first mapped paragraph gets para_ref=''."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
+
+        # First paragraph starts at offset 100 (e.g., header text before it)
+        paragraph_map: dict[str, int] = {"100": 1, "200": 2}
+        start_char, end_char = 10, 50
+
+        para_ref = lookup_para_ref(paragraph_map, start_char, end_char)
+        assert para_ref == ""
+
+        doc = AnnotationDocument(doc_id="test-ws")
+        highlight_id = doc.add_highlight(
+            start_char=start_char,
+            end_char=end_char,
+            tag="test-tag",
+            text="header text",
+            author="tester",
+            para_ref=para_ref,
+            document_id="doc-1",
+        )
+
+        highlights = doc.get_all_highlights()
+        assert len(highlights) == 1
+        assert highlights[0]["id"] == highlight_id
+        assert highlights[0]["para_ref"] == ""

@@ -120,6 +120,31 @@ async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
         return set(result.all())
 
 
+async def update_document_paragraph_settings(
+    document_id: UUID,
+    auto_number_paragraphs: bool,
+    paragraph_map: dict[str, int],
+) -> None:
+    """Update paragraph numbering settings on a WorkspaceDocument.
+
+    Args:
+        document_id: The document UUID.
+        auto_number_paragraphs: True for auto-number mode, False for source-number.
+        paragraph_map: New char-offset to paragraph-number mapping.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        doc = result.first()
+        if doc is None:
+            msg = f"WorkspaceDocument {document_id} not found"
+            raise ValueError(msg)
+        doc.auto_number_paragraphs = auto_number_paragraphs
+        doc.paragraph_map = paragraph_map
+        session.add(doc)
+
+
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:
     """Reorder documents in a workspace.
 

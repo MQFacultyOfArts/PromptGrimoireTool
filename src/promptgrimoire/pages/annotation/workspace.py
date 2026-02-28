@@ -451,12 +451,16 @@ async def _build_tab_panels(
     on_manage_tags: Any,
     can_create_tags: bool,
     footer: Any | None = None,
+    documents: list[Any] | None = None,
 ) -> None:
     """Build the three tab panels and store panel refs on ``state``.
 
     Populates Annotate (with CRDT load + document render), Organise, and
     Respond panels.  Stores ``state.tab_panels``, ``state.organise_panel``,
     and ``state.respond_panel`` for later use by broadcast callbacks.
+
+    Args:
+        documents: Pre-loaded documents list.  If ``None``, queries the DB.
     """
     with ui.tab_panels(tabs, value="Annotate", on_change=on_tab_change).classes(
         "w-full"
@@ -471,8 +475,9 @@ async def _build_tab_panels(
             )
             logger.debug("[RENDER] CRDT doc loaded")
 
-            # Load existing documents
-            documents = await list_documents(workspace_id)
+            # Use pre-loaded documents or query if not provided
+            if documents is None:
+                documents = await list_documents(workspace_id)
             logger.debug("[RENDER] documents loaded: count=%d", len(documents))
 
             if documents:
@@ -542,6 +547,10 @@ async def _render_workspace_view(
     _setup_client_sync(workspace_id, client, state)
     can_manage_sharing = state.is_owner or state.viewer_is_privileged
 
+    # Pre-load documents so the header can show the paragraph toggle
+    documents = await list_documents(workspace_id)
+    first_doc = documents[0] if documents else None
+
     await render_workspace_header(
         state,
         workspace_id,
@@ -550,6 +559,7 @@ async def _render_workspace_view(
         shared_with_class=shared_with_class,
         can_manage_sharing=can_manage_sharing,
         user_id=_get_current_user_id(),
+        document=first_doc,
     )
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
@@ -578,6 +588,7 @@ async def _render_workspace_view(
         on_manage_tags=on_manage_tags,
         can_create_tags=can_create_tags,
         footer=footer,
+        documents=documents,
     )
 
     # Inject copy protection JS after tab container is built (Phase 4)

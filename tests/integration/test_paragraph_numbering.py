@@ -236,6 +236,63 @@ class TestCloneParagraphFields:
         assert cloned_doc.paragraph_map == {"0": 1, "45": 2, "100": 3}
 
 
+class TestUpdateDocumentParagraphSettings:
+    """Verify update_document_paragraph_settings() persists both columns."""
+
+    @pytest.mark.asyncio
+    async def test_update_toggles_auto_number_and_rebuilds_map(
+        self,
+        db_session: AsyncSession,  # noqa: ARG002 — triggers DB URL setup
+    ) -> None:
+        """AC7.2: Toggling rebuilds paragraph_map and updates auto_number."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            get_document,
+            update_document_paragraph_settings,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        original_map: dict[str, int] = {"0": 1, "50": 2, "120": 3}
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>First para</p><p>Second para</p><p>Third para</p>",
+            source_type="html",
+            auto_number_paragraphs=True,
+            paragraph_map=original_map,
+        )
+
+        # Toggle to source-number mode with a new map
+        new_map: dict[str, int] = {"0": 5, "12": 10}
+        await update_document_paragraph_settings(
+            doc.id, auto_number_paragraphs=False, paragraph_map=new_map
+        )
+
+        reloaded = await get_document(doc.id)
+        assert reloaded is not None
+        assert reloaded.auto_number_paragraphs is False
+        assert reloaded.paragraph_map == {"0": 5, "12": 10}
+
+    @pytest.mark.asyncio
+    async def test_update_nonexistent_document_raises(
+        self,
+        db_session: AsyncSession,  # noqa: ARG002 — triggers DB URL setup
+    ) -> None:
+        """Updating a non-existent document raises ValueError."""
+        from uuid import uuid4
+
+        from promptgrimoire.db.workspace_documents import (
+            update_document_paragraph_settings,
+        )
+
+        with pytest.raises(ValueError, match="not found"):
+            await update_document_paragraph_settings(
+                uuid4(), auto_number_paragraphs=True, paragraph_map={}
+            )
+
+
 class TestHighlightParaRefWiring:
     """Verify end-to-end wiring from paragraph_map through lookup to CRDT.
 

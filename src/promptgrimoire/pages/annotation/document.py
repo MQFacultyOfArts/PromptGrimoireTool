@@ -228,6 +228,9 @@ async def _render_document_with_highlights(
         state.document_chars = extract_text_from_html(doc.content)
         # paragraph_map is only meaningful when content is present
         state.paragraph_map = doc.paragraph_map
+        # Store raw content and auto-number mode for paragraph toggle re-render
+        state.document_content = doc.content
+        state.auto_number_paragraphs = getattr(doc, "auto_number_paragraphs", True)
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
@@ -283,6 +286,7 @@ async def _render_document_with_highlights(
             .style("flex: 2; min-width: 600px; max-width: 900px;")
             .props('id="doc-container"')
         )
+        state.doc_container = doc_container
         with doc_container:
             # Inject data-para attributes for paragraph number margin display.
             # paragraph_map comes from WorkspaceDocument; empty map is a no-op.

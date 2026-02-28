@@ -226,6 +226,7 @@ async def _render_document_with_highlights(
     # (char spans are injected client-side, not stored in DB)
     if doc.content:
         state.document_chars = extract_text_from_html(doc.content)
+        # paragraph_map is only meaningful when content is present
         state.paragraph_map = doc.paragraph_map
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are

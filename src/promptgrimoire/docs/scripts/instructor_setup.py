@@ -8,7 +8,6 @@ narrative markdown with highlighted screenshots.
 
 from __future__ import annotations
 
-import asyncio
 import re
 import subprocess
 from pathlib import Path
@@ -50,87 +49,67 @@ def _enrol_instructor() -> None:
     )
 
 
+_SEED_TEMPLATE_TAGS_SCRIPT = """\
+import asyncio
+from sqlmodel import select
+from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.models import (
+    Activity, Course, Tag, TagGroup, Week, Workspace,
+)
+
+async def main():
+    async with get_session() as s:
+        c = (await s.exec(
+            select(Course).where(
+                Course.code == "{code}",
+                Course.semester == "{semester}",
+            )
+        )).first()
+        if not c:
+            return
+        a = (await s.exec(
+            select(Activity).join(Week).where(Week.course_id == c.id)
+        )).first()
+        if not a:
+            return
+        wid = a.template_workspace_id
+        if (await s.exec(select(TagGroup).where(TagGroup.workspace_id == wid))).first():
+            return
+        g = TagGroup(workspace_id=wid, name="Translation Analysis",
+                     color="#4a90d9", order_index=0)
+        s.add(g)
+        await s.flush()
+        tags = [("Source Text Features", "#1f77b4"),
+                ("Translation Strategy", "#2ca02c"),
+                ("Cultural Adaptation", "#d62728")]
+        for i, (n, cl) in enumerate(tags):
+            s.add(Tag(workspace_id=wid, group_id=g.id, name=n,
+                      color=cl, locked=False, order_index=i))
+        await s.flush()
+        w = await s.get(Workspace, wid)
+        if w:
+            w.next_tag_order = len(tags)
+            w.next_group_order = 1
+            s.add(w)
+            await s.flush()
+
+asyncio.run(main())
+"""
+
+
 def _seed_template_tags(course_code: str, semester: str) -> None:
     """Seed tags into the activity's template workspace via DB.
 
-    The UI saves tags to the instructor's own workspace clone; the
-    template remains empty unless seeded explicitly. This ensures
-    student workspaces inherit the tag configuration on clone.
+    Runs in a separate subprocess because the NiceGUI server already
+    owns the event loop — ``asyncio.run()`` cannot be called from a
+    running loop. The bash script used the same subprocess pattern.
     """
-
-    async def _seed() -> None:
-        from sqlmodel import select  # noqa: PLC0415
-
-        from promptgrimoire.db.engine import get_session  # noqa: PLC0415
-        from promptgrimoire.db.models import (  # noqa: PLC0415
-            Activity,
-            Course,
-            Tag,
-            TagGroup,
-            Week,
-            Workspace,
-        )
-
-        async with get_session() as s:
-            c = (
-                await s.exec(
-                    select(Course).where(
-                        Course.code == course_code,
-                        Course.semester == semester,
-                    )
-                )
-            ).first()
-            if not c:
-                return
-
-            a = (
-                await s.exec(select(Activity).join(Week).where(Week.course_id == c.id))
-            ).first()
-            if not a:
-                return
-
-            wid = a.template_workspace_id
-            # Skip if already seeded
-            if (
-                await s.exec(select(TagGroup).where(TagGroup.workspace_id == wid))
-            ).first():
-                return
-
-            g = TagGroup(
-                workspace_id=wid,
-                name="Translation Analysis",
-                color="#4a90d9",
-                order_index=0,
-            )
-            s.add(g)
-            await s.flush()
-
-            tags_data = [
-                ("Source Text Features", "#1f77b4"),
-                ("Translation Strategy", "#2ca02c"),
-                ("Cultural Adaptation", "#d62728"),
-            ]
-            for i, (name, color) in enumerate(tags_data):
-                s.add(
-                    Tag(
-                        workspace_id=wid,
-                        group_id=g.id,
-                        name=name,
-                        color=color,
-                        locked=False,
-                        order_index=i,
-                    )
-                )
-            await s.flush()
-
-            w = await s.get(Workspace, wid)
-            if w:
-                w.next_tag_order = len(tags_data)
-                w.next_group_order = 1
-                s.add(w)
-                await s.flush()
-
-    asyncio.run(_seed())
+    script = _SEED_TEMPLATE_TAGS_SCRIPT.format(code=course_code, semester=semester)
+    subprocess.run(
+        ["uv", "run", "python", "-c", script],
+        capture_output=True,
+        check=False,
+    )
 
 
 def _create_demo_student() -> None:

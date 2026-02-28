@@ -1,10 +1,13 @@
 """Screenshot test for paragraph numbering visual verification.
 
-Identifies novel formatting contexts (speaker turns, headings,
-lists, thinking blocks) and takes targeted screenshots at each.
+Parametrised over all conversation fixtures. Identifies novel
+formatting contexts (speaker turns, headings, lists, blockquotes,
+tables, code blocks, thinking blocks) and takes targeted screenshots.
 
-Run: uv run test-e2e tests/e2e/test_para_screenshot.py -xvs
-Screenshots: tests/e2e/screenshots/cooking_*.png
+Run all:   uv run test-e2e tests/e2e/test_para_screenshot.py -xvs
+Run one:   uv run test-e2e tests/e2e/test_para_screenshot.py -xvs -k cooking
+
+Screenshots: tests/e2e/screenshots/<prefix>_*.png
 """
 
 from __future__ import annotations
@@ -25,6 +28,30 @@ if TYPE_CHECKING:
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "conversations"
 SCREENSHOT_DIR = Path(__file__).parent / "screenshots"
 SCREENSHOT_DIR.mkdir(exist_ok=True)
+
+# All conversation fixtures to test, with short prefix for filenames.
+# Excludes 183-clipboard (test artifact) and .gz duplicates of .html files.
+_ALL_FIXTURES: list[tuple[str, str]] = [
+    ("austlii", "austlii.html"),
+    ("chinese_wikipedia", "chinese_wikipedia.html"),
+    ("claude_cooking", "claude_cooking.html"),
+    ("claude_maths", "claude_maths.html"),
+    ("google_aistudio_image", "google_aistudio_image.html.gz"),
+    ("google_aistudio_ux", "google_aistudio_ux_discussion.html.gz"),
+    ("google_gemini_debug", "google_gemini_debug.html.gz"),
+    ("google_gemini_deep_research", "google_gemini_deep_research.html.gz"),
+    ("lawlis_v_r_austlii", "lawlis_v_r_austlii.html"),
+    ("openai_biblatex", "openai_biblatex.html.gz"),
+    ("openai_dh_dr", "openai_dh_dr.html.gz"),
+    ("openai_dprk_denmark", "openai_dprk_denmark.html.gz"),
+    ("openai_software_long_dr", "openai_software_long_dr.html.gz"),
+    ("scienceos_loc", "scienceos_loc.html.gz"),
+    ("scienceos_philsci", "scienceos_philsci.html.gz"),
+    ("translation_japanese", "translation_japanese_sample.html"),
+    ("translation_korean", "translation_korean_sample.html"),
+    ("translation_spanish", "translation_spanish_sample.html"),
+    ("wikisource_quijote", "wikisource_es_don_quijote.html.gz"),
+]
 
 
 def _load_fixture(name: str) -> str:
@@ -95,106 +122,122 @@ def _paste_and_render(page: Page, html: str) -> None:
     page.wait_for_timeout(500)
 
 
-def _find_formatting_landmarks(page: Page) -> list[dict]:
-    """Find positions of novel formatting contexts.
+# JS function that detects all novel formatting contexts in the
+# rendered document and returns their positions for screenshotting.
+_LANDMARK_JS = """() => {
+    const c = document.getElementById('doc-container');
+    if (!c) return [];
+    const cRect = c.getBoundingClientRect();
+    const landmarks = [];
 
-    Returns list of {type, y, text} sorted by y position,
-    deduplicated so nearby items (within 300px) are merged.
-    """
-    return page.evaluate("""() => {
-        const c = document.getElementById('doc-container');
-        if (!c) return [];
-        const cRect = c.getBoundingClientRect();
-        const landmarks = [];
+    function yOf(el) {
+        return el.getBoundingClientRect().top
+            - cRect.top + c.scrollTop;
+    }
 
-        // Speaker turn boundaries
-        for (const el of c.querySelectorAll(
-            '[data-speaker]'
-        )) {
-            const r = el.getBoundingClientRect();
-            const speaker = el.getAttribute('data-speaker');
-            const text = el.textContent?.substring(0, 40);
+    // Speaker turn boundaries
+    for (const el of c.querySelectorAll('[data-speaker]')) {
+        const speaker = el.getAttribute('data-speaker');
+        landmarks.push({
+            type: 'speaker-' + speaker,
+            y: yOf(el),
+            text: el.textContent?.substring(0, 40)
+        });
+    }
+
+    // Headings
+    for (const el of c.querySelectorAll('h1,h2,h3,h4,h5,h6')) {
+        landmarks.push({
+            type: 'heading-' + el.tagName.toLowerCase(),
+            y: yOf(el),
+            text: el.textContent?.substring(0, 40)
+        });
+    }
+
+    // Thinking blocks
+    for (const el of c.querySelectorAll('[data-thinking]')) {
+        landmarks.push({
+            type: 'thinking',
+            y: yOf(el),
+            text: el.textContent?.substring(0, 40)
+        });
+    }
+
+    // Lists (first of each type)
+    const seenListTypes = new Set();
+    for (const el of c.querySelectorAll('ol, ul')) {
+        const tag = el.tagName.toLowerCase();
+        if (!seenListTypes.has(tag)) {
+            seenListTypes.add(tag);
             landmarks.push({
-                type: 'speaker-' + speaker,
-                y: r.top - cRect.top + c.scrollTop,
-                text: text
-            });
-        }
-
-        // Headings
-        for (const el of c.querySelectorAll(
-            'h1,h2,h3,h4,h5,h6'
-        )) {
-            landmarks.push({
-                type: 'heading-' + el.tagName.toLowerCase(),
-                y: el.getBoundingClientRect().top
-                    - cRect.top + c.scrollTop,
+                type: 'list-' + tag,
+                y: yOf(el),
                 text: el.textContent?.substring(0, 40)
             });
         }
+    }
 
-        // Thinking blocks
-        for (const el of c.querySelectorAll(
-            '[data-thinking]'
-        )) {
-            landmarks.push({
-                type: 'thinking',
-                y: el.getBoundingClientRect().top
-                    - cRect.top + c.scrollTop,
-                text: el.textContent?.substring(0, 40)
-            });
-        }
+    // Blockquotes (first only)
+    const bq = c.querySelector('blockquote');
+    if (bq) {
+        landmarks.push({
+            type: 'blockquote',
+            y: yOf(bq),
+            text: bq.textContent?.substring(0, 40)
+        });
+    }
 
-        // Lists (first of each type)
-        const seenListTypes = new Set();
-        for (const el of c.querySelectorAll('ol, ul')) {
-            const tag = el.tagName.toLowerCase();
-            if (!seenListTypes.has(tag)) {
-                seenListTypes.add(tag);
-                landmarks.push({
-                    type: 'list-' + tag,
-                    y: el.getBoundingClientRect().top
-                        - cRect.top + c.scrollTop,
-                    text: el.textContent?.substring(0, 40)
-                });
-            }
-        }
+    // Tables (first only)
+    const tbl = c.querySelector('table');
+    if (tbl) {
+        landmarks.push({
+            type: 'table',
+            y: yOf(tbl),
+            text: tbl.textContent?.substring(0, 40)
+        });
+    }
 
-        // First and last data-para elements
-        const paras = c.querySelectorAll('[data-para]');
-        if (paras.length > 0) {
-            const first = paras[0];
-            landmarks.push({
-                type: 'first-para',
-                y: first.getBoundingClientRect().top
-                    - cRect.top + c.scrollTop,
-                text: '[' + first.getAttribute('data-para')
-                    + '] ' + first.textContent
-                        ?.substring(0, 30)
-            });
-            const last = paras[paras.length - 1];
-            landmarks.push({
-                type: 'last-para',
-                y: last.getBoundingClientRect().top
-                    - cRect.top + c.scrollTop,
-                text: '[' + last.getAttribute('data-para')
-                    + '] ' + last.textContent
-                        ?.substring(0, 30)
-            });
-        }
+    // Code blocks (first <pre> only)
+    const pre = c.querySelector('pre');
+    if (pre) {
+        landmarks.push({
+            type: 'code-block',
+            y: yOf(pre),
+            text: pre.textContent?.substring(0, 40)
+        });
+    }
 
-        // Sort by y, deduplicate within 300px
-        landmarks.sort((a, b) => a.y - b.y);
-        const deduped = [];
-        let lastY = -999;
-        for (const lm of landmarks) {
-            if (lm.y - lastY > 300) {
-                deduped.push(lm);
-                lastY = lm.y;
-            }
+    // First and last data-para elements
+    const paras = c.querySelectorAll('[data-para]');
+    if (paras.length > 0) {
+        const first = paras[0];
+        landmarks.push({
+            type: 'first-para',
+            y: yOf(first),
+            text: '[' + first.getAttribute('data-para')
+                + '] ' + first.textContent?.substring(0, 30)
+        });
+        const last = paras[paras.length - 1];
+        landmarks.push({
+            type: 'last-para',
+            y: yOf(last),
+            text: '[' + last.getAttribute('data-para')
+                + '] ' + last.textContent?.substring(0, 30)
+        });
+    }
+
+    // Sort by y, deduplicate within 300px
+    landmarks.sort((a, b) => a.y - b.y);
+    const deduped = [];
+    let lastY = -999;
+    for (const lm of landmarks) {
+        if (lm.y - lastY > 300) {
+            deduped.push(lm);
+            lastY = lm.y;
         }
-        return deduped;
-    }""")
+    }
+    return deduped;
+}"""
 
 
 def _clean_screenshots(prefix: str) -> None:
@@ -210,16 +253,14 @@ def _screenshot_at_landmarks(
     paths = []
 
     for i, lm in enumerate(landmarks):
-        # scrollIntoView on nearest element to the landmark
         page.evaluate(
             f"""(() => {{
-                const c = document.getElementById(
-                    'doc-container'
-                );
+                const c = document.getElementById('doc-container');
                 if (!c) return;
                 const els = c.querySelectorAll(
                     '[data-para],[data-speaker],'
-                    + 'h1,h2,h3,h4,h5,h6,ol,ul'
+                    + 'h1,h2,h3,h4,h5,h6,ol,ul,'
+                    + 'blockquote,table,pre'
                 );
                 let best = null;
                 let bestDist = Infinity;
@@ -255,15 +296,24 @@ def _screenshot_at_landmarks(
 
 @pytest.mark.e2e
 class TestParagraphScreenshots:
-    def test_claude_cooking_fixture(self, page_with_paste: Page) -> None:
-        """Full cooking conversation — inspect paragraph
-        numbers at every novel formatting context."""
+    @pytest.mark.parametrize(
+        ("prefix", "fixture_file"),
+        _ALL_FIXTURES,
+        ids=[f[0] for f in _ALL_FIXTURES],
+    )
+    def test_fixture_screenshots(
+        self,
+        page_with_paste: Page,
+        prefix: str,
+        fixture_file: str,
+    ) -> None:
+        """Paste fixture, detect landmarks, take screenshots."""
         page = page_with_paste
-        _clean_screenshots("cooking")
-        html = _load_fixture("claude_cooking.html")
+        _clean_screenshots(prefix)
+        html = _load_fixture(fixture_file)
         _paste_and_render(page, html)
 
-        # Report all data-para elements
+        # Report data-para elements
         para_values = page.evaluate("""
             Array.from(
                 document.querySelectorAll('[data-para]')
@@ -273,17 +323,18 @@ class TestParagraphScreenshots:
                 text: el.textContent?.substring(0, 60)
             }))
         """)
-        print(f"\ndata-para elements: {len(para_values)}")
+        print(f"\n=== {prefix} ({fixture_file}) ===")
+        print(f"data-para elements: {len(para_values)}")
         for p in para_values:
             print(f"  [{p['para']:>3s}] <{p['tag']}>: {p['text']}")
 
-        # Find landmarks and take targeted screenshots
-        landmarks = _find_formatting_landmarks(page)
+        # Find landmarks and take screenshots
+        landmarks: list[dict] = page.evaluate(_LANDMARK_JS)
         print(f"\nFormatting landmarks: {len(landmarks)}")
         for lm in landmarks:
             print(f"  y={lm['y']:>6.0f}  {lm['type']:<20s}  {lm['text']}")
 
-        paths = _screenshot_at_landmarks(page, "cooking", landmarks)
+        paths = _screenshot_at_landmarks(page, prefix, landmarks)
 
-        assert len(para_values) > 0
-        assert len(paths) > 0
+        assert len(para_values) > 0, f"No data-para elements in {fixture_file}"
+        assert len(paths) > 0, f"No landmarks found in {fixture_file}"

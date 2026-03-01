@@ -1,16 +1,33 @@
 """Tests for make_docs() CLI function.
 
-Covers acceptance criteria AC4.1-AC4.5, AC6.1, AC7.1, AC7.2, and AC8.1.
+Covers acceptance criteria AC4.1-AC4.5, AC5.1, AC5.3, AC6.1, AC7.1, AC7.2, and AC8.1.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import promptgrimoire.cli as cli_module
+
+# Guides directory that make_docs() will glob for pandoc PDF generation.
+# Must match make_docs()'s own: Path(__file__).resolve().parents[2] / "docs" / "guides"
+_guides_dir = Path(cli_module.__file__).resolve().parents[2] / "docs" / "guides"
+
+_GUIDE_NAMES = ("instructor-setup", "student-workflow", "your-personal-grimoire")
+
+
+def _create_guide_md(name: str):
+    """Return a side_effect that creates a placeholder .md file for glob discovery."""
+
+    def _side_effect(*_args, **_kwargs):
+        _guides_dir.mkdir(parents=True, exist_ok=True)
+        (_guides_dir / f"{name}.md").write_text(f"# {name}\n")
+
+    return _side_effect
 
 
 @pytest.fixture
@@ -18,7 +35,9 @@ def _mock_happy_path():
     """Patch all external dependencies so make_docs() can run to completion.
 
     Mocks Playwright launch chain, guide functions, subprocess calls,
-    and server lifecycle. Yields a dict of key mocks for assertions.
+    and server lifecycle. Guide mocks create placeholder .md files so the
+    glob-based pandoc loop discovers them. Yields a dict of key mocks for
+    assertions.
     """
     mock_process = MagicMock(name="server_process")
     mock_page = MagicMock(name="page")
@@ -41,9 +60,15 @@ def _mock_happy_path():
         patch(
             "promptgrimoire.docs.scripts.student_workflow.run_student_guide"
         ) as mock_student,
+        patch(
+            "promptgrimoire.docs.scripts.personal_grimoire.run_personal_grimoire_guide"
+        ) as mock_personal,
         patch("subprocess.run") as mock_subprocess_run,
     ):
         mock_sync_pw.return_value.start.return_value = mock_pw
+        mock_instructor.side_effect = _create_guide_md("instructor-setup")
+        mock_student.side_effect = _create_guide_md("student-workflow")
+        mock_personal.side_effect = _create_guide_md("your-personal-grimoire")
         yield {
             "start": mock_start,
             "stop": mock_stop,
@@ -54,8 +79,12 @@ def _mock_happy_path():
             "sync_pw": mock_sync_pw,
             "instructor": mock_instructor,
             "student": mock_student,
+            "personal": mock_personal,
             "subprocess_run": mock_subprocess_run,
         }
+        # Cleanup: remove placeholder markdown files created by side_effects
+        for name in _GUIDE_NAMES:
+            (_guides_dir / f"{name}.md").unlink(missing_ok=True)
 
 
 class TestMakeDocsServerLifecycle:
@@ -93,20 +122,16 @@ class TestMakeDocsServerLifecycle:
             device_scale_factor=4,
         )
 
-    def test_both_guides_called_with_page_and_base_url(self, _mock_happy_path):
+    def test_all_guides_called_with_page_and_base_url(self, _mock_happy_path):
         mocks = _mock_happy_path
 
         cli_module.make_docs()
 
-        mocks["instructor"].assert_called_once()
-        page_arg, base_url_arg = mocks["instructor"].call_args[0]
-        assert page_arg is mocks["page"]
-        assert base_url_arg.startswith("http://localhost:")
-
-        mocks["student"].assert_called_once()
-        page_arg, base_url_arg = mocks["student"].call_args[0]
-        assert page_arg is mocks["page"]
-        assert base_url_arg.startswith("http://localhost:")
+        for key in ("instructor", "student", "personal"):
+            mocks[key].assert_called_once()
+            page_arg, base_url_arg = mocks[key].call_args[0]
+            assert page_arg is mocks["page"]
+            assert base_url_arg.startswith("http://localhost:")
 
 
 class TestMakeDocsOutputProduction:
@@ -132,24 +157,25 @@ class TestMakeDocsOutputProduction:
 
 
 class TestMakeDocsGuideOrder:
-    """AC4.2: Instructor guide runs before student guide."""
+    """AC4.2, AC5.1: Guides run in correct order."""
 
-    def test_instructor_runs_before_student(self, _mock_happy_path):
+    def test_guide_execution_order(self, _mock_happy_path):
         mocks = _mock_happy_path
         call_order: list[str] = []
 
-        def _record_instructor(*_args, **_kwargs):
-            call_order.append("instructor")
+        def _record(label: str):
+            def _side_effect(*_args, **_kwargs):
+                call_order.append(label)
 
-        def _record_student(*_args, **_kwargs):
-            call_order.append("student")
+            return _side_effect
 
-        mocks["instructor"].side_effect = _record_instructor
-        mocks["student"].side_effect = _record_student
+        mocks["instructor"].side_effect = _record("instructor")
+        mocks["student"].side_effect = _record("student")
+        mocks["personal"].side_effect = _record("personal")
 
         cli_module.make_docs()
 
-        assert call_order == ["instructor", "student"]
+        assert call_order == ["instructor", "student", "personal"]
 
 
 class TestMakeDocsErrorHandling:
@@ -235,11 +261,11 @@ class TestMakeDocsMkdocsBuild:
         mocks = _mock_happy_path
         call_order: list[str] = []
 
-        def _record_instructor(*_args, **_kwargs):
-            call_order.append("instructor")
+        def _record(label: str):
+            def _side_effect(*_args, **_kwargs):
+                call_order.append(label)
 
-        def _record_student(*_args, **_kwargs):
-            call_order.append("student")
+            return _side_effect
 
         def _record_subprocess(cmd, **_kwargs):
             if cmd[:3] == ["uv", "run", "mkdocs"]:
@@ -247,18 +273,21 @@ class TestMakeDocsMkdocsBuild:
             elif cmd[0] == "pandoc":
                 call_order.append("pandoc")
 
-        mocks["instructor"].side_effect = _record_instructor
-        mocks["student"].side_effect = _record_student
+        mocks["instructor"].side_effect = _record("instructor")
+        mocks["student"].side_effect = _record("student")
+        mocks["personal"].side_effect = _record("personal")
         mocks["subprocess_run"].side_effect = _record_subprocess
 
         cli_module.make_docs()
 
         assert "instructor" in call_order
         assert "student" in call_order
+        assert "personal" in call_order
         assert "mkdocs" in call_order
         mkdocs_idx = call_order.index("mkdocs")
         assert call_order.index("instructor") < mkdocs_idx
         assert call_order.index("student") < mkdocs_idx
+        assert call_order.index("personal") < mkdocs_idx
 
 
 class TestMakeDocsPandocPdf:
@@ -272,11 +301,12 @@ class TestMakeDocsPandocPdf:
         pandoc_calls = [
             c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
         ]
-        assert len(pandoc_calls) == 2
+        assert len(pandoc_calls) == 3
 
         input_files = [c[0][0][-1] for c in pandoc_calls]
         assert any("instructor-setup.md" in f for f in input_files)
         assert any("student-workflow.md" in f for f in input_files)
+        assert any("your-personal-grimoire.md" in f for f in input_files)
 
     def test_pandoc_includes_resource_path(self, _mock_happy_path):
         """AC7.2: --resource-path is critical for image resolution."""

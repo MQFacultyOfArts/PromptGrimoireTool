@@ -112,11 +112,9 @@ def _setup_selection_handlers(state: PageState) -> None:
 
 def _render_new_tag_button(on_add_click: Any) -> None:
     """Render the '+ New' tag creation button in the current NiceGUI context."""
-    ui.button("+ New", on_click=on_add_click).props("flat dense color=grey-7").classes(
-        "text-sm"
-    ).props('data-testid="highlight-menu-new-tag"').tooltip(
-        "Create a new tag and apply it to your selection"
-    )
+    ui.button("+ New", on_click=on_add_click).props(
+        'flat dense color=grey-7 data-testid="highlight-menu-new-tag"'
+    ).classes("text-sm").tooltip("Create a new tag and apply it to your selection")
 
 
 def _populate_highlight_menu(

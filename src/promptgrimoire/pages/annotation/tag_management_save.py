@@ -52,8 +52,8 @@ async def _refresh_tag_state(
             _populate_highlight_menu,
         )
 
-        on_tag_click = getattr(state, "_highlight_menu_tag_click", None)
-        on_add_click = getattr(state, "_highlight_menu_on_add_click", None)
+        on_tag_click = state._highlight_menu_tag_click
+        on_add_click = state._highlight_menu_on_add_click
         if on_tag_click is not None:
             _populate_highlight_menu(state, on_tag_click, on_add_click=on_add_click)
 

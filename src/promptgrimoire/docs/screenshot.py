@@ -94,6 +94,7 @@ def capture_screenshot(
     highlight: Sequence[str] = (),
     focus: str | None = None,
     trim: bool = True,
+    settle_ms: int = 500,
 ) -> Path:
     """Capture a screenshot with optional highlight injection and trimming.
 
@@ -110,6 +111,9 @@ def capture_screenshot(
         via ``locator.screenshot()`` instead of a full-page capture.
     trim:
         If ``True``, remove empty white margins from the captured image.
+    settle_ms:
+        Milliseconds to wait before capture so CSS transitions (e.g.
+        Quasar floating labels) finish animating.
 
     Returns
     -------
@@ -119,6 +123,8 @@ def capture_screenshot(
     style_handle = highlight_elements(page, highlight)
 
     try:
+        if settle_ms > 0:
+            page.wait_for_timeout(settle_ms)
         if focus is not None:
             image_bytes = page.get_by_test_id(focus).screenshot()
         else:

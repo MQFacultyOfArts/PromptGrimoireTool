@@ -205,3 +205,25 @@ class TestGuideContextManager:
         second_path = calls[1][0][1]
         assert "test-01.png" in str(first_path)
         assert "test-02.png" in str(second_path)
+
+    def test_step_skips_auto_capture_when_explicit_screenshot_taken(
+        self, tmp_path: Path
+    ) -> None:
+        """Step exit skips auto-capture when explicit screenshot was taken.
+
+        Steps with explicit ``guide.screenshot()`` calls already have
+        carefully timed captures. The auto-capture would produce a
+        redundant image, often in a transitional CSS state.
+        """
+        mock_page = MagicMock()
+
+        with patch(_CAPTURE_PATCH) as mock_cap:
+            mock_cap.return_value = tmp_path / "screenshots" / "test-01.png"
+            with (
+                Guide("Test", tmp_path, mock_page) as guide,
+                guide.step("Explicit") as g,
+            ):
+                g.screenshot("Manual capture")
+
+        # Only the explicit call — no auto-capture at step exit
+        mock_cap.assert_called_once()

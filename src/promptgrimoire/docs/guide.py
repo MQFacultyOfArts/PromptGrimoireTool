@@ -56,7 +56,12 @@ class Guide:
         return re.sub(r"[^a-z0-9-]", "", slug)
 
     def __enter__(self) -> Self:
-        (self._output_dir / self._screenshot_subdir).mkdir(parents=True, exist_ok=True)
+        screenshot_dir = self._output_dir / self._screenshot_subdir
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        # Remove stale screenshots from previous runs so the directory
+        # only contains images referenced by the current markdown.
+        for old in screenshot_dir.glob(f"{self._slug}-*.png"):
+            old.unlink()
         self._append(f"# {self._title}\n")
         return self
 
@@ -108,7 +113,9 @@ class Step:
     """Context manager for a guide step.
 
     On entry, appends a ``## heading`` to the guide's buffer.
-    On exit (if no exception), auto-captures a screenshot.
+    On exit (if no exception and no explicit screenshot was taken),
+    auto-captures a screenshot.  Steps with explicit screenshots
+    skip the auto-capture to avoid redundant images.
     Returns the parent ``Guide`` from ``__enter__`` so callers can
     use ``with guide.step("...") as g:`` and call ``g.note()``, etc.
     """
@@ -116,9 +123,11 @@ class Step:
     def __init__(self, guide: Guide, heading: str) -> None:
         self._guide = guide
         self._heading = heading
+        self._screenshot_count_at_entry: int = 0
 
     def __enter__(self) -> Guide:
         self._guide._append(f"## {self._heading}\n")
+        self._screenshot_count_at_entry = self._guide._screenshot_counter
         return self._guide
 
     def __exit__(
@@ -127,8 +136,12 @@ class Step:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool:
-        if exc_type is None:
-            # Auto-capture failures propagate — callers should handle Playwright
+        if (
+            exc_type is None
+            and self._guide._screenshot_counter == self._screenshot_count_at_entry
+        ):
+            # Auto-capture only if no explicit screenshot was taken during
+            # this step.  Failures propagate — callers should handle Playwright
             # errors (e.g. browser crash, page closed) raised by guide.screenshot().
             self._guide.screenshot(caption=self._heading)
         return False

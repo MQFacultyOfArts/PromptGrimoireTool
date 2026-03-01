@@ -71,6 +71,12 @@ REQUIRED_PACKAGES = [
     "emoji",  # Emoji rendering in LuaLaTeX
     "luatexja",  # CJK support for LuaLaTeX
     "haranoaji",  # Default Japanese fonts for luatexja-fontspec
+    # Typography and tables (required by promptgrimoire-export.sty)
+    "microtype",  # Better typography (kerning, protrusion)
+    "tools",  # longtable, array, calc, tabularx (TeX Live bundle)
+    "booktabs",  # Professional table rules
+    "changepage",  # Adjustable page margins
+    # amsmath, hyperref are in base LaTeX distribution
 ]
 
 # Required system fonts (installed via OS, not TinyTeX)

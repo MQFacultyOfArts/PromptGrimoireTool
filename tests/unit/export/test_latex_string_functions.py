@@ -156,6 +156,39 @@ class TestFormatAnnot:
         assert "Jurisdiction" in result
         assert "Alice" in result
 
+    def test_uuid_tag_with_tag_name_displays_name(self) -> None:
+        """When tag is a UUID but tag_name is provided, display name not UUID."""
+        highlight = {
+            "tag": "0bd64204-fce6-4069-ba38-920fae78eefc",
+            "tag_name": "Jurisdiction",
+            "author": "Alice",
+            "text": "The court held",
+            "comments": [],
+            "created_at": "2026-01-26T14:30:00+00:00",
+        }
+        result = format_annot_latex(highlight)
+
+        # Should display the human-readable name, not the UUID
+        assert "Jurisdiction" in result
+        assert "0bd64204" not in result.lower().replace("\\", "")
+
+        # Colour name should still use the UUID (matches \definecolor)
+        nodes = parse_latex(result)
+        annots = find_macros(nodes, "annot")
+        assert len(annots) >= 1
+        assert get_body_text(annots[0]) == "tag-0bd64204-fce6-4069-ba38-920fae78eefc"
+
+    def test_uuid_tag_without_tag_name_falls_back(self) -> None:
+        """Without tag_name, UUID tags display as-is (legacy fallback)."""
+        highlight = {
+            "tag": "jurisdiction",
+            "author": "Alice",
+            "text": "The court held",
+            "comments": [],
+        }
+        result = format_annot_latex(highlight)
+        assert "Jurisdiction" in result
+
     def test_with_paragraph_reference(self) -> None:
         """Annotation with para ref should include it."""
         highlight = {

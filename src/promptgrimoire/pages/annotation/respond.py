@@ -145,7 +145,7 @@ def _build_reference_card(
                     await on_locate(sc, ec)
 
                 ui.button(icon="my_location", on_click=_do_locate).props(
-                    "flat dense size=xs"
+                    'flat dense size=xs data-testid="respond-locate-btn"'
                 ).tooltip("Locate in document")
 
         ui.label(f"by {author}").classes("text-xs text-gray-500")

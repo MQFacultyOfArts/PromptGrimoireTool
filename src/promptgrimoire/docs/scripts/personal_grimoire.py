@@ -27,13 +27,13 @@ GUIDE_OUTPUT_DIR = Path("docs/guides")
 _SAMPLE_HTML = (
     '<div class="conversation">'
     '<div class="user"><p><strong>Human:</strong> I\'m translating a Japanese'
-    " contract clause about \u4fe1\u7fa9\u8aa0\u5b9f\u306e\u539f\u5247"
-    " (shingi seijitsu no gensoku)."
+    " contract clause about shingi seijitsu no gensoku"
+    " (the principle of good faith and fair dealing)."
     " The English term 'good faith' doesn't seem to capture the full"
     " meaning. What cultural factors should I consider?</p></div>"
     '<div class="assistant"><p><strong>Assistant:</strong> You\'ve identified'
     " a significant translation challenge. The Japanese principle of"
-    " \u4fe1\u7fa9\u8aa0\u5b9f\u306e\u539f\u5247 carries cultural weight beyond"
+    " shingi seijitsu no gensoku carries cultural weight beyond"
     " the common law concept"
     " of 'good faith':</p>"
     "<ol>"
@@ -375,6 +375,58 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             "The Organise tab groups your highlights by tag. Your "
             "emergent vocabulary becomes a lens for seeing patterns "
             "across the conversation."
+        )
+
+        # Respond tab
+        page.get_by_test_id("tab-respond").click()
+        page.get_by_test_id("respond-splitter").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Respond tab with reference panel and markdown editor",
+            highlight=["respond-reference-panel", "milkdown-editor-container"],
+        )
+        g.note(
+            "The Respond tab gives you a markdown editor alongside "
+            "your highlights. Use it to draft a reflection that draws "
+            "on the patterns you identified."
+        )
+
+        # Type indicative markdown into the Milkdown editor
+        editor = page.locator('[data-testid="milkdown-editor-container"]')
+        editor.locator("[contenteditable]").click()
+        page.keyboard.type("# My Analysis\n\n")
+        page.keyboard.type("The comparison was **useful** but missed:\n\n")
+        page.keyboard.type("* Relational duties beyond the contract\n")
+        page.keyboard.type("* How cultural context shapes interpretation")
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Drafting a response with markdown formatting",
+            highlight=["milkdown-editor-container"],
+        )
+        g.note(
+            "Write using markdown: headings (#), bold (**), and "
+            "lists (*). The editor renders your formatting as you type."
+        )
+
+        # Use the locate button to jump back to the highlight
+        locate_btn = page.get_by_test_id("respond-locate-btn").first
+        locate_btn.wait_for(state="visible", timeout=5000)
+        locate_btn.click()
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Navigated back to the highlighted passage from Respond tab",
+            highlight=["annotation-card"],
+        )
+        g.note(
+            "Click the target icon on any reference card to jump "
+            "back to its highlight in the Annotate tab. This lets "
+            "you move between analysis and source text."
         )
 
 

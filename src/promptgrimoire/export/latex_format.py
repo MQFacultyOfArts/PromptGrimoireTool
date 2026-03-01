@@ -51,8 +51,11 @@ def format_annot_latex(
     # NoEscape: colour names may contain '#' (pre-existing bug, see AC4.4).
     colour_name = NoEscape(f"tag-{tag.replace('_', '-')}")
 
-    # Build margin content
-    tag_display = tag.replace("_", " ").title()
+    # Build margin content — prefer explicit tag_name (UUID→display name
+    # mapping injected by the page-level export orchestrator) over the raw
+    # tag field, which may be a UUID when tags are DB-backed.
+    tag_name = highlight.get("tag_name")
+    tag_display = tag_name if tag_name else tag.replace("_", " ").title()
     timestamp = _format_timestamp(created_at)
 
     # escape_unicode_latex() already escapes LaTeX specials, so its output

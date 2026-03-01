@@ -2599,10 +2599,25 @@ def make_docs() -> None:
     Starts a NiceGUI server with mock auth, launches Playwright to run
     guide scripts against it, producing markdown and screenshots.
     Then builds an MkDocs Material HTML site and Pandoc PDFs.
+
+    Optional post-build actions::
+
+        uv run make-docs serve       # local preview server
+        uv run make-docs gh-deploy   # push to gh-pages branch
     """
+    import argparse
     import socket
     import subprocess
     from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="Generate documentation guides")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        choices=["serve", "gh-deploy"],
+        help="optional post-build action",
+    )
+    args = parser.parse_args()
 
     from playwright.sync_api import sync_playwright
 
@@ -2675,5 +2690,13 @@ def make_docs() -> None:
                 str(pdf_path),
                 str(md_path),
             ],
+            check=True,
+        )
+
+    # --- Optional post-build action -------------------------------------------
+    if args.action:
+        subprocess.run(
+            ["uv", "run", "mkdocs", args.action],
+            cwd=project_root,
             check=True,
         )

@@ -47,6 +47,7 @@ def _mock_happy_path():
     mock_pw.chromium.launch.return_value = mock_browser
 
     with (
+        patch("sys.argv", ["make-docs"]),
         patch("shutil.which", return_value="/usr/bin/pandoc"),
         patch.object(cli_module, "_pre_test_db_cleanup"),
         patch.object(
@@ -194,6 +195,7 @@ class TestMakeDocsDependencyChecks:
 
     def test_exits_if_pandoc_missing(self, capsys):
         with (
+            patch("sys.argv", ["make-docs"]),
             patch("shutil.which", return_value=None),
             patch.object(cli_module, "_pre_test_db_cleanup"),
             patch.object(cli_module, "_start_e2e_server") as mock_start,

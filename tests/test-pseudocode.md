@@ -3064,3 +3064,82 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Assert output includes the wait_for failure context message
 
 **Verifies:** AC1.6 -- script failures report which script failed and include diagnostic context
+
+## Empty-Tag Annotation UX (E2E)
+
+### Zero-tag workspace shows "+ New" button and tooltip
+**File:** tests/e2e/test_empty_tag_ux.py::TestEmptyTagFloatingMenu::test_zero_tag_new_button_and_tooltip
+1. Create workspace with content but no tags (owner has tag creation permission)
+2. Navigate to annotation page, wait for text walker
+3. Select text in document
+4. Assert floating highlight menu shows "+ New" button (AC1.1)
+5. Assert "No tags available" label is NOT present
+6. Hover "+ New" button, assert tooltip "Create a new tag and apply it to your selection" (AC3.1)
+7. Click "+ New", cancel quick-create dialog
+8. Assert no annotation card was created (AC1.5 -- cancel produces no highlight)
+
+**Verifies:** AC1.1 (new button in zero-tag workspace), AC1.5 (cancel creates no highlight), AC3.1 (tooltip on new button)
+
+### Create tag via "+ New" and verify alongside existing tags
+**File:** tests/e2e/test_empty_tag_ux.py::TestEmptyTagFloatingMenu::test_create_tag_and_alongside_existing
+1. Create zero-tag workspace, navigate to annotation page
+2. Select text, click "+ New" in floating menu
+3. Fill tag name "TestTag" in quick-create dialog, click Create
+4. Assert annotation card appears (AC1.2 -- tag created and highlight applied)
+5. Clear selection, re-select different text
+6. Assert floating menu shows both tag buttons AND "+ New" button (AC1.3)
+
+**Verifies:** AC1.2 (new button creates tag and applies highlight), AC1.3 (new button alongside existing tag buttons)
+
+### No-permission dead end
+**File:** tests/e2e/test_empty_tag_ux.py::TestEmptyTagNoPermission::test_no_tags_no_permission_shows_dead_end
+1. Create workspace under activity with tag creation disabled (course default_allow_tag_creation=False)
+2. User has editor permission (can annotate but not create tags)
+3. Select text in document
+4. Assert "No tags available" label is visible (AC1.4)
+5. Assert "+ New" button is NOT attached to DOM
+6. Hover "No tags available" label, assert tooltip "Ask your instructor" (AC1.4)
+
+**Verifies:** AC1.4 (dead-end message when user lacks tag creation permission)
+
+### Expanded toolbar labels at zero tags
+**File:** tests/e2e/test_empty_tag_ux.py::TestToolbarExpandedLabels::test_expanded_labels_at_zero_tags
+1. Create zero-tag workspace, navigate to annotation page
+2. Assert create button shows "Create New Tag" text (AC2.1)
+3. Assert manage button shows "Manage Tags" text (AC2.2)
+
+**Verifies:** AC2.1 (create button label), AC2.2 (manage button label) below compact threshold
+
+### Compact buttons at 5+ tags
+**File:** tests/e2e/test_empty_tag_ux.py::TestToolbarExpandedLabels::test_compact_buttons_at_five_plus_tags
+1. Create workspace with 10 seeded tags, navigate to annotation page
+2. Assert create button does NOT contain "Create New Tag" text (AC2.3)
+3. Assert manage button does NOT contain "Manage Tags" text (AC2.3)
+
+**Verifies:** AC2.3 (compact icon-only buttons at or above threshold)
+
+### Live transition to compact on 5th tag creation
+**File:** tests/e2e/test_empty_tag_ux.py::TestToolbarExpandedLabels::test_transition_to_compact_on_fifth_tag
+1. Create zero-tag workspace, navigate to annotation page
+2. Create 4 tags via toolbar create button + quick-create dialog
+3. Assert buttons still show expanded labels ("Create New Tag", "Manage Tags")
+4. Create 5th tag
+5. Assert buttons switched to compact (no text labels) (AC2.4)
+
+**Verifies:** AC2.4 (live rebuild triggers compact style at threshold)
+
+### Tooltips at zero tags
+**File:** tests/e2e/test_empty_tag_ux.py::TestToolbarTooltips::test_tooltips_at_zero_tags
+1. Create zero-tag workspace, navigate to annotation page
+2. Hover create button, assert tooltip "Create a new tag for highlighting and annotating text" (AC3.2)
+3. Hover manage button, assert tooltip "Manage tags -- create, edit, reorder, and import tags" (AC3.3)
+
+**Verifies:** AC3.2 (create tooltip), AC3.3 (manage tooltip) at zero tags
+
+### Tooltips at 5+ tags
+**File:** tests/e2e/test_empty_tag_ux.py::TestToolbarTooltips::test_tooltips_at_five_plus_tags
+1. Create workspace with 10 seeded tags, navigate to annotation page
+2. Hover create button, assert tooltip visible (AC3.2 at 5+)
+3. Hover manage button, assert tooltip visible (AC3.3 at 5+)
+
+**Verifies:** AC3.4 (tooltips display at all tag counts, including compact mode)

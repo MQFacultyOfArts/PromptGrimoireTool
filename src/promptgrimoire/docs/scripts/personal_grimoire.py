@@ -413,9 +413,7 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
         )
 
         # Select "Place in Activity" mode
-        page.locator(
-            '[data-testid="placement-mode"] label:has-text("Place in Activity")'
-        ).click()
+        page.get_by_test_id("placement-mode-activity").click()
         page.wait_for_timeout(500)
 
         # Select unit from the course dropdown

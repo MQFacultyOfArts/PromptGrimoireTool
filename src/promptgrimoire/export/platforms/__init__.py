@@ -1,7 +1,8 @@
 """Platform-specific HTML preprocessing for chatbot exports.
 
 This module provides a Protocol + Registry pattern for handling different
-AI platform exports (OpenAI, Claude, Gemini, AI Studio, ScienceOS).
+AI platform exports (OpenAI, Claude, Gemini, AI Studio, ScienceOS,
+OpenRouter, ChatCraft, Wikimedia).
 
 Usage:
     from promptgrimoire.export.platforms import preprocess_for_export

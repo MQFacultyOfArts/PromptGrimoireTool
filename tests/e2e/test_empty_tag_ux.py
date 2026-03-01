@@ -412,8 +412,11 @@ class TestToolbarTooltips:
                 # AC3.2: Hover create button, verify tooltip
                 create_btn = page.get_by_test_id("tag-create-btn")
                 create_btn.hover()
-                tooltip = page.get_by_text(
-                    "Create a new tag for highlighting and annotating text"
+                # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
+                # get_by_role("tooltip") is the correct Playwright accessor here.
+                tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Create a new tag for highlighting and annotating text",
                 )
                 expect(tooltip).to_be_visible(timeout=5000)
 
@@ -425,6 +428,8 @@ class TestToolbarTooltips:
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()
+                # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
+                # get_by_role("tooltip") is the correct Playwright accessor here.
                 tooltip = page.get_by_role("tooltip", name="Manage tags")
                 expect(tooltip).to_be_visible(timeout=5000)
 
@@ -458,8 +463,11 @@ class TestToolbarTooltips:
                 # AC3.2 at 5+: Hover create button
                 create_btn = page.get_by_test_id("tag-create-btn")
                 create_btn.hover()
-                tooltip = page.get_by_text(
-                    "Create a new tag for highlighting and annotating text"
+                # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
+                # get_by_role("tooltip") is the correct Playwright accessor here.
+                tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Create a new tag for highlighting and annotating text",
                 )
                 expect(tooltip).to_be_visible(timeout=5000)
 
@@ -470,6 +478,8 @@ class TestToolbarTooltips:
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()
+                # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
+                # get_by_role("tooltip") is the correct Playwright accessor here.
                 tooltip = page.get_by_role("tooltip", name="Manage tags")
                 expect(tooltip).to_be_visible(timeout=5000)
 

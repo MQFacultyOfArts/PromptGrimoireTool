@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from promptgrimoire.docs.helpers import wait_for_text_walker
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -300,3 +300,78 @@ def _section_make_meaning(page: Page, guide: Guide) -> None:
         # Close tag management dialog
         page.get_by_test_id("tag-management-done-btn").click()
         page.wait_for_timeout(1000)
+
+
+def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
+    """Section 4: Annotate and Reflect.
+
+    Highlight text, apply a tag, add a comment, view Organise tab.
+    """
+    with guide.step("Annotate and Reflect") as g:
+        g.note(
+            "With your tags ready, read through the conversation and "
+            "annotate the parts that matter. Each highlight is a claim "
+            "about the text — a moment where you assert that this "
+            "passage is significant and why."
+        )
+
+        # Select text and apply first tag
+        select_chars(page, 0, 50)
+        page.wait_for_timeout(500)
+
+        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button.wait_for(state="visible", timeout=5000)
+        tag_button.click()
+        page.locator("[data-testid='annotation-card']").first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+
+        g.screenshot(
+            "Text highlighted and tagged with your own category",
+            highlight=["tag-toolbar", "annotation-card"],
+        )
+        g.note(
+            "Select text and click a tag to create a highlight. "
+            "Your tags — not the instructor's — categorise the "
+            "annotation."
+        )
+
+        # Add a comment
+        card = page.locator("[data-testid='annotation-card']").first
+        comment_input = card.get_by_test_id("comment-input")
+        comment_input.fill(
+            "The AI assumes 'good faith' is a direct equivalent, "
+            "but the Japanese concept carries relational obligations "
+            "that common law lacks."
+        )
+        card.get_by_test_id("post-comment-btn").click()
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Comment reflecting on the AI's cultural assumption",
+            highlight=["comment-input"],
+        )
+        g.note(
+            "Add a comment explaining your annotation. This is where "
+            "reflection happens — you are not just marking text, you "
+            "are articulating why it matters."
+        )
+
+        # Organise tab
+        page.get_by_test_id("tab-organise").click()
+        page.get_by_test_id("organise-columns").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Organise tab showing highlights grouped by your tags",
+            highlight=["organise-columns"],
+        )
+        g.note(
+            "The Organise tab groups your highlights by tag. Your "
+            "emergent vocabulary becomes a lens for seeing patterns "
+            "across the conversation."
+        )

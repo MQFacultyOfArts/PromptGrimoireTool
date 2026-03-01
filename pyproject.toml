@@ -154,6 +154,16 @@ deprecated = "ignore"
 [tool.ty.src]
 exclude = ["alembic/"]
 
+[tool.vulture]
+paths = ["src/promptgrimoire"]
+exclude = ["*/migrations/*"]
+min_confidence = 80
+
+[tool.complexipy]
+paths = ["src/promptgrimoire"]
+max_complexity_allowed = 15
+exclude = ["*/migrations/*"]
+
 [tool.bandit]
   skips = ["B101", "B404", "B603", "B607"]
 
@@ -181,4 +191,6 @@ dev = [
     "pytest-rerunfailures>=16.1",
     "Pillow>=11.0",
     "mkdocs-material>=9.7",
+    "vulture>=2.14",
+    "complexipy>=5.2.0",
 ]

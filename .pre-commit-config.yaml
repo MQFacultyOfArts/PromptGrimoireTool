@@ -1,7 +1,7 @@
 repos:
   # Ruff: lint with autofix, then format
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+    rev: v0.15.4
     hooks:
       # Run the linter with autofix
       - id: ruff-check
@@ -29,8 +29,15 @@ repos:
         files: ^docs/.*\.md$
         pass_filenames: false
 
+  # Cognitive complexity gate — blocks commits with functions > 15
+  - repo: https://github.com/rohaquinlop/complexipy-pre-commit
+    rev: v4.2.0
+    hooks:
+      - id: complexipy
+        args: ['--max-complexity-allowed=15']
+
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.3
+    rev: 1.9.4
     hooks:
       - id: bandit
         args: ["-c", "pyproject.toml"]

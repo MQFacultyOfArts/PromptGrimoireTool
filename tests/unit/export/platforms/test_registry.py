@@ -48,11 +48,23 @@ class TestDiscoverHandlers:
 
         assert "wikimedia" in _handlers
 
-    def test_discovers_all_six_handlers(self) -> None:
-        """Autodiscovery finds exactly 6 handlers."""
+    def test_discovers_openrouter_handler(self) -> None:
+        """Autodiscovery finds OpenRouter handler."""
         from promptgrimoire.export.platforms import _handlers
 
-        assert len(_handlers) == 6
+        assert "openrouter" in _handlers
+
+    def test_discovers_chatcraft_handler(self) -> None:
+        """Autodiscovery finds ChatCraft handler."""
+        from promptgrimoire.export.platforms import _handlers
+
+        assert "chatcraft" in _handlers
+
+    def test_discovers_all_handlers(self) -> None:
+        """Autodiscovery finds exactly 8 handlers."""
+        from promptgrimoire.export.platforms import _handlers
+
+        assert len(_handlers) == 8
 
 
 class TestGetHandler:
@@ -163,6 +175,115 @@ class TestPreprocessForExport:
 
         assert "Unknown platform_hint" in caplog.text
         assert "Content" in result  # Still processed via autodiscovery
+
+    def test_generic_loop_injects_labels_for_all_roles(self) -> None:
+        """Generic loop injects data-speaker divs for every role a handler declares.
+
+        Verifies AC1.1: the loop handles arbitrary role counts (not just
+        user/assistant) by using a mock handler with three roles.
+        """
+        from unittest.mock import patch
+
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        class ThreeRoleHandler:
+            """Mock handler that declares user, assistant, and system roles."""
+
+            name: str = "three-role-mock"
+
+            def matches(self, html: str) -> bool:  # noqa: ARG002
+                return True
+
+            def preprocess(self, tree: object) -> None:
+                pass
+
+            def get_turn_markers(self) -> dict[str, str]:
+                return {
+                    "user": r'(<div class="role-user">)',
+                    "assistant": r'(<div class="role-assistant">)',
+                    "system": r'(<div class="role-system">)',
+                }
+
+        mock_handler = ThreeRoleHandler()
+
+        html = (
+            '<div class="role-user">Hello</div>'
+            '<div class="role-assistant">Hi there</div>'
+            '<div class="role-system">System prompt</div>'
+        )
+
+        with patch(
+            "promptgrimoire.export.platforms.get_handler",
+            return_value=mock_handler,
+        ):
+            result = preprocess_for_export(html)
+
+        assert 'data-speaker="user"' in result
+        assert 'data-speaker="assistant"' in result
+        assert 'data-speaker="system"' in result
+
+        # Verify original content is preserved
+        assert "Hello" in result
+        assert "Hi there" in result
+        assert "System prompt" in result
+
+    def test_rejects_unsafe_role_names(self) -> None:
+        """ValueError raised for role names unsafe for HTML."""
+        from unittest.mock import patch
+
+        import pytest
+
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        class UnsafeRoleHandler:
+            name: str = "unsafe-mock"
+
+            def matches(self, html: str) -> bool:  # noqa: ARG002
+                return True
+
+            def preprocess(self, tree: object) -> None:
+                pass
+
+            def get_turn_markers(self) -> dict[str, str]:
+                return {"invalid role!": r"(<div>)"}
+
+        with (
+            patch(
+                "promptgrimoire.export.platforms.get_handler",
+                return_value=UnsafeRoleHandler(),
+            ),
+            pytest.raises(ValueError, match="not safe for HTML attribute"),
+        ):
+            preprocess_for_export("<div>content</div>")
+
+    def test_rejects_uppercase_role_names(self) -> None:
+        """ValueError raised for uppercase role names."""
+        from unittest.mock import patch
+
+        import pytest
+
+        from promptgrimoire.export.platforms import preprocess_for_export
+
+        class UppercaseRoleHandler:
+            name: str = "uppercase-mock"
+
+            def matches(self, html: str) -> bool:  # noqa: ARG002
+                return True
+
+            def preprocess(self, tree: object) -> None:
+                pass
+
+            def get_turn_markers(self) -> dict[str, str]:
+                return {"UPPERCASE": r"(<div>)"}
+
+        with (
+            patch(
+                "promptgrimoire.export.platforms.get_handler",
+                return_value=UppercaseRoleHandler(),
+            ),
+            pytest.raises(ValueError, match="not safe for HTML attribute"),
+        ):
+            preprocess_for_export("<div>content</div>")
 
 
 class TestImportFailureHandling:

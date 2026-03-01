@@ -143,6 +143,9 @@ _PAGE_CSS = """
         font-weight: bold;
         margin-bottom: 0.3em;
     }
+    .doc-container [data-speaker="user"][data-speaker-name]::before {
+        content: attr(data-speaker-name) ":";
+    }
     .doc-container [data-speaker="assistant"]::before {
         content: "Assistant:";
         display: inline-block;
@@ -152,6 +155,22 @@ _PAGE_CSS = """
         border-radius: 3px;
         font-weight: bold;
         margin-bottom: 0.3em;
+    }
+    .doc-container [data-speaker="assistant"][data-speaker-name]::before {
+        content: attr(data-speaker-name) ":";
+    }
+    .doc-container [data-speaker="system"]::before {
+        content: "System:";
+        display: inline-block;
+        color: #e65100;
+        background: #fff3e0;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        margin-bottom: 0.3em;
+    }
+    .doc-container [data-speaker="system"][data-speaker-name]::before {
+        content: attr(data-speaker-name) ":";
     }
 
     /* Thinking block indicators (Claude thinking) */

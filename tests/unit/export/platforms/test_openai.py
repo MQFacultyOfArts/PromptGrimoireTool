@@ -76,6 +76,50 @@ class TestOpenAIHandlerPreprocess:
         assert "ChatGPT" not in result
         assert "Assistant response" in result
 
+    def test_removes_model_request_badge(self) -> None:
+        """Preprocessing removes 'Request for GPT-5 Pro' badges."""
+        handler = OpenAIHandler()
+        html = """
+        <div>
+            <div class="flex pb-2">
+                <div>Request for GPT-5 Pro</div>
+                <div>Reasoned for 8m 11s</div>
+            </div>
+            <div data-message-author-role="assistant">
+                <p>Great question!</p>
+            </div>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "Request for GPT-5 Pro" not in result
+        assert "Reasoned for" not in result
+        assert "Great question!" in result
+
+    def test_removes_tool_use_buttons(self) -> None:
+        """Preprocessing removes 'Analyzed' and 'Analysis errored' buttons."""
+        handler = OpenAIHandler()
+        html = """
+        <div>
+            <button class="inline-block">Analysis errored</button>
+            <button class="inline-block">Analyzed</button>
+            <p>Result content</p>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "Analysis errored" not in result
+        assert "Analyzed" not in result
+        assert "Result content" in result
+
     def test_preserves_conversation_content(self) -> None:
         """Preprocessing preserves actual conversation content."""
         handler = OpenAIHandler()

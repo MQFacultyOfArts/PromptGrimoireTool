@@ -9,8 +9,9 @@ they reveal where the test suite is redundant or incomplete.
 > **Scope:** This file covers tests added or modified on the
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
 > css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
-> 95-annotation-tags, workspace-navigator-196, and
-> user-docs-rodney-showboat-207 branches.
+> 95-annotation-tags, workspace-navigator-196,
+> user-docs-rodney-showboat-207, and
+> platform-handlers-openrouter-chatcraft-209 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -3143,3 +3144,258 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Hover manage button, assert tooltip visible (AC3.3 at 5+)
 
 **Verifies:** AC3.4 (tooltips display at all tag counts, including compact mode)
+## Platform Handler -- OpenRouter (Unit)
+
+### Matches OpenRouter HTML with playground-container
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerMatches::test_matches_openrouter_html_with_playground_container
+1. Create OpenRouterHandler
+2. Pass HTML containing `data-testid="playground-container"`
+3. Assert matches() returns True
+
+**Verifies:** Handler detects OpenRouter by its unique data-testid attribute
+
+### Does not match other platform HTML
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerMatches::test_does_not_match_*
+1. Create OpenRouterHandler
+2. Pass Claude, OpenAI, Gemini, ChatCraft, and empty HTML
+3. Assert matches() returns False for each
+
+**Verifies:** No false positives against other platform exports
+
+### Removes playground composer
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerPreprocess::test_removes_playground_composer
+1. Build HTML with playground-container, messages, and playground-composer
+2. Call preprocess()
+3. Assert "playground-composer" and textarea content are gone
+
+**Verifies:** Input area chrome is stripped
+
+### Strips assistant message metadata (timestamp, model link, actions)
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerPreprocess::test_strips_timestamp_from_assistant_messages, test_strips_model_link_from_assistant_messages, test_strips_actions_from_assistant_messages
+1. Build realistic assistant-message HTML with 4 child divs (timestamp, model link, content wrapper, actions)
+2. Call preprocess()
+3. Assert timestamp ("21 hours ago"), model link ("openrouter.ai"), and action children are removed
+4. Assert only the content wrapper's last child (response div) remains
+
+**Verifies:** All non-content metadata is stripped from assistant turns
+
+### Strips thinking content
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerPreprocess::test_strips_thinking_content
+1. Build assistant-message with thinking div and response div inside content wrapper
+2. Call preprocess()
+3. Assert "Thinking Process" and thinking text are gone, response text remains
+
+**Verifies:** Reasoning/thinking blocks are removed, only final response kept
+
+### Sets data-speaker-name from model link URL
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerPreprocess::test_sets_data_speaker_name_from_model_link, test_sets_data_speaker_name_with_trailing_slash
+1. Build assistant-message with model link href containing slug (e.g. "qwen/qwen3.5-35b-a3b")
+2. Call preprocess()
+3. Assert data-speaker-name attribute equals the model name portion ("qwen3.5-35b-a3b")
+4. Repeat with trailing slash in URL
+
+**Verifies:** Model identity is preserved for CSS label override
+
+### Turn markers match data-testid attributes
+**File:** tests/unit/export/platforms/test_openrouter.py::TestOpenRouterHandlerTurnMarkers
+1. Get turn markers from handler
+2. Assert "user" and "assistant" keys exist
+3. Apply each regex to matching HTML; assert match found
+
+**Verifies:** Regex patterns correctly identify user and assistant turns
+
+## Platform Handler -- ChatCraft (Unit)
+
+### Matches ChatCraft HTML requiring both signals
+**File:** tests/unit/export/platforms/test_chatcraft.py::TestChatCraftHandlerMatches
+1. Create ChatCraftHandler
+2. Pass HTML with both chakra-card class AND chatcraft.org text -- assert True
+3. Pass HTML with only chakra-card (no chatcraft.org) -- assert False
+4. Pass HTML with only chatcraft.org text (no chakra-card) -- assert False
+5. Pass Claude, OpenAI, OpenRouter, empty HTML -- assert False for each
+
+**Verifies:** Two-signal detection prevents false positives from other Chakra UI apps
+
+### Preprocess removes chrome and injects speaker attributes
+**File:** tests/unit/export/platforms/test_chatcraft.py::TestChatCraftHandlerPreprocess
+1. Build HTML with accordion item, form, menu item, and three chakra-cards (user "Alice Smith", assistant "claude-sonnet-4", system "System Prompt")
+2. Call preprocess()
+3. Assert accordion, form, and menu items are removed
+4. Assert cards have data-speaker attributes: ["user", "assistant", "system"]
+5. Assert cards have data-speaker-name attributes: ["Alice Smith", "claude-sonnet-4", "System Prompt"]
+6. Assert card headers (name, date, avatar) are removed
+7. Assert card body content is preserved
+
+**Verifies:** Chrome is stripped, speaker roles classified correctly, identity preserved
+
+### Speaker classification heuristic
+**File:** tests/unit/export/platforms/test_chatcraft.py::TestClassifySpeaker
+1. "System Prompt" -> "system" (exact match)
+2. "claude-sonnet-4", "gpt-4", "qwen3.5-35B-A3B" -> "assistant" (hyphens, no spaces)
+3. "Alice Smith" -> "user" (spaces)
+4. "ChatCraft" -> "user" (single word, no hyphen)
+5. "" -> "user" (fallback)
+
+**Verifies:** Heuristic: hyphens-no-spaces = model = assistant; spaces = human = user; "System Prompt" = system
+
+### Turn markers include system role
+**File:** tests/unit/export/platforms/test_chatcraft.py::TestChatCraftHandlerTurnMarkers
+1. Get turn markers from handler
+2. Assert "user", "assistant", and "system" keys exist
+3. Apply each regex to matching HTML; assert match found
+
+**Verifies:** ChatCraft is the only handler declaring all three roles including system
+
+## Platform Handler -- OpenAI (Unit)
+
+### Matches OpenAI HTML with agent-turn class
+**File:** tests/unit/export/platforms/test_openai.py::TestOpenAIHandlerMatches
+1. Pass HTML with `class="agent-turn"` -- assert True
+2. Pass HTML with agent-turn among multiple classes -- assert True
+3. Pass Claude HTML, empty HTML -- assert False
+
+**Verifies:** Detection by agent-turn class, no false positives
+
+### Preprocess strips sr-only, badges, and tool-use buttons
+**File:** tests/unit/export/platforms/test_openai.py::TestOpenAIHandlerPreprocess
+1. Build HTML with sr-only elements ("You said:", "ChatGPT"), model request badge ("Request for GPT-5 Pro"), reasoning badge ("Reasoned for 8m 11s"), and tool-use buttons ("Analyzed", "Analysis errored")
+2. Call preprocess()
+3. Assert all metadata removed, conversation content preserved
+
+**Verifies:** OpenAI-specific chrome (labels, badges, tool buttons) is stripped
+
+### Turn markers use data-message-author-role
+**File:** tests/unit/export/platforms/test_openai.py::TestOpenAIHandlerTurnMarkers
+1. Get turn markers, verify user and assistant keys reference data-message-author-role
+2. Apply regex to sample HTML, assert matches
+
+**Verifies:** Regex correctly identifies OpenAI turn boundaries
+
+## Platform Handler -- AI Studio (Unit)
+
+### Matches AI Studio HTML with ms-chat-turn element
+**File:** tests/unit/export/platforms/test_aistudio.py::TestAIStudioHandlerMatches
+1. Pass HTML with `<ms-chat-turn>` element -- assert True
+2. Pass with attributes on element -- assert True
+3. Pass Gemini HTML, empty HTML -- assert False
+
+**Verifies:** Detection by custom element, no false positives
+
+### Preprocess strips metadata and virtual scroll spacers
+**File:** tests/unit/export/platforms/test_aistudio.py::TestAIStudioHandlerPreprocess
+1. Build HTML with author labels, file chunks (filenames/token counts), thought chunks, toolbar, token counts, virtual scroll spacer divs, and chat-turn-options
+2. Call preprocess() for each
+3. Assert all metadata removed, conversation content preserved
+4. Virtual scroll spacers (empty divs with fixed pixel heights) specifically removed
+
+**Verifies:** AI Studio chrome is stripped including virtual-scrolling artefacts
+
+### Turn markers use data-turn-role with "User"/"Model" values
+**File:** tests/unit/export/platforms/test_aistudio.py::TestAIStudioHandlerTurnMarkers
+1. Get turn markers, verify user/assistant keys reference data-turn-role
+2. Apply regex to sample HTML with "User" and "Model" values, assert matches
+
+**Verifies:** Regex correctly identifies AI Studio turn boundaries (note: "Model" not "Assistant")
+
+## Platform Handler -- Registry (Unit)
+
+### Autodiscovery finds all 8 handlers
+**File:** tests/unit/export/platforms/test_registry.py::TestDiscoverHandlers
+1. Import _handlers from platforms package
+2. Assert each named handler exists: openai, claude, gemini, aistudio, scienceos, wikimedia, openrouter, chatcraft
+3. Assert total count is exactly 8
+
+**Verifies:** Autodiscovery finds every handler module in the package
+
+### get_handler dispatches correctly
+**File:** tests/unit/export/platforms/test_registry.py::TestGetHandler
+1. Pass OpenAI HTML -- assert handler.name == "openai"
+2. Pass Claude HTML -- assert handler.name == "claude"
+3. Pass unknown/empty HTML -- assert returns None
+
+**Verifies:** Detection dispatches to correct handler, unknown HTML returns None
+
+### preprocess_for_export end-to-end
+**File:** tests/unit/export/platforms/test_registry.py::TestPreprocessForExport
+1. Process OpenAI HTML -- assert sr-only removed, content preserved
+2. Process unknown HTML -- assert content unchanged (graceful degradation)
+3. Use platform_hint="claude" on OpenAI HTML -- assert Claude handler used (sr-only preserved)
+4. Use invalid platform_hint -- assert warning logged, falls back to autodiscovery
+5. Use mock 3-role handler -- assert data-speaker divs injected for all three roles
+6. Use mock handler with unsafe role name ("invalid role!") -- assert ValueError
+7. Use mock handler with uppercase role name -- assert ValueError
+
+**Verifies:** Entry point handles detection, hint override, fallback, multi-role injection, and role name sanitisation
+
+### All handlers implement PlatformHandler protocol
+**File:** tests/unit/export/platforms/test_registry.py::TestPlatformHandlerProtocol
+1. Iterate all registered handlers
+2. Assert each is instance of PlatformHandler protocol
+3. Assert each has name, matches, preprocess, get_turn_markers
+4. Assert handler.name matches its registry key
+
+**Verifies:** Protocol compliance and registry consistency
+
+## Platform Handler -- Role Styling Coverage (Unit Guard)
+
+### Every handler role has CSS, LaTeX, and Lua styling
+**File:** tests/unit/export/platforms/test_role_coverage.py::TestRoleStylingCoverage
+1. Collect all role names from all registered handlers' get_turn_markers()
+2. For each role, read css.py, .sty file, and libreoffice.lua
+3. Assert CSS has `[data-speaker="<role>"]` selector
+4. Assert .sty has `{<role>turn}` environment definition
+5. Assert Lua has `env = '<role>turn'` in speaker_roles table
+
+**Verifies:** Adding a new role without all three styling definitions will fail CI
+
+### Unknown role raises AssertionError
+**File:** tests/unit/export/platforms/test_role_coverage.py::TestNegativeCoverage
+1. Pass "unknown_role" to the assertion helper with real file contents
+2. Assert AssertionError is raised
+
+**Verifies:** The guard helper actually catches missing styling (not vacuously passing)
+
+## System Turn LaTeX Definitions (Unit Guard)
+
+### systemcolor and systemturn defined in .sty
+**File:** tests/unit/export/test_sty_system_turn.py::TestSystemTurnLatexDefinitions
+1. Read promptgrimoire-export.sty content
+2. Assert `\definecolor{systemcolor}{HTML}{E65100}` exists
+3. Assert systemcolor appears after assistantcolor
+4. Assert `{systemturn}` environment exists
+5. Assert systemturn uses `linecolor=systemcolor`
+6. Assert systemturn appears after assistantturn
+
+**Verifies:** System turn has correct LaTeX styling with orange colour, defined after assistant definitions
+
+## Annotation CSS Speaker Rules (Unit Guard)
+
+### Speaker CSS rules exist for user, assistant, and system
+**File:** tests/unit/test_annotation_css.py::TestSpeakerCssRules
+1. Import _PAGE_CSS from annotation css module
+2. Assert `[data-speaker="user"]::before` exists with blue colour (#1a5f7a)
+3. Assert `[data-speaker="assistant"]::before` exists with green colour (#2e7d32)
+4. Assert `[data-speaker="system"]::before` exists with orange colour (#e65100)
+5. Assert system label content is "System:"
+6. Assert system colour is distinct from user and assistant
+7. Assert system background is light amber (#fff3e0)
+
+**Verifies:** All three speaker roles have distinct, visible CSS pseudo-element labels
+
+## Chatbot Fixture Integration (Integration -- modified)
+
+### ChatCraft system label appears in LaTeX output
+**File:** tests/integration/test_chatbot_fixtures.py::TestChatbotConversationFixtures::test_system_label_in_chatcraft_latex
+1. Load chatcraft_prd.html fixture
+2. Run through preprocess_for_export
+3. Convert to LaTeX via Pandoc pipeline
+4. Assert "System:" label appears in LaTeX output
+
+**Verifies:** AC3.7 -- system prompt cards produce System: labels end-to-end through the full pipeline
+
+### OpenRouter and ChatCraft fixtures in marker injection test
+**File:** tests/integration/test_chatbot_fixtures.py (FIXTURES_WITH_MARKERS list)
+1. openrouter_fizzbuzz.html and chatcraft_prd.html added to fixture list
+2. Both run through the existing parametrised marker injection integration test
+
+**Verifies:** New fixtures produce data-speaker markers in LaTeX output

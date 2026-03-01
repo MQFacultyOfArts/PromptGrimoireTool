@@ -560,14 +560,10 @@ async def _render_workspace_view(
     # Three-tab container (Phase 1: three-tab UI)
     state.initialised_tabs = {"Annotate"}
 
-    with ui.row().classes("w-full items-center"):
-        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            'flat round data-testid="home-btn"'
-        ).tooltip("Home")
-        with ui.tabs().classes("w-full") as tabs:
-            ui.tab("Annotate").props('data-testid="tab-annotate"')
-            ui.tab("Organise").props('data-testid="tab-organise"')
-            ui.tab("Respond").props('data-testid="tab-respond"')
+    with ui.row().classes("w-full items-center"), ui.tabs().classes("w-full") as tabs:
+        ui.tab("Annotate").props('data-testid="tab-annotate"')
+        ui.tab("Organise").props('data-testid="tab-organise"')
+        ui.tab("Respond").props('data-testid="tab-respond"')
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

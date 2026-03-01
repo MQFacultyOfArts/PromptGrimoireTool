@@ -1,6 +1,6 @@
 # PDF Export / LaTeX
 
-*Last updated: 2026-02-15*
+*Last updated: 2026-03-01*
 
 PDF export uses TinyTeX for portable, consistent LaTeX compilation.
 
@@ -54,6 +54,48 @@ Font loading is demand-driven based on document content:
 3. `build_annotation_preamble(tag_colours, body_text="")` orchestrates: loads `.sty`, generates font preamble, emits colour definitions
 
 `FONT_REGISTRY` maps OpenType script tags to font names. `SCRIPT_TAG_RANGES` maps script tags to Unicode codepoint ranges. Latin fonts are always included.
+
+## Platform Handlers (HTML Preprocessing)
+
+Chatbot HTML pasted by users contains platform-specific chrome (buttons, menus, timestamps, metadata badges) that must be stripped before annotation/export. The `export/platforms/` package provides a Protocol + Registry pattern for this.
+
+### Architecture
+
+- `PlatformHandler` Protocol -- `matches(html)`, `preprocess(tree)`, `get_turn_markers()`
+- Autodiscovery at import: every module in `export/platforms/` with a `handler` attribute implementing the protocol is registered
+- `preprocess_for_export(html, platform_hint=None)` -- main entry point: detect platform, preprocess, inject `data-speaker` labels
+- Client-side mirror in `content_form.py` -- JavaScript paste handler duplicates detection + stripping for instant feedback; server path is the canonical fallback
+
+### Registered Handlers (8)
+
+| Handler | Detection | Roles | Notes |
+|---------|-----------|-------|-------|
+| openai | `agent-turn` class | user, assistant | Strips sr-only labels, model/reasoning badges, tool-use buttons |
+| claude | `font-user-message` class | user, assistant | |
+| gemini | `<user-query>` element | user, assistant | |
+| aistudio | `<ms-chat-turn>` element | user, assistant | Strips author labels, file/thought chunks, toolbar, token counts, virtual scroll spacers |
+| scienceos | `chat-turn-container` class | user, assistant | |
+| wikimedia | Wikipedia/Wikimedia chrome | (none) | Non-chatbot; strips wiki navigation chrome |
+| openrouter | `data-testid="playground-container"` | user, assistant | Strips timestamps, model links, thinking blocks, actions; extracts model name to `data-speaker-name` |
+| chatcraft | `chakra-card` class + `chatcraft.org` text | user, assistant, system | Speaker classification heuristic (model names have hyphens, human names have spaces); extracts speaker name to `data-speaker-name` |
+
+### Speaker Roles and Styling
+
+Each role declared by any handler must have matching styling in three places:
+
+1. **CSS** (`pages/annotation/css.py`) -- `[data-speaker="<role>"]::before` pseudo-element with label and colour
+2. **LaTeX** (`promptgrimoire-export.sty`) -- `\newmdenv{<role>turn}` environment with coloured left border
+3. **Lua filter** (`filters/libreoffice.lua`) -- `speaker_roles` table entry with env, label, colour
+
+**Invariant:** Guard test `tests/unit/export/platforms/test_role_coverage.py` parametrises over all roles from all handlers and asserts all three styling artefacts exist. Adding a new role without all three styling definitions will fail CI.
+
+### `data-speaker-name` Attribute
+
+When a handler can determine the specific speaker identity (e.g. "claude-sonnet-4", "Alice Smith"), it sets `data-speaker-name` on the turn element. CSS rules use `content: attr(data-speaker-name) ":"` to override the generic label (e.g. "claude-sonnet-4:" instead of "Assistant:").
+
+### Paste Debug Mode
+
+Append `?debug_paste=1` to the annotation page URL to capture raw paste HTML to `window.__rawPasteHTML` and log paste size to the browser console. Used for diagnosing platform detection issues with real user pastes.
 
 ## Highlight Pipeline (Pandoc + Lua Filter)
 

@@ -1,7 +1,8 @@
 """Platform-specific HTML preprocessing for chatbot exports.
 
 This module provides a Protocol + Registry pattern for handling different
-AI platform exports (OpenAI, Claude, Gemini, AI Studio, ScienceOS).
+AI platform exports (OpenAI, Claude, Gemini, AI Studio, ScienceOS,
+OpenRouter, ChatCraft, Wikimedia).
 
 Usage:
     from promptgrimoire.export.platforms import preprocess_for_export
@@ -28,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 # Registry of platform handlers, populated by autodiscovery
 _handlers: dict[str, PlatformHandler] = {}
+
+# Role names are used verbatim in HTML attribute values.  They must be safe
+# for injection into a double-quoted HTML attribute string.
+_ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 @runtime_checkable
@@ -58,7 +63,8 @@ class PlatformHandler(Protocol):
         """Return regex patterns for turn boundary detection.
 
         Returns:
-            Dict with 'user' and 'assistant' keys mapping to regex patterns.
+            Dict mapping role names (e.g. 'user', 'assistant', 'system')
+            to regex patterns. Each key becomes a data-speaker attribute value.
         """
         ...
 
@@ -151,22 +157,13 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     if handler and not already_has_labels:
         markers = handler.get_turn_markers()
 
-        # Inject user labels
-        user_pattern = markers.get("user")
-        if user_pattern:
+        for role, pattern in markers.items():
+            if not _ROLE_NAME_RE.match(role):
+                msg = f"Role name {role!r} is not safe for HTML attribute injection"
+                raise ValueError(msg)
             result = re.sub(
-                user_pattern,
-                r'<div data-speaker="user" class="speaker-turn"></div>\1',
-                result,
-                flags=re.IGNORECASE,
-            )
-
-        # Inject assistant labels
-        assistant_pattern = markers.get("assistant")
-        if assistant_pattern:
-            result = re.sub(
-                assistant_pattern,
-                r'<div data-speaker="assistant" class="speaker-turn"></div>\1',
+                pattern,
+                rf'<div data-speaker="{role}" class="speaker-turn"></div>\1',
                 result,
                 flags=re.IGNORECASE,
             )

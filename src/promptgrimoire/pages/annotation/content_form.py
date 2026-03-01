@@ -102,6 +102,16 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                     const origSize = (html || text).length;
 
                     if (html) {{
+                        // Capture raw paste HTML when
+                        // ?debug_paste=1 is in the URL
+                        if (new URLSearchParams(
+                            location.search)
+                            .get('debug_paste')) {{
+                            window.__rawPasteHTML = html;
+                            console.log('[PASTE] Raw HTML'
+                                + ' saved ('
+                                + html.length + ' chars)');
+                        }}
                         // Inject speaker labels into raw HTML
                         // BEFORE stripping (attrs needed for
                         // detection get stripped later)
@@ -132,14 +142,37 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 + 'font-claude-response'
                                 + '(?!-)[^"]*"[^>]*>)', 'gi');
                         }} else if (/conversation-turn/.test(html)) {{
-                            // OpenAI already has "You said:"/"ChatGPT said:"
-                            // labels in content — don't inject duplicates
                             window.{platform_var} = 'openai';
+                            sp.u = new RegExp(
+                                ar('data-message-author-role="user"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-message-author-role="assistant"'),
+                                'gi');
                         }} else if (/chat-turn-container/.test(html)) {{
-                            // AI Studio has "User"/"Model" text
-                            // labels in content — don't inject
-                            // duplicates (same as OpenAI)
                             window.{platform_var} = 'aistudio';
+                            sp.u = new RegExp(
+                                ar('data-turn-role="User"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-turn-role="Model"'),
+                                'gi');
+                            if (window.Quasar)
+                                Quasar.plugins.Notify.create({{
+                                    message: 'AI Studio uses'
+                                        + ' virtual scrolling'
+                                        + ' \u2014 turns not'
+                                        + ' visible when you'
+                                        + ' copied will be'
+                                        + ' empty. Scroll'
+                                        + ' through the entire'
+                                        + ' conversation before'
+                                        + ' copying, or paste'
+                                        + ' shorter segments.',
+                                    type: 'warning',
+                                    timeout: 15000,
+                                    position: 'top',
+                                }});
                         }} else if (/message-actions/.test(html)) {{
                             window.{platform_var} = 'gemini';
                             // Match only exact tags, not
@@ -158,6 +191,20 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 cr('_prompt_'), 'gi');
                             sp.a = new RegExp(
                                 cr('_markdown_'), 'gi');
+                        }} else if (/data-testid="playground-container"/.test(html)) {{
+                            window.{platform_var} = 'openrouter';
+                            sp.u = new RegExp(
+                                ar('data-testid="user-message"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-testid="assistant-message"'),
+                                'gi');
+                        }} else if (/chakra-card/.test(html)
+                            && /chatcraft\\.org/i.test(html)) {{
+                            window.{platform_var} = 'chatcraft';
+                            // Speaker labels injected in iframe
+                            // DOM section below — classification
+                            // requires span[title] inspection
                         }} else if (/mw-parser-output|mw-body-content/.test(html)) {{
                             window.{platform_var} = 'wikimedia';
                             // No speaker labels — wiki content
@@ -292,6 +339,185 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             }}
                         }}
 
+                        // Strip OpenRouter chrome & metadata
+                        if (window.{platform_var} === 'openrouter') {{
+                            const iDoc = iframe.contentDocument;
+                            iDoc.querySelectorAll(
+                                '[data-testid="playground-composer"]'
+                            ).forEach(el => el.remove());
+                            // OpenRouter assistant-message structure:
+                            //   child 0: timestamp (text-muted-foreground)
+                            //   child 1: model link (<a> to /model/name)
+                            //   child 2: content wrapper containing:
+                            //     - thinking div (has border+rounded)
+                            //     - response div (last child)
+                            //   child 3: actions (empty)
+                            iDoc.querySelectorAll(
+                                '[data-testid="assistant-message"]'
+                            ).forEach(msg => {{
+                                // Extract model name from link URL
+                                const modelLink = msg.querySelector(
+                                    'a[href*="/openrouter.ai/"]');
+                                if (modelLink) {{
+                                    const href =
+                                        modelLink.getAttribute(
+                                            'href') || '';
+                                    const parts =
+                                        href.replace(/\\/+$/, '')
+                                            .split('/');
+                                    const name =
+                                        parts[parts.length - 1];
+                                    if (name) msg.setAttribute(
+                                        'data-speaker-name', name);
+                                }}
+                                // Get direct children as array
+                                const kids = Array.from(
+                                    msg.querySelectorAll(':scope > *'));
+                                // Remove timestamp (child 0),
+                                // model link (child 1),
+                                // actions (child 3+)
+                                kids.forEach((child, i) => {{
+                                    if (i !== 2) child.remove();
+                                }});
+                                // Inside content wrapper (child 2),
+                                // keep only the LAST child (response)
+                                // and remove thinking (first child)
+                                const wrapper = msg.querySelector(
+                                    ':scope > *');
+                                if (wrapper) {{
+                                    const wKids = Array.from(
+                                        wrapper.querySelectorAll(
+                                            ':scope > *'));
+                                    if (wKids.length > 1) {{
+                                        // Keep only the last child
+                                        wKids.slice(0, -1).forEach(
+                                            c => c.remove());
+                                    }}
+                                }}
+                            }});
+                        }}
+
+                        // Strip OpenAI chrome & metadata
+                        if (window.{platform_var} === 'openai') {{
+                            const iDoc = iframe.contentDocument;
+                            // Remove sr-only labels
+                            iDoc.querySelectorAll('.sr-only')
+                                .forEach(el => el.remove());
+                            // Remove model request badges
+                            // ("Request for GPT-5 Pro") and
+                            // reasoning time badges
+                            // ("Reasoned for Xm Ys")
+                            iDoc.querySelectorAll('.flex.pb-2')
+                                .forEach(el => {{
+                                const txt = el.textContent.trim();
+                                if (/Request for|Reasoned for/i
+                                    .test(txt))
+                                    el.remove();
+                            }});
+                            // Remove tool use badges
+                            // ("Analysis errored", "Analyzed")
+                            iDoc.querySelectorAll('button')
+                                .forEach(el => {{
+                                const txt = el.textContent.trim();
+                                if (/^Analy/i.test(txt))
+                                    el.remove();
+                            }});
+                        }}
+
+                        // Strip AI Studio chrome & metadata
+                        if (window.{platform_var} === 'aistudio') {{
+                            const iDoc = iframe.contentDocument;
+                            // Remove virtual-scroll spacer divs
+                            // (empty divs with fixed pixel heights
+                            // that create massive whitespace)
+                            iDoc.querySelectorAll(
+                                '.virtual-scroll-container > div'
+                            ).forEach(el => {{
+                                if (!el.className
+                                    && !el.textContent.trim())
+                                    el.remove();
+                            }});
+                            // Remove turn options menus
+                            iDoc.querySelectorAll(
+                                'ms-chat-turn-options')
+                                .forEach(el => el.remove());
+                            // Remove author labels
+                            iDoc.querySelectorAll('.author-label')
+                                .forEach(el => el.remove());
+                            // Remove file/paste metadata chunks
+                            // (filename, date, token counts)
+                            iDoc.querySelectorAll('ms-file-chunk')
+                                .forEach(el => el.remove());
+                            // Remove thought section chrome
+                            // (accordion labels, expand controls)
+                            iDoc.querySelectorAll('ms-thought-chunk')
+                                .forEach(el => el.remove());
+                            // Remove toolbar (title, token count)
+                            iDoc.querySelectorAll('ms-toolbar')
+                                .forEach(el => el.remove());
+                            // Remove token count badges
+                            iDoc.querySelectorAll('.token-count')
+                                .forEach(el => el.remove());
+                        }}
+
+                        // ChatCraft: classify speakers, then
+                        // strip chrome (order matters — system
+                        // prompt lives inside an accordion item)
+                        if (window.{platform_var} === 'chatcraft') {{
+                            const iDoc = iframe.contentDocument;
+                            // 1. Classify ALL cards, set speaker
+                            // name, strip card header metadata
+                            // (name, date, avatar, URL)
+                            iDoc.querySelectorAll('.chakra-card')
+                                .forEach(card => {{
+                                const spans = card.querySelectorAll(
+                                    'span[title]');
+                                if (spans.length === 0) return;
+                                const title = spans[0]
+                                    .getAttribute('title') || '';
+                                let role;
+                                if (title === 'System Prompt') {{
+                                    role = 'system';
+                                }} else if (
+                                    title.indexOf(' ') === -1
+                                    && title.indexOf('-') !== -1
+                                ) {{
+                                    role = 'assistant';
+                                }} else {{
+                                    role = 'user';
+                                }}
+                                card.setAttribute(
+                                    'data-speaker', role);
+                                card.setAttribute(
+                                    'data-speaker-name', title);
+                                // Remove entire card header —
+                                // contains name, date, avatar, URL
+                                card.querySelectorAll(
+                                    '.chakra-card__header')
+                                    .forEach(h => h.remove());
+                            }});
+                            // 2. Extract classified cards from
+                            // accordion items before removal
+                            iDoc.querySelectorAll(
+                                '.chakra-accordion__item'
+                                + ' [data-speaker]'
+                            ).forEach(card => {{
+                                const acc = card.closest(
+                                    '.chakra-accordion__item');
+                                if (acc && acc.parentNode) {{
+                                    acc.parentNode.insertBefore(
+                                        card, acc);
+                                }}
+                            }});
+                            // 3. NOW remove chrome safely
+                            ['.chakra-accordion__item',
+                             'form',
+                             '.chakra-menu__menuitem'
+                            ].forEach(sel =>
+                                iDoc.querySelectorAll(sel)
+                                    .forEach(el => el.remove()));
+                        }}
+
                         // Unwrap hyperlinks: replace <a href="url">text</a>
                         // with text [url] — links are not interactive in
                         // the annotation view and interfere with selection
@@ -364,6 +590,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             const dataAttrs = [];
                             const keepData = new Set([
                                 'data-speaker',
+                                'data-speaker-name',
                                 'data-thinking']);
                             for (const attr of el.attributes) {{
                                 if (attr.name.startsWith('data-')

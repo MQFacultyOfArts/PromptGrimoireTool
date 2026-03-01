@@ -2593,6 +2593,38 @@ def show_export_log() -> None:
             console.print(log_file.read_text())
 
 
+def _make_docs_build_and_serve(action: str | None) -> None:
+    """Build MkDocs site, generate PDFs, and optionally serve or deploy."""
+    import subprocess
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
+
+    guides_dir = project_root / "docs" / "guides"
+    for md_path in sorted(guides_dir.glob("*.md")):
+        if md_path.name == "index.md":
+            continue
+        pdf_path = md_path.with_suffix(".pdf")
+        subprocess.run(
+            [
+                "pandoc",
+                "--pdf-engine=lualatex",
+                f"--resource-path={guides_dir}",
+                "-o",
+                str(pdf_path),
+                str(md_path),
+            ],
+            check=True,
+        )
+
+    if action:
+        cmd = ["uv", "run", "mkdocs", action]
+        if action == "serve":
+            cmd += ["--dev-addr", "localhost:8484"]
+        subprocess.run(cmd, cwd=project_root, check=True)
+
+
 def make_docs() -> None:
     """Generate user-facing documentation guides.
 
@@ -2607,8 +2639,6 @@ def make_docs() -> None:
     """
     import argparse
     import socket
-    import subprocess
-    from pathlib import Path
 
     parser = argparse.ArgumentParser(description="Generate documentation guides")
     parser.add_argument(
@@ -2671,32 +2701,4 @@ def make_docs() -> None:
             _stop_e2e_server(server_process)
         os.environ.pop("DEV__AUTH_MOCK", None)
 
-    # --- MkDocs build (HTML site) --------------------------------------------
-    project_root = Path(__file__).resolve().parents[2]
-    subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
-
-    # --- Pandoc PDF generation -----------------------------------------------
-    guides_dir = project_root / "docs" / "guides"
-    for md_path in sorted(guides_dir.glob("*.md")):
-        if md_path.name == "index.md":
-            continue
-        pdf_path = md_path.with_suffix(".pdf")
-        subprocess.run(
-            [
-                "pandoc",
-                "--pdf-engine=lualatex",
-                f"--resource-path={guides_dir}",
-                "-o",
-                str(pdf_path),
-                str(md_path),
-            ],
-            check=True,
-        )
-
-    # --- Optional post-build action -------------------------------------------
-    if args.action:
-        subprocess.run(
-            ["uv", "run", "mkdocs", args.action],
-            cwd=project_root,
-            check=True,
-        )
+    _make_docs_build_and_serve(args.action)

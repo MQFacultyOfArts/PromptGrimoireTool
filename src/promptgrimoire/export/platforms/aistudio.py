@@ -43,7 +43,20 @@ class AIStudioHandler:
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
+        # Remove virtual-scroll spacer divs (empty divs with fixed
+        # pixel heights that create massive whitespace in paste HTML)
+        for container in tree.css(".virtual-scroll-container"):
+            child = container.child
+            while child:
+                nxt = child.next
+                if child.tag != "-text" and not child.text(strip=True):
+                    cls = child.attributes.get("class") or ""
+                    if not cls:
+                        child.decompose()
+                child = nxt
+
         for selector in [
+            "ms-chat-turn-options",
             ".author-label",
             "ms-file-chunk",
             "ms-thought-chunk",

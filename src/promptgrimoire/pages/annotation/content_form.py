@@ -102,6 +102,10 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                     const origSize = (html || text).length;
 
                     if (html) {{
+                        // DEBUG: capture raw paste HTML
+                        window.__rawPasteHTML = html;
+                        console.log('[PASTE] Raw HTML saved ('
+                            + html.length + ' chars)');
                         // Inject speaker labels into raw HTML
                         // BEFORE stripping (attrs needed for
                         // detection get stripped later)
@@ -401,6 +405,20 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                         // Strip AI Studio chrome & metadata
                         if (window.{platform_var} === 'aistudio') {{
                             const iDoc = iframe.contentDocument;
+                            // Remove virtual-scroll spacer divs
+                            // (empty divs with fixed pixel heights
+                            // that create massive whitespace)
+                            iDoc.querySelectorAll(
+                                '.virtual-scroll-container > div'
+                            ).forEach(el => {{
+                                if (!el.className
+                                    && !el.textContent.trim())
+                                    el.remove();
+                            }});
+                            // Remove turn options menus
+                            iDoc.querySelectorAll(
+                                'ms-chat-turn-options')
+                                .forEach(el => el.remove());
                             // Remove author labels
                             iDoc.querySelectorAll('.author-label')
                                 .forEach(el => el.remove());

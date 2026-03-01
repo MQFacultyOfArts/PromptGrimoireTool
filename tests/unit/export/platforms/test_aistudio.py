@@ -112,6 +112,45 @@ class TestAIStudioHandlerPreprocess:
         assert "3,901 tokens" not in result
         assert "Content" in result
 
+    def test_removes_virtual_scroll_spacers(self) -> None:
+        """Virtual scroll spacer divs (empty, fixed height) are removed."""
+        handler = AIStudioHandler()
+        html = """
+        <div class="virtual-scroll-container user-prompt-container"
+             data-turn-role="User">
+            <div style="height: 352px;"></div>
+            <div class="turn-content">
+                <p>User message</p>
+            </div>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "352px" not in result
+        assert "User message" in result
+
+    def test_removes_chat_turn_options(self) -> None:
+        """Turn options menus are removed."""
+        handler = AIStudioHandler()
+        html = """
+        <ms-chat-turn data-turn-role="User">
+            <ms-chat-turn-options>More options</ms-chat-turn-options>
+            <p>User content</p>
+        </ms-chat-turn>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "More options" not in result
+        assert "User content" in result
+
     def test_preserves_conversation_content(self) -> None:
         """Preprocessing preserves actual conversation content."""
         handler = AIStudioHandler()

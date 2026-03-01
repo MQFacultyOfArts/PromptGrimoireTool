@@ -58,6 +58,9 @@ output/
 # LibreOffice lock files
 .~lock.*#
 
+# Tool caches
+.complexipy_cache/
+
 # Git worktrees (parallel development)
 .worktrees/
 .playwright-mcp/

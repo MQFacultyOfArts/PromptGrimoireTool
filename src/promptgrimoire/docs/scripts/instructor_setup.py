@@ -41,7 +41,7 @@ def _enrol_instructor() -> None:
             "manage-users",
             "enroll",
             "instructor@uni.edu",
-            "TRAN8034",
+            "UNIT1234",
             "S1 2026",
         ],
         capture_output=True,
@@ -130,7 +130,7 @@ def _create_demo_student() -> None:
             "manage-users",
             "enroll",
             "student-demo@test.example.edu.au",
-            "TRAN8034",
+            "UNIT1234",
             "S1 2026",
         ],
     ]:
@@ -153,8 +153,8 @@ def _step_create_unit(page: Page, base_url: str, guide: Guide) -> str:
         page.get_by_test_id("course-code-input").wait_for(
             state="visible", timeout=10000
         )
-        page.get_by_test_id("course-code-input").fill("TRAN8034")
-        page.get_by_test_id("course-name-input").fill("Translation Technologies")
+        page.get_by_test_id("course-code-input").fill("UNIT1234")
+        page.get_by_test_id("course-name-input").fill("AI in Professional Practice")
         page.get_by_test_id("course-semester-input").fill("S1 2026")
         g.screenshot(
             "Create unit form with code, name, and semester fields",
@@ -244,7 +244,7 @@ def _step_configure_tags(page: Page, base_url: str, guide: Guide) -> None:
         page.wait_for_timeout(1000)
 
         # Seed tags into template workspace for student inheritance
-        _seed_template_tags("TRAN8034", "S1 2026")
+        _seed_template_tags("UNIT1234", "S1 2026")
 
 
 def _step_enrol_student(page: Page, course_url: str, guide: Guide) -> None:

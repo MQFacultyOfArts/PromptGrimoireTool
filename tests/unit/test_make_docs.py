@@ -89,7 +89,8 @@ class TestMakeDocsServerLifecycle:
         mocks["sync_pw"].assert_called_once()
         mocks["pw"].chromium.launch.assert_called_once()
         mocks["browser"].new_page.assert_called_once_with(
-            viewport={"width": 1280, "height": 800}
+            viewport={"width": 1280, "height": 800},
+            device_scale_factor=4,
         )
 
     def test_both_guides_called_with_page_and_base_url(self, _mock_happy_path):

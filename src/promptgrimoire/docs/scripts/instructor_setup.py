@@ -177,10 +177,14 @@ def _step_add_week(page: Page, guide: Guide) -> None:
         page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+/weeks/new"), timeout=10000)
         page.get_by_test_id("week-number-input").fill("3")
         page.get_by_test_id("week-title-input").fill("Source Text Analysis")
-        page.get_by_test_id("create-week-btn").click()
-        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+        g.screenshot(
+            "Add week form with number and title",
+            highlight=["week-number-input", "week-title-input"],
+        )
         g.note("Create a week by entering the week number and title.")
 
+        page.get_by_test_id("create-week-btn").click()
+        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
         page.get_by_test_id("publish-week-btn").click()
         page.wait_for_timeout(1000)
         g.note("Publish the week to make it visible to students.")
@@ -199,12 +203,16 @@ def _step_create_activity(page: Page, guide: Guide) -> None:
             "Analyse a source text using AI conversation tools, "
             "then annotate your conversation in the Grimoire."
         )
-        page.get_by_test_id("create-activity-btn").click()
-        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
+        g.screenshot(
+            "Create activity form with title and description",
+            highlight=["activity-title-input", "activity-description-input"],
+        )
         g.note(
             "Create an activity within the week. Students will create "
             "workspaces from this activity."
         )
+        page.get_by_test_id("create-activity-btn").click()
+        page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
 
 
 def _step_configure_tags(page: Page, base_url: str, guide: Guide) -> None:
@@ -372,6 +380,14 @@ def run_instructor_guide(page: Page, base_url: str) -> None:
         with guide.step("Step 7: Verifying the Student View") as g:
             g.note("Re-authenticate as a student to verify the activity is visible.")
             _authenticate(page, base_url, "student-demo@test.example.edu.au")
+            # Wait for Navigator to render with the activity
+            page.locator('[data-testid^="start-activity-btn"]').first.wait_for(
+                state="visible", timeout=10000
+            )
+            g.screenshot(
+                "Student Navigator showing the activity with Start button",
+                highlight=["start-activity-btn"],
+            )
             g.note(
                 "The student can see the unit and activity on their "
                 "Navigator. They can click Start to create a workspace."

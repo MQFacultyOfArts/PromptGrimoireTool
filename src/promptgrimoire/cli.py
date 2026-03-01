@@ -2635,7 +2635,10 @@ def make_docs() -> None:
 
         pw = sync_playwright().start()
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1280, "height": 800})
+        page = browser.new_page(
+            viewport={"width": 1280, "height": 800},
+            device_scale_factor=4,
+        )
 
         run_instructor_guide(page, base_url)
         run_student_guide(page, base_url)

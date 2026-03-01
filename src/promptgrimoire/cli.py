@@ -2607,6 +2607,9 @@ def make_docs() -> None:
     from playwright.sync_api import sync_playwright
 
     from promptgrimoire.docs.scripts.instructor_setup import run_instructor_guide
+    from promptgrimoire.docs.scripts.personal_grimoire import (
+        run_personal_grimoire_guide,
+    )
     from promptgrimoire.docs.scripts.student_workflow import run_student_guide
 
     # --- Dependency check ---
@@ -2642,6 +2645,7 @@ def make_docs() -> None:
 
         run_instructor_guide(page, base_url)
         run_student_guide(page, base_url)
+        run_personal_grimoire_guide(page, base_url)
 
     finally:
         if browser is not None:
@@ -2658,9 +2662,10 @@ def make_docs() -> None:
 
     # --- Pandoc PDF generation -----------------------------------------------
     guides_dir = project_root / "docs" / "guides"
-    for guide_name in ("instructor-setup", "student-workflow"):
-        md_path = guides_dir / f"{guide_name}.md"
-        pdf_path = guides_dir / f"{guide_name}.pdf"
+    for md_path in sorted(guides_dir.glob("*.md")):
+        if md_path.name == "index.md":
+            continue
+        pdf_path = md_path.with_suffix(".pdf")
         subprocess.run(
             [
                 "pandoc",

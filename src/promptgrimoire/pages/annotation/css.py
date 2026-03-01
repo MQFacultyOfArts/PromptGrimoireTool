@@ -14,6 +14,9 @@ from nicegui import ui
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation.tags import TagInfo
 
+_COMPACT_THRESHOLD = 5
+"""Tag count at or above which toolbar buttons use compact icon-only style."""
+
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     """Parse a ``#RRGGBB`` hex string into an (r, g, b) tuple."""
@@ -337,6 +340,60 @@ def _resolve_group_bg(group_name: str | None, group_colour: str | None) -> str |
     return f"rgba({r},{g},{b},0.15)"
 
 
+def _render_action_buttons(
+    tag_count: int,
+    *,
+    on_add_click: Any | None,
+    on_manage_click: Any | None,
+) -> None:
+    """Render the create and manage action buttons in the toolbar.
+
+    Below ``_COMPACT_THRESHOLD`` tags, buttons show text labels alongside
+    icons. At or above the threshold, buttons are compact icon-only.
+    Tooltips are always present.
+
+    Args:
+        tag_count: Current number of tags in the workspace.
+        on_add_click: Callback for the create button, or ``None`` to hide.
+        on_manage_click: Callback for the manage button, or ``None`` to hide.
+    """
+    compact = tag_count >= _COMPACT_THRESHOLD
+
+    if on_add_click is not None:
+        if compact:
+            ui.button(
+                icon="add",
+                on_click=on_add_click,
+            ).classes("compact-btn").props(
+                'round dense flat color=grey-7 data-testid="tag-create-btn"',
+            ).tooltip("Create a new tag for highlighting and annotating text")
+        else:
+            ui.button(
+                "Create New Tag",
+                icon="add",
+                on_click=on_add_click,
+            ).props(
+                'dense flat color=grey-7 data-testid="tag-create-btn"',
+            ).tooltip("Create a new tag for highlighting and annotating text")
+
+    if on_manage_click is not None:
+        if compact:
+            ui.button(
+                icon="settings",
+                on_click=on_manage_click,
+            ).classes("compact-btn").props(
+                'round dense flat color=grey-7 data-testid="tag-settings-btn"',
+            ).tooltip("Manage tags -- create, edit, reorder, and import tags")
+        else:
+            ui.button(
+                "Manage Tags",
+                icon="settings",
+                on_click=on_manage_click,
+            ).props(
+                'dense flat color=grey-7 data-testid="tag-settings-btn"',
+            ).tooltip("Manage tags -- create, edit, reorder, and import tags")
+
+
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
@@ -422,20 +479,9 @@ def _build_tag_toolbar(
             with ui.column().classes("tag-group-col"):
                 ui.label("").classes("text-[9px] leading-tight tag-group-spacer")
                 with ui.row().classes("gap-1 items-center"):
-                    if on_add_click is not None:
-                        ui.button(
-                            icon="add",
-                            on_click=on_add_click,
-                        ).classes("compact-btn").props(
-                            "round dense flat color=grey-7",
-                        ).tooltip("Create new tag")
-
-                    if on_manage_click is not None:
-                        ui.button(
-                            icon="settings",
-                            on_click=on_manage_click,
-                        ).classes("compact-btn").props(
-                            "round dense flat color=grey-7"
-                            ' data-testid="tag-settings-btn"',
-                        ).tooltip("Manage tags")
+                    _render_action_buttons(
+                        len(tag_info_list),
+                        on_add_click=on_add_click,
+                        on_manage_click=on_manage_click,
+                    )
     return toolbar_wrapper

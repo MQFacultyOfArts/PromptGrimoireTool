@@ -44,6 +44,7 @@ def _make_hl(
     tag: str = "jurisdiction",
     author: str = "",
     comments: list | None = None,
+    para_ref: str = "",
 ) -> dict:
     """Build a highlight dict matching the expected schema."""
     return {
@@ -52,6 +53,7 @@ def _make_hl(
         "tag": tag,
         "author": author,
         "comments": comments or [],
+        "para_ref": para_ref,
     }
 
 
@@ -461,9 +463,9 @@ class TestEdgeCases:
         assert "Alice" in annots_raw
 
     def test_annots_with_para_ref(self) -> None:
-        """data-annots includes para_ref when word_to_legal_para is provided."""
+        """data-annots includes para_ref stored in highlight dict."""
         html = "<p>some text</p>"
-        hl = _make_hl(0, 4, tag="jurisdiction", author="Bob")
+        hl = _make_hl(0, 4, tag="jurisdiction", author="Bob", para_ref="[5]")
         word_to_legal_para = {0: 5, 1: 5, 2: 5, 3: 5}
         result = compute_highlight_spans(
             html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para
@@ -500,7 +502,7 @@ class TestAC6_ParaRefInMarginNotes:
         word_to_legal_para: dict[int, int | None] = {0: 1, 10: 2}
 
         # Highlight in first paragraph (chars 0-5: "First")
-        hl1 = _make_hl(0, 5, tag="jurisdiction", author="Alice")
+        hl1 = _make_hl(0, 5, tag="jurisdiction", author="Alice", para_ref="[1]")
         result = compute_highlight_spans(
             html, [hl1], {"jurisdiction": "#3366cc"}, word_to_legal_para
         )
@@ -509,7 +511,7 @@ class TestAC6_ParaRefInMarginNotes:
         assert "[1]" in annot_spans[0]["data-annots"]
 
         # Highlight in second paragraph (chars 10-16: "Second")
-        hl2 = _make_hl(10, 16, tag="evidence", author="Bob")
+        hl2 = _make_hl(10, 16, tag="evidence", author="Bob", para_ref="[2]")
         result2 = compute_highlight_spans(
             html, [hl2], {"evidence": "#ff6600"}, word_to_legal_para
         )
@@ -530,7 +532,7 @@ class TestAC6_ParaRefInMarginNotes:
         word_to_legal_para: dict[int, int | None] = {0: 1, 8: 2, 16: 5, 25: 6}
 
         # Highlight in third paragraph (chars 16-20: "Para")
-        hl = _make_hl(16, 20, tag="jurisdiction", author="Alice")
+        hl = _make_hl(16, 20, tag="jurisdiction", author="Alice", para_ref="[5]")
         result = compute_highlight_spans(
             html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para
         )
@@ -539,7 +541,7 @@ class TestAC6_ParaRefInMarginNotes:
         assert "[5]" in annot_spans[0]["data-annots"]
 
         # Highlight in fourth paragraph (chars 25-29: "Para")
-        hl2 = _make_hl(25, 29, tag="evidence", author="Bob")
+        hl2 = _make_hl(25, 29, tag="evidence", author="Bob", para_ref="[6]")
         result2 = compute_highlight_spans(
             html, [hl2], {"evidence": "#ff6600"}, word_to_legal_para
         )

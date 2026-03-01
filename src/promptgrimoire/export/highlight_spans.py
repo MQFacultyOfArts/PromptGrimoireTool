@@ -244,7 +244,7 @@ def _build_span_tag(
     region: _HlRegion,
     highlights: list[dict[str, Any]],
     tag_colours: dict[str, str],  # noqa: ARG001 — API placeholder; colours derived from tag slugs
-    word_to_legal_para: dict[int, int | None] | None,
+    word_to_legal_para: dict[int, int | None] | None,  # noqa: ARG001 — API placeholder; para_ref read from highlight dict
 ) -> tuple[str, str]:
     """Build opening and closing ``<span>`` tags for a region.
 
@@ -271,13 +271,10 @@ def _build_span_tag(
         annot_parts: list[str] = []
         for annot_idx in region.annots:
             hl = highlights[annot_idx]
-            # Resolve para_ref string
-            para_ref = ""
-            if word_to_legal_para is not None:
-                start_char = int(hl.get("start_char", hl.get("start_word", 0)))
-                para_num = word_to_legal_para.get(start_char)
-                if para_num is not None:
-                    para_ref = f"[{para_num}]"
+            # Use the para_ref already stored in the highlight by
+            # the annotation page (computed via lookup_para_ref at
+            # highlight creation time).
+            para_ref = hl.get("para_ref", "")
             annot_parts.append(format_annot_latex(hl, para_ref=para_ref))
         annots_latex = "".join(annot_parts)
         # Use single quotes for the attribute since LaTeX uses braces/backslashes.

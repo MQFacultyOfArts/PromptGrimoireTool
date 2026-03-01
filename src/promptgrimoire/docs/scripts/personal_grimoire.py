@@ -249,6 +249,13 @@ def _section_make_meaning(page: Page, guide: Guide) -> None:
             "emergent folksonomy that reflects how you see the conversation."
         )
 
+        # Screenshot highlighting the settings button before clicking
+        g.screenshot(
+            "Tag settings button in the toolbar",
+            highlight=["tag-settings-btn"],
+        )
+        g.note("Click the tag settings button (gear icon) in the toolbar.")
+
         # Open tag management dialog
         page.get_by_test_id("tag-settings-btn").click()
         page.get_by_test_id("add-tag-group-btn").wait_for(
@@ -260,8 +267,8 @@ def _section_make_meaning(page: Page, guide: Guide) -> None:
             highlight=["add-tag-group-btn"],
         )
         g.note(
-            "Open the tag settings to create your own tags. The dialog "
-            "is empty — you are starting from scratch."
+            "The dialog is empty — you are starting from scratch. "
+            "Click Add Group to create your first tag group."
         )
 
         # Create tag group "My Analysis"
@@ -299,16 +306,21 @@ def _section_make_meaning(page: Page, guide: Guide) -> None:
         )
 
         # Close tag management dialog
+        g.screenshot(
+            "Done button to close tag management",
+            highlight=["tag-management-done-btn"],
+        )
+        g.note("Click Done to save your tags and return to the annotation page.")
         page.get_by_test_id("tag-management-done-btn").click()
         page.wait_for_timeout(1000)
 
 
-def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
-    """Section 4: Annotate and Reflect.
+def _section_annotate(page: Page, guide: Guide) -> None:
+    """Section 4: Annotate Your Conversation.
 
-    Highlight text, apply a tag, add a comment, view Organise tab.
+    Highlight text, apply a tag, add a comment.
     """
-    with guide.step("Annotate and Reflect") as g:
+    with guide.step("Annotate Your Conversation") as g:
         g.note(
             "With your tags ready, read through the conversation and "
             "annotate the parts that matter. Each highlight is a claim "
@@ -322,6 +334,12 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
 
         tag_button = page.locator('[data-testid^="tag-btn-"]').first
         tag_button.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Tag toolbar with your custom tags",
+            highlight=["tag-toolbar"],
+        )
+        g.note("Select text in the conversation, then click a tag to apply it.")
+
         tag_button.click()
         page.locator("[data-testid='annotation-card']").first.wait_for(
             state="visible",
@@ -333,9 +351,8 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             highlight=["tag-toolbar", "annotation-card"],
         )
         g.note(
-            "Select text and click a tag to create a highlight. "
             "Your tags — not the instructor's — categorise the "
-            "annotation."
+            "annotation. The highlight appears in the sidebar."
         )
 
         # Add a comment
@@ -346,12 +363,18 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             "but the Japanese concept carries relational obligations "
             "that common law lacks."
         )
+        g.screenshot(
+            "Comment input on the annotation card",
+            highlight=["comment-input"],
+        )
+        g.note("Type your comment, then click the post button.")
+
         card.get_by_test_id("post-comment-btn").click()
         page.wait_for_timeout(1000)
 
         g.screenshot(
             "Comment reflecting on the AI's cultural assumption",
-            highlight=["comment-input"],
+            highlight=["annotation-card"],
         )
         g.note(
             "Add a comment explaining your annotation. This is where "
@@ -359,7 +382,19 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             "are articulating why it matters."
         )
 
-        # Organise tab
+
+def _section_organise(page: Page, guide: Guide) -> None:
+    """Section 5: Organise Your Highlights.
+
+    Switch to Organise tab, describe reordering and reclassifying.
+    """
+    with guide.step("Organise Your Highlights") as g:
+        g.screenshot(
+            "Organise tab button",
+            highlight=["tab-organise"],
+        )
+        g.note("Click the Organise tab to see your highlights grouped by tag.")
+
         page.get_by_test_id("tab-organise").click()
         page.get_by_test_id("organise-columns").wait_for(
             state="visible",
@@ -367,17 +402,50 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
+        g._append("### Viewing Your Tags\n")
         g.screenshot(
             "Organise tab showing highlights grouped by your tags",
             highlight=["organise-columns"],
         )
         g.note(
-            "The Organise tab groups your highlights by tag. Your "
-            "emergent vocabulary becomes a lens for seeing patterns "
-            "across the conversation."
+            "The Organise tab displays your highlights in columns, "
+            "one column per tag. Your emergent vocabulary becomes a "
+            "lens for seeing patterns across the conversation."
         )
 
-        # Respond tab
+        g._append("### Reordering Within a Column\n")
+        g.note(
+            "Drag highlights up and down within a column to group "
+            "related passages together. This lets you build clusters "
+            "of evidence before writing your response."
+        )
+
+        g._append("### Moving Between Columns\n")
+        g.note(
+            "Drag a highlight from one column to another to reclassify "
+            "it under a different tag. As your analysis develops, you "
+            "may find that a passage fits a different category than you "
+            "first thought."
+        )
+
+        g.note(
+            "*Note: with longer conversations, you may need to scroll "
+            "within each column to see all your highlights.*"
+        )
+
+
+def _section_respond(page: Page, guide: Guide) -> None:
+    """Section 6: Write Your Response.
+
+    Switch to Respond tab, type markdown, use locate button.
+    """
+    with guide.step("Write Your Response") as g:
+        g.screenshot(
+            "Respond tab button",
+            highlight=["tab-respond"],
+        )
+        g.note("Click the Respond tab to write your analysis.")
+
         page.get_by_test_id("tab-respond").click()
         page.get_by_test_id("respond-splitter").wait_for(
             state="visible",
@@ -385,6 +453,7 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
+        g._append("### Writing Your Response\n")
         g.screenshot(
             "Respond tab with reference panel and markdown editor",
             highlight=["respond-reference-panel", "milkdown-editor-container"],
@@ -413,13 +482,29 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             highlight=["milkdown-editor-container"],
         )
         g.note(
-            "Write using markdown: headings (#), bold (**), and "
-            "lists (*). The editor renders your formatting as you type."
+            "The editor supports markdown formatting: "
+            "`#` for headings, `**bold**` for emphasis, and "
+            "`*` for bullet lists. Your formatting renders as you type."
         )
+        g.note(
+            "For a full guide to markdown syntax, see "
+            "[Markdown Guide](https://www.markdownguide.org/basic-syntax/)."
+        )
+
+        g._append("### Locating Source Text\n")
 
         # Use the locate button to jump back to the highlight
         locate_btn = page.get_by_test_id("respond-locate-btn").first
         locate_btn.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Locate button on a reference card",
+            highlight=["respond-locate-btn"],
+        )
+        g.note(
+            "Click the target icon on any reference card to jump "
+            "back to its highlight in the Annotate tab."
+        )
+
         locate_btn.click()
         page.wait_for_timeout(1000)
 
@@ -428,9 +513,8 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             highlight=["annotation-card"],
         )
         g.note(
-            "Click the target icon on any reference card to jump "
-            "back to its highlight in the Annotate tab. This lets "
-            "you move between analysis and source text."
+            "This lets you move between analysis and source text — "
+            "check the original context while writing your response."
         )
 
 
@@ -540,5 +624,7 @@ def run_personal_grimoire_guide(page: Page, base_url: str) -> None:
         _section_enter_grimoire(page, base_url, guide)
         _section_bring_conversation(page, guide)
         _section_make_meaning(page, guide)
-        _section_annotate_and_reflect(page, guide)
+        _section_annotate(page, guide)
+        _section_organise(page, guide)
+        _section_respond(page, guide)
         _section_connect_to_unit(page, guide)

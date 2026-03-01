@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
+    from promptgrimoire.docs import Guide
+
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
 _SAMPLE_HTML = (
@@ -112,3 +114,65 @@ def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
         run_instructor_guide(page, base_url)
         # Re-setup the loose student (instructor guide may have reset state)
         _setup_loose_student()
+
+
+def _section_enter_grimoire(
+    page: Page,
+    base_url: str,
+    guide: Guide,
+) -> None:
+    """Section 1: Enter the Grimoire.
+
+    Login as enrolled student, show Navigator, navigate to /annotation,
+    create a loose workspace (bypassing activity Start button).
+    """
+    with guide.step("Enter the Grimoire") as g:
+        _authenticate(page, base_url, "loose-student@test.example.edu.au")
+
+        # Navigator: show enrolled unit with Start button
+        page.locator('[data-testid^="start-activity-btn"]').first.wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        g.screenshot(
+            "Navigator showing your enrolled unit and activities",
+            highlight=["start-activity-btn"],
+        )
+        g.note(
+            "After logging in, you see the Navigator with your enrolled "
+            "units and activities. Instead of clicking Start on an "
+            "activity, you will create your own workspace — your "
+            "personal grimoire."
+        )
+
+        # Navigate to /annotation directly (bypassing Start button)
+        page.goto(f"{base_url}/annotation")
+        page.get_by_test_id("create-workspace-btn").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        g.screenshot(
+            "Annotation page with Create Workspace button",
+            highlight=["create-workspace-btn"],
+        )
+        g.note(
+            "Navigate to the annotation page directly. The Create "
+            "Workspace button lets you start a workspace outside any "
+            "activity — a loose workspace that belongs only to you."
+        )
+
+        # Create the loose workspace
+        page.get_by_test_id("create-workspace-btn").click()
+        page.get_by_test_id("content-editor").wait_for(
+            state="visible",
+            timeout=15000,
+        )
+        g.screenshot(
+            "Your new loose workspace on the annotation page",
+            highlight=["content-editor"],
+        )
+        g.note(
+            "Your workspace is created. Unlike activity-based workspaces, "
+            "this one has no inherited tags and no course association. "
+            "It is your blank slate — a grimoire waiting to be filled."
+        )

@@ -102,10 +102,16 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                     const origSize = (html || text).length;
 
                     if (html) {{
-                        // DEBUG: capture raw paste HTML
-                        window.__rawPasteHTML = html;
-                        console.log('[PASTE] Raw HTML saved ('
-                            + html.length + ' chars)');
+                        // Capture raw paste HTML when
+                        // ?debug_paste=1 is in the URL
+                        if (new URLSearchParams(
+                            location.search)
+                            .get('debug_paste')) {{
+                            window.__rawPasteHTML = html;
+                            console.log('[PASTE] Raw HTML'
+                                + ' saved ('
+                                + html.length + ' chars)');
+                        }}
                         // Inject speaker labels into raw HTML
                         // BEFORE stripping (attrs needed for
                         // detection get stripped later)

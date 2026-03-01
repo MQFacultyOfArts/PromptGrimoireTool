@@ -57,16 +57,24 @@ _PREPROCESS_HTML = """
 <form><input type="text" /></form>
 <div class="chakra-menu__menuitem">Copy</div>
 <div class="chakra-card">
-    <span title="Alice Smith">A</span>
-    <p>User message content</p>
+    <div class="chakra-card__header">
+        <span title="Alice Smith">A</span>
+        <span>Sep 29, 2025</span>
+    </div>
+    <div class="chakra-card__body"><p>User message content</p></div>
 </div>
 <div class="chakra-card">
-    <span title="claude-sonnet-4">C</span>
-    <p>Assistant response content</p>
+    <div class="chakra-card__header">
+        <span title="claude-sonnet-4">C</span>
+        <span>Sep 29, 2025</span>
+    </div>
+    <div class="chakra-card__body"><p>Assistant response content</p></div>
 </div>
 <div class="chakra-card">
-    <span title="System Prompt">S</span>
-    <p>System instructions</p>
+    <div class="chakra-card__header">
+        <span title="System Prompt">S</span>
+    </div>
+    <div class="chakra-card__body"><p>System instructions</p></div>
 </div>
 <footer>chatcraft.org</footer>
 </body></html>
@@ -152,8 +160,29 @@ class TestChatCraftHandlerPreprocess:
         speakers = [card.attributes.get("data-speaker") for card in cards]
         assert speakers == ["user", "assistant", "system"]
 
+    def test_sets_data_speaker_name(self) -> None:
+        """After preprocessing, cards have data-speaker-name with avatar title."""
+        handler = ChatCraftHandler()
+        tree = LexborHTMLParser(_PREPROCESS_HTML)
+        handler.preprocess(tree)
+
+        cards = tree.css(".chakra-card")
+        names = [card.attributes.get("data-speaker-name") for card in cards]
+        assert names == ["Alice Smith", "claude-sonnet-4", "System Prompt"]
+
+    def test_removes_card_headers(self) -> None:
+        """Card headers (name, date, avatar) are removed after extraction."""
+        handler = ChatCraftHandler()
+        tree = LexborHTMLParser(_PREPROCESS_HTML)
+        handler.preprocess(tree)
+
+        assert tree.css(".chakra-card__header") == []
+        result = tree.html or ""
+        # Date metadata should be gone
+        assert "Sep 29, 2025" not in result
+
     def test_preserves_conversation_content(self) -> None:
-        """Card text content is preserved after preprocessing."""
+        """Card body content is preserved after preprocessing."""
         handler = ChatCraftHandler()
         tree = LexborHTMLParser(_PREPROCESS_HTML)
         handler.preprocess(tree)

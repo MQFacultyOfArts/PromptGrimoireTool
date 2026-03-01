@@ -107,6 +107,50 @@ class TestOpenRouterHandlerPreprocess:
         assert "What is the capital of France?" in result
         assert "The capital of France is Paris." in result
 
+    def test_strips_metadata_row_from_assistant_messages(self) -> None:
+        """Metadata row (timestamp, model name, badge) is removed."""
+        handler = OpenRouterHandler()
+        html = """
+        <div data-testid="assistant-message">
+            <div class="text-xs text-gray-500 mb-1">
+                <span>5 seconds ago</span>
+                <span class="font-medium">Qwen3.5-35B-A3B</span>
+                <span class="text-blue-600">Reasoning</span>
+            </div>
+            <div class="prose"><p>The answer is 42.</p></div>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "5 seconds ago" not in result
+        assert "Reasoning" not in result
+        assert "The answer is 42." in result
+
+    def test_sets_data_speaker_name_from_model(self) -> None:
+        """Model name from metadata is folded into data-speaker-name."""
+        handler = OpenRouterHandler()
+        html = """
+        <div data-testid="assistant-message">
+            <div class="text-xs text-gray-500">
+                <span>5 seconds ago</span>
+                <span class="font-medium">Qwen3.5-35B-A3B</span>
+            </div>
+            <p>Response</p>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+
+        msgs = tree.css('[data-testid="assistant-message"]')
+        assert len(msgs) == 1
+        assert msgs[0].attributes.get("data-speaker-name") == "Qwen3.5-35B-A3B"
+
 
 class TestOpenRouterHandlerTurnMarkers:
     """Tests for OpenRouter turn marker patterns."""

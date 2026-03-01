@@ -32,16 +32,30 @@ class OpenRouterHandler:
         return bool(_DETECTION_PATTERN.search(html))
 
     def preprocess(self, tree: LexborHTMLParser) -> None:
-        """Remove chrome from OpenRouter HTML.
+        """Remove chrome and metadata from OpenRouter HTML.
 
         Removes:
         - playground-composer element (the input/composer area)
+        - Metadata rows in assistant messages (timestamp, model name,
+          reasoning badge) — model name is folded into data-speaker-name
 
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
         for node in tree.css('[data-testid="playground-composer"]'):
             node.decompose()
+
+        # Extract model name into data-speaker-name, then strip
+        # the metadata row (timestamp, model name, reasoning badge)
+        for msg in tree.css('[data-testid="assistant-message"]'):
+            # Metadata row has classes: text-xs text-gray-500
+            for meta in msg.css(".text-xs.text-gray-500"):
+                model_span = meta.css_first(".font-medium")
+                if model_span:
+                    model_name = model_span.text(strip=True)
+                    if model_name:
+                        msg.attrs["data-speaker-name"] = model_name
+                meta.decompose()
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for OpenRouter turn boundaries.

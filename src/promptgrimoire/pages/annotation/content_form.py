@@ -306,26 +306,41 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             }}
                         }}
 
-                        // Strip OpenRouter chrome
+                        // Strip OpenRouter chrome & metadata
                         if (window.{platform_var} === 'openrouter') {{
                             const iDoc = iframe.contentDocument;
                             iDoc.querySelectorAll(
                                 '[data-testid="playground-composer"]'
                             ).forEach(el => el.remove());
+                            // Extract model name from metadata row
+                            // and fold into data-speaker-name, then
+                            // remove the metadata row (timestamp,
+                            // model name, reasoning badge)
+                            iDoc.querySelectorAll(
+                                '[data-testid="assistant-message"]'
+                            ).forEach(msg => {{
+                                const meta = msg.querySelector(
+                                    '.text-xs.text-gray-500');
+                                if (!meta) return;
+                                const modelSpan = meta.querySelector(
+                                    '.font-medium');
+                                if (modelSpan) {{
+                                    msg.setAttribute(
+                                        'data-speaker-name',
+                                        modelSpan.textContent.trim());
+                                }}
+                                meta.remove();
+                            }});
                         }}
 
-                        // Strip ChatCraft chrome and classify speakers
+                        // ChatCraft: classify speakers, then
+                        // strip chrome (order matters — system
+                        // prompt lives inside an accordion item)
                         if (window.{platform_var} === 'chatcraft') {{
                             const iDoc = iframe.contentDocument;
-                            // Remove sidebar chrome
-                            ['.chakra-accordion__item',
-                             'form',
-                             '.chakra-menu__menuitem'
-                            ].forEach(sel =>
-                                iDoc.querySelectorAll(sel)
-                                    .forEach(el => el.remove()));
-                            // Walk cards, classify speakers from
-                            // avatar span[title] attributes
+                            // 1. Classify ALL cards, set speaker
+                            // name, strip card header metadata
+                            // (name, date, avatar, URL)
                             iDoc.querySelectorAll('.chakra-card')
                                 .forEach(card => {{
                                 const spans = card.querySelectorAll(
@@ -334,19 +349,46 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 const title = spans[0]
                                     .getAttribute('title') || '';
                                 let role;
-                                // Exact match for system prompt
                                 if (title === 'System Prompt') {{
                                     role = 'system';
-                                // Model IDs have hyphens, no spaces
-                                }} else if (title.indexOf(' ') === -1
-                                    && title.indexOf('-') !== -1) {{
+                                }} else if (
+                                    title.indexOf(' ') === -1
+                                    && title.indexOf('-') !== -1
+                                ) {{
                                     role = 'assistant';
                                 }} else {{
                                     role = 'user';
                                 }}
                                 card.setAttribute(
                                     'data-speaker', role);
+                                card.setAttribute(
+                                    'data-speaker-name', title);
+                                // Remove entire card header —
+                                // contains name, date, avatar, URL
+                                card.querySelectorAll(
+                                    '.chakra-card__header')
+                                    .forEach(h => h.remove());
                             }});
+                            // 2. Extract classified cards from
+                            // accordion items before removal
+                            iDoc.querySelectorAll(
+                                '.chakra-accordion__item'
+                                + ' [data-speaker]'
+                            ).forEach(card => {{
+                                const acc = card.closest(
+                                    '.chakra-accordion__item');
+                                if (acc && acc.parentNode) {{
+                                    acc.parentNode.insertBefore(
+                                        card, acc);
+                                }}
+                            }});
+                            // 3. NOW remove chrome safely
+                            ['.chakra-accordion__item',
+                             'form',
+                             '.chakra-menu__menuitem'
+                            ].forEach(sel =>
+                                iDoc.querySelectorAll(sel)
+                                    .forEach(el => el.remove()));
                         }}
 
                         // Unwrap hyperlinks: replace <a href="url">text</a>
@@ -421,6 +463,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             const dataAttrs = [];
                             const keepData = new Set([
                                 'data-speaker',
+                                'data-speaker-name',
                                 'data-thinking']);
                             for (const attr of el.attributes) {{
                                 if (attr.name.startsWith('data-')

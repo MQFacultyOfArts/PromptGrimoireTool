@@ -69,12 +69,11 @@ class ChatCraftHandler:
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
-        # Remove chrome elements
-        for selector in _CHROME_SELECTORS:
-            for node in tree.css(selector):
-                node.decompose()
-
-        # Walk cards and inject speaker attributes
+        # 1. Classify ALL cards first — system prompt lives
+        #    inside an accordion item, so we must tag it before
+        #    chrome removal destroys the accordion subtree.
+        #    Set data-speaker-name for CSS label override, then
+        #    remove entire card header (name, date, avatar, URL).
         for card in tree.css(".chakra-card"):
             spans = card.css("span[title]")
             if not spans:
@@ -84,6 +83,22 @@ class ChatCraftHandler:
                 continue
             role = _classify_speaker(title)
             card.attrs["data-speaker"] = role
+            card.attrs["data-speaker-name"] = title
+            # Remove card header metadata (speaker name heading,
+            # timestamp, avatar image, conversation URL)
+            for header in card.css(".chakra-card__header"):
+                header.decompose()
+
+        # 2. Remove chrome elements (accordion items, forms, menus).
+        #    Classified cards inside accordion items are NOT extracted
+        #    by selectolax (no reparenting API), so they are lost here.
+        #    This is acceptable because the client-side paste handler
+        #    (content_form.py) extracts them before chrome removal.
+        #    The server path is only hit for direct API imports, where
+        #    the system prompt accordion content is less critical.
+        for selector in _CHROME_SELECTORS:
+            for node in tree.css(selector):
+                node.decompose()
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for ChatCraft turn boundaries.

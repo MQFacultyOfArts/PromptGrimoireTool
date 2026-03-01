@@ -112,12 +112,14 @@ class TestOpenRouterHandlerPreprocess:
         handler = OpenRouterHandler()
         html = """
         <div data-testid="assistant-message">
+          <div data-testid="chat-bubble-color-scope">
             <div class="text-xs text-gray-500 mb-1">
                 <span>5 seconds ago</span>
                 <span class="font-medium">Qwen3.5-35B-A3B</span>
                 <span class="text-blue-600">Reasoning</span>
             </div>
             <div class="prose"><p>The answer is 42.</p></div>
+          </div>
         </div>
         """
         from selectolax.lexbor import LexborHTMLParser
@@ -130,16 +132,46 @@ class TestOpenRouterHandlerPreprocess:
         assert "Reasoning" not in result
         assert "The answer is 42." in result
 
+    def test_strips_thinking_content(self) -> None:
+        """Thinking/reasoning content blocks are removed."""
+        handler = OpenRouterHandler()
+        html = """
+        <div data-testid="assistant-message">
+          <div data-testid="chat-bubble-color-scope">
+            <div class="metadata">
+                <span>5 seconds ago</span>
+                <span class="font-medium">Qwen3.5-35B-A3B</span>
+            </div>
+            <div class="prose"><p>The answer is 42.</p></div>
+            <div class="thinking">
+                <p>Thinking Process:</p>
+                <p>Analyze the request...</p>
+            </div>
+          </div>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "Thinking Process" not in result
+        assert "Analyze the request" not in result
+        assert "The answer is 42." in result
+
     def test_sets_data_speaker_name_from_model(self) -> None:
         """Model name from metadata is folded into data-speaker-name."""
         handler = OpenRouterHandler()
         html = """
         <div data-testid="assistant-message">
+          <div data-testid="chat-bubble-color-scope">
             <div class="text-xs text-gray-500">
                 <span>5 seconds ago</span>
                 <span class="font-medium">Qwen3.5-35B-A3B</span>
             </div>
-            <p>Response</p>
+            <div class="prose"><p>Response</p></div>
+          </div>
         </div>
         """
         from selectolax.lexbor import LexborHTMLParser

@@ -312,37 +312,37 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             iDoc.querySelectorAll(
                                 '[data-testid="playground-composer"]'
                             ).forEach(el => el.remove());
-                            // Extract model name from metadata row
-                            // and fold into data-speaker-name, then
-                            // remove the metadata row (timestamp,
-                            // model name, reasoning badge)
+                            // Structural approach: in OpenRouter,
+                            // actual content lives in a .prose div
+                            // inside the chat bubble. Everything
+                            // else (metadata row, thinking) is a
+                            // sibling. Keep only .prose content.
                             iDoc.querySelectorAll(
                                 '[data-testid="assistant-message"]'
                             ).forEach(msg => {{
-                                const meta = msg.querySelector(
-                                    '.text-xs.text-gray-500');
-                                if (!meta) return;
-                                const modelSpan = meta.querySelector(
+                                // Extract model name before removal
+                                const modelSpan = msg.querySelector(
                                     '.font-medium');
                                 if (modelSpan) {{
                                     msg.setAttribute(
                                         'data-speaker-name',
-                                        modelSpan.textContent.trim());
+                                        modelSpan.textContent
+                                            .trim());
                                 }}
-                                meta.remove();
-                            }});
-                            // Remove thinking/reasoning content.
-                            // OpenRouter wraps reasoning in a
-                            // details/summary or a div with
-                            // "reasoning" in class name
-                            iDoc.querySelectorAll(
-                                'details, [class*="reason"]'
-                            ).forEach(el => {{
-                                const txt =
-                                    el.textContent.trim();
-                                if (/^(Reason|Think)/i.test(txt)
-                                    || el.tagName === 'DETAILS')
-                                    el.remove();
+                                // Find the prose (content) div
+                                const prose = msg.querySelector(
+                                    '.prose');
+                                if (!prose) return;
+                                const bubble = prose.parentElement;
+                                if (!bubble) return;
+                                // Remove all bubble children except
+                                // prose — strips metadata row,
+                                // thinking section, everything
+                                Array.from(bubble.children)
+                                    .forEach(child => {{
+                                    if (child !== prose)
+                                        child.remove();
+                                }});
                             }});
                         }}
 

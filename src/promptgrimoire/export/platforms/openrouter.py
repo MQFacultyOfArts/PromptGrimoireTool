@@ -38,6 +38,11 @@ class OpenRouterHandler:
         - playground-composer element (the input/composer area)
         - Metadata rows in assistant messages (timestamp, model name,
           reasoning badge) — model name is folded into data-speaker-name
+        - Thinking/reasoning content blocks
+
+        Structural approach: actual content lives in a ``.prose`` div
+        inside the chat bubble.  Everything else (metadata row, thinking
+        section) is a sibling and gets removed.
 
         Args:
             tree: Parsed HTML tree to modify in-place.
@@ -45,17 +50,25 @@ class OpenRouterHandler:
         for node in tree.css('[data-testid="playground-composer"]'):
             node.decompose()
 
-        # Extract model name into data-speaker-name, then strip
-        # the metadata row (timestamp, model name, reasoning badge)
         for msg in tree.css('[data-testid="assistant-message"]'):
-            # Metadata row has classes: text-xs text-gray-500
-            for meta in msg.css(".text-xs.text-gray-500"):
-                model_span = meta.css_first(".font-medium")
-                if model_span:
-                    model_name = model_span.text(strip=True)
-                    if model_name:
-                        msg.attrs["data-speaker-name"] = model_name
-                meta.decompose()
+            # Extract model name before stripping
+            model_span = msg.css_first(".font-medium")
+            if model_span:
+                model_name = model_span.text(strip=True)
+                if model_name:
+                    msg.attrs["data-speaker-name"] = model_name
+
+            # Find prose content div; strip all siblings
+            prose = msg.css_first(".prose")
+            if not prose or not prose.parent:
+                continue
+            bubble = prose.parent
+            child = bubble.child
+            while child:
+                next_sib = child.next
+                if child != prose and child.tag != "-text":
+                    child.decompose()
+                child = next_sib
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for OpenRouter turn boundaries.

@@ -3399,3 +3399,385 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Both run through the existing parametrised marker injection integration test
 
 **Verifies:** New fixtures produce data-speaker markers in LaTeX output
+
+## Paragraph Map Builder (Unit)
+
+### Auto-numbered paragraphs get sequential numbers
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_1_simple_paragraphs
+1. Build paragraph map from `<p>First</p><p>Second</p><p>Third</p>` with auto_number=True
+2. Assert 3 entries with values [1, 2, 3]
+3. Assert offsets point to "First" at 0, "Second" at 5, "Third" at 11
+
+**Verifies:** AC1.1 -- plain prose with `<p>` elements gets sequential numbers
+
+### Mixed block elements numbered correctly
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_2_mixed_block_elements
+1. Build map from `<p>`, `<blockquote>`, `<ul><li>` with auto_number=True
+2. Assert 2 entries (p and blockquote numbered; li skipped in auto-number mode)
+
+**Verifies:** AC1.2 -- list items are sub-structure, not discourse-level paragraphs
+
+### Blockquote wrapping `<p>` is not double-counted
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_blockquote_wrapping_p_not_double_counted
+1. Build map from `<p>Before</p><blockquote><p>Quoted text</p></blockquote><p>After</p>`
+2. Assert values are [1, 2, 3] with no gaps
+
+**Verifies:** Regression -- blockquote acting as wrapper delegates numbering to inner `<p>`
+
+### Double `<br><br>` creates new paragraph
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_3_br_br_creates_new_paragraph
+1. Build map from `<p>Line one<br><br>Line two</p>` with auto_number=True
+2. Assert 2 entries -- "Line one" is para 1, "Line two" is para 2
+
+**Verifies:** AC1.3 -- br-br sequences within a block create new paragraph boundaries
+
+### Single `<br>` does not split
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_4_single_br_no_split
+1. Build map from `<p>Line one<br>Line two</p>`
+2. Assert only 1 entry
+
+**Verifies:** AC1.4 -- single br is a line break, not a paragraph boundary
+
+### Headers not numbered
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_5_headers_skipped
+1. Build map from `<h1>Title</h1><p>Body</p>`
+2. Assert 1 entry for `<p>` only
+
+**Verifies:** AC1.5 -- h1-h6 elements are excluded from paragraph numbering
+
+### Empty/whitespace blocks skipped
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestAutoNumberParagraphs::test_ac1_6_empty_whitespace_blocks_skipped
+1. Build map from `<p>   </p><p>Real content</p>`
+2. Assert 1 entry for "Real content" only
+
+**Verifies:** AC1.6 -- whitespace-only blocks do not consume paragraph numbers
+
+## Source-Number Paragraphs (Unit)
+
+### AustLII-style numbered list uses li[value] numbers
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestSourceNumberParagraphs::test_ac2_1_numbered_list
+1. Build 42 `<li value="N">` items in an `<ol>`
+2. Build map with auto_number=False
+3. Assert 42 entries with values 1..42
+
+**Verifies:** AC2.1 -- source-number mode reads paragraph numbers from HTML attributes
+
+### Gaps in source numbering preserved
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestSourceNumberParagraphs::test_ac2_2_gaps_preserved
+1. Build map from `<li value="1">` and `<li value="5">`
+2. Assert values are [1, 5]
+
+**Verifies:** AC2.2 -- non-sequential paragraph numbers from source are preserved exactly
+
+### Non-numbered blocks have no entry in source mode
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestSourceNumberParagraphs::test_ac2_3_non_numbered_blocks_no_entry
+1. Build map from `<li value="1">` followed by `<p>Unnumbered</p>` with auto_number=False
+2. Assert only 1 entry (the numbered `<li>`)
+
+**Verifies:** AC2.3 -- plain blocks between numbered items get no paragraph number
+
+## Source Numbering Detection (Unit)
+
+### Detects 2+ li[value] as source-numbered
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestDetectSourceNumbering::test_ac3_1_detects_source_numbered
+1. Call detect_source_numbering on HTML with 3 `<li value>` elements
+2. Assert returns True
+
+**Verifies:** AC3.1 -- threshold of 2+ numbered list items triggers source-number mode
+
+### Zero or one li[value] returns False
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestDetectSourceNumbering::test_ac3_2_no_source_numbering_zero / test_ac3_2_no_source_numbering_one
+1. Call detect_source_numbering on plain paragraphs (0 li[value]) and on 1 li[value]
+2. Assert both return False
+
+**Verifies:** AC3.2 -- below threshold does not trigger source-number mode
+
+## Char-Offset Alignment (Unit)
+
+### Offsets align with extract_text_from_html
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestCharOffsetAlignment (6 tests)
+1. For each HTML variant (simple, mixed, br-br, source-numbered, header+body, whitespace)
+2. Extract text via _extract_text helper (mirrors extract_text_from_html)
+3. Build paragraph map
+4. Assert every offset key is a valid index into the extracted text
+
+**Verifies:** AC8 -- paragraph map char offsets are consistent with the text walker
+
+### Offsets point to correct text characters
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestCharOffsetAlignment::test_ac8_1_offsets_point_to_correct_text
+1. Build map and extract text from `<p>Alpha</p><p>Beta</p>`
+2. Assert first offset points to 'A', second points to 'B'
+
+**Verifies:** AC8.1 -- offsets point to the first character of each paragraph's content
+
+## Paragraph Attribute Injection (Unit)
+
+### Auto-numbered HTML gets data-para attributes
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestInjectParagraphAttributes::test_ac4_1_auto_numbered_paragraphs
+1. Build paragraph map and inject attributes into 3 `<p>` elements
+2. Parse result, assert 3 `p[data-para]` elements with values "1", "2", "3"
+
+**Verifies:** AC4.1 -- inject_paragraph_attributes adds data-para to each block
+
+### Source-numbered li gets data-para from map
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestInjectParagraphAttributes::test_ac4_2_source_numbered_li
+1. Build map from `<li value="5">` and `<li value="10">` with auto_number=False
+2. Inject attributes, assert li[data-para] values are "5" and "10"
+
+**Verifies:** AC4.2 -- source paragraph numbers appear as data-para attributes
+
+### Blockquote wrapping `<p>` -- no double data-para
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestInjectParagraphAttributes::test_blockquote_wrapping_p_no_double_attribute
+1. Inject attributes into `<blockquote><p>Quoted</p></blockquote>`
+2. Assert blockquote has NO data-para, only inner `<p>` elements do
+3. Assert sequential values [1, 2, 3] with no gaps
+
+**Verifies:** Regression -- wrapper blockquote does not get a duplicate data-para
+
+### br-br pseudo-paragraph gets span wrapper
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestInjectParagraphAttributes::test_br_br_pseudo_paragraph
+1. Inject attributes into `<p>Line one<br><br>Line two</p>`
+2. Assert `<p data-para="1">` and `<span data-para="2">` for the second segment
+
+**Verifies:** br-br text that cannot be a block element gets a `<span data-para>` wrapper
+
+## Paragraph Reference Lookup (Unit)
+
+### Single-paragraph highlight returns [N]
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestLookupParaRef::test_ac5_1_single_paragraph
+1. Call lookup_para_ref with start/end within paragraph 2
+2. Assert returns "[2]"
+
+**Verifies:** AC5.1 -- highlight in one paragraph shows that paragraph's number
+
+### Multi-paragraph highlight returns [N]-[M]
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestLookupParaRef::test_ac5_2_spanning_paragraphs
+1. Call lookup_para_ref with range spanning paragraphs 2-3
+2. Assert returns "[2]-[3]"
+
+**Verifies:** AC5.2 -- spanning highlights show the range
+
+### Highlight before first paragraph returns empty
+**File:** tests/unit/input_pipeline/test_paragraph_map.py::TestLookupParaRef::test_ac5_4_before_first_paragraph
+1. Call lookup_para_ref with range before any mapped paragraph
+2. Assert returns ""
+
+**Verifies:** AC5.4 -- no paragraph reference when highlight precedes first mapped block
+
+## Paragraph Numbering DB Columns (Integration)
+
+### Default values on new document
+**File:** tests/integration/test_paragraph_numbering.py::TestWorkspaceDocumentParagraphFields::test_defaults_on_new_document
+1. Create WorkspaceDocument with no paragraph args
+2. Commit and reload from DB
+3. Assert auto_number_paragraphs=True and paragraph_map={}
+
+**Verifies:** Schema defaults -- new documents get auto-number mode and empty map
+
+### paragraph_map JSON round-trip
+**File:** tests/integration/test_paragraph_numbering.py::TestWorkspaceDocumentParagraphFields::test_paragraph_map_round_trip
+1. Create document with paragraph_map={"0": 1, "50": 2, "120": 3}
+2. Commit and reload
+3. Assert map round-trips with string keys and int values
+
+**Verifies:** PostgreSQL JSON column preserves string-keyed paragraph map
+
+### source-number mode persists
+**File:** tests/integration/test_paragraph_numbering.py::TestWorkspaceDocumentParagraphFields::test_source_number_mode
+1. Create document with auto_number_paragraphs=False
+2. Commit and reload
+3. Assert auto_number_paragraphs=False
+
+**Verifies:** Boolean column persists False for source-number mode
+
+### add_document with explicit paragraph fields
+**File:** tests/integration/test_paragraph_numbering.py::TestAddDocumentWithParagraphFields::test_explicit_paragraph_fields_persist
+1. Call add_document() with auto_number_paragraphs=False and a test paragraph_map
+2. Reload via get_document()
+3. Assert both fields match
+
+**Verifies:** add_document() API accepts and persists paragraph numbering fields
+
+### add_document defaults when no paragraph args
+**File:** tests/integration/test_paragraph_numbering.py::TestAddDocumentWithParagraphFields::test_defaults_when_no_paragraph_args
+1. Call add_document() without paragraph args
+2. Reload and assert defaults (True, {})
+
+**Verifies:** Backward compatibility -- existing callers get sensible defaults
+
+### Clone copies paragraph numbering fields
+**File:** tests/integration/test_paragraph_numbering.py::TestCloneParagraphFields::test_clone_copies_auto_number_paragraphs_and_paragraph_map
+1. Create course/week/activity/student infrastructure
+2. Add template document with auto_number_paragraphs=False and test map
+3. Clone workspace via clone_workspace_from_activity()
+4. Reload cloned document
+5. Assert auto_number_paragraphs=False and paragraph_map match template
+
+**Verifies:** Cloning propagates paragraph numbering fields from template to student workspace
+
+### update_document_paragraph_settings persists changes
+**File:** tests/integration/test_paragraph_numbering.py::TestUpdateDocumentParagraphSettings::test_update_toggles_auto_number_and_rebuilds_map
+1. Create document with auto_number=True and initial map
+2. Call update_document_paragraph_settings with auto_number=False and new map
+3. Reload and assert new values
+
+**Verifies:** AC7.2 -- toggle handler can persist new numbering mode and rebuilt map
+
+### update non-existent document raises ValueError
+**File:** tests/integration/test_paragraph_numbering.py::TestUpdateDocumentParagraphSettings::test_update_nonexistent_document_raises
+1. Call update_document_paragraph_settings with random UUID
+2. Assert raises ValueError matching "not found"
+
+**Verifies:** Error handling for missing documents
+
+## Highlight para_ref Wiring (Integration)
+
+### Single-paragraph highlight round-trips through CRDT
+**File:** tests/integration/test_paragraph_numbering.py::TestHighlightParaRefWiring::test_single_paragraph_highlight_has_para_ref
+1. Compute para_ref via lookup_para_ref from paragraph_map
+2. Add highlight to AnnotationDocument CRDT with para_ref="[3]"
+3. Retrieve highlights and assert para_ref preserved
+
+**Verifies:** AC5.1 -- paragraph reference survives CRDT round-trip
+
+### Multi-paragraph highlight range round-trips
+**File:** tests/integration/test_paragraph_numbering.py::TestHighlightParaRefWiring::test_multi_paragraph_highlight_has_range_para_ref
+1. Compute para_ref for range spanning paragraphs 2-4
+2. Store in CRDT, retrieve, assert para_ref="[2]-[4]"
+
+**Verifies:** AC5.2 -- range references survive CRDT round-trip
+
+### Toggle rebuilds paragraph_map in DB
+**File:** tests/integration/test_paragraph_numbering.py::TestToggleParagraphNumbering::test_toggle_rebuilds_paragraph_map_in_db
+1. Create document with auto_number=True and auto-built map
+2. Rebuild map with auto_number=False (source mode), persist via update
+3. Reload and assert new mode and map
+4. Toggle back to auto_number=True, persist, reload, assert original map
+
+**Verifies:** AC7.2 -- full toggle cycle works end-to-end through DB
+
+### Toggle does not modify existing highlight para_ref
+**File:** tests/integration/test_paragraph_numbering.py::TestToggleParagraphNumbering::test_toggle_does_not_modify_highlight_para_ref
+1. Create CRDT doc with two highlights having para_ref="[1]" and "[2]"
+2. Rebuild paragraph maps for both modes (auto and source)
+3. Assert highlight para_ref values unchanged after rebuild
+
+**Verifies:** AC7.3 -- toggling numbering mode is non-destructive to existing annotations
+
+## Upload Dialog Contract (Integration)
+
+### Dialog accepts source_numbering_detected parameter
+**File:** tests/integration/test_paragraph_numbering.py::TestUploadDialogAutoDetect::test_dialog_function_accepts_source_numbering_parameter
+1. Inspect signature of show_content_type_dialog
+2. Assert source_numbering_detected parameter exists with default=False
+
+**Verifies:** AC3.3 -- dialog API supports source-numbering detection
+
+### Dialog return type includes auto-number bool
+**File:** tests/integration/test_paragraph_numbering.py::TestUploadDialogAutoDetect::test_dialog_return_type_includes_bool
+1. Get type hints for show_content_type_dialog
+2. Assert return type includes tuple, bool, and None
+
+**Verifies:** AC3.3 -- dialog returns (ContentType, auto_number_bool) | None
+
+### Paste handler uses auto-detect, bypasses dialog
+**File:** tests/integration/test_paragraph_numbering.py::TestUploadDialogAutoDetect::test_paste_handler_auto_detect_bypasses_dialog
+1. Call _detect_paragraph_numbering on plain HTML
+2. Assert auto_number=True and 2-entry map
+3. Call on AustLII HTML
+4. Assert auto_number=False and non-empty map
+
+**Verifies:** AC3.3 -- paste path auto-detects numbering mode without user dialog
+
+## CRDT para_ref Update (Unit)
+
+### update_highlight_para_ref changes value
+**File:** tests/unit/test_annotation_doc.py::TestUpdateHighlightParaRef::test_update_highlight_para_ref_changes_value
+1. Add highlight with para_ref="[1]"
+2. Call update_highlight_para_ref with new_para_ref="[5]"
+3. Assert returns True and highlight now has para_ref="[5]"
+
+**Verifies:** AC5.3 -- para_ref can be updated after creation
+
+### update_highlight_para_ref with unknown ID returns False
+**File:** tests/unit/test_annotation_doc.py::TestUpdateHighlightParaRef::test_update_unknown_highlight_returns_false
+1. Call update_highlight_para_ref with non-existent highlight_id
+2. Assert returns False
+
+**Verifies:** Error handling for unknown highlights
+
+### update_highlight_para_ref preserves other fields
+**File:** tests/unit/test_annotation_doc.py::TestUpdateHighlightParaRef::test_update_preserves_other_fields
+1. Add highlight with all fields set
+2. Update para_ref to new value
+3. Assert start_char, end_char, tag, text, author, document_id unchanged
+
+**Verifies:** para_ref update is targeted -- no side effects on other highlight fields
+
+### update_highlight_para_ref syncs via CRDT
+**File:** tests/unit/test_annotation_doc.py::TestUpdateHighlightParaRef::test_update_syncs_across_docs
+1. Create two AnnotationDocument instances, sync initial state
+2. Update para_ref on doc1, extract update bytes
+3. Apply update to doc2
+4. Assert doc2 now has the updated para_ref
+
+**Verifies:** para_ref changes propagate through CRDT sync protocol
+
+## PDF Export Paragraph Map Conversion (Unit)
+
+### String keys convert to int keys
+**File:** tests/unit/export/test_pdf_export_para_map.py::TestParagraphMapKeyConversion::test_normal_conversion
+1. Convert {"0": 1, "50": 2, "120": 3} to int-keyed dict
+2. Assert result is {0: 1, 50: 2, 120: 3}
+
+**Verifies:** JSON string keys from DB are converted to int keys for export pipeline
+
+### Empty map becomes None
+**File:** tests/unit/export/test_pdf_export_para_map.py::TestParagraphMapKeyConversion::test_empty_map_becomes_none
+1. Convert empty dict
+2. Assert result is None
+
+**Verifies:** Documents without paragraph maps skip paragraph numbering in export
+
+### Source-numbered gaps preserved in conversion
+**File:** tests/unit/export/test_pdf_export_para_map.py::TestParagraphMapKeyConversion::test_source_numbered_with_gaps
+1. Convert {"0": 1, "100": 5, "200": 12, "350": 13}
+2. Assert non-sequential values preserved
+
+**Verifies:** Source-numbered document gaps survive the key conversion
+
+## PDF Export Paragraph References in Margin Notes (Unit)
+
+### Margin notes include [N] paragraph references
+**File:** tests/unit/export/test_highlight_spans.py::TestAC6_ParaRefInMarginNotes (6 tests)
+1. Create highlights at known char offsets
+2. Call compute_highlight_spans with word_to_legal_para mapping
+3. Parse data-annots attributes on resulting spans
+4. Assert "[N]" references appear in annotation strings
+5. Test single-paragraph, multi-paragraph range, no-map, and format variants
+
+**Verifies:** AC6 -- PDF margin notes display paragraph references from the paragraph map
+
+## Upload Dialog Parameter (Unit)
+
+### Dialog has source_numbering_detected parameter
+**File:** tests/unit/pages/test_dialogs.py (2 tests)
+1. Inspect show_content_type_dialog signature
+2. Assert source_numbering_detected parameter exists
+3. Assert default value is False
+
+**Verifies:** Upload dialog API contract includes source numbering detection
+
+## Paragraph Screenshot Visual Verification (E2E)
+
+### Fixture screenshots with paragraph numbering
+**File:** tests/e2e/test_para_screenshot.py::TestParagraphScreenshots::test_fixture_screenshots
+1. Create workspace, authenticate, navigate to annotation page
+2. Paste HTML fixture via clipboard simulation (19 fixtures parametrised)
+3. Wait for document render (text walker ready)
+4. Evaluate JS to count data-para elements
+5. Evaluate landmark detection JS (speakers, headings, lists, blockquotes, tables, code blocks, first/last data-para)
+6. Scroll to each landmark and take screenshot
+7. Assert data-para elements > 0 and screenshots taken
+
+**Verifies:** Visual regression -- paragraph numbers render correctly across diverse HTML formats (AustLII, ChatCraft, Claude, Gemini, OpenAI, translations, Wikipedia, etc.)

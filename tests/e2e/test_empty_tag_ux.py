@@ -165,7 +165,7 @@ class TestEmptyTagFloatingMenu:
                 menu = page.get_by_test_id("highlight-menu")
                 expect(menu).to_be_visible(timeout=5000)
 
-                tag_buttons = menu.locator("button.compact-btn")
+                tag_buttons = menu.get_by_test_id("highlight-menu-tag-btn")
                 expect(tag_buttons.first).to_be_visible(timeout=5000)
 
                 new_btn = page.get_by_test_id("highlight-menu-new-tag")

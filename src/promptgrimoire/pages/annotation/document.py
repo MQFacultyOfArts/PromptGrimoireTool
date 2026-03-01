@@ -152,8 +152,10 @@ def _populate_highlight_menu(
                             async def _apply(tag_key: str = ti.raw_key) -> None:
                                 await on_tag_click(tag_key)
 
-                            btn = ui.button(abbrev, on_click=_apply).classes(
-                                "text-xs compact-btn"
+                            btn = (
+                                ui.button(abbrev, on_click=_apply)
+                                .classes("text-xs compact-btn")
+                                .props('data-testid="highlight-menu-tag-btn"')
                             )
                             btn.style(
                                 f"background-color: {ti.colour} !important; "

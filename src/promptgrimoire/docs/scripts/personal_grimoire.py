@@ -320,7 +320,7 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
         select_chars(page, 0, 50)
         page.wait_for_timeout(500)
 
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button = page.locator('[data-testid^="tag-btn-"]').first
         tag_button.wait_for(state="visible", timeout=5000)
         tag_button.click()
         page.locator("[data-testid='annotation-card']").first.wait_for(
@@ -422,29 +422,29 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
         course_select.click()
 
         # Click the UNIT1234 option in the dropdown
-        unit_option = page.locator('.q-menu .q-item:has-text("UNIT1234")').first
+        unit_option = (
+            page.locator('[data-testid^="placement-course-opt-"]')
+            .filter(has_text="UNIT1234")
+            .first
+        )
         unit_option.wait_for(state="visible", timeout=5000)
         unit_option.click()
         page.wait_for_timeout(1000)
 
-        # Select week
+        # Select week (first available option)
         week_select = page.get_by_test_id("placement-week")
         week_select.click()
-        page.locator(".q-menu .q-item").first.wait_for(
-            state="visible",
-            timeout=5000,
-        )
-        page.locator(".q-menu .q-item").first.click()
+        week_option = page.locator('[data-testid^="placement-week-opt-"]').first
+        week_option.wait_for(state="visible", timeout=5000)
+        week_option.click()
         page.wait_for_timeout(1000)
 
-        # Select activity
+        # Select activity (first available option)
         activity_select = page.get_by_test_id("placement-activity")
         activity_select.click()
-        page.locator(".q-menu .q-item").first.wait_for(
-            state="visible",
-            timeout=5000,
-        )
-        page.locator(".q-menu .q-item").first.click()
+        activity_option = page.locator('[data-testid^="placement-activity-opt-"]').first
+        activity_option.wait_for(state="visible", timeout=5000)
+        activity_option.click()
         page.wait_for_timeout(500)
 
         g.screenshot(

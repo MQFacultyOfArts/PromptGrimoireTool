@@ -20,6 +20,20 @@ from promptgrimoire.db.workspaces import (
     place_workspace_in_course,
 )
 
+_OPTION_SLOT_TEMPLATE = (
+    '<q-item v-bind="props.itemProps" '
+    ":data-testid=\"'{prefix}-' + props.opt.value\">"
+    "<q-item-section>"
+    '<q-item-label v-html="props.opt.label"></q-item-label>'
+    "</q-item-section>"
+    "</q-item>"
+)
+
+
+def _add_option_testids(select: ui.select, prefix: str) -> None:
+    """Add data-testid to each dropdown option via a Quasar slot template."""
+    select.add_slot("option", _OPTION_SLOT_TEMPLATE.replace("{prefix}", prefix))
+
 
 async def _load_enrolled_course_options(
     user_id: UUID,
@@ -75,6 +89,9 @@ def _build_activity_cascade(
         .props('data-testid="placement-activity"')
     )
     activity_select.disable()
+    _add_option_testids(course_select, "placement-course-opt")
+    _add_option_testids(week_select, "placement-week-opt")
+    _add_option_testids(activity_select, "placement-activity-opt")
 
     async def on_course_change(e: events.ValueChangeEventArguments) -> None:
         _reset_select(week_select, selected, "course", "week", "activity")
@@ -136,6 +153,7 @@ def _build_course_only_select(
         selected["course_only"] = UUID(e.value) if e.value else None
 
     course_only_select.on_value_change(on_change)
+    _add_option_testids(course_only_select, "placement-course-only-opt")
 
 
 async def _apply_placement(

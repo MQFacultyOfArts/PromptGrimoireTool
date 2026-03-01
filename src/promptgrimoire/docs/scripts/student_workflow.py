@@ -174,7 +174,7 @@ def _step_highlight_text(page: Page, guide: Guide) -> None:
         page.wait_for_timeout(500)
 
         # Click the first tag button in the toolbar
-        tag_button = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_button = page.locator('[data-testid^="tag-btn-"]').first
         tag_button.wait_for(state="visible", timeout=5000)
         tag_button.click()
         page.locator("[data-testid='annotation-card']").first.wait_for(

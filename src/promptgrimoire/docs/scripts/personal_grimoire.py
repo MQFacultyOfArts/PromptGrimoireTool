@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from promptgrimoire.docs.helpers import wait_for_text_walker
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
@@ -175,4 +177,57 @@ def _section_enter_grimoire(
             "Your workspace is created. Unlike activity-based workspaces, "
             "this one has no inherited tags and no course association. "
             "It is your blank slate — a grimoire waiting to be filled."
+        )
+
+
+def _section_bring_conversation(page: Page, guide: Guide) -> None:
+    """Section 2: Bring Your Conversation.
+
+    Paste an AI conversation about cultural markers in Japanese legal
+    text translation. Confirm content type.
+    """
+    with guide.step("Bring Your Conversation") as g:
+        g.note(
+            "Copy an AI conversation that you want to analyse. This could "
+            "be from ChatGPT, Claude, or any other tool. Paste it into "
+            "the editor to begin building your grimoire."
+        )
+
+        # Inject sample HTML into QEditor contenteditable div.
+        # Uses .q-editor__content -- known exception: Quasar renders this
+        # div internally; our code cannot attach a data-testid to it.
+        # Static, hardcoded content only (not user-supplied).
+        page.evaluate(
+            """(html) => {
+                const el = document.querySelector(
+                    '[data-testid="content-editor"] .q-editor__content'
+                );
+                el.focus();
+                el.innerHTML = html;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+            }""",
+            _SAMPLE_HTML,
+        )
+        g.screenshot(
+            "AI conversation pasted into the editor",
+            highlight=["content-editor"],
+        )
+        g.note(
+            "Paste your AI conversation into the editor. This "
+            "conversation about cultural markers in Japanese legal "
+            "translation will be the artefact you annotate."
+        )
+
+        page.get_by_test_id("add-document-btn").click()
+
+        confirm_btn = page.get_by_test_id("confirm-content-type-btn")
+        confirm_btn.wait_for(state="visible", timeout=5000)
+        confirm_btn.click()
+
+        wait_for_text_walker(page, timeout=15000)
+        g.screenshot("Processed conversation with formatted turns")
+        g.note(
+            "Your conversation is processed and displayed with formatted "
+            "turns. The grimoire now holds your artefact — ready for "
+            "annotation."
         )

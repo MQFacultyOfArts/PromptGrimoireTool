@@ -246,7 +246,9 @@ def _instructor_quick_create_tag(page: Page) -> None:
     ).click()
     dialog = page.locator("[data-testid='tag-quick-create-dialog']")
     expect(dialog).to_be_visible(timeout=5000)
-    dialog.locator("input").first.fill("Statutory Interpretation")
+    dialog.get_by_test_id("tag-quick-create-name-input").fill(
+        "Statutory Interpretation"
+    )
     dialog.get_by_role("button", name="Create").click()
     expect(dialog).to_be_hidden(timeout=5000)
     expect(toolbar).to_contain_text("Statutory Interpretation", timeout=5000)

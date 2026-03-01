@@ -149,7 +149,7 @@ class TestEmptyTagFloatingMenu:
                 dialog = page.get_by_test_id("tag-quick-create-dialog")
                 expect(dialog).to_be_visible(timeout=5000)
 
-                dialog.locator("input").first.fill("TestTag")
+                dialog.get_by_test_id("tag-quick-create-name-input").fill("TestTag")
                 dialog.get_by_role("button", name="Create").click()
 
                 card = page.locator("[data-testid='annotation-card']").first

@@ -109,7 +109,11 @@ async def open_quick_create(state: PageState) -> None:
         ui.label("Quick Create Tag").classes(
             "text-lg font-bold mb-2",
         )
-        name_input = ui.input("Tag name").props("maxlength=100").classes("w-full")
+        name_input = (
+            ui.input("Tag name")
+            .props('maxlength=100 data-testid="tag-quick-create-name-input"')
+            .classes("w-full")
+        )
 
         _build_colour_picker(selected_color)
 

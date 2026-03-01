@@ -132,14 +132,21 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 + 'font-claude-response'
                                 + '(?!-)[^"]*"[^>]*>)', 'gi');
                         }} else if (/conversation-turn/.test(html)) {{
-                            // OpenAI already has "You said:"/"ChatGPT said:"
-                            // labels in content — don't inject duplicates
                             window.{platform_var} = 'openai';
+                            sp.u = new RegExp(
+                                ar('data-message-author-role="user"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-message-author-role="assistant"'),
+                                'gi');
                         }} else if (/chat-turn-container/.test(html)) {{
-                            // AI Studio has "User"/"Model" text
-                            // labels in content — don't inject
-                            // duplicates (same as OpenAI)
                             window.{platform_var} = 'aistudio';
+                            sp.u = new RegExp(
+                                ar('data-turn-role="User"'),
+                                'gi');
+                            sp.a = new RegExp(
+                                ar('data-turn-role="Model"'),
+                                'gi');
                         }} else if (/message-actions/.test(html)) {{
                             window.{platform_var} = 'gemini';
                             // Match only exact tags, not

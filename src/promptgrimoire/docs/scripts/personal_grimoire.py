@@ -14,12 +14,11 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
-
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-    from promptgrimoire.docs import Guide
+from promptgrimoire.docs import Guide
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -475,3 +474,15 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
             "the unit, while retaining your personal tag vocabulary "
             "and annotations."
         )
+
+
+def run_personal_grimoire_guide(page: Page, base_url: str) -> None:
+    """Run the personal grimoire guide, producing markdown and screenshots."""
+    _ensure_instructor_guide_ran(page, base_url)
+
+    with Guide("Your Personal Grimoire", GUIDE_OUTPUT_DIR, page) as guide:
+        _section_enter_grimoire(page, base_url, guide)
+        _section_bring_conversation(page, guide)
+        _section_make_meaning(page, guide)
+        _section_annotate_and_reflect(page, guide)
+        _section_connect_to_unit(page, guide)

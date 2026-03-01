@@ -37,16 +37,32 @@ class OpenAIHandler:
         return bool(_DETECTION_PATTERN.search(html))
 
     def preprocess(self, tree: LexborHTMLParser) -> None:
-        """Remove chrome and native labels from OpenAI HTML.
+        """Remove chrome, native labels, and metadata from OpenAI HTML.
 
         Removes:
         - sr-only elements (contain "You said:" and "ChatGPT" labels)
+        - Model request badges ("Request for GPT-5 Pro")
+        - Reasoning time badges ("Reasoned for Xm Ys")
+        - Tool use badges ("Analyzed", "Analysis errored")
 
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
         for selector in _CHROME_SELECTORS:
             for node in tree.css(selector):
+                node.decompose()
+
+        # Remove model request and reasoning badges
+        _REQUEST_RE = re.compile(r"Request for|Reasoned for", re.IGNORECASE)
+        for node in tree.css(".flex.pb-2"):
+            text = node.text(strip=True)
+            if _REQUEST_RE.search(text):
+                node.decompose()
+
+        # Remove tool use badges
+        for node in tree.css("button"):
+            text = node.text(strip=True)
+            if text.startswith("Analy"):
                 node.decompose()
 
     def get_turn_markers(self) -> dict[str, str]:

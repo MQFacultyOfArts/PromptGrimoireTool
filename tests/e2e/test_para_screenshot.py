@@ -33,11 +33,10 @@ SCREENSHOT_DIR.mkdir(exist_ok=True)
 # Excludes 183-clipboard (test artifact) and .gz duplicates of .html files.
 _ALL_FIXTURES: list[tuple[str, str]] = [
     ("austlii", "austlii.html"),
+    ("chatcraft_prd", "chatcraft_prd.html.gz"),
     ("chinese_wikipedia", "chinese_wikipedia.html"),
     ("claude_cooking", "claude_cooking.html"),
     ("claude_maths", "claude_maths.html"),
-    ("google_aistudio_image", "google_aistudio_image.html.gz"),
-    ("google_aistudio_ux", "google_aistudio_ux_discussion.html.gz"),
     ("google_gemini_debug", "google_gemini_debug.html.gz"),
     ("google_gemini_deep_research", "google_gemini_deep_research.html.gz"),
     ("lawlis_v_r_austlii", "lawlis_v_r_austlii.html"),
@@ -45,6 +44,7 @@ _ALL_FIXTURES: list[tuple[str, str]] = [
     ("openai_dh_dr", "openai_dh_dr.html.gz"),
     ("openai_dprk_denmark", "openai_dprk_denmark.html.gz"),
     ("openai_software_long_dr", "openai_software_long_dr.html.gz"),
+    ("openrouter_fizzbuzz", "openrouter_fizzbuzz.html.gz"),
     ("scienceos_loc", "scienceos_loc.html.gz"),
     ("scienceos_philsci", "scienceos_philsci.html.gz"),
     ("translation_japanese", "translation_japanese_sample.html"),

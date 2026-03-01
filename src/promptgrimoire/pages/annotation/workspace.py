@@ -306,7 +306,9 @@ async def _resolve_workspace_context(
         workspace = await get_workspace(workspace_id)
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500")
-        ui.button("Create New Workspace", on_click=_create_workspace_and_redirect)
+        ui.button(
+            "Create New Workspace", on_click=_create_workspace_and_redirect
+        ).props('data-testid="create-workspace-btn"')
         return None
 
     auth_user = app.storage.user.get("auth_user")

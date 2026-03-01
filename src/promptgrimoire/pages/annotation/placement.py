@@ -238,7 +238,9 @@ async def show_placement_dialog(
                     dialog.close()
                     await on_changed()
 
-            ui.button("Confirm", on_click=on_confirm).props("color=primary")
+            ui.button("Confirm", on_click=on_confirm).props(
+                'color=primary data-testid="placement-confirm-btn"'
+            )
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
     dialog.open()

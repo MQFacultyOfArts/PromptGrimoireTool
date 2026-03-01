@@ -109,16 +109,24 @@ async def open_quick_create(state: PageState) -> None:
         ui.label("Quick Create Tag").classes(
             "text-lg font-bold mb-2",
         )
-        name_input = ui.input("Tag name").props("maxlength=100").classes("w-full")
+        name_input = (
+            ui.input("Tag name")
+            .props('maxlength=100 data-testid="quick-create-name-input"')
+            .classes("w-full")
+        )
 
         _build_colour_picker(selected_color)
 
-        group_select = ui.select(
-            label="Group (optional)",
-            options=group_options,
-            value=None,
-            clearable=True,
-        ).classes("w-full")
+        group_select = (
+            ui.select(
+                label="Group (optional)",
+                options=group_options,
+                value=None,
+                clearable=True,
+            )
+            .classes("w-full")
+            .props('data-testid="quick-create-group-select"')
+        )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -181,7 +189,7 @@ async def open_quick_create(state: PageState) -> None:
                 )
 
             ui.button("Create", on_click=_save).props(
-                "color=primary",
+                'color=primary data-testid="quick-create-save-btn"',
             )
 
     dialog.open()

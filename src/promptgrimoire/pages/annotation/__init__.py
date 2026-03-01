@@ -321,4 +321,6 @@ async def annotation_page(client: Client) -> None:
             ui.button(
                 "Create Workspace",
                 on_click=_create_workspace_and_redirect,
-            ).classes("bg-blue-500 text-white")
+            ).classes("bg-blue-500 text-white").props(
+                'data-testid="create-workspace-btn"'
+            )

@@ -424,11 +424,9 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
         course_select.click()
 
         # Click the UNIT1234 option in the dropdown
-        page.locator('.q-menu .q-item:has-text("UNIT1234")').first.wait_for(
-            state="visible",
-            timeout=5000,
-        )
-        page.locator('.q-menu .q-item:has-text("UNIT1234")').first.click()
+        unit_option = page.locator('.q-menu .q-item:has-text("UNIT1234")').first
+        unit_option.wait_for(state="visible", timeout=5000)
+        unit_option.click()
         page.wait_for_timeout(1000)
 
         # Select week

@@ -113,6 +113,15 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
                 privileged_user_ids=state.privileged_user_ids,
             )
 
+        # Enrich highlights with display names so the export pipeline renders
+        # human-readable tag names instead of UUIDs (DB-backed tags store UUIDs
+        # in the CRDT "tag" field).
+        tag_name_map = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+        highlights = [
+            {**hl, "tag_name": tag_name_map.get(str(hl.get("tag", "")))}
+            for hl in highlights
+        ]
+
         doc = await get_document(state.document_id)
         if doc is None or not doc.content:
             notification.dismiss()

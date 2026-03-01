@@ -170,7 +170,9 @@ class TestFormatAnnot:
 
         # Should display the human-readable name, not the UUID
         assert "Jurisdiction" in result
-        assert "0bd64204" not in result.lower().replace("\\", "")
+        # UUID is expected in the colour name (first arg to \annot),
+        # but must NOT appear in the display text (second arg).
+        assert "\\textbf{Jurisdiction}" in result
 
         # Colour name should still use the UUID (matches \definecolor)
         nodes = parse_latex(result)

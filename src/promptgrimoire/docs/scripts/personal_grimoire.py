@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from promptgrimoire.docs import Guide
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 
@@ -104,9 +106,7 @@ def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
             timeout=5000,
         )
         unit_visible = page.locator("text=UNIT1234").count() > 0
-    except Exception as exc:
-        if "Timeout" not in type(exc).__name__:
-            raise
+    except PlaywrightTimeoutError:
         unit_visible = False
 
     if not unit_visible:

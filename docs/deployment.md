@@ -540,7 +540,7 @@ SyslogIdentifier=promptgrimoire
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/promptgrimoire/logs /home/promptgrimoire/.TinyTeX /home/promptgrimoire/.cache/uv
+ReadWritePaths=/opt/promptgrimoire/logs /opt/promptgrimoire/.venv /home/promptgrimoire/.TinyTeX /home/promptgrimoire/.cache/uv
 PrivateTmp=true
 
 [Install]

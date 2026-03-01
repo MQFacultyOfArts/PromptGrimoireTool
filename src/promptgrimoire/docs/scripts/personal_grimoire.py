@@ -375,3 +375,103 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             "emergent vocabulary becomes a lens for seeing patterns "
             "across the conversation."
         )
+
+
+def _section_connect_to_unit(page: Page, guide: Guide) -> None:
+    """Section 5: Connect to Your Unit.
+
+    Open the placement dialog, select UNIT1234 activity via cascading
+    selects, confirm placement.
+    """
+    with guide.step("Connect to Your Unit") as g:
+        g.note(
+            "Your grimoire has grown from a blank slate into a structured "
+            "analysis. Now you can connect it to your unit — associating "
+            "your personal work with the course activity so your "
+            "instructor can see it alongside the class work."
+        )
+
+        # Switch back to Annotate tab
+        page.get_by_test_id("tab-annotate").click()
+        page.wait_for_timeout(1000)
+
+        # Open placement dialog via placement chip
+        page.get_by_test_id("placement-chip").click()
+        page.get_by_test_id("placement-mode").wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        g.screenshot(
+            "Placement dialog for associating workspace with a unit",
+            highlight=["placement-mode"],
+        )
+        g.note(
+            "Click the placement chip in the header to open the "
+            "placement dialog. Your enrolled units appear in the "
+            "cascading selects because you are already enrolled."
+        )
+
+        # Select "Place in Activity" mode
+        page.locator(
+            '[data-testid="placement-mode"] label:has-text("Place in Activity")'
+        ).click()
+        page.wait_for_timeout(500)
+
+        # Select unit from the course dropdown
+        course_select = page.get_by_test_id("placement-course")
+        course_select.wait_for(state="visible", timeout=5000)
+        course_select.click()
+
+        # Click the UNIT1234 option in the dropdown
+        page.locator('.q-menu .q-item:has-text("UNIT1234")').first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        page.locator('.q-menu .q-item:has-text("UNIT1234")').first.click()
+        page.wait_for_timeout(1000)
+
+        # Select week
+        week_select = page.get_by_test_id("placement-week")
+        week_select.click()
+        page.locator(".q-menu .q-item").first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        page.locator(".q-menu .q-item").first.click()
+        page.wait_for_timeout(1000)
+
+        # Select activity
+        activity_select = page.get_by_test_id("placement-activity")
+        activity_select.click()
+        page.locator(".q-menu .q-item").first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        page.locator(".q-menu .q-item").first.click()
+        page.wait_for_timeout(500)
+
+        g.screenshot(
+            "Cascading selects with UNIT1234, week, and activity selected",
+            highlight=[
+                "placement-course",
+                "placement-week",
+                "placement-activity",
+            ],
+        )
+        g.note(
+            "Select your unit, week, and activity from the cascading "
+            "dropdowns. Your enrolment in UNIT1234 makes it available "
+            "in the placement dialog."
+        )
+
+        # Confirm placement
+        page.get_by_test_id("placement-confirm-btn").click()
+        page.wait_for_timeout(2000)
+
+        g.screenshot("Workspace now associated with the course activity")
+        g.note(
+            "Your personal grimoire is now connected to the course "
+            "activity. It appears alongside other students' work in "
+            "the unit, while retaining your personal tag vocabulary "
+            "and annotations."
+        )

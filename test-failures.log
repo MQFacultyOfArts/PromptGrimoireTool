@@ -1,0 +1,19 @@
+============================================================
+Changed Tests (vs main)
+Branch: docs-platform-208
+Test DB: promptgrimoire_test_docs_platform_208
+Started: 2026-03-01T11:28:40.680580
+Command: pytest --depper -m not e2e -n auto --dist=worksteal -x --ff --reruns 3 --tb=short
+============================================================
+
+bringing up nodes...
+bringing up nodes...
+
+
+no tests ran in 4.94s
+
+============================================================
+Finished: 2026-03-01T11:28:46.013029
+Duration: 0:00:05.332449
+Exit code: 5
+============================================================

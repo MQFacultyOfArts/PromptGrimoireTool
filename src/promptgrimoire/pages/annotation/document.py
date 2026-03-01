@@ -110,6 +110,15 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.run_javascript(js_code)
 
 
+def _render_new_tag_button(on_add_click: Any) -> None:
+    """Render the '+ New' tag creation button in the current NiceGUI context."""
+    ui.button("+ New", on_click=on_add_click).props("flat dense color=grey-7").classes(
+        "text-sm"
+    ).props('data-testid="highlight-menu-new-tag"').tooltip(
+        "Create a new tag and apply it to your selection"
+    )
+
+
 def _populate_highlight_menu(
     state: PageState, on_tag_click: Any, *, on_add_click: Any | None = None
 ) -> None:
@@ -163,18 +172,10 @@ def _populate_highlight_menu(
 
                 # Append "+ New" after all tag groups when permitted
                 if on_add_click is not None:
-                    ui.button("+ New", on_click=on_add_click).props(
-                        "flat dense color=grey-7"
-                    ).classes("text-sm").props(
-                        'data-testid="highlight-menu-new-tag"'
-                    ).tooltip("Create a new tag and apply it to your selection")
+                    _render_new_tag_button(on_add_click)
         elif on_add_click is not None:
             # Zero tags but user can create — show only the "+ New" button
-            ui.button("+ New", on_click=on_add_click).props(
-                "flat dense color=grey-7"
-            ).classes("text-sm").props('data-testid="highlight-menu-new-tag"').tooltip(
-                "Create a new tag and apply it to your selection"
-            )
+            _render_new_tag_button(on_add_click)
         else:
             # Zero tags and no creation permission
             ui.label("No tags available").classes("text-sm text-gray-600").tooltip(

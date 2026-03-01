@@ -197,10 +197,11 @@ class TestEmptyTagNoPermission:
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
             wait_for_text_walker(page, timeout=15000)
 
+            menu = page.get_by_test_id("highlight-menu")
+
             with subtests.test(msg="ac1_4_no_permission_dead_end"):
                 select_chars(page, 2, 15)
 
-                menu = page.get_by_test_id("highlight-menu")
                 expect(menu).to_be_visible(timeout=5000)
 
                 no_tags_label = menu.get_by_text("No tags available")
@@ -208,7 +209,7 @@ class TestEmptyTagNoPermission:
 
                 expect(
                     page.get_by_test_id("highlight-menu-new-tag")
-                ).not_to_be_visible()
+                ).not_to_be_attached()
 
             with subtests.test(msg="ac1_4_tooltip_mentions_instructor"):
                 no_tags_label = menu.get_by_text("No tags available")

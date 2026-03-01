@@ -104,7 +104,9 @@ def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
             timeout=5000,
         )
         unit_visible = page.locator("text=UNIT1234").count() > 0
-    except Exception:
+    except Exception as exc:
+        if "Timeout" not in type(exc).__name__:
+            raise
         unit_visible = False
 
     if not unit_visible:
@@ -287,7 +289,7 @@ def _section_make_meaning(page: Page, guide: Guide) -> None:
 
         g.screenshot(
             "Tag group 'My Analysis' with three student-created tags",
-            highlight=["add-tag-group-btn"],
+            highlight=["tag-name-input", "group-name-input"],
         )
         g.note(
             "Create a tag group and tags that make sense for your "

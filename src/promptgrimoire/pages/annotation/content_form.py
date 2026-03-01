@@ -151,6 +151,22 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             sp.a = new RegExp(
                                 ar('data-turn-role="Model"'),
                                 'gi');
+                            if (window.Quasar)
+                                Quasar.plugins.Notify.create({{
+                                    message: 'AI Studio uses'
+                                        + ' virtual scrolling'
+                                        + ' \u2014 turns not'
+                                        + ' visible when you'
+                                        + ' copied will be'
+                                        + ' empty. Scroll'
+                                        + ' through the entire'
+                                        + ' conversation before'
+                                        + ' copying, or paste'
+                                        + ' shorter segments.',
+                                    type: 'warning',
+                                    timeout: 15000,
+                                    position: 'top',
+                                }});
                         }} else if (/message-actions/.test(html)) {{
                             window.{platform_var} = 'gemini';
                             // Match only exact tags, not

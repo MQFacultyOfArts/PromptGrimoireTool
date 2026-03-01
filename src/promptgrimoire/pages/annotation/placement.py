@@ -226,9 +226,6 @@ async def show_placement_dialog(
             },
             value=initial_mode,
         ).props('data-testid="placement-mode"')
-        # Add data-testid to individual radio options via Quasar attrs
-        for opt in mode._props["options"]:
-            opt["attrs"] = {"data-testid": f"placement-mode-{opt['value']}"}
 
         activity_container = ui.column().classes("w-full gap-2")
         course_container = ui.column().classes("w-full gap-2")

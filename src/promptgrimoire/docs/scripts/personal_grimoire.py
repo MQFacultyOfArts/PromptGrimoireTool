@@ -468,8 +468,10 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
             "cascading selects because you are already enrolled."
         )
 
-        # Select "Place in Activity" mode
-        page.get_by_test_id("placement-mode-activity").click()
+        # Select "Place in Activity" mode.
+        # Quasar q-option-group does not support per-option data-testid,
+        # so scope a text selector within the testid parent.
+        page.get_by_test_id("placement-mode").get_by_text("Place in Activity").click()
         page.wait_for_timeout(500)
 
         # Select unit from the course dropdown

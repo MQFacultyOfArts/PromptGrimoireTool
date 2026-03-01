@@ -359,39 +359,37 @@ def _render_action_buttons(
     """
     compact = tag_count >= _COMPACT_THRESHOLD
 
+    buttons: list[tuple[str, str, str, str, Any]] = []
     if on_add_click is not None:
-        if compact:
-            ui.button(
-                icon="add",
-                on_click=on_add_click,
-            ).classes("compact-btn").props(
-                'round dense flat color=grey-7 data-testid="tag-create-btn"',
-            ).tooltip("Create a new tag for highlighting and annotating text")
-        else:
-            ui.button(
+        buttons.append(
+            (
                 "Create New Tag",
-                icon="add",
-                on_click=on_add_click,
-            ).props(
-                'dense flat color=grey-7 data-testid="tag-create-btn"',
-            ).tooltip("Create a new tag for highlighting and annotating text")
-
+                "add",
+                "tag-create-btn",
+                "Create a new tag for highlighting and annotating text",
+                on_add_click,
+            )
+        )
     if on_manage_click is not None:
-        if compact:
-            ui.button(
-                icon="settings",
-                on_click=on_manage_click,
-            ).classes("compact-btn").props(
-                'round dense flat color=grey-7 data-testid="tag-settings-btn"',
-            ).tooltip("Manage tags -- create, edit, reorder, and import tags")
-        else:
-            ui.button(
+        buttons.append(
+            (
                 "Manage Tags",
-                icon="settings",
-                on_click=on_manage_click,
-            ).props(
-                'dense flat color=grey-7 data-testid="tag-settings-btn"',
-            ).tooltip("Manage tags -- create, edit, reorder, and import tags")
+                "settings",
+                "tag-settings-btn",
+                "Manage tags -- create, edit, reorder, and import tags",
+                on_manage_click,
+            )
+        )
+
+    for label, icon, testid, tooltip_text, callback in buttons:
+        if compact:
+            btn = ui.button(icon=icon, on_click=callback)
+            btn.classes("compact-btn")
+            btn.props(f'round dense flat color=grey-7 data-testid="{testid}"')
+        else:
+            btn = ui.button(label, icon=icon, on_click=callback)
+            btn.props(f'dense flat color=grey-7 data-testid="{testid}"')
+        btn.tooltip(tooltip_text)
 
 
 def _build_tag_toolbar(

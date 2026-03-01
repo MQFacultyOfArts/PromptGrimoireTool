@@ -128,6 +128,17 @@ class TestEmptyTagFloatingMenu:
                 cards = page.locator("[data-testid='annotation-card']")
                 expect(cards).to_have_count(0)
 
+            with subtests.test(msg="ac1_5_reselect_after_cancel"):
+                # AC1.5 (selection state): After cancelling, the user can
+                # re-select different text and the floating menu reappears.
+                select_chars(page, 30, 50)
+
+                menu = page.get_by_test_id("highlight-menu")
+                expect(menu).to_be_visible(timeout=5000)
+
+                new_btn = page.get_by_test_id("highlight-menu-new-tag")
+                expect(new_btn).to_be_visible(timeout=5000)
+
         finally:
             page.close()
             context.close()

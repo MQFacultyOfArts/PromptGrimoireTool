@@ -331,6 +331,68 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 }}
                                 meta.remove();
                             }});
+                            // Remove thinking/reasoning content.
+                            // OpenRouter wraps reasoning in a
+                            // details/summary or a div with
+                            // "reasoning" in class name
+                            iDoc.querySelectorAll(
+                                'details, [class*="reason"]'
+                            ).forEach(el => {{
+                                const txt =
+                                    el.textContent.trim();
+                                if (/^(Reason|Think)/i.test(txt)
+                                    || el.tagName === 'DETAILS')
+                                    el.remove();
+                            }});
+                        }}
+
+                        // Strip OpenAI chrome & metadata
+                        if (window.{platform_var} === 'openai') {{
+                            const iDoc = iframe.contentDocument;
+                            // Remove sr-only labels
+                            iDoc.querySelectorAll('.sr-only')
+                                .forEach(el => el.remove());
+                            // Remove model request badges
+                            // ("Request for GPT-5 Pro") and
+                            // reasoning time badges
+                            // ("Reasoned for Xm Ys")
+                            iDoc.querySelectorAll('.flex.pb-2')
+                                .forEach(el => {{
+                                const txt = el.textContent.trim();
+                                if (/Request for|Reasoned for/i
+                                    .test(txt))
+                                    el.remove();
+                            }});
+                            // Remove tool use badges
+                            // ("Analysis errored", "Analyzed")
+                            iDoc.querySelectorAll('button')
+                                .forEach(el => {{
+                                const txt = el.textContent.trim();
+                                if (/^Analy/i.test(txt))
+                                    el.remove();
+                            }});
+                        }}
+
+                        // Strip AI Studio chrome & metadata
+                        if (window.{platform_var} === 'aistudio') {{
+                            const iDoc = iframe.contentDocument;
+                            // Remove author labels
+                            iDoc.querySelectorAll('.author-label')
+                                .forEach(el => el.remove());
+                            // Remove file/paste metadata chunks
+                            // (filename, date, token counts)
+                            iDoc.querySelectorAll('ms-file-chunk')
+                                .forEach(el => el.remove());
+                            // Remove thought section chrome
+                            // (accordion labels, expand controls)
+                            iDoc.querySelectorAll('ms-thought-chunk')
+                                .forEach(el => el.remove());
+                            // Remove toolbar (title, token count)
+                            iDoc.querySelectorAll('ms-toolbar')
+                                .forEach(el => el.remove());
+                            // Remove token count badges
+                            iDoc.querySelectorAll('.token-count')
+                                .forEach(el => el.remove());
                         }}
 
                         // ChatCraft: classify speakers, then

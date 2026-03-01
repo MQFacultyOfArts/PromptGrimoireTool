@@ -35,13 +35,23 @@ class AIStudioHandler:
 
         Removes:
         - .author-label elements (native speaker labels like "User", "Model")
+        - ms-file-chunk elements (file metadata, paste dates, token counts)
+        - ms-thought-chunk elements (thought section accordion chrome)
+        - ms-toolbar elements (title bar, global token count)
+        - .token-count elements (per-attachment token counts)
 
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
-        # Remove native author labels
-        for node in tree.css(".author-label"):
-            node.decompose()
+        for selector in [
+            ".author-label",
+            "ms-file-chunk",
+            "ms-thought-chunk",
+            "ms-toolbar",
+            ".token-count",
+        ]:
+            for node in tree.css(selector):
+                node.decompose()
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for AI Studio turn boundaries.

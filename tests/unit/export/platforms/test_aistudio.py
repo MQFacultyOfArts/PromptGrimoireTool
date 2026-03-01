@@ -53,6 +53,65 @@ class TestAIStudioHandlerPreprocess:
         assert "author-label" not in result
         assert "Hello AI Studio!" in result
 
+    def test_removes_file_chunk_metadata(self) -> None:
+        """Preprocessing removes ms-file-chunk elements (filenames, token counts)."""
+        handler = AIStudioHandler()
+        html = """
+        <ms-chat-turn data-turn-role="User">
+            <ms-file-chunk>case-brief-tool-prd.md 3,901 tokens</ms-file-chunk>
+            <p>Actual user content</p>
+        </ms-chat-turn>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "3,901 tokens" not in result
+        assert "case-brief-tool-prd.md" not in result
+        assert "Actual user content" in result
+
+    def test_removes_thought_chunk_chrome(self) -> None:
+        """Preprocessing removes ms-thought-chunk elements."""
+        handler = AIStudioHandler()
+        html = """
+        <ms-chat-turn data-turn-role="Model">
+            <ms-thought-chunk>Thoughts Expand to view model thoughts</ms-thought-chunk>
+            <p>Model response content</p>
+        </ms-chat-turn>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "Expand to view model thoughts" not in result
+        assert "Model response content" in result
+
+    def test_removes_toolbar_and_token_counts(self) -> None:
+        """Preprocessing removes ms-toolbar and .token-count elements."""
+        handler = AIStudioHandler()
+        html = """
+        <div>
+            <ms-toolbar>UX Discussion 26,924 tokens</ms-toolbar>
+            <ms-chat-turn data-turn-role="User">
+                <span class="token-count">3,901 tokens</span>
+                <p>Content</p>
+            </ms-chat-turn>
+        </div>
+        """
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "26,924 tokens" not in result
+        assert "3,901 tokens" not in result
+        assert "Content" in result
+
     def test_preserves_conversation_content(self) -> None:
         """Preprocessing preserves actual conversation content."""
         handler = AIStudioHandler()

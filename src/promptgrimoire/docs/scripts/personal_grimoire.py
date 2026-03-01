@@ -231,3 +231,72 @@ def _section_bring_conversation(page: Page, guide: Guide) -> None:
             "turns. The grimoire now holds your artefact — ready for "
             "annotation."
         )
+
+
+def _section_make_meaning(page: Page, guide: Guide) -> None:
+    """Section 3: Make Meaning Through Tags.
+
+    Open tag management, create a tag group and three tags from scratch
+    (emergent folksonomy). This section mirrors the instructor guide's
+    tag creation but from the student's perspective — no inherited tags.
+    """
+    with guide.step("Make Meaning Through Tags") as g:
+        g.note(
+            "Your workspace has no tags — unlike activity-based workspaces "
+            "that inherit the instructor's tag vocabulary, your grimoire "
+            "starts empty. You build your own analytical vocabulary: an "
+            "emergent folksonomy that reflects how you see the conversation."
+        )
+
+        # Open tag management dialog
+        page.get_by_test_id("tag-settings-btn").click()
+        page.get_by_test_id("add-tag-group-btn").wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        g.screenshot(
+            "Tag management dialog with no existing tags",
+            highlight=["add-tag-group-btn"],
+        )
+        g.note(
+            "Open the tag settings to create your own tags. The dialog "
+            "is empty — you are starting from scratch."
+        )
+
+        # Create tag group "My Analysis"
+        page.get_by_test_id("add-tag-group-btn").click()
+        page.wait_for_timeout(1000)
+
+        group_header = page.locator('[data-testid^="tag-group-header-"]').first
+        group_header.wait_for(state="visible", timeout=5000)
+        testid = group_header.get_attribute("data-testid") or ""
+        group_id = testid.removeprefix("tag-group-header-")
+
+        page.get_by_test_id(f"group-name-input-{group_id}").click()
+        page.get_by_test_id(f"group-name-input-{group_id}").fill("My Analysis")
+        # Commit the value by pressing Tab (triggers blur/change event)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(500)
+
+        # Add three tags
+        for tag_name in ["AI Assumption", "Cultural Gap", "Useful Insight"]:
+            page.get_by_test_id(f"group-add-tag-btn-{group_id}").click()
+            page.wait_for_timeout(1000)
+            last_input = page.locator('[data-testid^="tag-name-input-"]').last
+            last_input.click()
+            last_input.fill(tag_name)
+
+        g.screenshot(
+            "Tag group 'My Analysis' with three student-created tags",
+            highlight=["add-tag-group-btn"],
+        )
+        g.note(
+            "Create a tag group and tags that make sense for your "
+            "analysis. These tags — 'AI Assumption', 'Cultural Gap', "
+            "and 'Useful Insight' — reflect the student's own "
+            "analytical categories, not the instructor's."
+        )
+
+        # Close tag management dialog
+        page.get_by_test_id("tag-management-done-btn").click()
+        page.wait_for_timeout(1000)

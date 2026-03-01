@@ -58,6 +58,43 @@ class TestOpenRouterHandlerMatches:
         assert handler.matches("<html></html>") is False
 
 
+def _assistant_msg_html(
+    response: str,
+    *,
+    model_slug: str = "qwen/qwen3.5-35b-a3b",
+    thinking: str = "",
+) -> str:
+    """Build realistic OpenRouter assistant-message HTML.
+
+    Mirrors the real structure (as of 2026-03)::
+
+        [data-testid="assistant-message"]
+          ├── child 0: timestamp div
+          ├── child 1: model link div
+          ├── child 2: content wrapper
+          │   ├── (optional) thinking div
+          │   └── response div (last child)
+          └── child 3: actions div (empty)
+    """
+    thinking_block = ""
+    if thinking:
+        thinking_block = (
+            f'<div class="border rounded-md p-3">'
+            f"<p>Thinking Process:</p><p>{thinking}</p></div>"
+        )
+    return f"""
+    <div data-testid="assistant-message">
+      <div class="text-muted-foreground text-xs">21 hours ago</div>
+      <div><a href="https://openrouter.ai/{model_slug}">model</a></div>
+      <div class="flex flex-col">
+        {thinking_block}
+        <div class="items-stretch"><p>{response}</p></div>
+      </div>
+      <div class="flex items-center gap-1"></div>
+    </div>
+    """
+
+
 class TestOpenRouterHandlerPreprocess:
     """Tests for OpenRouter HTML preprocessing."""
 
@@ -85,14 +122,12 @@ class TestOpenRouterHandlerPreprocess:
     def test_preserves_conversation_content(self) -> None:
         """Preprocessing preserves actual conversation content."""
         handler = OpenRouterHandler()
-        html = """
+        html = f"""
         <div data-testid="playground-container">
             <div data-testid="user-message">
                 <p>What is the capital of France?</p>
             </div>
-            <div data-testid="assistant-message">
-                <p>The capital of France is Paris.</p>
-            </div>
+            {_assistant_msg_html("The capital of France is Paris.")}
             <div data-testid="playground-composer">
                 <textarea></textarea>
             </div>
@@ -107,49 +142,57 @@ class TestOpenRouterHandlerPreprocess:
         assert "What is the capital of France?" in result
         assert "The capital of France is Paris." in result
 
-    def test_strips_metadata_row_from_assistant_messages(self) -> None:
-        """Metadata row (timestamp, model name, badge) is removed."""
+    def test_strips_timestamp_from_assistant_messages(self) -> None:
+        """Timestamp (child 0) is removed from assistant messages."""
         handler = OpenRouterHandler()
-        html = """
-        <div data-testid="assistant-message">
-          <div data-testid="chat-bubble-color-scope">
-            <div class="text-xs text-gray-500 mb-1">
-                <span>5 seconds ago</span>
-                <span class="font-medium">Qwen3.5-35B-A3B</span>
-                <span class="text-blue-600">Reasoning</span>
-            </div>
-            <div class="prose"><p>The answer is 42.</p></div>
-          </div>
-        </div>
-        """
+        html = _assistant_msg_html("The answer is 42.")
         from selectolax.lexbor import LexborHTMLParser
 
         tree = LexborHTMLParser(html)
         handler.preprocess(tree)
         result = tree.html or ""
 
-        assert "5 seconds ago" not in result
-        assert "Reasoning" not in result
+        assert "21 hours ago" not in result
         assert "The answer is 42." in result
+
+    def test_strips_model_link_from_assistant_messages(self) -> None:
+        """Model link (child 1) is removed from assistant messages."""
+        handler = OpenRouterHandler()
+        html = _assistant_msg_html("Response text.")
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+        result = tree.html or ""
+
+        assert "openrouter.ai" not in result
+        assert "Response text." in result
+
+    def test_strips_actions_from_assistant_messages(self) -> None:
+        """Actions div (child 3) is removed from assistant messages."""
+        handler = OpenRouterHandler()
+        html = _assistant_msg_html("Response text.")
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+
+        # Only the content wrapper's last child should remain
+        msgs = tree.css('[data-testid="assistant-message"]')
+        assert len(msgs) == 1
+        # Should have exactly one element child (the response div)
+        from promptgrimoire.export.platforms.openrouter import _element_children
+
+        top_children = _element_children(msgs[0])
+        # Content wrapper kept, inside it only the response div
+        assert len(top_children) == 1
 
     def test_strips_thinking_content(self) -> None:
         """Thinking/reasoning content blocks are removed."""
         handler = OpenRouterHandler()
-        html = """
-        <div data-testid="assistant-message">
-          <div data-testid="chat-bubble-color-scope">
-            <div class="metadata">
-                <span>5 seconds ago</span>
-                <span class="font-medium">Qwen3.5-35B-A3B</span>
-            </div>
-            <div class="prose"><p>The answer is 42.</p></div>
-            <div class="thinking">
-                <p>Thinking Process:</p>
-                <p>Analyze the request...</p>
-            </div>
-          </div>
-        </div>
-        """
+        html = _assistant_msg_html(
+            "The answer is 42.", thinking="Analyze the request..."
+        )
         from selectolax.lexbor import LexborHTMLParser
 
         tree = LexborHTMLParser(html)
@@ -160,18 +203,29 @@ class TestOpenRouterHandlerPreprocess:
         assert "Analyze the request" not in result
         assert "The answer is 42." in result
 
-    def test_sets_data_speaker_name_from_model(self) -> None:
-        """Model name from metadata is folded into data-speaker-name."""
+    def test_sets_data_speaker_name_from_model_link(self) -> None:
+        """Model name extracted from link URL is set as data-speaker-name."""
         handler = OpenRouterHandler()
+        html = _assistant_msg_html("Response", model_slug="qwen/qwen3.5-35b-a3b")
+        from selectolax.lexbor import LexborHTMLParser
+
+        tree = LexborHTMLParser(html)
+        handler.preprocess(tree)
+
+        msgs = tree.css('[data-testid="assistant-message"]')
+        assert len(msgs) == 1
+        assert msgs[0].attributes.get("data-speaker-name") == "qwen3.5-35b-a3b"
+
+    def test_sets_data_speaker_name_with_trailing_slash(self) -> None:
+        """Model name extraction handles trailing slashes in URLs."""
+        handler = OpenRouterHandler()
+        # Build HTML with trailing slash on href
         html = """
         <div data-testid="assistant-message">
-          <div data-testid="chat-bubble-color-scope">
-            <div class="text-xs text-gray-500">
-                <span>5 seconds ago</span>
-                <span class="font-medium">Qwen3.5-35B-A3B</span>
-            </div>
-            <div class="prose"><p>Response</p></div>
-          </div>
+          <div class="text-muted-foreground">21 hours ago</div>
+          <div><a href="https://openrouter.ai/qwen/qwen3.5-35b-a3b/">model</a></div>
+          <div><div><p>Response</p></div></div>
+          <div></div>
         </div>
         """
         from selectolax.lexbor import LexborHTMLParser
@@ -181,7 +235,7 @@ class TestOpenRouterHandlerPreprocess:
 
         msgs = tree.css('[data-testid="assistant-message"]')
         assert len(msgs) == 1
-        assert msgs[0].attributes.get("data-speaker-name") == "Qwen3.5-35B-A3B"
+        assert msgs[0].attributes.get("data-speaker-name") == "qwen3.5-35b-a3b"
 
 
 class TestOpenRouterHandlerTurnMarkers:

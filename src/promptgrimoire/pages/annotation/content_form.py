@@ -312,37 +312,55 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             iDoc.querySelectorAll(
                                 '[data-testid="playground-composer"]'
                             ).forEach(el => el.remove());
-                            // Structural approach: in OpenRouter,
-                            // actual content lives in a .prose div
-                            // inside the chat bubble. Everything
-                            // else (metadata row, thinking) is a
-                            // sibling. Keep only .prose content.
+                            // OpenRouter assistant-message structure:
+                            //   child 0: timestamp (text-muted-foreground)
+                            //   child 1: model link (<a> to /model/name)
+                            //   child 2: content wrapper containing:
+                            //     - thinking div (has border+rounded)
+                            //     - response div (last child)
+                            //   child 3: actions (empty)
                             iDoc.querySelectorAll(
                                 '[data-testid="assistant-message"]'
                             ).forEach(msg => {{
-                                // Extract model name before removal
-                                const modelSpan = msg.querySelector(
-                                    '.font-medium');
-                                if (modelSpan) {{
-                                    msg.setAttribute(
-                                        'data-speaker-name',
-                                        modelSpan.textContent
-                                            .trim());
+                                // Extract model name from link URL
+                                const modelLink = msg.querySelector(
+                                    'a[href*="/openrouter.ai/"]');
+                                if (modelLink) {{
+                                    const href =
+                                        modelLink.getAttribute(
+                                            'href') || '';
+                                    const parts =
+                                        href.replace(/\\/+$/, '')
+                                            .split('/');
+                                    const name =
+                                        parts[parts.length - 1];
+                                    if (name) msg.setAttribute(
+                                        'data-speaker-name', name);
                                 }}
-                                // Find the prose (content) div
-                                const prose = msg.querySelector(
-                                    '.prose');
-                                if (!prose) return;
-                                const bubble = prose.parentElement;
-                                if (!bubble) return;
-                                // Remove all bubble children except
-                                // prose — strips metadata row,
-                                // thinking section, everything
-                                Array.from(bubble.children)
-                                    .forEach(child => {{
-                                    if (child !== prose)
-                                        child.remove();
+                                // Get direct children as array
+                                const kids = Array.from(
+                                    msg.querySelectorAll(':scope > *'));
+                                // Remove timestamp (child 0),
+                                // model link (child 1),
+                                // actions (child 3+)
+                                kids.forEach((child, i) => {{
+                                    if (i !== 2) child.remove();
                                 }});
+                                // Inside content wrapper (child 2),
+                                // keep only the LAST child (response)
+                                // and remove thinking (first child)
+                                const wrapper = msg.querySelector(
+                                    ':scope > *');
+                                if (wrapper) {{
+                                    const wKids = Array.from(
+                                        wrapper.querySelectorAll(
+                                            ':scope > *'));
+                                    if (wKids.length > 1) {{
+                                        // Keep only the last child
+                                        wKids.slice(0, -1).forEach(
+                                            c => c.remove());
+                                    }}
+                                }}
                             }});
                         }}
 

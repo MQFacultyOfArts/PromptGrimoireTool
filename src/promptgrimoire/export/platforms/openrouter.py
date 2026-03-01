@@ -12,10 +12,21 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from selectolax.lexbor import LexborHTMLParser
+    from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 # Platform detection pattern
 _DETECTION_PATTERN = re.compile(r'data-testid="playground-container"', re.IGNORECASE)
+
+
+def _element_children(node: LexborNode) -> list[LexborNode]:
+    """Collect direct element children, skipping text nodes."""
+    result: list[LexborNode] = []
+    child = node.child
+    while child:
+        if child.tag != "-text":
+            result.append(child)
+        child = child.next
+    return result
 
 
 class OpenRouterHandler:
@@ -34,15 +45,18 @@ class OpenRouterHandler:
     def preprocess(self, tree: LexborHTMLParser) -> None:
         """Remove chrome and metadata from OpenRouter HTML.
 
-        Removes:
-        - playground-composer element (the input/composer area)
-        - Metadata rows in assistant messages (timestamp, model name,
-          reasoning badge) — model name is folded into data-speaker-name
-        - Thinking/reasoning content blocks
+        OpenRouter assistant-message structure (as of 2026-03)::
 
-        Structural approach: actual content lives in a ``.prose`` div
-        inside the chat bubble.  Everything else (metadata row, thinking
-        section) is a sibling and gets removed.
+            [data-testid="assistant-message"]
+              ├── child 0: timestamp (text-muted-foreground)
+              ├── child 1: model link (<a href="/openrouter.ai/...">)
+              ├── child 2: content wrapper
+              │   ├── thinking div (border + rounded classes)
+              │   └── response div (last child)
+              └── child 3: actions (empty)
+
+        We extract the model name from the link URL, strip everything
+        except child 2's last child (the actual response).
 
         Args:
             tree: Parsed HTML tree to modify in-place.
@@ -51,24 +65,31 @@ class OpenRouterHandler:
             node.decompose()
 
         for msg in tree.css('[data-testid="assistant-message"]'):
-            # Extract model name before stripping
-            model_span = msg.css_first(".font-medium")
-            if model_span:
-                model_name = model_span.text(strip=True)
-                if model_name:
-                    msg.attrs["data-speaker-name"] = model_name
+            self._strip_assistant_chrome(msg)
 
-            # Find prose content div; strip all siblings
-            prose = msg.css_first(".prose")
-            if not prose or not prose.parent:
-                continue
-            bubble = prose.parent
-            child = bubble.child
-            while child:
-                next_sib = child.next
-                if child != prose and child.tag != "-text":
-                    child.decompose()
-                child = next_sib
+    def _strip_assistant_chrome(self, msg: LexborNode) -> None:
+        """Extract model name and strip metadata from one assistant message."""
+        # Extract model name from link URL
+        model_link = msg.css_first('a[href*="openrouter.ai"]')
+        if model_link:
+            href = model_link.attributes.get("href") or ""
+            name = href.rstrip("/").rsplit("/", 1)[-1]
+            if name:
+                msg.attrs["data-speaker-name"] = name
+
+        # Remove all direct children except child 2 (content wrapper)
+        children = _element_children(msg)
+        for i, ch in enumerate(children):
+            if i != 2:
+                ch.decompose()
+
+        # Inside content wrapper, keep only the last child
+        # (response), remove thinking (first child)
+        wrapper = next((c for c in _element_children(msg)), None)
+        if wrapper:
+            w_children = _element_children(wrapper)
+            for wch in w_children[:-1]:
+                wch.decompose()
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for OpenRouter turn boundaries.

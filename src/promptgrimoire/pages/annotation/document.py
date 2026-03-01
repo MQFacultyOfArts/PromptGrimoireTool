@@ -117,6 +117,34 @@ def _render_new_tag_button(on_add_click: Any) -> None:
     ).classes("text-sm").tooltip("Create a new tag and apply it to your selection")
 
 
+def _render_highlight_menu_tag_button(ti: Any, on_tag_click: Any) -> None:
+    """Render a single abbreviated tag button inside the floating highlight menu."""
+    abbrev = ti.name[:6]
+
+    async def _apply(tag_key: str = ti.raw_key) -> None:
+        await on_tag_click(tag_key)
+
+    btn = (
+        ui.button(abbrev, on_click=_apply)
+        .classes("text-xs compact-btn")
+        .props('data-testid="highlight-menu-tag-btn"')
+    )
+    btn.style(
+        f"background-color: {ti.colour} !important; "
+        "color: white !important; "
+        "padding: 1px 4px !important; "
+        "min-height: 20px !important;"
+    )
+    if ti.description:
+        with btn, ui.element("q-tooltip"):
+            ui.html(
+                f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
+                sanitize=False,
+            )
+    else:
+        btn.tooltip(ti.name)
+
+
 def _populate_highlight_menu(
     state: PageState, on_tag_click: Any, *, on_add_click: Any | None = None
 ) -> None:
@@ -145,30 +173,7 @@ def _populate_highlight_menu(
                 for members in groups.values():
                     with ui.row().classes("gap-1 items-center"):
                         for ti in members:
-                            abbrev = ti.name[:6]
-
-                            async def _apply(tag_key: str = ti.raw_key) -> None:
-                                await on_tag_click(tag_key)
-
-                            btn = (
-                                ui.button(abbrev, on_click=_apply)
-                                .classes("text-xs compact-btn")
-                                .props('data-testid="highlight-menu-tag-btn"')
-                            )
-                            btn.style(
-                                f"background-color: {ti.colour} !important; "
-                                "color: white !important; "
-                                "padding: 1px 4px !important; "
-                                "min-height: 20px !important;"
-                            )
-                            if ti.description:
-                                with btn, ui.element("q-tooltip"):
-                                    ui.html(
-                                        f"<b>{escape(ti.name)}</b><br>{escape(ti.description)}",
-                                        sanitize=False,
-                                    )
-                            else:
-                                btn.tooltip(ti.name)
+                            _render_highlight_menu_tag_button(ti, on_tag_click)
 
                 # Append "+ New" after all tag groups when permitted
                 if on_add_click is not None:

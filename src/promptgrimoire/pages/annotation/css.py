@@ -392,6 +392,37 @@ def _render_action_buttons(
         btn.tooltip(tooltip_text)
 
 
+def _render_tag_group(
+    group_name: str | None,
+    members: list[tuple[int, TagInfo]],
+    on_tag_click: Any,
+) -> None:
+    """Render a single tag group column in the toolbar.
+
+    Named groups get a visible label and optional background colour.
+    Ungrouped tags get a hidden spacer so button baselines align.
+    """
+    group_colour = members[0][1].group_colour if members else None
+    bg = _resolve_group_bg(group_name, group_colour)
+
+    col = ui.column().classes("tag-group-col")
+    if bg is not None:
+        col.style(f"background: {bg} !important;")
+    with col:
+        label_text = group_name or ""
+        label_cls = "text-[9px] leading-tight"
+        if group_name is not None:
+            label_cls += " text-gray-500"
+        else:
+            label_cls += " tag-group-spacer"
+        ui.label(label_text).classes(label_cls)
+
+        with ui.row().classes("gap-1"):
+            for idx, ti in members:
+                shortcut = str((idx + 1) % 10) if idx < 10 else ""
+                _render_tag_button(ti, shortcut, on_tag_click)
+
+
 def _build_tag_toolbar(
     tag_info_list: list[TagInfo],
     on_tag_click: Any,
@@ -450,27 +481,7 @@ def _build_tag_toolbar(
         .props('data-testid="tag-toolbar"'),
     ):
         for group_name, members in groups.items():
-            group_colour = members[0][1].group_colour if members else None
-            bg = _resolve_group_bg(group_name, group_colour)
-
-            col = ui.column().classes("tag-group-col")
-            if bg is not None:
-                col.style(f"background: {bg} !important;")
-            with col:
-                # Named groups get a visible label; ungrouped get a
-                # hidden spacer so button baselines align.
-                label_text = group_name or ""
-                label_cls = "text-[9px] leading-tight"
-                if group_name is not None:
-                    label_cls += " text-gray-500"
-                else:
-                    label_cls += " tag-group-spacer"
-                ui.label(label_text).classes(label_cls)
-
-                with ui.row().classes("gap-1"):
-                    for idx, ti in members:
-                        shortcut = str((idx + 1) % 10) if idx < 10 else ""
-                        _render_tag_button(ti, shortcut, on_tag_click)
+            _render_tag_group(group_name, members, on_tag_click)
 
         # Action buttons (+ and gear) aligned with tag button baseline
         if on_add_click is not None or on_manage_click is not None:

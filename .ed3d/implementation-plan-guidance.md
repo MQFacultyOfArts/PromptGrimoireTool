@@ -1,6 +1,6 @@
 # Implementation Plan Guidance for PromptGrimoire
 
-**Last updated:** 2026-02-07
+**Last updated:** 2026-03-02
 
 ## UAT is Critical
 
@@ -116,9 +116,13 @@ Commits trigger:
 1. `ruff check` - lint (with autofix)
 2. `ruff format --check` - format
 3. `ty check` - type check
-4. `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
+4. `complexipy` - cognitive complexity gate (rejects functions > 15)
+5. `bandit` - security linting
+6. `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
 
 **If pre-commit fails:** Fix the issue, stage the fix, create a NEW commit (don't amend).
+
+**If complexipy fails:** The function is too complex. Extract helper functions, use early returns, reduce nesting. Do NOT add `# noqa: complexipy` — discuss with Brian first.
 
 ### Claude Code Hooks (on `.py` file write)
 
@@ -128,6 +132,55 @@ Every time a `.py` file is written, hooks automatically run:
 3. `ty check` - type checking
 
 All three must pass before code is considered complete.
+
+## Complexity and Refactoring
+
+### Mechanical Enforcement
+
+Two tools enforce complexity and dead code limits. These are not suggestions — complexipy is a pre-commit hook that **blocks commits**.
+
+**complexipy** — cognitive complexity analyser (Sonar-style). Pre-commit hook rejects any function with complexity > 15.
+
+```bash
+# Check the whole codebase
+uv run complexipy src/promptgrimoire/ --max-complexity-allowed 15
+
+# Check a single file
+uv run complexipy src/promptgrimoire/pages/courses.py
+
+# JSON output for CI
+uv run complexipy src/promptgrimoire/ --output-json
+```
+
+**vulture** — dead code finder. Manual/CI diagnostic (not pre-commit because it must scan the entire codebase).
+
+```bash
+# Find dead code (≥80% confidence)
+uv run vulture src/promptgrimoire/ --min-confidence 80
+```
+
+### When to Refactor
+
+These thresholds are enforced by tooling. You cannot commit code that violates them.
+
+| Metric | Threshold | Enforced by | Action |
+|--------|-----------|-------------|--------|
+| Cognitive complexity | > 15 | complexipy pre-commit hook | Extract helper functions, reduce nesting |
+| Function length | > 40 lines | Code review | Split into focused functions |
+| File length | > 400 lines | Code review | Extract module |
+| Nesting depth | > 3 levels | complexipy (indirectly) | Early returns, extract conditions |
+
+### How to Reduce Complexity
+
+When complexipy blocks a commit:
+
+1. **Extract conditionals** — Move complex `if/elif` chains into named predicate functions
+2. **Early returns** — Invert conditions and return early to reduce nesting
+3. **Extract loops** — Move loop bodies into named functions
+4. **Split UI builders** — NiceGUI page functions naturally grow; extract widget-building functions with clear data-in/UI-out signatures
+5. **Never suppress** — Do not add `# noqa: complexipy` without discussing with Brian first
+
+Pre-existing violations are refactoring targets, not permission to add more. New code must pass the threshold. Run `uv run complexipy src/promptgrimoire/ --max-complexity-allowed 15` to see current violations.
 
 ## Coding Standards
 

@@ -89,7 +89,7 @@ class TestEmptyTagFloatingMenu:
 
                 # Verify "No tags available" is NOT present
                 menu = page.get_by_test_id("highlight-menu")
-                expect(menu.get_by_text("No tags available")).not_to_be_visible()
+                expect(menu.get_by_text("No tags available")).not_to_be_attached()
 
             with subtests.test(msg="ac3_1_tooltip_on_new_button"):
                 # AC3.1: Verify tooltip text on the "+ New" button

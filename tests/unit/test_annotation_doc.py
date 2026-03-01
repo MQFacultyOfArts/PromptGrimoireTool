@@ -143,6 +143,84 @@ class TestHighlightUserId:
         assert highlight["user_id"] is None
 
 
+class TestUpdateHighlightParaRef:
+    """Tests for update_highlight_para_ref CRDT operation (AC5.3)."""
+
+    def test_update_highlight_para_ref_changes_value(self) -> None:
+        """update_highlight_para_ref should change the para_ref field."""
+        doc = AnnotationDocument("test-doc")
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="jurisdiction",
+            text="test text",
+            author="TestAuthor",
+            para_ref="[3]",
+        )
+
+        result = doc.update_highlight_para_ref(highlight_id, "[3a]")
+
+        assert result is True
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["para_ref"] == "[3a]"
+
+    def test_update_highlight_para_ref_preserves_other_fields(self) -> None:
+        """update_highlight_para_ref should not modify other highlight fields."""
+        doc = AnnotationDocument("test-doc")
+        highlight_id = doc.add_highlight(
+            start_char=10,
+            end_char=20,
+            tag="facts",
+            text="important text",
+            author="Author1",
+            para_ref="[3]",
+            user_id="user-abc",
+        )
+
+        doc.update_highlight_para_ref(highlight_id, "[5]")
+
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["start_char"] == 10
+        assert highlight["end_char"] == 20
+        assert highlight["tag"] == "facts"
+        assert highlight["text"] == "important text"
+        assert highlight["author"] == "Author1"
+        assert highlight["user_id"] == "user-abc"
+        assert highlight["para_ref"] == "[5]"
+
+    def test_update_highlight_para_ref_nonexistent_returns_false(self) -> None:
+        """update_highlight_para_ref on non-existent highlight returns False."""
+        doc = AnnotationDocument("test-doc")
+
+        result = doc.update_highlight_para_ref("nonexistent-id", "[1]")
+
+        assert result is False
+
+    def test_update_highlight_para_ref_with_origin_client(self) -> None:
+        """update_highlight_para_ref should accept origin_client_id."""
+        doc = AnnotationDocument("test-doc")
+        doc.register_client("client-1", "User1")
+        highlight_id = doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="tag",
+            text="text",
+            author="Author",
+            para_ref="[1]",
+        )
+
+        result = doc.update_highlight_para_ref(
+            highlight_id, "[2]", origin_client_id="client-1"
+        )
+
+        assert result is True
+        highlight = doc.get_highlight(highlight_id)
+        assert highlight is not None
+        assert highlight["para_ref"] == "[2]"
+
+
 class TestCommentUserId:
     """Tests for user_id field on comments (AC3.3)."""
 

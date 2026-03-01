@@ -23,6 +23,8 @@ async def add_document(
     content: str,
     source_type: str,
     title: str | None = None,
+    auto_number_paragraphs: bool = True,
+    paragraph_map: dict[str, int] | None = None,
 ) -> WorkspaceDocument:
     """Add a document to a workspace.
 
@@ -34,6 +36,10 @@ async def add_document(
         content: HTML content with character-level spans.
         source_type: Content type - "html", "rtf", "docx", "pdf", or "text".
         title: Optional document title.
+        auto_number_paragraphs: True for auto-number mode (default),
+            False for source-number mode (AustLII documents).
+        paragraph_map: Char-offset to paragraph-number mapping.
+            Defaults to ``{}`` if not provided.
 
     Returns:
         The created WorkspaceDocument.
@@ -55,6 +61,8 @@ async def add_document(
             source_type=source_type,
             title=title,
             order_index=next_index,
+            auto_number_paragraphs=auto_number_paragraphs,
+            paragraph_map=paragraph_map if paragraph_map is not None else {},
         )
         session.add(doc)
         await session.flush()
@@ -110,6 +118,31 @@ async def workspaces_with_documents(workspace_ids: set[UUID]) -> set[UUID]:
             .distinct()
         )
         return set(result.all())
+
+
+async def update_document_paragraph_settings(
+    document_id: UUID,
+    auto_number_paragraphs: bool,
+    paragraph_map: dict[str, int],
+) -> None:
+    """Update paragraph numbering settings on a WorkspaceDocument.
+
+    Args:
+        document_id: The document UUID.
+        auto_number_paragraphs: True for auto-number mode, False for source-number.
+        paragraph_map: New char-offset to paragraph-number mapping.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        doc = result.first()
+        if doc is None:
+            msg = f"WorkspaceDocument {document_id} not found"
+            raise ValueError(msg)
+        doc.auto_number_paragraphs = auto_number_paragraphs
+        doc.paragraph_map = paragraph_map
+        session.add(doc)
 
 
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:

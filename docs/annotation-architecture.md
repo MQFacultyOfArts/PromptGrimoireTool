@@ -2,7 +2,7 @@
 
 *Last updated: 2026-03-01*
 
-The annotation page (`pages/annotation/`) is a 17-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 20-module package split from a monolith.
 
 ## Layout
 
@@ -49,6 +49,6 @@ Do not reorder. Types must be defined before submodule imports to resolve circul
 
 ## Guard Tests
 
-- `test_annotation_package_structure.py` -- Prevents regression: package directory exists, monolith `.py` file absent, all 17 modules present, no satellite files at `pages/` level, no imports from old paths
+- `test_annotation_package_structure.py` -- Prevents regression: package directory exists, monolith `.py` file absent, all 20 modules present, no satellite files at `pages/` level, no imports from old paths
 - `test_annotation_js_extraction.py` -- Prevents re-introduction of JS string constants: static JS files exist with expected functions, `_COPY_PROTECTION_JS` constant absent from Python source
 - `test_css_audit.py` -- Quasar regression guard: asserts computed CSS properties on toolbar, buttons, highlight menu, and sidebar; verifies toolbar is at viewport bottom and content is not obscured

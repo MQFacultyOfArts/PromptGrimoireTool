@@ -7,12 +7,18 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.db.workspace_documents import update_document_paragraph_settings
 from promptgrimoire.db.workspaces import get_placement_context
+from promptgrimoire.input_pipeline.paragraph_map import (
+    build_paragraph_map_for_json,
+    inject_paragraph_attributes,
+)
 from promptgrimoire.pages.annotation.broadcast import _update_user_count
 
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
 
@@ -76,6 +82,61 @@ def inject_copy_protection() -> None:
     ui.html(_COPY_PROTECTION_PRINT_MESSAGE, sanitize=False)
 
 
+def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> None:
+    """Render the auto-number paragraph toggle in the workspace header.
+
+    The toggle rebuilds the paragraph map and re-renders the document
+    HTML with updated ``data-para`` attributes.  Existing highlight
+    ``para_ref`` values are NOT modified (AC7.3).
+
+    Only shown to users with upload permission (editors/owners).
+
+    Args:
+        state: Page state with document container and content references.
+        document: The WorkspaceDocument for initial toggle value and ID.
+    """
+
+    async def _handle_paragraph_toggle(new_value: bool) -> None:
+        """Handle paragraph numbering toggle change."""
+        if not state.document_content:
+            return
+
+        # Rebuild the paragraph map with the new mode
+        new_map = build_paragraph_map_for_json(
+            state.document_content, auto_number=new_value
+        )
+
+        # Persist to database
+        try:
+            await update_document_paragraph_settings(document.id, new_value, new_map)
+        except Exception:
+            logger.exception(
+                "Failed to update paragraph settings for doc %s", document.id
+            )
+            ui.notify("Failed to update paragraph settings", type="negative")
+            return
+
+        # Update in-memory state
+        state.paragraph_map = new_map
+        state.auto_number_paragraphs = new_value
+
+        # Re-render the document HTML with new paragraph attributes
+        if state.doc_container is not None:
+            rendered_html = inject_paragraph_attributes(state.document_content, new_map)
+            state.doc_container.clear()
+            with state.doc_container:
+                ui.html(rendered_html, sanitize=False)
+
+        mode_label = "auto-number" if new_value else "source-number"
+        ui.notify(f"Paragraph numbering: {mode_label}", type="info")
+
+    ui.switch(
+        "Auto-number \u00b6",
+        value=document.auto_number_paragraphs,
+        on_change=lambda e: _handle_paragraph_toggle(e.value),
+    ).props('data-testid="paragraph-toggle"')
+
+
 async def render_workspace_header(
     state: PageState,
     workspace_id: UUID,
@@ -85,6 +146,7 @@ async def render_workspace_header(
     shared_with_class: bool = False,
     can_manage_sharing: bool = False,
     user_id: UUID | None = None,
+    document: WorkspaceDocument | None = None,
 ) -> None:
     """Render the header row with save status, user count, and export button.
 
@@ -96,6 +158,7 @@ async def render_workspace_header(
         shared_with_class: Current workspace shared_with_class state.
         can_manage_sharing: Whether the user can toggle sharing (owner or privileged).
         user_id: The local User UUID for the current session, or None.
+        document: First WorkspaceDocument, used for paragraph numbering toggle.
     """
     logger.debug("[HEADER] START workspace=%s", workspace_id)
     with ui.row().classes("gap-4 items-center"):
@@ -180,6 +243,10 @@ async def render_workspace_header(
             ).props(
                 'dense aria-label="Copy protection is enabled for this activity"'
             ).tooltip("Copy protection is enabled for this activity")
+
+        # Paragraph numbering toggle (Phase 7)
+        if document is not None and state.can_upload:
+            _render_paragraph_toggle(state, document)
 
         # Sharing controls (Phase 5)
         render_sharing_controls(

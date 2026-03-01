@@ -211,6 +211,14 @@ class PageState:
     broadcast_selection: Any | None = None  # Callable to broadcast selection
     # Document content for text extraction
     document_chars: list[str] | None = None  # Characters by index
+    # Paragraph map for computing para_ref on highlights
+    paragraph_map: dict[str, int] = field(default_factory=dict)
+    # Document container element for re-rendering (paragraph toggle)
+    doc_container: ui.element | None = None
+    # Raw document HTML content for paragraph map rebuild
+    document_content: str = ""
+    # Current auto-number mode for paragraph toggle
+    auto_number_paragraphs: bool = True
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
     # Tab container references (Phase 1: three-tab UI)

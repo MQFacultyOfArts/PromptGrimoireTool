@@ -476,6 +476,117 @@ class TestEdgeCases:
         assert r"\annot{tag-jurisdiction}" in annots_raw
         assert "[5]" in annots_raw
 
+
+# ---------------------------------------------------------------------------
+# AC6: PDF export paragraph references in margin notes
+# ---------------------------------------------------------------------------
+
+
+class TestAC6_ParaRefInMarginNotes:
+    """Verify compute_highlight_spans produces correct [N] paragraph
+    references when word_to_legal_para is provided."""
+
+    def test_auto_numbered_sequential_map(self) -> None:
+        """Auto-numbered document: sequential paragraph numbers 1,2,3.
+
+        AC6.2: auto-numbered documents produce correct PDF output.
+        """
+        # Two paragraphs: "First para" (chars 0-10), "Second para" (chars 10-21)
+        html = "<p>First para</p><p>Second para</p>"
+        chars = extract_text_from_html(html)
+        assert len(chars) == 21
+
+        # Auto-numbered: para 1 starts at char 0, para 2 at char 10
+        word_to_legal_para: dict[int, int | None] = {0: 1, 10: 2}
+
+        # Highlight in first paragraph (chars 0-5: "First")
+        hl1 = _make_hl(0, 5, tag="jurisdiction", author="Alice")
+        result = compute_highlight_spans(
+            html, [hl1], {"jurisdiction": "#3366cc"}, word_to_legal_para
+        )
+        annot_spans = [s for s in _find_spans(result) if "data-annots" in s]
+        assert len(annot_spans) == 1
+        assert "[1]" in annot_spans[0]["data-annots"]
+
+        # Highlight in second paragraph (chars 10-16: "Second")
+        hl2 = _make_hl(10, 16, tag="evidence", author="Bob")
+        result2 = compute_highlight_spans(
+            html, [hl2], {"evidence": "#ff6600"}, word_to_legal_para
+        )
+        annot_spans2 = [s for s in _find_spans(result2) if "data-annots" in s]
+        assert len(annot_spans2) == 1
+        assert "[2]" in annot_spans2[0]["data-annots"]
+
+    def test_source_numbered_gapped_map(self) -> None:
+        """Source-numbered document: non-sequential numbers with gaps (e.g. 1,2,5,6).
+
+        AC6.2: source-numbered documents produce correct PDF output.
+        """
+        html = "<p>Para one</p><p>Para two</p><p>Para five</p><p>Para six</p>"
+        chars = extract_text_from_html(html)
+        assert len(chars) == 33
+
+        # Source-numbered with gaps: para numbers 1, 2, 5, 6
+        word_to_legal_para: dict[int, int | None] = {0: 1, 8: 2, 16: 5, 25: 6}
+
+        # Highlight in third paragraph (chars 16-20: "Para")
+        hl = _make_hl(16, 20, tag="jurisdiction", author="Alice")
+        result = compute_highlight_spans(
+            html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para
+        )
+        annot_spans = [s for s in _find_spans(result) if "data-annots" in s]
+        assert len(annot_spans) == 1
+        assert "[5]" in annot_spans[0]["data-annots"]
+
+        # Highlight in fourth paragraph (chars 25-29: "Para")
+        hl2 = _make_hl(25, 29, tag="evidence", author="Bob")
+        result2 = compute_highlight_spans(
+            html, [hl2], {"evidence": "#ff6600"}, word_to_legal_para
+        )
+        annot_spans2 = [s for s in _find_spans(result2) if "data-annots" in s]
+        assert len(annot_spans2) == 1
+        assert "[6]" in annot_spans2[0]["data-annots"]
+
+    def test_none_map_no_para_ref(self) -> None:
+        """word_to_legal_para=None produces no paragraph reference.
+
+        Preserves existing behavior for documents without paragraph numbering.
+        """
+        html = "<p>some text here</p>"
+        hl = _make_hl(0, 9, tag="jurisdiction", author="Alice")
+        result = compute_highlight_spans(
+            html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para=None
+        )
+        annot_spans = [s for s in _find_spans(result) if "data-annots" in s]
+        assert len(annot_spans) == 1
+        annots_raw = annot_spans[0]["data-annots"]
+        # Should NOT contain any [N] paragraph reference
+        assert "[" not in annots_raw or r"\textbf{" in annots_raw.split("[")[0]
+        # More precise: no bracket-number pattern
+        import re
+
+        assert not re.search(r"\[\d+\]", annots_raw)
+
+    def test_highlight_on_unnumbered_offset(self) -> None:
+        """Highlight starting at an offset not in the map produces no para_ref.
+
+        When the highlight's start_char is not a key in word_to_legal_para,
+        no [N] reference should appear.
+        """
+        html = "<p>some text here</p>"
+        # Map only has offset 0; highlight starts at offset 5 (not in map)
+        word_to_legal_para: dict[int, int | None] = {0: 1}
+        hl = _make_hl(5, 9, tag="jurisdiction", author="Alice")
+        result = compute_highlight_spans(
+            html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para
+        )
+        annot_spans = [s for s in _find_spans(result) if "data-annots" in s]
+        assert len(annot_spans) == 1
+        annots_raw = annot_spans[0]["data-annots"]
+        import re
+
+        assert not re.search(r"\[\d+\]", annots_raw)
+
     def test_pandoc_block_elements_constant(self) -> None:
         """PANDOC_BLOCK_ELEMENTS contains all required elements."""
         required = {

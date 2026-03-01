@@ -308,6 +308,33 @@ class AnnotationDocument:
         finally:
             _origin_var.reset(token)
 
+    def update_highlight_para_ref(
+        self,
+        highlight_id: str,
+        new_para_ref: str,
+        origin_client_id: str | None = None,
+    ) -> bool:
+        """Update a highlight's para_ref field.
+
+        Args:
+            highlight_id: ID of the highlight to update.
+            new_para_ref: New paragraph reference value.
+            origin_client_id: Client making the change (for echo prevention).
+
+        Returns:
+            True if highlight was found and updated.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            if highlight_id in self.highlights:
+                hl_data = dict(self.highlights[highlight_id])
+                hl_data["para_ref"] = new_para_ref
+                self.highlights[highlight_id] = hl_data
+                return True
+            return False
+        finally:
+            _origin_var.reset(token)
+
     def get_highlight(self, highlight_id: str) -> dict[str, Any] | None:
         """Get a highlight by ID.
 

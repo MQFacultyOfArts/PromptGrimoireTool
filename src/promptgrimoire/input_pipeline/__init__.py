@@ -8,12 +8,22 @@ from promptgrimoire.input_pipeline.html_input import (
     insert_markers_into_dom,
     process_input,
 )
+from promptgrimoire.input_pipeline.paragraph_map import (
+    build_paragraph_map,
+    detect_source_numbering,
+    inject_paragraph_attributes,
+    lookup_para_ref,
+)
 
 __all__ = [
     "CONTENT_TYPES",
     "ContentType",
+    "build_paragraph_map",
     "detect_content_type",
+    "detect_source_numbering",
     "extract_text_from_html",
+    "inject_paragraph_attributes",
     "insert_markers_into_dom",
+    "lookup_para_ref",
     "process_input",
 ]

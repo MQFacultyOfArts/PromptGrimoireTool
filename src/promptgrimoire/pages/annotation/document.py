@@ -12,6 +12,7 @@ from typing import Any
 from nicegui import ui
 
 from promptgrimoire.input_pipeline.html_input import extract_text_from_html
+from promptgrimoire.input_pipeline.paragraph_map import inject_paragraph_attributes
 from promptgrimoire.pages.annotation import PageState, _RawJS, _render_js
 from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 from promptgrimoire.pages.annotation.css import (
@@ -225,6 +226,11 @@ async def _render_document_with_highlights(
     # (char spans are injected client-side, not stored in DB)
     if doc.content:
         state.document_chars = extract_text_from_html(doc.content)
+        # paragraph_map is only meaningful when content is present
+        state.paragraph_map = doc.paragraph_map
+        # Store raw content and auto-number mode for paragraph toggle re-render
+        state.document_content = doc.content
+        state.auto_number_paragraphs = getattr(doc, "auto_number_paragraphs", True)
 
     # Static ::highlight() CSS for all tags -- actual highlight ranges are
     # registered in CSS.highlights by JS applyHighlights()
@@ -280,8 +286,13 @@ async def _render_document_with_highlights(
             .style("flex: 2; min-width: 600px; max-width: 900px;")
             .props('id="doc-container"')
         )
+        state.doc_container = doc_container
         with doc_container:
-            ui.html(doc.content, sanitize=False)
+            # Inject data-para attributes for paragraph number margin display.
+            # paragraph_map comes from WorkspaceDocument; empty map is a no-op.
+            para_map = getattr(doc, "paragraph_map", None) or {}
+            rendered_html = inject_paragraph_attributes(doc.content, para_map)
+            ui.html(rendered_html, sanitize=False)
 
         # Load annotation-highlight.js for CSS Custom Highlight API support.
         # This script provides walkTextNodes(), applyHighlights(),

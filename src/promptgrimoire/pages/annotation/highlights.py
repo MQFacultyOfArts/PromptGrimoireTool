@@ -13,6 +13,7 @@ from typing import Any
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
+from promptgrimoire.input_pipeline.paragraph_map import lookup_para_ref
 from promptgrimoire.pages.annotation import (
     PageState,
     _RawJS,
@@ -227,12 +228,16 @@ async def _add_highlight(state: PageState, tag: str) -> None:
             chars_slice = state.document_chars[start:end]
             highlighted_text = "".join(chars_slice)
 
+        # Compute paragraph reference from the document's paragraph map
+        para_ref = lookup_para_ref(state.paragraph_map, start, end)
+
         state.crdt_doc.add_highlight(
             start_char=start,
             end_char=end,
             tag=tag,
             text=highlighted_text,
             author=state.user_name,
+            para_ref=para_ref,
             document_id=str(state.document_id),
             user_id=state.user_id,
         )

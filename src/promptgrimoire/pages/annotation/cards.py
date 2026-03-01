@@ -194,6 +194,80 @@ def _build_comments_section(
         ).classes("mt-1")
 
 
+def _build_para_ref_editor(
+    state: PageState,
+    highlight_id: str,
+    para_ref: str,
+) -> None:
+    """Build a click-to-edit para_ref display.
+
+    Default state shows a static label. Clicking switches to an inline
+    input. On blur or Enter the new value is saved to CRDT, persisted,
+    and the display swaps back to the label.
+
+    Args:
+        state: Page state with CRDT and persistence info.
+        highlight_id: ID of the highlight to update.
+        para_ref: Current paragraph reference string.
+    """
+    # Mutable container so finish_edit always falls back to the most recently
+    # saved value, not the stale value captured at construction time.
+    # If the user edits [3] → [3a] (saved), then opens again and clears the
+    # field, we must restore [3a], not [3].
+    current: list[str] = [para_ref]
+
+    # Container holds label and input; only one visible at a time
+    label = (
+        ui.label(para_ref)
+        .classes("text-xs font-mono text-gray-400 cursor-pointer")
+        .props('data-testid="para-ref-label"')
+    )
+    inp = (
+        ui.input(value=para_ref)
+        .props('dense data-testid="para-ref-input"')
+        .classes("text-xs font-mono")
+        .style("max-width: 80px;")
+    )
+    inp.set_visibility(False)
+
+    def start_edit(
+        lbl: ui.label = label,
+        field: ui.input = inp,
+    ) -> None:
+        lbl.set_visibility(False)
+        field.set_visibility(True)
+
+    async def finish_edit(
+        lbl: ui.label = label,
+        field: ui.input = inp,
+        hid: str = highlight_id,
+    ) -> None:
+        new_value = (field.value or "").strip()
+        lbl.text = new_value if new_value else current[0]
+        lbl.set_visibility(True)
+        field.set_visibility(False)
+
+        # Only persist if value actually changed
+        if new_value and new_value != current[0] and state.crdt_doc is not None:
+            state.crdt_doc.update_highlight_para_ref(hid, new_value)
+            current[0] = new_value  # Track latest saved value for future edits
+            pm = get_persistence_manager()
+            pm.mark_dirty_workspace(
+                state.workspace_id,
+                state.crdt_doc.doc_id,
+                last_editor=state.user_name,
+            )
+            await pm.force_persist_workspace(state.workspace_id)
+            if state.save_status:
+                state.save_status.text = "Saved"
+            if state.broadcast_update:
+                await state.broadcast_update()
+
+    label.on("click", start_edit)
+    inp.on("blur", finish_edit)
+    inp.on("keydown.enter", finish_edit)
+
+
 def _build_card_header(
     state: PageState,
     highlight_id: str,
@@ -355,7 +429,7 @@ def _build_annotation_card(
         with ui.row().classes("gap-2 items-center"):
             ui.label(f"by {display_author}").classes("text-xs text-gray-500")
             if para_ref:
-                ui.label(para_ref).classes("text-xs font-mono text-gray-400")
+                _build_para_ref_editor(state, highlight_id, para_ref)
 
         # Highlighted text preview - expandable if long
         if full_text:

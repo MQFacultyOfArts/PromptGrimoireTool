@@ -35,11 +35,38 @@ _PAGE_CSS = """
         font-size: 12pt;
         line-height: 1.6 !important;
         padding: 1rem;
+        padding-left: 3.5rem;  /* Extra space for paragraph numbers */
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         /* Allow horizontal scroll for wide content (tables) */
         overflow-x: auto;
+    }
+
+    /* Paragraph numbers in left margin (data-para attribute) */
+    .doc-container [data-para] {
+        position: relative;
+    }
+    .doc-container [data-para]::before {
+        content: attr(data-para);
+        position: absolute;
+        left: -3rem;
+        width: 2.5rem;
+        text-align: right;
+        font-family: "Fira Code", "Consolas", monospace;
+        font-size: 0.75rem;
+        color: #999;
+        line-height: inherit;
+        user-select: none;
+        pointer-events: none;
+    }
+
+    /* In ordered lists the native list marker already shows the number.
+       Suppress the grey data-para margin number to avoid overlap.
+       Covers both direct <li data-para> and wrapper <li> > <div data-para>. */
+    .doc-container ol > li[data-para]::before,
+    .doc-container ol > li > [data-para]::before {
+        content: none;
     }
 
     /* Tables: proper table layout, container handles overflow */
@@ -135,26 +162,47 @@ _PAGE_CSS = """
     }
     .doc-container [data-speaker="user"]::before {
         content: "User:";
-        display: inline-block;
+        display: block;
+        width: fit-content;
         color: #1a5f7a;
         background: #e3f2fd;
         padding: 2px 8px;
         border-radius: 3px;
         font-weight: bold;
-        margin-bottom: 0.3em;
+        margin-bottom: 0.5em;
+        /* Reset [data-para]::before positioning when both attributes
+           are on the same element (speaker divs with bare text). */
+        position: static;
+        left: auto;
+        text-align: left;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        user-select: auto;
+        pointer-events: auto;
     }
     .doc-container [data-speaker="user"][data-speaker-name]::before {
         content: attr(data-speaker-name) ":";
     }
     .doc-container [data-speaker="assistant"]::before {
         content: "Assistant:";
-        display: inline-block;
+        display: block;
+        width: fit-content;
         color: #2e7d32;
         background: #e8f5e9;
         padding: 2px 8px;
         border-radius: 3px;
         font-weight: bold;
-        margin-bottom: 0.3em;
+        margin-bottom: 0.5em;
+        /* Reset [data-para]::before positioning (same as user). */
+        position: static;
+        left: auto;
+        text-align: left;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        user-select: auto;
+        pointer-events: auto;
     }
     .doc-container [data-speaker="assistant"][data-speaker-name]::before {
         content: attr(data-speaker-name) ":";

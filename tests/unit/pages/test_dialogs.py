@@ -39,3 +39,14 @@ class TestContentTypeDialog:
 
         assert "detected_type" in params
         assert "preview" in params
+        assert "source_numbering_detected" in params
+
+    def test_source_numbering_detected_defaults_false(self) -> None:
+        """source_numbering_detected parameter defaults to False."""
+        import inspect
+
+        from promptgrimoire.pages.dialogs import show_content_type_dialog
+
+        sig = inspect.signature(show_content_type_dialog)
+        param = sig.parameters["source_numbering_detected"]
+        assert param.default is False

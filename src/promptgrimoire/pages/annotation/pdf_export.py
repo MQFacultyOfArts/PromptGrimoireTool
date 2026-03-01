@@ -150,6 +150,12 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         if response_markdown and response_markdown.strip():
             notes_latex = await markdown_to_latex_notes(response_markdown)
 
+        # Convert string keys (from JSON) to int keys (expected by export pipeline)
+        doc_para_map = doc.paragraph_map
+        legal_para_map: dict[int, int | None] | None = (
+            {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
+        )
+
         # Generate PDF
         pdf_path = await export_annotation_pdf(
             html_content=html_content,
@@ -157,7 +163,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             tag_colours=state.tag_colours(),
             general_notes="",
             notes_latex=notes_latex,
-            word_to_legal_para=None,
+            word_to_legal_para=legal_para_map,
             filename=f"workspace_{workspace_id}",
         )
 

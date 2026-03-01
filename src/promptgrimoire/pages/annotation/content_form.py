@@ -18,6 +18,10 @@ from promptgrimoire.input_pipeline.html_input import (
     detect_content_type,
     process_input,
 )
+from promptgrimoire.input_pipeline.paragraph_map import (
+    build_paragraph_map_for_json,
+    detect_source_numbering,
+)
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 if TYPE_CHECKING:
@@ -59,6 +63,104 @@ def _get_file_preview(
         return f"[Binary file: {filename}]"
 
 
+def _detect_paragraph_numbering(
+    processed_html: str,
+) -> tuple[bool, dict[str, int]]:
+    """Detect paragraph numbering mode and build the paragraph map.
+
+    Returns:
+        Tuple of (auto_number_paragraphs, paragraph_map) ready for
+        persistence (map keys converted to strings for JSON storage).
+    """
+    auto_number = not detect_source_numbering(processed_html)
+    para_map = build_paragraph_map_for_json(processed_html, auto_number=auto_number)
+    return auto_number, para_map
+
+
+def _detect_source_numbering_from_bytes(
+    content_bytes: bytes,
+    detected_type: ContentType,
+) -> bool:
+    """Try to detect source paragraph numbering from raw upload bytes.
+
+    Only meaningful for HTML/text uploads where the bytes can be decoded
+    and inspected.  Binary formats (DOCX, PDF, RTF) return ``False``.
+    """
+    if detected_type not in ("html", "text"):
+        return False
+    try:
+        text = content_bytes.decode("utf-8")
+    except UnicodeDecodeError, ValueError:
+        return False
+    return detect_source_numbering(text)
+
+
+def _annotation_url(workspace_id: UUID) -> str:
+    """Build the annotation page URL for a workspace."""
+    return f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
+
+
+async def _handle_file_upload(
+    workspace_id: UUID,
+    upload_event: events.UploadEventArguments,
+) -> None:
+    """Handle file upload through HTML pipeline.
+
+    Extracted from ``_render_add_content_form`` to reduce function complexity.
+    """
+    # Access file via .file attribute (FileUpload dataclass)
+    # ty cannot resolve this type due to TYPE_CHECKING import in nicegui
+    filename: str = upload_event.file.name  # pyright: ignore[reportAttributeAccessIssue]
+    content_bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+
+    # Detect type from extension, fall back to content detection
+    detected_type = _detect_type_from_extension(filename)
+    if detected_type is None:
+        detected_type = detect_content_type(content_bytes)
+
+    preview = _get_file_preview(content_bytes, detected_type, filename)
+
+    # Detect source numbering on HTML uploads (binary formats
+    # like DOCX/PDF will return False — safe default).
+    source_numbered = _detect_source_numbering_from_bytes(content_bytes, detected_type)
+
+    dialog_result = await show_content_type_dialog(
+        detected_type=detected_type,
+        preview=preview,
+        source_numbering_detected=source_numbered,
+    )
+
+    if dialog_result is None:
+        ui.notify("Upload cancelled", type="info")
+        return
+
+    confirmed_type, auto_number = dialog_result
+
+    try:
+        processed_html = await process_input(
+            content=content_bytes,
+            source_type=confirmed_type,
+            platform_hint=None,
+        )
+        para_map = build_paragraph_map_for_json(processed_html, auto_number=auto_number)
+        await add_document(
+            workspace_id=workspace_id,
+            type="source",
+            content=processed_html,
+            source_type=confirmed_type,
+            title=filename,
+            auto_number_paragraphs=auto_number,
+            paragraph_map=para_map,
+        )
+        ui.notify(f"Uploaded: {filename}", type="positive")
+        ui.navigate.to(_annotation_url(workspace_id))
+    except NotImplementedError as not_impl_err:
+        ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
+    except Exception as exc:
+        logger.exception("Failed to process uploaded file")
+        ui.notify(f"Failed to process file: {exc}", type="negative")
+
+
 def _render_add_content_form(workspace_id: UUID) -> None:
     """Render the add content form with editor and file upload.
 
@@ -75,8 +177,10 @@ def _render_add_content_form(workspace_id: UUID) -> None:
 
     # Intercept paste, strip CSS client-side, store cleaned HTML.
     # Browsers include computed CSS (2.7MB for 32KB text). Strip it here.
-    paste_var = f"_pastedHtml_{content_input.id}"
-    platform_var = f"_platformHint_{content_input.id}"
+    paste_var, platform_var = (
+        f"_pastedHtml_{content_input.id}",
+        f"_platformHint_{content_input.id}",
+    )
     ui.add_body_html(f"""
     <script>
         window.{paste_var} = null;
@@ -783,25 +887,27 @@ def _render_add_content_form(workspace_id: UUID) -> None:
         # Try to get pasted content from JS storage (bypasses websocket limit)
         stored = await ui.run_javascript(f"window.{paste_var}")
         platform_hint = await ui.run_javascript(f"window.{platform_var}")
-        content = stored if stored else content_input.value
-        from_paste = bool(stored)
+        content, from_paste = (stored, True) if stored else (content_input.value, False)
 
         if not content or not content.strip():
             ui.notify("Please enter or paste some content", type="warning")
             return
 
-        # Skip dialog if HTML was captured from paste - we know it's HTML
-        confirmed_type: ContentType | None = (
-            "html"
-            if from_paste
-            else (
-                await show_content_type_dialog(
-                    detect_content_type(content), content[:500]
-                )
+        # Skip dialog if HTML was captured from paste - we know it's HTML.
+        # For direct paste, auto-detect paragraph numbering mode.
+        if from_paste:
+            confirmed_type: ContentType = "html"
+            auto_number_override: bool | None = None  # use auto-detect
+        else:
+            dialog_result = await show_content_type_dialog(
+                detect_content_type(content),
+                content[:500],
+                source_numbering_detected=detect_source_numbering(content),
             )
-        )
-        if confirmed_type is None:
-            return  # User cancelled
+            if dialog_result is None:
+                return  # User cancelled
+            confirmed_type, auto_number_from_dialog = dialog_result
+            auto_number_override = auto_number_from_dialog
 
         try:
             processed_html = await process_input(
@@ -809,18 +915,27 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                 source_type=confirmed_type,
                 platform_hint=platform_hint,
             )
+            if auto_number_override is not None:
+                # User chose a value in the dialog — honour it
+                auto_number = auto_number_override
+                para_map = build_paragraph_map_for_json(
+                    processed_html, auto_number=auto_number
+                )
+            else:
+                # Paste path — auto-detect
+                auto_number, para_map = _detect_paragraph_numbering(processed_html)
             await add_document(
                 workspace_id=workspace_id,
                 type="source",
                 content=processed_html,
                 source_type=confirmed_type,
                 title=None,
+                auto_number_paragraphs=auto_number,
+                paragraph_map=para_map,
             )
             content_input.value = ""
             ui.notify("Document added successfully", type="positive")
-            ui.navigate.to(
-                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-            )
+            ui.navigate.to(_annotation_url(workspace_id))
         except Exception as exc:
             logger.exception("Failed to add document")
             ui.notify(f"Failed to add document: {exc}", type="negative")
@@ -829,56 +944,11 @@ def _render_add_content_form(workspace_id: UUID) -> None:
         'data-testid="add-document-btn"'
     ).classes("bg-green-500 text-white mt-2")
 
-    async def handle_file_upload(upload_event: events.UploadEventArguments) -> None:
-        """Handle file upload through HTML pipeline."""
-        # Access file via .file attribute (FileUpload dataclass)
-        # ty cannot resolve this type due to TYPE_CHECKING import in nicegui
-        filename: str = upload_event.file.name  # pyright: ignore[reportAttributeAccessIssue]
-        content_bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
-
-        # Detect type from extension, fall back to content detection
-        detected_type = _detect_type_from_extension(filename)
-        if detected_type is None:
-            detected_type = detect_content_type(content_bytes)
-
-        preview = _get_file_preview(content_bytes, detected_type, filename)
-        confirmed_type = await show_content_type_dialog(
-            detected_type=detected_type,
-            preview=preview,
-        )
-
-        if confirmed_type is None:
-            ui.notify("Upload cancelled", type="info")
-            return
-
-        try:
-            processed_html = await process_input(
-                content=content_bytes,
-                source_type=confirmed_type,
-                platform_hint=None,
-            )
-            await add_document(
-                workspace_id=workspace_id,
-                type="source",
-                content=processed_html,
-                source_type=confirmed_type,
-                title=filename,
-            )
-            ui.notify(f"Uploaded: {filename}", type="positive")
-            ui.navigate.to(
-                f"/annotation?{urlencode({'workspace_id': str(workspace_id)})}"
-            )
-        except NotImplementedError as not_impl_err:
-            ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
-        except Exception as exc:
-            logger.exception("Failed to process uploaded file")
-            ui.notify(f"Failed to process file: {exc}", type="negative")
-
     # File upload for HTML, RTF, DOCX, PDF, TXT, Markdown files
     if get_settings().features.enable_file_upload:
         ui.upload(
             label="Or upload a file",
-            on_upload=handle_file_upload,
+            on_upload=lambda e: _handle_file_upload(workspace_id, e),
             auto_upload=True,
             max_file_size=10 * 1024 * 1024,  # 10 MB limit
         ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes(

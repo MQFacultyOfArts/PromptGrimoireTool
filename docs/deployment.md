@@ -83,8 +83,13 @@ sudo apt install -y \
   fail2ban \
   ufw \
   unattended-upgrades apt-listchanges \
-  rclone \
-  curl
+  pandoc \
+  curl \
+  fontconfig
+
+# rclone — install from upstream (apt version lags badly)
+curl https://rclone.org/install.sh | sudo bash
+rclone version
 ```
 
 > **Ref:** [Ubuntu 24.04 Package Management](https://documentation.ubuntu.com/server/explanation/software/package-management/)
@@ -403,30 +408,102 @@ Stytch email domain JIT provisioning requires at least one existing member with 
 >
 > **Design plan:** `docs/design-plans/2026-02-26-aaf-oidc-auth-188-189.md`
 
-### Run Migrations & Seed
+### Service user profile
 
-**Important:** All `uv run` commands for the service user must execute from `/opt/promptgrimoire` — uv walks up the directory tree looking for config files and will fail with permission errors if run from `/home/ubuntu` or elsewhere.
+The `promptgrimoire` user has `/usr/sbin/nologin` as its shell, so it needs an explicit `.profile` for PATH setup. This ensures TinyTeX and uv are found both by systemd and by `grimoire-run`.
 
 ```bash
-cd /opt/promptgrimoire
+echo 'export PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/home/promptgrimoire/.local/bin:$PATH"' \
+  | sudo tee /home/promptgrimoire/.profile
+sudo chown promptgrimoire:promptgrimoire /home/promptgrimoire/.profile
+```
 
+### `grimoire-run` helper
+
+All `uv run` commands for the service user must execute from `/opt/promptgrimoire` — uv walks up the directory tree looking for config files and will fail with permission errors if run from `/home/ubuntu` or elsewhere. This wrapper handles the `cd`, `sudo`, and PATH boilerplate.
+
+Create `/usr/local/bin/grimoire-run`:
+
+```bash
+#!/bin/bash
+# Run a command in the PromptGrimoire venv as the service user.
+# Sources the service user's profile for PATH (TinyTeX, uv).
+cd /opt/promptgrimoire
+exec sudo -u promptgrimoire \
+  env PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/home/promptgrimoire/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+  /home/promptgrimoire/.local/bin/uv run "$@"
+```
+
+```bash
+sudo chmod +x /usr/local/bin/grimoire-run
+```
+
+### Run Migrations
+
+```bash
 # Migrations run automatically on app start, but can be run manually:
-sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv run alembic upgrade head
+grimoire-run alembic upgrade head
 ```
 
 ## 9. TinyTeX (PDF Export)
 
-TinyTeX installs to `~/.TinyTeX` by default. No relocation needed.
+Install system fonts first (Noto provides broad Unicode coverage, SIL fonts cover specialist scripts). This is a large download (~1GB for Noto CJK).
+
+```bash
+sudo apt install -y fonts-noto --install-recommends \
+  fonts-texgyre \
+  fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+  fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+  fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+  fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+  fonts-sil-taiheritagepro
+```
+
+Then install TinyTeX (installs to `~/.TinyTeX` by default, no relocation needed):
 
 ```bash
 sudo -u promptgrimoire bash -c \
   'cd /opt/promptgrimoire && /home/promptgrimoire/.local/bin/uv run python scripts/setup_latex.py'
 ```
 
+Rebuild the LuaTeX font cache so fontspec can find system fonts (especially TeX Gyre Termes):
+
+```bash
+cd /opt/promptgrimoire
+sudo -u promptgrimoire env PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
+  luaotfload-tool --update --force
+```
+
 Verify:
 
 ```bash
+# latexmk is installed
 sudo -u promptgrimoire /home/promptgrimoire/.TinyTeX/bin/x86_64-linux/latexmk --version
+
+# LuaTeX can find the main font (OSFONTDIR must be set)
+cd /opt/promptgrimoire
+sudo -u promptgrimoire env \
+  PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
+  OSFONTDIR="/usr/share/fonts:/usr/share/texmf/fonts" \
+  luaotfload-tool --update --force
+sudo -u promptgrimoire env \
+  PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
+  OSFONTDIR="/usr/share/fonts:/usr/share/texmf/fonts" \
+  luaotfload-tool --find="TeX Gyre Termes"
+# Should print the font path, NOT "Cannot find"
+
+# System sees the font
+fc-list | grep -i "tex gyre termes"
+```
+
+If `luaotfload-tool --find` can't find fonts that `fc-list` sees, check `$OSFONTDIR` — LuaTeX does **not** use fontconfig. It only scans its own texmf tree plus directories listed in `OSFONTDIR`. The systemd service sets this; for manual invocations pass it via `env`.
+
+```bash
+cd /opt/promptgrimoire
+sudo -u promptgrimoire env \
+  PATH="/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:$PATH" \
+  OSFONTDIR="/usr/share/fonts:/usr/share/texmf/fonts" \
+  luaotfload-tool --diagnose=environment
 ```
 
 > **Ref:** [TinyTeX installation](https://yihui.org/tinytex/)
@@ -448,9 +525,11 @@ Group=promptgrimoire
 WorkingDirectory=/opt/promptgrimoire
 Environment=PATH=/home/promptgrimoire/.local/bin:/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/home/promptgrimoire
+Environment=OSFONTDIR=/usr/share/fonts:/usr/share/texmf/fonts
 ExecStart=/home/promptgrimoire/.local/bin/uv run python run_prod.py
 Restart=on-failure
 RestartSec=5
+SuccessExitStatus=143
 
 # Logging
 StandardOutput=journal
@@ -461,14 +540,18 @@ SyslogIdentifier=promptgrimoire
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/promptgrimoire/logs /home/promptgrimoire/.TinyTeX
+ReadWritePaths=/opt/promptgrimoire/logs /home/promptgrimoire/.TinyTeX /home/promptgrimoire/.cache/uv
 PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Ensure the uv cache directory exists before starting (systemd's `ReadWritePaths` can't create it):
+
 ```bash
+sudo -u promptgrimoire mkdir -p /home/promptgrimoire/.cache/uv
+
 sudo systemctl daemon-reload
 sudo systemctl enable promptgrimoire
 sudo systemctl start promptgrimoire
@@ -505,7 +588,6 @@ global
 defaults
     log     global
     mode    http
-    option  httplog
     option  dontlognull
     option  http-server-close
     option  forwardfor
@@ -517,18 +599,18 @@ defaults
     timeout http-keep-alive 1s
     timeout http-request 15s
 
-    # Custom log format with client IP for fail2ban
+    # Custom log format with client IP for fail2ban (replaces option httplog)
     log-format "%ci:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r"
 
 frontend fe_http
     bind *:80
 
-    # Let's Encrypt ACME http-01 challenges pass through to certbot webroot
+    # Let's Encrypt ACME http-01 challenges pass through to certbot
     acl is_acme path_beg /.well-known/acme-challenge/
-    use_backend be_certbot if is_acme
 
-    # Everything else redirects to HTTPS
+    # Redirect must come before use_backend to avoid ordering warning
     redirect scheme https code 301 if !is_acme
+    use_backend be_certbot if is_acme
 
 backend be_certbot
     # During renewal (~30s every 60-90 days), certbot runs a temporary
@@ -573,12 +655,11 @@ HAProxy isn't running yet (no cert to bind). For the *first* certificate only, u
 
 ```bash
 sudo certbot certonly --standalone -d grimoire.drbbs.org
-
-# Create HAProxy certs directory
-sudo mkdir -p /etc/haproxy/certs
 ```
 
-### Smush script
+### Smush script and renewal hooks
+
+Set up all the plumbing before starting HAProxy — the smush script, deploy hook, and renewal config. This way everything is ready for both the initial start and future auto-renewals.
 
 Create `/usr/local/bin/haproxy-cert-smush`:
 
@@ -617,25 +698,6 @@ fi
 
 ```bash
 sudo chmod +x /usr/local/bin/haproxy-cert-smush
-
-# Run it once to create the initial combined PEM
-sudo /usr/local/bin/haproxy-cert-smush
-
-# Now start HAProxy (it has a cert to bind)
-sudo systemctl enable haproxy
-sudo systemctl start haproxy
-```
-
-### Auto-renewal (zero downtime)
-
-Now that HAProxy is running and routing ACME challenges to the certbot backend, configure renewals to use standalone on port 8402 (behind HAProxy).
-
-Edit `/etc/letsencrypt/renewal/grimoire.drbbs.org.conf` and ensure:
-
-```ini
-[renewalparams]
-authenticator = standalone
-http01_port = 8402
 ```
 
 Create the deploy hook at `/etc/letsencrypt/renewal-hooks/deploy/50-haproxy.sh`:
@@ -643,14 +705,35 @@ Create the deploy hook at `/etc/letsencrypt/renewal-hooks/deploy/50-haproxy.sh`:
 ```bash
 #!/bin/bash
 # After certbot renews, smush the new cert and reload HAProxy.
-# No downtime — HAProxy was running the whole time.
 /usr/local/bin/haproxy-cert-smush
 ```
 
 ```bash
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/50-haproxy.sh
+```
 
-# Verify auto-renewal works end-to-end
+Configure renewals to use standalone on port 8402 (behind HAProxy). Edit `/etc/letsencrypt/renewal/grimoire.drbbs.org.conf` and ensure:
+
+```ini
+[renewalparams]
+authenticator = standalone
+http01_port = 8402
+```
+
+### Start HAProxy
+
+```bash
+# Create the initial combined PEM
+sudo /usr/local/bin/haproxy-cert-smush
+
+# Start HAProxy (it now has a cert to bind)
+sudo systemctl enable haproxy
+sudo systemctl start haproxy
+```
+
+### Verify auto-renewal
+
+```bash
 sudo certbot renew --dry-run
 ```
 
@@ -662,14 +745,25 @@ Certbot's systemd timer (`certbot.timer`) runs twice daily. On renewal: certbot 
 
 ### HAProxy log setup
 
-HAProxy logs via syslog by default. Ensure rsyslog captures it.
+Ubuntu 24.04 ships `/etc/rsyslog.d/49-haproxy.conf` out of the box — it creates a Unix socket in HAProxy's chroot and routes logs to `/var/log/haproxy.log`. Verify it exists:
 
-Create `/etc/rsyslog.d/49-haproxy.conf`:
+```bash
+cat /etc/rsyslog.d/49-haproxy.conf
+# Should show: $AddUnixListenSocket, :programname filter, /var/log/haproxy.log
+```
+
+If missing, create it:
 
 ```
-# HAProxy logs to local0 and local1
-if $programname startswith 'haproxy' then /var/log/haproxy.log
-& stop
+# Create an additional socket in haproxy's chroot in order to allow logging via
+# /dev/log to chroot'ed HAProxy processes
+$AddUnixListenSocket /var/lib/haproxy/dev/log
+
+# Send HAProxy messages to a dedicated logfile
+:programname, startswith, "haproxy" {
+  /var/log/haproxy.log
+  stop
+}
 ```
 
 ```bash
@@ -734,7 +828,7 @@ sudo -u promptgrimoire rclone config
 Follow the interactive setup:
 1. Choose `n` for new remote
 2. Name it `sharepoint`
-3. Select `onedrive` (type 27 or search)
+3. Select `onedrive` (type number varies by version — search for it)
 4. Enter your Microsoft 365 client ID and secret (create an app registration in Azure AD if needed)
 5. Select `sharepoint` as the drive type
 6. Authenticate via browser (use `--auth-no-open-browser` on a headless server and paste the URL locally)
@@ -758,6 +852,7 @@ set -euo pipefail
 BACKUP_DIR="/var/backups/promptgrimoire"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REMOTE="sharepoint:PromptGrimoire/backups"
+RCLONE_CONFIG="/home/promptgrimoire/.config/rclone/rclone.conf"
 RETAIN_DAYS=30
 
 mkdir -p "$BACKUP_DIR"
@@ -777,7 +872,8 @@ tar czf "${BACKUP_DIR}/promptgrimoire-${TIMESTAMP}.tar.gz" \
   "env-${TIMESTAMP}"
 
 # 4. Upload to SharePoint
-rclone copy "${BACKUP_DIR}/promptgrimoire-${TIMESTAMP}.tar.gz" "$REMOTE/" \
+rclone --config "$RCLONE_CONFIG" copy \
+  "${BACKUP_DIR}/promptgrimoire-${TIMESTAMP}.tar.gz" "$REMOTE/" \
   --log-level INFO
 
 # 5. Clean up local files
@@ -805,7 +901,8 @@ echo '0 3 * * * root /usr/local/bin/promptgrimoire-backup >> /var/log/promptgrim
 
 ```bash
 # 1. Download the backup from SharePoint
-rclone copy "sharepoint:PromptGrimoire/backups/promptgrimoire-YYYYMMDD-HHMMSS.tar.gz" /tmp/
+rclone --config /home/promptgrimoire/.config/rclone/rclone.conf \
+  copy "sharepoint:PromptGrimoire/backups/promptgrimoire-YYYYMMDD-HHMMSS.tar.gz" /tmp/
 
 # 2. Extract
 cd /tmp && tar xzf promptgrimoire-*.tar.gz
@@ -832,8 +929,8 @@ sudo systemctl status promptgrimoire
 sudo systemctl status haproxy
 sudo systemctl status fail2ban
 
-# App responds
-curl -I https://grimoire.drbbs.org
+# App responds (NiceGUI doesn't support HEAD, so use GET and check status code)
+curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org
 
 # TLS certificate
 echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drbbs.org 2>/dev/null \
@@ -858,13 +955,7 @@ sudo /usr/local/bin/promptgrimoire-backup
 
 ## Ongoing Operations
 
-All `manage-users` commands below run on the server as root (or via `sudo`). They need database access and (for Stytch operations) the app's `.env` to be sourced.
-
-```bash
-# Shorthand used below — all commands run from the app directory
-cd /opt/promptgrimoire
-UV="sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv run"
-```
+All `manage-users` commands below use the `grimoire-run` helper (installed in Step 8).
 
 ### Create a unit and add an instructor
 
@@ -873,13 +964,13 @@ UV="sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv run"
 2. **Enrol your colleague** — they must have logged in at least once (AAF/magic link auto-creates their account). Then:
 
 ```bash
-$UV manage-users enroll colleague@mq.edu.au LAWS1100 2026-S1 --role instructor
+grimoire-run manage-users enroll colleague@mq.edu.au LAWS1100 2026-S1 --role instructor
 ```
 
 3. **Grant Stytch instructor role** — this gives org-level privilege (copy-protection bypass, `is_privileged_user()` = true):
 
 ```bash
-$UV manage-users instructor colleague@mq.edu.au
+grimoire-run manage-users instructor colleague@mq.edu.au
 ```
 
 Step 2 is the *course-level* role (can manage weeks, activities, settings for that unit). Step 3 is the *org-level* Stytch role (bypasses copy protection globally, sees all workspaces as owner). Both are needed for full instructor access.
@@ -888,30 +979,30 @@ Step 2 is the *course-level* role (can manage weeks, activities, settings for th
 
 ```bash
 # List all users who have logged in
-$UV manage-users list
+grimoire-run manage-users list
 
 # List all users including pre-created
-$UV manage-users list --all
+grimoire-run manage-users list --all
 
 # Show a user's details and enrollments
-$UV manage-users show colleague@mq.edu.au
+grimoire-run manage-users show colleague@mq.edu.au
 
 # Pre-create a user (before they've logged in)
-$UV manage-users create colleague@mq.edu.au --name "Jane Smith"
+grimoire-run manage-users create colleague@mq.edu.au --name "Jane Smith"
 
 # Grant/revoke org-level admin
-$UV manage-users admin colleague@mq.edu.au
-$UV manage-users admin colleague@mq.edu.au --remove
+grimoire-run manage-users admin colleague@mq.edu.au
+grimoire-run manage-users admin colleague@mq.edu.au --remove
 
 # Grant/revoke Stytch instructor role
-$UV manage-users instructor colleague@mq.edu.au
-$UV manage-users instructor colleague@mq.edu.au --remove
+grimoire-run manage-users instructor colleague@mq.edu.au
+grimoire-run manage-users instructor colleague@mq.edu.au --remove
 
 # Change a user's course role
-$UV manage-users role colleague@mq.edu.au LAWS1100 2026-S1 coordinator
+grimoire-run manage-users role colleague@mq.edu.au LAWS1100 2026-S1 coordinator
 
 # Remove a user from a course
-$UV manage-users unenroll colleague@mq.edu.au LAWS1100 2026-S1
+grimoire-run manage-users unenroll colleague@mq.edu.au LAWS1100 2026-S1
 ```
 
 **Available course roles** (in ascending privilege): `student`, `tutor`, `instructor`, `coordinator`. Roles marked `is_staff` (`instructor`, `coordinator`) can see unpublished weeks, manage activities, and edit locked tags.
@@ -973,8 +1064,8 @@ sudo tail -f /var/log/promptgrimoire-backup.log
 # All services running?
 sudo systemctl status postgresql promptgrimoire haproxy fail2ban
 
-# App responds?
-curl -I https://grimoire.drbbs.org
+# App responds? (NiceGUI doesn't support HEAD — use GET)
+curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org
 
 # TLS certificate valid?
 echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drbbs.org 2>/dev/null \
@@ -1002,7 +1093,7 @@ sudo fail2ban-client set haproxy-http-flood unbanip <ip>
 For dev/test environments only — creates mock users, a LAWS1100 course, weeks, activities, and a legal case brief tag template:
 
 ```bash
-$UV seed-data
+grimoire-run seed-data
 ```
 
 Idempotent — safe to run multiple times.
@@ -1013,6 +1104,7 @@ Idempotent — safe to run multiple times.
 
 | What | Where |
 |------|-------|
+| `grimoire-run` helper | `/usr/local/bin/grimoire-run` |
 | App source | `/opt/promptgrimoire/` |
 | App config | `/opt/promptgrimoire/.env` |
 | App logs | `/opt/promptgrimoire/logs/` + `journalctl -u promptgrimoire` |

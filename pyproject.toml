@@ -179,5 +179,6 @@ dev = [
     "pytest-sugar>=1.1.1",
     "junitparser>=4.0.2",
     "pytest-rerunfailures>=16.1",
-    "showboat>=0.6",
+    "Pillow>=11.0",
+    "mkdocs-material>=9.7",
 ]

@@ -1,0 +1,630 @@
+"""Personal grimoire guide -- produces markdown with annotated screenshots.
+
+Drives a Playwright browser through the loose workspace flow: an enrolled
+student chooses to create a personal workspace outside the activity
+structure, builds their own tag vocabulary, annotates an AI conversation,
+and associates the workspace with a course activity via the placement
+dialog. Each section uses the Guide DSL to emit narrative markdown with
+highlighted screenshots.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+from promptgrimoire.docs import Guide
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+
+GUIDE_OUTPUT_DIR = Path("docs/guides")
+
+_SAMPLE_HTML = (
+    '<div class="conversation">'
+    '<div class="user"><p><strong>Human:</strong> I\'m translating a Japanese'
+    " contract clause about shingi seijitsu no gensoku"
+    " (the principle of good faith and fair dealing)."
+    " The English term 'good faith' doesn't seem to capture the full"
+    " meaning. What cultural factors should I consider?</p></div>"
+    '<div class="assistant"><p><strong>Assistant:</strong> You\'ve identified'
+    " a significant translation challenge. The Japanese principle of"
+    " shingi seijitsu no gensoku carries cultural weight beyond"
+    " the common law concept"
+    " of 'good faith':</p>"
+    "<ol>"
+    "<li><strong>Relational obligation:</strong> In Japanese legal culture,"
+    " this principle reflects an ongoing duty to maintain harmonious"
+    " business relationships, not merely honest dealing at the point"
+    " of contract.</li>"
+    "<li><strong>Contextual interpretation:</strong> Japanese courts apply"
+    " this principle more broadly than common law courts apply good faith,"
+    " considering social context and the parties' relationship history.</li>"
+    "<li><strong>Implied duties:</strong> The principle generates implied"
+    " duties of cooperation and disclosure that go further than common"
+    " law good faith typically requires.</li>"
+    "</ol>"
+    "<p>A translator might consider retaining the Japanese term with"
+    " an explanatory gloss, or using 'good faith and fair dealing'"
+    " with a translator's note explaining the broader scope.</p>"
+    "</div></div>"
+)
+
+
+def _authenticate(page: Page, base_url: str, email: str) -> None:
+    """Authenticate via mock token and wait for redirect."""
+    page.goto(f"{base_url}/auth/callback?token=mock-token-{email}")
+    page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+
+def _setup_loose_student() -> None:
+    """Create the loose-student user and enrol in UNIT1234."""
+    for cmd in [
+        [
+            "uv",
+            "run",
+            "manage-users",
+            "create",
+            "loose-student@test.example.edu.au",
+            "--name",
+            "Loose Student",
+        ],
+        [
+            "uv",
+            "run",
+            "manage-users",
+            "enroll",
+            "loose-student@test.example.edu.au",
+            "UNIT1234",
+            "S1 2026",
+        ],
+    ]:
+        subprocess.run(cmd, capture_output=True, check=False)
+
+
+def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
+    """Ensure UNIT1234 exists; run instructor guide if not.
+
+    Authenticates as a temporary user to check the Navigator for the
+    unit. If UNIT1234 is not visible, invokes the instructor guide
+    to create it. Re-authentication as the guide's own user happens
+    in _section_enter_grimoire().
+    """
+    _setup_loose_student()
+    _authenticate(page, base_url, "loose-student@test.example.edu.au")
+
+    # Wait for Navigator to render, then check for UNIT1234.
+    # Use wait_for on the start-activity-btn (present when units exist)
+    # with a short timeout -- if it times out, UNIT1234 is missing.
+    try:
+        page.locator('[data-testid^="start-activity-btn"]').first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        unit_visible = page.locator("text=UNIT1234").count() > 0
+    except PlaywrightTimeoutError:
+        unit_visible = False
+
+    if not unit_visible:
+        from promptgrimoire.docs.scripts.instructor_setup import (  # noqa: PLC0415
+            run_instructor_guide,
+        )
+
+        run_instructor_guide(page, base_url)
+        # Re-setup the loose student (instructor guide may have reset state)
+        _setup_loose_student()
+
+
+def _section_enter_grimoire(
+    page: Page,
+    base_url: str,
+    guide: Guide,
+) -> None:
+    """Section 1: Enter the Grimoire.
+
+    Login as enrolled student, show Navigator, navigate to /annotation,
+    create a loose workspace (bypassing activity Start button).
+    """
+    with guide.step("Enter the Grimoire") as g:
+        _authenticate(page, base_url, "loose-student@test.example.edu.au")
+
+        # Navigator: show enrolled unit with Start button
+        page.locator('[data-testid^="start-activity-btn"]').first.wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        g.screenshot(
+            "Navigator showing your enrolled unit and activities",
+            highlight=["start-activity-btn"],
+        )
+        g.note(
+            "After logging in, you see the Navigator with your enrolled "
+            "units and activities. Instead of clicking Start on an "
+            "activity, you will create your own workspace — your "
+            "personal grimoire."
+        )
+
+        # Navigate to /annotation directly (bypassing Start button)
+        page.goto(f"{base_url}/annotation")
+        page.get_by_test_id("create-workspace-btn").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        g.screenshot(
+            "Annotation page with Create Workspace button",
+            highlight=["create-workspace-btn"],
+        )
+        g.note(
+            "Navigate to the annotation page directly. The Create "
+            "Workspace button lets you start a workspace outside any "
+            "activity — a loose workspace that belongs only to you."
+        )
+
+        # Create the loose workspace
+        page.get_by_test_id("create-workspace-btn").click()
+        page.get_by_test_id("content-editor").wait_for(
+            state="visible",
+            timeout=15000,
+        )
+        g.screenshot(
+            "Your new loose workspace on the annotation page",
+            highlight=["content-editor"],
+        )
+        g.note(
+            "Your workspace is created. Unlike activity-based workspaces, "
+            "this one has no inherited tags and no course association. "
+            "It is your blank slate — a grimoire waiting to be filled."
+        )
+
+
+def _section_bring_conversation(page: Page, guide: Guide) -> None:
+    """Section 2: Bring Your Conversation.
+
+    Paste an AI conversation about cultural markers in Japanese legal
+    text translation. Confirm content type.
+    """
+    with guide.step("Bring Your Conversation") as g:
+        g.note(
+            "Copy an AI conversation that you want to analyse. This could "
+            "be from ChatGPT, Claude, or any other tool. Paste it into "
+            "the editor to begin building your grimoire."
+        )
+
+        # Inject sample HTML into QEditor contenteditable div.
+        # Uses .q-editor__content -- known exception: Quasar renders this
+        # div internally; our code cannot attach a data-testid to it.
+        # Static, hardcoded content only (not user-supplied).
+        page.evaluate(
+            """(html) => {
+                const el = document.querySelector(
+                    '[data-testid="content-editor"] .q-editor__content'
+                );
+                el.focus();
+                el.innerHTML = html;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+            }""",
+            _SAMPLE_HTML,
+        )
+        g.screenshot(
+            "AI conversation pasted into the editor",
+            highlight=["content-editor"],
+        )
+        g.note(
+            "Paste your AI conversation into the editor. This "
+            "conversation about cultural markers in Japanese legal "
+            "translation will be the artefact you annotate."
+        )
+
+        page.get_by_test_id("add-document-btn").click()
+
+        confirm_btn = page.get_by_test_id("confirm-content-type-btn")
+        confirm_btn.wait_for(state="visible", timeout=5000)
+        confirm_btn.click()
+
+        wait_for_text_walker(page, timeout=15000)
+        g.screenshot("Processed conversation with formatted turns")
+        g.note(
+            "Your conversation is processed and displayed with formatted "
+            "turns. The grimoire now holds your artefact — ready for "
+            "annotation."
+        )
+
+
+def _section_make_meaning(page: Page, guide: Guide) -> None:
+    """Section 3: Make Meaning Through Tags.
+
+    Open tag management, create a tag group and three tags from scratch
+    (emergent folksonomy). This section mirrors the instructor guide's
+    tag creation but from the student's perspective — no inherited tags.
+    """
+    with guide.step("Make Meaning Through Tags") as g:
+        g.note(
+            "Your workspace has no tags — unlike activity-based workspaces "
+            "that inherit the instructor's tag vocabulary, your grimoire "
+            "starts empty. You build your own analytical vocabulary: an "
+            "emergent folksonomy that reflects how you see the conversation."
+        )
+
+        # Screenshot highlighting the settings button before clicking
+        g.screenshot(
+            "Tag settings button in the toolbar",
+            highlight=["tag-settings-btn"],
+        )
+        g.note("Click the tag settings button (gear icon) in the toolbar.")
+
+        # Open tag management dialog
+        page.get_by_test_id("tag-settings-btn").click()
+        page.get_by_test_id("add-tag-group-btn").wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        g.screenshot(
+            "Tag management dialog with no existing tags",
+            highlight=["add-tag-group-btn"],
+        )
+        g.note(
+            "The dialog is empty — you are starting from scratch. "
+            "Click Add Group to create your first tag group."
+        )
+
+        # Create tag group "My Analysis"
+        page.get_by_test_id("add-tag-group-btn").click()
+        page.wait_for_timeout(1000)
+
+        group_header = page.locator('[data-testid^="tag-group-header-"]').first
+        group_header.wait_for(state="visible", timeout=5000)
+        testid = group_header.get_attribute("data-testid") or ""
+        group_id = testid.removeprefix("tag-group-header-")
+
+        page.get_by_test_id(f"group-name-input-{group_id}").click()
+        page.get_by_test_id(f"group-name-input-{group_id}").fill("My Analysis")
+        # Commit the value by pressing Tab (triggers blur/change event)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(500)
+
+        # Add three tags
+        for tag_name in ["AI Assumption", "Cultural Gap", "Useful Insight"]:
+            page.get_by_test_id(f"group-add-tag-btn-{group_id}").click()
+            page.wait_for_timeout(1000)
+            last_input = page.locator('[data-testid^="tag-name-input-"]').last
+            last_input.click()
+            last_input.fill(tag_name)
+
+        g.screenshot(
+            "Tag group 'My Analysis' with three student-created tags",
+            highlight=["tag-name-input", "group-name-input"],
+        )
+        g.note(
+            "Create a tag group and tags that make sense for your "
+            "analysis. These tags — 'AI Assumption', 'Cultural Gap', "
+            "and 'Useful Insight' — reflect the student's own "
+            "analytical categories, not the instructor's."
+        )
+
+        # Close tag management dialog
+        g.screenshot(
+            "Done button to close tag management",
+            highlight=["tag-management-done-btn"],
+        )
+        g.note("Click Done to save your tags and return to the annotation page.")
+        page.get_by_test_id("tag-management-done-btn").click()
+        page.wait_for_timeout(1000)
+
+
+def _section_annotate(page: Page, guide: Guide) -> None:
+    """Section 4: Annotate Your Conversation.
+
+    Highlight text, apply a tag, add a comment.
+    """
+    with guide.step("Annotate Your Conversation") as g:
+        g.note(
+            "With your tags ready, read through the conversation and "
+            "annotate the parts that matter. Each highlight is a claim "
+            "about the text — a moment where you assert that this "
+            "passage is significant and why."
+        )
+
+        # Select text and apply first tag
+        select_chars(page, 0, 50)
+        page.wait_for_timeout(500)
+
+        tag_button = page.locator('[data-testid^="tag-btn-"]').first
+        tag_button.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Tag toolbar with your custom tags",
+            highlight=["tag-toolbar"],
+        )
+        g.note("Select text in the conversation, then click a tag to apply it.")
+
+        tag_button.click()
+        page.locator("[data-testid='annotation-card']").first.wait_for(
+            state="visible",
+            timeout=5000,
+        )
+
+        g.screenshot(
+            "Text highlighted and tagged with your own category",
+            highlight=["tag-toolbar", "annotation-card"],
+        )
+        g.note(
+            "Your tags — not the instructor's — categorise the "
+            "annotation. The highlight appears in the sidebar."
+        )
+
+        # Add a comment
+        card = page.locator("[data-testid='annotation-card']").first
+        comment_input = card.get_by_test_id("comment-input")
+        comment_input.fill(
+            "The AI assumes 'good faith' is a direct equivalent, "
+            "but the Japanese concept carries relational obligations "
+            "that common law lacks."
+        )
+        g.screenshot(
+            "Comment input on the annotation card",
+            highlight=["comment-input"],
+        )
+        g.note("Type your comment, then click the post button.")
+
+        card.get_by_test_id("post-comment-btn").click()
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Comment reflecting on the AI's cultural assumption",
+            highlight=["annotation-card"],
+        )
+        g.note(
+            "Add a comment explaining your annotation. This is where "
+            "reflection happens — you are not just marking text, you "
+            "are articulating why it matters."
+        )
+
+
+def _section_organise(page: Page, guide: Guide) -> None:
+    """Section 5: Organise Your Highlights.
+
+    Switch to Organise tab, describe reordering and reclassifying.
+    """
+    with guide.step("Organise Your Highlights") as g:
+        g.screenshot(
+            "Organise tab button",
+            highlight=["tab-organise"],
+        )
+        g.note("Click the Organise tab to see your highlights grouped by tag.")
+
+        page.get_by_test_id("tab-organise").click()
+        page.get_by_test_id("organise-columns").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        page.wait_for_timeout(1000)
+
+        g._append("### Viewing Your Tags\n")
+        g.screenshot(
+            "Organise tab showing highlights grouped by your tags",
+            highlight=["organise-columns"],
+        )
+        g.note(
+            "The Organise tab displays your highlights in columns, "
+            "one column per tag. Your emergent vocabulary becomes a "
+            "lens for seeing patterns across the conversation."
+        )
+
+        g._append("### Reordering Within a Column\n")
+        g.note(
+            "Drag highlights up and down within a column to group "
+            "related passages together. This lets you build clusters "
+            "of evidence before writing your response."
+        )
+
+        g._append("### Moving Between Columns\n")
+        g.note(
+            "Drag a highlight from one column to another to reclassify "
+            "it under a different tag. As your analysis develops, you "
+            "may find that a passage fits a different category than you "
+            "first thought."
+        )
+
+        g.note(
+            "*Note: with longer conversations, you may need to scroll "
+            "within each column to see all your highlights.*"
+        )
+
+
+def _section_respond(page: Page, guide: Guide) -> None:
+    """Section 6: Write Your Response.
+
+    Switch to Respond tab, type markdown, use locate button.
+    """
+    with guide.step("Write Your Response") as g:
+        g.screenshot(
+            "Respond tab button",
+            highlight=["tab-respond"],
+        )
+        g.note("Click the Respond tab to write your analysis.")
+
+        page.get_by_test_id("tab-respond").click()
+        page.get_by_test_id("respond-splitter").wait_for(
+            state="visible",
+            timeout=10000,
+        )
+        page.wait_for_timeout(1000)
+
+        g._append("### Writing Your Response\n")
+        g.screenshot(
+            "Respond tab with reference panel and markdown editor",
+            highlight=["respond-reference-panel", "milkdown-editor-container"],
+        )
+        g.note(
+            "The Respond tab gives you a markdown editor alongside "
+            "your highlights. Use it to draft a reflection that draws "
+            "on the patterns you identified."
+        )
+
+        # Type indicative markdown into the Milkdown editor.
+        # Use [contenteditable="true"] to avoid the ProseMirror virtual
+        # cursor element (contenteditable="false") which causes strict
+        # mode violations.
+        page.locator(
+            '[data-testid="milkdown-editor-container"] [contenteditable="true"]'
+        ).click()
+        page.keyboard.type("# My Analysis\n\n")
+        page.keyboard.type("The comparison was **useful** but missed:\n\n")
+        page.keyboard.type("* Relational duties beyond the contract\n")
+        page.keyboard.type("* How cultural context shapes interpretation")
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Drafting a response with markdown formatting",
+            highlight=["milkdown-editor-container"],
+        )
+        g.note(
+            "The editor supports markdown formatting: "
+            "`#` for headings, `**bold**` for emphasis, and "
+            "`*` for bullet lists. Your formatting renders as you type."
+        )
+        g.note(
+            "For a full guide to markdown syntax, see "
+            "[Markdown Guide](https://www.markdownguide.org/basic-syntax/)."
+        )
+
+        g._append("### Locating Source Text\n")
+
+        # Use the locate button to jump back to the highlight
+        locate_btn = page.get_by_test_id("respond-locate-btn").first
+        locate_btn.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Locate button on a reference card",
+            highlight=["respond-locate-btn"],
+        )
+        g.note(
+            "Click the target icon on any reference card to jump "
+            "back to its highlight in the Annotate tab."
+        )
+
+        locate_btn.click()
+        page.wait_for_timeout(1000)
+
+        g.screenshot(
+            "Navigated back to the highlighted passage from Respond tab",
+            highlight=["annotation-card"],
+        )
+        g.note(
+            "This lets you move between analysis and source text — "
+            "check the original context while writing your response."
+        )
+
+
+def _section_connect_to_unit(page: Page, guide: Guide) -> None:
+    """Section 5: Connect to Your Unit.
+
+    Open the placement dialog, select UNIT1234 activity via cascading
+    selects, confirm placement.
+    """
+    with guide.step("Connect to Your Unit") as g:
+        g.note(
+            "Your grimoire has grown from a blank slate into a structured "
+            "analysis. Now you can connect it to your unit — associating "
+            "your personal work with the course activity so your "
+            "instructor can see it alongside the class work."
+        )
+
+        # Switch back to Annotate tab
+        page.get_by_test_id("tab-annotate").click()
+        page.wait_for_timeout(1000)
+
+        # Open placement dialog via placement chip
+        page.get_by_test_id("placement-chip").click()
+        page.get_by_test_id("placement-mode").wait_for(
+            state="visible",
+            timeout=5000,
+        )
+        g.screenshot(
+            "Placement dialog for associating workspace with a unit",
+            highlight=["placement-mode"],
+        )
+        g.note(
+            "Click the placement chip in the header to open the "
+            "placement dialog. Your enrolled units appear in the "
+            "cascading selects because you are already enrolled."
+        )
+
+        # Select "Place in Activity" mode.
+        # Quasar q-option-group does not support per-option data-testid,
+        # so scope a text selector within the testid parent.
+        page.get_by_test_id("placement-mode").get_by_text("Place in Activity").click()
+        page.wait_for_timeout(500)
+
+        # Select unit from the course dropdown
+        course_select = page.get_by_test_id("placement-course")
+        course_select.wait_for(state="visible", timeout=5000)
+        course_select.click()
+
+        # Click the UNIT1234 option in the dropdown
+        unit_option = (
+            page.locator('[data-testid^="placement-course-opt-"]')
+            .filter(has_text="UNIT1234")
+            .first
+        )
+        unit_option.wait_for(state="visible", timeout=5000)
+        unit_option.click()
+        page.wait_for_timeout(1000)
+
+        # Select week (first available option)
+        week_select = page.get_by_test_id("placement-week")
+        week_select.click()
+        week_option = page.locator('[data-testid^="placement-week-opt-"]').first
+        week_option.wait_for(state="visible", timeout=5000)
+        week_option.click()
+        page.wait_for_timeout(1000)
+
+        # Select activity (first available option)
+        activity_select = page.get_by_test_id("placement-activity")
+        activity_select.click()
+        activity_option = page.locator('[data-testid^="placement-activity-opt-"]').first
+        activity_option.wait_for(state="visible", timeout=5000)
+        activity_option.click()
+        page.wait_for_timeout(500)
+
+        g.screenshot(
+            "Cascading selects with UNIT1234, week, and activity selected",
+            highlight=[
+                "placement-course",
+                "placement-week",
+                "placement-activity",
+            ],
+        )
+        g.note(
+            "Select your unit, week, and activity from the cascading "
+            "dropdowns. Your enrolment in UNIT1234 makes it available "
+            "in the placement dialog."
+        )
+
+        # Confirm placement
+        page.get_by_test_id("placement-confirm-btn").click()
+        page.wait_for_timeout(2000)
+
+        g.screenshot("Workspace now associated with the course activity")
+        g.note(
+            "Your personal grimoire is now connected to the course "
+            "activity. It appears alongside other students' work in "
+            "the unit, while retaining your personal tag vocabulary "
+            "and annotations."
+        )
+
+
+def run_personal_grimoire_guide(page: Page, base_url: str) -> None:
+    """Run the personal grimoire guide, producing markdown and screenshots."""
+    _ensure_instructor_guide_ran(page, base_url)
+
+    with Guide("Your Personal Grimoire", GUIDE_OUTPUT_DIR, page) as guide:
+        _section_enter_grimoire(page, base_url, guide)
+        _section_bring_conversation(page, guide)
+        _section_make_meaning(page, guide)
+        _section_annotate(page, guide)
+        _section_organise(page, guide)
+        _section_respond(page, guide)
+        _section_connect_to_unit(page, guide)

@@ -2593,24 +2593,77 @@ def show_export_log() -> None:
             console.print(log_file.read_text())
 
 
+def _make_docs_build_and_serve(action: str | None) -> None:
+    """Build MkDocs site, generate PDFs, and optionally serve or deploy."""
+    import subprocess
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
+
+    guides_dir = project_root / "docs" / "guides"
+    for md_path in sorted(guides_dir.glob("*.md")):
+        if md_path.name == "index.md":
+            continue
+        pdf_path = md_path.with_suffix(".pdf")
+        subprocess.run(
+            [
+                "pandoc",
+                "--pdf-engine=lualatex",
+                f"--resource-path={guides_dir}",
+                "-o",
+                str(pdf_path),
+                str(md_path),
+            ],
+            check=True,
+        )
+
+    if action:
+        cmd = ["uv", "run", "mkdocs", action]
+        if action == "serve":
+            cmd += ["--dev-addr", "localhost:8484"]
+        subprocess.run(cmd, cwd=project_root, check=True)
+
+
 def make_docs() -> None:
     """Generate user-facing documentation guides.
 
-    Starts a NiceGUI server with mock auth, runs Rodney/Showboat capture
-    scripts against it, then converts the resulting Markdown to PDF via
-    Pandoc with LuaLaTeX.
+    Starts a NiceGUI server with mock auth, launches Playwright to run
+    guide scripts against it, producing markdown and screenshots.
+    Then builds an MkDocs Material HTML site and Pandoc PDFs.
+
+    Optional post-build actions::
+
+        uv run make-docs serve       # local preview server
+        uv run make-docs gh-deploy   # push to gh-pages branch
     """
+    import argparse
     import socket
 
-    # --- Dependency checks ---------------------------------------------------
-    required_tools = ["rodney", "showboat", "pandoc"]
-    for tool in required_tools:
-        if shutil.which(tool) is None:
-            print(
-                f"Error: '{tool}' not found in PATH.\n"
-                f"Install {tool} before running make-docs."
-            )
-            sys.exit(1)
+    parser = argparse.ArgumentParser(description="Generate documentation guides")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        choices=["serve", "gh-deploy"],
+        help="optional post-build action",
+    )
+    args = parser.parse_args()
+
+    from playwright.sync_api import sync_playwright
+
+    from promptgrimoire.docs.scripts.instructor_setup import run_instructor_guide
+    from promptgrimoire.docs.scripts.personal_grimoire import (
+        run_personal_grimoire_guide,
+    )
+    from promptgrimoire.docs.scripts.student_workflow import run_student_guide
+
+    # --- Dependency check ---
+    if shutil.which("pandoc") is None:
+        print(
+            "Error: 'pandoc' not found in PATH.\n"
+            "Install pandoc before running make-docs."
+        )
+        sys.exit(1)
 
     # --- DB setup & server lifecycle -----------------------------------------
     _pre_test_db_cleanup()
@@ -2619,76 +2672,33 @@ def make_docs() -> None:
         s.bind(("", 0))
         port = s.getsockname()[1]
 
+    # --- Server & Playwright lifecycle -----------------------------------------
     os.environ["DEV__AUTH_MOCK"] = "true"
-    server_process = _start_e2e_server(port)
-
-    project_root = Path(__file__).resolve().parents[2]
-    base_url = f"http://localhost:{port}"
-
-    scripts = [
-        "docs/guides/scripts/generate-instructor-setup.sh",
-        "docs/guides/scripts/generate-student-workflow.sh",
-    ]
-
-    guides = [
-        ("docs/guides/instructor-setup.md", "docs/guides/instructor-setup.pdf"),
-        ("docs/guides/student-workflow.md", "docs/guides/student-workflow.pdf"),
-    ]
-
+    server_process = None
+    pw = None
+    browser = None
     try:
-        # --- Start Rodney browser --------------------------------------------
-        subprocess.run(["rodney", "start", "--local"], check=True, cwd=project_root)
+        server_process = _start_e2e_server(port)
+        base_url = f"http://localhost:{port}"
 
-        # --- Run capture scripts ---------------------------------------------
-        script_env = os.environ.copy()
-        script_env["ROD_TIMEOUT"] = "15"
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch()
+        page = browser.new_page(
+            viewport={"width": 1280, "height": 800},
+            device_scale_factor=4,
+        )
 
-        guide_dir = project_root / "docs" / "guides"
-
-        for script in scripts:
-            result = subprocess.run(
-                ["bash", script, base_url],
-                cwd=project_root,
-                env=script_env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                console.print(
-                    f"[red]Error:[/] {script} failed (exit {result.returncode})"
-                )
-                if result.stderr:
-                    console.print(result.stderr.rstrip())
-                # Find most recent error screenshot
-                error_shots = sorted(guide_dir.glob("screenshots/*/ERROR_*.png"))
-                if error_shots:
-                    console.print(f"[dim]Last error screenshot:[/] {error_shots[-1]}")
-                sys.exit(1)
-
-        # --- Convert Markdown to PDF via Pandoc ------------------------------
-        for md_path, pdf_path in guides:
-            # --resource-path lets Pandoc resolve image paths relative to
-            # the markdown file's directory (not just the CWD).
-            md_dir = Path(md_path).parent
-            result = subprocess.run(
-                [
-                    "pandoc",
-                    md_path,
-                    "-o",
-                    pdf_path,
-                    "--pdf-engine=lualatex",
-                    f"--resource-path={md_dir}",
-                ],
-                cwd=project_root,
-                check=False,
-            )
-            if result.returncode != 0:
-                console.print(f"[red]Error:[/] Pandoc failed for: {md_path}")
-                sys.exit(1)
-            console.print(f"[green]Generated:[/] {pdf_path}")
+        run_instructor_guide(page, base_url)
+        run_student_guide(page, base_url)
+        run_personal_grimoire_guide(page, base_url)
 
     finally:
-        subprocess.run(["rodney", "stop", "--local"], check=False, cwd=project_root)
-        _stop_e2e_server(server_process)
+        if browser is not None:
+            browser.close()
+        if pw is not None:
+            pw.stop()
+        if server_process is not None:
+            _stop_e2e_server(server_process)
         os.environ.pop("DEV__AUTH_MOCK", None)
+
+    _make_docs_build_and_serve(args.action)

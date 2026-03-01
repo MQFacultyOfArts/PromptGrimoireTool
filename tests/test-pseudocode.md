@@ -10,8 +10,8 @@ they reveal where the test suite is redundant or incomplete.
 > 134-lua-highlight, 94-hierarchy-placement, 103-copy-protection,
 > css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
 > 95-annotation-tags, workspace-navigator-196,
-> user-docs-rodney-showboat-207, and
-> platform-handlers-openrouter-chatcraft-209 branches.
+> user-docs-rodney-showboat-207,
+> platform-handlers-openrouter-chatcraft-209, and docs-platform-208 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -3019,43 +3019,6 @@ It catches any divergence that would cause highlights to render at wrong positio
 5. Assert each script call includes "http://localhost:<port>" as an argument
 
 **Verifies:** AC1.1 -- both capture scripts are invoked with the server's base URL
-
-### Server and Rodney stop on script failure
-**File:** tests/unit/test_make_docs.py::TestMakeDocsCleanup::test_make_docs_stops_server_on_script_failure
-1. Patch all external dependencies; make bash subprocess.run calls return exit code 1
-2. Call make_docs(), expect SystemExit
-3. Assert _stop_e2e_server was still called with the server process
-4. Assert "rodney stop --local" was called in the finally block
-
-**Verifies:** AC1.2 -- cleanup runs even when a capture script fails
-
-### Rodney start/stop lifecycle order
-**File:** tests/unit/test_make_docs.py::TestMakeDocsRodneyLifecycle::test_make_docs_rodney_start_stop_lifecycle
-1. Patch all external dependencies for happy path
-2. Call make_docs()
-3. Extract command summaries from all subprocess.run calls
-4. Assert "rodney start" precedes all "bash" (script) calls
-5. Assert "rodney stop" follows all "bash" (script) calls
-
-**Verifies:** Rodney browser is started before scripts run and stopped after they complete
-
-### Missing rodney causes early exit
-**File:** tests/unit/test_make_docs.py::TestMakeDocsDependencyChecks::test_make_docs_exits_if_rodney_missing
-1. Patch shutil.which to return None for "rodney"
-2. Call make_docs(), expect SystemExit with code 1
-3. Assert output mentions "rodney"
-4. Assert _start_e2e_server was never called
-
-**Verifies:** AC1.4 -- missing rodney binary is detected before starting the server
-
-### Missing showboat causes early exit
-**File:** tests/unit/test_make_docs.py::TestMakeDocsDependencyChecks::test_make_docs_exits_if_showboat_missing
-1. Patch shutil.which to return None for "showboat"
-2. Call make_docs(), expect SystemExit with code 1
-3. Assert output mentions "showboat"
-4. Assert _start_e2e_server was never called
-
-**Verifies:** AC1.5 -- missing showboat binary is detected before starting the server
 
 ### Script failure reports context
 **File:** tests/unit/test_make_docs.py::TestMakeDocsErrorReporting::test_make_docs_error_reports_script_name_and_context

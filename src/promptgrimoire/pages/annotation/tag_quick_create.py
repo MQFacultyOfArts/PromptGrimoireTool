@@ -117,12 +117,16 @@ async def open_quick_create(state: PageState) -> None:
 
         _build_colour_picker(selected_color)
 
-        group_select = ui.select(
-            label="Group (optional)",
-            options=group_options,
-            value=None,
-            clearable=True,
-        ).classes("w-full")
+        group_select = (
+            ui.select(
+                label="Group (optional)",
+                options=group_options,
+                value=None,
+                clearable=True,
+            )
+            .classes("w-full")
+            .props('data-testid="quick-create-group-select"')
+        )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -185,7 +189,7 @@ async def open_quick_create(state: PageState) -> None:
                 )
 
             ui.button("Create", on_click=_save).props(
-                "color=primary",
+                'color=primary data-testid="quick-create-save-btn"',
             )
 
     dialog.open()

@@ -430,7 +430,10 @@ class TestToolbarTooltips:
                 manage_btn.hover()
                 # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
                 # get_by_role("tooltip") is the correct Playwright accessor here.
-                tooltip = page.get_by_role("tooltip", name="Manage tags")
+                tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Manage tags -- create, edit, reorder, and import tags",
+                )
                 expect(tooltip).to_be_visible(timeout=5000)
 
         finally:
@@ -480,7 +483,10 @@ class TestToolbarTooltips:
                 manage_btn.hover()
                 # NiceGUI .tooltip() renders a q-tooltip child with no testid surface;
                 # get_by_role("tooltip") is the correct Playwright accessor here.
-                tooltip = page.get_by_role("tooltip", name="Manage tags")
+                tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Manage tags -- create, edit, reorder, and import tags",
+                )
                 expect(tooltip).to_be_visible(timeout=5000)
 
         finally:

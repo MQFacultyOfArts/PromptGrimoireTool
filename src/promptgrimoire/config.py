@@ -74,6 +74,7 @@ class AppConfig(BaseModel):
     storage_secret: SecretStr = SecretStr("dev-secret-change-me")
     log_dir: Path = Path("logs/sessions")
     latexmk_path: str = ""
+    reload: bool = True
 
 
 class FeaturesConfig(BaseModel):

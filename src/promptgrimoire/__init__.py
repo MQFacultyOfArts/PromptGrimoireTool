@@ -150,8 +150,12 @@ def main() -> None:
     print(f"PromptGrimoire v{get_version_string()}")
     print(f"Starting application on http://0.0.0.0:{port}")
 
-    reload = os.environ.get("PROMPTGRIMOIRE_RELOAD", "1") != "0"
-    ui.run(host="0.0.0.0", port=port, reload=reload, storage_secret=storage_secret)  # nosec B104
+    ui.run(
+        host="0.0.0.0",
+        port=port,
+        reload=settings.app.reload,
+        storage_secret=storage_secret,
+    )  # nosec B104
 
 
 if __name__ in {"__main__", "__mp_main__"}:

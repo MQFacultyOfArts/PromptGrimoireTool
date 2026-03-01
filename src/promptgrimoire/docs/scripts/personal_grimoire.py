@@ -395,9 +395,13 @@ def _section_annotate_and_reflect(page: Page, guide: Guide) -> None:
             "on the patterns you identified."
         )
 
-        # Type indicative markdown into the Milkdown editor
-        editor = page.locator('[data-testid="milkdown-editor-container"]')
-        editor.locator("[contenteditable]").click()
+        # Type indicative markdown into the Milkdown editor.
+        # Use [contenteditable="true"] to avoid the ProseMirror virtual
+        # cursor element (contenteditable="false") which causes strict
+        # mode violations.
+        page.locator(
+            '[data-testid="milkdown-editor-container"] [contenteditable="true"]'
+        ).click()
         page.keyboard.type("# My Analysis\n\n")
         page.keyboard.type("The comparison was **useful** but missed:\n\n")
         page.keyboard.type("* Relational duties beyond the contract\n")

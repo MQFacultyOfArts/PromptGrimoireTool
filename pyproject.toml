@@ -120,6 +120,10 @@ ignore = [
 "src/promptgrimoire/cli.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]
+"src/promptgrimoire/word_count.py" = [
+    "E402",  # Imports after warnings.filterwarnings() and try/except block
+    "I001",  # Import ordering affected by mid-module imports
+]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block
 ]

@@ -288,8 +288,6 @@ async def _resolve_course_placement(
         copy_protection=course.default_copy_protection,
         allow_sharing=course.default_allow_sharing,
         anonymous_sharing=course.default_anonymous_sharing,
-        word_minimum=None,
-        word_limit=None,
         word_limit_enforcement=course.default_word_limit_enforcement,
     )
 

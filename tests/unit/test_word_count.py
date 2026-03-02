@@ -270,7 +270,7 @@ class TestWordCountAntiGaming:
         """AC1.5: Mixed English+Japanese counts both segments."""
         text = "The contract states \u5951\u7d04\u306f\u6709\u52b9\u3067\u3042\u308b"
         result = word_count(text)
-        # 3 English words + ~5 Japanese tokens
+        # 3 English words + Japanese tokens (count varies by MeCab dict)
         assert result >= 5
 
     def test_markdown_link_counts_text_only(self) -> None:

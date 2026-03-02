@@ -18,7 +18,7 @@ import warnings
 # Suppress jieba SyntaxWarning before importing
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="jieba")
 
-import jieba
+import jieba  # noqa: E402
 
 try:
     import MeCab
@@ -29,11 +29,19 @@ except ImportError as exc:
     )
     raise ImportError(msg) from exc
 
-from uniseg.wordbreak import words as uniseg_words
+from uniseg.wordbreak import words as uniseg_words  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-_MECAB_TAGGER = MeCab.Tagger("-Owakati")
+try:
+    _MECAB_TAGGER = MeCab.Tagger("-Owakati")
+except RuntimeError as exc:
+    msg = (
+        "MeCab is installed but could not be initialised. "
+        "Check that a dictionary is installed and MECABRC is configured correctly. "
+        "Fix: apt install mecab mecab-ipadic-utf8 && uv add unidic-lite"
+    )
+    raise RuntimeError(msg) from exc
 
 # Regex to strip Unicode format characters (category Cf)
 _FORMAT_CHARS_RE = re.compile(r"[\u200b-\u200f\u2028-\u202f\u2060-\u2069\ufeff]")

@@ -18,7 +18,7 @@ import warnings
 # Suppress jieba SyntaxWarning before importing
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="jieba")
 
-import jieba  # noqa: F401 — used by word_count() in later tasks
+import jieba
 
 try:
     import MeCab
@@ -29,7 +29,7 @@ except ImportError as exc:
     )
     raise ImportError(msg) from exc
 
-from uniseg.wordbreak import words as uniseg_words  # noqa: F401 — used by word_count()
+from uniseg.wordbreak import words as uniseg_words
 
 logger = logging.getLogger(__name__)
 
@@ -150,3 +150,48 @@ def segment_by_script(text: str) -> list[tuple[str, str]]:
             merged.append((script, seg_text))
 
     return merged
+
+
+def word_count(text: str) -> int:
+    """Count words in text with multilingual support and anti-gaming measures.
+
+    Pipeline:
+    1. Normalise (NFKC, strip zero-width chars, strip markdown URLs)
+    2. Segment by script (Latin, Chinese, Japanese, Korean)
+    3. Tokenise each segment with appropriate tokeniser
+    4. Split tokens on hyphens (anti-gaming)
+    5. Filter to tokens containing at least one Unicode letter
+    6. Return count
+
+    CJK tokenisation uses dictionary-based segmentation (jieba for Chinese,
+    MeCab for Japanese), so exact counts may vary slightly across dictionary
+    versions.
+    """
+    text = normalise_text(text)
+    segments = segment_by_script(text)
+
+    tokens: list[str] = []
+    for script, segment_text in segments:
+        if script == "zh":
+            tokens.extend(jieba.lcut(segment_text, cut_all=False))
+        elif script == "ja":
+            parsed = _MECAB_TAGGER.parse(segment_text).strip()
+            if parsed:
+                tokens.extend(parsed.split())
+        elif script == "ko":
+            tokens.extend(uniseg_words(segment_text))
+        else:  # latin
+            tokens.extend(uniseg_words(segment_text))
+
+    # Split on hyphens (anti-gaming: AC1.7)
+    sub_tokens: list[str] = []
+    for token in tokens:
+        sub_tokens.extend(token.split("-"))
+
+    # Filter: keep only sub-tokens with at least one Unicode letter
+    count = sum(
+        1
+        for sub in sub_tokens
+        if any(unicodedata.category(c).startswith("L") for c in sub)
+    )
+    return count

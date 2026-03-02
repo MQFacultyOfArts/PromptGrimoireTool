@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from promptgrimoire.word_count import normalise_text, segment_by_script
+from promptgrimoire.word_count import normalise_text, segment_by_script, word_count
 
 
 class TestNormaliseText:
@@ -186,3 +186,128 @@ class TestSegmentByScript:
     ) -> None:
         """Edge cases: empty input, whitespace, punctuation, emoji, lone kanji."""
         assert segment_by_script(input_text) == expected
+
+
+class TestWordCount:
+    """Tests for word_count() main function.
+
+    CJK word counts use +-1 tolerance because jieba and MeCab tokenisation
+    depends on dictionary version. The exact counts in acceptance criteria
+    (AC1.2: 7 words, AC1.3: 8 words) are illustrative of expected magnitude,
+    not precise requirements.
+    """
+
+    @pytest.mark.parametrize(
+        ("input_text", "expected"),
+        [
+            pytest.param(
+                "well-known fact",
+                3,
+                id="AC1.1-hyphens-split-three-words",
+            ),
+            pytest.param(
+                "write-like-this-to-game",
+                5,
+                id="AC1.7-anti-gaming-hyphens-split-five-words",
+            ),
+            pytest.param(
+                "",
+                0,
+                id="AC1.10-empty-string-returns-zero",
+            ),
+            pytest.param(
+                "42",
+                0,
+                id="AC1.11-numbers-only-returns-zero",
+            ),
+        ],
+    )
+    def test_word_count_exact(self, input_text: str, expected: int) -> None:
+        """Verify word_count returns exact expected counts for non-CJK cases."""
+        assert word_count(input_text) == expected
+
+    @pytest.mark.parametrize(
+        ("input_text", "low", "high", "test_id"),
+        [
+            pytest.param(
+                "\u8fd9\u662f\u4e2d\u6587\u7ef4\u57fa\u767e\u79d1\u9996\u9875\u7684\u793a\u4f8b\u5185\u5bb9",
+                6,
+                8,
+                "AC1.2-chinese-jieba-approx-7",
+            ),
+            pytest.param(
+                "\u65e5\u672c\u56fd\u61b2\u6cd5\u306f\u6700\u9ad8\u6cd5\u898f\u3067\u3042\u308b",
+                7,
+                9,
+                "AC1.3-japanese-mecab-approx-8",
+            ),
+        ],
+    )
+    def test_word_count_cjk_tolerance(
+        self, input_text: str, low: int, high: int, test_id: str
+    ) -> None:
+        """CJK word counts use +-1 tolerance for dictionary variation."""
+        result = word_count(input_text)
+        assert low <= result <= high, f"{test_id}: expected {low}-{high}, got {result}"
+
+    def test_word_count_korean(self) -> None:
+        """AC1.4: Korean space-delimited text returns 4 words."""
+        korean = (
+            "\ub300\ud55c\ubbfc\uad6d \ud5cc\ubc95\uc740"
+            " \ucd5c\uace0\uc758 \ubc95\ub960\uc785\ub2c8\ub2e4"
+        )
+        assert word_count(korean) == 4
+
+
+class TestWordCountAntiGaming:
+    """Integration tests for the full word_count pipeline.
+
+    Verifies normalise -> segment -> tokenise -> filter works end-to-end
+    for anti-gaming measures and mixed-script inputs.
+    """
+
+    def test_mixed_script_english_japanese(self) -> None:
+        """AC1.5: Mixed English+Japanese counts both segments."""
+        text = "The contract states \u5951\u7d04\u306f\u6709\u52b9\u3067\u3042\u308b"
+        result = word_count(text)
+        # 3 English words + ~5 Japanese tokens
+        assert result >= 5
+
+    def test_markdown_link_counts_text_only(self) -> None:
+        """AC1.6: Markdown link URL excluded, only link text counted."""
+        result = word_count("[click here](https://example.com/long/path)")
+        assert result == 2
+
+    def test_zero_width_space_merges_words(self) -> None:
+        """AC1.8: Zero-width space stripped, adjacent words merge."""
+        assert word_count("hello\u200bworld") == 1
+
+    def test_fullwidth_normalised(self) -> None:
+        """AC1.9: Full-width text NFKC-normalised before counting."""
+        assert (
+            word_count("\uff28\uff45\uff4c\uff4c\uff4f \uff37\uff4f\uff52\uff4c\uff44")
+            == 2
+        )
+
+    def test_combined_anti_gaming(self) -> None:
+        """Multiple anti-gaming measures combined in one string."""
+        text = "write-like-this \u200b and [link](http://x.com)"
+        result = word_count(text)
+        # "write", "like", "this", "and", "link" = 5 words
+        # zero-width stripped, link URL stripped but link text kept
+        assert result == 5
+
+    def test_markdown_image(self) -> None:
+        """Markdown image: only alt text counted, not URL."""
+        assert word_count("![alt text](image.png)") == 2
+
+    def test_pure_punctuation(self) -> None:
+        """Pure punctuation returns 0 words."""
+        assert word_count("... --- !!!") == 0
+
+    def test_mixed_cjk_english(self) -> None:
+        """Mixed CJK and English in one sentence."""
+        text = "Hello \u4e16\u754c world"
+        result = word_count(text)
+        # "Hello" + Chinese segment + "world" = at least 3
+        assert result >= 3

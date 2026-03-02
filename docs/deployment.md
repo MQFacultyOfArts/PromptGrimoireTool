@@ -84,6 +84,7 @@ sudo apt install -y \
   ufw \
   unattended-upgrades apt-listchanges \
   pandoc \
+  pngquant \
   curl \
   fontconfig \
   mecab libmecab-dev

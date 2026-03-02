@@ -910,6 +910,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-glightbox"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "selectolax" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/26/c793459622da8e31f954c6f5fb51e8f098143fdfc147b1e3c25bf686f4aa/mkdocs_glightbox-0.5.2.tar.gz", hash = "sha256:c7622799347c32310878e01ccf14f70648445561010911c80590cec0353370ac", size = 510586, upload-time = "2025-10-23T14:55:18.909Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/ca/03624e017e5ee2d7ce8a08d89f81c1e535eb3c30d7b2dc4a435ea3fbbeae/mkdocs_glightbox-0.5.2-py3-none-any.whl", hash = "sha256:23a431ea802b60b1030c73323db2eed6ba859df1a0822ce575afa43e0ea3f47e", size = 26458, upload-time = "2025-10-23T14:55:17.43Z" },
+]
+
+[[package]]
 name = "mkdocs-material"
 version = "9.7.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1192,6 +1204,7 @@ dev = [
     { name = "ast-grep-cli" },
     { name = "complexipy" },
     { name = "junitparser" },
+    { name = "mkdocs-glightbox" },
     { name = "mkdocs-material" },
     { name = "pillow" },
     { name = "pre-commit" },
@@ -1242,6 +1255,7 @@ dev = [
     { name = "ast-grep-cli", specifier = ">=0.40.5" },
     { name = "complexipy", specifier = ">=5.2.0" },
     { name = "junitparser", specifier = ">=4.0.2" },
+    { name = "mkdocs-glightbox", specifier = ">=0.5.2" },
     { name = "mkdocs-material", specifier = ">=9.7" },
     { name = "pillow", specifier = ">=11.0" },
     { name = "pre-commit", specifier = ">=4.5.1" },

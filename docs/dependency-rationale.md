@@ -280,6 +280,30 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `src/promptgrimoire/docs/screenshot.py` — `trim_whitespace()` function.
 **Serves:** Developers (guide authoring), end users (cleaner screenshots in documentation).
 
+### uniseg
+
+**Added:** 2026-03-02
+**Design plan:** docs/design-plans/2026-03-02-word-count-limits-47.md
+**Claim:** UAX #29 compliant Unicode word boundary detection. Used as the default tokeniser for Latin, Korean, and other space-delimited scripts in the word count function.
+**Evidence:** `src/promptgrimoire/word_count.py` — `word_count()` calls `uniseg.wordbreak.words()` for non-CJK text segments.
+**Serves:** Runtime users (accurate word counting for limit enforcement).
+
+### jieba
+
+**Added:** 2026-03-02
+**Design plan:** docs/design-plans/2026-03-02-word-count-limits-47.md
+**Claim:** Chinese text word segmentation. Chinese text has no whitespace between words; jieba provides dictionary-based segmentation required for accurate word counting.
+**Evidence:** `src/promptgrimoire/word_count.py` — `segment_chinese()` calls `jieba.cut()` for Chinese-script text segments.
+**Serves:** Runtime users (accurate Chinese word counting in translation assessments).
+
+### mecab-python3 + unidic-lite
+
+**Added:** 2026-03-02
+**Design plan:** docs/design-plans/2026-03-02-word-count-limits-47.md
+**Claim:** Japanese morphological analysis. Japanese text mixes kanji, hiragana, and katakana without whitespace boundaries; MeCab provides dictionary-based segmentation. unidic-lite provides the bundled dictionary.
+**Evidence:** `src/promptgrimoire/word_count.py` — `segment_japanese()` calls `MeCab.Tagger().parseToNode()` for Japanese-script text segments.
+**Serves:** Runtime users (accurate Japanese word counting in translation assessments).
+
 ### mkdocs-material
 
 **Added:** 2026-02-28

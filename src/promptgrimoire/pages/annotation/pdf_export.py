@@ -22,12 +22,12 @@ from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
 )
-from promptgrimoire.pages.annotation.word_count_enforcement import (
+from promptgrimoire.word_count import word_count
+from promptgrimoire.word_count_enforcement import (
     WordCountViolation,
     check_word_count_violation,
     format_violation_message,
 )
-from promptgrimoire.word_count import word_count
 
 if TYPE_CHECKING:
     from uuid import UUID

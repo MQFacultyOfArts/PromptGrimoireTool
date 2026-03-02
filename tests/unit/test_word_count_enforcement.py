@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from promptgrimoire.pages.annotation.word_count_enforcement import (
+from promptgrimoire.word_count_enforcement import (
     WordCountViolation,
     check_word_count_violation,
     format_violation_message,

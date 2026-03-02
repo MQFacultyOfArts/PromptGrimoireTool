@@ -23,6 +23,7 @@ from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
+from promptgrimoire.word_count_enforcement import check_word_count_violation
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +272,22 @@ def _get_export_dir(user_id: str) -> Path:
     return export_dir
 
 
+def _red_badge(label: str) -> str:
+    """Return a red ``\\fcolorbox`` LaTeX snippet with *label* in bold."""
+    return (
+        r"\noindent\fcolorbox{red}{red!10}{%"
+        "\n"
+        r"\parbox{\dimexpr\textwidth-2\fboxsep-2\fboxrule}{%"
+        "\n"
+        rf"\textcolor{{red}}{{\textbf{{{label}}}}}"
+        "%\n"
+        r"}}"
+        "\n"
+        r"\vspace{1em}"
+        "\n"
+    )
+
+
 def _build_word_count_badge(
     count: int,
     word_minimum: int | None,
@@ -283,6 +300,10 @@ def _build_word_count_badge(
     - Neutral italic line when within limits.
     - Empty string when no limits are configured.
 
+    Delegates violation detection to
+    :func:`~promptgrimoire.word_count_enforcement.check_word_count_violation`
+    so the rules are defined in exactly one place.
+
     Args:
         count: Current word count.
         word_minimum: Minimum word count threshold, or None.
@@ -294,44 +315,18 @@ def _build_word_count_badge(
     if word_limit is None and word_minimum is None:
         return ""
 
+    violation = check_word_count_violation(count, word_minimum, word_limit)
+
     # Determine the denominator for the "X / Y" display
     denominator = word_limit if word_limit is not None else word_minimum
 
-    # Check for violations (same rules as word_count_enforcement)
-    is_over = word_limit is not None and count >= word_limit
-    is_under = word_minimum is not None and count < word_minimum
+    if violation.over_limit:
+        return _red_badge(f"Word Count: {count:,} / {denominator:,} (Exceeded)")
 
-    if is_over:
-        label = f"Word Count: {count:,} / {denominator:,} (Exceeded)"
-        return (
-            r"\noindent\fcolorbox{red}{red!10}{%"
-            "\n"
-            r"\parbox{\dimexpr\textwidth-2\fboxsep-2\fboxrule}{%"
-            "\n"
-            rf"\textcolor{{red}}{{\textbf{{{label}}}}}"
-            "%\n"
-            r"}}"
-            "\n"
-            r"\vspace{1em}"
-            "\n"
-        )
+    if violation.under_minimum:
+        return _red_badge(f"Word Count: {count:,} / {denominator:,} (Below Minimum)")
 
-    if is_under:
-        label = f"Word Count: {count:,} / {denominator:,} (Below Minimum)"
-        return (
-            r"\noindent\fcolorbox{red}{red!10}{%"
-            "\n"
-            r"\parbox{\dimexpr\textwidth-2\fboxsep-2\fboxrule}{%"
-            "\n"
-            rf"\textcolor{{red}}{{\textbf{{{label}}}}}"
-            "%\n"
-            r"}}"
-            "\n"
-            r"\vspace{1em}"
-            "\n"
-        )
-
-    # Within limits — neutral italic line
+    # Within limits -- neutral italic line
     label = f"Word Count: {count:,} / {denominator:,}"
     return r"\noindent\textit{" + label + "}\n" + r"\vspace{1em}" + "\n"
 

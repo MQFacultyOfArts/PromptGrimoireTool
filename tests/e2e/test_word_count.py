@@ -49,12 +49,15 @@ class TestWordCountSettings:
             authenticated_page.get_by_test_id("activity-word-limit-input").fill("500")
 
         with subtests.test(msg="AC3.3: Set enforcement to Hard"):
+            from playwright.sync_api import expect
+
             authenticated_page.get_by_test_id(
                 "activity-word_limit_enforcement-select"
             ).click()
-            authenticated_page.get_by_test_id(
-                "activity-word_limit_enforcement-opt-on"
-            ).click()
+            # Quasar renders select options in a teleported q-menu;
+            # use q-item text filter (same pattern as test_instructor_workflow)
+            authenticated_page.wait_for_timeout(300)
+            authenticated_page.locator(".q-item").filter(has_text="Hard").click()
 
         # Save settings
         authenticated_page.get_by_test_id("save-activity-settings-btn").click()
@@ -88,28 +91,16 @@ class TestWordCountSettings:
             authenticated_page.keyboard.press("Escape")
 
         with subtests.test(msg="AC3.4: Course default word limit enforcement toggle"):
-            # Open course settings dialog
-            authenticated_page.get_by_test_id("course-settings-btn").click()
-            authenticated_page.get_by_test_id("course-settings-title").wait_for(
-                state="visible", timeout=5000
+            from tests.e2e import course_helpers
+
+            # Use the existing helper which handles q-toggle interaction correctly
+            course_helpers.configure_course_setting(
+                authenticated_page,
+                toggle_label="Default word limit enforcement",
+                enabled=True,
             )
 
             from playwright.sync_api import expect
-
-            # Verify switch is visible
-            switch = authenticated_page.get_by_test_id(
-                "course-default_word_limit_enforcement-switch"
-            )
-            expect(switch).to_be_visible()
-
-            # Toggle it on
-            switch.click()
-
-            # Save
-            authenticated_page.get_by_test_id("save-course-settings-btn").click()
-            authenticated_page.get_by_test_id("course-settings-title").wait_for(
-                state="hidden", timeout=5000
-            )
 
             # Reload and verify persistence
             authenticated_page.reload()
@@ -120,10 +111,11 @@ class TestWordCountSettings:
                 state="visible", timeout=5000
             )
 
-            switch = authenticated_page.get_by_test_id(
-                "course-default_word_limit_enforcement-switch"
+            # q-toggle uses aria-checked on the .q-toggle element
+            toggle = authenticated_page.locator(".q-toggle").filter(
+                has_text="Default word limit enforcement"
             )
-            expect(switch).to_have_attribute("aria-checked", "true")
+            expect(toggle).to_have_attribute("aria-checked", "true")
 
 
 @pytest.mark.e2e

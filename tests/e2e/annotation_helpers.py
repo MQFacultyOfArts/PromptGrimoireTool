@@ -499,7 +499,7 @@ def _create_workspace_with_word_limits(
                 "  default_anonymous_sharing, default_allow_tag_creation,"
                 "  default_word_limit_enforcement, created_at)"
                 " VALUES (CAST(:id AS uuid), :code, :name, :semester,"
-                "  false, false, false, false, :dwle, now())"
+                "  false, false, false, false, false, :dwle, now())"
             ),
             {
                 "id": course_id,

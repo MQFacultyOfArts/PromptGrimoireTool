@@ -43,9 +43,11 @@ tests/e2e/screenshots/
 
 # Documentation generation artefacts (uv run make-docs)
 docs/guides/screenshots/
+docs/guides/index.md
 docs/guides/instructor-setup.md
 docs/guides/student-workflow.md
 docs/guides/your-personal-grimoire.md
+docs/guides/flight-rules.md
 docs/guides/*.pdf
 docs/guides/*.png
 docs/site/

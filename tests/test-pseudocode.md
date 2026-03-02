@@ -11,7 +11,8 @@ they reveal where the test suite is redundant or incomplete.
 > css-highlight-api, 165-auto-create-branch-db, 96-workspace-acl,
 > 95-annotation-tags, workspace-navigator-196,
 > user-docs-rodney-showboat-207,
-> platform-handlers-openrouter-chatcraft-209, and docs-platform-208 branches.
+> platform-handlers-openrouter-chatcraft-209, docs-platform-208,
+> and tags-214 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -2307,6 +2308,100 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert results ordered: First, Second, Third
 
 **Verifies:** Tags sorted by order_index regardless of insertion order
+
+## Annotation Tags -- Empty Template Tag Management (Integration)
+
+### Empty workspace returns empty tag list
+**File:** tests/integration/test_empty_template_tags.py::TestEmptyWorkspaceTags::test_empty_workspace_returns_empty_tag_list
+1. Create course, week, and activity (provisions empty template workspace)
+2. Call workspace_tags() on the template workspace
+3. Assert result is empty list
+
+**Verifies:** workspace_tags() returns empty list for a new workspace with no tags and no documents (AC1.1)
+
+### Tags on empty workspace are retrievable
+**File:** tests/integration/test_empty_template_tags.py::TestEmptyWorkspaceTags::test_tags_on_empty_workspace_are_retrievable
+1. Create activity with empty template workspace
+2. Create a tag group "Legal Issues" and tag "Jurisdiction" on the template
+3. Call workspace_tags()
+4. Assert one TagInfo returned with correct name, colour, raw_key, group_name
+
+**Verifies:** Tags created on a workspace with zero WorkspaceDocument rows are returned by workspace_tags() (AC1.1)
+
+### Import tags into empty template
+**File:** tests/integration/test_empty_template_tags.py::TestImportTagsToEmptyTemplate::test_import_tags_into_empty_template
+1. Create source activity, add two tags ("Damages", "Liability")
+2. Create target activity (empty template, different course)
+3. Verify target workspace_tags() returns empty list
+4. Call import_tags_from_activity() from source to target
+5. Assert 2 tags imported, workspace_tags() returns both names
+
+**Verifies:** import_tags_from_activity() works for templates with no documents (AC1.3)
+
+### Import tags with groups into empty template
+**File:** tests/integration/test_empty_template_tags.py::TestImportTagsToEmptyTemplate::test_import_tags_with_groups_into_empty_template
+1. Create source activity, add tag group "Core Issues" with tag "Negligence"
+2. Create empty target activity
+3. Import tags from source to target
+4. Assert imported tag has correct name and group_name preserved
+
+**Verifies:** Group assignment survives import into an empty template (AC1.3)
+
+### Create then query reflects immediately
+**File:** tests/integration/test_empty_template_tags.py::TestTagMutationsReflectedInWorkspaceTags::test_create_then_query
+1. Create activity, verify workspace_tags() starts empty
+2. Create tag "Tag A"
+3. Call workspace_tags() again
+4. Assert one tag returned with name "Tag A"
+
+**Verifies:** Tag creation is immediately reflected in workspace_tags() (AC1.4)
+
+### Rename then query reflects immediately
+**File:** tests/integration/test_empty_template_tags.py::TestTagMutationsReflectedInWorkspaceTags::test_rename_then_query
+1. Create tag "Old Name" on empty template
+2. Rename via update_tag() to "New Name"
+3. Call workspace_tags()
+4. Assert tag name is "New Name"
+
+**Verifies:** Tag rename is immediately reflected in workspace_tags() (AC1.4)
+
+### Delete then query reflects immediately
+**File:** tests/integration/test_empty_template_tags.py::TestTagMutationsReflectedInWorkspaceTags::test_delete_then_query
+1. Create tag "To Delete" on empty template
+2. Delete via delete_tag()
+3. Call workspace_tags()
+4. Assert empty list
+
+**Verifies:** Tag deletion is immediately reflected in workspace_tags() (AC1.4)
+
+### Sequential mutations all reflected
+**File:** tests/integration/test_empty_template_tags.py::TestTagMutationsReflectedInWorkspaceTags::test_sequential_mutations
+1. Create two tags ("Alpha", "Beta"), verify both returned
+2. Rename "Alpha" to "Alpha Renamed", verify set is {"Alpha Renamed", "Beta"}
+3. Delete "Beta", verify only "Alpha Renamed" remains
+4. Create "Gamma", verify set is {"Alpha Renamed", "Gamma"}
+
+**Verifies:** A sequence of create, rename, and delete mutations are all consistently reflected (AC1.4)
+
+### Clone copies tags from empty template
+**File:** tests/integration/test_empty_template_tags.py::TestCloneEmptyTemplateWithTags::test_clone_copies_tags_from_empty_template
+1. Create activity, add tag group "Issues" with tags "Causation" and "Duty of Care"
+2. Create a user, clone workspace via clone_workspace_from_activity()
+3. Assert cloned workspace has same tag names and group assignment as template
+4. Assert cloned tag UUIDs are different from template (independent copies)
+
+**Verifies:** Tags and groups on an empty template are snapshot-copied during cloning (AC2.1)
+
+### Tags returned identically with document present
+**File:** tests/integration/test_empty_template_tags.py::TestWorkspaceWithDocumentsStillReturnsTags::test_tags_returned_with_document_present
+1. Create activity, add a document via add_document()
+2. Add tag group "Analysis" with tag "Key Finding"
+3. Call workspace_tags()
+4. Assert one TagInfo returned with correct name, colour, raw_key, group_name
+
+**Verifies:** workspace_tags() returns tags the same way whether documents exist or not (AC3.1 -- non-regression)
+
+**Overlap note:** test_empty_workspace_returns_empty_tag_list and test_tags_on_empty_workspace_are_retrievable overlap with tests/integration/test_workspace_tags.py (existing workspace_tags tests). The new tests specifically target workspaces created via the activity provisioning path (with zero WorkspaceDocument rows), while the existing tests use direct workspace creation.
 
 ## CLI Utilities (Unit)
 

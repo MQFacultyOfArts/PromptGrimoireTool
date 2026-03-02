@@ -57,6 +57,37 @@ async def get_user_workspace_for_activity(
         return result.first()
 
 
+async def has_student_workspaces(activity_id: UUID) -> int:
+    """Count non-template workspaces for an activity.
+
+    Returns the number of student (cloned) workspaces placed in this
+    activity, excluding the template workspace itself.  A return value
+    of 0 means the activity is safe to delete without force.
+
+    Args:
+        activity_id: The activity UUID.
+
+    Returns:
+        Count of student workspaces (0 = safe to delete).
+    """
+    from sqlalchemy import func
+
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        if activity is None:
+            return 0
+
+        result = await session.exec(
+            select(func.count())
+            .select_from(Workspace)
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.id != activity.template_workspace_id,
+            )
+        )
+        return result.one()
+
+
 async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | None:
     """Check if a user is eligible to clone a workspace from an activity.
 

@@ -145,3 +145,44 @@ class TestSegmentByScript:
     ) -> None:
         """Verify segment_by_script groups characters by script correctly."""
         assert segment_by_script(input_text) == expected
+
+    @pytest.mark.parametrize(
+        ("input_text", "expected"),
+        [
+            pytest.param(
+                "",
+                [],
+                id="empty-string-returns-empty-list",
+            ),
+            pytest.param(
+                "   ",
+                [("latin", "   ")],
+                id="whitespace-only-returns-single-latin",
+            ),
+            pytest.param(
+                "42 + 3.14",
+                [("latin", "42 + 3.14")],
+                id="numbers-and-punctuation-are-latin",
+            ),
+            pytest.param(
+                "\u3001\u3002\u300c\u300d",
+                [("latin", "\u3001\u3002\u300c\u300d")],
+                id="cjk-punctuation-classified-as-latin",
+            ),
+            pytest.param(
+                "\U0001f600\U0001f680",
+                [("latin", "\U0001f600\U0001f680")],
+                id="emoji-fallback-to-latin",
+            ),
+            pytest.param(
+                "\u5b57",
+                [("zh", "\u5b57")],
+                id="single-kanji-no-neighbours-classified-zh",
+            ),
+        ],
+    )
+    def test_segment_by_script_edge_cases(
+        self, input_text: str, expected: list[tuple[str, str]]
+    ) -> None:
+        """Edge cases: empty input, whitespace, punctuation, emoji, lone kanji."""
+        assert segment_by_script(input_text) == expected

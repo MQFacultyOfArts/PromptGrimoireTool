@@ -11,6 +11,7 @@ import pytest
 from promptgrimoire.pages.annotation.word_count_enforcement import (
     WordCountViolation,
     check_word_count_violation,
+    format_violation_message,
 )
 
 
@@ -103,3 +104,59 @@ class TestCheckWordCountViolation:
         assert result.count == 150
         assert result.word_minimum == 50
         assert result.word_limit == 100
+
+
+class TestFormatViolationMessage:
+    """Tests for format_violation_message().
+
+    Verifies AC5.1 (dialog message text) and AC5.5 (both violations message).
+    """
+
+    def test_over_limit_message(self) -> None:
+        """AC5.1: Over limit message includes word limit and current count."""
+        violation = check_word_count_violation(
+            count=150, word_minimum=None, word_limit=100
+        )
+        msg = format_violation_message(violation)
+        assert msg == (
+            "Your response is 50 words over the 100-word limit (current count: 150)."
+        )
+
+    def test_under_minimum_message(self) -> None:
+        """AC5.1: Under minimum message includes word minimum and current count."""
+        violation = check_word_count_violation(
+            count=50, word_minimum=100, word_limit=None
+        )
+        msg = format_violation_message(violation)
+        assert msg == (
+            "Your response is 50 words under the 100-word minimum (current count: 50)."
+        )
+
+    def test_both_violated_message(self) -> None:
+        """AC5.5: Both violated message mentions over and under.
+
+        Constructs a WordCountViolation directly since this state is
+        unreachable through check_word_count_violation() with validated data
+        (word_minimum < word_limit). Tests the formatting code path.
+        """
+        violation = WordCountViolation(
+            over_limit=True,
+            under_minimum=True,
+            over_by=50,
+            under_by=30,
+            count=250,
+            word_minimum=280,
+            word_limit=200,
+        )
+        msg = format_violation_message(violation)
+        assert msg == (
+            "Your response is 50 words over the limit and 30 words under the minimum."
+        )
+
+    def test_over_limit_large_count_has_comma_formatting(self) -> None:
+        """Large counts use comma-separated formatting."""
+        violation = check_word_count_violation(
+            count=1567, word_minimum=None, word_limit=1500
+        )
+        msg = format_violation_message(violation)
+        assert "(current count: 1,567)" in msg

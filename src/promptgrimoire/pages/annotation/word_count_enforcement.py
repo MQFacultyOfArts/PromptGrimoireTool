@@ -75,3 +75,35 @@ def check_word_count_violation(
         word_minimum=word_minimum,
         word_limit=word_limit,
     )
+
+
+def format_violation_message(violation: WordCountViolation) -> str:
+    """Format a human-readable violation message for dialog display.
+
+    Args:
+        violation: The violation state to describe.
+
+    Returns:
+        A sentence describing what limit(s) are violated.
+
+    Message patterns:
+        - Both violated: mentions over and under in one sentence.
+        - Over only: includes word limit and current count.
+        - Under only: includes word minimum and current count.
+    """
+    if violation.over_limit and violation.under_minimum:
+        return (
+            f"Your response is {violation.over_by} words over the limit"
+            f" and {violation.under_by} words under the minimum."
+        )
+    if violation.over_limit:
+        return (
+            f"Your response is {violation.over_by} words over the"
+            f" {violation.word_limit}-word limit"
+            f" (current count: {violation.count:,})."
+        )
+    return (
+        f"Your response is {violation.under_by} words under the"
+        f" {violation.word_minimum}-word minimum"
+        f" (current count: {violation.count:,})."
+    )

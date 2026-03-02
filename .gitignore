@@ -45,6 +45,7 @@ tests/e2e/screenshots/
 docs/guides/screenshots/
 docs/guides/instructor-setup.md
 docs/guides/student-workflow.md
+docs/guides/your-personal-grimoire.md
 docs/guides/*.pdf
 docs/guides/*.png
 docs/site/

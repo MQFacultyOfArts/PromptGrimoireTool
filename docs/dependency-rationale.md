@@ -154,6 +154,15 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Why not alternatives:** The existing `ClaudeClient` (anthropic SDK) only supports Anthropic. pydantic-ai abstracts multiple providers with a single streaming interface, supports extended thinking across providers (Claude native, DeepSeek `<think>` tags, Gemini reasoning_details), and handles `message_history` serialization for cross-model conversations. LiteLLM was considered but adds a proxy server; pydantic-ai is a library.
 **Classification:** Hard core for the playground feature. The provider abstraction and streaming event model are built around pydantic-ai's API.
 
+### typer[all]
+
+**Added:** 2026-03-02
+**Design plan:** docs/design-plans/2026-03-02-cli-typer-211.md
+**Claim:** CLI framework for all developer-facing commands. Replaces argparse and raw `sys.argv` parsing with type-annotated argument declarations, auto-generated help, and shell completion.
+**Evidence:** All files in `src/promptgrimoire/cli/` import typer. The single entry point `grimoire` in `[project.scripts]` points to `promptgrimoire.cli:app`, a `typer.Typer()` instance. Sub-apps for test, e2e, admin, seed, export, and docs are registered via `add_typer()`.
+**Why not alternatives:** click is typer's underlying library but requires more boilerplate. argparse (stdlib) lacks auto-generated Rich help, shell completion, and the composable sub-app model. The project already uses Rich and Pydantic, which typer integrates with natively.
+**Classification:** Hard core for CLI. All command-line entry points depend on it.
+
 ## Dev Dependencies
 
 ### pytest >= 8.0

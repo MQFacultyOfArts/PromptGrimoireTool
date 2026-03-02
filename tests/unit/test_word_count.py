@@ -227,28 +227,28 @@ class TestWordCount:
         assert word_count(input_text) == expected
 
     @pytest.mark.parametrize(
-        ("input_text", "low", "high", "test_id"),
+        ("input_text", "low", "high"),
         [
             pytest.param(
                 "\u8fd9\u662f\u4e2d\u6587\u7ef4\u57fa\u767e\u79d1\u9996\u9875\u7684\u793a\u4f8b\u5185\u5bb9",
                 6,
                 8,
-                "AC1.2-chinese-jieba-approx-7",
+                id="AC1.2-chinese-jieba-approx-7",
             ),
             pytest.param(
                 "\u65e5\u672c\u56fd\u61b2\u6cd5\u306f\u6700\u9ad8\u6cd5\u898f\u3067\u3042\u308b",
                 7,
                 9,
-                "AC1.3-japanese-mecab-approx-8",
+                id="AC1.3-japanese-mecab-approx-8",
             ),
         ],
     )
     def test_word_count_cjk_tolerance(
-        self, input_text: str, low: int, high: int, test_id: str
+        self, input_text: str, low: int, high: int
     ) -> None:
         """CJK word counts use +-1 tolerance for dictionary variation."""
         result = word_count(input_text)
-        assert low <= result <= high, f"{test_id}: expected {low}-{high}, got {result}"
+        assert low <= result <= high, f"expected {low}-{high}, got {result}"
 
     def test_word_count_korean(self) -> None:
         """AC1.4: Korean space-delimited text returns 4 words."""

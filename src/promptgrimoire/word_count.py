@@ -59,16 +59,9 @@ def normalise_text(text: str) -> str:
     2. Strip zero-width / format characters (AC1.8)
     3. Strip markdown link/image URLs (AC1.6)
     """
-    # NFKC normalisation: full-width -> ASCII, compatibility decomposition
     text = unicodedata.normalize("NFKC", text)
-
-    # Strip Unicode format characters (zero-width spaces, joiners, etc.)
     text = _FORMAT_CHARS_RE.sub("", text)
-
-    # Strip markdown image markers: ![alt](url) -> [alt](url)
     text = _MARKDOWN_IMAGE_RE.sub("[", text)
-
-    # Strip markdown link URLs: [text](url) -> [text]
     text = _MARKDOWN_LINK_URL_RE.sub("]", text)
 
     return text
@@ -186,20 +179,12 @@ def word_count(text: str) -> int:
             parsed = _MECAB_TAGGER.parse(segment_text).strip()
             if parsed:
                 tokens.extend(parsed.split())
-        elif script == "ko":
-            tokens.extend(uniseg_words(segment_text))
-        else:  # latin
+        else:  # ko, latin — both use UAX #29
             tokens.extend(uniseg_words(segment_text))
 
-    # Split on hyphens (anti-gaming: AC1.7)
-    sub_tokens: list[str] = []
-    for token in tokens:
-        sub_tokens.extend(token.split("-"))
+    # Split on hyphens (anti-gaming: AC1.7), then keep only tokens
+    # containing at least one Unicode letter
+    def _has_letter(s: str) -> bool:
+        return any(unicodedata.category(c).startswith("L") for c in s)
 
-    # Filter: keep only sub-tokens with at least one Unicode letter
-    count = sum(
-        1
-        for sub in sub_tokens
-        if any(unicodedata.category(c).startswith("L") for c in sub)
-    )
-    return count
+    return sum(1 for token in tokens for sub in token.split("-") if _has_letter(sub))

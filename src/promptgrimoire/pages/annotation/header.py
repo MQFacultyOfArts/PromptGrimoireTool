@@ -14,6 +14,7 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     inject_paragraph_attributes,
 )
 from promptgrimoire.pages.annotation.broadcast import _update_user_count
+from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -177,6 +178,17 @@ async def render_workspace_header(
         )
         # Update with actual count now that badge exists
         _update_user_count(state)
+
+        # Word count badge (only when limits are configured)
+        if state.word_minimum is not None or state.word_limit is not None:
+            badge_state = format_word_count_badge(
+                0, state.word_minimum, state.word_limit
+            )
+            state.word_count_badge = (
+                ui.label(badge_state.text)
+                .classes(badge_state.css_classes)
+                .props('data-testid="word-count-badge"')
+            )
 
         # Export PDF button with loading state
         export_btn = ui.button(

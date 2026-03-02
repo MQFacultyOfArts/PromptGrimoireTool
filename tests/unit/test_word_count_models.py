@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 from promptgrimoire.db.models import Activity, Course
 
 _WEEK_ID = uuid4()
@@ -70,3 +72,53 @@ class TestCourseWordCountFields:
         """Course default_word_limit_enforcement can be set to True."""
         course = _make_course(default_word_limit_enforcement=True)
         assert course.default_word_limit_enforcement is True
+
+
+class TestWordCountValidation:
+    """Tests for cross-field validation of word_minimum vs word_limit.
+
+    Verifies AC2.5: Setting word_minimum >= word_limit (when both set) is rejected.
+    """
+
+    def test_minimum_greater_than_limit_raises(self) -> None:
+        """AC2.5: word_minimum=500 > word_limit=200 raises ValueError."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        with pytest.raises(
+            ValueError, match="word_minimum must be less than word_limit"
+        ):
+            validate_word_count_limits(word_minimum=500, word_limit=200)
+
+    def test_minimum_equal_to_limit_raises(self) -> None:
+        """AC2.5: word_minimum=500 == word_limit=500 raises ValueError."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        with pytest.raises(
+            ValueError, match="word_minimum must be less than word_limit"
+        ):
+            validate_word_count_limits(word_minimum=500, word_limit=500)
+
+    def test_minimum_less_than_limit_succeeds(self) -> None:
+        """word_minimum=200 < word_limit=500 is valid."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        # Should not raise
+        validate_word_count_limits(word_minimum=200, word_limit=500)
+
+    def test_no_minimum_with_limit_succeeds(self) -> None:
+        """word_minimum=None with word_limit=200 is valid."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        validate_word_count_limits(word_minimum=None, word_limit=200)
+
+    def test_minimum_with_no_limit_succeeds(self) -> None:
+        """word_minimum=200 with word_limit=None is valid."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        validate_word_count_limits(word_minimum=200, word_limit=None)
+
+    def test_both_none_succeeds(self) -> None:
+        """Both None is valid (no limits configured)."""
+        from promptgrimoire.db.activities import validate_word_count_limits
+
+        validate_word_count_limits(word_minimum=None, word_limit=None)

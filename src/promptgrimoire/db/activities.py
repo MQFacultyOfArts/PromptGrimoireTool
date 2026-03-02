@@ -75,6 +75,32 @@ async def create_activity(
         return activity
 
 
+def validate_word_count_limits(
+    *, word_minimum: int | None, word_limit: int | None
+) -> None:
+    """Validate that word_minimum < word_limit when both are set.
+
+    Parameters
+    ----------
+    word_minimum : int | None
+        Minimum word count (None = no minimum).
+    word_limit : int | None
+        Maximum word count (None = no limit).
+
+    Raises
+    ------
+    ValueError
+        If both are set and word_minimum >= word_limit.
+    """
+    if (
+        word_minimum is not None
+        and word_limit is not None
+        and word_minimum >= word_limit
+    ):
+        msg = "word_minimum must be less than word_limit"
+        raise ValueError(msg)
+
+
 async def get_activity(activity_id: UUID) -> Activity | None:
     """Get an activity by ID."""
     async with get_session() as session:
@@ -89,13 +115,23 @@ async def update_activity(
     allow_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     anonymous_sharing: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
     allow_tag_creation: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
+    word_minimum: int | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear minimum)
+    word_limit: int | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (clear limit)
+    word_limit_enforcement: bool | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel distinguishes "not provided" from explicit None (reset to inherit)
 ) -> Activity | None:
     """Update activity details.
 
     Use description=None to clear it.
     Use copy_protection=None / allow_sharing=None / anonymous_sharing=None /
-    allow_tag_creation=None to reset to inherit from course.
+    allow_tag_creation=None / word_limit_enforcement=None to reset to inherit
+    from course.
+    Use word_minimum=None / word_limit=None to clear the limit.
     Omit any parameter (or pass ...) to leave it unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the resolved word_minimum >= word_limit (when both are set).
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
@@ -114,6 +150,18 @@ async def update_activity(
             activity.anonymous_sharing = anonymous_sharing
         if allow_tag_creation is not ...:
             activity.allow_tag_creation = allow_tag_creation
+        if word_minimum is not ...:
+            activity.word_minimum = word_minimum
+        if word_limit is not ...:
+            activity.word_limit = word_limit
+        if word_limit_enforcement is not ...:
+            activity.word_limit_enforcement = word_limit_enforcement
+
+        # Cross-field validation on the resolved state
+        validate_word_count_limits(
+            word_minimum=activity.word_minimum,
+            word_limit=activity.word_limit,
+        )
 
         activity.updated_at = datetime.now(UTC)
         session.add(activity)

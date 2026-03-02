@@ -1,9 +1,9 @@
-"""Integration tests for word count fields in PlacementContext resolution.
+"""Integration tests for word count fields.
 
-These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
+Tests PlacementContext resolution and update_activity() word count support.
+Requires a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
-Verifies AC2.4 (PlacementContext resolves enforcement via resolve_tristate)
-and AC2.6 (no limits configured = no word count behaviour).
+Verifies AC2.1, AC2.2, AC2.4, AC2.5, AC2.6.
 """
 
 from __future__ import annotations
@@ -272,3 +272,117 @@ class TestPlacementContextWordCountEdgeCases:
         ctx = await get_placement_context(ws.id)
         assert ctx.word_minimum is None
         assert ctx.word_limit == 500
+
+
+class TestUpdateActivityWordCountFields:
+    """Tests for word count field support in update_activity().
+
+    Verifies AC2.1 (fields accept int|None), AC2.2 (enforcement tri-state),
+    AC2.5 (cross-field validation).
+    """
+
+    @pytest.mark.asyncio
+    async def test_set_word_minimum(self) -> None:
+        """AC2.1: Set word_minimum via update_activity, read back."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-min")
+        activity = await create_activity(week_id=week.id, title="Set Min")
+
+        updated = await update_activity(activity.id, word_minimum=100)
+        assert updated is not None
+        assert updated.word_minimum == 100
+
+    @pytest.mark.asyncio
+    async def test_set_word_limit(self) -> None:
+        """AC2.1: Set word_limit via update_activity, read back."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-lim")
+        activity = await create_activity(week_id=week.id, title="Set Limit")
+
+        updated = await update_activity(activity.id, word_limit=500)
+        assert updated is not None
+        assert updated.word_limit == 500
+
+    @pytest.mark.asyncio
+    async def test_set_word_limit_enforcement_true(self) -> None:
+        """AC2.2: Set word_limit_enforcement=True, read back."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-enf-true")
+        activity = await create_activity(week_id=week.id, title="Hard Enforce")
+
+        updated = await update_activity(activity.id, word_limit_enforcement=True)
+        assert updated is not None
+        assert updated.word_limit_enforcement is True
+
+    @pytest.mark.asyncio
+    async def test_reset_word_limit_enforcement_to_inherit(self) -> None:
+        """AC2.2: Reset word_limit_enforcement=None (inherit), read back."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-enf-reset")
+        activity = await create_activity(week_id=week.id, title="Reset Enforce")
+
+        # Set to True first
+        await update_activity(activity.id, word_limit_enforcement=True)
+        # Reset to None (inherit)
+        updated = await update_activity(activity.id, word_limit_enforcement=None)
+        assert updated is not None
+        assert updated.word_limit_enforcement is None
+
+    @pytest.mark.asyncio
+    async def test_validation_rejects_minimum_ge_limit(self) -> None:
+        """AC2.5: Setting word_minimum >= word_limit via update raises ValueError."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-val-reject")
+        activity = await create_activity(week_id=week.id, title="Validate")
+
+        with pytest.raises(
+            ValueError, match="word_minimum must be less than word_limit"
+        ):
+            await update_activity(activity.id, word_minimum=500, word_limit=200)
+
+    @pytest.mark.asyncio
+    async def test_validation_rejects_when_updating_one_field(self) -> None:
+        """AC2.5: Updating just word_minimum to exceed existing word_limit raises."""
+        from promptgrimoire.db.activities import create_activity, update_activity
+
+        _, week = await _make_course_and_week("upd-val-partial")
+        activity = await create_activity(week_id=week.id, title="Partial Val")
+
+        # Set word_limit first
+        await update_activity(activity.id, word_limit=200)
+        # Now try to set word_minimum higher than the existing limit
+        with pytest.raises(
+            ValueError, match="word_minimum must be less than word_limit"
+        ):
+            await update_activity(activity.id, word_minimum=300)
+
+    @pytest.mark.asyncio
+    async def test_omitted_fields_unchanged(self) -> None:
+        """Omitting word count params preserves existing values."""
+        from promptgrimoire.db.activities import (
+            create_activity,
+            get_activity,
+            update_activity,
+        )
+
+        _, week = await _make_course_and_week("upd-preserve")
+        activity = await create_activity(week_id=week.id, title="Preserve")
+
+        # Set word count fields
+        await update_activity(
+            activity.id, word_minimum=100, word_limit=500, word_limit_enforcement=True
+        )
+
+        # Update only title -- word count fields should be unchanged
+        await update_activity(activity.id, title="Renamed")
+
+        refetched = await get_activity(activity.id)
+        assert refetched is not None
+        assert refetched.word_minimum == 100
+        assert refetched.word_limit == 500
+        assert refetched.word_limit_enforcement is True

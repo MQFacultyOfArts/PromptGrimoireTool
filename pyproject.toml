@@ -119,6 +119,9 @@ ignore = [
     "PLC0415",  # Late imports to avoid circular dependencies with db
     "PLW0603",  # Global singleton pattern is intentional
 ]
+"src/promptgrimoire/cli/admin.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB/auth modules at CLI load time
+]
 "src/promptgrimoire/cli_legacy.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]

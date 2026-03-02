@@ -12,6 +12,8 @@ from rich.console import Console
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from promptgrimoire.db.models import Course, User
+
 admin_app = typer.Typer(help="User, role, and course enrollment management.")
 
 # ---------------------------------------------------------------------------
@@ -26,7 +28,7 @@ def _format_last_login(dt: datetime | None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
-async def _find_course(code: str, semester: str):
+async def _find_course(code: str, semester: str) -> Course | None:
     """Look up a course by code + semester. Returns None if not found."""
     from sqlmodel import select
 
@@ -40,7 +42,7 @@ async def _find_course(code: str, semester: str):
         return result.first()
 
 
-async def _require_user(email: str, con: Console):
+async def _require_user(email: str, con: Console) -> User:
     """Look up user by email or exit with error."""
     from promptgrimoire.db.users import get_user_by_email
 
@@ -52,7 +54,7 @@ async def _require_user(email: str, con: Console):
     return user
 
 
-async def _require_course(code: str, semester: str, con: Console):
+async def _require_course(code: str, semester: str, con: Console) -> Course:
     """Look up course by code+semester or exit with error."""
     course = await _find_course(code, semester)
     if course is None:

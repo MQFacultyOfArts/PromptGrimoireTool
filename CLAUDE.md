@@ -100,7 +100,7 @@ uvx ty check
 uv run seed-data
 
 # Manage users, roles, and course enrollments
-uv run manage-users list|show|create|admin|enroll|unenroll|role
+uv run grimoire admin list|show|create|admin|enroll|unenroll|role
 
 # Generate user-facing documentation (requires pandoc)
 uv run make-docs

@@ -237,7 +237,7 @@ class TestAdminCliRunner:
 
 
 class TestCmdList:
-    """manage-users list — tabular user output."""
+    """admin list — tabular user output."""
 
     @pytest.mark.anyio
     async def test_list_shows_user_emails(self) -> None:
@@ -317,7 +317,7 @@ class TestCmdShow:
 
 
 class TestCmdAdmin:
-    """manage-users admin — set/remove admin status."""
+    """admin admin — set/remove admin status."""
 
     @pytest.mark.anyio
     async def test_admin_user_not_found(self) -> None:

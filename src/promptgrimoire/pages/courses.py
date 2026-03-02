@@ -57,8 +57,8 @@ from promptgrimoire.db.workspaces import (
     get_user_workspace_for_activity,
     resolve_tristate,
 )
-from promptgrimoire.pages.annotation.placement import _add_option_testids
 from promptgrimoire.pages.registry import page_route
+from promptgrimoire.pages.ui_helpers import add_option_testids
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -276,14 +276,18 @@ async def open_activity_settings(activity: Activity) -> None:
                 .classes("w-full")
                 .props(f'data-testid="activity-{attr}-select"')
             )
-            _add_option_testids(sel, f"activity-{attr}-opt")
+            add_option_testids(sel, f"activity-{attr}-opt")
             selects[attr] = sel
 
-        anon_select = ui.select(
-            options=_ANONYMOUS_SHARING_OPTIONS,
-            value=_model_to_ui(activity.anonymous_sharing),
-            label="Anonymity (overrides unit default)",
-        ).classes("w-full")
+        anon_select = (
+            ui.select(
+                options=_ANONYMOUS_SHARING_OPTIONS,
+                value=_model_to_ui(activity.anonymous_sharing),
+                label="Anonymity (overrides unit default)",
+            )
+            .classes("w-full")
+            .props('data-testid="activity-anonymous_sharing-select"')
+        )
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")

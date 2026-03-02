@@ -196,6 +196,11 @@ class PageState:
     is_anonymous: bool = False  # from PlacementContext.anonymous_sharing
     viewer_is_privileged: bool = False  # instructor / admin bypass
     privileged_user_ids: frozenset[str] = field(default_factory=frozenset)
+    # Word count limits (populated from PlacementContext during init)
+    word_minimum: int | None = None
+    word_limit: int | None = None
+    word_limit_enforcement: bool = False
+    word_count_badge: ui.label | None = None
     # UI elements set during page build
     highlight_style: ui.element | None = None
     highlight_menu: ui.element | None = None

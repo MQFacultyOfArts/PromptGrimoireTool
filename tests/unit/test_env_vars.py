@@ -230,10 +230,10 @@ _ALEMBIC_DIR = PROJECT_ROOT / "alembic"
 _ALLOWED_OS_ENVIRON = {
     # subprocess env pass-through
     _SRC_DIR / "db" / "bootstrap.py",
-    # NullPool coordination flag (set by cli.py, read by engine.py)
+    # NullPool coordination flag (set by cli_legacy.py, read by engine.py)
     _SRC_DIR / "db" / "engine.py",
     # subprocess env override for test database
-    _SRC_DIR / "cli.py",
+    _SRC_DIR / "cli_legacy.py",
 }
 
 _TESTS_DIR = PROJECT_ROOT / "tests"

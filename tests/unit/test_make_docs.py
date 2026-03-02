@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import promptgrimoire.cli as cli_module
+import promptgrimoire.cli_legacy as cli_module
 
 # Guides directory that make_docs() will glob for pandoc PDF generation.
 # Must match make_docs()'s own: Path(__file__).resolve().parents[2] / "docs" / "guides"

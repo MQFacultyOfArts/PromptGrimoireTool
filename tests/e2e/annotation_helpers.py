@@ -435,6 +435,181 @@ def _create_workspace_no_tag_permission(user_email: str) -> str:
     return workspace_id
 
 
+def _create_workspace_with_word_limits(
+    user_email: str,
+    html_content: str,
+    *,
+    word_minimum: int | None = None,
+    word_limit: int | None = None,
+    word_limit_enforcement: bool | None = None,
+    default_word_limit_enforcement: bool = False,
+) -> str:
+    """Create a workspace under an activity with word count limits configured.
+
+    Builds the full hierarchy (course -> week -> activity -> workspace)
+    via direct DB operations. Sets word count fields on both the course
+    and activity.
+
+    Args:
+        user_email: Email of the user (must exist in DB).
+        html_content: Pre-processed HTML content for the document.
+        word_minimum: Activity-level word minimum (None = no minimum).
+        word_limit: Activity-level word limit (None = no limit).
+        word_limit_enforcement: Activity-level enforcement override
+            (None = inherit from course, True = hard, False = soft).
+        default_word_limit_enforcement: Course-level default enforcement
+            (True = hard, False = soft).
+
+    Returns:
+        workspace_id as string.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    course_id = str(uuid.uuid4())
+    week_id = str(uuid.uuid4())
+    activity_id = str(uuid.uuid4())
+    template_ws_id = str(uuid.uuid4())
+    workspace_id = str(uuid.uuid4())
+    doc_id = str(uuid.uuid4())
+
+    with engine.begin() as conn:
+        # Look up user
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            msg = f"User not found in DB: {user_email}"
+            raise RuntimeError(msg)
+        user_id = row[0]
+
+        # Create course with word limit enforcement setting
+        conn.execute(
+            text(
+                "INSERT INTO course"
+                " (id, code, name, semester, is_archived,"
+                "  default_copy_protection, default_allow_sharing,"
+                "  default_anonymous_sharing, default_allow_tag_creation,"
+                "  default_word_limit_enforcement, created_at)"
+                " VALUES (CAST(:id AS uuid), :code, :name, :semester,"
+                "  false, false, false, false, :dwle, now())"
+            ),
+            {
+                "id": course_id,
+                "code": f"WDCNT-{uuid.uuid4().hex[:6]}",
+                "name": "Word Count Test",
+                "semester": "2026-T1",
+                "dwle": default_word_limit_enforcement,
+            },
+        )
+
+        # Create week
+        conn.execute(
+            text(
+                "INSERT INTO week"
+                " (id, course_id, week_number, title,"
+                "  is_published, created_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:cid AS uuid),"
+                "  1, :title, true, now())"
+            ),
+            {"id": week_id, "cid": course_id, "title": "Week 1"},
+        )
+
+        # Create template workspace (required by activity FK)
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, enable_save_as_draft, created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), false, now(), now())"
+            ),
+            {"id": template_ws_id},
+        )
+
+        # Create activity with word count fields
+        conn.execute(
+            text(
+                "INSERT INTO activity"
+                " (id, week_id, template_workspace_id, title,"
+                "  word_minimum, word_limit, word_limit_enforcement,"
+                "  created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:wid AS uuid),"
+                "  CAST(:twid AS uuid), :title,"
+                "  :word_minimum, :word_limit, :word_limit_enforcement,"
+                "  now(), now())"
+            ),
+            {
+                "id": activity_id,
+                "wid": week_id,
+                "twid": template_ws_id,
+                "title": "Word Count Activity",
+                "word_minimum": word_minimum,
+                "word_limit": word_limit,
+                "word_limit_enforcement": word_limit_enforcement,
+            },
+        )
+
+        # Create user's workspace placed under the activity
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, activity_id, enable_save_as_draft,"
+                "  created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:aid AS uuid),"
+                "  false, now(), now())"
+            ),
+            {"id": workspace_id, "aid": activity_id},
+        )
+
+        # Create workspace document
+        conn.execute(
+            text(
+                "INSERT INTO workspace_document"
+                " (id, workspace_id, type, content,"
+                "  source_type, order_index, created_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                "  'source', :content, 'text', 0, now())"
+            ),
+            {
+                "id": doc_id,
+                "ws": workspace_id,
+                "content": html_content,
+            },
+        )
+
+        # Grant owner permission
+        conn.execute(
+            text(
+                "INSERT INTO acl_entry"
+                " (id, workspace_id, user_id, permission, created_at)"
+                " VALUES (gen_random_uuid(),"
+                "  CAST(:ws AS uuid), :uid, 'owner', now())"
+            ),
+            {"ws": workspace_id, "uid": user_id},
+        )
+
+        # Enrol the user in the course (required for placement resolution)
+        conn.execute(
+            text(
+                "INSERT INTO course_enrollment"
+                " (id, course_id, user_id, role, created_at)"
+                " VALUES (gen_random_uuid(),"
+                "  CAST(:cid AS uuid), :uid, 'student', now())"
+                " ON CONFLICT DO NOTHING"
+            ),
+            {"cid": course_id, "uid": user_id},
+        )
+
+    engine.dispose()
+    return workspace_id
+
+
 def get_user_id_by_email(email: str) -> str:
     """Return a user's UUID (as string) from their email.
 

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _CAPTURE_PATCH = "promptgrimoire.docs.guide.capture_screenshot"
+_THUMBNAIL_PATCH = "promptgrimoire.docs.guide.generate_thumbnail"
 
 
 def _read_guide_md(tmp_path: Path, slug: str = "test") -> str:
@@ -32,6 +33,12 @@ def _read_guide_md(tmp_path: Path, slug: str = "test") -> str:
 
 class TestGuideContextManager:
     """Tests for the Guide context manager."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_thumbnail(self) -> None:  # type: ignore[override]
+        """Auto-mock generate_thumbnail for all tests."""
+        with patch(_THUMBNAIL_PATCH):
+            yield  # type: ignore[misc]
 
     def test_creates_output_dir_and_writes_markdown(self, tmp_path: Path) -> None:
         """AC1.1: Guide creates output directory and writes .md file on exit."""
@@ -87,7 +94,9 @@ class TestGuideContextManager:
                 guide.screenshot("Login page")
 
         content = _read_guide_md(tmp_path)
-        assert "![Login page](screenshots/test-01.png)\n" in content
+        # Thumbnail links to full-res for glightbox
+        assert "[![Login page](screenshots/test-01-thumb.png)]" in content
+        assert "(screenshots/test-01.png)" in content
 
     def test_screenshot_calls_capture(self, tmp_path: Path) -> None:
         """AC1.4: screenshot() delegates to capture_screenshot with correct args."""

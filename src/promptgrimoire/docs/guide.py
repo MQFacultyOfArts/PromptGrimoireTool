@@ -10,7 +10,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Self
 
-from promptgrimoire.docs.screenshot import capture_screenshot
+from promptgrimoire.docs.screenshot import (
+    capture_screenshot,
+    generate_thumbnail,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -19,9 +22,17 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Page
 
+#: Default inline thumbnail width in pixels.  Full-res images are
+#: shown on click via glightbox.
+THUMBNAIL_WIDTH: int = 480
+
 
 class Guide:
     """Context manager for a single guide document.
+
+    Screenshots are saved as full-res PNGs with width-constrained
+    thumbnails for inline display.  Markdown links the thumbnail
+    to the full image; glightbox opens full-res on click.
 
     Usage::
 
@@ -38,11 +49,13 @@ class Guide:
         page: Page,
         *,
         screenshot_subdir: str = "screenshots",
+        thumbnail_width: int = THUMBNAIL_WIDTH,
     ) -> None:
         self._title = title
         self._output_dir = output_dir
         self._page = page
         self._screenshot_subdir = screenshot_subdir
+        self._thumbnail_width = thumbnail_width
         self._buffer: list[str] = []
         self._screenshot_counter: int = 0
 
@@ -50,7 +63,8 @@ class Guide:
     def _slug(self) -> str:
         """Derive a filename slug from the title.
 
-        Lowercase, spaces to hyphens, strip non-alphanumeric (except hyphens).
+        Lowercase, spaces to hyphens, strip non-alphanumeric
+        (except hyphens).
         """
         slug = self._title.lower().replace(" ", "-")
         return re.sub(r"[^a-z0-9-]", "", slug)
@@ -58,8 +72,9 @@ class Guide:
     def __enter__(self) -> Self:
         screenshot_dir = self._output_dir / self._screenshot_subdir
         screenshot_dir.mkdir(parents=True, exist_ok=True)
-        # Remove stale screenshots from previous runs so the directory
-        # only contains images referenced by the current markdown.
+        # Remove stale screenshots from previous runs so the
+        # directory only contains images referenced by the
+        # current markdown.
         for old in screenshot_dir.glob(f"{self._slug}-*.png"):
             old.unlink()
         self._append(f"# {self._title}\n")
@@ -95,18 +110,39 @@ class Guide:
         focus: str | None = None,
         trim: bool = True,
     ) -> Path:
-        """Capture a screenshot and append a markdown image reference.
+        """Capture a screenshot with thumbnail for inline display.
 
-        Returns the path to the saved screenshot file.
+        Saves full-res PNG and a width-constrained thumbnail.
+        Emits ``[![caption](thumb)](full)`` so glightbox opens
+        the full image on click.
+
+        Returns the path to the full-res screenshot file.
         """
         self._screenshot_counter += 1
-        filename = f"{self._slug}-{self._screenshot_counter:02d}.png"
-        path = self._output_dir / self._screenshot_subdir / filename
+        idx = f"{self._screenshot_counter:02d}"
+        full_name = f"{self._slug}-{idx}.png"
+        thumb_name = f"{self._slug}-{idx}-thumb.png"
+        ss_dir = self._output_dir / self._screenshot_subdir
+
+        full_path = ss_dir / full_name
         capture_screenshot(
-            self._page, path, highlight=highlight, focus=focus, trim=trim
+            self._page,
+            full_path,
+            highlight=highlight,
+            focus=focus,
+            trim=trim,
         )
-        self._append(f"![{caption}]({self._screenshot_subdir}/{filename})\n")
-        return path
+
+        thumb_path = ss_dir / thumb_name
+        generate_thumbnail(
+            full_path,
+            thumb_path,
+            max_width=self._thumbnail_width,
+        )
+
+        sub = self._screenshot_subdir
+        self._append(f"[![{caption}]({sub}/{thumb_name})]({sub}/{full_name})\n")
+        return full_path
 
 
 class Step:
@@ -117,7 +153,8 @@ class Step:
     auto-captures a screenshot.  Steps with explicit screenshots
     skip the auto-capture to avoid redundant images.
     Returns the parent ``Guide`` from ``__enter__`` so callers can
-    use ``with guide.step("...") as g:`` and call ``g.note()``, etc.
+    use ``with guide.step("...") as g:`` and call ``g.note()``,
+    etc.
     """
 
     def __init__(self, guide: Guide, heading: str) -> None:
@@ -140,8 +177,7 @@ class Step:
             exc_type is None
             and self._guide._screenshot_counter == self._screenshot_count_at_entry
         ):
-            # Auto-capture only if no explicit screenshot was taken during
-            # this step.  Failures propagate — callers should handle Playwright
-            # errors (e.g. browser crash, page closed) raised by guide.screenshot().
+            # Auto-capture only if no explicit screenshot was
+            # taken during this step.
             self._guide.screenshot(caption=self._heading)
         return False

@@ -1,15 +1,16 @@
-"""Screenshot capture, CSS highlight injection, and whitespace trimming.
+"""Screenshot capture, highlight injection, thumbnails, and trimming.
 
 Provides utilities for the Guide DSL to capture annotated, trimmed
 screenshots during documentation generation via Playwright.
 
 Public API (exported via docs/__init__.py):
-    capture_screenshot  -- Full orchestration: highlight, capture, trim, write.
-    trim_whitespace     -- Pillow-based margin removal from PNG bytes.
+    capture_screenshot   -- Full orchestration: highlight, capture, trim, write.
+    generate_thumbnail   -- Resize a full-res PNG to a width-constrained thumbnail.
+    trim_whitespace      -- Pillow-based margin removal from PNG bytes.
 
 Internal helpers (not exported; used by capture_screenshot):
-    highlight_elements  -- Inject a <style> element into the live Playwright page.
-    remove_highlight    -- Remove a previously injected <style> element.
+    highlight_elements   -- Inject a <style> element into the live Playwright page.
+    remove_highlight     -- Remove a previously injected <style> element.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import io
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageChops
+from PIL.Image import Resampling
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -55,6 +57,30 @@ def trim_whitespace(image_bytes: bytes) -> bytes:
     buf = io.BytesIO()
     cropped.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def generate_thumbnail(
+    source: Path,
+    dest: Path,
+    *,
+    max_width: int = 480,
+) -> Path:
+    """Resize a full-res PNG to a width-constrained thumbnail.
+
+    Maintains aspect ratio.  If the source image is already narrower
+    than *max_width*, it is copied unchanged.
+
+    Returns *dest* for chaining convenience.
+    """
+    img = Image.open(source)
+    if img.width > max_width:
+        ratio = max_width / img.width
+        new_size = (max_width, int(img.height * ratio))
+        img = img.resize(new_size, Resampling.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    dest.write_bytes(buf.getvalue())
+    return dest
 
 
 def highlight_elements(page: Page, test_ids: Sequence[str]) -> ElementHandle | None:

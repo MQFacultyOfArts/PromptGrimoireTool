@@ -20,6 +20,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 from promptgrimoire.docs.screenshot import (
     capture_screenshot,
+    generate_thumbnail,
     highlight_elements,
     remove_highlight,
     trim_whitespace,
@@ -240,3 +241,36 @@ class TestCaptureScreenshot:
         capture_screenshot(mock_page, out, trim=False)
 
         assert out.read_bytes() == test_png
+
+
+# ===========================================================================
+# Thumbnail generation
+# ===========================================================================
+
+
+class TestGenerateThumbnail:
+    """Tests for generate_thumbnail()."""
+
+    def test_resizes_wide_image(self, tmp_path: Path) -> None:
+        """Images wider than max_width are scaled down."""
+        src = tmp_path / "full.png"
+        Image.new("RGB", (960, 600), (100, 100, 100)).save(src)
+
+        dest = tmp_path / "thumb.png"
+        generate_thumbnail(src, dest, max_width=480)
+
+        thumb = Image.open(dest)
+        assert thumb.width == 480
+        assert thumb.height == 300  # aspect ratio preserved
+
+    def test_narrow_image_unchanged(self, tmp_path: Path) -> None:
+        """Images narrower than max_width are copied as-is."""
+        src = tmp_path / "full.png"
+        Image.new("RGB", (200, 150), (50, 50, 50)).save(src)
+
+        dest = tmp_path / "thumb.png"
+        generate_thumbnail(src, dest, max_width=480)
+
+        thumb = Image.open(dest)
+        assert thumb.width == 200
+        assert thumb.height == 150

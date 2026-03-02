@@ -150,6 +150,7 @@ _COURSE_DEFAULT_FIELDS: list[tuple[str, str]] = [
     ("Default allow sharing", "default_allow_sharing"),
     ("Anonymous sharing by default", "default_anonymous_sharing"),
     ("Default allow tag creation", "default_allow_tag_creation"),
+    ("Default word limit enforcement", "default_word_limit_enforcement"),
 ]
 
 _ANONYMOUS_SHARING_OPTIONS: dict[str, str] = {

@@ -160,3 +160,95 @@ class TestFormatViolationMessage:
         )
         msg = format_violation_message(violation)
         assert "(current count: 1,567)" in msg
+
+
+class TestViolationEdgeCases:
+    """Edge case tests for check_word_count_violation().
+
+    Verifies AC6.3 (within limits proceeds normally) and boundary conditions.
+    """
+
+    def test_zero_count_no_limits(self) -> None:
+        """count=0 with no limits -> no violation."""
+        result = check_word_count_violation(count=0, word_minimum=None, word_limit=None)
+        assert result.has_violation is False
+
+    def test_zero_count_with_limit_only(self) -> None:
+        """count=0, limit=100, no minimum -> not over limit."""
+        result = check_word_count_violation(count=0, word_minimum=None, word_limit=100)
+        assert result.over_limit is False
+        assert result.under_minimum is False
+        assert result.has_violation is False
+
+    def test_zero_count_with_minimum(self) -> None:
+        """count=0, min=100 -> under minimum by 100."""
+        result = check_word_count_violation(count=0, word_minimum=100, word_limit=None)
+        assert result.under_minimum is True
+        assert result.under_by == 100
+        assert result.over_limit is False
+
+    def test_large_count_over_limit(self) -> None:
+        """count=10000, limit=5000 -> over_by=5000."""
+        result = check_word_count_violation(
+            count=10000, word_minimum=None, word_limit=5000
+        )
+        assert result.over_limit is True
+        assert result.over_by == 5000
+
+
+class TestAC7NonBlockingBehaviour:
+    """AC7.1-AC7.4: Word count enforcement does NOT block save, edit, or share.
+
+    These tests verify that the word_count_enforcement module is only used
+    by export-related code. If someone adds an import of enforcement symbols
+    to a save/edit/share module, these tests will fail as a regression guard.
+    """
+
+    def test_ac7_1_save_does_not_import_enforcement(self) -> None:
+        """AC7.1: CRDT save path does not import word count enforcement."""
+        import importlib
+
+        mod = importlib.import_module("promptgrimoire.crdt")
+        assert not hasattr(mod, "WordCountViolation")
+        assert not hasattr(mod, "check_word_count_violation")
+
+    def test_ac7_2_edit_does_not_import_enforcement(self) -> None:
+        """AC7.2: Respond/edit module does not import word count enforcement."""
+        import importlib
+
+        mod = importlib.import_module("promptgrimoire.pages.annotation.respond")
+        assert not hasattr(mod, "WordCountViolation")
+        assert not hasattr(mod, "check_word_count_violation")
+
+    def test_ac7_3_share_does_not_import_enforcement(self) -> None:
+        """AC7.3: ACL/share module does not import word count enforcement."""
+        import importlib
+
+        mod = importlib.import_module("promptgrimoire.db.acl")
+        assert not hasattr(mod, "WordCountViolation")
+        assert not hasattr(mod, "check_word_count_violation")
+
+    def test_ac7_4_only_export_uses_enforcement(self) -> None:
+        """AC7.4: Enforcement is only imported by export-related modules.
+
+        Negative controls: respond and acl must NOT have enforcement symbols.
+        Positive control: pdf_export WILL import enforcement after Task 4.
+        The positive control is marked as a TODO since Task 4 adds the import.
+        """
+        import importlib
+
+        # Negative controls (must always pass)
+        respond = importlib.import_module("promptgrimoire.pages.annotation.respond")
+        assert not hasattr(respond, "check_word_count_violation")
+
+        acl = importlib.import_module("promptgrimoire.db.acl")
+        assert not hasattr(acl, "check_word_count_violation")
+
+        # Positive control: pdf_export will import enforcement after Task 4.
+        # For now, verify the module exists and is importable.
+        pdf_export = importlib.import_module(
+            "promptgrimoire.pages.annotation.pdf_export"
+        )
+        assert pdf_export is not None
+        # TODO(Task 4): add positive control asserting pdf_export
+        # has check_word_count_violation after Task 4 wires the import.

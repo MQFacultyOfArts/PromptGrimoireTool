@@ -57,6 +57,7 @@ from promptgrimoire.db.workspaces import (
     get_user_workspace_for_activity,
     resolve_tristate,
 )
+from promptgrimoire.pages.annotation.placement import _add_option_testids
 from promptgrimoire.pages.registry import page_route
 
 if TYPE_CHECKING:
@@ -209,7 +210,9 @@ async def open_course_settings(course: Course) -> None:
 
         switches: dict[str, ui.switch] = {}
         for label, attr in _COURSE_DEFAULT_FIELDS:
-            switches[attr] = ui.switch(label, value=getattr(course, attr))
+            switches[attr] = ui.switch(label, value=getattr(course, attr)).props(
+                f'data-testid="course-{attr}-switch"'
+            )
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -264,11 +267,17 @@ async def open_activity_settings(activity: Activity) -> None:
 
         selects: dict[str, ui.select] = {}
         for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
-            selects[attr] = ui.select(
-                options=_tri_state_options(on_text, off_text),
-                value=_model_to_ui(getattr(activity, attr)),
-                label=label,
-            ).classes("w-full")
+            sel = (
+                ui.select(
+                    options=_tri_state_options(on_text, off_text),
+                    value=_model_to_ui(getattr(activity, attr)),
+                    label=label,
+                )
+                .classes("w-full")
+                .props(f'data-testid="activity-{attr}-select"')
+            )
+            _add_option_testids(sel, f"activity-{attr}-opt")
+            selects[attr] = sel
 
         anon_select = ui.select(
             options=_ANONYMOUS_SHARING_OPTIONS,
@@ -310,7 +319,7 @@ async def open_activity_settings(activity: Activity) -> None:
                     return
 
                 try:
-                    await update_activity(activity.id, **kwargs)  # type: ignore[invalid-argument-type]  -- kwargs keys are tri-state field names only
+                    await update_activity(activity.id, **kwargs)
                 except ValueError as e:
                     ui.notify(str(e), type="negative")
                     return

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 admin_app = typer.Typer(help="User, role, and course enrollment management.")
 
 # ---------------------------------------------------------------------------
-# Helper functions (migrated from cli_legacy.py)
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -105,7 +105,7 @@ async def _update_stytch_metadata(
 
 
 # ---------------------------------------------------------------------------
-# Command functions (migrated from cli_legacy.py)
+# Command handlers
 # ---------------------------------------------------------------------------
 
 
@@ -211,14 +211,13 @@ async def _cmd_admin(
     con = console or Console()
     user = await _require_user(email, con)
 
-    if remove:
-        await db_set_admin(user.id, False)
-        con.print(f"[green]Removed[/] admin from '{email}' (local DB).")
-        await _update_stytch_metadata(user, {"is_admin": False}, console=con)
-    else:
-        await db_set_admin(user.id, True)
-        con.print(f"[green]Granted[/] admin to '{email}' (local DB).")
-        await _update_stytch_metadata(user, {"is_admin": True}, console=con)
+    is_admin = not remove
+    await db_set_admin(user.id, is_admin)
+    action = "Removed" if remove else "Granted"
+    con.print(
+        f"[green]{action}[/] admin {'from' if remove else 'to'} '{email}' (local DB)."
+    )
+    await _update_stytch_metadata(user, {"is_admin": is_admin}, console=con)
 
 
 async def _cmd_instructor(
@@ -231,14 +230,12 @@ async def _cmd_instructor(
     con = console or Console()
     user = await _require_user(email, con)
 
-    if remove:
-        metadata = {"eduperson_affiliation": ""}
-    else:
-        metadata = {"eduperson_affiliation": "staff"}
-
-    success = await _update_stytch_metadata(user, metadata, console=con)
+    affiliation = "" if remove else "staff"
+    success = await _update_stytch_metadata(
+        user, {"eduperson_affiliation": affiliation}, console=con
+    )
+    action = "Removed" if remove else "Granted"
     if success:
-        action = "Removed" if remove else "Granted"
         con.print(f"[green]{action}[/] instructor for '{email}'.")
     elif not remove:
         con.print(

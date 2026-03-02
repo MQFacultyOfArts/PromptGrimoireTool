@@ -17,6 +17,13 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from promptgrimoire.cli import app
+from promptgrimoire.cli.admin import (
+    _cmd_admin,
+    _cmd_enroll,
+    _cmd_list,
+    _cmd_show,
+    _format_last_login,
+)
 
 # Patch targets — functions are imported locally inside each _cmd_* function,
 # so we patch at the source module.
@@ -36,13 +43,9 @@ class TestFormatLastLogin:
     """_format_last_login returns human-readable login status."""
 
     def test_none_returns_never(self) -> None:
-        from promptgrimoire.cli.admin import _format_last_login
-
         assert _format_last_login(None) == "Never"
 
     def test_datetime_returns_formatted(self) -> None:
-        from promptgrimoire.cli.admin import _format_last_login
-
         dt = datetime(2026, 2, 16, 10, 30, 0, tzinfo=UTC)
         result = _format_last_login(dt)
         assert "2026-02-16" in result
@@ -241,8 +244,6 @@ class TestCmdList:
 
     @pytest.mark.anyio
     async def test_list_shows_user_emails(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_list
-
         con, buf = _capture_console()
         user = _make_user(email="alice@uni.edu", display_name="Alice", is_admin=True)
 
@@ -256,8 +257,6 @@ class TestCmdList:
 
     @pytest.mark.anyio
     async def test_list_empty(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_list
-
         con, buf = _capture_console()
 
         with patch(f"{_USERS}.list_all_users", new_callable=AsyncMock) as mock:
@@ -273,8 +272,6 @@ class TestCmdShow:
 
     @pytest.mark.anyio
     async def test_show_user_not_found(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_show
-
         con, buf = _capture_console()
 
         with patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock:
@@ -287,8 +284,6 @@ class TestCmdShow:
 
     @pytest.mark.anyio
     async def test_show_displays_enrollments(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_show
-
         con, buf = _capture_console()
         user = _make_user(email="bob@uni.edu", display_name="Bob")
         course = _make_course()
@@ -321,8 +316,6 @@ class TestCmdAdmin:
 
     @pytest.mark.anyio
     async def test_admin_user_not_found(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_admin
-
         con, _buf = _capture_console()
 
         with patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock:
@@ -332,8 +325,6 @@ class TestCmdAdmin:
 
     @pytest.mark.anyio
     async def test_admin_set(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_admin
-
         con, _buf = _capture_console()
         user = _make_user(is_admin=False)
 
@@ -355,8 +346,6 @@ class TestCmdAdmin:
 
     @pytest.mark.anyio
     async def test_admin_remove(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_admin
-
         con, _buf = _capture_console()
         user = _make_user(is_admin=True)
 
@@ -382,8 +371,6 @@ class TestCmdEnroll:
 
     @pytest.mark.anyio
     async def test_enroll_course_not_found(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_enroll
-
         con, _buf = _capture_console()
         user = _make_user()
 
@@ -398,8 +385,6 @@ class TestCmdEnroll:
 
     @pytest.mark.anyio
     async def test_enroll_success(self) -> None:
-        from promptgrimoire.cli.admin import _cmd_enroll
-
         con, buf = _capture_console()
         user = _make_user()
         course = _make_course()

@@ -1195,6 +1195,7 @@ dependencies = [
     { name = "selectolax" },
     { name = "sqlmodel" },
     { name = "stytch" },
+    { name = "typer" },
     { name = "unidic-lite" },
     { name = "uniseg" },
 ]
@@ -1246,6 +1247,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.4.6" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "stytch", specifier = ">=11.0" },
+    { name = "typer", specifier = ">=0.15.0" },
     { name = "unidic-lite", specifier = ">=1.0.8" },
     { name = "uniseg", specifier = ">=0.10.1" },
 ]

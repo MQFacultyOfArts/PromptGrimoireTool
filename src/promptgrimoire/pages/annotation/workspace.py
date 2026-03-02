@@ -505,8 +505,23 @@ async def _build_tab_panels(
                     ).classes("w-full mt-4"):
                         _render_add_content_form(workspace_id)
             elif state.can_upload:
-                # Show add content form for editors/owners
-                logger.debug("[RENDER] no documents, showing add content form")
+                # Tag toolbar for empty template — allows tag management
+                # before any content is uploaded.  Tag buttons are inert
+                # (_add_highlight guards on document_id is None).
+                logger.debug(
+                    "[RENDER] no documents, showing toolbar + add content form"
+                )
+
+                async def handle_tag_click(tag_key: str) -> None:
+                    await _add_highlight(state, tag_key)
+
+                state.toolbar_container = _build_tag_toolbar(
+                    state.tag_info_list or [],
+                    handle_tag_click,
+                    on_add_click=(on_add_tag if can_create_tags else None),
+                    on_manage_click=on_manage_tags,
+                    footer=footer,
+                )
                 _render_add_content_form(workspace_id)
             else:
                 # Read-only empty state for viewers/peers

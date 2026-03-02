@@ -47,3 +47,37 @@ class TestNormaliseText:
     def test_normalise_text(self, input_text: str, expected: str) -> None:
         """Verify normalise_text handles NFKC, zero-width, and markdown URLs."""
         assert normalise_text(input_text) == expected
+
+    @pytest.mark.parametrize(
+        ("input_text", "expected"),
+        [
+            pytest.param(
+                "[text][ref]",
+                "[text][ref]",
+                id="reference-style-link-preserved",
+            ),
+            pytest.param(
+                "[a](http://x.com) then [b](http://y.com) then [c](http://z.com)",
+                "[a] then [b] then [c]",
+                id="multiple-links-all-stripped",
+            ),
+            pytest.param(
+                "[**bold text**](http://example.com)",
+                "[**bold text**]",
+                id="nested-markdown-bold-inside-link",
+            ),
+            pytest.param(
+                "\u200b\u200c\u200d\u2060\ufeff",
+                "",
+                id="only-zero-width-chars-becomes-empty",
+            ),
+            pytest.param(
+                "already normalised text",
+                "already normalised text",
+                id="already-normalised-unchanged",
+            ),
+        ],
+    )
+    def test_normalise_text_edge_cases(self, input_text: str, expected: str) -> None:
+        """Edge cases: reference links, multiple links, nested markdown."""
+        assert normalise_text(input_text) == expected

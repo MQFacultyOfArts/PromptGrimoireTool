@@ -37,6 +37,11 @@ library references during development.
 
 - [Design Notes: Bottom-Anchored Tag Bar](design-notes/bottom-tag-bar.md)
 
+## guides
+
+- [PromptGrimoire Guides](guides/index.md)
+- [Your Personal Grimoire](guides/your-personal-grimoire.md)
+
 ## lark
 
 - [Using Lark as a standalone lexer (tokenizer only, no parsing)](lark/lexer-usage.md)
@@ -126,6 +131,7 @@ library references during development.
 - [Human Test Plan: Auto-create Branch Databases (#165)](test-plans/2026-02-14-auto-create-branch-db-165.md)
 - [Mega UAT: CSS Highlight API + Copy Protection + Pydantic-Settings](test-plans/2026-02-14-mega-uat.md)
 - [Human Test Plan: Annotation Tags (Issue #95)](test-plans/2026-02-18-95-annotation-tags.md)
+- [Human Test Plan: Empty-Tag Annotation UX (#210)](test-plans/2026-03-01-empty-tag-ux-210.md)
 
 ---
 

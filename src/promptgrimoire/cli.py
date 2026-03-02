@@ -2593,12 +2593,64 @@ def show_export_log() -> None:
             console.print(log_file.read_text())
 
 
+def _generate_guide_index_and_nav() -> None:
+    """Auto-generate index.md and mkdocs.yml nav from guide .md files.
+
+    Scans docs/guides/ for generated markdown files, extracts the
+    ``# Title`` from each, writes ``index.md``, and updates the
+    ``nav:`` section in ``mkdocs.yml``.
+    """
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    project_root = Path(__file__).resolve().parents[2]
+    guides_dir = project_root / "docs" / "guides"
+    mkdocs_path = project_root / "mkdocs.yml"
+
+    # Collect titles from generated .md files
+    entries: list[tuple[str, str]] = []  # (title, filename)
+    for md_path in sorted(guides_dir.glob("*.md")):
+        if md_path.name == "index.md":
+            continue
+        first_line = md_path.read_text().split("\n", 1)[0]
+        match = re.match(r"^#\s+(.+)$", first_line)
+        title = match.group(1) if match else md_path.stem.replace("-", " ").title()
+        entries.append((title, md_path.name))
+
+    # Write index.md
+    lines = [
+        "# PromptGrimoire Guides",
+        "",
+        "PromptGrimoire is a collaborative annotation tool "
+        "for AI conversations in educational contexts.",
+        "",
+    ]
+    for title, filename in entries:
+        lines.append(f"- [{title}]({filename})")
+    lines.append("")
+    (guides_dir / "index.md").write_text("\n".join(lines))
+
+    # Update mkdocs.yml nav
+    nav = [{"Home": "index.md"}]
+    for title, filename in entries:
+        nav.append({title: filename})
+
+    config = yaml.safe_load(mkdocs_path.read_text())
+    config["nav"] = nav
+    mkdocs_path.write_text(yaml.dump(config, sort_keys=False))
+
+
 def _make_docs_build_and_serve(action: str | None) -> None:
     """Build MkDocs site, generate PDFs, and optionally serve or deploy."""
     import subprocess
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[2]
+
+    _generate_guide_index_and_nav()
+
     subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
 
     guides_dir = project_root / "docs" / "guides"
@@ -2651,6 +2703,7 @@ def make_docs() -> None:
 
     from playwright.sync_api import sync_playwright
 
+    from promptgrimoire.docs.scripts.flight_rules import run_flight_rules_guide
     from promptgrimoire.docs.scripts.instructor_setup import run_instructor_guide
     from promptgrimoire.docs.scripts.personal_grimoire import (
         run_personal_grimoire_guide,
@@ -2691,6 +2744,7 @@ def make_docs() -> None:
         run_instructor_guide(page, base_url)
         run_student_guide(page, base_url)
         run_personal_grimoire_guide(page, base_url)
+        run_flight_rules_guide(page, base_url)
 
     finally:
         if browser is not None:

@@ -161,6 +161,25 @@ class TestFormatViolationMessage:
         msg = format_violation_message(violation)
         assert "(current count: 1,567)" in msg
 
+    def test_no_violation_returns_empty_string(self) -> None:
+        """Guard case: returns '' when has_violation is False.
+
+        Prevents nonsense like 'Your response is 0 words under the
+        None-word minimum (current count: 0).' on a clean violation.
+        """
+        violation = WordCountViolation()
+        msg = format_violation_message(violation)
+        assert msg == ""
+
+    def test_within_range_returns_empty_string(self) -> None:
+        """Format on a within-range violation also returns empty string."""
+        violation = check_word_count_violation(
+            count=150, word_minimum=100, word_limit=200
+        )
+        assert not violation.has_violation
+        msg = format_violation_message(violation)
+        assert msg == ""
+
 
 class TestViolationEdgeCases:
     """Edge case tests for check_word_count_violation().

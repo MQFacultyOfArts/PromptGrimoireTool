@@ -87,10 +87,13 @@ def format_violation_message(violation: WordCountViolation) -> str:
         A sentence describing what limit(s) are violated.
 
     Message patterns:
+        - No violation: returns empty string.
         - Both violated: mentions over and under in one sentence.
         - Over only: includes word limit and current count.
         - Under only: includes word minimum and current count.
     """
+    if not violation.has_violation:
+        return ""
     if violation.over_limit and violation.under_minimum:
         return (
             f"Your response is {violation.over_by} words over the limit"

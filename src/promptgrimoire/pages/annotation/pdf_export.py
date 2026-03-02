@@ -196,15 +196,21 @@ async def _extract_response_markdown(state: PageState) -> str:
     return response_markdown
 
 
-async def _check_word_count_enforcement(state: PageState) -> tuple[bool, int | None]:
+async def _check_word_count_enforcement(
+    state: PageState,
+    response_text: str,
+) -> tuple[bool, int | None]:
     """Run pre-export word count enforcement check.
 
-    Computes word count from CRDT content (not from the badge display) and
-    checks against configured limits. Shows the appropriate dialog based on
-    enforcement mode.
+    Accepts pre-extracted response text (from the live Milkdown editor via JS)
+    so that enforcement and export always operate on the same content. Callers
+    must extract the text via ``_extract_response_markdown()`` before calling
+    this function.
 
     Args:
         state: Current page state with word limit configuration.
+        response_text: The response draft text to count words in.  Must be
+            the same text that will be passed to the export pipeline.
 
     Returns:
         A tuple of (should_proceed, export_word_count). ``should_proceed``
@@ -212,10 +218,9 @@ async def _check_word_count_enforcement(state: PageState) -> tuple[bool, int | N
         is the computed count (or None if no limits are configured).
     """
     has_limits = state.word_minimum is not None or state.word_limit is not None
-    if not has_limits or state.crdt_doc is None:
+    if not has_limits:
         return True, None
 
-    response_text = state.crdt_doc.get_response_draft_markdown()
     count = word_count(response_text) if response_text else 0
     violation = check_word_count_violation(count, state.word_minimum, state.word_limit)
 
@@ -238,9 +243,16 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         ui.notify("No document to export", type="warning")
         return
 
+    # --- Extract response markdown once (live JS path, with CRDT fallback) ---
+    # This single extraction is shared by both enforcement and the export
+    # pipeline, eliminating any divergence between stale CRDT and live editor
+    # content (AC5/AC6 enforcement fires on the same text that goes into the PDF).
+    response_markdown = await _extract_response_markdown(state)
+
     # --- Word count enforcement (AC5, AC6) ---
-    # Compute word count from CRDT content at export time (not from badge).
-    should_proceed, export_word_count = await _check_word_count_enforcement(state)
+    should_proceed, export_word_count = await _check_word_count_enforcement(
+        state, response_markdown
+    )
     if not should_proceed:
         return
 
@@ -285,11 +297,9 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             return
         html_content = doc.content
 
-        # Get response draft markdown for the General Notes section (Phase 7).
-        response_markdown = await _extract_response_markdown(state)
-
         # Convert markdown to LaTeX via Pandoc (no new dependencies).
         # markdown_to_latex_notes() handles empty/whitespace-only input gracefully.
+        # response_markdown was extracted above, before enforcement.
         notes_latex = await markdown_to_latex_notes(response_markdown)
 
         # Convert string keys (from JSON) to int keys (expected by export pipeline)

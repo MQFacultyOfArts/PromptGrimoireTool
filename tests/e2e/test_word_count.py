@@ -411,3 +411,62 @@ class TestWordCountBadge:
             page.goto("about:blank")
             page.close()
             context.close()
+
+    def test_badge_with_minimum_only(self, browser: Browser, app_server: str) -> None:
+        """AC4.1: Badge visible when only word_minimum is set (no word_limit)."""
+        from playwright.sync_api import expect
+
+        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.conftest import _authenticate_page
+
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            email = _authenticate_page(page, app_server)
+
+            workspace_id = _create_workspace_with_word_limits(
+                user_email=email,
+                html_content="<p>Minimum-only badge test content.</p>",
+                word_minimum=200,
+            )
+
+            page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+            page.wait_for_load_state("networkidle")
+
+            badge = page.get_by_test_id("word-count-badge")
+            expect(badge).to_be_visible(timeout=10000)
+            expect(badge).to_contain_text("Words:")
+            expect(badge).to_contain_text("minimum")
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()
+
+    def test_badge_with_limit_only(self, browser: Browser, app_server: str) -> None:
+        """AC4.1: Badge visible when only word_limit is set (no word_minimum)."""
+        from playwright.sync_api import expect
+
+        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.conftest import _authenticate_page
+
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            email = _authenticate_page(page, app_server)
+
+            workspace_id = _create_workspace_with_word_limits(
+                user_email=email,
+                html_content="<p>Limit-only badge test content.</p>",
+                word_limit=500,
+            )
+
+            page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+            page.wait_for_load_state("networkidle")
+
+            badge = page.get_by_test_id("word-count-badge")
+            expect(badge).to_be_visible(timeout=10000)
+            expect(badge).to_contain_text("Words:")
+        finally:
+            page.goto("about:blank")
+            page.close()
+            context.close()

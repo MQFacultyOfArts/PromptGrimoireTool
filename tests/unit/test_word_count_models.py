@@ -113,25 +113,13 @@ class TestWordCountValidation:
 
 
 class TestActivityTriStateConfig:
-    """Tests verifying word_limit_enforcement is registered in UI config."""
+    """Tests verifying word_limit_enforcement UI helpers exist."""
 
-    def test_word_limit_enforcement_in_tri_state_fields(self) -> None:
-        """AC3.3: word_limit_enforcement appears in _ACTIVITY_TRI_STATE_FIELDS."""
-        from promptgrimoire.pages.courses import _ACTIVITY_TRI_STATE_FIELDS
+    def test_tri_state_options_produce_hard_soft(self) -> None:
+        """AC3.3: _tri_state_options produces Hard/Soft labels."""
+        from promptgrimoire.pages.courses import _tri_state_options
 
-        attrs = [attr for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS]
-        assert "word_limit_enforcement" in attrs
-
-    def test_word_limit_enforcement_options(self) -> None:
-        """AC3.3: word_limit_enforcement uses Hard/Soft labels."""
-        from promptgrimoire.pages.courses import _ACTIVITY_TRI_STATE_FIELDS
-
-        for _label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
-            if attr == "word_limit_enforcement":
-                assert on_text == "Hard"
-                assert off_text == "Soft"
-                break
-        else:
-            pytest.fail(
-                "word_limit_enforcement not found in _ACTIVITY_TRI_STATE_FIELDS"
-            )
+        opts = _tri_state_options("Hard", "Soft")
+        assert opts["on"] == "Hard"
+        assert opts["off"] == "Soft"
+        assert "inherit" in opts

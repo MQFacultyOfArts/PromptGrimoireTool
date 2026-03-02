@@ -123,27 +123,6 @@ def _tri_state_options(on_label: str = "On", off_label: str = "Off") -> dict[str
 
 
 # (UI label, model attribute name, on_label, off_label)
-_ACTIVITY_TRI_STATE_FIELDS: list[tuple[str, str, str, str]] = [
-    ("Copy protection (overrides unit default)", "copy_protection", "On", "Off"),
-    (
-        "Allow sharing (overrides unit default)",
-        "allow_sharing",
-        "Allowed",
-        "Not allowed",
-    ),
-    (
-        "Allow tag creation (overrides unit default)",
-        "allow_tag_creation",
-        "Allowed",
-        "Not allowed",
-    ),
-    (
-        "Word limit enforcement (overrides unit default)",
-        "word_limit_enforcement",
-        "Hard",
-        "Soft",
-    ),
-]
 
 # (UI label, model attribute name)
 _COURSE_DEFAULT_FIELDS: list[tuple[str, str]] = [
@@ -237,41 +216,61 @@ async def open_course_settings(course: Course) -> None:
 async def open_activity_settings(activity: Activity) -> None:
     """Open a dialog to edit per-activity settings.
 
-    Shows tri-state selects for each policy field, driven by
-    _ACTIVITY_TRI_STATE_FIELDS config.
+    Shows word count, sharing, and editing settings in grouped sections.
     """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label(f"Activity Settings: {activity.title}").classes(
             "text-lg font-bold"
         ).props('data-testid="activity-settings-title"')
 
-        word_min_input = (
-            ui.number(
-                "Word minimum",
-                value=activity.word_minimum,
-                min=1,
-            )
-            .classes("w-full")
-            .props('data-testid="activity-word-minimum-input"')
-        )
-
-        word_limit_input = (
-            ui.number(
-                "Word limit",
-                value=activity.word_limit,
-                min=1,
-            )
-            .classes("w-full")
-            .props('data-testid="activity-word-limit-input"')
-        )
-
         selects: dict[str, ui.select] = {}
-        for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
+
+        # -- Response Word Count section --
+        ui.label("Response Word Count").classes(
+            "text-sm font-semibold text-gray-600 mt-2"
+        )
+        with ui.row().classes("w-full gap-2"):
+            word_min_input = (
+                ui.number(
+                    "Minimum",
+                    value=activity.word_minimum,
+                    min=1,
+                )
+                .classes("flex-1")
+                .props('data-testid="activity-word-minimum-input"')
+            )
+            word_limit_input = (
+                ui.number(
+                    "Limit",
+                    value=activity.word_limit,
+                    min=1,
+                )
+                .classes("flex-1")
+                .props('data-testid="activity-word-limit-input"')
+            )
+
+        sel = (
+            ui.select(
+                options=_tri_state_options("Hard", "Soft"),
+                value=_model_to_ui(activity.word_limit_enforcement),
+                label="Enforcement (overrides unit default)",
+            )
+            .classes("w-full")
+            .props('data-testid="activity-word_limit_enforcement-select"')
+        )
+        add_option_testids(sel, "activity-word_limit_enforcement-opt")
+        selects["word_limit_enforcement"] = sel
+
+        # -- Sharing section --
+        ui.label("Sharing").classes("text-sm font-semibold text-gray-600 mt-3")
+        for label, attr, on_text, off_text in (
+            ("Allow sharing", "allow_sharing", "Allowed", "Not allowed"),
+        ):
             sel = (
                 ui.select(
                     options=_tri_state_options(on_text, off_text),
                     value=_model_to_ui(getattr(activity, attr)),
-                    label=label,
+                    label=f"{label} (overrides unit default)",
                 )
                 .classes("w-full")
                 .props(f'data-testid="activity-{attr}-select"')
@@ -289,13 +288,35 @@ async def open_activity_settings(activity: Activity) -> None:
             .props('data-testid="activity-anonymous_sharing-select"')
         )
 
+        # -- Editing section --
+        ui.label("Editing").classes("text-sm font-semibold text-gray-600 mt-3")
+        for label, attr, on_text, off_text in (
+            ("Copy protection", "copy_protection", "On", "Off"),
+            (
+                "Allow tag creation",
+                "allow_tag_creation",
+                "Allowed",
+                "Not allowed",
+            ),
+        ):
+            sel = (
+                ui.select(
+                    options=_tri_state_options(on_text, off_text),
+                    value=_model_to_ui(getattr(activity, attr)),
+                    label=f"{label} (overrides unit default)",
+                )
+                .classes("w-full")
+                .props(f'data-testid="activity-{attr}-select"')
+            )
+            add_option_testids(sel, f"activity-{attr}-opt")
+            selects[attr] = sel
+
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
                 kwargs: dict[str, Any] = {
-                    attr: _ui_to_model(selects[attr].value)
-                    for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS
+                    attr: _ui_to_model(sel.value) for attr, sel in selects.items()
                 }
                 # anonymous_sharing uses a custom options set, not in the loop
                 kwargs["anonymous_sharing"] = _ui_to_model(anon_select.value)

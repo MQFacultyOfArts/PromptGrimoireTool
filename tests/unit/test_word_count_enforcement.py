@@ -244,11 +244,8 @@ class TestAC7NonBlockingBehaviour:
         acl = importlib.import_module("promptgrimoire.db.acl")
         assert not hasattr(acl, "check_word_count_violation")
 
-        # Positive control: pdf_export will import enforcement after Task 4.
-        # For now, verify the module exists and is importable.
+        # Positive control: pdf_export imports enforcement (wired in Task 4).
         pdf_export = importlib.import_module(
             "promptgrimoire.pages.annotation.pdf_export"
         )
-        assert pdf_export is not None
-        # TODO(Task 4): add positive control asserting pdf_export
-        # has check_word_count_violation after Task 4 wires the import.
+        assert hasattr(pdf_export, "check_word_count_violation")

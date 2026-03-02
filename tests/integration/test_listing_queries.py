@@ -135,10 +135,21 @@ class TestListAccessibleWorkspaces:
         Verifies AC9.7.
         """
         from promptgrimoire.db.acl import list_accessible_workspaces
-        from promptgrimoire.db.activities import delete_activity
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity, Workspace
 
         data = await _make_listing_data()
-        await delete_activity(data["activity"].id)
+        # Bypass the guard function and delete at DB level to
+        # simulate orphaning (SET NULL on workspace.activity_id).
+        async with get_session() as session:
+            act = await session.get(Activity, data["activity"].id)
+            assert act is not None
+            tmpl_id = act.template_workspace_id
+            await session.delete(act)
+            await session.flush()
+            tmpl = await session.get(Workspace, tmpl_id)
+            if tmpl:
+                await session.delete(tmpl)
 
         results = await list_accessible_workspaces(data["student_a"].id)
         ws_ids = {ws.id for ws, _perm in results}

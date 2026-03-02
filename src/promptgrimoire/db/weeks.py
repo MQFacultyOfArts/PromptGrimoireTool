@@ -14,9 +14,13 @@ from sqlmodel import or_, select
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import CourseEnrollment, Week
+from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.models import Activity, CourseEnrollment, Week, Workspace
 from promptgrimoire.db.roles import get_staff_roles
+from promptgrimoire.db.workspaces import has_student_workspaces
 
 
 async def create_week(
@@ -184,11 +188,63 @@ async def update_week(
         return week
 
 
-async def delete_week(week_id: UUID) -> bool:
-    """Delete a week.
+async def _purge_activity(
+    session: AsyncSession,
+    activity: Activity,
+) -> None:
+    """Delete an activity and its workspaces within an existing session.
+
+    Removes student workspaces first, then the activity (SET NULL on
+    remaining workspace.activity_id references), then the orphaned
+    template workspace.  Caller must own the session transaction.
+
+    Args:
+        session: Active async database session.
+        activity: The Activity instance to delete.
+    """
+    # Delete student workspaces
+    student_ws_rows = await session.exec(
+        select(Workspace).where(
+            Workspace.activity_id == activity.id,
+            Workspace.id != activity.template_workspace_id,
+        )
+    )
+    for ws in student_ws_rows.all():
+        await session.delete(ws)
+    await session.flush()
+
+    # Delete activity (SET NULL on remaining refs)
+    template_ws_id = activity.template_workspace_id
+    await session.delete(activity)
+    await session.flush()
+
+    # Delete orphaned template workspace
+    template = await session.get(Workspace, template_ws_id)
+    if template:
+        await session.delete(template)
+    await session.flush()
+
+
+async def delete_week(
+    week_id: UUID,
+    *,
+    force: bool = False,
+) -> bool:
+    """Delete a week and its activities.
+
+    When ``force=False`` (default), raises
+    :class:`~promptgrimoire.db.exceptions.DeletionBlockedError` if
+    any activity in this week has student workspaces.  The error
+    carries the aggregate count across all activities.
+
+    When ``force=True``, student workspaces are deleted first, then
+    each activity is removed with proper FK ordering (activity first
+    to SET NULL workspace.activity_id, then template workspace),
+    and finally the week itself.
 
     Args:
         week_id: The week UUID.
+        force: If True, force-delete even with student workspaces.
 
     Returns:
         True if deleted, False if not found.
@@ -197,7 +253,33 @@ async def delete_week(week_id: UUID) -> bool:
         week = await session.get(Week, week_id)
         if not week:
             return False
-        await session.delete(week)
+
+        # Fetch all activities for this week
+        activity_rows = await session.exec(
+            select(Activity).where(Activity.week_id == week_id)
+        )
+        activities = list(activity_rows.all())
+
+        # Aggregate student workspace count across all activities
+        total_students = 0
+        for act in activities:
+            total_students += await has_student_workspaces(act.id)
+
+        if total_students > 0 and not force:
+            raise DeletionBlockedError(
+                student_workspace_count=total_students,
+            )
+
+        # Purge each activity with proper FK ordering
+        for act in activities:
+            await _purge_activity(session, act)
+
+        # Finally delete the week itself
+        # (re-fetch since session state may have changed)
+        week = await session.get(Week, week_id)
+        if week:
+            await session.delete(week)
+
         return True
 
 

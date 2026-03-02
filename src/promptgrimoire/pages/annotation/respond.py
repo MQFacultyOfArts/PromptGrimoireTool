@@ -398,7 +398,7 @@ def _setup_yjs_event_handler(
                 count, state.word_minimum, state.word_limit
             )
             state.word_count_badge.set_text(badge_state.text)
-            state.word_count_badge.classes(badge_state.css_classes, replace="text-sm *")
+            state.word_count_badge.classes(replace=badge_state.css_classes)
         # Persist CRDT state to database (debounced by persistence manager)
         pm = get_persistence_manager()
         pm.mark_dirty_workspace(

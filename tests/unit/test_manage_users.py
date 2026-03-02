@@ -269,7 +269,7 @@ class TestCmdList:
 
 
 class TestCmdShow:
-    """manage-users show — user details and enrollments."""
+    """admin show — user details and enrollments."""
 
     @pytest.mark.anyio
     async def test_show_user_not_found(self) -> None:
@@ -378,7 +378,7 @@ class TestCmdAdmin:
 
 
 class TestCmdEnroll:
-    """manage-users enroll — enrol user in course."""
+    """admin enroll — enrol user in course."""
 
     @pytest.mark.anyio
     async def test_enroll_course_not_found(self) -> None:

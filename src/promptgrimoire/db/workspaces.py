@@ -94,12 +94,11 @@ async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | Non
 
         # 4. Week must be visible to the user
         # Staff always have access regardless of publish state
-        if enrollment.role not in staff_roles:
-            # Students need published + visible week
-            if not week.is_published:
-                return "Week is not published"
-            if week.visible_from and week.visible_from > datetime.now(UTC):
-                return "Week is not yet visible"
+        is_student = enrollment.role not in staff_roles
+        if is_student and not week.is_published:
+            return "Week is not published"
+        if is_student and week.visible_from and week.visible_from > datetime.now(UTC):
+            return "Week is not yet visible"
 
         return None
 
@@ -688,6 +687,7 @@ async def clone_workspace_from_activity(
                 order_index=tmpl_doc.order_index,
                 auto_number_paragraphs=tmpl_doc.auto_number_paragraphs,
                 paragraph_map=tmpl_doc.paragraph_map,
+                source_document_id=tmpl_doc.id,
             )
             session.add(cloned_doc)
             await session.flush()

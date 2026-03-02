@@ -281,6 +281,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         client_id=state.client_id,
         on_yjs_update_broadcast=_on_broadcast,
         on_locate=_on_respond_locate,
+        state=state,
     )
     state.has_milkdown_editor = True
     # Mark this client as having a Milkdown editor for Yjs relay

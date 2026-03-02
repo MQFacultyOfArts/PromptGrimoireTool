@@ -240,8 +240,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
 
     # --- Word count enforcement (AC5, AC6) ---
     # Compute word count from CRDT content at export time (not from badge).
-    # _export_word_count will be passed to the export pipeline in Task 5.
-    should_proceed, _export_word_count = await _check_word_count_enforcement(state)
+    should_proceed, export_word_count = await _check_word_count_enforcement(state)
     if not should_proceed:
         return
 
@@ -299,10 +298,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
         )
 
-        # Generate PDF
-        # NOTE: word count params (export_word_count, word_minimum, word_limit)
-        # will be passed through once generate_tex_only/export_annotation_pdf
-        # signatures are extended in Task 5 (snitch badge).
+        # Generate PDF with optional word count snitch badge
         pdf_path = await export_annotation_pdf(
             html_content=html_content,
             highlights=highlights,
@@ -311,6 +307,9 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             notes_latex=notes_latex,
             word_to_legal_para=legal_para_map,
             filename=f"workspace_{workspace_id}",
+            word_count=export_word_count,
+            word_minimum=state.word_minimum,
+            word_limit=state.word_limit,
         )
 
         notification.dismiss()

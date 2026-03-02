@@ -40,7 +40,6 @@ library references during development.
 ## guides
 
 - [PromptGrimoire Guides](guides/index.md)
-- [Your Personal Grimoire](guides/your-personal-grimoire.md)
 
 ## lark
 

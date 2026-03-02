@@ -242,6 +242,26 @@ async def open_activity_settings(activity: Activity) -> None:
             "text-lg font-bold"
         ).props('data-testid="activity-settings-title"')
 
+        word_min_input = (
+            ui.number(
+                "Word minimum",
+                value=activity.word_minimum,
+                min=1,
+            )
+            .classes("w-full")
+            .props('data-testid="activity-word-minimum-input"')
+        )
+
+        word_limit_input = (
+            ui.number(
+                "Word limit",
+                value=activity.word_limit,
+                min=1,
+            )
+            .classes("w-full")
+            .props('data-testid="activity-word-limit-input"')
+        )
+
         selects: dict[str, ui.select] = {}
         for label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
             selects[attr] = ui.select(
@@ -260,13 +280,41 @@ async def open_activity_settings(activity: Activity) -> None:
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def save() -> None:
-                kwargs = {
+                kwargs: dict[str, Any] = {
                     attr: _ui_to_model(selects[attr].value)
                     for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS
                 }
                 # anonymous_sharing uses a custom options set, not in the loop
                 kwargs["anonymous_sharing"] = _ui_to_model(anon_select.value)
-                await update_activity(activity.id, **kwargs)  # type: ignore[invalid-argument-type]  -- kwargs keys are tri-state field names only
+
+                # Word count fields (ui.number may return float)
+                word_min_val = word_min_input.value
+                word_limit_val = word_limit_input.value
+                kwargs["word_minimum"] = (
+                    int(word_min_val) if word_min_val is not None else None
+                )
+                kwargs["word_limit"] = (
+                    int(word_limit_val) if word_limit_val is not None else None
+                )
+
+                # Client-side cross-field validation
+                if (
+                    kwargs["word_minimum"] is not None
+                    and kwargs["word_limit"] is not None
+                    and kwargs["word_minimum"] >= kwargs["word_limit"]
+                ):
+                    ui.notify(
+                        "Word minimum must be less than word limit",
+                        type="negative",
+                    )
+                    return
+
+                try:
+                    await update_activity(activity.id, **kwargs)  # type: ignore[invalid-argument-type]  -- kwargs keys are tri-state field names only
+                except ValueError as e:
+                    ui.notify(str(e), type="negative")
+                    return
+
                 for attr, value in kwargs.items():
                     setattr(activity, attr, value)
                 dialog.close()

@@ -19,7 +19,7 @@ import pytest
 from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
-    from promptgrimoire.db.models import Activity, Course, Week
+    from promptgrimoire.db.models import Activity, Course, User, Week
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-async def _make_clone_user():
+async def _make_clone_user() -> User:
     """Create a unique user for clone ownership tests."""
     from promptgrimoire.db.users import create_user
 
@@ -145,7 +145,7 @@ class TestProvenanceEdgeCases:
         from promptgrimoire.db.workspaces import create_workspace
 
         workspace = await create_workspace()
-        doc = await add_document(
+        await add_document(
             workspace_id=workspace.id,
             type="source",
             content="<p>Pre-migration style</p>",
@@ -154,8 +154,8 @@ class TestProvenanceEdgeCases:
 
         # Re-fetch from DB to confirm persisted value
         docs = await list_documents(workspace.id)
-        fetched = next(d for d in docs if d.id == doc.id)
-        assert fetched.source_document_id is None
+        assert len(docs) == 1
+        assert docs[0].source_document_id is None
 
     @pytest.mark.asyncio
     async def test_delete_template_sets_clone_source_to_null(

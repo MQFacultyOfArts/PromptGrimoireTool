@@ -160,6 +160,12 @@ class Course(SQLModel, table=True):
 
     Inherited by activities with allow_tag_creation=NULL.
     """
+    default_word_limit_enforcement: bool = Field(default=False)
+    """Course-level default for word limit enforcement.
+
+    Inherited by activities with word_limit_enforcement=NULL.
+    False=soft (warn only), True=hard (block submit).
+    """
     default_instructor_permission: str = Field(
         default="editor",
         sa_column=Column(
@@ -300,6 +306,21 @@ class Activity(SQLModel, table=True):
     """Tri-state tag creation control.
 
     None=inherit from course, True=allowed, False=disallowed.
+    """
+    word_minimum: int | None = Field(default=None)
+    """Minimum word count for submissions.
+
+    None=no minimum enforced.
+    """
+    word_limit: int | None = Field(default=None)
+    """Maximum word count for submissions.
+
+    None=no limit enforced.
+    """
+    word_limit_enforcement: bool | None = Field(default=None)
+    """Tri-state word limit enforcement.
+
+    None=inherit from course, True=hard (block submit), False=soft (warn only).
     """
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

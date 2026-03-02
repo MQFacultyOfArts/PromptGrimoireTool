@@ -341,6 +341,9 @@ async def _resolve_workspace_context(
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,
         privileged_user_ids=priv_ids,
+        word_minimum=ctx.word_minimum,
+        word_limit=ctx.word_limit,
+        word_limit_enforcement=ctx.word_limit_enforcement,
     )
     state.tag_info_list = await workspace_tags(workspace_id)
 

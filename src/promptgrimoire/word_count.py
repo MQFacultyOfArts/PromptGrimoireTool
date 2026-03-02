@@ -64,3 +64,89 @@ def normalise_text(text: str) -> str:
     text = _MARKDOWN_LINK_URL_RE.sub("]", text)
 
     return text
+
+
+def _classify_codepoint(cp: int) -> str:
+    """Classify a Unicode codepoint into a script category.
+
+    Returns one of: "zh", "ja", "ko", "latin".
+
+    CJK Unified Ideographs are initially classified as "zh"; the caller
+    (segment_by_script) applies neighbour resolution to reclassify kanji
+    adjacent to hiragana/katakana as "ja".
+    """
+    # Hiragana
+    if 0x3040 <= cp <= 0x309F:
+        return "ja"
+    # Katakana (main block + extension + half-width)
+    if 0x30A0 <= cp <= 0x30FF or 0x31F0 <= cp <= 0x31FF or 0xFF65 <= cp <= 0xFF9F:
+        return "ja"
+    # Hangul: Syllables, Jamo, Compatibility Jamo
+    if 0xAC00 <= cp <= 0xD7AF or 0x1100 <= cp <= 0x11FF or 0x3130 <= cp <= 0x318F:
+        return "ko"
+    # CJK Unified Ideographs (all blocks)
+    if (
+        0x4E00 <= cp <= 0x9FFF
+        or 0x3400 <= cp <= 0x4DBF
+        or 0x20000 <= cp <= 0x2A6DF
+        or 0x2A700 <= cp <= 0x2B73F
+        or 0x2B740 <= cp <= 0x2B81F
+        or 0x2B820 <= cp <= 0x2CEAF
+        or 0x2CEB0 <= cp <= 0x2EBEF
+        or 0x30000 <= cp <= 0x3134F
+        or 0x31350 <= cp <= 0x323AF
+    ):
+        return "zh"
+    # Everything else: Latin, punctuation, whitespace, numbers, emoji
+    return "latin"
+
+
+def segment_by_script(text: str) -> list[tuple[str, str]]:
+    """Segment text into runs of consecutive characters with the same script.
+
+    Returns a list of (script, text) tuples where script is one of:
+    "zh", "ja", "ko", "latin".
+
+    After initial per-codepoint classification, applies neighbour resolution:
+    any "zh" segment immediately adjacent to a "ja" segment is reclassified
+    as "ja" (kanji used in Japanese context).
+    """
+    if not text:
+        return []
+
+    # Phase 1: group consecutive codepoints by script
+    segments: list[tuple[str, str]] = []
+    current_script = _classify_codepoint(ord(text[0]))
+    current_chars: list[str] = [text[0]]
+
+    for ch in text[1:]:
+        script = _classify_codepoint(ord(ch))
+        if script == current_script:
+            current_chars.append(ch)
+        else:
+            segments.append((current_script, "".join(current_chars)))
+            current_script = script
+            current_chars = [ch]
+
+    segments.append((current_script, "".join(current_chars)))
+
+    # Phase 2: neighbour resolution — reclassify "zh" adjacent to "ja" as "ja"
+    scripts = [s for s, _ in segments]
+    for i, (script, seg_text) in enumerate(segments):
+        if script != "zh":
+            continue
+        prev_ja = i > 0 and scripts[i - 1] == "ja"
+        next_ja = i < len(scripts) - 1 and scripts[i + 1] == "ja"
+        if prev_ja or next_ja:
+            segments[i] = ("ja", seg_text)
+            scripts[i] = "ja"
+
+    # Phase 3: merge adjacent segments of the same script
+    merged: list[tuple[str, str]] = [segments[0]]
+    for script, seg_text in segments[1:]:
+        if script == merged[-1][0]:
+            merged[-1] = (script, merged[-1][1] + seg_text)
+        else:
+            merged.append((script, seg_text))
+
+    return merged

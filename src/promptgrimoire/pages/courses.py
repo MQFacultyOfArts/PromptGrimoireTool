@@ -136,6 +136,12 @@ _ACTIVITY_TRI_STATE_FIELDS: list[tuple[str, str, str, str]] = [
         "Allowed",
         "Not allowed",
     ),
+    (
+        "Word limit enforcement (overrides unit default)",
+        "word_limit_enforcement",
+        "Hard",
+        "Soft",
+    ),
 ]
 
 # (UI label, model attribute name)

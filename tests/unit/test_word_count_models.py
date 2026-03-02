@@ -110,3 +110,28 @@ class TestWordCountValidation:
     def test_both_none_succeeds(self) -> None:
         """Both None is valid (no limits configured)."""
         validate_word_count_limits(word_minimum=None, word_limit=None)
+
+
+class TestActivityTriStateConfig:
+    """Tests verifying word_limit_enforcement is registered in UI config."""
+
+    def test_word_limit_enforcement_in_tri_state_fields(self) -> None:
+        """AC3.3: word_limit_enforcement appears in _ACTIVITY_TRI_STATE_FIELDS."""
+        from promptgrimoire.pages.courses import _ACTIVITY_TRI_STATE_FIELDS
+
+        attrs = [attr for _, attr, *_ in _ACTIVITY_TRI_STATE_FIELDS]
+        assert "word_limit_enforcement" in attrs
+
+    def test_word_limit_enforcement_options(self) -> None:
+        """AC3.3: word_limit_enforcement uses Hard/Soft labels."""
+        from promptgrimoire.pages.courses import _ACTIVITY_TRI_STATE_FIELDS
+
+        for _label, attr, on_text, off_text in _ACTIVITY_TRI_STATE_FIELDS:
+            if attr == "word_limit_enforcement":
+                assert on_text == "Hard"
+                assert off_text == "Soft"
+                break
+        else:
+            pytest.fail(
+                "word_limit_enforcement not found in _ACTIVITY_TRI_STATE_FIELDS"
+            )

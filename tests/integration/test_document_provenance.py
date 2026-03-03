@@ -8,6 +8,17 @@ Tests verify:
 - AC5.3: Pre-migration documents have NULL source_document_id
 - AC5.4: Deleting template source sets clones' source_document_id to NULL
 - AC5.5: count_document_clones() returns correct clone counts
+
+Document deletion tests (AC4.x) live in test_delete_guards.py:
+- AC4.1: TestDeleteDocument.test_deletes_user_uploaded_document
+- AC4.3: TestDeleteDocument.test_blocks_deletion_of_template_cloned_document
+- AC4.4: TestDeleteDocument.test_tags_remain_after_document_deletion
+- AC4.2: UI concern (upload form availability after deletion) -- verified by manual UAT
+- AC5.5 clone warning: UI dialog -- verified by manual UAT;
+  count_document_clones() tested in TestCountDocumentClones below
+
+Unit tests for can_delete_document() live in
+tests/unit/pages/test_organise_documents.py.
 """
 
 from __future__ import annotations

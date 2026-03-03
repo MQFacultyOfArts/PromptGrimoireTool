@@ -17,7 +17,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 ### 2. Testing Constraints (TDD Mandatory)
 - **Async Fixtures**: NEVER use `@pytest.fixture` on `async def` functions. Always use `@pytest_asyncio.fixture`. Using the sync decorator causes `Runner.run() cannot be called from a running event loop` under xdist.
-- **E2E Isolation**: E2E tests (Playwright) contaminate xdist workers. They are excluded from `test-all`. They must run separately via `uv run test-e2e`.
+- **E2E Isolation**: E2E tests (Playwright) contaminate xdist workers. They are excluded from `test-all`. They must run separately via `uv run grimoire e2e run`.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 
 ### 3. Code Quality & Formatting
@@ -32,10 +32,13 @@ Use these commands for verification and execution:
 
 ```bash
 # Testing
-uv run test-changed         # Fast unit/integration tests based on git diff
-uv run test-all             # All tests EXCEPT E2E
-uv run test-e2e             # E2E tests (serial, starts server)
-uv run test-e2e-changed     # Smart selection E2E tests
+uv run grimoire test changed           # Fast unit/integration tests based on git diff
+uv run grimoire test all                # All tests EXCEPT E2E
+uv run grimoire test all -k "pattern"   # Filter tests by keyword expression
+uv run grimoire e2e run                 # E2E tests (serial, starts server)
+uv run grimoire e2e run -k "pattern"    # E2E tests filtered by keyword
+uv run grimoire e2e run --parallel      # E2E tests in parallel (xdist)
+uv run grimoire e2e changed             # Smart selection E2E tests
 
 # Code Quality
 uv run ruff check .         # Linting
@@ -43,8 +46,10 @@ uv run ruff format .        # Formatting
 uvx ty check                # Type checking
 
 # Execution & Data
-uv run seed-data            # Idempotent development data seeding
-uv run python -m promptgrimoire # Run the application
+uv run grimoire seed run            # Idempotent development data seeding
+uv run grimoire admin list|show|create|admin|enroll|unenroll|role  # User management
+uv run grimoire docs build          # Generate user-facing documentation (requires pandoc)
+uv run run.py                       # Run the application
 ```
 
 ## Autonomous Agent Guidelines
@@ -59,6 +64,7 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:
 - Schema & Persistence: `docs/database.md`
-- Collaboration (CRDT): `docs/architecture.md`
+- Collaboration (CRDT): `docs/ARCHITECTURE.md`
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Export Pipeline: `docs/export.md`
+- Testing: `docs/testing.md`

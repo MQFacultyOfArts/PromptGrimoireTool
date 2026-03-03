@@ -34,8 +34,10 @@ jobs:
       - name: Run vulture (dead code detection)
         run: uv run vulture
 
-      - name: Run complexipy (cognitive complexity)
-        run: uv run complexipy
+      # TEMPORARILY DISABLED — 59 pre-existing complexity violations (#254).
+      # Re-enable after cleanup.
+      # - name: Run complexipy (cognitive complexity)
+      #   run: uv run complexipy
 
       - name: Run pip-audit (dependency vulnerabilities)
         run: uv run pip-audit

@@ -10,10 +10,10 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.1
+      - uses: actions/checkout@v6.0.2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7.2.0
+        uses: astral-sh/setup-uv@v7.3.1
         with:
           version: "latest"
           enable-cache: true
@@ -62,10 +62,19 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@v6.0.1
+      - uses: actions/checkout@v6.0.2
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-test-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
       - name: Install system dependencies
         run: |
+          if [ -d ~/apt-cache ]; then
+            sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
           sudo apt-get update -y
           sudo apt-get install -y \
             mecab libmecab-dev \
@@ -79,9 +88,11 @@ jobs:
             fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
             fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
             fonts-sil-taiheritagepro
+          mkdir -p ~/apt-cache
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7.2.0
+        uses: astral-sh/setup-uv@v7.3.1
         with:
           version: "latest"
           enable-cache: true
@@ -93,9 +104,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      - name: Cache TinyTeX
+        uses: actions/cache@v4
+        with:
+          path: ~/.TinyTeX
+          key: tinytex-${{ runner.os }}-${{ hashFiles('scripts/setup_latex.py') }}
+
       - name: Install TinyTeX and LaTeX packages
         run: |
-          uv run python scripts/setup_latex.py
+          if [ ! -f ~/.TinyTeX/bin/x86_64-linux/latexmk ]; then
+            uv run python scripts/setup_latex.py
+          fi
           ~/.TinyTeX/bin/x86_64-linux/luaotfload-tool --update --force
 
       - name: Run unit and integration tests
@@ -121,7 +140,7 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@v6.0.1
+      - uses: actions/checkout@v6.0.2
 
       - name: Install system dependencies
         run: |
@@ -129,7 +148,7 @@ jobs:
           sudo apt-get install -y mecab libmecab-dev pandoc
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7.2.0
+        uses: astral-sh/setup-uv@v7.3.1
         with:
           version: "latest"
           enable-cache: true

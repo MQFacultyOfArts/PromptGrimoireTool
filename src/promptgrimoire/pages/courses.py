@@ -32,6 +32,7 @@ from promptgrimoire.db.activities import (
 )
 from promptgrimoire.db.courses import (
     create_course,
+    delete_course,
     enroll_user,
     get_course_by_id,
     get_enrollment,
@@ -1039,20 +1040,34 @@ def _render_add_week_btn(course_id: str) -> None:
 
 
 def _render_course_action_bar(
-    course_id: str, course: Course, *, can_manage: bool
+    course_id: str,
+    course: Course,
+    *,
+    can_manage: bool,
+    can_delete: bool = False,
+    on_delete: Callable[[], Any] | None = None,
 ) -> None:
     """Render the action bar with management buttons."""
-    if can_manage:
+    if can_manage or (can_delete and on_delete is not None):
         with ui.row().classes("gap-2 mb-4"):
-            ui.button(
-                "Manage Enrollments",
-                on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
-            ).props('outline color=primary data-testid="manage-enrollments-btn"')
-            ui.button(
-                "Unit Settings",
-                icon="settings",
-                on_click=lambda: open_course_settings(course),
-            ).props('outline color=primary data-testid="course-settings-btn"')
+            if can_manage:
+                ui.button(
+                    "Manage Enrollments",
+                    on_click=lambda: ui.navigate.to(
+                        f"/courses/{course_id}/enrollments"
+                    ),
+                ).props('outline color=primary data-testid="manage-enrollments-btn"')
+                ui.button(
+                    "Unit Settings",
+                    icon="settings",
+                    on_click=lambda: open_course_settings(course),
+                ).props('outline color=primary data-testid="course-settings-btn"')
+            if can_delete and on_delete is not None:
+                ui.button(
+                    "Delete Unit",
+                    icon="delete_forever",
+                    on_click=on_delete,
+                ).props('outline color=negative data-testid="delete-unit-btn"')
 
 
 async def _render_students_without_work(cid: UUID, *, can_view_drafts: bool) -> None:
@@ -1163,6 +1178,18 @@ async def course_detail_page(course_id: str) -> None:
     user_id, can_manage = ctx.user_id, ctx.can_manage
     can_view_drafts, client_id = ctx.can_view_drafts, ctx.client_id
 
+    auth_user = _get_current_user()
+    can_delete = is_privileged_user(auth_user) or ctx.enrollment.role == "coordinator"
+
+    async def _delete_unit() -> None:
+        await _confirm_and_delete(
+            entity_label=f"unit: {course.name}",
+            delete_fn=delete_course,
+            entity_id=cid,
+            is_admin=is_privileged_user(auth_user),
+            on_success=lambda: ui.navigate.to("/courses"),
+        )
+
     with page_layout(f"{course.code} - {course.name}"):
         ui.add_css(_CSS_FILE)
 
@@ -1170,7 +1197,13 @@ async def course_detail_page(course_id: str) -> None:
             ui.badge(ctx.enrollment.role)
             ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 
-            _render_course_action_bar(course_id, course, can_manage=can_manage)
+            _render_course_action_bar(
+                course_id,
+                course,
+                can_manage=can_manage,
+                can_delete=can_delete,
+                on_delete=_delete_unit,
+            )
 
             ui.label("Weeks").classes("text-xl font-semibold mb-2")
 

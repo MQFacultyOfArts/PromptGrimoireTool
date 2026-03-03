@@ -65,3 +65,41 @@ def test_has_student_workspaces_imported() -> None:
     assert hasattr(mod, "has_student_workspaces"), (
         "courses module does not import has_student_workspaces"
     )
+
+
+def test_delete_activity_imported() -> None:
+    """courses module must import delete_activity from db.activities."""
+    import promptgrimoire.pages.courses as mod
+
+    assert hasattr(mod, "delete_activity"), (
+        "courses module does not import delete_activity"
+    )
+
+
+def test_render_activity_row_accepts_on_delete() -> None:
+    """_render_activity_row must accept an on_delete keyword parameter."""
+    import inspect
+
+    from promptgrimoire.pages.courses import _render_activity_row
+
+    sig = inspect.signature(_render_activity_row)
+    assert "on_delete" in sig.parameters, (
+        f"_render_activity_row missing on_delete parameter, has: {list(sig.parameters)}"
+    )
+    param = sig.parameters["on_delete"]
+    assert param.default is None, "on_delete default should be None"
+
+
+def test_render_week_activities_accepts_on_delete_activity() -> None:
+    """_render_week_activities must accept an on_delete_activity keyword parameter."""
+    import inspect
+
+    from promptgrimoire.pages.courses import _render_week_activities
+
+    sig = inspect.signature(_render_week_activities)
+    assert "on_delete_activity" in sig.parameters, (
+        "_render_week_activities missing on_delete_activity param,"
+        f" has: {list(sig.parameters)}"
+    )
+    param = sig.parameters["on_delete_activity"]
+    assert param.default is None, "on_delete_activity default should be None"

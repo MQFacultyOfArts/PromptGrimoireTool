@@ -26,6 +26,7 @@ from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import list_peer_workspaces_with_owners
 from promptgrimoire.db.activities import (
     create_activity,
+    delete_activity,
     list_activities_for_week,
     update_activity,
 )
@@ -279,6 +280,52 @@ async def _handle_edit_template(activity_id: UUID, template_workspace_id: UUID) 
     dialog.open()
 
 
+def _render_activity_management_controls(
+    act: Activity,
+    *,
+    populated_templates: set[UUID],
+    on_edit: Callable[[Activity], Any] | None = None,
+    on_delete: Callable[[Activity], Any] | None = None,
+) -> None:
+    """Render template, edit, settings, and delete buttons for an activity."""
+    has_content = act.template_workspace_id in populated_templates
+    btn_label = "Edit Template" if has_content else "Create Template"
+    btn_icon = "edit" if has_content else "add"
+    ui.button(
+        btn_label,
+        icon=btn_icon,
+        on_click=lambda a=act: _handle_edit_template(a.id, a.template_workspace_id),
+    ).props(
+        f"unelevated color=blue-1 text-color=primary dense"
+        f' data-testid="template-btn-{act.id}"'
+    )
+    if on_edit is not None:
+        ui.button(
+            "Edit",
+            icon="edit",
+            on_click=lambda a=act: on_edit(a),
+        ).props(
+            f"unelevated color=grey-2 text-color=grey-9 dense"
+            f' data-testid="edit-activity-btn-{act.id}"'
+        )
+    ui.button(
+        "Activity Settings",
+        icon="settings",
+        on_click=lambda a=act: open_activity_settings(a),
+    ).props(
+        "unelevated color=grey-2 text-color=grey-9 dense"
+        ' data-testid="activity-settings-btn"'
+    )
+    if on_delete is not None:
+        ui.button(
+            "Delete",
+            icon="delete",
+            on_click=lambda a=act: on_delete(a),
+        ).props(
+            f'outline color=negative dense data-testid="delete-activity-btn-{act.id}"'
+        )
+
+
 def _render_activity_row(
     act: Activity,
     *,
@@ -287,6 +334,7 @@ def _render_activity_row(
     user_workspace_map: dict[UUID, Workspace],
     peer_workspaces: list[tuple[str, str, str]] | None = None,
     on_edit: Callable[[Activity], Any] | None = None,
+    on_delete: Callable[[Activity], Any] | None = None,
 ) -> None:
     """Render a single Activity row with buttons."""
     with (
@@ -298,35 +346,11 @@ def _render_activity_row(
         ui.label(act.title).classes("text-sm font-medium")
 
         if can_manage:
-            has_content = act.template_workspace_id in populated_templates
-            btn_label = "Edit Template" if has_content else "Create Template"
-            btn_icon = "edit" if has_content else "add"
-            ui.button(
-                btn_label,
-                icon=btn_icon,
-                on_click=lambda a=act: _handle_edit_template(
-                    a.id, a.template_workspace_id
-                ),
-            ).props(
-                f"unelevated color=blue-1 text-color=primary dense"
-                f' data-testid="template-btn-{act.id}"'
-            )
-            if on_edit is not None:
-                ui.button(
-                    "Edit",
-                    icon="edit",
-                    on_click=lambda a=act: on_edit(a),
-                ).props(
-                    f"unelevated color=grey-2 text-color=grey-9 dense"
-                    f' data-testid="edit-activity-btn-{act.id}"'
-                )
-            ui.button(
-                "Activity Settings",
-                icon="settings",
-                on_click=lambda a=act: open_activity_settings(a),
-            ).props(
-                "unelevated color=grey-2 text-color=grey-9 dense"
-                ' data-testid="activity-settings-btn"'
+            _render_activity_management_controls(
+                act,
+                populated_templates=populated_templates,
+                on_edit=on_edit,
+                on_delete=on_delete,
             )
 
         # Push student actions to far-right of the row
@@ -457,6 +481,7 @@ async def _render_week_activities(
     can_manage: bool,
     can_view_drafts: bool,
     on_edit_activity: Callable[[Activity], Any] | None = None,
+    on_delete_activity: Callable[[Activity], Any] | None = None,
 ) -> None:
     """Render the activity list and 'Add Activity' button for a week."""
     activities = await list_activities_for_week(week.id)
@@ -479,6 +504,7 @@ async def _render_week_activities(
                     user_workspace_map=ws_map,
                     peer_workspaces=peer_map.get(act.id),
                     on_edit=on_edit_activity,
+                    on_delete=on_delete_activity,
                 )
     elif can_manage:
         ui.label("No activities yet").classes("text-xs text-gray-400 ml-4 mt-1")
@@ -1178,6 +1204,18 @@ async def course_detail_page(course_id: str) -> None:
                         on_success=_on_week_save,
                     )
 
+                async def _delete_activity_handler(
+                    a: Any,
+                ) -> None:
+                    auth_user = _get_current_user()
+                    await _confirm_and_delete(
+                        entity_label=f"activity: {a.title}",
+                        delete_fn=delete_activity,
+                        entity_id=a.id,
+                        is_admin=is_privileged_user(auth_user),
+                        on_success=_on_activity_save,
+                    )
+
                 with ui.column().classes("gap-2 w-full max-w-2xl"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -1201,6 +1239,7 @@ async def course_detail_page(course_id: str) -> None:
                                 on_edit_activity=lambda a: open_edit_activity(
                                     a, cid, on_save=_on_activity_save
                                 ),
+                                on_delete_activity=_delete_activity_handler,
                             )
 
             await weeks_list()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from promptgrimoire.cli_legacy import _allocate_ports
+from promptgrimoire.cli.e2e._workers import _allocate_ports
 
 
 def test_allocate_ports_returns_distinct_ports() -> None:

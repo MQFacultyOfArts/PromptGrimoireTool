@@ -105,7 +105,6 @@ def noretry(ctx: typer.Context) -> None:
 
     os.environ["E2E_BASE_URL"] = url
 
-    exit_code = 1
     try:
         exit_code = _run_pytest(
             title=f"E2E Debug (no retries, -x) — server {url}",
@@ -147,7 +146,6 @@ def changed(ctx: typer.Context) -> None:
 
     os.environ["E2E_BASE_URL"] = url
 
-    exit_code = 1
     try:
         log_path = Path("test-e2e.log")
         exit_code = _run_pytest(

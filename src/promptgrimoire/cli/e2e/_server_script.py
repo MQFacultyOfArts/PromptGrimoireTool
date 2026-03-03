@@ -70,7 +70,8 @@ def _watchdog_loop():
                 " — BLOCKED. Dumping stacks to file."
             )
             # Canary: does code after the log message run?
-            open("/tmp/wd-canary.txt", "w").write("reached")
+            with open("/tmp/wd-canary.txt", "w") as _f:
+                _f.write("reached")
             dump_path = "/tmp/watchdog-stacks.log"
             try:
                 import datetime as _dt
@@ -151,9 +152,9 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 
-import promptgrimoire
+from promptgrimoire import __file__ as _pg_init
 
-_static_dir = Path(promptgrimoire.__file__).parent / "static"
+_static_dir = Path(_pg_init).parent / "static"
 app.add_static_files("/static", str(_static_dir))
 
 

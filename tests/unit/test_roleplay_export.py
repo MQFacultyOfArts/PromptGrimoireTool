@@ -81,3 +81,19 @@ class TestSessionToHtml:
         from promptgrimoire.pages.roleplay_export import session_to_html
 
         assert session_to_html(session) == ""
+
+    def test_system_turn_has_system_role(self, session: Session) -> None:
+        """System turns produce data-speaker='system'."""
+        from promptgrimoire.models.scenario import Turn
+        from promptgrimoire.pages.roleplay_export import session_to_html
+
+        session.turns.append(
+            Turn(
+                name="System",
+                content="Context injection",
+                is_user=False,
+                is_system=True,
+            )
+        )
+        html = session_to_html(session)
+        assert 'data-speaker="system"' in html

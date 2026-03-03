@@ -176,15 +176,26 @@ class TestAvatarParameter:
 
 
 class TestExportButtonState:
-    """Tests for export button disabled state."""
+    """Tests for export button disabled state.
+
+    The button's initial state is controlled by
+    ``_EXPORT_BTN_INITIAL_DISABLED`` (consumed at roleplay.py:430
+    via ``if _EXPORT_BTN_INITIAL_DISABLED: ...disable()``).
+    NiceGUI button construction requires a running client context,
+    so we verify both the constant and its consumption site.
+    """
 
     def test_export_button_disabled_without_session(self) -> None:
-        """AC3.4: Export button is disabled when no session is active.
-
-        The module-level constant _EXPORT_BTN_INITIAL_DISABLED controls the
-        export button's initial disabled state. It must be True so the button
-        starts disabled until a session is loaded.
-        """
+        """AC3.4: Export button starts disabled when no session is active."""
         from promptgrimoire.pages.roleplay import _EXPORT_BTN_INITIAL_DISABLED
 
         assert _EXPORT_BTN_INITIAL_DISABLED is True
+
+    def test_constant_is_consumed_in_page_function(self) -> None:
+        """Verify _EXPORT_BTN_INITIAL_DISABLED is referenced in roleplay_page source."""
+        import inspect
+
+        from promptgrimoire.pages.roleplay import roleplay_page
+
+        source = inspect.getsource(roleplay_page)
+        assert "_EXPORT_BTN_INITIAL_DISABLED" in source

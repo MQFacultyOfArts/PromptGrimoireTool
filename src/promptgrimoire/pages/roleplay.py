@@ -230,9 +230,9 @@ async def _handle_export(state: dict) -> None:
         await grant_permission(workspace.id, user_id, "owner")
 
         ui.navigate.to(f"/annotation/{workspace.id}")
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to export roleplay session")
-        ui.notify(f"Export failed: {exc}", type="negative")
+        ui.notify("Export failed. Please try again.", type="negative")
 
 
 def _auto_load_character(state: dict, widgets: dict) -> None:

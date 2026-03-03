@@ -199,10 +199,14 @@ def render_inline_title_edit(
 
 async def _delete_workspace_from_navigator(
     workspace_id: UUID,
-    card: ui.card,
+    card: ui.card,  # noqa: ARG001 — kept for future ui.refreshable migration
     user_id: UUID,
 ) -> None:
-    """Show confirmation dialog and delete workspace, removing card from DOM."""
+    """Show confirmation dialog and delete workspace, then reload the page.
+
+    # TODO: Replace page reload with ui.refreshable on the navigator
+    # sections so deletion updates in-place without a full reload.
+    """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("Delete this workspace?").classes("text-lg font-bold")
         ui.label("This cannot be undone.").classes("text-gray-500")
@@ -219,8 +223,8 @@ async def _delete_workspace_from_navigator(
                     dialog.close()
                     return
                 dialog.close()
-                card.delete()
                 ui.notify("Workspace deleted", type="positive")
+                ui.navigate.to("/")
 
             ui.button("Delete", on_click=confirm).props(
                 'color=negative data-testid="confirm-delete-workspace-btn"'

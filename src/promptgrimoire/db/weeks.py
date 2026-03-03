@@ -188,7 +188,7 @@ async def update_week(
         return week
 
 
-async def _purge_activity(
+async def purge_activity(
     session: AsyncSession,
     activity: Activity,
 ) -> None:
@@ -197,6 +197,9 @@ async def _purge_activity(
     Removes student workspaces first, then the activity (SET NULL on
     remaining workspace.activity_id references), then the orphaned
     template workspace.  Caller must own the session transaction.
+
+    Package-internal helper shared by ``delete_week()`` and
+    ``delete_course()`` in ``db/courses.py``.
 
     Args:
         session: Active async database session.
@@ -261,6 +264,9 @@ async def delete_week(
         activities = list(activity_rows.all())
 
         # Aggregate student workspace count across all activities
+        # TODO(perf): N+1 sessions — has_student_workspaces
+        # opens its own session per call. Replace with single
+        # GROUP BY query if activity counts grow.
         total_students = 0
         for act in activities:
             total_students += await has_student_workspaces(act.id)
@@ -272,7 +278,7 @@ async def delete_week(
 
         # Purge each activity with proper FK ordering
         for act in activities:
-            await _purge_activity(session, act)
+            await purge_activity(session, act)
 
         # Finally delete the week itself
         # (re-fetch since session state may have changed)

@@ -1,9 +1,26 @@
-"""Tests for delete guard logic (student workspace protection).
+"""Integration tests for delete guard logic (student workspace protection).
 
 These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
-Tests verify has_student_workspaces() count accuracy, which is the
-foundation for all delete guard logic in activities, weeks, and courses.
+Covers all delete guard acceptance criteria:
+- AC2.1: Week deletion with no student workspaces
+- AC2.2: Activity deletion with no student workspaces
+- AC2.3: Deletion blocked when student workspaces exist (force=False)
+- AC2.4: Force-delete cascades through student workspaces
+- AC3.5: Workspace ownership check (defence in depth)
+- AC4.1: User-uploaded document deletion (source_document_id IS NULL)
+- AC4.4: Template-cloned document protected (ProtectedDocumentError)
+- AC6.1: Course deletion with no student workspaces
+- AC6.3: Course deletion blocked when student workspaces exist
+- AC6.4: Course force-delete cascades through everything
+
+Organised into test classes:
+- TestHasStudentWorkspaces: Count accuracy foundation
+- TestDeleteActivity: Guarded, unguarded, force
+- TestDeleteWeek: Guarded, unguarded, force, multi-activity aggregation
+- TestDeleteWorkspace: Ownership check
+- TestDeleteDocument: Provenance guard
+- TestDeleteCourse: Guarded, unguarded, force, multi-week aggregation
 """
 
 from __future__ import annotations
@@ -467,3 +484,127 @@ class TestDeleteDocument:
 
         result = await delete_document(uuid4())
         assert result is False
+
+
+class TestDeleteCourse:
+    """Tests for delete_course() with guard logic."""
+
+    @pytest.mark.asyncio
+    async def test_deletes_course_with_no_students(self) -> None:
+        """Course with no student workspaces deletes (force=False).
+
+        Verifies crud-management-229.AC6.1: Admin deletes a unit with
+        no student workspaces; course, weeks, activities, and template
+        workspaces are all removed.
+        """
+        from promptgrimoire.db.activities import get_activity
+        from promptgrimoire.db.courses import delete_course, get_course_by_id
+        from promptgrimoire.db.weeks import get_week_by_id
+
+        course_id, week_id = await _make_course_and_week("del-course-no-stu")
+        act_id = await _make_activity(week_id, "Act 1")
+
+        result = await delete_course(course_id)
+        assert result is True
+
+        # Course gone
+        assert await get_course_by_id(course_id) is None
+        # Week gone
+        assert await get_week_by_id(week_id) is None
+        # Activity gone
+        assert await get_activity(act_id) is None
+
+    @pytest.mark.asyncio
+    async def test_blocked_when_student_workspaces_exist(self) -> None:
+        """Delete blocked with aggregate count across all activities.
+
+        Verifies crud-management-229.AC6.3: DeletionBlockedError raised
+        when student workspaces exist (same guard as weeks/activities).
+        """
+        from promptgrimoire.db.courses import delete_course
+        from promptgrimoire.db.exceptions import DeletionBlockedError
+
+        course_id, week_id = await _make_course_and_week("del-course-blocked")
+        act1_id = await _make_activity(week_id, "Act A")
+        act2_id = await _make_activity(week_id, "Act B")
+        await _clone_for_student(act1_id)
+        await _clone_for_student(act1_id)
+        await _clone_for_student(act2_id)
+
+        with pytest.raises(DeletionBlockedError) as exc_info:
+            await delete_course(course_id)
+
+        # 2 from act1 + 1 from act2 = 3
+        assert exc_info.value.student_workspace_count == 3
+
+    @pytest.mark.asyncio
+    async def test_force_deletes_with_student_workspaces(self) -> None:
+        """force=True cascades through everything.
+
+        Verifies crud-management-229.AC6.4: Admin force-deletes unit with
+        student workspaces; all child entities removed.
+        """
+        from promptgrimoire.db.activities import get_activity
+        from promptgrimoire.db.courses import delete_course, get_course_by_id
+        from promptgrimoire.db.weeks import get_week_by_id
+        from promptgrimoire.db.workspaces import get_workspace
+
+        course_id, week_id = await _make_course_and_week("del-course-force")
+        act_id = await _make_activity(week_id, "Force Act")
+        student_ws_id = await _clone_for_student(act_id)
+
+        # Get template workspace id
+        activity = await get_activity(act_id)
+        assert activity is not None
+        template_ws_id = activity.template_workspace_id
+
+        result = await delete_course(course_id, force=True)
+        assert result is True
+
+        # Course gone
+        assert await get_course_by_id(course_id) is None
+        # Week gone
+        assert await get_week_by_id(week_id) is None
+        # Activity gone
+        assert await get_activity(act_id) is None
+        # Template workspace gone
+        assert await get_workspace(template_ws_id) is None
+        # Student workspace gone
+        assert await get_workspace(student_ws_id) is None
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_course_returns_false(self) -> None:
+        """Nonexistent ID returns False regardless of force."""
+        from promptgrimoire.db.courses import delete_course
+
+        result = await delete_course(uuid4())
+        assert result is False
+
+        result_force = await delete_course(uuid4(), force=True)
+        assert result_force is False
+
+    @pytest.mark.asyncio
+    async def test_multi_week_aggregation(self) -> None:
+        """Student workspace count aggregates across multiple weeks.
+
+        Course with activities in different weeks should sum student
+        workspaces from all activities in all weeks.
+        """
+        from promptgrimoire.db.courses import delete_course
+        from promptgrimoire.db.exceptions import DeletionBlockedError
+        from promptgrimoire.db.weeks import create_week
+
+        course_id, week1_id = await _make_course_and_week("del-course-multi-wk")
+        week2 = await create_week(course_id=course_id, week_number=2, title="Week 2")
+
+        act1_id = await _make_activity(week1_id, "W1 Act")
+        act2_id = await _make_activity(week2.id, "W2 Act")
+        await _clone_for_student(act1_id)
+        await _clone_for_student(act2_id)
+        await _clone_for_student(act2_id)
+
+        with pytest.raises(DeletionBlockedError) as exc_info:
+            await delete_course(course_id)
+
+        # 1 from act1 + 2 from act2 = 3
+        assert exc_info.value.student_workspace_count == 3

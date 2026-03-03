@@ -12,7 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Course, CourseEnrollment
+from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.models import Activity, Course, CourseEnrollment, Week
+from promptgrimoire.db.weeks import _purge_activity
+from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -159,6 +162,93 @@ async def archive_course(course_id: UUID) -> bool:
             return False
         course.is_archived = True
         session.add(course)
+        return True
+
+
+async def _gather_course_activities(
+    course_id: UUID,
+) -> tuple[list[Week], list[Activity]]:
+    """Fetch all weeks and their activities for a course.
+
+    Returns:
+        Tuple of (weeks, activities) for the given course.
+    """
+    async with get_session() as session:
+        week_rows = await session.exec(select(Week).where(Week.course_id == course_id))
+        weeks = list(week_rows.all())
+
+        week_ids = [w.id for w in weeks]
+        if not week_ids:
+            return weeks, []
+
+        activity_rows = await session.exec(
+            select(Activity).where(Activity.week_id.in_(week_ids))  # type: ignore[union-attr]  -- SQLAlchemy Column has .in_()
+        )
+        return weeks, list(activity_rows.all())
+
+
+async def _count_student_workspaces(activities: list[Activity]) -> int:
+    """Sum student workspace counts across a list of activities."""
+    total = 0
+    for act in activities:
+        total += await has_student_workspaces(act.id)
+    return total
+
+
+async def delete_course(
+    course_id: UUID,
+    *,
+    force: bool = False,
+) -> bool:
+    """Delete a course and all its weeks, activities, and workspaces.
+
+    When ``force=False`` (default), raises
+    :class:`~promptgrimoire.db.exceptions.DeletionBlockedError` if any
+    activity in this course has student workspaces.  The error carries
+    the aggregate count across all activities in all weeks.
+
+    When ``force=True``, student workspaces are deleted first, then each
+    activity is removed with proper FK ordering (activity first to SET
+    NULL workspace.activity_id, then template workspace), then weeks,
+    then the course itself.
+
+    The UI layer handles role checking (admin or coordinator).  This
+    function does NOT check roles -- that is a UI-layer concern.
+
+    Args:
+        course_id: The course UUID.
+        force: If True, force-delete even with student workspaces.
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    async with get_session() as session:
+        course = await session.get(Course, course_id)
+        if not course:
+            return False
+
+        weeks, activities = await _gather_course_activities(course_id)
+
+        total_students = await _count_student_workspaces(activities)
+        if total_students > 0 and not force:
+            raise DeletionBlockedError(student_workspace_count=total_students)
+
+        # Purge each activity with proper FK ordering
+        for act in activities:
+            await _purge_activity(session, act)
+
+        # Delete weeks
+        for wk in weeks:
+            week_obj = await session.get(Week, wk.id)
+            if week_obj:
+                await session.delete(week_obj)
+        await session.flush()
+
+        # Delete the course itself (re-fetch since session state may have changed)
+        course = await session.get(Course, course_id)
+        if course:
+            await session.delete(course)
+
         return True
 
 

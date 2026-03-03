@@ -14,6 +14,7 @@ from sqlmodel import select
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import DeletionBlockedError
 from promptgrimoire.db.models import Activity, Week, Workspace
+from promptgrimoire.db.weeks import purge_activity
 from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
@@ -184,15 +185,7 @@ async def delete_activity(
     student workspaces exist under this activity.  When ``force=True``,
     student workspaces are deleted first, then the activity.
 
-    Deletion order matters due to circular FKs:
-    1. Delete student workspaces (if force).
-    2. Delete Activity -- triggers SET NULL on remaining
-       workspace.activity_id references.
-    3. Delete the orphaned template Workspace, now safe because
-       no RESTRICT FK points to it.
-
-    (Activity.template_workspace_id uses RESTRICT, so deleting
-    the Workspace first would be blocked while the Activity exists.)
+    Delegates FK-ordered deletion to :func:`purge_activity`.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
@@ -206,25 +199,8 @@ async def delete_activity(
                 student_workspace_count=count,
             )
 
-        # Force: remove student workspaces first
-        if count > 0:
-            student_ws_rows = await session.exec(
-                select(Workspace).where(
-                    Workspace.activity_id == activity_id,
-                    Workspace.id != activity.template_workspace_id,
-                )
-            )
-            for ws in student_ws_rows.all():
-                await session.delete(ws)
-            await session.flush()
-
-        template_workspace_id = activity.template_workspace_id
-        await session.delete(activity)
-        await session.flush()
-
-        template = await session.get(Workspace, template_workspace_id)
-        if template:
-            await session.delete(template)
+        # Delegate FK-ordered deletion to shared helper
+        await purge_activity(session, activity)
 
         return True
 

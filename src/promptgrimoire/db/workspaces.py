@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -70,8 +71,6 @@ async def has_student_workspaces(activity_id: UUID) -> int:
     Returns:
         Count of student workspaces (0 = safe to delete).
     """
-    from sqlalchemy import func
-
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
         if activity is None:

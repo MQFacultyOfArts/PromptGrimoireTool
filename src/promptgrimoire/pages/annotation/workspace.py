@@ -163,6 +163,53 @@ def _parse_sort_end_args(
     return highlight_id, source_tag, target_tag, new_index
 
 
+def _apply_sort_reorder_or_move(
+    state: PageState,
+    highlight_id: str,
+    source_tag: str,
+    target_tag: str,
+    new_index: int,
+    refresh_fn: Any,
+) -> None:
+    """Apply a sort-end reorder or cross-column move to the CRDT.
+
+    Same-column events update tag_order in place. Cross-column events
+    reassign the highlight's tag and trigger a re-render.
+
+    Args:
+        state: Page state with crdt_doc.
+        highlight_id: The dragged highlight ID.
+        source_tag: Raw tag key of the source column.
+        target_tag: Raw tag key of the target column.
+        new_index: Position in the target column (0-indexed).
+        refresh_fn: Callable to re-render the Organise tab.
+    """
+    assert state.crdt_doc is not None
+    if source_tag == target_tag:
+        current_order = state.crdt_doc.get_tag_order(target_tag)
+        if highlight_id in current_order:
+            current_order.remove(highlight_id)
+        current_order.insert(new_index, highlight_id)
+        state.crdt_doc.set_tag_order(
+            target_tag, current_order, origin_client_id=state.client_id
+        )
+        ui.notify("Reordered", type="info")
+    else:
+        state.crdt_doc.move_highlight_to_tag(
+            highlight_id,
+            from_tag=source_tag,
+            to_tag=target_tag,
+            position=new_index,
+            origin_client_id=state.client_id,
+        )
+        ui.notify(
+            f"Moved to {target_tag or 'Untagged'}",
+            type="positive",
+            position="bottom",
+        )
+        refresh_fn()
+
+
 def _setup_organise_drag(state: PageState) -> None:
     """Set up SortableJS sort-end handler and Organise tab refresh.
 
@@ -174,49 +221,18 @@ def _setup_organise_drag(state: PageState) -> None:
     """
 
     async def _on_organise_sort_end(e: events.GenericEventArguments) -> None:
-        """Handle a SortableJS sort-end event from Tab 2.
-
-        Parses source/target tag from Sortable container HTML IDs
-        (``sort-{raw_key}``) and highlight_id from card HTML ID
-        (``hl-{highlight_id}``). Same-column reorders within the tag;
-        cross-column moves reassign the highlight's tag. Both mutate
-        CRDT and broadcast.
-        """
+        """Handle a SortableJS sort-end event from Tab 2."""
         if state.crdt_doc is None:
             return
 
         highlight_id, source_tag, target_tag, new_index = _parse_sort_end_args(e.args)
-
         if not highlight_id:
             logger.warning("Sort-end event with no item ID: %s", e.args)
             return
 
-        if source_tag == target_tag:
-            # Same-column reorder: SortableJS gives us the exact newIndex.
-            current_order = state.crdt_doc.get_tag_order(target_tag)
-            if highlight_id in current_order:
-                current_order.remove(highlight_id)
-            current_order.insert(new_index, highlight_id)
-            state.crdt_doc.set_tag_order(
-                target_tag, current_order, origin_client_id=state.client_id
-            )
-            ui.notify("Reordered", type="info")
-        else:
-            # Cross-column move: reassign tag and update orders
-            state.crdt_doc.move_highlight_to_tag(
-                highlight_id,
-                from_tag=source_tag,
-                to_tag=target_tag,
-                position=new_index,
-                origin_client_id=state.client_id,
-            )
-            ui.notify(
-                f"Moved to {target_tag or 'Untagged'}",
-                type="positive",
-                position="bottom",
-            )
-            # Re-render to update card tag labels and colours
-            _render_organise_now()
+        _apply_sort_reorder_or_move(
+            state, highlight_id, source_tag, target_tag, new_index, _render_organise_now
+        )
 
         # Persist to database
         pm = get_persistence_manager()
@@ -248,6 +264,7 @@ def _setup_organise_drag(state: PageState) -> None:
             on_sort_end=(_on_organise_sort_end if state.can_annotate else None),
             on_locate=_on_locate,
             state=state,
+            documents=state.workspace_documents,
         )
 
     state.refresh_organise = _render_organise_now
@@ -391,6 +408,48 @@ def _create_tag_callbacks(
     return on_add_tag, on_manage_tags
 
 
+async def _sync_respond_on_leave(state: PageState) -> None:
+    """Sync Milkdown markdown to CRDT when leaving the Respond tab.
+
+    Failure is logged but does not propagate -- blocking tab switches
+    would break the Annotate tab refresh.
+    """
+    if state.sync_respond_markdown:
+        try:
+            await state.sync_respond_markdown()
+        except Exception:
+            logger.debug(
+                "RESPOND_MD_SYNC failed on tab leave, continuing",
+                exc_info=True,
+            )
+
+
+def _handle_annotate_tab(state: PageState) -> None:
+    """Handle switching to the Annotate tab (refresh highlights)."""
+    _push_highlights_to_client(state)
+    if state.refresh_annotations:
+        state.refresh_annotations()
+    _update_highlight_css(state)
+
+
+def _handle_organise_tab(state: PageState) -> None:
+    """Handle switching to the Organise tab (re-render)."""
+    assert state.initialised_tabs is not None
+    state.initialised_tabs.add("Organise")
+    if state.refresh_organise:
+        state.refresh_organise()
+
+
+async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:
+    """Handle switching to the Respond tab (deferred init or refresh)."""
+    assert state.initialised_tabs is not None
+    if "Respond" not in state.initialised_tabs:
+        state.initialised_tabs.add("Respond")
+        await _initialise_respond_tab(state, workspace_id)
+    elif state.refresh_respond_references:
+        state.refresh_respond_references()
+
+
 def _make_tab_change_handler(
     state: PageState,
     workspace_id: UUID,
@@ -407,39 +466,19 @@ def _make_tab_change_handler(
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
-        # Sync markdown to CRDT when leaving the Respond tab.
-        # Failure must not block tab switch — Annotate refresh would break.
-        if prev_tab == "Respond" and state.sync_respond_markdown:
-            try:
-                await state.sync_respond_markdown()
-            except Exception:
-                logger.debug(
-                    "RESPOND_MD_SYNC failed on tab leave, continuing",
-                    exc_info=True,
-                )
+        if prev_tab == "Respond":
+            await _sync_respond_on_leave(state)
 
-        # Always re-render Organise tab to show current highlights
         if tab_name == "Organise" and state.organise_panel and state.crdt_doc:
-            state.initialised_tabs.add(tab_name)
-            if state.refresh_organise:
-                state.refresh_organise()
+            _handle_organise_tab(state)
             return
 
-        # Rebuild text node map and re-apply highlights. The text walker
-        # does not modify the DOM so this is safe on every tab switch.
         if tab_name == "Annotate":
-            _push_highlights_to_client(state)
-            if state.refresh_annotations:
-                state.refresh_annotations()
-            _update_highlight_css(state)
+            _handle_annotate_tab(state)
             return
 
         if tab_name == "Respond":
-            if tab_name not in state.initialised_tabs:
-                state.initialised_tabs.add(tab_name)
-                await _initialise_respond_tab(state, workspace_id)
-            elif state.refresh_respond_references:
-                state.refresh_respond_references()
+            await _handle_respond_tab(state, workspace_id)
             return
 
         if tab_name not in state.initialised_tabs:
@@ -485,6 +524,7 @@ async def _build_tab_panels(
             # Use pre-loaded documents or query if not provided
             if documents is None:
                 documents = await list_documents(workspace_id)
+            state.workspace_documents = documents
             logger.debug("[RENDER] documents loaded: count=%d", len(documents))
 
             if documents:

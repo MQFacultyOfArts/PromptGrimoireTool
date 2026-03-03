@@ -255,6 +255,8 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+    # Pre-loaded workspace documents for Organise tab document management
+    workspace_documents: list[Any] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""

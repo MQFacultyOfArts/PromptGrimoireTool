@@ -42,10 +42,12 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
+from promptgrimoire.db.exceptions import DeletionBlockedError
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
+    delete_week,
     get_visible_weeks,
     get_week_by_id,
     list_weeks,
@@ -100,6 +102,72 @@ _MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
 _course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
+
+
+async def _confirm_and_delete(
+    *,
+    entity_label: str,
+    delete_fn: Callable[..., Any],
+    entity_id: UUID,
+    is_admin: bool,
+    on_success: Callable[[], Any],
+) -> None:
+    """Show confirmation dialog, call delete_fn, handle DeletionBlockedError.
+
+    For admins, offers force-delete when blocked by student workspaces.
+    """
+
+    async def _do_delete(*, force: bool = False) -> None:
+        try:
+            await delete_fn(entity_id, force=force)
+        except DeletionBlockedError as e:
+            msg = f"Cannot delete: {e.student_workspace_count} student workspaces exist"
+            ui.notify(msg, type="warning")
+            if is_admin:
+                _show_force_dialog(e.student_workspace_count)
+            return
+        ui.notify(
+            f"Deleted {entity_label}",
+            type="positive",
+        )
+        on_success()
+
+    def _show_force_dialog(count: int) -> None:
+        with (
+            ui.dialog() as force_dlg,
+            ui.card().classes("w-96"),
+        ):
+            ui.label(
+                f"Force delete will remove {count}"
+                " student workspaces."
+                " This cannot be undone."
+            ).classes("text-body1")
+            with ui.row().classes("justify-end w-full gap-2 mt-4"):
+                ui.button(
+                    "Cancel",
+                    on_click=force_dlg.close,
+                ).props('flat data-testid="cancel-force-delete-btn"')
+                ui.button(
+                    "Force Delete",
+                    on_click=lambda: _do_delete(force=True),
+                ).props('color=negative data-testid="force-delete-btn"')
+        force_dlg.open()
+
+    with (
+        ui.dialog() as dlg,
+        ui.card().classes("w-96"),
+    ):
+        ui.label(f"Delete {entity_label}? This cannot be undone.").classes("text-body1")
+        with ui.row().classes("justify-end w-full gap-2 mt-4"):
+            ui.button(
+                "Cancel",
+                on_click=dlg.close,
+            ).props('flat data-testid="cancel-delete-btn"')
+            ui.button(
+                "Delete",
+                on_click=_do_delete,
+            ).props('color=negative data-testid="confirm-delete-btn"')
+    dlg.open()
 
 
 async def _build_peer_map(
@@ -308,8 +376,9 @@ def _render_week_management_controls(
     *,
     on_publish_toggle: Callable[[UUID], Any],
     on_edit: Callable[[Any], Any] | None = None,
+    on_delete: Callable[[Any], Any] | None = None,
 ) -> None:
-    """Render edit and publish/unpublish controls for a week."""
+    """Render edit, delete, and publish/unpublish controls for a week."""
     with ui.row().classes("gap-1"):
         if on_edit is not None:
             ui.button(
@@ -319,6 +388,14 @@ def _render_week_management_controls(
             ).props(
                 f"unelevated color=grey-2 text-color=grey-9 dense"
                 f' data-testid="edit-week-btn-{week.id}"'
+            )
+        if on_delete is not None:
+            ui.button(
+                "Delete",
+                icon="delete",
+                on_click=lambda w=week: on_delete(w),
+            ).props(
+                f'outline color=negative dense data-testid="delete-week-btn-{week.id}"'
             )
         _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
 
@@ -330,8 +407,9 @@ def _render_week_header(
     can_manage: bool,
     on_publish_toggle: Callable[[UUID], Any],
     on_edit: Callable[[Any], Any] | None = None,
+    on_delete: Callable[[Any], Any] | None = None,
 ) -> None:
-    """Render the week card header row with publish/unpublish and edit controls."""
+    """Render week card header with management controls."""
     with ui.row().classes("items-center justify-between w-full"):
         with ui.column().classes("gap-1"):
             ui.label(f"Week {week.week_number}: {week.title}").classes("font-semibold")
@@ -344,7 +422,10 @@ def _render_week_header(
 
         if can_manage:
             _render_week_management_controls(
-                week, on_publish_toggle=on_publish_toggle, on_edit=on_edit
+                week,
+                on_publish_toggle=on_publish_toggle,
+                on_edit=on_edit,
+                on_delete=on_delete,
             )
 
 
@@ -1085,6 +1166,18 @@ async def course_detail_page(course_id: str) -> None:
                     weeks_list.refresh()
                     _broadcast_weeks_refresh(cid, client_id)
 
+                async def _delete_week_handler(
+                    w: Any,
+                ) -> None:
+                    auth_user = _get_current_user()
+                    await _confirm_and_delete(
+                        entity_label=(f"Week {w.week_number}: {w.title}"),
+                        delete_fn=delete_week,
+                        entity_id=w.id,
+                        is_admin=is_privileged_user(auth_user),
+                        on_success=_on_week_save,
+                    )
+
                 with ui.column().classes("gap-2 w-full max-w-2xl"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -1096,6 +1189,7 @@ async def course_detail_page(course_id: str) -> None:
                                 on_edit=lambda w: open_edit_week(
                                     w, cid, on_save=_on_week_save
                                 ),
+                                on_delete=_delete_week_handler,
                             )
                             await _render_week_activities(
                                 week,

@@ -8,6 +8,7 @@ Route: /roleplay
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,8 @@ from promptgrimoire.parsers.sillytavern import parse_character_card
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.scroll_area import ScrollArea
+
+logger = logging.getLogger(__name__)
 
 
 def _get_default_user_name() -> str:
@@ -356,5 +359,6 @@ async def roleplay_page() -> None:
 
             _render_messages(session, chat_container, scroll_area)
         except Exception:
+            logger.exception("Failed to auto-load bundled character card")
             ui.notify("Could not auto-load character card", type="negative")
             upload_expansion.value = True  # open so students can manually load

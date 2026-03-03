@@ -288,7 +288,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 
     # After init_db(), session_factory is guaranteed to be set
     session_factory = _state.session_factory
-    assert session_factory is not None  # For type narrowing
+    assert session_factory is not None  # noqa: S101 — type narrowing
 
     async with session_factory() as session:
         try:

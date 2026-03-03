@@ -145,7 +145,7 @@ async def _run_e2e_worker(
         await pytest_proc.wait()
 
         duration = time.monotonic() - start_time
-        assert pytest_proc.returncode is not None  # guaranteed after wait()
+        assert pytest_proc.returncode is not None  # noqa: S101 — guaranteed after wait()
         return (test_file, pytest_proc.returncode, duration)
 
     finally:

@@ -28,7 +28,7 @@ def _adjective_animal_label(user_id: str) -> str:
     (e.g. "Crystal Peccary").
     """
     seed = int.from_bytes(hashlib.sha256(user_id.encode()).digest()[:8])
-    gen = RandomGenerator(_COOLNAME_CONFIG, random.Random(seed))  # nosec B311 — deterministic slug, not crypto
+    gen = RandomGenerator(_COOLNAME_CONFIG, random.Random(seed))  # noqa: S311 — deterministic slug, not crypto
     slug = gen.generate_slug(2)
     return slug.replace("-", " ").title()
 

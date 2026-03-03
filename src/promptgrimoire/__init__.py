@@ -151,11 +151,11 @@ def main() -> None:
     print(f"Starting application on http://0.0.0.0:{port}")
 
     ui.run(
-        host="0.0.0.0",
+        host="0.0.0.0",  # noqa: S104 — intentional bind for docker/server
         port=port,
         reload=settings.app.reload,
         storage_secret=storage_secret,
-    )  # nosec B104
+    )
 
 
 if __name__ in {"__main__", "__mp_main__"}:

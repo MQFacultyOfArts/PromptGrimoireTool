@@ -39,12 +39,6 @@ repos:
         # tests/: test code is not subject to complexity gates.
         exclude: '(_server_script\.py$|^tests/)'
 
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.4
-    hooks:
-      - id: bandit
-        args: ["-c", "pyproject.toml"]
-
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

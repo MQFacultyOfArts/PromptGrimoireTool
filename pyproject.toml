@@ -65,6 +65,7 @@ select = [
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "ARG",    # flake8-unused-arguments
+    "S",      # flake8-bandit (security)
     "SIM",    # flake8-simplify
     "TCH",    # flake8-type-checking
     "PTH",    # flake8-use-pathlib
@@ -75,11 +76,15 @@ select = [
 ignore = [
     "PLR0913",  # Too many arguments
     "PLR2004",  # Magic value comparison
+    "S404",     # subprocess import (CLI tooling uses subprocess intentionally)
+    "S603",     # subprocess call without shell check (controlled args in CLI)
+    "S607",     # partial executable path (uv, playwright, etc.)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "PLC0415",  # Allow imports inside test functions (needed for mocking)
+    "S101",     # Assertions are the primary test mechanism
 ]
 "src/promptgrimoire/auth/factory.py" = [
     "PLC0415",  # Intentional lazy imports for conditional client loading
@@ -130,6 +135,8 @@ ignore = [
     # Intentional late imports, module-level side effects, global state.
     "PLC0415", "E402", "I001", "B023", "PTH123", "ARG001",
     "SIM115", "PLR0915", "PLW0602", "PLW0603", "RUF100",
+    # Security rules: intentional test secrets, /tmp paths, bare except.
+    "S101", "S108", "S110",
 ]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block

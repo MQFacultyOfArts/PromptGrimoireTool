@@ -1,0 +1,71 @@
+/* SillyTavern-inspired dark theme for the roleplay page */
+
+/* ── Page background ─────────────────────────────────────────────── */
+.roleplay-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: url('/static/roleplay/background.png');
+    background-size: cover;
+    background-attachment: fixed;
+    background-position: center;
+    z-index: -1;
+}
+
+/* ── Chat scroll area ────────────────────────────────────────────── */
+.roleplay-chat {
+    background: rgba(23, 23, 23, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+/* ── Quasar chat message overrides ───────────────────────────────── */
+.q-message {
+    color: rgb(220, 220, 210);
+    font-family: "Noto Sans", sans-serif;
+    font-size: 15px;
+}
+
+/* User (sent) bubble */
+.q-message-sent .q-message-text-content {
+    background: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* AI (received) bubble */
+.q-message-received .q-message-text-content {
+    background: rgba(60, 60, 60, 0.3) !important;
+}
+
+/* Italic / emphasis colour */
+.q-message em,
+.q-message i {
+    color: rgb(145, 145, 145);
+}
+
+/* Blockquote — orange accent */
+.q-message blockquote {
+    border-left: 3px solid rgb(225, 138, 36);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+
+/* ── Avatar ──────────────────────────────────────────────────────── */
+.q-avatar img {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Upload card styling ─────────────────────────────────────────── */
+.roleplay-upload {
+    background: rgba(23, 23, 23, 0.8);
+    color: rgb(220, 220, 210);
+    border: 1px solid rgba(220, 220, 210, 0.2);
+    border-radius: 8px;
+}

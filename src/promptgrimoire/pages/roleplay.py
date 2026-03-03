@@ -361,6 +361,14 @@ async def roleplay_page() -> None:
             .roleplay-chat .q-message-text {
                 color: rgb(220, 220, 210) !important;
             }
+            .roleplay-chat .q-message-text--sent {
+                background: rgba(0, 0, 0, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-text--received {
+                background: rgba(60, 60, 60, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
             .roleplay-chat .q-message-name--sent,
             .roleplay-chat .q-message-name--received {
                 color: rgb(180, 180, 170) !important;

@@ -135,6 +135,9 @@ async def _confirm_and_delete(
         on_success()
 
     def _show_force_dialog(count: int) -> None:
+        async def _force_delete_click() -> None:
+            await _do_delete(force=True)
+
         with (
             ui.dialog() as force_dlg,
             ui.card().classes("w-96"),
@@ -151,7 +154,7 @@ async def _confirm_and_delete(
                 ).props('flat data-testid="cancel-force-delete-btn"')
                 ui.button(
                     "Force Delete",
-                    on_click=lambda: _do_delete(force=True),
+                    on_click=_force_delete_click,
                 ).props('color=negative data-testid="force-delete-btn"')
         force_dlg.open()
 

@@ -113,6 +113,10 @@ def _click_testid(user: User, testid: str) -> None:
         )
     from nicegui import events
 
+    # TODO(2026-03): Replace with public API when NiceGUI exposes a click()
+    # method that works outside the User.find() marker-based lookup.  We use
+    # the same pattern as NiceGUI's UserInteraction.click() internally.
+    # See: https://github.com/zauberzeug/nicegui/issues/XXXX
     for listener in el._event_listeners.values():
         if listener.element_id != el.id:
             continue
@@ -353,3 +357,46 @@ class TestDeleteUnitButtonVisibility:
 
         # Delete Unit button should NOT be visible
         await _should_not_see_testid(user, "delete-unit-btn")
+
+    @pytest.mark.asyncio
+    async def test_delete_unit_redirects_to_course_list(self, user: User) -> None:
+        """Confirming unit deletion navigates to /courses (AC6.2).
+
+        Steps:
+        1. Create course and enroll a coordinator.
+        2. Authenticate and open the course detail page.
+        3. Click the Delete Unit button.
+        4. Confirm deletion in the dialog.
+        5. Verify the user is redirected to /courses (back_history and page content).
+        """
+        email = "instructor@uni.edu"
+        course_id, _code = await _create_course()
+        await _enroll(course_id, email, "coordinator")
+
+        await _authenticate(user, email=email)
+        await user.open(f"/courses/{course_id}")
+
+        # Delete Unit button must be present
+        await _should_see_testid(user, "delete-unit-btn")
+
+        # Click delete unit
+        _click_testid(user, "delete-unit-btn")
+        await asyncio.sleep(0.1)
+
+        # Confirmation dialog must appear
+        await _should_see_testid(user, "confirm-delete-btn")
+
+        # Confirm deletion
+        _click_testid(user, "confirm-delete-btn")
+
+        # Wait for: DB deletion + on_success callback + background navigation task
+        for _ in range(20):
+            if user.back_history and user.back_history[-1] == "/courses":
+                break
+            await asyncio.sleep(0.1)
+
+        assert user.back_history[-1] == "/courses", (
+            f"expected redirect to /courses, but back_history is {user.back_history!r}"
+        )
+        # The courses list renders with the "Units" page title
+        await user.should_see(content="Units")

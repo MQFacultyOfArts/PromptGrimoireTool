@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-02-28
+**Last updated:** 2026-03-03
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -36,6 +36,7 @@ Course/unit of study with weeks and enrolled members.
 | `default_anonymous_sharing` | BOOLEAN | NOT NULL, default FALSE |
 | `default_instructor_permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL, default "editor" |
 | `default_allow_tag_creation` | BOOLEAN | NOT NULL, default TRUE |
+| `default_word_limit_enforcement` | BOOLEAN | NOT NULL, default FALSE |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`default_copy_protection`**: Course-level default inherited by activities with `copy_protection=NULL`.
@@ -47,6 +48,8 @@ Course/unit of study with weeks and enrolled members.
 **`default_instructor_permission`**: Default permission level for instructors accessing student workspaces via enrollment-derived access. FK to `permission.name` with RESTRICT delete.
 
 **`default_allow_tag_creation`**: Course-level default inherited by activities with `allow_tag_creation=NULL`. Controls whether students can create new tags and groups.
+
+**`default_word_limit_enforcement`**: Course-level default for word limit enforcement mode. Inherited by activities with `word_limit_enforcement=NULL`. `FALSE`=soft (warn only on export), `TRUE`=hard (block export). See `PlacementContext.word_limit_enforcement`.
 
 ### CourseEnrollment
 
@@ -95,6 +98,9 @@ Assignment within a Week. Owns a template Workspace.
 | `allow_sharing` | BOOLEAN | nullable (tri-state) |
 | `anonymous_sharing` | BOOLEAN | nullable (tri-state) |
 | `allow_tag_creation` | BOOLEAN | nullable (tri-state) |
+| `word_minimum` | INTEGER | nullable |
+| `word_limit` | INTEGER | nullable |
+| `word_limit_enforcement` | BOOLEAN | nullable (tri-state) |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 
@@ -105,6 +111,12 @@ Assignment within a Week. Owns a template Workspace.
 **`anonymous_sharing`**: Tri-state — `NULL`=inherit from course, `TRUE`=author names hidden from peer viewers, `FALSE`=author names visible. Mirrors `copy_protection` pattern. Resolved in `PlacementContext`.
 
 **`allow_tag_creation`**: Tri-state — `NULL`=inherit from course, `TRUE`=allowed, `FALSE`=not allowed. Controls whether students can create new tags and groups in workspaces for this activity. Resolved in `PlacementContext`.
+
+**`word_minimum`**: Minimum word count for submissions. `NULL`=no minimum enforced. Set per-activity; not inherited from course. Validated: must be less than `word_limit` when both are set (`validate_word_count_limits()` in `db/activities.py`).
+
+**`word_limit`**: Maximum word count for submissions. `NULL`=no limit enforced. Set per-activity; not inherited from course. At-limit counts as over (count >= word_limit is a violation).
+
+**`word_limit_enforcement`**: Tri-state — `NULL`=inherit from course `default_word_limit_enforcement`, `TRUE`=hard (block export), `FALSE`=soft (warn only). Resolved in `PlacementContext` via `resolve_tristate`.
 
 **`template_workspace_id`**: 1:1 relationship. RESTRICT prevents orphaning the activity's template. Created atomically with the activity via `create_activity()`.
 

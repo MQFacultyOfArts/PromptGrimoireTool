@@ -1,6 +1,6 @@
 # PDF Export / LaTeX
 
-*Last updated: 2026-03-01*
+*Last updated: 2026-03-03*
 
 PDF export uses TinyTeX for portable, consistent LaTeX compilation.
 
@@ -33,6 +33,16 @@ The `APP__LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Le
 - Does NOT fall back to system PATH - TinyTeX only for consistency
 
 **Note:** `compile_latex()` is async and uses `asyncio.create_subprocess_exec()` for non-blocking compilation.
+
+## Word Count Snitch Badge
+
+Both `generate_tex_only()` and `export_annotation_pdf()` accept optional keyword-only parameters: `word_count`, `word_minimum`, `word_limit`. When `word_count` is provided:
+
+- **Over limit / below minimum**: Red `\fcolorbox` badge prepended to the LaTeX body (e.g. "Word Count: 1,567 / 1,500 (Exceeded)")
+- **Within limits**: Neutral italic line (e.g. "Word Count: 1,234 / 1,500")
+- **No limits configured**: No badge emitted
+
+Violation detection uses `check_word_count_violation()` from `src/promptgrimoire/word_count_enforcement.py`. The UI-side pre-export check (`pages/annotation/pdf_export.py`) shows a warning dialog (soft enforcement) or blocking dialog (hard enforcement) before calling the export pipeline. Word count enforcement only applies at export time -- save, edit, and share paths must never import the enforcement module (AC7 guard tests enforce this).
 
 ## LaTeX Rendering Utilities (`latex_render.py`)
 

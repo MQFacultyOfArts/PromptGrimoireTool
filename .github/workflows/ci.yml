@@ -41,11 +41,7 @@ jobs:
         run: uv run pip-audit
 
       - name: Run ty type check
-        # ty is used via uvx (ephemeral install) rather than a pinned dev
-        # dependency. This means CI may pick up a newer ty version than local.
-        # If this causes flaky failures, pin ty in the uvx invocation or add
-        # it to [dependency-groups] dev and use uv run ty check instead.
-        run: uvx ty check
+        run: uvx ty@0.0.20 check
 
   test-all:
     runs-on: ubuntu-latest
@@ -53,6 +49,7 @@ jobs:
       postgres:
         image: postgres:17
         env:
+          POSTGRES_USER: postgres
           POSTGRES_DB: promptgrimoire_test
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -94,6 +91,7 @@ jobs:
       postgres:
         image: postgres:17
         env:
+          POSTGRES_USER: postgres
           POSTGRES_DB: promptgrimoire_test
           POSTGRES_PASSWORD: postgres
         options: >-

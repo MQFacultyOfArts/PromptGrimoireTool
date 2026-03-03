@@ -40,13 +40,10 @@ dependencies = [
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
-test-changed = "promptgrimoire.cli_legacy:test_changed"
-test-all = "promptgrimoire.cli_legacy:test_all"
 test-e2e = "promptgrimoire.cli_legacy:test_e2e"
 test-e2e-slow = "promptgrimoire.cli_legacy:test_e2e_slow"
 test-e2e-noretry = "promptgrimoire.cli_legacy:test_e2e_noretry"
 test-e2e-changed = "promptgrimoire.cli_legacy:test_e2e_changed"
-test-all-fixtures = "promptgrimoire.cli_legacy:test_all_fixtures"
 grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 

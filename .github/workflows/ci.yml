@@ -67,7 +67,17 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y mecab libmecab-dev
+          sudo apt-get install -y \
+            mecab libmecab-dev \
+            pandoc \
+            fontconfig \
+            fonts-noto --install-recommends \
+            fonts-texgyre \
+            fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+            fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+            fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+            fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+            fonts-sil-taiheritagepro
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7.2.0
@@ -82,9 +92,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      - name: Install TinyTeX and LaTeX packages
+        run: |
+          uv run python scripts/setup_latex.py
+          ~/.TinyTeX/bin/x86_64-linux/luaotfload-tool --update --force
+
       - name: Run unit and integration tests
         env:
           DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+          OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
         run: uv run grimoire test all
 
   e2e:
@@ -109,7 +125,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y mecab libmecab-dev
+          sudo apt-get install -y mecab libmecab-dev pandoc
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7.2.0

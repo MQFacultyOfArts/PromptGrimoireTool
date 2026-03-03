@@ -345,8 +345,30 @@ async def roleplay_page() -> None:
     state: dict = {"session": None, "client": None, "log_path": None}
     widgets: dict = {}
 
-    with page_layout("Roleplay"):
+    with page_layout("Roleplay", drawer_open=False):
         ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
+        # Inline overrides — Quasar uses very high specificity on
+        # chat message colours; an external stylesheet can't always win.
+        ui.add_head_html("""<style>
+            .roleplay-chat .q-message-text-content {
+                background: rgba(60, 60, 60, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-sent .q-message-text-content {
+                background: rgba(0, 0, 0, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-text {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-name--sent,
+            .roleplay-chat .q-message-name--received {
+                color: rgb(180, 180, 170) !important;
+            }
+            .roleplay-chat .q-message-stamp {
+                color: rgb(140, 140, 130) !important;
+            }
+        </style>""")
         ui.query("body").classes("roleplay-bg")
 
         with ui.column().classes("roleplay-column"):
@@ -374,6 +396,9 @@ async def roleplay_page() -> None:
             with (
                 ui.card()
                 .classes("w-full roleplay-card")
+                .style(
+                    "background: transparent !important; box-shadow: none !important;"
+                )
                 .props('data-testid="roleplay-chat-card"') as chat_card
             ):
                 widgets["chat_card"] = chat_card

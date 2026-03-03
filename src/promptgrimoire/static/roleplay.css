@@ -14,11 +14,11 @@
     z-index: -1;
 }
 
-/* ── Narrower centred column ─────────────────────────────────────── */
+/* ── Centred column ──────────────────────────────────────────────── */
 .roleplay-column {
-    max-width: 800px;
-    margin: 0 auto;
-    width: 100%;
+    max-width: 1000px !important;
+    margin: 0 auto !important;
+    width: 100% !important;
 }
 
 /* ── Transparent chat card (override Quasar q-card white default) ── */

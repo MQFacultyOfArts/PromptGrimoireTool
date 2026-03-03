@@ -17,15 +17,19 @@
 /* ── Centred column ──────────────────────────────────────────────── */
 .roleplay-column {
     max-width: 1000px !important;
-    margin: 0 auto !important;
     width: 100% !important;
+    align-self: center !important;
 }
 
-/* ── Transparent chat card (override Quasar q-card white default) ── */
+/* ── Dark semi-transparent card (override Quasar q-card white) ──── */
 .roleplay-card {
-    background: transparent !important;
-    box-shadow: none !important;
-    color: rgb(220, 220, 210);
+    background: rgba(23, 23, 23, 0.75) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(220, 220, 210, 0.1) !important;
+    border-radius: 12px !important;
+    color: rgb(220, 220, 210) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
 }
 
 /* ── Chat scroll area ────────────────────────────────────────────── */
@@ -98,9 +102,10 @@
     border-radius: 8px;
 }
 
-/* ── Input/button overrides inside roleplay page ───────────────── */
+/* ── Input overrides inside roleplay card ────────────────────────── */
 .roleplay-card .q-field__label,
-.roleplay-card .q-field__native {
+.roleplay-card .q-field__native,
+.roleplay-card .q-field__native::placeholder {
     color: rgb(220, 220, 210) !important;
 }
 
@@ -108,7 +113,34 @@
     border-color: rgba(220, 220, 210, 0.3) !important;
 }
 
-/* ── Export button styling ─────────────────────────────────────── */
+.roleplay-card .q-field--outlined .q-field__control:hover::before {
+    border-color: rgba(220, 220, 210, 0.5) !important;
+}
+
+/* ── Button overrides inside roleplay card ──────────────────────── */
 .roleplay-card .q-btn {
+    color: rgb(220, 220, 210) !important;
+    background: rgba(80, 80, 80, 0.5) !important;
+    border: 1px solid rgba(220, 220, 210, 0.2) !important;
+}
+
+.roleplay-card .q-btn:hover {
+    background: rgba(100, 100, 100, 0.6) !important;
+}
+
+.roleplay-card .q-btn--disabled {
+    opacity: 0.4 !important;
+}
+
+/* ── Expansion panel overrides ──────────────────────────────────── */
+.roleplay-upload .q-expansion-item__container {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-upload .q-item__label {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-upload .q-icon {
     color: rgb(220, 220, 210) !important;
 }

@@ -371,7 +371,15 @@ async def roleplay_page() -> None:
         </style>""")
         ui.query("body").classes("roleplay-bg")
 
-        with ui.column().classes("roleplay-column"):
+        # Centre a constrained-width column within the q-page
+        ui.query(".q-page").style(
+            "display: flex !important; justify-content: center !important;"
+        )
+        with (
+            ui.column()
+            .classes("roleplay-column")
+            .style("max-width: 1000px; width: 100%;")
+        ):
             # Upload section (collapsed — Becky Bennett auto-loads below)
             with (
                 ui.expansion("Load Different Character", icon="upload_file")
@@ -397,7 +405,10 @@ async def roleplay_page() -> None:
                 ui.card()
                 .classes("w-full roleplay-card")
                 .style(
-                    "background: transparent !important; box-shadow: none !important;"
+                    "background: rgba(23, 23, 23, 0.75) !important;"
+                    " box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;"
+                    " border: 1px solid rgba(220,220,210,0.1) !important;"
+                    " border-radius: 12px !important;"
                 )
                 .props('data-testid="roleplay-chat-card"') as chat_card
             ):

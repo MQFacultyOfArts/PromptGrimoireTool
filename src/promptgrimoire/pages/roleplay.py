@@ -229,7 +229,7 @@ async def _handle_export(state: dict) -> None:
         )
         await grant_permission(workspace.id, user_id, "owner")
 
-        ui.navigate.to(f"/annotation/{workspace.id}")
+        ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
     except Exception:
         logger.exception("Failed to export roleplay session")
         ui.notify("Export failed. Please try again.", type="negative")
@@ -376,26 +376,75 @@ async def roleplay_page() -> None:
             .roleplay-chat .q-message-stamp {
                 color: rgb(140, 140, 130) !important;
             }
+            /* Input field text colour */
+            .roleplay-card .q-field__native,
+            .roleplay-card .q-field__prefix,
+            .roleplay-card .q-field__suffix,
+            .roleplay-card .q-field__input,
+            .roleplay-card input,
+            .roleplay-card textarea {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-card .q-field__label {
+                color: rgba(220, 220, 210, 0.7) !important;
+            }
+            .roleplay-card .q-field--outlined .q-field__control::before {
+                border-color: rgba(220, 220, 210, 0.3) !important;
+            }
+            /* Buttons */
+            .roleplay-card .q-btn {
+                color: rgb(220, 220, 210) !important;
+                background: rgba(80, 80, 80, 0.5) !important;
+                border: 1px solid rgba(220, 220, 210, 0.2) !important;
+            }
+            .roleplay-card .q-btn .q-icon {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-card .q-btn[disabled],
+            .roleplay-card .q-btn--disabled {
+                color: rgba(220, 220, 210, 0.4) !important;
+                background: rgba(80, 80, 80, 0.3) !important;
+                border: 1px solid rgba(220, 220, 210, 0.1) !important;
+                opacity: 1 !important;
+            }
         </style>""")
         ui.query("body").classes("roleplay-bg")
 
-        # Centre a constrained-width column within the q-page
-        ui.query(".q-page").style(
-            "display: flex !important; justify-content: center !important;"
-        )
+        # Centre a constrained-width column
         with (
+            ui.column().classes("w-full items-center"),
             ui.column()
             .classes("roleplay-column")
-            .style("max-width: 1000px; width: 100%;")
+            .style("max-width: 1000px; width: 100%; padding: 0 16px;"),
         ):
-            # Upload section (collapsed — Becky Bennett auto-loads below)
+            # Management panel (collapsed — Becky Bennett auto-loads below)
             with (
-                ui.expansion("Load Different Character", icon="upload_file")
+                ui.expansion("Management", icon="settings")
                 .classes("w-full mb-4 roleplay-upload")
                 .props('data-testid="roleplay-upload-card"') as upload_expansion
             ):
                 widgets["upload_expansion"] = upload_expansion
 
+                # Export to workspace
+                export_button = (
+                    ui.button(
+                        "Export to Workspace",
+                        icon="upload",
+                        on_click=lambda: _handle_export(state),
+                    )
+                    .classes("w-full mb-4")
+                    .props('data-testid="roleplay-export-btn"')
+                )
+                if _EXPORT_BTN_INITIAL_DISABLED:
+                    export_button.disable()
+                widgets["export_button"] = export_button
+
+                ui.separator().style("border-color: rgba(220,220,210,0.2);")
+
+                # Load different character
+                ui.label("Load Different Character").classes(
+                    "text-subtitle1 mt-2"
+                ).style("color: rgb(220, 220, 210);")
                 user_name_input = ui.input(
                     label="Your name (used as {{user}})",
                     value=_get_default_user_name(),
@@ -407,6 +456,11 @@ async def roleplay_page() -> None:
                     on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
                     auto_upload=True,
                 ).classes("w-full").props('accept=".json"')
+
+                ui.separator().style("border-color: rgba(220,220,210,0.2);")
+                ui.label("Log files are saved to: logs/sessions/").style(
+                    "color: rgba(220,220,210,0.6); font-size: 12px;"
+                )
 
             # Chat section — transparent card over dark background
             with (
@@ -447,6 +501,7 @@ async def roleplay_page() -> None:
                         ui.input(placeholder="Type your message...")
                         .classes("flex-grow")
                         .props('outlined data-testid="roleplay-message-input"')
+                        .style("color: rgb(220, 220, 210) !important;")
                     )
 
                     async def on_send() -> None:
@@ -467,25 +522,6 @@ async def roleplay_page() -> None:
                         .props('data-testid="roleplay-send-btn"')
                     )
                     message_input.on("keydown.enter", on_send)
-
-                # Export button — disabled until a session is loaded
-                export_button = (
-                    ui.button(
-                        "Export to Workspace",
-                        icon="upload",
-                        on_click=lambda: _handle_export(state),
-                    )
-                    .classes("w-full mt-4")
-                    .props('data-testid="roleplay-export-btn"')
-                )
-                if _EXPORT_BTN_INITIAL_DISABLED:
-                    export_button.disable()
-                widgets["export_button"] = export_button
-
-            with ui.expansion("Session Info", icon="info").classes(
-                "w-full mt-4 roleplay-upload"
-            ):
-                ui.label("Log files are saved to: logs/sessions/")
 
             # Auto-load bundled Becky Bennett character card
             _auto_load_character(state, widgets)

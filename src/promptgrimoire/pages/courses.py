@@ -1252,7 +1252,7 @@ async def course_detail_page(course_id: str) -> None:
                         on_success=_on_activity_save,
                     )
 
-                with ui.column().classes("gap-2 w-full max-w-2xl"):
+                with ui.column().classes("gap-2 w-full"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
                             _render_week_header(

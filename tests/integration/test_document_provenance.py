@@ -7,6 +7,7 @@ Tests verify:
 - AC5.2: User-uploaded documents have NULL source_document_id
 - AC5.3: Pre-migration documents have NULL source_document_id
 - AC5.4: Deleting template source sets clones' source_document_id to NULL
+- AC5.5: count_document_clones() returns correct clone counts
 """
 
 from __future__ import annotations
@@ -201,3 +202,61 @@ class TestProvenanceEdgeCases:
         refreshed_docs = await list_documents(clone.id)
         assert len(refreshed_docs) == 1
         assert refreshed_docs[0].source_document_id is None
+
+
+class TestCountDocumentClones:
+    """Tests for count_document_clones() query function."""
+
+    @pytest.mark.asyncio
+    async def test_count_clones_returns_zero_when_no_clones(self) -> None:
+        """A document with no clones should return count 0.
+
+        Verifies crud-management-229.AC5.5 (zero case).
+        """
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            count_document_clones,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>No clones here</p>",
+            source_type="html",
+            title="Lonely Document",
+        )
+
+        count = await count_document_clones(doc.id)
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_count_clones_returns_correct_count(self) -> None:
+        """Cloning a workspace multiple times increments the clone count.
+
+        Verifies crud-management-229.AC5.5 (positive case).
+        """
+        from promptgrimoire.db.workspace_documents import (
+            count_document_clones,
+            list_documents,
+        )
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        _, _, activity = await _make_activity_with_docs(num_docs=1)
+        template_docs = await list_documents(activity.template_workspace_id)
+        assert len(template_docs) == 1
+        template_doc_id = template_docs[0].id
+
+        # No clones yet
+        assert await count_document_clones(template_doc_id) == 0
+
+        # First clone
+        user1 = await _make_clone_user()
+        await clone_workspace_from_activity(activity.id, user1.id)
+        assert await count_document_clones(template_doc_id) == 1
+
+        # Second clone
+        user2 = await _make_clone_user()
+        await clone_workspace_from_activity(activity.id, user2.id)
+        assert await count_document_clones(template_doc_id) == 2

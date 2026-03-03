@@ -183,6 +183,27 @@ async def delete_document(document_id: UUID) -> bool:
         return True
 
 
+async def count_document_clones(document_id: UUID) -> int:
+    """Count workspace documents that reference this document as their source.
+
+    Used to warn instructors before deleting a template source document
+    that has student clones.
+
+    Args:
+        document_id: The template document UUID to check for clones.
+
+    Returns:
+        Number of documents whose source_document_id matches document_id.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(func.count()).where(
+                WorkspaceDocument.source_document_id == document_id
+            )
+        )
+        return result.one()
+
+
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:
     """Reorder documents in a workspace.
 

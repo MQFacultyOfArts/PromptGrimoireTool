@@ -14,7 +14,7 @@ import inspect
 
 def test_delete_week_imported() -> None:
     """courses module must import delete_week from db.weeks."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     assert hasattr(mod, "delete_week"), (
         "courses module does not import delete_week from promptgrimoire.db.weeks"
@@ -23,7 +23,7 @@ def test_delete_week_imported() -> None:
 
 def test_deletion_blocked_error_imported() -> None:
     """courses module must import DeletionBlockedError from db.exceptions."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     assert hasattr(mod, "DeletionBlockedError"), (
         "courses module does not import DeletionBlockedError"

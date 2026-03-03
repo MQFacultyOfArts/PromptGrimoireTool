@@ -25,7 +25,7 @@ def test_css_file_contains_content_column_class() -> None:
 
 def test_course_detail_page_imports_page_layout() -> None:
     """course_detail_page module must import page_layout from layout."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     # page_layout should be accessible in the module namespace
     assert hasattr(mod, "page_layout"), (
@@ -60,7 +60,7 @@ def test_handle_edit_template_exists_and_is_async() -> None:
 
 def test_has_student_workspaces_imported() -> None:
     """courses module must import has_student_workspaces from db.workspaces."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     assert hasattr(mod, "has_student_workspaces"), (
         "courses module does not import has_student_workspaces"
@@ -69,7 +69,7 @@ def test_has_student_workspaces_imported() -> None:
 
 def test_delete_activity_imported() -> None:
     """courses module must import delete_activity from db.activities."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     assert hasattr(mod, "delete_activity"), (
         "courses module does not import delete_activity"

@@ -14,7 +14,7 @@ import inspect
 
 def test_delete_workspace_imported() -> None:
     """courses module must import delete_workspace from db.workspaces."""
-    import promptgrimoire.pages.courses as mod
+    from promptgrimoire.pages import courses as mod
 
     assert hasattr(mod, "delete_workspace"), (
         "courses module does not import delete_workspace from db.workspaces"

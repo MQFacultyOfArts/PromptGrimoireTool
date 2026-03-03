@@ -13,7 +13,7 @@ import inspect
 
 def test_delete_workspace_imported_in_cards() -> None:
     """_cards module must import delete_workspace from db.workspaces."""
-    import promptgrimoire.pages.navigator._cards as mod
+    from promptgrimoire.pages.navigator import _cards as mod
 
     assert hasattr(mod, "delete_workspace"), (
         "_cards module does not import delete_workspace from db.workspaces"

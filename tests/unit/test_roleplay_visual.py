@@ -29,7 +29,7 @@ class TestAvatarParameter:
             "Hello",
             "Jane",
             sent=True,
-            avatar="/static/roleplay/user-default.png",  # type: ignore[unknown-argument]  # TDD red: avatar param not yet added
+            avatar="/static/roleplay/user-default.png",
         )
         mock_ui.chat_message.assert_called_once_with(
             name="Jane", sent=True, avatar="/static/roleplay/user-default.png"
@@ -52,7 +52,7 @@ class TestAvatarParameter:
             "Hi there",
             "Becky Bennett",
             sent=False,
-            avatar="/static/roleplay/becky-bennett.png",  # type: ignore[unknown-argument]  # TDD red: avatar param not yet added
+            avatar="/static/roleplay/becky-bennett.png",
         )
         mock_ui.chat_message.assert_called_once_with(
             name="Becky Bennett",

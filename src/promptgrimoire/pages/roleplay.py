@@ -51,9 +51,15 @@ def _get_default_user_name() -> str:
     return "User"
 
 
-def _create_chat_message(content: str, name: str, sent: bool) -> None:
+_USER_AVATAR = "/static/roleplay/user-default.png"
+_AI_AVATAR = "/static/roleplay/becky-bennett.png"
+
+
+def _create_chat_message(
+    content: str, name: str, sent: bool, *, avatar: str | None = None
+) -> None:
     """Create a chat message with markdown-rendered content."""
-    msg = ui.chat_message(name=name, sent=sent)
+    msg = ui.chat_message(name=name, sent=sent, avatar=avatar)
     with msg:
         ui.markdown(content).classes("text-base")
 
@@ -62,7 +68,8 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
     """Render all messages in the session using chat_message components."""
     with chat_container:
         for turn in session.turns:
-            _create_chat_message(turn.content, turn.name, turn.is_user)
+            avatar = _USER_AVATAR if turn.is_user else _AI_AVATAR
+            _create_chat_message(turn.content, turn.name, turn.is_user, avatar=avatar)
     # Scroll to bottom after rendering
     scroll_area.scroll_to(percent=1.0)
 
@@ -87,12 +94,16 @@ async def _handle_send(
     # Add user message
     session.add_turn(user_message.strip(), is_user=True)
     with chat_container:
-        _create_chat_message(user_message.strip(), session.user_name, sent=True)
+        _create_chat_message(
+            user_message.strip(), session.user_name, sent=True, avatar=_USER_AVATAR
+        )
     scroll_area.scroll_to(percent=1.0)
 
     # Show thinking indicator
     with chat_container:
-        thinking_msg = ui.chat_message(name=session.character.name, sent=False)
+        thinking_msg = ui.chat_message(
+            name=session.character.name, sent=False, avatar=_AI_AVATAR
+        )
         with thinking_msg:
             with ui.row().classes("items-center gap-2"):
                 spinner = ui.spinner("dots", size="sm")
@@ -120,7 +131,9 @@ async def _handle_send(
     # Replace streaming message with final rendered version
     thinking_msg.delete()
     with chat_container:
-        _create_chat_message(full_response, session.character.name, sent=False)
+        _create_chat_message(
+            full_response, session.character.name, sent=False, avatar=_AI_AVATAR
+        )
     scroll_area.scroll_to(percent=1.0)
 
     send_button.enable()
@@ -167,10 +180,67 @@ def _setup_session(
     return session, client, log_path
 
 
+_MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
+
+
+async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
+    """Process an uploaded character card and initialise the chat session.
+
+    Extracted from roleplay_page to reduce cognitive complexity.
+    """
+    tmp_path = None
+    try:
+        content = await e.file.read()
+
+        # CRIT-6: Check upload size before processing
+        if len(content) > _MAX_UPLOAD_SIZE:
+            ui.notify("File too large (max 100MB)", type="negative")
+            return
+
+        # Write to temp file for parsing
+        tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
+        tmp_path.write_bytes(content)
+
+        character, lorebook_entries = parse_character_card(tmp_path)
+        user_name = widgets["user_name_input"].value or "User"
+
+        session, client, log_path = _setup_session(
+            character, lorebook_entries, user_name
+        )
+
+        state["session"] = session
+        state["client"] = client
+        state["log_path"] = log_path
+
+        widgets["upload_card"].visible = False
+        widgets["chat_card"].visible = True
+
+        widgets["char_name_label"].text = character.name
+        widgets["scenario_label"].text = substitute_placeholders(
+            character.scenario or "No scenario",
+            char_name=character.name,
+            user_name=user_name,
+        )
+
+        # Render initial messages
+        _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
+
+        ui.notify(f"Loaded {character.name}")
+
+    except ValueError as ve:
+        ui.notify(str(ve), type="negative")
+    except Exception as ex:
+        ui.notify(f"Failed to load: {ex}", type="negative")
+    finally:
+        # Clean up temp file
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
+
+
 @page_route(
     "/roleplay", title="Roleplay", icon="chat", order=30, requires_roleplay=True
 )
-async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many statements
+async def roleplay_page() -> None:
     """Roleplay chat page."""
     await ui.context.client.connected()
 
@@ -185,86 +255,42 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
         return
 
     state: dict = {"session": None, "client": None, "log_path": None}
+    widgets: dict = {}
 
     with page_layout("Roleplay"):
         # Upload section
         with ui.card().classes("w-full mb-4") as upload_card:
+            widgets["upload_card"] = upload_card
             ui.label("Load Character Card").classes("text-h6")
-
-            # CRIT-6: Maximum upload size limit to prevent DoS
-            max_upload_size = 100 * 1024 * 1024  # 100 MB
-
-            async def handle_upload(e) -> None:
-                tmp_path = None
-                try:
-                    content = await e.file.read()
-
-                    # CRIT-6: Check upload size before processing
-                    if len(content) > max_upload_size:
-                        ui.notify("File too large (max 100MB)", type="negative")
-                        return
-
-                    # Write to temp file for parsing
-                    tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
-                    tmp_path.write_bytes(content)
-
-                    character, lorebook_entries = parse_character_card(tmp_path)
-                    user_name = user_name_input.value or "User"
-
-                    session, client, log_path = _setup_session(
-                        character, lorebook_entries, user_name
-                    )
-
-                    state["session"] = session
-                    state["client"] = client
-                    state["log_path"] = log_path
-
-                    upload_card.visible = False
-                    chat_card.visible = True
-
-                    char_name_label.text = character.name
-                    scenario_label.text = substitute_placeholders(
-                        character.scenario or "No scenario",
-                        char_name=character.name,
-                        user_name=user_name,
-                    )
-
-                    # Render initial messages
-                    _render_messages(session, chat_container, scroll_area)
-
-                    ui.notify(f"Loaded {character.name}")
-
-                except ValueError as ve:
-                    ui.notify(str(ve), type="negative")
-                except Exception as ex:
-                    ui.notify(f"Failed to load: {ex}", type="negative")
-                finally:
-                    # Clean up temp file
-                    if tmp_path and tmp_path.exists():
-                        tmp_path.unlink()
 
             user_name_input = ui.input(
                 label="Your name (used as {{user}})", value=_get_default_user_name()
             ).classes("w-64 mb-2")
+            widgets["user_name_input"] = user_name_input
 
             ui.upload(
                 label="Drop character card JSON here",
-                on_upload=handle_upload,
+                on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
                 auto_upload=True,
             ).classes("w-full").props('accept=".json"')
 
         # Chat section
         with ui.card().classes("w-full") as chat_card:
             chat_card.visible = False
+            widgets["chat_card"] = chat_card
 
             with ui.row().classes("w-full items-center mb-2"):
                 char_name_label = ui.label("").classes("text-h5")
+                widgets["char_name_label"] = char_name_label
             scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
+            widgets["scenario_label"] = scenario_label
 
             with ui.scroll_area().classes(
                 "w-full h-96 border rounded p-4"
             ) as scroll_area:
                 chat_container = ui.column().classes("w-full gap-3")
+            widgets["scroll_area"] = scroll_area
+            widgets["chat_container"] = chat_container
 
             with ui.row().classes("w-full mt-4"):
                 message_input = (

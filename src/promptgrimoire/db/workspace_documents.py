@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import ProtectedDocumentError
 from promptgrimoire.db.models import WorkspaceDocument
 
 if TYPE_CHECKING:
@@ -143,6 +144,43 @@ async def update_document_paragraph_settings(
         doc.auto_number_paragraphs = auto_number_paragraphs
         doc.paragraph_map = paragraph_map
         session.add(doc)
+
+
+async def delete_document(document_id: UUID) -> bool:
+    """Delete a user-uploaded document.
+
+    Template-cloned documents (where ``source_document_id IS NOT NULL``)
+    are protected and cannot be deleted -- raises
+    :class:`~promptgrimoire.db.exceptions.ProtectedDocumentError`.
+
+    Tags are NOT affected -- they belong to the workspace via
+    ``TagGroup -> Workspace`` FK, not to the document.
+
+    Args:
+        document_id: The document UUID.
+
+    Returns:
+        True if deleted, False if not found.
+
+    Raises:
+        ProtectedDocumentError: If the document is a template clone.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        doc = result.first()
+        if doc is None:
+            return False
+
+        if doc.source_document_id is not None:
+            raise ProtectedDocumentError(
+                document_id=doc.id,
+                source_document_id=doc.source_document_id,
+            )
+
+        await session.delete(doc)
+        return True
 
 
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:

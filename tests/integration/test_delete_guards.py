@@ -278,3 +278,192 @@ class TestDeleteWeek:
 
         result_force = await delete_week(uuid4(), force=True)
         assert result_force is False
+
+
+class TestDeleteWorkspace:
+    """Tests for delete_workspace() with ownership check."""
+
+    @pytest.mark.asyncio
+    async def test_owner_can_delete_workspace(self) -> None:
+        """Owner user_id succeeds (workspace and documents deleted via CASCADE).
+
+        Verifies crud-management-229.AC3.5 (success path): workspace owner
+        can delete their own workspace.
+        """
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            delete_workspace,
+            get_workspace,
+        )
+
+        _course_id, week_id = await _make_course_and_week("del-ws-owner")
+        activity_id = await _make_activity(week_id)
+        user_id = await _create_student()
+
+        workspace, _doc_map = await clone_workspace_from_activity(activity_id, user_id)
+
+        await delete_workspace(workspace.id, user_id=user_id)
+
+        # Workspace gone
+        assert await get_workspace(workspace.id) is None
+
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_delete_workspace(self) -> None:
+        """Non-owner user_id raises PermissionError.
+
+        Verifies crud-management-229.AC3.5: DB-level delete_workspace()
+        raises PermissionError when user_id is not workspace owner.
+        """
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            delete_workspace,
+        )
+
+        _course_id, week_id = await _make_course_and_week("del-ws-non-owner")
+        activity_id = await _make_activity(week_id)
+        owner_id = await _create_student()
+        other_id = await _create_student()
+
+        workspace, _doc_map = await clone_workspace_from_activity(activity_id, owner_id)
+
+        with pytest.raises(PermissionError, match="Only workspace owner can delete"):
+            await delete_workspace(workspace.id, user_id=other_id)
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_workspace_is_noop(self) -> None:
+        """Deleting a nonexistent workspace does not raise."""
+        from promptgrimoire.db.workspaces import delete_workspace
+
+        user_id = await _create_student()
+        # Should not raise — workspace does not exist
+        await delete_workspace(uuid4(), user_id=user_id)
+
+
+class TestDeleteDocument:
+    """Tests for delete_document() with provenance guard."""
+
+    @pytest.mark.asyncio
+    async def test_deletes_user_uploaded_document(self) -> None:
+        """User-uploaded document (source_document_id IS NULL) deletes.
+
+        Verifies crud-management-229.AC4.1: Owner deletes a user-uploaded
+        document; document and annotations removed.
+        """
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            delete_document,
+            get_document,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>User uploaded content</p>",
+            source_type="html",
+            title="My Upload",
+        )
+        assert doc.source_document_id is None
+
+        result = await delete_document(doc.id)
+        assert result is True
+
+        # Document gone
+        assert await get_document(doc.id) is None
+
+    @pytest.mark.asyncio
+    async def test_blocks_deletion_of_template_cloned_document(self) -> None:
+        """Template-cloned document raises ProtectedDocumentError.
+
+        Verifies crud-management-229.AC4.4: DB-level delete_document()
+        raises ProtectedDocumentError for template-cloned documents.
+        """
+        from promptgrimoire.db.exceptions import ProtectedDocumentError
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            delete_document,
+            list_documents,
+        )
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        _course_id, week_id = await _make_course_and_week("del-doc-cloned")
+        activity_id = await _make_activity(week_id)
+
+        # Add a document to the template workspace
+        from promptgrimoire.db.activities import get_activity
+
+        activity = await get_activity(activity_id)
+        assert activity is not None
+        await add_document(
+            workspace_id=activity.template_workspace_id,
+            type="source",
+            content="<p>Template document</p>",
+            source_type="html",
+            title="Template Doc",
+        )
+
+        # Clone for a student — cloned doc has source_document_id set
+        user_id = await _create_student()
+        clone, _doc_map = await clone_workspace_from_activity(activity_id, user_id)
+        cloned_docs = await list_documents(clone.id)
+        assert len(cloned_docs) == 1
+        cloned_doc = cloned_docs[0]
+        assert cloned_doc.source_document_id is not None
+
+        with pytest.raises(ProtectedDocumentError) as exc_info:
+            await delete_document(cloned_doc.id)
+
+        assert exc_info.value.document_id == cloned_doc.id
+        assert exc_info.value.source_document_id == cloned_doc.source_document_id
+
+    @pytest.mark.asyncio
+    async def test_tags_remain_after_document_deletion(self) -> None:
+        """Workspace tags are preserved when a document is deleted.
+
+        Tags belong to the workspace (TagGroup -> Workspace FK), not the
+        document. Deleting a document must NOT cascade to tags.
+        """
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            delete_document,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace = await create_workspace()
+
+        # Add a tag to the workspace
+        tag = await create_tag(
+            workspace_id=workspace.id,
+            name="Important",
+            color="#ff0000",
+        )
+
+        # Add a document
+        doc = await add_document(
+            workspace_id=workspace.id,
+            type="source",
+            content="<p>Content</p>",
+            source_type="html",
+        )
+
+        # Delete the document
+        result = await delete_document(doc.id)
+        assert result is True
+
+        # Tag still exists
+        from promptgrimoire.db.tags import get_tag
+
+        surviving_tag = await get_tag(tag.id)
+        assert surviving_tag is not None
+        assert surviving_tag.name == "Important"
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_document_returns_false(self) -> None:
+        """Nonexistent document_id returns False."""
+        from promptgrimoire.db.workspace_documents import delete_document
+
+        result = await delete_document(uuid4())
+        assert result is False

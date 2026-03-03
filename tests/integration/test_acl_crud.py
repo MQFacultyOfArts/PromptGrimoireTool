@@ -258,9 +258,9 @@ class TestCascadeDeleteWorkspace:
         )
         workspace = await create_workspace()
         workspace_id = workspace.id
-        await grant_permission(workspace.id, user.id, "editor")
+        await grant_permission(workspace.id, user.id, "owner")
 
-        await delete_workspace(workspace.id)
+        await delete_workspace(workspace.id, user_id=user.id)
 
         entries = await list_entries_for_workspace(workspace_id)
         assert entries == []

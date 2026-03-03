@@ -349,16 +349,42 @@ async def get_workspace(workspace_id: UUID) -> Workspace | None:
         return await session.get(Workspace, workspace_id)
 
 
-async def delete_workspace(workspace_id: UUID) -> None:
+async def delete_workspace(workspace_id: UUID, *, user_id: UUID) -> None:
     """Delete a workspace and all its documents (CASCADE).
+
+    Checks that ``user_id`` is a literal owner of the workspace via
+    :class:`ACLEntry` before proceeding.  This is a defence-in-depth
+    check -- the UI layer should also verify ownership.
+
+    Uses a direct ACLEntry query for ``permission == "owner"``, NOT
+    ``resolve_permission()`` which would let admins pass via the full
+    ACL chain.  Admin bypass belongs in the UI layer only.
 
     Args:
         workspace_id: The workspace UUID.
+        user_id: The user attempting the deletion. Must be workspace owner.
+
+    Raises:
+        PermissionError: If ``user_id`` is not the workspace owner.
     """
     async with get_session() as session:
         workspace = await session.get(Workspace, workspace_id)
-        if workspace:
-            await session.delete(workspace)
+        if not workspace:
+            return
+
+        # Check literal ownership via ACLEntry (NOT resolve_permission)
+        owner_entry = await session.exec(
+            select(ACLEntry).where(
+                ACLEntry.workspace_id == workspace_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        if owner_entry.first() is None:
+            msg = "Only workspace owner can delete"
+            raise PermissionError(msg)
+
+        await session.delete(workspace)
 
 
 async def save_workspace_crdt_state(workspace_id: UUID, crdt_state: bytes) -> bool:

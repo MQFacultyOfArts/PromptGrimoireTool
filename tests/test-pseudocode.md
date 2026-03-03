@@ -4087,3 +4087,160 @@ It catches any divergence that would cause highlights to render at wrong positio
 5. Confirm export proceeds
 
 **Verifies:** Soft enforcement shows a dismissable warning but allows export to continue
+
+## Roleplay -- Session-to-HTML Export (Unit)
+
+### User turn has correct speaker attributes
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_user_turn_has_correct_speaker_attrs
+1. Create session with character "Becky Bennett" and user "Jane"
+2. Add a user turn "Hello Becky"
+3. Call session_to_html(session)
+4. Assert HTML contains data-speaker="user" and data-speaker-name="Jane"
+
+**Verifies:** AC3.2 -- user turns produce correct speaker marker attributes
+
+### AI turn has correct speaker attributes
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_ai_turn_has_correct_speaker_attrs
+1. Create session, add an AI turn
+2. Call session_to_html(session)
+3. Assert HTML contains data-speaker="assistant" and data-speaker-name="Becky Bennett"
+
+**Verifies:** AC3.2 -- AI turns produce assistant speaker markers with character name
+
+### Markdown converts to HTML
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_markdown_converts_to_html
+1. Create session, add AI turn with "*italics* and **bold**"
+2. Call session_to_html(session)
+3. Assert output contains <em>italics</em> and <strong>bold</strong>
+
+**Verifies:** Markdown formatting in turn content is rendered to HTML
+
+### Marker divs are siblings not parents
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_marker_divs_are_siblings_not_parents
+1. Create session, add user turn "Hello"
+2. Call session_to_html(session)
+3. Assert marker div is followed by content as sibling (</div>\n<p>) not child
+
+**Verifies:** Speaker marker divs are empty siblings of content, not wrappers
+
+### Multiple turns alternate correctly
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_multiple_turns_alternate_correctly
+1. Create session, add user turn then AI turn
+2. Call session_to_html(session)
+3. Assert both data-speaker="user" and data-speaker="assistant" present
+4. Assert user marker appears before assistant marker in output
+
+**Verifies:** Multi-turn sessions produce correctly ordered marker+content blocks
+
+### Empty session returns empty string
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_empty_session_returns_empty_string
+1. Create session with no turns
+2. Call session_to_html(session)
+3. Assert result is ""
+
+**Verifies:** Edge case -- no turns produces no output
+
+### System turn has system role
+**File:** tests/unit/test_roleplay_export.py::TestSessionToHtml::test_system_turn_has_system_role
+1. Create session, manually append Turn with is_system=True
+2. Call session_to_html(session)
+3. Assert HTML contains data-speaker="system"
+
+**Verifies:** System turns (context injections) are distinguished from user/assistant turns
+
+## Roleplay -- Visual Integration (Unit)
+
+### User turn gets user avatar in _render_messages
+**File:** tests/unit/test_roleplay_visual.py::TestRenderMessagesAvatarWiring::test_user_turn_gets_user_avatar
+1. Patch _create_chat_message
+2. Create session with one user turn
+3. Call _render_messages(session, container, scroll_area)
+4. Assert _create_chat_message was called with avatar=_USER_AVATAR
+
+**Verifies:** AC1.2 -- _render_messages passes correct user avatar constant
+
+### AI turn gets AI avatar in _render_messages
+**File:** tests/unit/test_roleplay_visual.py::TestRenderMessagesAvatarWiring::test_ai_turn_gets_ai_avatar
+1. Patch _create_chat_message
+2. Create session with one AI turn
+3. Call _render_messages(session, container, scroll_area)
+4. Assert _create_chat_message was called with avatar=_AI_AVATAR
+
+**Verifies:** AC1.3 -- _render_messages passes correct AI avatar constant
+
+### Mixed turns get correct avatars
+**File:** tests/unit/test_roleplay_visual.py::TestRenderMessagesAvatarWiring::test_mixed_turns_get_correct_avatars
+1. Patch _create_chat_message
+2. Create session with user turn then AI turn
+3. Call _render_messages(session, container, scroll_area)
+4. Assert first call uses _USER_AVATAR, second call uses _AI_AVATAR
+
+**Verifies:** Both avatar constants are correctly dispatched based on turn type
+
+### User message passes user avatar to ui.chat_message
+**File:** tests/unit/test_roleplay_visual.py::TestAvatarParameter::test_user_message_passes_user_avatar
+1. Patch nicegui ui module
+2. Call _create_chat_message("Hello", "Jane", sent=True, avatar=user_avatar_path)
+3. Assert ui.chat_message called with avatar="/static/roleplay/user-default.png"
+
+**Verifies:** AC1.2 -- avatar URL is forwarded to NiceGUI chat_message component
+
+### AI message passes AI avatar to ui.chat_message
+**File:** tests/unit/test_roleplay_visual.py::TestAvatarParameter::test_ai_message_passes_ai_avatar
+1. Patch nicegui ui module
+2. Call _create_chat_message("Hi", "Becky Bennett", sent=False, avatar=ai_avatar_path)
+3. Assert ui.chat_message called with avatar="/static/roleplay/becky-bennett.png"
+
+**Verifies:** AC1.3 -- AI avatar URL is forwarded to NiceGUI chat_message component
+
+### Avatar defaults to None
+**File:** tests/unit/test_roleplay_visual.py::TestAvatarParameter::test_avatar_defaults_to_none
+1. Patch nicegui ui module
+2. Call _create_chat_message("Test", "User", sent=True) without avatar argument
+3. Assert ui.chat_message called with avatar=None
+
+**Verifies:** Backward compatibility -- omitting avatar parameter passes None
+
+### Export button starts disabled without session
+**File:** tests/unit/test_roleplay_visual.py::TestExportButtonState::test_export_button_disabled_without_session
+1. Import _EXPORT_BTN_INITIAL_DISABLED constant from roleplay module
+2. Assert it is True
+
+**Verifies:** AC3.4 -- export button is disabled until a session is loaded
+
+### Export button disabled constant is consumed in page function
+**File:** tests/unit/test_roleplay_visual.py::TestExportButtonState::test_constant_is_consumed_in_page_function
+1. Get source code of roleplay_page function via inspect.getsource
+2. Assert "_EXPORT_BTN_INITIAL_DISABLED" appears in the source
+
+**Verifies:** Guard test -- the disabled constant is actually referenced in the page builder
+
+## Roleplay -- Workspace Export (Integration)
+
+### Export creates workspace with ai_conversation document
+**File:** tests/integration/test_roleplay_workspace_export.py::TestRoleplayWorkspaceExport::test_export_creates_workspace_with_ai_conversation_doc
+1. Create session with two turns (user + AI)
+2. Convert to HTML via session_to_html()
+3. Create workspace and add document with type="ai_conversation"
+4. Retrieve workspace, assert it exists
+5. List documents, assert exactly one with type "ai_conversation"
+
+**Verifies:** AC3.1 -- export pipeline creates a loose workspace with correct document type
+
+### Exported document contains speaker markers
+**File:** tests/integration/test_roleplay_workspace_export.py::TestRoleplayWorkspaceExport::test_exported_document_contains_speaker_markers
+1. Create session with user and AI turns
+2. Convert to HTML, create workspace, add document
+3. Retrieve document content
+4. Assert content contains data-speaker="user", data-speaker="assistant", and both speaker names
+
+**Verifies:** AC3.1+AC3.2 -- stored document preserves speaker marker attributes for annotation
+
+### Export grants owner permission
+**File:** tests/integration/test_roleplay_workspace_export.py::TestRoleplayWorkspaceExport::test_export_grants_owner_permission
+1. Create test user and workspace
+2. Grant "owner" permission via grant_permission()
+3. Resolve permission for that user/workspace pair
+4. Assert resolved permission is "owner"
+
+**Verifies:** AC3.1 -- exported workspace has owner ACL for the exporting user

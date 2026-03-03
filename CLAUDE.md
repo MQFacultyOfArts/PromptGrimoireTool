@@ -16,9 +16,9 @@ Collaborative annotation of AI conversations for teaching prompt engineering. St
 
 Import SillyTavern character cards to run AI-powered roleplay scenarios. Initial use case: tort law training where students interview a simulated client (Becky Bennett workplace injury case).
 
-- **Input**: SillyTavern chara_card_v3 JSON with embedded lorebook
+- **Input**: SillyTavern chara_card_v3 JSON with embedded lorebook (bundled Becky Bennett card auto-loads)
 - **Features**: Keyword-triggered context injection, empathy-based trust mechanics
-- **Output**: JSONL chat log for post-session annotation
+- **Output**: Export to annotation workspace (`ai_conversation` document type) or JSONL chat log
 
 See: [Issue #32](https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/32)
 
@@ -122,7 +122,8 @@ src/promptgrimoire/
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
 │   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)
 │   ├── courses.py       # Course management
-│   └── roleplay.py      # AI roleplay / client interview
+│   ├── roleplay.py      # AI roleplay / client interview
+│   └── roleplay_export.py  # Session-to-HTML conversion (functional core)
 ├── export/              # PDF/LaTeX export (see docs/export.md)
 ├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)

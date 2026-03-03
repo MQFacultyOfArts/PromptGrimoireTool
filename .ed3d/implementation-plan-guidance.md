@@ -19,7 +19,7 @@ For every implementation task, include:
 
 ```markdown
 ## UAT Steps
-1. [ ] Start the app: `uv run python -m promptgrimoire`
+1. [ ] Start the app: `uv run run.py`
 2. [ ] Navigate to: [route]
 3. [ ] Perform: [action]
 4. [ ] Verify: [expected outcome]
@@ -44,16 +44,16 @@ uv add <package>
 uv add --dev <package>
 
 # Run Python
-uv run python -m promptgrimoire
+uv run run.py
 
 # Run tests (smart selection based on changes - fast)
-uv run test-changed
+uv run grimoire test changed
 
 # Run all tests (unit + integration, excludes E2E)
-uv run test-all
+uv run grimoire test all
 
-# Run full test corpus including BLNS and slow tests
-uv run test-all-fixtures
+# Run E2E tests (starts server, serial fail-fast)
+uv run grimoire e2e run
 
 # Run specific test
 uv run pytest tests/unit/test_foo.py -k test_name
@@ -64,16 +64,25 @@ uvx ty check
 # Linting
 uv run ruff check .
 uv run ruff format .
+
+# Seed development data (idempotent)
+uv run grimoire seed run
+
+# Manage users
+uv run grimoire admin list|show|create|admin|enroll|unenroll|role
+
+# Generate user-facing documentation
+uv run grimoire docs build
 ```
 
 **Standard test commands (use ONLY these):**
-- `uv run test-changed` — smart test selection based on changes vs main (fast)
-- `uv run test-all` — full unit + integration suite (excludes E2E)
-- `uv run test-e2e` — E2E tests (starts server, serial fail-fast by default)
-- `uv run test-e2e --parallel` — E2E tests with xdist parallelism
-- `uv run test-e2e-changed` — E2E tests affected by changes vs main (`--depper -x`)
+- `uv run grimoire test changed` — smart test selection based on changes vs main (fast)
+- `uv run grimoire test all` — full unit + integration suite (excludes E2E)
+- `uv run grimoire e2e run` — E2E tests (starts server, serial fail-fast by default)
+- `uv run grimoire e2e run --parallel` — E2E tests with xdist parallelism
+- `uv run grimoire e2e changed` — E2E tests affected by changes vs main
 - `uv run pytest tests/unit/test_foo.py -k test_name` — specific test
-- `uv run test-e2e -k test_name` — specific E2E test
+- `uv run grimoire e2e run -k test_name` — specific E2E test
 
 **Never use:** `pip install`, `python -m pip`, raw `python` (always `uv run python`)
 

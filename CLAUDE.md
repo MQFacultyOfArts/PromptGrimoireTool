@@ -106,7 +106,7 @@ uv run grimoire admin list|show|create|admin|enroll|unenroll|role
 uv run grimoire docs build
 
 # Run the app
-uv run python -m promptgrimoire
+uv run run.py
 
 ```
 

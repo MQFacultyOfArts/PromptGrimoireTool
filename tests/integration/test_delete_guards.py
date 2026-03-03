@@ -366,6 +366,7 @@ class TestDeleteDocument:
         Verifies crud-management-229.AC4.1: Owner deletes a user-uploaded
         document; document and annotations removed.
         """
+        from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.workspace_documents import (
             add_document,
             delete_document,
@@ -374,6 +375,8 @@ class TestDeleteDocument:
         from promptgrimoire.db.workspaces import create_workspace
 
         workspace = await create_workspace()
+        owner_id = await _create_student()
+        await grant_permission(workspace.id, owner_id, "owner")
 
         doc = await add_document(
             workspace_id=workspace.id,
@@ -384,7 +387,7 @@ class TestDeleteDocument:
         )
         assert doc.source_document_id is None
 
-        result = await delete_document(doc.id)
+        result = await delete_document(doc.id, user_id=owner_id)
         assert result is True
 
         # Document gone
@@ -429,8 +432,9 @@ class TestDeleteDocument:
         cloned_doc = cloned_docs[0]
         assert cloned_doc.source_document_id is not None
 
+        # ProtectedDocumentError fires before the ownership check
         with pytest.raises(ProtectedDocumentError) as exc_info:
-            await delete_document(cloned_doc.id)
+            await delete_document(cloned_doc.id, user_id=user_id)
 
         assert exc_info.value.document_id == cloned_doc.id
         assert exc_info.value.source_document_id == cloned_doc.source_document_id
@@ -442,6 +446,7 @@ class TestDeleteDocument:
         Tags belong to the workspace (TagGroup -> Workspace FK), not the
         document. Deleting a document must NOT cascade to tags.
         """
+        from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.tags import create_tag
         from promptgrimoire.db.workspace_documents import (
             add_document,
@@ -450,6 +455,8 @@ class TestDeleteDocument:
         from promptgrimoire.db.workspaces import create_workspace
 
         workspace = await create_workspace()
+        owner_id = await _create_student()
+        await grant_permission(workspace.id, owner_id, "owner")
 
         # Add a tag to the workspace
         tag = await create_tag(
@@ -467,7 +474,7 @@ class TestDeleteDocument:
         )
 
         # Delete the document
-        result = await delete_document(doc.id)
+        result = await delete_document(doc.id, user_id=owner_id)
         assert result is True
 
         # Tag still exists
@@ -482,7 +489,7 @@ class TestDeleteDocument:
         """Nonexistent document_id returns False."""
         from promptgrimoire.db.workspace_documents import delete_document
 
-        result = await delete_document(uuid4())
+        result = await delete_document(uuid4(), user_id=uuid4())
         assert result is False
 
 

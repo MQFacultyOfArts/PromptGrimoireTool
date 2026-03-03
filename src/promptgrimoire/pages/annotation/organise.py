@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
+from uuid import UUID
 
 from nicegui import ui
 
@@ -351,7 +352,12 @@ def _show_clone_warning_dialog(
         state: Page state for redirect after deletion.
         clone_count: Number of student clones.
     """
-    with ui.dialog() as warn_dialog, ui.card().classes("w-96"):
+    with (
+        ui.dialog().props(
+            'data-testid="template-delete-warning-dialog"'
+        ) as warn_dialog,
+        ui.card().classes("w-96"),
+    ):
         ui.label(
             f"{clone_count} student{'s' if clone_count != 1 else ''} "
             f"{'have' if clone_count != 1 else 'has'} "
@@ -411,8 +417,14 @@ async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
         doc: The document to delete.
         state: Page state (provides workspace_id for redirect).
     """
+    if not state.user_id:
+        ui.notify("Not logged in", type="negative")
+        return
     try:
-        await delete_document(doc.id)
+        await delete_document(doc.id, user_id=UUID(state.user_id))
+    except PermissionError:
+        ui.notify("Permission denied", type="negative")
+        return
     except ProtectedDocumentError:
         ui.notify("This document is protected and cannot be deleted", type="negative")
         return

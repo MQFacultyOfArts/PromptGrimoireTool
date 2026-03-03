@@ -239,6 +239,23 @@ class TestMakeDocsCleanup:
         assert os.environ.get("DEV__AUTH_MOCK") is None
 
 
+class TestMakeDocsActionArgument:
+    """AC6.4: build() accepts optional action argument."""
+
+    def test_serve_action_invokes_mkdocs_serve(self, _mock_happy_path):
+        mocks = _mock_happy_path
+
+        cli_module.build(action="serve")
+
+        serve_calls = [
+            c
+            for c in mocks["subprocess_run"].call_args_list
+            if c[0][0]
+            == ["uv", "run", "mkdocs", "serve", "--dev-addr", "localhost:8484"]
+        ]
+        assert len(serve_calls) == 1
+
+
 class TestMakeDocsMkdocsBuild:
     """AC6.1: mkdocs build is called after guide functions complete."""
 

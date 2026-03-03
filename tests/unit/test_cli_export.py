@@ -57,13 +57,15 @@ class TestFindExportDir:
     def test_finds_most_recent_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import time
+        import os
 
         old_dir = tmp_path / "promptgrimoire_export_old"
         old_dir.mkdir()
-        time.sleep(0.05)
         new_dir = tmp_path / "promptgrimoire_export_new"
         new_dir.mkdir()
+        # Set deterministic mtime: old_dir in the past, new_dir in the future
+        os.utime(old_dir, (1_000_000, 1_000_000))
+        os.utime(new_dir, (2_000_000, 2_000_000))
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         from promptgrimoire.cli.export import _find_export_dir

@@ -30,12 +30,12 @@
     font-size: 15px;
 }
 
-/* User (sent) bubble */
+/* User (sent) bubble — !important overrides Quasar's default background */
 .q-message-sent .q-message-text-content {
     background: rgba(0, 0, 0, 0.3) !important;
 }
 
-/* AI (received) bubble */
+/* AI (received) bubble — !important overrides Quasar's default background */
 .q-message-received .q-message-text-content {
     background: rgba(60, 60, 60, 0.3) !important;
 }

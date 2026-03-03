@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 from uuid import UUID
 
 from nicegui import app, ui
@@ -229,7 +230,8 @@ async def _handle_export(state: dict) -> None:
         )
         await grant_permission(workspace.id, user_id, "owner")
 
-        ui.navigate.to(f"/annotation?workspace_id={workspace.id}")
+        url = f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}"
+        ui.navigate.to(url)
     except Exception:
         logger.exception("Failed to export roleplay session")
         ui.notify("Export failed. Please try again.", type="negative")

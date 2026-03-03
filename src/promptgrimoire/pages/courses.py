@@ -305,7 +305,12 @@ async def _handle_delete_workspace(
                     ui.notify("Not logged in", type="negative")
                     dialog.close()
                     return
-                await delete_workspace(workspace_id, user_id=user_id)
+                try:
+                    await delete_workspace(workspace_id, user_id=user_id)
+                except PermissionError:
+                    ui.notify("Permission denied", type="negative")
+                    dialog.close()
+                    return
                 dialog.close()
                 ui.notify("Workspace deleted. You can start fresh.", type="positive")
                 on_success()

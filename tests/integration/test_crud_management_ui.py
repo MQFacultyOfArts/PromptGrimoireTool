@@ -501,7 +501,57 @@ class TestWorkspaceDelete:
         # Resume button should be gone
         await _should_not_see_testid(user, f"resume-btn-{activity_id}")
 
-    # NOTE: test_delete_workspace_non_owner_no_button is better tested via
-    # Playwright E2E -- the NiceGUI User harness makes multi-user shared
-    # workspace setup prohibitively complex (needs two separate simulated
-    # users sharing a workspace via ACL).
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_see_delete_button(self, user: User) -> None:
+        """Student B cannot see a delete button for student A's workspace (AC3.4).
+
+        The delete-workspace button is only rendered inside the
+        ``if act.id in user_workspace_map:`` branch in ``_render_activity_row``,
+        which is keyed to the *viewing* user's own workspaces.  A student who
+        has not yet started an activity never enters that branch, so they will
+        see "Start as Student" with no delete button — even if a peer has
+        already cloned the same activity.
+
+        Steps:
+        1. Create course + week + activity.
+        2. Enroll student A and have them clone a workspace.
+        3. Enroll student B (no workspace).
+        4. Authenticate as student B and open the course page.
+        5. Verify no delete-workspace button for student A's workspace exists.
+        6. Verify "Start as Student" is shown (student B's view).
+        """
+        course_id, _code = await _create_course()
+        await _enroll(course_id, "coordinator@uni.edu", "coordinator")
+
+        uid = uuid4().hex[:8]
+        student_a_email = f"student-a-{uid}@test.example.edu.au"
+        student_b_email = f"student-b-{uid}@test.example.edu.au"
+
+        student_a_id = await _enroll(course_id, student_a_email, "student")
+        await _enroll(course_id, student_b_email, "student")
+
+        week_id = await _create_week(course_id, title="Shared Week")
+        from promptgrimoire.db.weeks import publish_week
+
+        await publish_week(week_id)
+        activity_id = await _create_activity(week_id, title="Shared Activity")
+
+        # Student A clones a workspace
+        ws_id = await _clone_workspace(activity_id, student_a_id)
+
+        # Authenticate as student B (no workspace)
+        await _authenticate(user, email=student_b_email)
+        await user.open(f"/courses/{course_id}")
+
+        # Student B sees Start as Student, not Resume
+        await _should_see_testid(user, f"start-activity-btn-{activity_id}")
+
+        # Student A's delete button is NOT visible to student B
+        await _should_not_see_testid(user, f"delete-workspace-btn-{ws_id}")
+
+    # NOTE(AC3.2 navigator gap): Full navigator delete-from-card flow is not
+    # tested here because the NiceGUI User harness cannot drive the full
+    # navigator query stack (UNION ALL CTE across multiple tables) without
+    # standing up additional fixtures that duplicate existing integration
+    # coverage.  The function signature and existence are verified by
+    # tests/unit/test_navigator_delete.py.  Manual UAT covers the full flow.

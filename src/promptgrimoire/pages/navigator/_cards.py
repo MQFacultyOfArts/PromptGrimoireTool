@@ -212,7 +212,12 @@ async def _delete_workspace_from_navigator(
             )
 
             async def confirm() -> None:
-                await delete_workspace(workspace_id, user_id=user_id)
+                try:
+                    await delete_workspace(workspace_id, user_id=user_id)
+                except PermissionError:
+                    ui.notify("Permission denied", type="negative")
+                    dialog.close()
+                    return
                 dialog.close()
                 card.delete()
                 ui.notify("Workspace deleted", type="positive")

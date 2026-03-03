@@ -258,8 +258,15 @@ async def roleplay_page() -> None:
     widgets: dict = {}
 
     with page_layout("Roleplay"):
+        ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
+        ui.query("body").classes("roleplay-bg")
+
         # Upload section
-        with ui.card().classes("w-full mb-4") as upload_card:
+        with (
+            ui.card()
+            .classes("w-full mb-4 roleplay-upload")
+            .props('data-testid="roleplay-upload-card"') as upload_card
+        ):
             widgets["upload_card"] = upload_card
             ui.label("Load Character Card").classes("text-h6")
 
@@ -275,7 +282,11 @@ async def roleplay_page() -> None:
             ).classes("w-full").props('accept=".json"')
 
         # Chat section
-        with ui.card().classes("w-full") as chat_card:
+        with (
+            ui.card()
+            .classes("w-full")
+            .props('data-testid="roleplay-chat-card"') as chat_card
+        ):
             chat_card.visible = False
             widgets["chat_card"] = chat_card
 
@@ -285,9 +296,11 @@ async def roleplay_page() -> None:
             scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
             widgets["scenario_label"] = scenario_label
 
-            with ui.scroll_area().classes(
-                "w-full h-96 border rounded p-4"
-            ) as scroll_area:
+            with (
+                ui.scroll_area()
+                .classes("w-full h-96 border rounded p-4 roleplay-chat")
+                .props('data-testid="roleplay-chat-area"') as scroll_area
+            ):
                 chat_container = ui.column().classes("w-full gap-3")
             widgets["scroll_area"] = scroll_area
             widgets["chat_container"] = chat_container
@@ -296,7 +309,7 @@ async def roleplay_page() -> None:
                 message_input = (
                     ui.input(placeholder="Type your message...")
                     .classes("flex-grow")
-                    .props("outlined")
+                    .props('outlined data-testid="roleplay-message-input"')
                 )
 
                 async def on_send() -> None:
@@ -311,7 +324,11 @@ async def roleplay_page() -> None:
                             send_button,
                         )
 
-                send_button = ui.button("Send", on_click=on_send).classes("ml-2")
+                send_button = (
+                    ui.button("Send", on_click=on_send)
+                    .classes("ml-2")
+                    .props('data-testid="roleplay-send-btn"')
+                )
                 message_input.on("keydown.enter", on_send)
 
         with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):

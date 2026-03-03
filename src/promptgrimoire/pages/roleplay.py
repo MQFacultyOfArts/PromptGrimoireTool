@@ -8,23 +8,32 @@ Route: /roleplay
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
+from uuid import UUID
 
 from nicegui import app, ui
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.acl import grant_permission
+from promptgrimoire.db.workspace_documents import add_document
+from promptgrimoire.db.workspaces import create_workspace, update_workspace_title
 from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
 from promptgrimoire.models import Character, Session
 from promptgrimoire.pages.layout import page_layout, require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
+from promptgrimoire.pages.roleplay_export import session_to_html
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.scroll_area import ScrollArea
+
+logger = logging.getLogger(__name__)
 
 
 def _get_default_user_name() -> str:
@@ -51,9 +60,18 @@ def _get_default_user_name() -> str:
     return "User"
 
 
-def _create_chat_message(content: str, name: str, sent: bool) -> None:
+_USER_AVATAR = "/static/roleplay/user-default.png"
+_AI_AVATAR = "/static/roleplay/becky-bennett.png"
+_BECKY_CARD_PATH = (
+    Path(__file__).parent.parent / "static" / "roleplay" / "becky-bennett.json"
+)
+
+
+def _create_chat_message(
+    content: str, name: str, sent: bool, *, avatar: str | None = None
+) -> None:
     """Create a chat message with markdown-rendered content."""
-    msg = ui.chat_message(name=name, sent=sent)
+    msg = ui.chat_message(name=name, sent=sent, avatar=avatar)
     with msg:
         ui.markdown(content).classes("text-base")
 
@@ -62,7 +80,8 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
     """Render all messages in the session using chat_message components."""
     with chat_container:
         for turn in session.turns:
-            _create_chat_message(turn.content, turn.name, turn.is_user)
+            avatar = _USER_AVATAR if turn.is_user else _AI_AVATAR
+            _create_chat_message(turn.content, turn.name, turn.is_user, avatar=avatar)
     # Scroll to bottom after rendering
     scroll_area.scroll_to(percent=1.0)
 
@@ -87,12 +106,16 @@ async def _handle_send(
     # Add user message
     session.add_turn(user_message.strip(), is_user=True)
     with chat_container:
-        _create_chat_message(user_message.strip(), session.user_name, sent=True)
+        _create_chat_message(
+            user_message.strip(), session.user_name, sent=True, avatar=_USER_AVATAR
+        )
     scroll_area.scroll_to(percent=1.0)
 
     # Show thinking indicator
     with chat_container:
-        thinking_msg = ui.chat_message(name=session.character.name, sent=False)
+        thinking_msg = ui.chat_message(
+            name=session.character.name, sent=False, avatar=_AI_AVATAR
+        )
         with thinking_msg:
             with ui.row().classes("items-center gap-2"):
                 spinner = ui.spinner("dots", size="sm")
@@ -120,7 +143,9 @@ async def _handle_send(
     # Replace streaming message with final rendered version
     thinking_msg.delete()
     with chat_container:
-        _create_chat_message(full_response, session.character.name, sent=False)
+        _create_chat_message(
+            full_response, session.character.name, sent=False, avatar=_AI_AVATAR
+        )
     scroll_area.scroll_to(percent=1.0)
 
     send_button.enable()
@@ -167,10 +192,145 @@ def _setup_session(
     return session, client, log_path
 
 
+_EXPORT_BTN_INITIAL_DISABLED = True
+
+_MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
+
+
+async def _handle_export(state: dict) -> None:
+    """Export the current roleplay session to an annotation workspace.
+
+    Creates a loose workspace, adds the session HTML as a document,
+    grants owner permission to the current user, and navigates to the
+    annotation page.
+    """
+    session = state.get("session")
+    if session is None:
+        ui.notify("No active session to export", type="warning")
+        return
+
+    try:
+        auth_user = app.storage.user.get("auth_user")
+        if not auth_user or not auth_user.get("user_id"):
+            ui.notify("You must be logged in to export", type="negative")
+            return
+
+        user_id = UUID(auth_user["user_id"])
+        html_content = session_to_html(session)
+
+        workspace = await create_workspace()
+        title = f"Roleplay: {session.character.name}"
+        await update_workspace_title(workspace.id, title)
+        await add_document(
+            workspace_id=workspace.id,
+            type="ai_conversation",
+            content=html_content,
+            source_type="html",
+            title=title,
+        )
+        await grant_permission(workspace.id, user_id, "owner")
+
+        url = f"/annotation?{urlencode({'workspace_id': str(workspace.id)})}"
+        ui.navigate.to(url)
+    except Exception:
+        logger.exception("Failed to export roleplay session")
+        ui.notify("Export failed. Please try again.", type="negative")
+
+
+def _auto_load_character(state: dict, widgets: dict) -> None:
+    """Auto-load the bundled Becky Bennett character card.
+
+    Populates state and widgets on success, opens upload panel on failure.
+    Extracted from roleplay_page to reduce cognitive complexity.
+    """
+    try:
+        character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
+        user_name = _get_default_user_name()
+
+        session, client, log_path = _setup_session(
+            character, lorebook_entries, user_name
+        )
+        state["session"] = session
+        state["client"] = client
+        state["log_path"] = log_path
+
+        widgets["char_name_label"].text = character.name
+        widgets["scenario_label"].text = substitute_placeholders(
+            character.scenario or "No scenario",
+            char_name=character.name,
+            user_name=user_name,
+        )
+
+        _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
+        widgets["export_button"].enable()
+    except Exception:
+        logger.exception("Failed to auto-load bundled character card")
+        ui.notify("Could not auto-load character card", type="negative")
+        widgets["upload_expansion"].value = True
+
+
+async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
+    """Process an uploaded character card and initialise the chat session.
+
+    Extracted from roleplay_page to reduce cognitive complexity.
+    """
+    tmp_path = None
+    try:
+        content = await e.file.read()
+
+        # CRIT-6: Check upload size before processing
+        if len(content) > _MAX_UPLOAD_SIZE:
+            ui.notify("File too large (max 100MB)", type="negative")
+            return
+
+        # Write to temp file for parsing
+        tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
+        tmp_path.write_bytes(content)
+
+        character, lorebook_entries = parse_character_card(tmp_path)
+        user_name = widgets["user_name_input"].value or "User"
+
+        session, client, log_path = _setup_session(
+            character, lorebook_entries, user_name
+        )
+
+        state["session"] = session
+        state["client"] = client
+        state["log_path"] = log_path
+
+        widgets["upload_expansion"].value = False  # collapse the expansion panel
+
+        widgets["char_name_label"].text = character.name
+        widgets["scenario_label"].text = substitute_placeholders(
+            character.scenario or "No scenario",
+            char_name=character.name,
+            user_name=user_name,
+        )
+
+        # Clear previous messages and render new ones
+        widgets["chat_container"].clear()
+        _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
+
+        # Enable export now that a session is loaded
+        if "export_button" in widgets:
+            widgets["export_button"].enable()
+
+        ui.notify(f"Loaded {character.name}")
+
+    except ValueError as ve:
+        ui.notify(str(ve), type="negative")
+    except Exception as ex:
+        ui.notify(f"Failed to load: {ex}", type="negative")
+    finally:
+        # Clean up temp file
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
+
+
 @page_route(
     "/roleplay", title="Roleplay", icon="chat", order=30, requires_roleplay=True
 )
-async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many statements
+async def roleplay_page() -> None:
     """Roleplay chat page."""
     await ui.context.client.connected()
 
@@ -185,108 +345,185 @@ async def roleplay_page() -> None:  # noqa: PLR0915 - UI pages have many stateme
         return
 
     state: dict = {"session": None, "client": None, "log_path": None}
+    widgets: dict = {}
 
-    with page_layout("Roleplay"):
-        # Upload section
-        with ui.card().classes("w-full mb-4") as upload_card:
-            ui.label("Load Character Card").classes("text-h6")
+    with page_layout("Roleplay", drawer_open=False):
+        ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
+        # Inline overrides — Quasar uses very high specificity on
+        # chat message colours; an external stylesheet can't always win.
+        ui.add_head_html("""<style>
+            .roleplay-chat .q-message-text-content {
+                background: rgba(60, 60, 60, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-sent .q-message-text-content {
+                background: rgba(0, 0, 0, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-text {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-text--sent {
+                background: rgba(0, 0, 0, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-text--received {
+                background: rgba(60, 60, 60, 0.3) !important;
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-chat .q-message-name--sent,
+            .roleplay-chat .q-message-name--received {
+                color: rgb(180, 180, 170) !important;
+            }
+            .roleplay-chat .q-message-stamp {
+                color: rgb(140, 140, 130) !important;
+            }
+            /* Input field text colour */
+            .roleplay-card .q-field__native,
+            .roleplay-card .q-field__prefix,
+            .roleplay-card .q-field__suffix,
+            .roleplay-card .q-field__input,
+            .roleplay-card input,
+            .roleplay-card textarea {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-card .q-field__label {
+                color: rgba(220, 220, 210, 0.7) !important;
+            }
+            .roleplay-card .q-field--outlined .q-field__control::before {
+                border-color: rgba(220, 220, 210, 0.3) !important;
+            }
+            /* Buttons */
+            .roleplay-card .q-btn {
+                color: rgb(220, 220, 210) !important;
+                background: rgba(80, 80, 80, 0.5) !important;
+                border: 1px solid rgba(220, 220, 210, 0.2) !important;
+            }
+            .roleplay-card .q-btn .q-icon {
+                color: rgb(220, 220, 210) !important;
+            }
+            .roleplay-card .q-btn[disabled],
+            .roleplay-card .q-btn--disabled {
+                color: rgba(220, 220, 210, 0.4) !important;
+                background: rgba(80, 80, 80, 0.3) !important;
+                border: 1px solid rgba(220, 220, 210, 0.1) !important;
+                opacity: 1 !important;
+            }
+        </style>""")
+        ui.query("body").classes("roleplay-bg")
 
-            # CRIT-6: Maximum upload size limit to prevent DoS
-            max_upload_size = 100 * 1024 * 1024  # 100 MB
+        # Centre a constrained-width column
+        with (
+            ui.column().classes("w-full items-center"),
+            ui.column()
+            .classes("roleplay-column")
+            .style("max-width: 1000px; width: 100%; padding: 0 16px;"),
+        ):
+            # Management panel (collapsed — Becky Bennett auto-loads below)
+            with (
+                ui.expansion("Management", icon="settings")
+                .classes("w-full mb-4 roleplay-upload")
+                .props('data-testid="roleplay-upload-card"') as upload_expansion
+            ):
+                widgets["upload_expansion"] = upload_expansion
 
-            async def handle_upload(e) -> None:
-                tmp_path = None
-                try:
-                    content = await e.file.read()
-
-                    # CRIT-6: Check upload size before processing
-                    if len(content) > max_upload_size:
-                        ui.notify("File too large (max 100MB)", type="negative")
-                        return
-
-                    # Write to temp file for parsing
-                    tmp_path = Path(f"/tmp/pg_upload_{e.file.name}")  # nosec B108
-                    tmp_path.write_bytes(content)
-
-                    character, lorebook_entries = parse_character_card(tmp_path)
-                    user_name = user_name_input.value or "User"
-
-                    session, client, log_path = _setup_session(
-                        character, lorebook_entries, user_name
+                # Export to workspace
+                export_button = (
+                    ui.button(
+                        "Export to Workspace",
+                        icon="upload",
+                        on_click=lambda: _handle_export(state),
                     )
+                    .classes("w-full mb-4")
+                    .props('data-testid="roleplay-export-btn"')
+                )
+                if _EXPORT_BTN_INITIAL_DISABLED:
+                    export_button.disable()
+                widgets["export_button"] = export_button
 
-                    state["session"] = session
-                    state["client"] = client
-                    state["log_path"] = log_path
+                ui.separator().style("border-color: rgba(220,220,210,0.2);")
 
-                    upload_card.visible = False
-                    chat_card.visible = True
+                # Load different character
+                ui.label("Load Different Character").classes(
+                    "text-subtitle1 mt-2"
+                ).style("color: rgb(220, 220, 210);")
+                user_name_input = ui.input(
+                    label="Your name (used as {{user}})",
+                    value=_get_default_user_name(),
+                ).classes("w-64 mb-2")
+                widgets["user_name_input"] = user_name_input
 
-                    char_name_label.text = character.name
-                    scenario_label.text = substitute_placeholders(
-                        character.scenario or "No scenario",
-                        char_name=character.name,
-                        user_name=user_name,
-                    )
+                ui.upload(
+                    label="Drop character card JSON here",
+                    on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
+                    auto_upload=True,
+                ).classes("w-full").props('accept=".json"')
 
-                    # Render initial messages
-                    _render_messages(session, chat_container, scroll_area)
-
-                    ui.notify(f"Loaded {character.name}")
-
-                except ValueError as ve:
-                    ui.notify(str(ve), type="negative")
-                except Exception as ex:
-                    ui.notify(f"Failed to load: {ex}", type="negative")
-                finally:
-                    # Clean up temp file
-                    if tmp_path and tmp_path.exists():
-                        tmp_path.unlink()
-
-            user_name_input = ui.input(
-                label="Your name (used as {{user}})", value=_get_default_user_name()
-            ).classes("w-64 mb-2")
-
-            ui.upload(
-                label="Drop character card JSON here",
-                on_upload=handle_upload,
-                auto_upload=True,
-            ).classes("w-full").props('accept=".json"')
-
-        # Chat section
-        with ui.card().classes("w-full") as chat_card:
-            chat_card.visible = False
-
-            with ui.row().classes("w-full items-center mb-2"):
-                char_name_label = ui.label("").classes("text-h5")
-            scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
-
-            with ui.scroll_area().classes(
-                "w-full h-96 border rounded p-4"
-            ) as scroll_area:
-                chat_container = ui.column().classes("w-full gap-3")
-
-            with ui.row().classes("w-full mt-4"):
-                message_input = (
-                    ui.input(placeholder="Type your message...")
-                    .classes("flex-grow")
-                    .props("outlined")
+                ui.separator().style("border-color: rgba(220,220,210,0.2);")
+                ui.label("Log files are saved to: logs/sessions/").style(
+                    "color: rgba(220,220,210,0.6); font-size: 12px;"
                 )
 
-                async def on_send() -> None:
-                    if state["session"]:
-                        await _handle_send(
-                            state["session"],
-                            state["client"],
-                            message_input,
-                            state["log_path"],
-                            chat_container,
-                            scroll_area,
-                            send_button,
-                        )
+            # Chat section — transparent card over dark background
+            with (
+                ui.card()
+                .classes("w-full roleplay-card")
+                .style(
+                    "background: rgba(23, 23, 23, 0.75) !important;"
+                    " box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;"
+                    " border: 1px solid rgba(220,220,210,0.1) !important;"
+                    " border-radius: 12px !important;"
+                )
+                .props('data-testid="roleplay-chat-card"') as chat_card
+            ):
+                widgets["chat_card"] = chat_card
 
-                send_button = ui.button("Send", on_click=on_send).classes("ml-2")
-                message_input.on("keydown.enter", on_send)
+                char_name_label = (
+                    ui.label("").classes("text-h5").style("color: rgb(220, 220, 210);")
+                )
+                widgets["char_name_label"] = char_name_label
 
-        with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
-            ui.label("Log files are saved to: logs/sessions/")
+                # Scenario hidden — raw placeholder text is not user-facing
+                scenario_label = ui.label("")
+                scenario_label.visible = False
+                widgets["scenario_label"] = scenario_label
+
+                with (
+                    ui.scroll_area()
+                    .classes("w-full border rounded p-4 roleplay-chat")
+                    .style("height: 60vh;")
+                    .props('data-testid="roleplay-chat-area"') as scroll_area
+                ):
+                    chat_container = ui.column().classes("w-full gap-3")
+                widgets["scroll_area"] = scroll_area
+                widgets["chat_container"] = chat_container
+
+                with ui.row().classes("w-full mt-4"):
+                    message_input = (
+                        ui.input(placeholder="Type your message...")
+                        .classes("flex-grow")
+                        .props('outlined data-testid="roleplay-message-input"')
+                        .style("color: rgb(220, 220, 210) !important;")
+                    )
+
+                    async def on_send() -> None:
+                        if state["session"]:
+                            await _handle_send(
+                                state["session"],
+                                state["client"],
+                                message_input,
+                                state["log_path"],
+                                chat_container,
+                                scroll_area,
+                                send_button,
+                            )
+
+                    send_button = (
+                        ui.button("Send", on_click=on_send)
+                        .classes("ml-2")
+                        .props('data-testid="roleplay-send-btn"')
+                    )
+                    message_input.on("keydown.enter", on_send)
+
+            # Auto-load bundled Becky Bennett character card
+            _auto_load_character(state, widgets)

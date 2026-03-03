@@ -39,6 +39,7 @@ library references during development.
 
 ## guides
 
+- [Flight Rules](guides/flight-rules.md)
 - [PromptGrimoire Guides](guides/index.md)
 
 ## lark

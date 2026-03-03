@@ -1,0 +1,146 @@
+/* SillyTavern-inspired dark theme for the roleplay page */
+
+/* ── Page background ─────────────────────────────────────────────── */
+.roleplay-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: url('/static/roleplay/background.png');
+    background-size: cover;
+    background-attachment: fixed;
+    background-position: center;
+    z-index: -1;
+}
+
+/* ── Centred column ──────────────────────────────────────────────── */
+.roleplay-column {
+    max-width: 1000px !important;
+    width: 100% !important;
+    align-self: center !important;
+}
+
+/* ── Dark semi-transparent card (override Quasar q-card white) ──── */
+.roleplay-card {
+    background: rgba(23, 23, 23, 0.75) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(220, 220, 210, 0.1) !important;
+    border-radius: 12px !important;
+    color: rgb(220, 220, 210) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* ── Chat scroll area ────────────────────────────────────────────── */
+.roleplay-chat {
+    background: rgba(23, 23, 23, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 16px;
+    border-color: rgba(220, 220, 210, 0.15) !important;
+}
+
+/* ── Quasar chat message overrides ───────────────────────────────── */
+.roleplay-chat .q-message {
+    color: rgb(220, 220, 210);
+    font-family: "Noto Sans", sans-serif;
+    font-size: 15px;
+}
+
+/* Message name labels */
+.roleplay-chat .q-message-name {
+    color: rgb(180, 180, 170) !important;
+}
+
+/* User (sent) bubble — !important overrides Quasar's default background */
+.roleplay-chat .q-message-sent .q-message-text-content {
+    background: rgba(0, 0, 0, 0.3) !important;
+    color: rgb(220, 220, 210) !important;
+}
+
+/* AI (received) bubble — !important overrides Quasar's default background */
+.roleplay-chat .q-message-received .q-message-text-content {
+    background: rgba(60, 60, 60, 0.3) !important;
+    color: rgb(220, 220, 210) !important;
+}
+
+/* Kill the Quasar default message text colour overrides */
+.roleplay-chat .q-message-text--sent,
+.roleplay-chat .q-message-text--received {
+    color: rgb(220, 220, 210) !important;
+}
+
+/* Italic / emphasis colour */
+.roleplay-chat .q-message em,
+.roleplay-chat .q-message i {
+    color: rgb(145, 145, 145);
+}
+
+/* Blockquote — orange accent */
+.roleplay-chat .q-message blockquote {
+    border-left: 3px solid rgb(225, 138, 36);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+
+/* ── Avatar ──────────────────────────────────────────────────────── */
+.roleplay-chat .q-avatar img {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Upload card styling ─────────────────────────────────────────── */
+.roleplay-upload {
+    background: rgba(23, 23, 23, 0.8) !important;
+    color: rgb(220, 220, 210) !important;
+    border: 1px solid rgba(220, 220, 210, 0.2);
+    border-radius: 8px;
+}
+
+/* ── Input overrides inside roleplay card ────────────────────────── */
+.roleplay-card .q-field__label,
+.roleplay-card .q-field__native,
+.roleplay-card .q-field__native::placeholder {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-card .q-field--outlined .q-field__control::before {
+    border-color: rgba(220, 220, 210, 0.3) !important;
+}
+
+.roleplay-card .q-field--outlined .q-field__control:hover::before {
+    border-color: rgba(220, 220, 210, 0.5) !important;
+}
+
+/* ── Button overrides inside roleplay card ──────────────────────── */
+.roleplay-card .q-btn {
+    color: rgb(220, 220, 210) !important;
+    background: rgba(80, 80, 80, 0.5) !important;
+    border: 1px solid rgba(220, 220, 210, 0.2) !important;
+}
+
+.roleplay-card .q-btn:hover {
+    background: rgba(100, 100, 100, 0.6) !important;
+}
+
+.roleplay-card .q-btn--disabled {
+    opacity: 0.4 !important;
+}
+
+/* ── Expansion panel overrides ──────────────────────────────────── */
+.roleplay-upload .q-expansion-item__container {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-upload .q-item__label {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-upload .q-icon {
+    color: rgb(220, 220, 210) !important;
+}

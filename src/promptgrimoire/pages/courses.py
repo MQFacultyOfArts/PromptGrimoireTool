@@ -202,13 +202,11 @@ def _render_activity_row(
                 icon=btn_icon,
                 on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
             ).props("flat dense size=sm color=secondary")
-            _act_settings_props = (
-                'flat round dense size=sm data-testid="activity-settings-btn"'
-            )
             ui.button(
+                "Activity Settings",
                 icon="settings",
                 on_click=lambda a=act: open_activity_settings(a),
-            ).props(_act_settings_props).tooltip("Settings")
+            ).props('outline color=primary dense data-testid="activity-settings-btn"')
 
         if act.id in user_workspace_map:
             # User already has a workspace -- show Resume
@@ -276,17 +274,15 @@ def _render_publish_toggle(
     """Render publish/unpublish button for a week."""
     with ui.row().classes("gap-1"):
         if week.is_published:
-            _unpub_props = 'flat dense data-testid="unpublish-week-btn"'
             ui.button(
                 "Unpublish",
                 on_click=lambda wid=week.id: on_publish_toggle(wid),
-            ).props(_unpub_props)
+            ).props('outline color=primary dense data-testid="unpublish-week-btn"')
         else:
-            _pub_props = 'flat dense data-testid="publish-week-btn"'
             ui.button(
                 "Publish",
                 on_click=lambda wid=week.id: on_publish_toggle(wid),
-            ).props(_pub_props)
+            ).props('outline color=primary dense data-testid="publish-week-btn"')
 
 
 async def _render_week_activities(
@@ -328,7 +324,7 @@ async def _render_week_activities(
             on_click=lambda wid=week.id: ui.navigate.to(
                 f"/courses/{course_id}/weeks/{wid}/activities/new"
             ),
-        ).props('flat dense size=sm data-testid="add-activity-btn"').classes(
+        ).props('outline color=primary dense data-testid="add-activity-btn"').classes(
             "ml-4 mt-1"
         )
 
@@ -769,17 +765,16 @@ def _render_course_action_bar(
             ui.button(
                 "Add Week",
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
-            ).props('data-testid="add-week-btn"')
+            ).props('color=primary data-testid="add-week-btn"')
             ui.button(
                 "Manage Enrollments",
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
-            ).props('flat data-testid="manage-enrollments-btn"')
+            ).props('outline color=primary data-testid="manage-enrollments-btn"')
             ui.button(
+                "Unit Settings",
                 icon="settings",
                 on_click=lambda: open_course_settings(course),
-            ).props('flat round data-testid="course-settings-btn"').tooltip(
-                "Unit Settings"
-            )
+            ).props('outline color=primary data-testid="course-settings-btn"')
     else:
         ui.button(
             "Back to Units",

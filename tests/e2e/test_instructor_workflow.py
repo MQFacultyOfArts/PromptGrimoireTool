@@ -59,11 +59,8 @@ def _fill_template_workspace(page: Page) -> None:
     Expects the page to be on a course detail page with a freshly
     created activity showing a "Create Template" button.
     """
-    # Click "Create Template" to open the template workspace
-    page.get_by_role(
-        "button",
-        name=re.compile(r"Create Template|Edit Template"),
-    ).click()
+    # Click template button to open the template workspace
+    page.locator("[data-testid^='template-btn-']").first.click()
 
     # Wait for the annotation page to load
     page.wait_for_url(
@@ -229,7 +226,7 @@ def _instructor_open_template(page: Page, app_server: str, course_id: str) -> st
     activity_card = page.get_by_text("Annotate Becky").locator(
         "xpath=ancestor::div[contains(@class, 'q-card')]"
     )
-    activity_card.get_by_role("button", name=re.compile(r"Edit Template")).click()
+    activity_card.locator("[data-testid^='template-btn-']").first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
     wait_for_text_walker(page, timeout=15000)
     template_ws_id = page.url.split("workspace_id=")[1].split("&")[0]
@@ -396,7 +393,7 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
     activity_card = page.get_by_text("Case Brief Practice").locator(
         "xpath=ancestor::div[contains(@class, 'q-card')]"
     )
-    activity_card.get_by_role("button", name=re.compile(r"Create Template")).click()
+    activity_card.locator("[data-testid^='template-btn-']").first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)

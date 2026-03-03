@@ -247,15 +247,15 @@ def build_crdt_state(
     doc = AnnotationDocument(doc_id=document_id)
 
     # 2-5 highlights
-    num_highlights = random.randint(2, 5)  # nosec B311 -- test fixture, not crypto
+    num_highlights = random.randint(2, 5)
     highlight_ids: list[str] = []
 
     for _ in range(num_highlights):
         if content_length < 20:
             break
-        start = random.randint(0, max(0, content_length - 20))  # nosec B311
-        end = min(start + random.randint(10, 50), content_length)  # nosec B311
-        tag = random.choice(tag_ids) if tag_ids else ""  # nosec B311
+        start = random.randint(0, max(0, content_length - 20))
+        end = min(start + random.randint(10, 50), content_length)
+        tag = random.choice(tag_ids) if tag_ids else ""
         text = f"highlighted text by {student_name}"
 
         hl_id = doc.add_highlight(
@@ -271,17 +271,17 @@ def build_crdt_state(
 
     # 0-3 comments per highlight
     for hl_id in highlight_ids:
-        num_comments = random.randint(0, 3)  # nosec B311
+        num_comments = random.randint(0, 3)
         for _ in range(num_comments):
             doc.add_comment(
                 highlight_id=hl_id,
                 author=student_name,
-                text=random.choice(COMMENT_POOL),  # nosec B311
+                text=random.choice(COMMENT_POOL),
                 user_id=user_id,
             )
 
     # Response draft
-    draft_text = random.choice(RESPONSE_DRAFT_POOL)  # nosec B311
+    draft_text = random.choice(RESPONSE_DRAFT_POOL)
     rdm = doc.response_draft_markdown
     rdm += draft_text
 
@@ -295,7 +295,7 @@ def build_crdt_state(
 
 def roll_1d6_minus_2() -> int:
     """Roll 1d6-2 (min 0, max 4) for loose workspace count per student."""
-    return max(0, random.randint(1, 6) - 2)  # nosec B311
+    return max(0, random.randint(1, 6) - 2)
 
 
 # ---------------------------------------------------------------------------
@@ -585,8 +585,8 @@ async def _ensure_activities_for_course(
         tmpl_id = activity.template_workspace_id
 
         # Add 2-3 documents to template workspace
-        num_docs = random.randint(2, 3)  # nosec B311
-        paragraphs = random.sample(  # nosec B311
+        num_docs = random.randint(2, 3)
+        paragraphs = random.sample(
             DOCUMENT_PARAGRAPHS, min(num_docs * 2, len(DOCUMENT_PARAGRAPHS))
         )
         for doc_idx in range(num_docs):
@@ -700,7 +700,7 @@ async def _create_student_activity_workspace(
 
     # Place in activity and set title
     await place_workspace_in_activity(ws_id, activity.id)
-    shared_with_class = random.random() < 0.2  # nosec B311 -- ~20% chance
+    shared_with_class = random.random() < 0.2  # ~20% chance
     async with get_session() as session:
         ws = await session.get(Workspace, ws_id)
         if ws:
@@ -720,8 +720,8 @@ async def _create_student_activity_workspace(
     for tmpl_doc in template_docs:
         # Swap one paragraph from the pool for variation
         content = tmpl_doc.content
-        if random.random() < 0.3:  # nosec B311 -- 30% chance of variation
-            extra_para = random.choice(DOCUMENT_PARAGRAPHS)  # nosec B311
+        if random.random() < 0.3:  # 30% chance of variation
+            extra_para = random.choice(DOCUMENT_PARAGRAPHS)
             content = content + "\n" + extra_para
 
         para_map = build_paragraph_map_for_json(content, auto_number=True)
@@ -760,7 +760,7 @@ async def _create_loose_workspace(
     await place_workspace_in_course(ws_id, course_id)
 
     # Set title from pool
-    title = random.choice(LOOSE_WORKSPACE_TITLES)  # nosec B311
+    title = random.choice(LOOSE_WORKSPACE_TITLES)
     async with get_session() as session:
         ws = await session.get(Workspace, ws_id)
         if ws:
@@ -772,8 +772,8 @@ async def _create_loose_workspace(
     await grant_permission(ws_id, user.id, "owner")
 
     # Add 1-2 documents
-    num_docs = random.randint(1, 2)  # nosec B311
-    paragraphs = random.sample(  # nosec B311
+    num_docs = random.randint(1, 2)
+    paragraphs = random.sample(
         DOCUMENT_PARAGRAPHS, min(num_docs * 2, len(DOCUMENT_PARAGRAPHS))
     )
 
@@ -862,7 +862,7 @@ async def _create_loose_workspaces_for_student(
     doc_count = 0
 
     for _ in range(loose_count):
-        course_code = random.choice(enrolled_codes)  # nosec B311
+        course_code = random.choice(enrolled_codes)
         course_id = await _resolve_course_id_for_code(course_code, course_activities)
         if course_id is None:
             continue
@@ -910,7 +910,7 @@ async def _seed_student_workspaces(
             activities = course_activities.get(code, [])
             for activity, tmpl_id in activities:
                 # 70% chance of creating a workspace
-                if random.random() > 0.7:  # nosec B311
+                if random.random() > 0.7:
                     continue
 
                 # Idempotency check
@@ -1010,7 +1010,7 @@ async def _seed_acl_shares(
 
     # Select ~50 random workspaces
     sample_size = min(50, len(candidate_workspaces))
-    selected = random.sample(candidate_workspaces, sample_size)  # nosec B311
+    selected = random.sample(candidate_workspaces, sample_size)
 
     for ws_id, owner_id, course_id in selected:
         students_in_course = course_students.get(course_id, [])
@@ -1020,11 +1020,11 @@ async def _seed_acl_shares(
             continue
 
         # Grant to 1-2 other students
-        num_shares = random.randint(1, min(2, len(eligible)))  # nosec B311
-        recipients = random.sample(eligible, num_shares)  # nosec B311
+        num_shares = random.randint(1, min(2, len(eligible)))
+        recipients = random.sample(eligible, num_shares)
 
         for recipient in recipients:
-            perm = random.choice(["editor", "viewer"])  # nosec B311
+            perm = random.choice(["editor", "viewer"])
             await grant_permission(ws_id, recipient.id, perm)
             share_count += 1
 

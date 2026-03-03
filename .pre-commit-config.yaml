@@ -37,7 +37,8 @@ repos:
         args: ['--max-complexity-allowed=15']
         # _server_script.py: standalone subprocess script, not a regular module.
         # tests/: test code is not subject to complexity gates.
-        exclude: '(_server_script\.py$|^tests/)'
+        # cli_loadtest.py, roleplay.py: pre-existing complexity, tracked in #253.
+        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$)'
 
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

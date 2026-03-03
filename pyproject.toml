@@ -126,6 +126,9 @@ ignore = [
 "src/promptgrimoire/cli/docs.py" = [
     "PLC0415",  # Late imports to avoid heavy Playwright/subprocess modules at CLI load time
 ]
+"src/promptgrimoire/cli/testing.py" = [
+    "PLC0415",  # Deferred config import to avoid pydantic-settings loading at import time
+]
 "src/promptgrimoire/cli_legacy.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]

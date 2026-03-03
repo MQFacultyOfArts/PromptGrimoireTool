@@ -10,7 +10,7 @@ from datetime import datetime
 
 from rich.text import Text
 
-from promptgrimoire.cli_legacy import _build_test_header
+from promptgrimoire.cli._shared import _build_test_header
 
 
 class TestBuildTestHeaderBranch:

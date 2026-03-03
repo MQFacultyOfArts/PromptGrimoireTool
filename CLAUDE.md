@@ -49,7 +49,7 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### E2E Test Isolation
 
-E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run test-e2e`, which runs in serial fail-fast mode by default (`--parallel` for xdist). See [docs/testing.md](docs/testing.md).
+E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run grimoire e2e run`, which runs in serial fail-fast mode by default (`--parallel` for xdist). See [docs/testing.md](docs/testing.md).
 
 ### E2E Locator Convention
 
@@ -76,19 +76,19 @@ Git commits trigger ruff lint + format check and ty type check. Commits will be 
 uv sync
 
 # Run tests (smart selection based on changes - fast)
-uv run test-changed
+uv run grimoire test changed
 
 # Run all tests (unit + integration, excludes E2E)
-uv run test-all
+uv run grimoire test all
 
 # Run E2E tests (starts server, serial fail-fast by default)
-uv run test-e2e
+uv run grimoire e2e run
 
 # Run E2E tests in parallel (xdist)
-uv run test-e2e --parallel
+uv run grimoire e2e run --parallel
 
 # Run E2E tests (smart selection based on changes)
-uv run test-e2e-changed
+uv run grimoire e2e changed
 
 # Run linting
 uv run ruff check .
@@ -97,13 +97,13 @@ uv run ruff check .
 uvx ty check
 
 # Seed development data (idempotent)
-uv run seed-data
+uv run grimoire seed run
 
 # Manage users, roles, and course enrollments
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role
 
 # Generate user-facing documentation (requires pandoc)
-uv run make-docs
+uv run grimoire docs build
 
 # Run the app
 uv run python -m promptgrimoire

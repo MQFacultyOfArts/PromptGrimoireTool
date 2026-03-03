@@ -54,10 +54,11 @@ from promptgrimoire.pages.annotation.highlights import (
     _warp_to_highlight,
 )
 from promptgrimoire.pages.annotation.organise import render_organise_tab
-from promptgrimoire.pages.annotation.respond import render_respond_tab
+from promptgrimoire.pages.annotation.respond import render_respond_tab, word_count
 from promptgrimoire.pages.annotation.tag_management import open_tag_management
 from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
 from promptgrimoire.pages.annotation.tags import workspace_tags
+from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
     from nicegui import Client
@@ -281,6 +282,7 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
         client_id=state.client_id,
         on_yjs_update_broadcast=_on_broadcast,
         on_locate=_on_respond_locate,
+        state=state,
     )
     state.has_milkdown_editor = True
     # Mark this client as having a Milkdown editor for Yjs relay
@@ -341,6 +343,9 @@ async def _resolve_workspace_context(
         is_anonymous=ctx.anonymous_sharing,
         viewer_is_privileged=privileged,
         privileged_user_ids=priv_ids,
+        word_minimum=ctx.word_minimum,
+        word_limit=ctx.word_limit,
+        word_limit_enforcement=ctx.word_limit_enforcement,
     )
     state.tag_info_list = await workspace_tags(workspace_id)
 
@@ -495,6 +500,16 @@ async def _build_tab_panels(
                     footer=footer,
                 )
                 logger.debug("[RENDER] document rendered")
+
+                # Initialise word count badge from existing CRDT content
+                if state.word_count_badge is not None:
+                    initial_md = str(crdt_doc.response_draft_markdown)
+                    initial_count = word_count(initial_md)
+                    badge_state = format_word_count_badge(
+                        initial_count, state.word_minimum, state.word_limit
+                    )
+                    state.word_count_badge.set_text(badge_state.text)
+                    state.word_count_badge.classes(replace=badge_state.css_classes)
 
                 # "Add Document" button for editors/owners with
                 # existing documents (gated by multi-document flag)

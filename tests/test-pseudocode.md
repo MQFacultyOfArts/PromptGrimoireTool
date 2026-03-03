@@ -12,7 +12,7 @@ they reveal where the test suite is redundant or incomplete.
 > 95-annotation-tags, workspace-navigator-196,
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
-> and tags-214 branches.
+> tags-214, and word-count-limits-47 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -3839,3 +3839,251 @@ It catches any divergence that would cause highlights to render at wrong positio
 7. Assert data-para elements > 0 and screenshots taken
 
 **Verifies:** Visual regression -- paragraph numbers render correctly across diverse HTML formats (AustLII, ChatCraft, Claude, Gemini, OpenAI, translations, Wikipedia, etc.)
+
+## Word Count -- Multilingual Tokenisation
+
+### Text normalisation (NFKC, zero-width, markdown URLs)
+**File:** tests/unit/test_word_count.py::TestNormaliseText
+1. Pass fullwidth characters (U+FF21-FF23) through normalise_text
+2. Assert NFKC converts them to ASCII ("ABC")
+3. Pass text with zero-width spaces; assert they are stripped
+4. Pass markdown links `[text](url)` and images `![alt](url)`; assert URLs removed, text kept
+5. Edge cases: reference-style links preserved, multiple links, nested bold, only-zero-width chars become empty
+
+**Verifies:** Pre-tokenisation normalisation handles Unicode gaming vectors and markdown URL inflation
+
+### Script-based segmentation (Latin, Chinese, Japanese, Korean)
+**File:** tests/unit/test_word_count.py::TestSegmentByScript
+1. Pass pure English text; assert single ("latin", ...) segment
+2. Pass pure Chinese; assert single ("zh", ...) segment
+3. Pass Japanese with hiragana+kanji; assert single ("ja", ...) segment (neighbour resolution reclassifies adjacent kanji)
+4. Pass Korean hangul; assert single ("ko", ...) segment
+5. Pass mixed English+Chinese; assert two segments
+6. Pass mixed all-four-scripts; assert correct segmentation per codepoint ranges
+7. Edge cases: empty string, whitespace, CJK punctuation as latin, emoji as latin, standalone kanji without hiragana classified as zh
+
+**Verifies:** Unicode codepoints are correctly classified into script groups for per-script tokenisation
+
+### word_count() exact and CJK tolerance
+**File:** tests/unit/test_word_count.py::TestWordCount
+1. Pass "well-known fact"; assert 3 (hyphens split into separate words)
+2. Pass "write-like-this-to-game"; assert 5 (anti-gaming hyphen splitting)
+3. Pass empty string; assert 0
+4. Pass "42" (numbers only); assert 0
+5. Pass Chinese text; assert count in range 6-8 (jieba dictionary variance)
+6. Pass Japanese text; assert count in range 7-9 (MeCab dictionary variance)
+7. Pass Korean space-delimited text; assert exactly 4
+
+**Verifies:** Full pipeline (normalise -> segment -> tokenise -> filter -> count) produces correct counts with anti-gaming measures
+
+### Anti-gaming integration
+**File:** tests/unit/test_word_count.py::TestWordCountAntiGaming
+1. Pass mixed English+Japanese; assert count >= 5 (both segments counted)
+2. Pass markdown link; assert count == 2 (URL excluded, link text counted)
+3. Pass text with zero-width space between words; assert merged to 1 word
+4. Pass fullwidth text; assert NFKC normalises before counting
+5. Pass combined anti-gaming text; assert correct count
+6. Pass pure punctuation; assert 0 words
+7. Pass mixed CJK+English; assert >= 3
+
+**Verifies:** Anti-gaming measures (zero-width stripping, NFKC, URL removal, hyphen splitting) work in combination
+
+## Word Count -- Model Fields
+
+### Activity word count field defaults
+**File:** tests/unit/test_word_count_models.py::TestActivityWordCountFields
+1. Create Activity with no overrides
+2. Assert word_minimum=None, word_limit=None, word_limit_enforcement=None
+3. Create Activity with explicit positive integers; verify they are stored
+4. Create Activity with enforcement=True/False/None; verify tri-state
+
+**Verifies:** Activity model accepts word count fields with correct defaults (all nullable)
+
+### Course word count field defaults
+**File:** tests/unit/test_word_count_models.py::TestCourseWordCountFields
+1. Create Course with defaults
+2. Assert default_word_limit_enforcement is False
+3. Create Course with default_word_limit_enforcement=True; verify stored
+
+**Verifies:** Course carries the enforcement default that activities inherit via resolve_tristate
+
+### Cross-field validation (word_minimum vs word_limit)
+**File:** tests/unit/test_word_count_models.py::TestWordCountValidation
+1. Call validate_word_count_limits with minimum=500, limit=200; assert ValueError
+2. Call with minimum=500, limit=500 (equal); assert ValueError
+3. Call with minimum=200, limit=500; assert no error
+4. Call with one or both None; assert no error
+
+**Verifies:** Setting word_minimum >= word_limit is rejected at the validation layer
+
+### Tri-state UI helper existence
+**File:** tests/unit/test_word_count_models.py::TestActivityTriStateConfig
+1. Import _tri_state_options from pages.courses
+2. Call with "Hard", "Soft" labels; verify keys "on", "off", "inherit" exist
+
+**Verifies:** Activity settings UI uses the standard tri-state pattern for enforcement
+
+## Word Count -- Badge Formatting
+
+### Badge text and CSS classes
+**File:** tests/unit/test_word_count_badge.py::TestFormatWordCountBadge
+1. Call format_word_count_badge with various (count, min, limit) combos
+2. Assert neutral badge text includes comma-formatted count and limit
+3. Assert amber badge appears at 90% of limit ("approaching limit")
+4. Assert red badge for over limit ("over limit") or below minimum ("below minimum")
+5. Assert CSS classes match _NEUTRAL, _AMBER, or _RED constants
+
+**Verifies:** Badge state correctly represents word count status with visual severity
+
+### Badge edge cases
+**File:** tests/unit/test_word_count_badge.py::TestBadgeEdgeCases
+1. Zero count with various limit configs
+2. Exactly-at-limit is red (over)
+3. Exactly 90% is amber; just below 90% is neutral
+4. Both limits set with count below minimum
+
+**Verifies:** Boundary conditions at limit thresholds produce correct badge states
+
+### Badge with both min and max limits
+**File:** tests/unit/test_word_count_badge.py::TestBadgeCombinedMinMax
+1. Count below minimum -> red
+2. Count within range -> neutral
+3. Count approaching limit -> amber
+4. Count over limit -> red
+
+**Verifies:** Combined min+max configuration shows correct badge at each threshold
+
+## Word Count -- Enforcement (Export-Time)
+
+### Violation detection (check_word_count_violation)
+**File:** tests/unit/test_word_count_enforcement.py::TestCheckWordCountViolation
+1. count=150, limit=100 -> over_limit=True, over_by=50
+2. count=50, min=100 -> under_minimum=True, under_by=50
+3. count=150, min=100, limit=200 -> no violation
+4. No limits -> no violation
+5. At exactly limit (count==limit) -> over_limit=True (at-limit is over)
+6. At exactly minimum (count==minimum) -> not under (at-minimum is OK)
+7. Violation preserves count, min, limit values
+
+**Verifies:** Pure function correctly detects over-limit and under-minimum violations
+
+### Violation message formatting
+**File:** tests/unit/test_word_count_enforcement.py::TestFormatViolationMessage
+1. Over-limit violation -> message includes limit and current count
+2. Under-minimum violation -> message includes minimum and current count
+3. Both violated (synthetic) -> combined message
+4. Large count -> comma-separated formatting
+5. No violation -> empty string
+
+**Verifies:** Human-readable violation messages for export-time dialogs
+
+### AC7: Enforcement only imported by export code
+**File:** tests/unit/test_word_count_enforcement.py::TestAC7NonBlockingBehaviour
+1. Import promptgrimoire.crdt; assert no enforcement symbols (AC7.1: save path clean)
+2. Import pages.annotation.respond; assert no enforcement symbols (AC7.2: edit path clean)
+3. Import db.acl; assert no enforcement symbols (AC7.3: share path clean)
+4. Import pages.annotation.pdf_export; assert enforcement symbols present (AC7.4: export uses it)
+
+**Verifies:** Word count enforcement is architecturally isolated to export -- save/edit/share paths never block on word count
+
+## Word Count -- PDF Snitch Badge
+
+### LaTeX badge generation
+**File:** tests/unit/test_word_count_pdf_badge.py::TestBuildWordCountBadge
+1. Over limit -> red fcolorbox with "Word Count: N / N (Exceeded)"
+2. Within limits -> italic neutral line with "Word Count: N / N"
+3. No limits -> empty string
+4. Under minimum -> red fcolorbox with "(Below Minimum)"
+5. At exactly limit -> red badge
+6. At exactly minimum -> neutral badge
+7. Both limits within range -> neutral showing max
+8. Badge includes vspace for separation
+
+**Verifies:** LaTeX export produces correct visual badge (red box or neutral italic) based on violation state
+
+## Word Count -- PageState Fields
+
+### PageState word count defaults
+**File:** tests/unit/test_page_state_word_count.py::TestPageStateWordCountDefaults
+1. Create PageState with only workspace_id
+2. Assert word_minimum=None, word_limit=None, word_limit_enforcement=False, word_count_badge=None
+
+**Verifies:** PageState fields have safe defaults when no limits configured
+
+### PageState explicit values
+**File:** tests/unit/test_page_state_word_count.py::TestPageStateWordCountExplicit
+1. Set word_minimum=500; assert stored
+2. Set word_limit=1500; assert stored
+3. Set word_limit_enforcement=True; assert stored
+4. Set all three together; assert all stored, badge still None
+
+**Verifies:** PageState accepts word count fields from PlacementContext resolution
+
+## Word Count -- PlacementContext Resolution (Integration)
+
+### Enforcement tri-state resolution
+**File:** tests/integration/test_word_count_placement.py::TestPlacementContextWordCountResolution
+1. Activity enforcement=True, course default=False -> ctx.word_limit_enforcement=True
+2. Activity enforcement=None, course default=False -> ctx.word_limit_enforcement=False (inherited)
+3. Activity enforcement=False, course default=True -> ctx.word_limit_enforcement=False (override wins)
+4. Activity with no word count fields -> all None/default
+
+**Verifies:** resolve_tristate correctly resolves activity-level override vs course-level default for enforcement
+
+### Edge cases: course-placed, loose, partial configs
+**File:** tests/integration/test_word_count_placement.py::TestPlacementContextWordCountEdgeCases
+1. Course-placed workspace -> word_minimum/limit=None, enforcement from course default
+2. Loose workspace -> no limits, enforcement=False
+3. Activity with minimum-only -> word_limit stays None
+4. Activity with limit-only -> word_minimum stays None
+
+**Verifies:** Placement resolution handles all workspace placement types and partial limit configurations
+
+### update_activity() word count support
+**File:** tests/integration/test_word_count_placement.py::TestUpdateActivityWordCountFields
+1. Set word_minimum via update_activity; read back
+2. Set word_limit; read back
+3. Set enforcement=True; read back
+4. Reset enforcement to None (inherit); read back
+5. Set minimum >= limit -> ValueError
+6. Update only one field when other already set, exceeding limit -> ValueError
+7. Omit word count params; verify existing values preserved
+
+**Verifies:** update_activity() correctly handles word count CRUD with cross-field validation
+
+## Word Count -- PageState from PlacementContext (Integration)
+
+### PlacementContext fields propagate to PageState
+**File:** tests/integration/test_pagestate_word_count.py::TestPageStateWordCountFromPlacementContext
+1. Seed activity with word_limit=500; create workspace; get PlacementContext
+2. Construct PageState with ctx fields; assert word_limit=500, others default
+3. Seed with word_minimum=100; assert word_minimum=100 in PageState
+4. Seed with all three fields; assert all propagate
+5. Seed with no limits; assert PageState has defaults
+
+**Verifies:** Data path from Activity -> PlacementContext -> PageState correctly carries word count configuration
+
+## Word Count -- E2E
+
+### Activity settings UI
+**File:** tests/e2e/test_word_count.py::TestWordCountSettings
+1. Create course and activity via UI
+2. Open activity settings dialog
+3. Fill word minimum input (data-testid="activity-word-minimum-input") with "200"
+4. Fill word limit input (data-testid="activity-word-limit-input") with "500"
+5. Select enforcement "Hard" from tri-state dropdown
+6. Save settings; verify dialog closes
+7. Reload page; reopen settings; verify values persisted
+8. Toggle course-level default word limit enforcement; reload; verify persisted
+
+**Verifies:** Word count settings round-trip through the activity settings dialog and survive page reloads
+
+### Soft enforcement warning on export
+**File:** tests/e2e/test_word_count.py::TestWordCountExport::test_soft_enforcement_warning
+1. Create workspace with word_limit=10, enforcement=False (soft), HTML content
+2. Navigate to annotation page
+3. Trigger PDF export
+4. Assert warning dialog appears (not blocking)
+5. Confirm export proceeds
+
+**Verifies:** Soft enforcement shows a dismissable warning but allows export to continue

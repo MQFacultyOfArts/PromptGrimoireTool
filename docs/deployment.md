@@ -85,7 +85,19 @@ sudo apt install -y \
   unattended-upgrades apt-listchanges \
   pandoc \
   curl \
-  fontconfig
+  fontconfig \
+  mecab libmecab-dev
+
+### MeCab (word count)
+
+`mecab` and `libmecab-dev` provide the C library and headers for Japanese word segmentation (used by `mecab-python3`). The Python dictionary (`unidic-lite`) is installed automatically by `uv sync`. Two failure modes at app startup:
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `ImportError: MeCab is required for Japanese word counting` | `libmecab.so` not on system | `apt install mecab libmecab-dev` |
+| `RuntimeError: MeCab is installed but could not be initialised` | Library present but no dictionary found | `uv sync` (installs `unidic-lite`) or `apt install mecab-ipadic-utf8` |
+
+Both errors appear in `journalctl -u promptgrimoire` at startup and prevent the app from loading.
 
 # rclone — install from upstream (apt version lags badly)
 curl https://rclone.org/install.sh | sudo bash

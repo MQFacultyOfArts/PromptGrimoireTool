@@ -93,6 +93,7 @@ async def update_course(
     default_allow_sharing: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
     default_anonymous_sharing: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
     default_allow_tag_creation: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
+    default_word_limit_enforcement: bool = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
 ) -> Course | None:
     """Update a course's mutable fields.
 
@@ -101,6 +102,8 @@ async def update_course(
     Pass default_allow_sharing=True/False to change, or omit to leave unchanged.
     Pass default_anonymous_sharing=True/False to change, or omit to leave unchanged.
     Pass default_allow_tag_creation=True/False to change, or omit to leave unchanged.
+    Pass default_word_limit_enforcement=True/False to change, or omit to
+    leave unchanged.
 
     Args:
         course_id: The course UUID.
@@ -112,6 +115,8 @@ async def update_course(
         default_anonymous_sharing: New default anonymous sharing value,
             or omit (Ellipsis) to leave unchanged.
         default_allow_tag_creation: New default tag creation permission,
+            or omit (Ellipsis) to leave unchanged.
+        default_word_limit_enforcement: New default word limit enforcement,
             or omit (Ellipsis) to leave unchanged.
 
     Returns:
@@ -131,6 +136,8 @@ async def update_course(
             course.default_anonymous_sharing = default_anonymous_sharing
         if default_allow_tag_creation is not ...:
             course.default_allow_tag_creation = default_allow_tag_creation
+        if default_word_limit_enforcement is not ...:
+            course.default_word_limit_enforcement = default_word_limit_enforcement
         session.add(course)
         await session.flush()
         await session.refresh(course)

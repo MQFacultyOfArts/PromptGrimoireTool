@@ -135,6 +135,22 @@ class PlacementContext:
 
     True = students can create tags.
     """
+    word_minimum: int | None = None
+    """Resolved minimum word count.
+
+    None = no minimum enforced. Passes through from Activity directly.
+    """
+    word_limit: int | None = None
+    """Resolved maximum word count.
+
+    None = no limit enforced. Passes through from Activity directly.
+    """
+    word_limit_enforcement: bool = False
+    """Resolved word limit enforcement mode.
+
+    True = hard (block submit), False = soft (warn only).
+    Resolved via resolve_tristate from Activity override and Course default.
+    """
     course_id: UUID | None = None
     """Course UUID for activity-placed workspaces.
 
@@ -244,6 +260,11 @@ async def _resolve_activity_placement(
         allow_tag_creation=resolve_tristate(
             activity.allow_tag_creation, course.default_allow_tag_creation
         ),
+        word_minimum=activity.word_minimum,
+        word_limit=activity.word_limit,
+        word_limit_enforcement=resolve_tristate(
+            activity.word_limit_enforcement, course.default_word_limit_enforcement
+        ),
         course_id=course.id,
     )
 
@@ -267,6 +288,7 @@ async def _resolve_course_placement(
         copy_protection=course.default_copy_protection,
         allow_sharing=course.default_allow_sharing,
         anonymous_sharing=course.default_anonymous_sharing,
+        word_limit_enforcement=course.default_word_limit_enforcement,
     )
 
 

@@ -23,6 +23,7 @@ from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
+from promptgrimoire.word_count_enforcement import check_word_count_violation
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +272,65 @@ def _get_export_dir(user_id: str) -> Path:
     return export_dir
 
 
+def _red_badge(label: str) -> str:
+    """Return a red ``\\fcolorbox`` LaTeX snippet with *label* in bold."""
+    return (
+        r"\noindent\fcolorbox{red}{red!10}{%"
+        "\n"
+        r"\parbox{\dimexpr\textwidth-2\fboxsep-2\fboxrule}{%"
+        "\n"
+        rf"\textcolor{{red}}{{\textbf{{{label}}}}}"
+        "%\n"
+        r"}}"
+        "\n"
+        r"\vspace{1em}"
+        "\n"
+    )
+
+
+def _build_word_count_badge(
+    count: int,
+    word_minimum: int | None,
+    word_limit: int | None,
+) -> str:
+    """Build a LaTeX word count badge for the PDF export.
+
+    Returns a LaTeX snippet to prepend before the document body:
+    - Red ``\\fcolorbox`` for violations (over limit or below minimum).
+    - Neutral italic line when within limits.
+    - Empty string when no limits are configured.
+
+    Delegates violation detection to
+    :func:`~promptgrimoire.word_count_enforcement.check_word_count_violation`
+    so the rules are defined in exactly one place.
+
+    Args:
+        count: Current word count.
+        word_minimum: Minimum word count threshold, or None.
+        word_limit: Maximum word count threshold, or None.
+
+    Returns:
+        LaTeX snippet (may be empty).
+    """
+    if word_limit is None and word_minimum is None:
+        return ""
+
+    violation = check_word_count_violation(count, word_minimum, word_limit)
+
+    # Determine the denominator for the "X / Y" display
+    denominator = word_limit if word_limit is not None else word_minimum
+
+    if violation.over_limit:
+        return _red_badge(f"Word Count: {count:,} / {denominator:,} (Exceeded)")
+
+    if violation.under_minimum:
+        return _red_badge(f"Word Count: {count:,} / {denominator:,} (Below Minimum)")
+
+    # Within limits -- neutral italic line
+    label = f"Word Count: {count:,} / {denominator:,}"
+    return r"\noindent\textit{" + label + "}\n" + r"\vspace{1em}" + "\n"
+
+
 async def generate_tex_only(
     html_content: str,
     highlights: list[dict[str, Any]],
@@ -280,6 +340,10 @@ async def generate_tex_only(
     notes_latex: str = "",
     word_to_legal_para: dict[int, int | None] | None = None,
     filename: str = "annotated_document",
+    *,
+    word_count: int | None = None,
+    word_minimum: int | None = None,
+    word_limit: int | None = None,
 ) -> Path:
     """Generate a .tex file from HTML + annotations without compiling to PDF.
 
@@ -299,6 +363,9 @@ async def generate_tex_only(
             ``general_notes`` when non-empty.
         word_to_legal_para: Optional mapping for paragraph references.
         filename: Base name for the output file (without extension).
+        word_count: Word count to display in the snitch badge (keyword-only).
+        word_minimum: Minimum word count threshold (keyword-only).
+        word_limit: Maximum word count threshold (keyword-only).
 
     Returns:
         Path to the generated .tex file.
@@ -327,6 +394,12 @@ async def generate_tex_only(
         filter_paths=[_LIBREOFFICE_FILTER],
         word_to_legal_para=word_to_legal_para,
     )
+
+    # Prepend word count badge if word count info is provided
+    if word_count is not None:
+        badge = _build_word_count_badge(word_count, word_minimum, word_limit)
+        if badge:
+            latex_body = badge + latex_body
 
     # Build general notes section (before preamble so notes text is
     # included in script detection for dynamic font loading)
@@ -362,6 +435,10 @@ async def export_annotation_pdf(
     output_dir: Path | None = None,
     user_id: str | None = None,
     filename: str = "annotated_document",
+    *,
+    word_count: int | None = None,
+    word_minimum: int | None = None,
+    word_limit: int | None = None,
 ) -> Path:
     """Generate PDF with annotations from live annotation data.
 
@@ -382,6 +459,9 @@ async def export_annotation_pdf(
         user_id: Optional user identifier for scoped temp directory.
             If provided, creates a per-user export dir that is cleaned on reuse.
         filename: Base name for the output PDF file (without extension).
+        word_count: Word count to display in the snitch badge (keyword-only).
+        word_minimum: Minimum word count threshold (keyword-only).
+        word_limit: Maximum word count threshold (keyword-only).
 
     Returns:
         Path to the generated PDF file.
@@ -407,6 +487,9 @@ async def export_annotation_pdf(
         notes_latex=notes_latex,
         word_to_legal_para=word_to_legal_para,
         filename=filename,
+        word_count=word_count,
+        word_minimum=word_minimum,
+        word_limit=word_limit,
     )
 
     # Compile to PDF

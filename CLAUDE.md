@@ -132,6 +132,8 @@ src/promptgrimoire/
 │   ├── roles.py         # Cached staff role queries
 │   └── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 ├── crdt/                # pycrdt collaboration logic
+├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
+├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 └── static/              # JS/CSS assets
 

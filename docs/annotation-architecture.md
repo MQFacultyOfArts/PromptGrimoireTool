@@ -1,8 +1,8 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-01*
+*Last updated: 2026-03-03*
 
-The annotation page (`pages/annotation/`) is a 20-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 22-module package split from a monolith.
 
 ## Layout
 
@@ -46,6 +46,15 @@ Definition-before-import ordering is **critical** in `__init__.py`. The sequence
 4. Define `annotation_page()` -- uses imported functions
 
 Do not reorder. Types must be defined before submodule imports to resolve circular dependencies (e.g. `workspace.py` imports `PageState` from `__init__`). No `PLC0415` lint suppression is used; the ordering makes late imports unnecessary.
+
+## Word Count Integration
+
+Two new modules support word count limits in the annotation page:
+
+- `word_count_badge.py` -- Pure functions. `format_word_count_badge(count, word_minimum, word_limit)` returns a `BadgeState` (text + CSS classes) for the header badge. Colour logic: red (over limit or below minimum), amber (approaching limit at 90%), neutral (within range).
+- `word_count_enforcement.py` -- Re-export shim. The canonical implementation lives at `src/promptgrimoire/word_count_enforcement.py` (package root). This shim keeps annotation-package imports working. Only export-related code may import enforcement symbols (AC7 guard tests enforce this).
+
+`PageState` carries four word count fields populated from `PlacementContext` during `_resolve_workspace_context()`: `word_minimum`, `word_limit`, `word_limit_enforcement`, and `word_count_badge` (the live `ui.label` element). The badge updates on every keystroke in the respond tab via `word_count()` from `src/promptgrimoire/word_count.py`.
 
 ## Guard Tests
 

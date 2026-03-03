@@ -31,6 +31,10 @@ dependencies = [
     "emoji>=2.0.0",
     "lxml>=6.0",
     "coolname>=3.0.0",
+    "uniseg>=0.10.1",
+    "jieba>=0.42.1",
+    "mecab-python3>=1.0.12",
+    "unidic-lite>=1.0.8",
 ]
 
 [project.scripts]

@@ -27,12 +27,15 @@ from typing import TYPE_CHECKING, Any
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
+from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
+from promptgrimoire.word_count import word_count
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = logging.getLogger(__name__)
@@ -353,12 +356,13 @@ def _setup_yjs_event_handler(
     workspace_id: UUID,
     client_id: str,
     on_yjs_update_broadcast: Any,
+    state: PageState,
 ) -> None:
     """Register the NiceGUI event handler for Yjs updates from the Milkdown editor.
 
     Receives base64-encoded Yjs updates from the browser, applies them to the
-    server-side CRDT Doc, broadcasts to other clients, and syncs the markdown
-    mirror to the CRDT Text field.
+    server-side CRDT Doc, broadcasts to other clients, syncs the markdown
+    mirror to the CRDT Text field, and updates the word count badge.
 
     Args:
         crdt_doc: The CRDT annotation document.
@@ -367,6 +371,7 @@ def _setup_yjs_event_handler(
         client_id: This client's unique ID (for echo prevention).
         on_yjs_update_broadcast: Callable(b64_update, origin_client_id) to
             broadcast Yjs updates to other clients.
+        state: PageState containing word count limits and badge reference.
     """
 
     async def on_yjs_update(e: object) -> None:
@@ -385,6 +390,15 @@ def _setup_yjs_event_handler(
         )
         # Sync markdown mirror to CRDT Text field for server-side access
         await _sync_markdown_to_crdt(crdt_doc, workspace_key, client_id)
+        # Update word count badge if limits configured
+        if state.word_count_badge is not None:
+            markdown = str(crdt_doc.response_draft_markdown)
+            count = word_count(markdown)
+            badge_state = format_word_count_badge(
+                count, state.word_minimum, state.word_limit
+            )
+            state.word_count_badge.set_text(badge_state.text)
+            state.word_count_badge.classes(replace=badge_state.css_classes)
         # Persist CRDT state to database (debounced by persistence manager)
         pm = get_persistence_manager()
         pm.mark_dirty_workspace(
@@ -405,6 +419,8 @@ async def render_respond_tab(
     client_id: str,
     on_yjs_update_broadcast: Any,
     on_locate: Callable[..., Any] | None = None,
+    *,
+    state: PageState,
 ) -> tuple[Callable[[], None], Callable[[], Any]]:
     """Populate the Respond tab panel with Milkdown editor and reference panel.
 
@@ -427,6 +443,8 @@ async def render_respond_tab(
             broadcast Yjs updates to other clients.
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
+        state: PageState containing word count limits and badge reference,
+            passed through to the Yjs event handler for live badge updates.
 
     Returns:
         A tuple of (refresh_references, sync_markdown):
@@ -503,7 +521,12 @@ async def render_respond_tab(
             ).classes("w-full").style("display: flex; flex-direction: column; flex: 1;")
 
     _setup_yjs_event_handler(
-        crdt_doc, workspace_key, workspace_id, client_id, on_yjs_update_broadcast
+        crdt_doc,
+        workspace_key,
+        workspace_id,
+        client_id,
+        on_yjs_update_broadcast,
+        state=state,
     )
 
     # Wait for WebSocket, then initialize the editor

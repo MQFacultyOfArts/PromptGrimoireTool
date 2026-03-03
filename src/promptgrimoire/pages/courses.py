@@ -58,6 +58,7 @@ from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
     get_user_workspace_for_activity,
+    has_student_workspaces,
     resolve_tristate,
 )
 from promptgrimoire.pages.layout import page_layout
@@ -182,6 +183,34 @@ async def _start_activity_handler(aid: UUID) -> None:
     ui.navigate.to(f"/annotation?{qs}")
 
 
+async def _handle_edit_template(activity_id: UUID, template_workspace_id: UUID) -> None:
+    """Navigate to template workspace, showing clone warning if students have cloned."""
+    qs = urlencode({"workspace_id": str(template_workspace_id)})
+    count = await has_student_workspaces(activity_id)
+    if not count:
+        ui.navigate.to(f"/annotation?{qs}")
+        return
+
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes("w-96").props('data-testid="template-clone-warning-dialog"'),
+    ):
+        ui.label(
+            f"{count} student(s) have cloned this template. "
+            "Changes won't propagate to existing copies."
+        ).classes("text-body1")
+        with ui.row().classes("justify-end w-full gap-2 mt-4"):
+            ui.button(
+                "Cancel",
+                on_click=dialog.close,
+            ).props('flat data-testid="template-clone-warning-cancel-btn"')
+            ui.button(
+                "Continue",
+                on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
+            ).props('color=primary data-testid="template-clone-warning-continue-btn"')
+    dialog.open()
+
+
 def _render_activity_row(
     act: Activity,
     *,
@@ -204,11 +233,12 @@ def _render_activity_row(
             has_content = act.template_workspace_id in populated_templates
             btn_label = "Edit Template" if has_content else "Create Template"
             btn_icon = "edit" if has_content else "add"
-            _qs = urlencode({"workspace_id": str(act.template_workspace_id)})
             ui.button(
                 btn_label,
                 icon=btn_icon,
-                on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
+                on_click=lambda a=act: _handle_edit_template(
+                    a.id, a.template_workspace_id
+                ),
             ).props(
                 f"unelevated color=blue-1 text-color=primary dense"
                 f' data-testid="template-btn-{act.id}"'

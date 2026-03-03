@@ -40,3 +40,28 @@ def test_css_file_path_is_under_static_dir() -> None:
     assert "static" in _CSS_FILE.parts, f"CSS file not under static/: {_CSS_FILE}"
     # Also check it's a .css file
     assert _CSS_FILE.suffix == ".css"
+
+
+def test_handle_edit_template_exists_and_is_async() -> None:
+    """_handle_edit_template must be an async function with correct signature."""
+    import inspect
+
+    from promptgrimoire.pages.courses import _handle_edit_template
+
+    assert inspect.iscoroutinefunction(_handle_edit_template), (
+        "_handle_edit_template must be an async function"
+    )
+    sig = inspect.signature(_handle_edit_template)
+    param_names = list(sig.parameters.keys())
+    assert param_names == ["activity_id", "template_workspace_id"], (
+        f"Expected (activity_id, template_workspace_id), got {param_names}"
+    )
+
+
+def test_has_student_workspaces_imported() -> None:
+    """courses module must import has_student_workspaces from db.workspaces."""
+    import promptgrimoire.pages.courses as mod
+
+    assert hasattr(mod, "has_student_workspaces"), (
+        "courses module does not import has_student_workspaces"
+    )

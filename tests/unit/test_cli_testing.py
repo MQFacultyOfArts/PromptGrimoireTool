@@ -241,6 +241,160 @@ class TestXdistWorkerCount:
 
 
 # ---------------------------------------------------------------------------
+# _stream_plain output filtering
+# ---------------------------------------------------------------------------
+class TestStreamPlain:
+    """_stream_plain suppresses pre-summary output except FAILED/ERROR."""
+
+    def _make_mock_process(self, lines: list[str], returncode: int = 0):
+        """Create a mock Popen with stdout as a list of lines."""
+        from unittest.mock import MagicMock
+
+        proc = MagicMock()
+        proc.stdout = lines
+        proc.returncode = returncode
+        proc.wait.return_value = None
+        return proc
+
+    def test_failed_line_printed_before_summary(self, capsys) -> None:
+        import io
+
+        from promptgrimoire.cli.testing import _stream_plain
+
+        lines = [
+            "===== test session starts =====\n",
+            "tests/unit/test_foo.py::test_bar PASSED\n",
+            "tests/unit/test_baz.py::test_qux FAILED\n",
+            "===== 1 failed =====\n",
+            "FAILURES\n",
+        ]
+        proc = self._make_mock_process(lines)
+        log = io.StringIO()
+        _stream_plain(proc, log)
+
+        out = capsys.readouterr().out
+        assert "FAILED" in out
+        assert "PASSED" not in out
+
+    def test_lines_suppressed_before_second_separator(self, capsys) -> None:
+        import io
+
+        from promptgrimoire.cli.testing import _stream_plain
+
+        lines = [
+            "===== test session starts =====\n",
+            "collecting ... collected 5 items\n",
+            "tests/test_a.py::test_1 PASSED\n",
+        ]
+        proc = self._make_mock_process(lines)
+        log = io.StringIO()
+        _stream_plain(proc, log)
+
+        out = capsys.readouterr().out
+        assert "collecting" not in out
+        assert "PASSED" not in out
+
+    def test_all_lines_printed_after_second_separator(self, capsys) -> None:
+        import io
+
+        from promptgrimoire.cli.testing import _stream_plain
+
+        lines = [
+            "===== test session starts =====\n",
+            "tests/test_a.py PASSED\n",
+            "===== 1 passed =====\n",
+            "summary details here\n",
+        ]
+        proc = self._make_mock_process(lines)
+        log = io.StringIO()
+        _stream_plain(proc, log)
+
+        out = capsys.readouterr().out
+        assert "1 passed" in out
+        assert "summary details" in out
+
+    def test_all_lines_written_to_log(self) -> None:
+        import io
+
+        from promptgrimoire.cli.testing import _stream_plain
+
+        lines = ["line1\n", "line2\n", "line3\n"]
+        proc = self._make_mock_process(lines)
+        log = io.StringIO()
+        _stream_plain(proc, log)
+
+        assert log.getvalue() == "line1\nline2\nline3\n"
+
+
+# ---------------------------------------------------------------------------
+# _dispatch_progress_line phase-state-machine
+# ---------------------------------------------------------------------------
+class TestDispatchProgressLine:
+    """_dispatch_progress_line routes lines through collecting/running/summary."""
+
+    def test_summary_phase_passthrough(self, capsys) -> None:
+        from unittest.mock import MagicMock
+
+        from rich.progress import TaskID
+
+        from promptgrimoire.cli.testing import _dispatch_progress_line
+
+        progress = MagicMock()
+        phase, _count, _done = _dispatch_progress_line(
+            "summary line",
+            "summary line\n",
+            "summary",
+            None,
+            0,
+            progress,
+            TaskID(0),
+        )
+        assert phase == "summary"
+        out = capsys.readouterr().out
+        assert "summary line" in out
+
+    def test_collecting_to_running_transition(self) -> None:
+        from unittest.mock import MagicMock
+
+        from rich.progress import TaskID
+
+        from promptgrimoire.cli.testing import _dispatch_progress_line
+
+        progress = MagicMock()
+        phase, count, _done = _dispatch_progress_line(
+            "collected 42 items",
+            "collected 42 items\n",
+            "collecting",
+            None,
+            0,
+            progress,
+            TaskID(0),
+        )
+        assert phase == "running"
+        assert count == 42
+
+    def test_running_to_summary_transition(self) -> None:
+        from unittest.mock import MagicMock
+
+        from rich.progress import TaskID
+
+        from promptgrimoire.cli.testing import _dispatch_progress_line
+
+        progress = MagicMock()
+        phase, _count, _done = _dispatch_progress_line(
+            "=" * 20,
+            "=" * 20 + "\n",
+            "running",
+            10,
+            5,
+            progress,
+            TaskID(0),
+        )
+        assert phase == "summary"
+        progress.stop.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Typer command --help
 # ---------------------------------------------------------------------------
 class TestTestCommandHelp:

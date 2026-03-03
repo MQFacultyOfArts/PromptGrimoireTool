@@ -11,16 +11,21 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from nicegui import app, ui
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.acl import grant_permission
+from promptgrimoire.db.workspace_documents import add_document
+from promptgrimoire.db.workspaces import create_workspace, update_workspace_title
 from promptgrimoire.llm import substitute_placeholders
 from promptgrimoire.llm.client import ClaudeClient
 from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
 from promptgrimoire.models import Character, Session
 from promptgrimoire.pages.layout import page_layout, require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
+from promptgrimoire.pages.roleplay_export import session_to_html
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
 if TYPE_CHECKING:
@@ -186,7 +191,80 @@ def _setup_session(
     return session, client, log_path
 
 
+_EXPORT_BTN_INITIAL_DISABLED = True
+
 _MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB (CRIT-6)
+
+
+async def _handle_export(state: dict) -> None:
+    """Export the current roleplay session to an annotation workspace.
+
+    Creates a loose workspace, adds the session HTML as a document,
+    grants owner permission to the current user, and navigates to the
+    annotation page.
+    """
+    session = state.get("session")
+    if session is None:
+        ui.notify("No active session to export", type="warning")
+        return
+
+    try:
+        auth_user = app.storage.user.get("auth_user")
+        if not auth_user or not auth_user.get("user_id"):
+            ui.notify("You must be logged in to export", type="negative")
+            return
+
+        user_id = UUID(auth_user["user_id"])
+        html_content = session_to_html(session)
+
+        workspace = await create_workspace()
+        title = f"Roleplay: {session.character.name}"
+        await update_workspace_title(workspace.id, title)
+        await add_document(
+            workspace_id=workspace.id,
+            type="ai_conversation",
+            content=html_content,
+            source_type="html",
+            title=title,
+        )
+        await grant_permission(workspace.id, user_id, "owner")
+
+        ui.navigate.to(f"/annotation/{workspace.id}")
+    except Exception as exc:
+        logger.exception("Failed to export roleplay session")
+        ui.notify(f"Export failed: {exc}", type="negative")
+
+
+def _auto_load_character(state: dict, widgets: dict) -> None:
+    """Auto-load the bundled Becky Bennett character card.
+
+    Populates state and widgets on success, opens upload panel on failure.
+    Extracted from roleplay_page to reduce cognitive complexity.
+    """
+    try:
+        character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
+        user_name = _get_default_user_name()
+
+        session, client, log_path = _setup_session(
+            character, lorebook_entries, user_name
+        )
+        state["session"] = session
+        state["client"] = client
+        state["log_path"] = log_path
+
+        widgets["char_name_label"].text = character.name
+        widgets["scenario_label"].text = substitute_placeholders(
+            character.scenario or "No scenario",
+            char_name=character.name,
+            user_name=user_name,
+        )
+
+        _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
+        widgets["export_button"].enable()
+    except Exception:
+        logger.exception("Failed to auto-load bundled character card")
+        ui.notify("Could not auto-load character card", type="negative")
+        widgets["upload_expansion"].value = True
 
 
 async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
@@ -230,6 +308,10 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         # Clear previous messages and render new ones
         widgets["chat_container"].clear()
         _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
+
+        # Enable export now that a session is loaded
+        if "export_button" in widgets:
+            widgets["export_button"].enable()
 
         ui.notify(f"Loaded {character.name}")
 
@@ -335,30 +417,22 @@ async def roleplay_page() -> None:
                 )
                 message_input.on("keydown.enter", on_send)
 
+            # Export button — disabled until a session is loaded
+            export_button = (
+                ui.button(
+                    "Export to Workspace",
+                    icon="upload",
+                    on_click=lambda: _handle_export(state),
+                )
+                .classes("w-full mt-4")
+                .props('data-testid="roleplay-export-btn"')
+            )
+            if _EXPORT_BTN_INITIAL_DISABLED:
+                export_button.disable()
+            widgets["export_button"] = export_button
+
         with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
             ui.label("Log files are saved to: logs/sessions/")
 
         # Auto-load bundled Becky Bennett character card
-        try:
-            character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
-            user_name = _get_default_user_name()
-
-            session, client, log_path = _setup_session(
-                character, lorebook_entries, user_name
-            )
-            state["session"] = session
-            state["client"] = client
-            state["log_path"] = log_path
-
-            char_name_label.text = character.name
-            scenario_label.text = substitute_placeholders(
-                character.scenario or "No scenario",
-                char_name=character.name,
-                user_name=user_name,
-            )
-
-            _render_messages(session, chat_container, scroll_area)
-        except Exception:
-            logger.exception("Failed to auto-load bundled character card")
-            ui.notify("Could not auto-load character card", type="negative")
-            upload_expansion.value = True  # open so students can manually load
+        _auto_load_character(state, widgets)

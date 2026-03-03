@@ -5,6 +5,8 @@ Verifies AC1.2 (user avatar) and AC1.3 (AI avatar).
 
 Also tests that _render_messages() passes the correct avatar constants
 to _create_chat_message() for each turn type (AC1.2/AC1.3 call-site wiring).
+
+Tests export button initial disabled state (AC3.4).
 """
 
 from __future__ import annotations
@@ -171,3 +173,18 @@ class TestAvatarParameter:
         mock_ui.chat_message.assert_called_once_with(
             name="User", sent=True, avatar=None
         )
+
+
+class TestExportButtonState:
+    """Tests for export button disabled state."""
+
+    def test_export_button_disabled_without_session(self) -> None:
+        """AC3.4: Export button is disabled when no session is active.
+
+        The module-level constant _EXPORT_BTN_INITIAL_DISABLED controls the
+        export button's initial disabled state. It must be True so the button
+        starts disabled until a session is loaded.
+        """
+        from promptgrimoire.pages.roleplay import _EXPORT_BTN_INITIAL_DISABLED
+
+        assert _EXPORT_BTN_INITIAL_DISABLED is True

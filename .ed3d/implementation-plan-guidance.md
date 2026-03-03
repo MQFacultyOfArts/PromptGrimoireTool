@@ -117,8 +117,9 @@ Commits trigger:
 2. `ruff format --check` - format
 3. `ty check` - type check
 4. `complexipy` - cognitive complexity gate (rejects functions > 15)
-5. `bandit` - security linting
-6. `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
+5. `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`
+
+**Note:** Security scanning is handled by ruff S rules (not standalone bandit). `pip-audit` scans for dependency vulnerabilities.
 
 **If pre-commit fails:** Fix the issue, stage the fix, create a NEW commit (don't amend).
 

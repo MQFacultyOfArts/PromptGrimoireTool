@@ -201,7 +201,10 @@ def _render_activity_row(
                 btn_label,
                 icon=btn_icon,
                 on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
-            ).props("flat dense size=sm color=secondary")
+            ).props(
+                f"flat dense size=sm color=secondary"
+                f' data-testid="template-btn-{act.id}"'
+            )
             ui.button(
                 "Activity Settings",
                 icon="settings",
@@ -216,12 +219,17 @@ def _render_activity_row(
                 "Resume",
                 icon="play_arrow",
                 on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
-            ).props("flat dense size=sm color=primary")
+            ).props(
+                f'flat dense size=sm color=primary data-testid="resume-btn-{ws.id}"'
+            )
         else:
             ui.button(
                 "Start Activity",
                 on_click=lambda a=act.id: _start_activity_handler(a),
-            ).props("flat dense size=sm color=primary")
+            ).props(
+                f"flat dense size=sm color=primary"
+                f' data-testid="start-activity-btn-{act.id}"'
+            )
 
     _render_peer_workspaces(peer_workspaces)
 
@@ -429,7 +437,9 @@ async def open_course_settings(course: Course) -> None:
             )
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-course-settings-btn"'
+            )
 
             async def save() -> None:
                 kwargs = {
@@ -547,7 +557,9 @@ async def open_activity_settings(activity: Activity) -> None:
             selects[attr] = sel
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-activity-settings-btn"'
+            )
 
             async def save() -> None:
                 kwargs: dict[str, Any] = {
@@ -748,7 +760,9 @@ async def create_course_page() -> None:
 
     with ui.row().classes("gap-2 mt-4"):
         ui.button("Create", on_click=submit).props('data-testid="create-course-btn"')
-        ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props("flat")
+        ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props(
+            'flat data-testid="cancel-create-course-btn"'
+        )
 
 
 def _render_course_action_bar(
@@ -1000,7 +1014,7 @@ async def create_week_page(course_id: str) -> None:
         ui.button("Create", on_click=submit).props('data-testid="create-week-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
-        ).props("flat")
+        ).props('flat data-testid="cancel-create-week-btn"')
 
 
 @ui.page("/courses/{course_id}/weeks/{week_id}/activities/new")
@@ -1075,7 +1089,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         ui.button("Create", on_click=submit).props('data-testid="create-activity-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
-        ).props("flat")
+        ).props('flat data-testid="cancel-create-activity-btn"')
 
 
 async def _render_enrollment_card(
@@ -1106,7 +1120,8 @@ async def _render_enrollment_card(
                     on_remove()
 
                 ui.button(icon="delete", on_click=remove).props(
-                    "flat round dense color=negative"
+                    f"flat round dense color=negative"
+                    f' data-testid="delete-enrollment-btn-{e.user_id}"'
                 )
 
 

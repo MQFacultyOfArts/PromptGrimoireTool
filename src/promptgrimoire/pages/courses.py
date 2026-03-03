@@ -189,6 +189,7 @@ def _render_activity_row(
     populated_templates: set[UUID],
     user_workspace_map: dict[UUID, Workspace],
     peer_workspaces: list[tuple[str, str, str]] | None = None,
+    on_edit: Callable[[Activity], Any] | None = None,
 ) -> None:
     """Render a single Activity row with buttons."""
     with (
@@ -212,6 +213,15 @@ def _render_activity_row(
                 f"unelevated color=blue-1 text-color=primary dense"
                 f' data-testid="template-btn-{act.id}"'
             )
+            if on_edit is not None:
+                ui.button(
+                    "Edit",
+                    icon="edit",
+                    on_click=lambda a=act: on_edit(a),
+                ).props(
+                    f"unelevated color=grey-2 text-color=grey-9 dense"
+                    f' data-testid="edit-activity-btn-{act.id}"'
+                )
             ui.button(
                 "Activity Settings",
                 icon="settings",
@@ -335,6 +345,7 @@ async def _render_week_activities(
     user_id: UUID,
     can_manage: bool,
     can_view_drafts: bool,
+    on_edit_activity: Callable[[Activity], Any] | None = None,
 ) -> None:
     """Render the activity list and 'Add Activity' button for a week."""
     activities = await list_activities_for_week(week.id)
@@ -356,6 +367,7 @@ async def _render_week_activities(
                     populated_templates=populated,
                     user_workspace_map=ws_map,
                     peer_workspaces=peer_map.get(act.id),
+                    on_edit=on_edit_activity,
                 )
     elif can_manage:
         ui.label("No activities yet").classes("text-xs text-gray-400 ml-4 mt-1")
@@ -681,6 +693,44 @@ async def open_edit_week(
     dialog.open()
 
 
+async def open_edit_activity(
+    activity: Activity,
+    course_id: UUID,  # noqa: ARG001 -- reserved for future validation
+    *,
+    on_save: Callable[[], Any],
+) -> None:
+    """Open a dialog to edit activity title and description."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Edit Activity").classes("text-lg font-bold")
+
+        title = ui.input("Title", value=activity.title).props(
+            'data-testid="edit-activity-title-input"'
+        )
+        description = ui.textarea(
+            "Description", value=activity.description or ""
+        ).props('data-testid="edit-activity-description-input"')
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-edit-activity-btn"'
+            )
+
+            async def save() -> None:
+                desc = description.value or None
+                await update_activity(activity.id, title=title.value, description=desc)
+                activity.title = title.value
+                activity.description = desc
+                dialog.close()
+                ui.notify("Activity updated", type="positive")
+                on_save()
+
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-edit-activity-btn"'
+            )
+
+    dialog.open()
+
+
 def _get_current_user() -> dict | None:
     """Get current authenticated user from session storage."""
     return app.storage.user.get("auth_user")
@@ -1001,6 +1051,10 @@ async def course_detail_page(course_id: str) -> None:
                     weeks_list.refresh()
                     _broadcast_weeks_refresh(cid, client_id)
 
+                def _on_activity_save() -> None:
+                    weeks_list.refresh()
+                    _broadcast_weeks_refresh(cid, client_id)
+
                 with ui.column().classes("gap-2 w-full max-w-2xl"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -1020,6 +1074,9 @@ async def course_detail_page(course_id: str) -> None:
                                 user_id=user_id,
                                 can_manage=can_manage,
                                 can_view_drafts=can_view_drafts,
+                                on_edit_activity=lambda a: open_edit_activity(
+                                    a, cid, on_save=_on_activity_save
+                                ),
                             )
 
             await weeks_list()

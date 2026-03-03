@@ -11,11 +11,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import promptgrimoire.cli_legacy as cli_module
+import promptgrimoire.cli.docs as cli_module
 
-# Guides directory that make_docs() will glob for pandoc PDF generation.
-# Must match make_docs()'s own: Path(__file__).resolve().parents[2] / "docs" / "guides"
-_guides_dir = Path(cli_module.__file__).resolve().parents[2] / "docs" / "guides"
+# Guides directory that build() will glob for pandoc PDF generation.
+# Depth [3] matches _make_docs_build_and_serve() in cli/docs.py.
+_guides_dir = Path(cli_module.__file__).resolve().parents[3] / "docs" / "guides"
 
 _GUIDE_NAMES = ("instructor-setup", "student-workflow", "your-personal-grimoire")
 
@@ -47,7 +47,6 @@ def _mock_happy_path():
     mock_pw.chromium.launch.return_value = mock_browser
 
     with (
-        patch("sys.argv", ["make-docs"]),
         patch("shutil.which", return_value="/usr/bin/pandoc"),
         patch.object(cli_module, "_pre_test_db_cleanup"),
         patch.object(
@@ -103,7 +102,7 @@ class TestMakeDocsServerLifecycle:
 
         mocks["start"].side_effect = _capture_env_on_start
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         mocks["start"].assert_called_once()
         (port,), _ = mocks["start"].call_args
@@ -114,7 +113,7 @@ class TestMakeDocsServerLifecycle:
     def test_launches_playwright_with_correct_viewport(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         mocks["sync_pw"].assert_called_once()
         mocks["pw"].chromium.launch.assert_called_once()
@@ -126,7 +125,7 @@ class TestMakeDocsServerLifecycle:
     def test_all_guides_called_with_page_and_base_url(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         for key in ("instructor", "student", "personal"):
             mocks[key].assert_called_once()
@@ -151,7 +150,7 @@ class TestMakeDocsOutputProduction:
 
         mocks["instructor"].side_effect = _create_instructor_output
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         assert md_file.exists()
         assert screenshot.exists()
@@ -174,7 +173,7 @@ class TestMakeDocsGuideOrder:
         mocks["student"].side_effect = _record("student")
         mocks["personal"].side_effect = _record("personal")
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         assert call_order == ["instructor", "student", "personal"]
 
@@ -187,7 +186,7 @@ class TestMakeDocsErrorHandling:
         mocks["instructor"].side_effect = RuntimeError("Guide failed")
 
         with pytest.raises(RuntimeError, match="Guide failed"):
-            cli_module.make_docs()
+            cli_module.build(action=None)
 
 
 class TestMakeDocsDependencyChecks:
@@ -195,14 +194,13 @@ class TestMakeDocsDependencyChecks:
 
     def test_exits_if_pandoc_missing(self, capsys):
         with (
-            patch("sys.argv", ["make-docs"]),
             patch("shutil.which", return_value=None),
             patch.object(cli_module, "_pre_test_db_cleanup"),
             patch.object(cli_module, "_start_e2e_server") as mock_start,
             patch.object(cli_module, "_stop_e2e_server"),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                cli_module.make_docs()
+                cli_module.build(action=None)
 
             assert exc_info.value.code == 1
             captured = capsys.readouterr()
@@ -216,7 +214,7 @@ class TestMakeDocsCleanup:
     def test_cleanup_on_success(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         mocks["browser"].close.assert_called_once()
         mocks["pw"].stop.assert_called_once()
@@ -227,7 +225,7 @@ class TestMakeDocsCleanup:
         mocks["instructor"].side_effect = RuntimeError("boom")
 
         with pytest.raises(RuntimeError):
-            cli_module.make_docs()
+            cli_module.build(action=None)
 
         mocks["browser"].close.assert_called_once()
         mocks["pw"].stop.assert_called_once()
@@ -236,7 +234,7 @@ class TestMakeDocsCleanup:
     def test_env_var_cleared_after_completion(self, _mock_happy_path, monkeypatch):
         monkeypatch.delenv("DEV__AUTH_MOCK", raising=False)
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         assert os.environ.get("DEV__AUTH_MOCK") is None
 
@@ -247,7 +245,7 @@ class TestMakeDocsMkdocsBuild:
     def test_mkdocs_build_called_with_cwd(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         mkdocs_calls = [
             c
@@ -280,7 +278,7 @@ class TestMakeDocsMkdocsBuild:
         mocks["personal"].side_effect = _record("personal")
         mocks["subprocess_run"].side_effect = _record_subprocess
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         assert "instructor" in call_order
         assert "student" in call_order
@@ -298,7 +296,7 @@ class TestMakeDocsPandocPdf:
     def test_pandoc_called_for_each_guide(self, _mock_happy_path):
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         pandoc_calls = [
             c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
@@ -314,7 +312,7 @@ class TestMakeDocsPandocPdf:
         """AC7.2: --resource-path is critical for image resolution."""
         mocks = _mock_happy_path
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         pandoc_calls = [
             c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
@@ -337,7 +335,7 @@ class TestMakeDocsPandocPdf:
 
         mocks["subprocess_run"].side_effect = _record_subprocess
 
-        cli_module.make_docs()
+        cli_module.build(action=None)
 
         assert "mkdocs" in call_order
         assert "pandoc" in call_order

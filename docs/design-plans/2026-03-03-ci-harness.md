@@ -104,7 +104,7 @@ All three jobs share a common setup preamble:
 1. `actions/checkout@v6.0.1`
 2. `astral-sh/setup-uv@v7.2.0` with `enable-cache: true` and `cache-dependency-glob: "uv.lock"`
 3. `uv python install 3.14`
-4. `uv sync --all-extras`
+4. `uv sync --locked --all-groups`
 
 **Postgres service container** (test-all and e2e only): `postgres:17` image with `POSTGRES_DB=promptgrimoire_test`, `POSTGRES_PASSWORD=postgres`, port 5432 exposed, health-checked via `pg_isready`.
 

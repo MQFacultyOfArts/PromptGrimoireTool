@@ -9,8 +9,8 @@ import sys
 import typer
 from rich.console import Console
 
+from promptgrimoire.cli._shared import _pre_test_db_cleanup
 from promptgrimoire.cli_legacy import (
-    _pre_test_db_cleanup,
     _start_e2e_server,
     _stop_e2e_server,
 )

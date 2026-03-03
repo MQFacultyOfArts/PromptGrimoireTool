@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from promptgrimoire.pages.annotation.organise import can_delete_document
+from promptgrimoire.pages.annotation.document_management import can_delete_document
 
 # Fixed UUIDs for deterministic tests
 _OWNER_WORKSPACE_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")

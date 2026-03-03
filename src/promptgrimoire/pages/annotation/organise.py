@@ -21,14 +21,10 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
-from uuid import UUID
 
 from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
-from promptgrimoire.db.exceptions import ProtectedDocumentError
-from promptgrimoire.db.workspace_documents import count_document_clones, delete_document
 from promptgrimoire.elements.sortable import Sortable
 
 if TYPE_CHECKING:
@@ -37,7 +33,6 @@ if TYPE_CHECKING:
     from nicegui.events import GenericEventArguments
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-    from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
@@ -51,26 +46,6 @@ _UNTAGGED_RAW_KEY = ""
 
 # Maximum characters to show in text snippet before truncation
 _SNIPPET_MAX_CHARS = 100
-
-
-def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
-    """Whether a document is eligible for deletion in the UI.
-
-    A document can be deleted when:
-    1. The viewer is the workspace owner, AND
-    2. The document is user-uploaded (source_document_id IS NULL).
-
-    Template-cloned documents (source_document_id IS NOT NULL) never show
-    a delete button (AC4.3).
-
-    Args:
-        doc: The workspace document to check.
-        is_owner: Whether the current user is the workspace owner.
-
-    Returns:
-        True if the delete button should be shown.
-    """
-    return is_owner and doc.source_document_id is None
 
 
 def _build_highlight_card(
@@ -275,165 +250,6 @@ def _build_tag_column(
     return column
 
 
-def _build_document_section(
-    documents: list[WorkspaceDocument],
-    state: PageState,
-) -> None:
-    """Render the document management section below tag columns.
-
-    Shows each document with title, source type badge, protection status,
-    and a delete button for user-uploaded documents when the viewer is
-    the workspace owner.
-
-    Template-cloned documents (source_document_id IS NOT NULL) show a
-    "Template" badge and no delete button (AC4.3).
-
-    Args:
-        documents: Pre-loaded workspace documents.
-        state: Page state (provides is_owner, workspace_id).
-    """
-    with (
-        ui.column()
-        .classes("w-full mt-4")
-        .props('data-testid="document-management-section"')
-    ):
-        ui.label("Documents").classes("text-lg font-semibold mb-2")
-        ui.separator()
-        if not documents:
-            ui.label("No documents in this workspace.").classes(
-                "text-sm text-gray-400 italic py-2"
-            )
-            return
-        for doc in documents:
-            with ui.row().classes("w-full items-center gap-2 py-1"):
-                ui.label(doc.title or "Untitled").classes("text-sm")
-                ui.badge(doc.source_type).classes("text-xs")
-                if doc.source_document_id is not None:
-                    ui.badge("Template", color="blue").classes("text-xs").props(
-                        'data-testid="template-badge"'
-                    )
-                elif state.is_owner:
-                    ui.button(
-                        icon="delete",
-                        on_click=lambda d=doc: _handle_delete_document(d, state),
-                    ).props(
-                        "flat round dense size=sm color=negative"
-                        f' data-testid="delete-doc-btn-{doc.id}"'
-                    )
-
-
-async def _handle_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
-    """Show confirmation dialog and delete a user-uploaded document.
-
-    Checks for student clones first. If the document is a template source
-    with clones, shows a warning before proceeding (AC5.5). Otherwise
-    shows a standard confirmation dialog (AC4.1).
-
-    Args:
-        doc: The document to delete.
-        state: Page state (provides workspace_id for redirect).
-    """
-    clone_count = await count_document_clones(doc.id)
-
-    if clone_count > 0:
-        _show_clone_warning_dialog(doc, state, clone_count)
-        return
-
-    _show_delete_confirm_dialog(doc, state)
-
-
-def _show_clone_warning_dialog(
-    doc: WorkspaceDocument, state: PageState, clone_count: int
-) -> None:
-    """Show warning dialog when deleting a template document with clones.
-
-    Args:
-        doc: The template source document.
-        state: Page state for redirect after deletion.
-        clone_count: Number of student clones.
-    """
-    with (
-        ui.dialog().props(
-            'data-testid="template-delete-warning-dialog"'
-        ) as warn_dialog,
-        ui.card().classes("w-96"),
-    ):
-        ui.label(
-            f"{clone_count} student{'s' if clone_count != 1 else ''} "
-            f"{'have' if clone_count != 1 else 'has'} "
-            "copies of this document. "
-            "Deleting it will make their copies deletable."
-        ).classes("text-body1").props('data-testid="clone-warning-text"')
-        with ui.row().classes("justify-end w-full gap-2 mt-4"):
-            ui.button("Cancel", on_click=warn_dialog.close).props(
-                'flat data-testid="cancel-delete-doc-btn"'
-            )
-
-            async def _proceed_after_warning() -> None:
-                warn_dialog.close()
-                await _do_delete_document(doc, state)
-
-            ui.button("Delete Anyway", on_click=_proceed_after_warning).props(
-                'color=negative data-testid="confirm-delete-doc-btn"'
-            )
-    warn_dialog.open()
-
-
-def _show_delete_confirm_dialog(doc: WorkspaceDocument, state: PageState) -> None:
-    """Show standard confirmation dialog for deleting a user-uploaded document.
-
-    Args:
-        doc: The document to delete.
-        state: Page state for redirect after deletion.
-    """
-    with ui.dialog() as dialog, ui.card().classes("w-96"):
-        ui.label(f"Delete '{doc.title or 'Untitled'}'?").classes("text-lg font-bold")
-        ui.label("Annotations will be removed. Tags preserved.").classes(
-            "text-gray-500"
-        )
-        with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props(
-                'flat data-testid="cancel-delete-doc-btn"'
-            )
-
-            async def _confirm() -> None:
-                await _do_delete_document(doc, state)
-                dialog.close()
-
-            ui.button("Delete", on_click=_confirm).props(
-                'color=negative data-testid="confirm-delete-doc-btn"'
-            )
-    dialog.open()
-
-
-async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
-    """Execute document deletion and redirect to annotation page.
-
-    Catches ProtectedDocumentError as defence in depth -- the UI should
-    never show delete buttons for protected documents, but handle it
-    gracefully if it happens.
-
-    Args:
-        doc: The document to delete.
-        state: Page state (provides workspace_id for redirect).
-    """
-    if not state.user_id:
-        ui.notify("Not logged in", type="negative")
-        return
-    try:
-        await delete_document(doc.id, user_id=UUID(state.user_id))
-    except PermissionError:
-        ui.notify("Permission denied", type="negative")
-        return
-    except ProtectedDocumentError:
-        ui.notify("This document is protected and cannot be deleted", type="negative")
-        return
-
-    ui.notify("Document deleted. You can upload a replacement.", type="positive")
-    qs = urlencode({"workspace_id": str(state.workspace_id)})
-    ui.navigate.to(f"/annotation?{qs}")
-
-
 def render_organise_tab(
     panel: ui.element,
     tags: list[TagInfo],
@@ -442,7 +258,6 @@ def render_organise_tab(
     on_sort_end: (Callable[[GenericEventArguments], Any] | None) = None,
     on_locate: Callable[..., Any] | None = None,
     state: PageState,
-    documents: list[WorkspaceDocument] | None = None,
 ) -> None:
     """Populate the Organise tab panel with tag columns and highlight cards.
 
@@ -536,11 +351,6 @@ def render_organise_tab(
                 state,
                 on_locate,
             )
-
-    # Document management section (below tag columns)
-    if documents is not None:
-        with panel:
-            _build_document_section(documents, state)
 
     # Restore scroll position after rebuild
     ui.run_javascript(

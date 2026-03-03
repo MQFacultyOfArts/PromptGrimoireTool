@@ -14,6 +14,9 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     inject_paragraph_attributes,
 )
 from promptgrimoire.pages.annotation.broadcast import _update_user_count
+from promptgrimoire.pages.annotation.document_management import (
+    open_manage_documents_dialog,
+)
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
@@ -206,6 +209,15 @@ async def render_workspace_header(
                 export_btn.enable()
 
         export_btn.on_click(on_export_click)
+
+        # Manage Documents button (owners only)
+        if state.is_owner:
+            ui.button(
+                "Manage Documents",
+                icon="description",
+                on_click=lambda: open_manage_documents_dialog(state),
+            ).props('outline color=primary data-testid="manage-documents-btn"')
+
         logger.debug("[HEADER] buttons done, calling placement_chip")
 
         # Placement status chip (refreshable)

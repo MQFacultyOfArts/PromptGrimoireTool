@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import socket
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +22,7 @@ from promptgrimoire.cli.e2e._server import (
     _stop_e2e_server,
     _stop_pyspy,
 )
+from promptgrimoire.cli.e2e._workers import _allocate_ports as _allocate_ports
 from promptgrimoire.cli.testing import _run_pytest
 
 e2e_app = typer.Typer(help="End-to-end test commands.")
@@ -97,9 +97,7 @@ def noretry(ctx: typer.Context) -> None:
     get_settings()
     _pre_test_db_cleanup()
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        port = s.getsockname()[1]
+    port = _allocate_ports(1)[0]
 
     url = f"http://localhost:{port}"
     server_process = _start_e2e_server(port)
@@ -141,9 +139,7 @@ def changed(ctx: typer.Context) -> None:
     get_settings()
     _pre_test_db_cleanup()
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        port = s.getsockname()[1]
+    port = _allocate_ports(1)[0]
 
     url = f"http://localhost:{port}"
     server_process = _start_e2e_server(port)
@@ -196,9 +192,7 @@ def _run_serial_e2e(
 
     _pre_test_db_cleanup()
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        port = s.getsockname()[1]
+    port = _allocate_ports(1)[0]
 
     url = f"http://localhost:{port}"
     server_process = _start_e2e_server(port)

@@ -115,10 +115,17 @@ class TestHistoryTutorial:
             # Open dropdown
             tag_select.click()
 
-            # Select Procedural History from menu
-            page1.locator(".q-menu .q-item").filter(
-                has_text="Procedural History"
-            ).click()
+            # Select Procedural History via JS to avoid DOM detachment
+            page1.wait_for_selector(".q-menu", state="visible", timeout=5000)
+            page1.evaluate(
+                """() => {
+                    for (const el of document
+                        .querySelectorAll('.q-menu .q-item'))
+                        if (el.textContent
+                            .includes('Procedural History'))
+                            { el.click(); return; }
+                }"""
+            )
 
             # Verify tag changed on page1
             expect(tag_select).to_contain_text("Procedural History", timeout=5000)

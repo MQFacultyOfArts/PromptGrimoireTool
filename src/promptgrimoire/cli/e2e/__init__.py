@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
+from promptgrimoire.cli._shared import _pre_test_db_cleanup, _prepend_filter, console
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
 
 if TYPE_CHECKING:
@@ -46,12 +46,16 @@ def run(
         help="Stop on first failure (parallel only)",
     ),
     py_spy: bool = typer.Option(False, "--py-spy", help="Profile with py-spy"),
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
 ) -> None:
     """Run E2E tests (serial fail-fast by default)."""
     from promptgrimoire.cli.e2e._parallel import _run_parallel_e2e
     from promptgrimoire.config import get_settings
 
     get_settings()
+    args = _prepend_filter(ctx.args, filter_expr)
 
     if parallel:
         if py_spy:
@@ -60,14 +64,14 @@ def run(
             )
         try:
             exit_code = asyncio.run(
-                _run_parallel_e2e(user_args=ctx.args, fail_fast=fail_fast)
+                _run_parallel_e2e(user_args=args, fail_fast=fail_fast)
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted — cleaning up...[/]")
             exit_code = 130
         sys.exit(exit_code)
 
-    _run_serial_e2e(ctx.args, use_pyspy=py_spy, reruns=True)
+    _run_serial_e2e(args, use_pyspy=py_spy, reruns=True)
 
 
 @e2e_app.command(
@@ -77,10 +81,17 @@ def run(
         "allow_interspersed_args": False,
     },
 )
-def slow(ctx: typer.Context) -> None:
+def slow(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run E2E tests with full PDF compilation (latexmk)."""
     os.environ["E2E_SKIP_LATEXMK"] = "0"
-    _run_serial_e2e(ctx.args, use_pyspy=False, reruns=True)
+    _run_serial_e2e(
+        _prepend_filter(ctx.args, filter_expr), use_pyspy=False, reruns=True
+    )
 
 
 @e2e_app.command(
@@ -90,7 +101,12 @@ def slow(ctx: typer.Context) -> None:
         "allow_interspersed_args": False,
     },
 )
-def noretry(ctx: typer.Context) -> None:
+def noretry(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run E2E tests with no retries and fail-fast (-x)."""
     from promptgrimoire.config import get_settings
 
@@ -117,7 +133,7 @@ def noretry(ctx: typer.Context) -> None:
                 "--tb=short",
                 "--log-cli-level=WARNING",
             ],
-            extra_args=ctx.args,
+            extra_args=_prepend_filter(ctx.args, filter_expr),
         )
     finally:
         _stop_e2e_server(server_process)
@@ -131,7 +147,12 @@ def noretry(ctx: typer.Context) -> None:
         "allow_interspersed_args": False,
     },
 )
-def changed(ctx: typer.Context) -> None:
+def changed(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run E2E tests affected by changes relative to main."""
     from promptgrimoire.config import get_settings
 
@@ -160,7 +181,7 @@ def changed(ctx: typer.Context) -> None:
                 "--log-cli-level=WARNING",
                 "-v",
             ],
-            extra_args=ctx.args,
+            extra_args=_prepend_filter(ctx.args, filter_expr),
         )
         if exit_code not in (0, 5):
             exit_code = _retry_e2e_tests_in_isolation(log_path)

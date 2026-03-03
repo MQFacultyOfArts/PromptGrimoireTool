@@ -362,8 +362,15 @@ def _print_footer(exit_code: int, duration: object, log_path: Path) -> None:
     "changed",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
-def changed_tests(ctx: typer.Context) -> None:
+def changed_tests(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run pytest on tests affected by changes relative to main."""
+    from promptgrimoire.cli._shared import _prepend_filter
+
     sys.exit(
         _run_pytest(
             title="Changed Tests (vs main)",
@@ -381,7 +388,7 @@ def changed_tests(ctx: typer.Context) -> None:
                 "3",
                 "--tb=short",
             ],
-            extra_args=ctx.args,
+            extra_args=_prepend_filter(ctx.args, filter_expr),
         )
     )
 
@@ -390,8 +397,15 @@ def changed_tests(ctx: typer.Context) -> None:
     "all",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
-def all_tests(ctx: typer.Context) -> None:
+def all_tests(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run unit and integration tests under xdist parallel execution."""
+    from promptgrimoire.cli._shared import _prepend_filter
+
     sys.exit(
         _run_pytest(
             title="Full Test Suite (unit + integration, excludes E2E)",
@@ -406,7 +420,7 @@ def all_tests(ctx: typer.Context) -> None:
                 "3",
                 "-v",
             ],
-            extra_args=ctx.args,
+            extra_args=_prepend_filter(ctx.args, filter_expr),
         )
     )
 
@@ -415,13 +429,20 @@ def all_tests(ctx: typer.Context) -> None:
     "all-fixtures",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
-def all_fixtures_tests(ctx: typer.Context) -> None:
+def all_fixtures_tests(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
     """Run full test corpus including BLNS and slow tests."""
+    from promptgrimoire.cli._shared import _prepend_filter
+
     sys.exit(
         _run_pytest(
             title="Full Fixture Corpus (including BLNS/slow)",
             log_path=Path("test-all-fixtures.log"),
             default_args=["-m", "", "-v", "--tb=short"],
-            extra_args=ctx.args,
+            extra_args=_prepend_filter(ctx.args, filter_expr),
         )
     )

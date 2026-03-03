@@ -27,6 +27,13 @@ _PCT_RE = re.compile(r"\[\s*(\d+)%\s*\]")
 _SEPARATOR_RE = re.compile(r"^={5,}")
 
 
+def _prepend_filter(extra_args: list[str], filter_expr: str | None) -> list[str]:
+    """Inject ``-k EXPR`` into *extra_args* when a filter is given."""
+    if filter_expr:
+        return ["-k", filter_expr, *extra_args]
+    return extra_args
+
+
 def _pre_test_db_cleanup() -> None:
     """Run Alembic migrations and truncate all tables before tests.
 

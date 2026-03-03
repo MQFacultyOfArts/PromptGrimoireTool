@@ -400,3 +400,108 @@ class TestDeleteUnitButtonVisibility:
         )
         # The courses list renders with the "Units" page title
         await user.should_see(content="Units")
+
+
+# ---------------------------------------------------------------------------
+# Workspace-level DB helpers
+# ---------------------------------------------------------------------------
+
+
+async def _create_activity(week_id: UUID, title: str = "Test Activity") -> UUID:
+    """Create an activity in the given week. Returns activity_id."""
+    from promptgrimoire.db.activities import create_activity
+
+    activity = await create_activity(week_id=week_id, title=title)
+    return activity.id
+
+
+async def _clone_workspace(activity_id: UUID, user_id: UUID) -> UUID:
+    """Clone the activity's template workspace for a user. Returns workspace_id."""
+    from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+    ws, _doc_map = await clone_workspace_from_activity(activity_id, user_id)
+    return ws.id
+
+
+# ---------------------------------------------------------------------------
+# Workspace deletion tests
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceDelete:
+    """Verify workspace deletion from the course detail page.
+
+    Acceptance Criteria:
+    - crud-management-229.AC3.1: Owner can delete their workspace
+    - crud-management-229.AC3.2: Confirmation dialog before deletion
+    - crud-management-229.AC3.3: After deletion, activity shows "Start as Student"
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_from_course_page(self, user: User) -> None:
+        """Delete a student workspace via UI and verify it reverts to start state.
+
+        AC3.1: Owner can delete their workspace.
+        AC3.2: Confirmation dialog appears before deletion.
+        AC3.3: After deletion, "Start as Student" appears instead of "Resume".
+
+        Steps:
+        1. Create course + week + activity via DB.
+        2. Enroll user as student.
+        3. Clone a workspace for that user.
+        4. Authenticate and open the course detail page.
+        5. Verify "Resume" button is visible.
+        6. Click the delete-workspace button.
+        7. Verify confirmation dialog appears.
+        8. Click confirm.
+        9. Verify "Start as Student" appears (workspace gone).
+        """
+        course_id, _code = await _create_course()
+        # Need a coordinator so _resolve_course_detail succeeds
+        await _enroll(course_id, "coordinator@uni.edu", "coordinator")
+
+        uid = uuid4().hex[:8]
+        student_email = f"student-{uid}@test.example.edu.au"
+        student_user_id = await _enroll(course_id, student_email, "student")
+
+        week_id = await _create_week(course_id, title="Week with Activity")
+        # Publish the week so students can see it
+        from promptgrimoire.db.weeks import publish_week
+
+        await publish_week(week_id)
+        activity_id = await _create_activity(week_id, title="Activity to Test")
+        ws_id = await _clone_workspace(activity_id, student_user_id)
+
+        await _authenticate(user, email=student_email)
+        await user.open(f"/courses/{course_id}")
+
+        # Resume button should be visible (user has a workspace)
+        await _should_see_testid(user, f"resume-btn-{activity_id}")
+
+        # Click the delete-workspace button
+        _click_testid(user, f"delete-workspace-btn-{ws_id}")
+        await asyncio.sleep(0.1)
+
+        # Confirmation dialog should appear
+        await _should_see_testid(user, "confirm-delete-workspace-btn")
+        await _should_see_testid(user, "cancel-delete-workspace-btn")
+
+        # Click confirm
+        _click_testid(user, "confirm-delete-workspace-btn")
+
+        # Wait for async delete + refreshable rebuild
+        for _ in range(20):
+            if _find_by_testid(user, f"start-activity-btn-{activity_id}") is not None:
+                break
+            await asyncio.sleep(0.15)
+
+        # After deletion, "Start as Student" button should appear
+        await _should_see_testid(user, f"start-activity-btn-{activity_id}")
+
+        # Resume button should be gone
+        await _should_not_see_testid(user, f"resume-btn-{activity_id}")
+
+    # NOTE: test_delete_workspace_non_owner_no_button is better tested via
+    # Playwright E2E -- the NiceGUI User harness makes multi-user shared
+    # workspace setup prohibitively complex (needs two separate simulated
+    # users sharing a workspace via ACL).

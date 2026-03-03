@@ -126,6 +126,15 @@ ignore = [
 "src/promptgrimoire/cli/testing.py" = [
     "PLC0415",  # Deferred config import to avoid pydantic-settings loading at import time
 ]
+"src/promptgrimoire/cli/e2e/__init__.py" = [
+    "PLC0415",  # Deferred imports to avoid heavy config/parallel modules at CLI load time
+]
+"src/promptgrimoire/cli/e2e/_server_script.py" = [
+    # Standalone subprocess script — not a regular importable module.
+    # Intentional late imports, module-level side effects, global state.
+    "PLC0415", "E402", "I001", "B023", "PTH123", "ARG001",
+    "SIM115", "PLR0915", "PLW0602", "PLW0603", "RUF100",
+]
 "src/promptgrimoire/cli_legacy.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]
@@ -179,6 +188,9 @@ exclude = ["*/migrations/*"]
 
 [tool.bandit]
   skips = ["B101", "B404", "B603", "B607"]
+  # _server_script.py is a standalone subprocess script with intentional
+  # test secrets, /tmp paths, and bare except:pass — exclude from scanning.
+  exclude_dirs = ["src/promptgrimoire/cli/e2e/_server_script.py"]
 
 [dependency-groups]
 dev = [

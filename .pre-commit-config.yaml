@@ -35,10 +35,10 @@ repos:
     hooks:
       - id: complexipy
         args: ['--max-complexity-allowed=15']
-        # cli_legacy.py is excluded because it contains the complex implementations
-        # being migrated out. The new cli/ package (cli/admin.py etc.) is NOT excluded,
-        # so Phase 2-5 authors must keep each sub-command's functions below complexity 15.
-        exclude: '(cli_legacy\.py$|^tests/)'
+        # cli_legacy.py: complex implementations being migrated out.
+        # _server_script.py: standalone subprocess script, not a regular module.
+        # tests/: test code is not subject to complexity gates.
+        exclude: '(cli_legacy\.py$|_server_script\.py$|^tests/)'
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.4

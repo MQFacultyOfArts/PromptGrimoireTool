@@ -250,4 +250,5 @@ dev = [
     "vulture>=2.14",
     "complexipy>=5.2.0",
     "mkdocs-glightbox>=0.5.2",
+    "pip-audit>=2.10.0",
 ]

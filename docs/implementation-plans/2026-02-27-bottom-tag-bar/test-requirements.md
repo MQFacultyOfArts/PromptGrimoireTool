@@ -101,5 +101,5 @@ These ACs require manual verification because they depend on visual appearance, 
 - **E2E fixture**: `authenticated_page` (from `tests/e2e/conftest.py`)
 - **Workspace creation**: `_create_workspace_via_db()` with simple HTML content
 - **Render wait**: `wait_for_text_walker(page, timeout=15000)`
-- **Run command**: `uv run test-e2e -k test_css_audit`
-- **Changed-only**: `uv run test-e2e-changed`
+- **Run command**: `uv run grimoire e2e run -k test_css_audit`
+- **Changed-only**: `uv run grimoire e2e changed`

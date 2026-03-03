@@ -127,7 +127,7 @@ Update `convert_html_with_annotations()` in `pandoc.py`:
 Run: `uv run pytest tests/integration/test_highlight_latex_elements.py -v`
 Expected: All integration tests pass with the new pipeline.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: Full suite passes.
 
 **Commit:** `feat: rewire convert_html_with_annotations to use highlight spans + Lua filter`
@@ -193,7 +193,7 @@ Expected: Full suite passes.
 
 **Testing:**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass. No import errors.
 
 **Commit:** `refactor: delete latex.py, P4 test files, and remove pylatexenc + lark dependencies`
@@ -227,7 +227,7 @@ Write a validation test file that asserts the cleanup is complete:
 Run: `uv run pytest tests/unit/export/test_pipeline_cleanup.py -v`
 Expected: All assertions pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: Full suite passes — no regressions.
 
 **Commit:** `test: add pipeline cleanup validation tests for AC4 + AC5`

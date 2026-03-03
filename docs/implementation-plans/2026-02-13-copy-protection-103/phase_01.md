@@ -104,7 +104,7 @@ Expected: Migration applies cleanly. Existing activities get `copy_protection=NU
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All existing tests pass (new nullable field with default doesn't break anything).
@@ -188,8 +188,8 @@ git commit -m "feat: resolve copy_protection through Activity -> Course fallback
 
 1. [ ] Verify migration applied: `uv run alembic current` shows the new migration as head
 2. [ ] Start the app: `uv run python -m promptgrimoire`
-3. [ ] Seed data: `uv run seed-data` — completes without error (existing seed path doesn't set copy_protection, so it defaults to NULL)
-4. [ ] Verify tests: `uv run test-all` — all pass, including the new `TestCopyProtectionResolution` tests
+3. [ ] Seed data: `uv run grimoire seed run` — completes without error (existing seed path doesn't set copy_protection, so it defaults to NULL)
+4. [ ] Verify tests: `uv run grimoire test all` — all pass, including the new `TestCopyProtectionResolution` tests
 
 **Evidence Required:**
 - [ ] Test output showing all `TestCopyProtectionResolution` tests green

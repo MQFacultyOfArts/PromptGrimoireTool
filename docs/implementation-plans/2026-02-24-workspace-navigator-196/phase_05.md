@@ -88,7 +88,7 @@ This phase implements and tests:
 
 **Verification:**
 Manual: Type 3+ characters. After ~500ms, sections re-render with filtered results. Clear search — full view returns.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add server-side search with debounce to navigator`
 <!-- END_TASK_1 -->
@@ -112,7 +112,7 @@ Update the `@ui.refreshable` sections rendering function to display snippets:
 
 **Verification:**
 Manual: Search for a word in document content. Matching cards show highlighted snippet text below the title.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: render FTS snippets on matching navigator cards`
 <!-- END_TASK_2 -->
@@ -157,7 +157,7 @@ E2E tests for search using Playwright:
 - AC8.4: Type only 2 characters. Wait 1 second. Verify no filtering occurs (all rows still visible).
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 
 **Commit:** `test: add E2E tests for navigator search`
 <!-- END_TASK_4 -->

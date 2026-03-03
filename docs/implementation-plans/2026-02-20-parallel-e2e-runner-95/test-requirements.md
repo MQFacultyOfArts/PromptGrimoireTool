@@ -18,7 +18,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. Confirm console output shows `Found 16 test files` (or current count).
 3. Confirm per-file result lines appear for every `tests/e2e/test_*.py` file -- no files skipped, no files duplicated.
 4. While running, confirm with `ps aux | grep promptgrimoire` that multiple server processes exist simultaneously.
@@ -59,7 +59,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. Check worker log files (`test-e2e-{stem}.log`) for distinct port numbers in server startup messages.
 3. Check `psql -l | grep _w` during execution to confirm multiple worker databases exist.
 
@@ -75,7 +75,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. Read the summary table. Sum the per-file durations. Compare to the reported total wall-clock time.
 3. The total wall-clock time should be roughly equal to the maximum per-file duration, not the sum. A ratio of `sum / wall_clock > 2` for 16 files confirms concurrency.
 
@@ -92,7 +92,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 **Verification approach:**
 
 1. Temporarily modify `_E2E_SERVER_SCRIPT` to `sys.exit(1)` immediately for a specific port or worker index, or pass an invalid `DATABASE__URL` to one worker.
-2. Run `uv run test-e2e --parallel`.
+2. Run `uv run grimoire e2e run --parallel`.
 3. Confirm exit code is non-zero.
 4. Confirm `ps aux | grep promptgrimoire` shows no orphan server processes.
 5. Confirm `psql -l | grep _w` shows no leftover worker databases.
@@ -104,7 +104,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 ## AC2: Serial mode unchanged
 
-### AC2.1 -- `uv run test-e2e` (no flags) runs single-server serial mode exactly as before
+### AC2.1 -- `uv run grimoire e2e run` (no flags) runs single-server serial mode exactly as before
 
 | Property | Value |
 |----------|-------|
@@ -114,7 +114,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e -k test_browser_gate` (fast single test, serial mode).
+1. Run `uv run grimoire e2e run -k test_browser_gate` (fast single test, serial mode).
 2. Confirm: one server starts on one port (visible in `test-e2e-server.log`).
 3. Confirm: test runs with `-x` (fail-fast) semantics.
 4. Confirm: server stops after tests complete.
@@ -122,7 +122,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 ---
 
-### AC2.2 -- `uv run test-e2e-debug` runs single-server with `--lf` and `-x` exactly as before
+### AC2.2 -- `uv run grimoire e2e noretry` runs single-server with `--lf` and `-x` exactly as before
 
 | Property | Value |
 |----------|-------|
@@ -132,7 +132,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e-debug -k test_browser_gate`.
+1. Run `uv run grimoire e2e noretry -k test_browser_gate`.
 2. Confirm: verbose output (`-v`, `--tb=long`).
 3. Confirm: `--lf` flag present (pytest output shows "run only last failures" or runs all if no prior failures).
 4. Confirm: single server starts and stops.
@@ -151,7 +151,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. On success, confirm the summary mentions the merged JUnit XML path.
 3. On failure (to preserve temp dir), open the `combined.xml` file in the preserved result directory.
 4. Verify it contains `<testsuite>` entries from multiple test files (check `name` attributes).
@@ -170,12 +170,12 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach -- all pass:**
 
-1. Run `uv run test-e2e --parallel` (assuming all tests pass).
+1. Run `uv run grimoire e2e run --parallel` (assuming all tests pass).
 2. Confirm exit code is 0: `echo $?` (bash) or `echo $status` (fish).
 
 **Verification approach -- exit code 5 treated as pass:**
 
-1. Run `uv run test-e2e --parallel -k test_browser_gate`.
+1. Run `uv run grimoire e2e run --parallel -k test_browser_gate`.
 2. Most workers will have no matching tests (exit code 5). One worker will run `test_browser_gate`.
 3. Confirm overall exit code is 0.
 4. Confirm summary shows pass status for exit-code-5 workers.
@@ -183,7 +183,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 **Verification approach -- failure produces non-zero:**
 
 1. Introduce a deliberate test failure (e.g., add `assert False` to one test).
-2. Run `uv run test-e2e --parallel`.
+2. Run `uv run grimoire e2e run --parallel`.
 3. Confirm exit code is non-zero.
 4. Revert the deliberate failure.
 
@@ -199,7 +199,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. Confirm the summary table shows:
    - One row per test file with file name, PASS/FAIL status, and duration in seconds.
    - A totals row with pass/fail counts and wall-clock time.
@@ -273,7 +273,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel` (all tests passing).
+1. Run `uv run grimoire e2e run --parallel` (all tests passing).
 2. After completion, run `psql -l | grep _w`.
 3. Confirm no `{branch_db}_wN` databases remain.
 
@@ -290,7 +290,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 **Verification approach:**
 
 1. Introduce a deliberate test failure (e.g., `assert False` in one test file).
-2. Run `uv run test-e2e --parallel`.
+2. Run `uv run grimoire e2e run --parallel`.
 3. Confirm console output includes `Preserved worker DB:` lines with connection strings for ALL workers (not just the failing one).
 4. Confirm `psql -l | grep _w` shows the worker databases still exist.
 5. Connect to one preserved worker database using the logged connection string. Confirm tables and data are present.
@@ -311,7 +311,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel`.
+1. Run `uv run grimoire e2e run --parallel`.
 2. Wait for completion.
 3. Run `ps aux | grep "[p]romptgrimoire"` (bracketed grep avoids matching itself).
 4. Confirm no server processes remain.
@@ -336,7 +336,7 @@ Maps each acceptance criterion to specific automated tests or human verification
 **Verification approach:**
 
 1. Introduce a deliberate early failure in one test file (e.g., `assert False` as the first test in `test_browser_gate.py`, which is fast).
-2. Run `uv run test-e2e --parallel --fail-fast`.
+2. Run `uv run grimoire e2e run --parallel --fail-fast`.
 3. Confirm: wall-clock time is significantly less than running all files (indicates remaining workers were killed, not awaited).
 4. Confirm: summary shows the failing file and `CANCELLED` status for remaining workers.
 5. Confirm: exit code is non-zero.
@@ -355,10 +355,10 @@ Maps each acceptance criterion to specific automated tests or human verification
 
 **Verification approach:**
 
-1. Run `uv run test-e2e --parallel -k test_browser_gate`.
+1. Run `uv run grimoire e2e run --parallel -k test_browser_gate`.
 2. Confirm: summary shows most files as PASS (exit code 5, no tests collected).
 3. Confirm: overall exit code is 0.
-4. Run `uv run test-e2e --parallel -k nonexistent_test_that_matches_nothing`.
+4. Run `uv run grimoire e2e run --parallel -k nonexistent_test_that_matches_nothing`.
 5. Confirm: ALL files show exit code 5 (no tests collected).
 6. Confirm: overall exit code is 0 (all exit-code-5 results treated as pass).
 

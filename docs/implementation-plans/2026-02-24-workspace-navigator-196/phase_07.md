@@ -102,7 +102,7 @@ When search is active (Phase 5), the navigator shows filtered results from FTS �
 
 **Verification:**
 Manual: Load navigator with seed data. Scroll to bottom — more rows load automatically. With fewer than 50 total rows, no additional loading occurs.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add infinite scroll pagination to navigator`
 <!-- END_TASK_1 -->
@@ -129,7 +129,7 @@ The `@ui.refreshable` sections renderer from Phase 4 already groups rows by sect
 
 **Verification:**
 Manual: With load-test data, scroll through multiple pages. Verify rows appear in correct sections. Verify students with no workspaces appear at end of their unit section.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: verify section grouping with paginated data loading`
 <!-- END_TASK_2 -->
@@ -164,7 +164,7 @@ await page.locator('.q-scrollarea').evaluate(
 Or use `page.mouse.wheel(0, 10000)` within the scroll area bounds.
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 
 **Commit:** `test: add E2E tests for infinite scroll pagination`
 <!-- END_TASK_3 -->
@@ -190,7 +190,7 @@ E2E test verifying that infinite scroll is disabled during an active search:
 - Clear search. Verify full paginated view restores. Scroll to bottom — verify pagination resumes.
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 
 **Commit:** `test: add E2E test for pagination disabled during search`
 <!-- END_TASK_4 -->

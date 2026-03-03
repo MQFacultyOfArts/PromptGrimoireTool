@@ -4,8 +4,8 @@
 
 - PostgreSQL running with `DATABASE_URL` configured
 - `uv run alembic upgrade head` applied (all migrations including copy protection)
-- `uv run seed-data` completes without error
-- `uv run test-all` passes (2427 tests, 2 skipped)
+- `uv run grimoire seed run` completes without error
+- `uv run grimoire test all` passes (2427 tests, 2 skipped)
 - Two browser sessions: one as instructor/admin, one as student
 - Browser DevTools accessible
 

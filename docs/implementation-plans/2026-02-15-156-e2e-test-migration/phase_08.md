@@ -20,7 +20,7 @@ This phase implements and tests:
 - **156-e2e-test-migration.AC1.1 Success:** `grep -r "data-char-index" tests/e2e/ tests/benchmark/` returns zero matches excluding `deprecated/` and comment-only references in `test_no_char_span_queries.py`
 
 ### 156-e2e-test-migration.AC2: All active E2E tests pass (DoD 2)
-- **156-e2e-test-migration.AC2.1 Success:** `uv run test-e2e` completes with zero failures and zero timeouts
+- **156-e2e-test-migration.AC2.1 Success:** `uv run grimoire e2e run` completes with zero failures and zero timeouts
 - **156-e2e-test-migration.AC2.2 Success:** No test is skipped with reason "Pending #106"
 
 ### 156-e2e-test-migration.AC6: Obsolete files deleted (DoD 3)
@@ -112,7 +112,7 @@ No commit — verification only.
 
 **Step 1: Run full E2E suite.**
 
-Run: `uv run test-e2e`
+Run: `uv run grimoire e2e run`
 
 Verify:
 - Zero test failures
@@ -167,7 +167,7 @@ Open `docs/implementation-plans/2026-02-04-html-input-pipeline/e2e-test-audit.md
 ```
 
 **Verification:**
-Run: `uv run test-e2e`
+Run: `uv run grimoire e2e run`
 Expected: All tests pass, zero failures, zero timeouts
 
 **Commit:** `docs: update e2e-test-audit.md with migration completion status`

@@ -51,12 +51,12 @@ The executor and its subagents should read these files for context:
 Add a new subsection "Running E2E Tests" within the "E2E Test Guidelines" section. This should cover:
 
 **Serial mode (default):**
-- `uv run test-e2e` — single server, fail-fast (`-x`), all test files run sequentially
-- `uv run test-e2e -k test_name` — run specific test(s)
-- `uv run test-e2e-debug` — re-run last-failed tests with verbose output (`--lf -x --tb=long -v`)
+- `uv run grimoire e2e run` — single server, fail-fast (`-x`), all test files run sequentially
+- `uv run grimoire e2e run -k test_name` — run specific test(s)
+- `uv run grimoire e2e noretry` — re-run last-failed tests with verbose output (`--lf -x --tb=long -v`)
 
 **Parallel mode:**
-- `uv run test-e2e --parallel` — one server+database per test file, all files run concurrently
+- `uv run grimoire e2e run --parallel` — one server+database per test file, all files run concurrently
 - Each test file gets its own NiceGUI server on a distinct port
 - Each test file gets its own PostgreSQL database, cloned from the branch test database via `CREATE DATABASE ... TEMPLATE`
 - Wall-clock time approximately equals the slowest individual test file
@@ -101,7 +101,7 @@ Add a new top-level section "Parallel Mode Debugging" at the end of the file. Th
 1. Check the summary output for which file(s) failed
 2. Read the worker's log file (path printed on failure)
 3. Worker databases are preserved on failure — connect directly to inspect state
-4. Re-run the failing file in serial mode for interactive debugging: `uv run test-e2e -k test_file_name` or `uv run test-e2e-debug -k test_file_name`
+4. Re-run the failing file in serial mode for interactive debugging: `uv run grimoire e2e run -k test_file_name` or `uv run grimoire e2e noretry -k test_file_name`
 
 **Common parallel-specific issues:**
 - Port conflicts: unlikely (ports allocated simultaneously) but if it happens, re-run
@@ -132,14 +132,14 @@ In the "Key Commands" section of CLAUDE.md, update the parallel E2E description 
 
 ```
 # Run E2E tests in parallel (xdist)
-uv run test-e2e --parallel
+uv run grimoire e2e run --parallel
 ```
 
 to:
 
 ```
 # Run E2E tests in parallel (isolated servers + databases per file)
-uv run test-e2e --parallel
+uv run grimoire e2e run --parallel
 ```
 
 This reflects that parallel mode now uses the custom orchestrator with per-file isolation, not xdist.

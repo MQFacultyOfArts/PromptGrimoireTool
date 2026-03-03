@@ -117,7 +117,7 @@ Each step should include narrative text via `guide.note()` explaining what the i
 **Testing:**
 
 This is an integration-level guide script that drives a real browser. Unit testing the guide function itself is impractical (it requires a running app server). Verification is operational:
-- `uv run make-docs` produces `docs/guides/instructor-setup.md`
+- `uv run grimoire docs build` produces `docs/guides/instructor-setup.md`
 - The markdown file contains 7 `##` headings (one per step)
 - The markdown file contains 7 `![` image references
 - Screenshots exist in `docs/guides/screenshots/` directory
@@ -127,21 +127,21 @@ The "integration test property" of make-docs (AC4.4) provides regression coverag
 
 **Verification:**
 
-Run: `uv run make-docs` (requires running PostgreSQL and pandoc)
+Run: `uv run grimoire docs build` (requires running PostgreSQL and pandoc)
 Expected: Produces `docs/guides/instructor-setup.md` with ~7 screenshots
 
 If the full pipeline is not available for local testing, verify the import works:
 Run: `uv run python -c "from promptgrimoire.docs.scripts.instructor_setup import run_instructor_guide; print('OK')"`
 
 **UAT Steps:**
-1. [ ] Run: `uv run make-docs`
+1. [ ] Run: `uv run grimoire docs build`
 2. [ ] Open `docs/guides/instructor-setup.md` — verify ~7 `##` headings
 3. [ ] Verify ~7 `![` image references in the markdown
 4. [ ] Open screenshots in `docs/guides/screenshots/` — verify red outlines on highlighted elements
 5. [ ] Verify screenshots are trimmed (no large white margins)
 
 **Evidence Required:**
-- [ ] `uv run make-docs` exits zero
+- [ ] `uv run grimoire docs build` exits zero
 - [ ] `docs/guides/instructor-setup.md` exists with expected content
 
 **Commit:** `feat: migrate instructor setup guide to Python DSL`
@@ -176,7 +176,7 @@ git commit -m "chore: remove replaced instructor guide bash script"
 
 **Step 1: Run make-docs**
 
-Run: `uv run make-docs`
+Run: `uv run grimoire docs build`
 Expected: Pipeline completes, instructor guide produces markdown and screenshots. Student guide runs as stub (from Phase 2).
 
 **Step 2: Inspect output**
@@ -189,7 +189,7 @@ Verify:
 
 **Step 3: Run existing tests**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass, no regressions
 
 Run: `uv run ruff check .`

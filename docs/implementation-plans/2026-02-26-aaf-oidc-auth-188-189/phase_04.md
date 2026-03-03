@@ -106,7 +106,7 @@ Tests must verify each AC:
 
 ```bash
 uv run pytest tests/unit/test_magic_link_domain.py -v
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: New tests pass, all existing tests pass.
@@ -145,7 +145,7 @@ The E2E test itself IS the test. Update the assertion:
 **Verification:**
 
 ```bash
-uv run test-e2e -k test_login_page
+uv run grimoire e2e run -k test_login_page
 ```
 
 Expected: Updated E2E test passes.
@@ -164,4 +164,4 @@ Phase 4 is complete when:
 2. MQ emails (@mq.edu.au, @students.mq.edu.au) accepted (Task 1)
 3. Unit tests for domain validation pass (Task 1)
 4. E2E test updated and passing (Task 2)
-5. `uv run test-all` passes with zero failures
+5. `uv run grimoire test all` passes with zero failures

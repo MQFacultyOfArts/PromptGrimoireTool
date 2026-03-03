@@ -239,7 +239,7 @@ Expected: No results
 
 **Step 4: Run full test suite**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `uv run ruff check .`
@@ -250,6 +250,6 @@ Expected: No type errors
 
 **Step 5: Run make-docs end-to-end**
 
-Run: `uv run make-docs`
+Run: `uv run grimoire docs build`
 Expected: Full pipeline completes successfully — guides, HTML site, PDFs all generated.
 <!-- END_TASK_8 -->

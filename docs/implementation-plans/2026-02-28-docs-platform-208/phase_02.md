@@ -17,7 +17,7 @@
 This phase implements and tests:
 
 ### docs-platform-208.AC4: make_docs() orchestrates the full pipeline
-- **docs-platform-208.AC4.1 Success:** `uv run make-docs` starts the NiceGUI server with mock auth, launches Playwright, runs guides, and stops both on completion
+- **docs-platform-208.AC4.1 Success:** `uv run grimoire docs build` starts the NiceGUI server with mock auth, launches Playwright, runs guides, and stops both on completion
 - **docs-platform-208.AC4.2 Success:** Instructor guide runs before student guide (student depends on data created by instructor)
 - **docs-platform-208.AC4.3 Success:** Pipeline produces both markdown files and all screenshots in the expected output directories
 - **docs-platform-208.AC4.4 Failure:** If a guide function raises an exception, `make_docs()` exits non-zero (integration test property)
@@ -179,7 +179,7 @@ git commit -m "feat: add stub guide functions for Playwright-based make_docs()"
 
 **Step 1: Run all tests**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, no regressions from make_docs() refactoring
 
 **Step 2: Run linting and type checking**

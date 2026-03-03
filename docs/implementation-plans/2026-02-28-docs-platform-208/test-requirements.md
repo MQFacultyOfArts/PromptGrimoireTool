@@ -31,7 +31,7 @@ Generated from acceptance criteria in `docs/design-plans/2026-02-28-docs-platfor
 | AC3.1 | Success | Pillow trimming removes empty margins from screenshots | 1 | `tests/unit/test_docs_screenshot.py` |
 | AC3.2 | Success | Trimmed image retains all non-empty content (pixel data matches cropped original) | 1 | `tests/unit/test_docs_screenshot.py` |
 | AC3.3 | Edge | Image with no whitespace margins is returned unchanged | 1 | `tests/unit/test_docs_screenshot.py` |
-| AC3.4 | Success | Focused `locator.screenshot()` produces tightly-cropped element image | 3, 4 | Operational (via `uv run make-docs`) |
+| AC3.4 | Success | Focused `locator.screenshot()` produces tightly-cropped element image | 3, 4 | Operational (via `uv run grimoire docs build`) |
 
 ## AC4: make_docs() orchestrates the full pipeline
 
@@ -47,8 +47,8 @@ Generated from acceptance criteria in `docs/design-plans/2026-02-28-docs-platfor
 
 | AC | Type | Test Description | Phase | Test Location |
 |----|------|-----------------|-------|---------------|
-| AC5.1 | Success | Instructor guide produces markdown with ~7 screenshots | 3 | Operational (`uv run make-docs`) |
-| AC5.2 | Success | Student guide produces markdown with ~10 screenshots | 4 | Operational (`uv run make-docs`) |
+| AC5.1 | Success | Instructor guide produces markdown with ~7 screenshots | 3 | Operational (`uv run grimoire docs build`) |
+| AC5.2 | Success | Student guide produces markdown with ~10 screenshots | 4 | Operational (`uv run grimoire docs build`) |
 | AC5.3 | Success | All screenshots show element highlights and are trimmed | 3, 4 | Operational (visual inspection) |
 
 ## AC6: MkDocs Material renders HTML site
@@ -90,4 +90,4 @@ Generated from acceptance criteria in `docs/design-plans/2026-02-28-docs-platfor
 | Operational (make-docs) | 9 | AC3.4, AC5.1–AC5.3, AC6.1–AC6.3, AC7.1, AC8.2 |
 | Operational (search/review) | 4 | AC8.1, AC8.3, AC9.1, AC7.2 |
 
-Unit tests live in `tests/unit/` and run via `uv run test-all`. Operational tests are verified by running `uv run make-docs` end-to-end and inspecting output.
+Unit tests live in `tests/unit/` and run via `uv run grimoire test all`. Operational tests are verified by running `uv run grimoire docs build` end-to-end and inspecting output.

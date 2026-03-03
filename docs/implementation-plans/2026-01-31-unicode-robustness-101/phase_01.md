@@ -201,7 +201,7 @@ git commit -m "feat(test): add BLNS corpus parser with category extraction"
 This script runs pytest without marker filtering, enabling all tests
 including those marked with @pytest.mark.blns and @pytest.mark.slow.
 
-Usage: uv run test-all-fixtures
+Usage: uv run grimoire test all-fixtures
 """
 
 from __future__ import annotations
@@ -245,7 +245,7 @@ test-all-fixtures = "scripts.test_all_fixtures:main"
 
 **Step 3: Verify script runs**
 
-Run: `uv run test-all-fixtures --collect-only | head -20`
+Run: `uv run grimoire test all-fixtures --collect-only | head -20`
 
 Expected: Shows test collection without marker filtering (includes blns tests when they exist)
 
@@ -319,7 +319,7 @@ git commit -m "docs: document fontspec investigation - chose detect-and-wrap"
 **Done when:**
 - [x] `pytest --markers` shows `blns` and `slow` markers
 - [x] `uv run pytest` excludes `blns` by default
-- [x] `uv run test-all-fixtures` runs without marker filtering
+- [x] `uv run grimoire test all-fixtures` runs without marker filtering
 - [x] `uv run test-debug` continues to work
 - [x] Decision documented: detect-and-wrap approach
 
@@ -333,7 +333,7 @@ uv run pytest --markers | grep -E "(blns|slow)"
 uv run pytest --collect-only 2>&1 | grep -c "blns" || echo "0 blns tests collected (correct)"
 
 # Verify test-all-fixtures works
-uv run test-all-fixtures --collect-only | head -5
+uv run grimoire test all-fixtures --collect-only | head -5
 
 # Verify test-debug still works
 uv run test-debug --help || uv run test-debug --collect-only | head -5

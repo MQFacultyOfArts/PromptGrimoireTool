@@ -359,7 +359,7 @@ Tests:
 Run: `uv run pytest tests/integration/test_listing_queries.py -v`
 Expected: All tests pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass alongside new listing query tests.
 
 **Commit:** `test: add integration tests for workspace listing queries`

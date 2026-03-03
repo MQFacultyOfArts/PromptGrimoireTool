@@ -246,7 +246,7 @@ Update tests in `test_claude_client.py` that construct `ClaudeClient`:
 Run: `uv run pytest tests/unit/test_claude_client.py -v`
 Expected: All tests pass
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass
 
 **Commit:** `test: update LLM tests for parameter injection pattern`

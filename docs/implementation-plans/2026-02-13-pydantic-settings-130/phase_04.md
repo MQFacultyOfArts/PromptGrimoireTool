@@ -210,7 +210,7 @@ get_settings.cache_clear()
 **Important:** The `get_settings.cache_clear()` after setting the env var is critical — without it, Settings would return the cached instance that doesn't know about the test database URL. The `cache_clear()` must happen AFTER `os.environ[...]` is set, not before, so that the next `get_settings()` call picks up the new value.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass
 
 Run: `uv run ruff check tests/conftest.py`
@@ -257,7 +257,7 @@ Also update `test_run_alembic_upgrade_fails_without_database_url` (line 91): the
 Run: `uv run pytest tests/unit/test_db_schema.py -v`
 Expected: All tests pass
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass
 
 **Commit:** `test: update db schema tests for Settings-based configuration`

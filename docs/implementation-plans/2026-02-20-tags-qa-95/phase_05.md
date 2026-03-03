@@ -37,7 +37,7 @@ This phase implements and tests:
 After this phase is complete, verify manually:
 
 1. Run `uv run alembic upgrade head` — CHECK constraint migration applies cleanly
-2. Run `uv run test-all` — all integration tests pass, including new bypass_lock, delete nonexistent, import ValueError, color sentinel, and reorder ValueError tests
+2. Run `uv run grimoire test all` — all integration tests pass, including new bypass_lock, delete nonexistent, import ValueError, color sentinel, and reorder ValueError tests
 3. Verify CHECK constraint at DB level: `INSERT INTO tag_group (id, workspace_id, name, color, order_index) VALUES (gen_random_uuid(), (SELECT id FROM workspace LIMIT 1), 'test', 'red', 99)` — should fail with CHECK violation
 4. Verify NULL colour is accepted: `INSERT INTO tag_group (id, workspace_id, name, color, order_index) VALUES (gen_random_uuid(), (SELECT id FROM workspace LIMIT 1), 'test2', NULL, 99)` — should succeed
 
@@ -103,7 +103,7 @@ def downgrade() -> None:
 Run: `uv run alembic upgrade head`
 Expected: Migration applies cleanly (no existing invalid data)
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 **Commit:** `feat: add ck_tag_group_color_hex CHECK constraint`

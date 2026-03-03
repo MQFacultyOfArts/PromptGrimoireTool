@@ -94,10 +94,10 @@ Follow project TDD patterns. Write the test, run it against the current codebase
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_css_audit`
+Run: `uv run grimoire e2e run -k test_css_audit`
 Expected: Both test functions pass
 
-Run: `uv run test-e2e-changed`
+Run: `uv run grimoire e2e changed`
 Expected: New test runs and passes
 
 **Commit:** `test: add E2E CSS audit test for bottom toolbar layout`

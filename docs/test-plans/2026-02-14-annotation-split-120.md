@@ -5,8 +5,8 @@
 - Development environment configured with `.env` file
 - PostgreSQL running and accessible
 - `uv sync` completed
-- `uv run test-all` passing (2494 tests)
-- Seeded database (`uv run seed-data`)
+- `uv run grimoire test all` passing (2494 tests)
+- Seeded database (`uv run grimoire seed run`)
 - Browser supporting CSS Custom Highlight API (Chrome 105+ / Edge 105+)
 
 ## Phase 1: Scroll-Sync Card Positioning (AC2.3)
@@ -59,6 +59,6 @@
 | AC3.1 | `test_annotation_package_structure.py::test_no_imports_from_old_satellite_paths` | 3.1 |
 | AC3.2 | -- | 3.2 |
 | AC3.3-AC3.4 | `test_annotation_package_structure.py` | -- |
-| AC4.1 | `uv run test-all` (2494 passed) | -- |
+| AC4.1 | `uv run grimoire test all` (2494 passed) | -- |
 | AC4.3 | Updated test files pass | -- |
 | AC5.1-AC5.3 | -- | 4.1-4.3 |

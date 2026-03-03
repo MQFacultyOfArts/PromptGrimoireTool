@@ -20,7 +20,7 @@ This phase implements and tests:
 - **156-e2e-test-migration.AC1.3 Success:** `test_annotation_tabs.py` contains zero `data-char-index` locators
 
 ### 156-e2e-test-migration.AC2: All active E2E tests pass (DoD 2)
-- **156-e2e-test-migration.AC2.1 Success:** `uv run test-e2e` completes with zero failures and zero timeouts
+- **156-e2e-test-migration.AC2.1 Success:** `uv run grimoire e2e run` completes with zero failures and zero timeouts
 
 ---
 

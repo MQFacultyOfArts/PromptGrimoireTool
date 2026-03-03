@@ -27,7 +27,7 @@ This phase implements and tests:
 
 ---
 
-**Note on AC1.3:** The design plan specified seed data in the migration. Since tags require a `workspace_id` FK and no workspaces exist at migration time, seed data goes in the `seed-data` script instead (which creates activities with template workspaces). The migration creates empty tables. AC1.3 is satisfied after running `uv run seed-data`.
+**Note on AC1.3:** The design plan specified seed data in the migration. Since tags require a `workspace_id` FK and no workspaces exist at migration time, seed data goes in the `seed-data` script instead (which creates activities with template workspaces). The migration creates empty tables. AC1.3 is satisfied after running `uv run grimoire seed run`.
 
 ---
 
@@ -320,7 +320,7 @@ All tags: `locked=True` (instructor-provided tags students shouldn't modify), `w
 Use `get_session()` to create all rows in one transaction. Import `TagGroup` and `Tag` from `promptgrimoire.db.models`.
 
 **Verification:**
-Run: `uv run seed-data`
+Run: `uv run grimoire seed run`
 Expected: Tags seeded message appears. Subsequent runs show "Tags exist" (idempotent).
 
 **Commit:** `feat: seed Legal Case Brief tags in seed-data script`

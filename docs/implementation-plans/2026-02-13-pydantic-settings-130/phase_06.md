@@ -276,7 +276,7 @@ engine = create_async_engine(
 These fixtures depend on `db_schema_guard` (which sets `DATABASE__URL` and calls `cache_clear()`), so `get_settings().database.url` will return the test database URL.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass
 
 Verify no old-name bridge references remain:
@@ -326,7 +326,7 @@ Expected results:
 These are legitimate uses of `os.environ` for subprocess communication, not configuration reading.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `uv run ruff check .`

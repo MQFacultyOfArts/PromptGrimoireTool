@@ -299,7 +299,7 @@ Follow project testing patterns. Task-implementor generates actual test code at 
 Run: `uv run pytest tests/unit/test_make_docs.py -x -v`
 Expected: All tests pass (existing + updated)
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: Full test suite passes
 
 **Commit:** `test: verify personal grimoire guide pipeline integration`

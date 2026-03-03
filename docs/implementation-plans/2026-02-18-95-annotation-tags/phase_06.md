@@ -304,7 +304,7 @@ Check that no other modules import `create_activity` or `update_activity` with p
 Run: `uvx ty check`
 Expected: No type errors across the full codebase
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass (full suite verification — the refactored settings dialogs and new CRUD params are backward compatible)
 
 **Commit:** `chore: verify exports and backward compatibility for tag creation settings`

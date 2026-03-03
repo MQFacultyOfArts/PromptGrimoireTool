@@ -121,11 +121,11 @@ The "Annotate" tab label is created by `ui.tab("Annotate")` at `workspace.py:551
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_naughty_student`
+Run: `uv run grimoire e2e run -k test_naughty_student`
 Expected: Test passes (this test takes a while — it injects many naughty strings)
 
 **UAT Steps:**
-1. [ ] Run: `uv run test-e2e -k test_naughty_student`
+1. [ ] Run: `uv run grimoire e2e run -k test_naughty_student`
 2. [ ] Verify: test passes (crash-detection assertion finds "Annotate" tab label)
 
 **Commit:** `test: update crash-detection selector after title removal`

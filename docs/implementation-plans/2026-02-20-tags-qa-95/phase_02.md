@@ -39,7 +39,7 @@ This phase implements and tests:
 
 After this phase is complete, verify manually:
 
-1. Run `uv run test-e2e -k test_full_course_setup --headed` and observe:
+1. Run `uv run grimoire e2e run -k test_full_course_setup --headed` and observe:
    - Instructor creates a tag via quick-create "+", tag appears in toolbar
    - Instructor opens management dialog, adds tags, locks one, reorders groups
    - Student navigates to cloned workspace, sees tags in toolbar
@@ -47,7 +47,7 @@ After this phase is complete, verify manually:
    - Student edits unlocked tag name, change persists on blur
    - Student uses keyboard shortcuts `2` and `3` — highlights created with correct tags at reordered positions
 2. Confirm SortableJS drag reorder visually moves elements in `--headed` mode
-3. Run `uv run test-e2e -k test_full_course_setup` (headless) — all subtests pass
+3. Run `uv run grimoire e2e run -k test_full_course_setup` (headless) — all subtests pass
 
 ---
 
@@ -185,7 +185,7 @@ Each subtest is a `with subtests.test()` checkpoint — Playwright assertions vi
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_full_course_setup`
+Run: `uv run grimoire e2e run -k test_full_course_setup`
 Expected: All existing + new instructor subtests pass
 
 **Commit:** `test: add instructor tag E2E subtests (create, lock, reorder, import)`
@@ -256,7 +256,7 @@ Each subtest uses `expect()` assertions for visibility, text content, and elemen
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_full_course_setup`
+Run: `uv run grimoire e2e run -k test_full_course_setup`
 Expected: All subtests pass including new student verification subtests
 
 **Commit:** `test: add student clone verification E2E subtests`

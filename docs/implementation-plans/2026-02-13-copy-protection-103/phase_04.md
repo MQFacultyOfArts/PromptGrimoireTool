@@ -159,7 +159,7 @@ E2E testing of actual clipboard interception requires Phase 4 to be functionally
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass.
@@ -213,9 +213,9 @@ git commit -m "test: verify copy protection inactive for disabled activities and
 
 **UAT Steps (end of Phase 4):**
 
-1. [ ] Verify tests: `uv run test-all` — all pass
+1. [ ] Verify tests: `uv run grimoire test all` — all pass
 2. [ ] Start the app: `uv run python -m promptgrimoire`
-3. [ ] Seed data: `uv run seed-data`
+3. [ ] Seed data: `uv run grimoire seed run`
 4. [ ] As student, navigate to annotation page for a protected activity:
    - [ ] Try to copy text from Tab 1 document — blocked, toast shown
    - [ ] Try to copy text from Tab 2 organise cards — blocked, toast shown

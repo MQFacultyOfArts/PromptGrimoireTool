@@ -148,7 +148,7 @@ Start app, navigate to annotation page with a workspace, verify placement contro
 11. [ ] Verify: Status updates to "Loose"
 12. [ ] Click "Change Placement" → select "Place in Course" → choose LAWS1100
 13. [ ] Verify: Status updates to "Course: LAWS1100"
-14. [ ] Run all tests: `uv run test-all`
+14. [ ] Run all tests: `uv run grimoire test all`
 15. [ ] Verify: All tests pass
 
 ## Evidence Required

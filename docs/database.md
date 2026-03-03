@@ -397,7 +397,7 @@ When `DATABASE__URL` is configured, `main()` automatically bootstraps the databa
 
 1. **`ensure_database_exists(url) -> bool`** -- Creates the PostgreSQL database if it does not exist. Returns `True` if a new database was created, `False` otherwise (including `None`/empty URL or database already exists).
 2. **`run_alembic_upgrade()`** -- Runs Alembic migrations to head (idempotent). Internally calls `ensure_database_exists()` again (harmless -- already exists, returns `False`).
-3. **Conditional seeding** -- If `ensure_database_exists()` returned `True` (new DB), runs `uv run seed-data` to populate development data.
+3. **Conditional seeding** -- If `ensure_database_exists()` returned `True` (new DB), runs `uv run grimoire seed run` to populate development data.
 4. **Branch info** -- On feature branches (not main/master), prints `Branch: <name> | Database: <db_name>` to stdout.
 
 This means `uv run python -m promptgrimoire` on a new feature branch automatically creates the branch-specific database, migrates it, and seeds it. No manual setup needed.

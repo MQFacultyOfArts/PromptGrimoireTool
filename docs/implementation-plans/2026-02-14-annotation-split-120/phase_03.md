@@ -24,7 +24,7 @@ This phase implements and tests:
 - **120-annotation-split.AC3.1 Success:** All inter-module imports use direct paths (e.g., `from promptgrimoire.pages.annotation.organise import render_organise_tab`)
 
 ### 120-annotation-split.AC4: No logic changes
-- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run test-all`)
+- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run grimoire test all`)
 - **120-annotation-split.AC4.3 Edge:** Test import paths updated but test logic unchanged
 
 ---
@@ -174,7 +174,7 @@ from promptgrimoire.pages.annotation.respond import (
 grep -r "annotation_organise\|annotation_respond\|annotation_tags" src/ tests/ --include="*.py"
 # Expected: No matches (except possibly in comments/docstrings — verify manually)
 
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass
 ```
 
@@ -208,7 +208,7 @@ Add assertions to the existing package structure guard test:
 uv run pytest tests/unit/test_annotation_package_structure.py -v
 # Expected: All guard tests pass including new satellite checks
 
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass
 ```
 

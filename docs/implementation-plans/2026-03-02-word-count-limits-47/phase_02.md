@@ -197,7 +197,7 @@ pytestmark = pytest.mark.skipif(
 **Verification:**
 
 Run: `uv run pytest tests/integration/test_word_count_placement.py -v` (if DB configured)
-Or: `uv run test-changed`
+Or: `uv run grimoire test changed`
 Expected: All tests pass (or skip gracefully if no DB).
 
 **Commit:** `feat: add word count fields to PlacementContext with tri-state resolution`
@@ -221,7 +221,7 @@ Additional cases:
 
 **Verification:**
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass.
 
 **Commit:** `test: add PlacementContext word count edge cases`
@@ -298,7 +298,7 @@ Integration test (requires DB):
 
 **Verification:**
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass.
 
 **Commit:** `feat: add word count fields to update_activity()`
@@ -313,7 +313,7 @@ Expected: All tests pass.
 
 **Step 1: Run full test suite**
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass, no regressions.
 
 **Step 2: Run linting and type checking**

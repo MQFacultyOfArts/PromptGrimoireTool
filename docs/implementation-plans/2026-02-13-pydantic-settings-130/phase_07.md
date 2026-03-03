@@ -85,7 +85,7 @@ grep -rn "os\.environ\|os\.getenv\|load_dotenv" alembic/ --include="*.py"
 - Any old env var name references in error messages — update to new names
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass after any fixes
 <!-- END_TASK_2 -->
 
@@ -128,7 +128,7 @@ grep -rn "os.environ" tests/integration/ --include="*.py"
 Update each match. Also update the `_SERVER_SCRIPT` subprocess environment setup in conftest.py (lines 291-314) to use new env var names if it sets old-name variables for the test server subprocess.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `grep -rn "os\.environ" tests/ --include="*.py"`
@@ -156,7 +156,7 @@ Update all old-name env var references to new double-underscore names.
 Run: `grep -n "AUTH_MOCK\|STORAGE_SECRET\|STYTCH_" tests/conftest.py`
 Expected: Only new-name patterns with double underscores
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 **Commit (Tasks 1-4):** `chore: complete pydantic-settings migration cleanup`
@@ -176,7 +176,7 @@ Run the full verification battery:
 
 1. **Test suite:**
    ```bash
-   uv run test-all
+   uv run grimoire test all
    ```
    Expected: All 2354+ tests pass
 

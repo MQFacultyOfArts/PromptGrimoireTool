@@ -6,11 +6,11 @@
 
 PromptGrimoire currently generates user-facing guides through a pipeline built on two external CLI tools — rodney and showboat — driven by bash scripts. This design replaces that pipeline with a fully Python-native system. A new Guide DSL, built around Python context managers, lets authors write guide scripts that navigate the live application through a Playwright-controlled browser, capture annotated screenshots, and emit structured markdown — all in a single Python function. Screenshots are enhanced automatically: a CSS highlight is injected before capture to draw attention to relevant UI elements, then removed; Pillow trims empty margins from the result.
 
-The entry point `uv run make-docs` orchestrates the entire pipeline: it starts the NiceGUI server with mock authentication, runs the instructor and student guide scripts in order (instructor first, because the student guide depends on data the instructor creates), builds an HTML documentation site with MkDocs Material, and produces PDFs via Pandoc. Because the guides drive the real application through a real browser, a guide that fails to run signals a broken feature — making guide generation an integration test by design. The system is structured so that writing a new guide requires only a Python function and an entry in the nav configuration.
+The entry point `uv run grimoire docs build` orchestrates the entire pipeline: it starts the NiceGUI server with mock authentication, runs the instructor and student guide scripts in order (instructor first, because the student guide depends on data the instructor creates), builds an HTML documentation site with MkDocs Material, and produces PDFs via Pandoc. Because the guides drive the real application through a real browser, a guide that fails to run signals a broken feature — making guide generation an integration test by design. The system is structured so that writing a new guide requires only a Python function and an entry in the nav configuration.
 
 ## Definition of Done
 
-`uv run make-docs` generates user-facing guide documentation using a Python DSL backed by Playwright for browser automation and MkDocs Material for site rendering. Guide scripts are Python files that use the DSL to navigate the app, interact with UI, capture annotated screenshots (with element highlighting and whitespace trimming), and emit narrative markdown. The generated markdown is built into an HTML site deployable to GitHub Pages and exportable as PDF. Running the guides serves as an integration test — if the app breaks, guide generation fails. The system replaces the current bash/rodney/showboat pipeline and is designed for easy authoring of new guides as features are added. MkDocs configuration is structured for future migration to Zensical.
+`uv run grimoire docs build` generates user-facing guide documentation using a Python DSL backed by Playwright for browser automation and MkDocs Material for site rendering. Guide scripts are Python files that use the DSL to navigate the app, interact with UI, capture annotated screenshots (with element highlighting and whitespace trimming), and emit narrative markdown. The generated markdown is built into an HTML site deployable to GitHub Pages and exportable as PDF. Running the guides serves as an integration test — if the app breaks, guide generation fails. The system replaces the current bash/rodney/showboat pipeline and is designed for easy authoring of new guides as features are added. MkDocs configuration is structured for future migration to Zensical.
 
 ## Acceptance Criteria
 
@@ -35,7 +35,7 @@ The entry point `uv run make-docs` orchestrates the entire pipeline: it starts t
 - **docs-platform-208.AC3.4 Success:** Focused element capture (`locator.screenshot()`) produces a tightly-cropped image of just that element
 
 ### docs-platform-208.AC4: make_docs() orchestrates the full pipeline
-- **docs-platform-208.AC4.1 Success:** `uv run make-docs` starts the NiceGUI server with mock auth, launches Playwright, runs guides, and stops both on completion
+- **docs-platform-208.AC4.1 Success:** `uv run grimoire docs build` starts the NiceGUI server with mock auth, launches Playwright, runs guides, and stops both on completion
 - **docs-platform-208.AC4.2 Success:** Instructor guide runs before student guide (student depends on data created by instructor)
 - **docs-platform-208.AC4.3 Success:** Pipeline produces both markdown files and all screenshots in the expected output directories
 - **docs-platform-208.AC4.4 Failure:** If a guide function raises an exception, `make_docs()` exits non-zero (integration test property)
@@ -103,7 +103,7 @@ Two-pipeline system: a **guide runner** that drives Playwright to produce markdo
 **Data flow:**
 
 ```
-uv run make-docs
+uv run grimoire docs build
   → DB cleanup (Alembic + truncate)
   → Start NiceGUI server (mock auth)
   → Playwright browser (1280x800)
@@ -175,7 +175,7 @@ uv run make-docs
 
 **Dependencies:** Phase 2 (Playwright runner works)
 
-**Done when:** `uv run make-docs` produces `instructor-setup.md` with 7 screenshots, element highlights, trimmed whitespace, and narrative text. Guide content matches the current bash-generated output.
+**Done when:** `uv run grimoire docs build` produces `instructor-setup.md` with 7 screenshots, element highlights, trimmed whitespace, and narrative text. Guide content matches the current bash-generated output.
 <!-- END_PHASE_3 -->
 
 <!-- START_PHASE_4 -->
@@ -191,7 +191,7 @@ uv run make-docs
 
 **Dependencies:** Phase 3 (instructor guide creates the unit/week/activity the student uses)
 
-**Done when:** `uv run make-docs` produces `student-workflow.md` with 10 screenshots. Full pipeline produces both guides. All bash scripts removed.
+**Done when:** `uv run grimoire docs build` produces `student-workflow.md` with 10 screenshots. Full pipeline produces both guides. All bash scripts removed.
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->
@@ -208,7 +208,7 @@ uv run make-docs
 
 **Dependencies:** Phase 4 (both guides produce markdown)
 
-**Done when:** `uv run make-docs` produces an HTML site in `docs/guides/site/` with a landing page, both guides rendered with screenshots, and working navigation. `mkdocs serve` allows local preview.
+**Done when:** `uv run grimoire docs build` produces an HTML site in `docs/guides/site/` with a landing page, both guides rendered with screenshots, and working navigation. `mkdocs serve` allows local preview.
 <!-- END_PHASE_5 -->
 
 <!-- START_PHASE_6 -->
@@ -225,7 +225,7 @@ uv run make-docs
 
 **Dependencies:** Phase 5 (full pipeline works)
 
-**Done when:** No references to rodney or showboat remain in the codebase. `uv run make-docs` produces HTML site + PDFs from Python guide scripts. Project documentation is accurate.
+**Done when:** No references to rodney or showboat remain in the codebase. `uv run grimoire docs build` produces HTML site + PDFs from Python guide scripts. Project documentation is accurate.
 <!-- END_PHASE_6 -->
 
 ## Additional Considerations

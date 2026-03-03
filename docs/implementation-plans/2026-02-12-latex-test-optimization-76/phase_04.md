@@ -319,7 +319,7 @@ Or better: strip all non-alphanumeric-hyphen characters. But this changes existi
 Run: `uv run pytest tests/unit/export/test_latex_migration_snapshots.py -v`
 Expected: Snapshot tests pass (output identical to pre-migration)
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All LaTeX tests pass
 
 **Commit:** `refactor: migrate generate_tag_colour_definitions() to latex_cmd()`
@@ -389,7 +389,7 @@ This ensures `escape_latex` doesn't see/escape the `\cjktext{}` braces that `esc
 Run: `uv run pytest tests/unit/export/test_latex_migration_snapshots.py -v`
 Expected: Snapshot tests pass (output identical to pre-migration)
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All LaTeX tests pass
 
 **Commit:** `refactor: migrate format_annot_latex() to latex_cmd() and render_latex()`
@@ -432,7 +432,7 @@ The `escaped` value at line 375 has already been processed — it's trusted cont
 Run: `uv run pytest tests/unit/export/test_latex_migration_snapshots.py -v`
 Expected: Snapshot tests pass
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All LaTeX tests pass
 
 **Commit:** `refactor: migrate unicode_latex.py f-strings to latex_cmd()`
@@ -472,7 +472,7 @@ Expected: no results from `preamble.py`, `highlight_spans.py`, or `unicode_latex
 Run: `grep -rn 'f"\\\\' src/promptgrimoire/export/preamble.py src/promptgrimoire/export/highlight_spans.py src/promptgrimoire/export/unicode_latex.py`
 Expected: no results (or only allowed exceptions)
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 <!-- END_TASK_7 -->
 
@@ -488,14 +488,14 @@ Expected: All tests pass
 
 1. Run snapshot tests: `uv run pytest tests/unit/export/test_latex_migration_snapshots.py -v`
 2. Run latex_render unit tests: `uv run pytest tests/unit/export/test_latex_render.py -v`
-3. Run all LaTeX tests: `uv run test-all -m latex -v`
-4. Run full test suite: `uv run test-all`
+3. Run all LaTeX tests: `uv run grimoire test all -m latex -v`
+4. Run full test suite: `uv run grimoire test all`
 5. Verify no regressions
 
 The mega-doc tests from Phase 1 serve as the end-to-end regression guard. If they pass, the migrated functions produce correct LaTeX that compiles to valid PDFs.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, zero regressions
 <!-- END_TASK_8 -->
 <!-- END_SUBCOMPONENT_C -->
@@ -507,8 +507,8 @@ Expected: All tests pass, zero regressions
 1. [ ] Open `src/promptgrimoire/export/latex_render.py` — verify `NoEscape`, `escape_latex`, `latex_cmd`, `render_latex` exist and are readable
 2. [ ] Run `uv run python -c "from promptgrimoire.export.latex_render import latex_cmd; print(latex_cmd('definecolor', 'mycolor', 'HTML', 'FF0000'))"` — verify output is `\definecolor{mycolor}{HTML}{FF0000}`
 3. [ ] Run `uv run python -c "from promptgrimoire.export.latex_render import escape_latex; print(escape_latex('C#_notes'))"` — verify output escapes `#` and `_`
-4. [ ] Run `uv run test-all -m latex -v` — all LaTeX tests pass
-5. [ ] Run `uv run test-all` — full suite passes
+4. [ ] Run `uv run grimoire test all -m latex -v` — all LaTeX tests pass
+5. [ ] Run `uv run grimoire test all` — full suite passes
 6. [ ] Grep for f-string LaTeX patterns in migrated files — verify none remain
 7. [ ] Inspect `generate_tag_colour_definitions()` — verify it uses `latex_cmd()`, not f-strings
 8. [ ] Inspect `format_annot_latex()` — verify it uses `render_latex()` / `latex_cmd()`, not f-strings

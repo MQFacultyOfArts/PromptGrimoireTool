@@ -138,7 +138,7 @@ Phase 3 Task 5 already renamed `test_char_spans.py` to `test_text_extraction.py`
 3. **Audit `test_process_input.py`** — find assertions checking for `data-char-index` in pipeline output. Remove those assertions (pipeline no longer produces char spans). Keep assertions about other pipeline behaviour.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All remaining tests pass.
 
 **Commit:** `test: delete obsolete char-span tests`
@@ -309,7 +309,7 @@ Run a comprehensive sweep to confirm all char-span references are gone:
 
 3. **Full test suite:**
    ```
-   uv run test-all
+   uv run grimoire test all
    ```
    Expected: all pass.
 

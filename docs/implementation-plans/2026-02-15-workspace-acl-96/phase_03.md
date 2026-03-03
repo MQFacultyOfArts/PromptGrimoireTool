@@ -338,7 +338,7 @@ Follow project patterns from `docs/testing.md`. Use `@pytest_asyncio.fixture` fo
 Run: `uv run pytest tests/integration/test_acl_crud.py -v`
 Expected: All tests pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass alongside new ACL tests.
 
 **Commit:** `test: add integration tests for ACLEntry model and ACL CRUD operations`

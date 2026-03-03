@@ -125,7 +125,7 @@ All interactions use `data-testid` locators per project convention.
 
 **Verification:**
 
-Run: `uv run test-e2e -k TestWordCountSettings -x`
+Run: `uv run grimoire e2e run -k TestWordCountSettings -x`
 Expected: All subtests pass.
 
 **Commit:** `test: add E2E tests for word count activity settings`
@@ -175,7 +175,7 @@ Test flow:
 
 **Verification:**
 
-Run: `uv run test-e2e -k TestWordCountBadge -x`
+Run: `uv run grimoire e2e run -k TestWordCountBadge -x`
 Expected: All tests pass.
 
 **Commit:** `test: add E2E tests for word count badge display`
@@ -198,7 +198,7 @@ Additional badge tests:
 
 **Verification:**
 
-Run: `uv run test-e2e -k TestWordCountBadge -x`
+Run: `uv run grimoire e2e run -k TestWordCountBadge -x`
 Expected: All tests pass.
 
 **Commit:** `test: add badge edge case E2E tests`
@@ -253,7 +253,7 @@ Test flow:
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_soft_enforcement -x`
+Run: `uv run grimoire e2e run -k test_soft_enforcement -x`
 Expected: Test passes.
 
 **Commit:** `test: add E2E test for soft export enforcement`
@@ -287,7 +287,7 @@ Test flow:
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_hard_enforcement -x`
+Run: `uv run grimoire e2e run -k test_hard_enforcement -x`
 Expected: Test passes.
 
 **Commit:** `test: add E2E test for hard export enforcement`
@@ -302,17 +302,17 @@ Expected: Test passes.
 
 **Step 1: Run all word count E2E tests**
 
-Run: `uv run test-e2e -k "WordCount or word_count" -x`
+Run: `uv run grimoire e2e run -k "WordCount or word_count" -x`
 Expected: All tests pass.
 
 **Step 2: Run full E2E suite to check for regressions**
 
-Run: `uv run test-e2e`
+Run: `uv run grimoire e2e run`
 Expected: No regressions in existing E2E tests.
 
 **Step 3: Verify no unit/integration regressions**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass.
 
 **Step 4: Verify commit history**

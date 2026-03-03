@@ -27,7 +27,7 @@ Rather than patching tests feature-by-feature, this migration adopts a persona-b
 - **156-e2e-test-migration.AC1.3 Success:** `test_annotation_tabs.py` contains zero `data-char-index` locators
 
 ### 156-e2e-test-migration.AC2: All active E2E tests pass (DoD 2)
-- **156-e2e-test-migration.AC2.1 Success:** `uv run test-e2e` completes with zero failures and zero timeouts
+- **156-e2e-test-migration.AC2.1 Success:** `uv run grimoire e2e run` completes with zero failures and zero timeouts
 - **156-e2e-test-migration.AC2.2 Success:** No test is skipped with reason "Pending #106"
 
 ### 156-e2e-test-migration.AC3: Persona-based narrative tests (DoD 3, 4)

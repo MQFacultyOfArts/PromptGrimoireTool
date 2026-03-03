@@ -19,7 +19,7 @@ Tests in this table must exist and pass before the implementation is considered 
 | AC1.4 `generate_tex_only()` returns .tex without compiling | `tests/integration/test_pdf_export.py::TestGenerateTexOnly` | Call `generate_tex_only()` with HTML + highlight. Assert returns `Path` to `.tex` that exists, contains `\documentclass`, `\begin{document}`, highlight commands. Assert NO `.pdf` in parent directory. Also test with `general_notes` and `notes_latex` parameters. |
 | AC1.5 Subfiles independently compilable | `tests/integration/test_mega_doc_infrastructure.py` | Build mega-document with 2 segments. Assert main `.tex` compiles to PDF. Extract each subfile path and call `compile_latex()` on each independently -- assert each produces a PDF. |
 | AC1.6 Subtest failure does not block remaining subtests | `tests/integration/test_mega_doc_infrastructure.py`, `tests/integration/test_workspace_fixture_export.py` | Use `subtests.test()` context manager for each segment/highlight assertion. One failing subtest must not prevent others from executing. Verified by pytest-subtests plugin behaviour (independent assertion execution). |
-| AC1.7 Duplicate tests deleted without coverage loss | Phase 1 Task 15 (deletion) + `uv run test-all -m latex` | Delete `test_interleaved_highlights_compile`, `test_export_cjk_with_highlight`, `test_output_dir_defaults_to_tex_parent`. Verify all remaining tests pass and every codepath from the audit table still has at least one covering test. |
+| AC1.7 Duplicate tests deleted without coverage loss | Phase 1 Task 15 (deletion) + `uv run grimoire test all -m latex` | Delete `test_interleaved_highlights_compile`, `test_export_cjk_with_highlight`, `test_output_dir_defaults_to_tex_parent`. Verify all remaining tests pass and every codepath from the audit table still has at least one covering test. |
 | AC1.8 Critical path isolation tests | `tests/integration/test_pdf_export.py::TestCriticalPathIsolation` | Two fast standalone compile tests: (1) margin note alignment -- short document with 1 highlight + comment, assert PDF exists and `.tex` contains `\annot`; (2) highlight boundary precision -- short document with 1 highlight spanning exactly 2 words, assert `.tex` has `\highLight` wrapping those words. Each completes in <2s. |
 | AC2.1 `.sty` compiles standalone | `tests/integration/test_pdf_export.py::test_sty_compiles_standalone` | Write minimal `.tex` (`\documentclass{article}\usepackage{promptgrimoire-export}\begin{document}Test\end{document}`), copy `.sty` to same dir, call `compile_latex()`, assert PDF created. |
 | AC2.2 Production output parity | Phase 1 mega-doc tests as regression guard + Phase 2 Task 6 verification | All mega-doc tests pass after `.sty` extraction. Preamble content is identical in semantics (just different packaging). |
@@ -39,9 +39,9 @@ Tests in this table must exist and pass before the implementation is considered 
 | AC4.4 Output identity pre/post migration | `tests/unit/export/test_latex_migration_snapshots.py` | Three snapshot tests captured BEFORE migration, verified AFTER: (1) `generate_tag_colour_definitions()` with known tags, (2) `format_annot_latex()` with known highlight, (3) `format_annot_latex()` with LaTeX specials in author/comments. Must be byte-identical. |
 | AC4.5 Tag names with LaTeX specials | `tests/unit/export/test_latex_render.py::TestEscapeLatex` + `tests/unit/export/test_latex_migration_snapshots.py` | `escape_latex("C#_notes")` returns `"C\\#\\_notes"`. Snapshot test with `"C#_notes"` tag verifies colour definitions handle the name correctly. |
 | AC5.1 No export source file > 550 lines | Phase 5 Task 3 verification | `wc -l src/promptgrimoire/export/*.py \| sort -rn` -- every file under 550 lines. |
-| AC5.2 `format_annot_latex()` in `latex_format.py` | Phase 5 Task 1 implementation + `uv run test-all` | `grep -l "def format_annot_latex" src/promptgrimoire/export/` shows `latex_format.py` only. `highlight_spans.py` re-exports for backward compatibility. All tests pass. |
-| AC5.3 `pdf_exporter` in `tests/integration/conftest.py` | Phase 5 Task 4 implementation + `uv run test-all` | `grep -l "def pdf_exporter" tests/` shows `tests/integration/conftest.py` only. No unit or E2E tests use it. All integration tests pass with fixture discovery. |
-| AC5.4 All imports resolve after moves | Phase 5 Task 6 verification | `uvx ty check` passes. `uv run ruff check .` passes. Manual import verification of all moved modules succeeds. `uv run test-all` passes with zero import errors. |
+| AC5.2 `format_annot_latex()` in `latex_format.py` | Phase 5 Task 1 implementation + `uv run grimoire test all` | `grep -l "def format_annot_latex" src/promptgrimoire/export/` shows `latex_format.py` only. `highlight_spans.py` re-exports for backward compatibility. All tests pass. |
+| AC5.3 `pdf_exporter` in `tests/integration/conftest.py` | Phase 5 Task 4 implementation + `uv run grimoire test all` | `grep -l "def pdf_exporter" tests/` shows `tests/integration/conftest.py` only. No unit or E2E tests use it. All integration tests pass with fixture discovery. |
+| AC5.4 All imports resolve after moves | Phase 5 Task 6 verification | `uvx ty check` passes. `uv run ruff check .` passes. Manual import verification of all moved modules succeeds. `uv run grimoire test all` passes with zero import errors. |
 
 ---
 
@@ -68,8 +68,8 @@ Items in this table require manual inspection or judgement that automated tests 
 
 - TinyTeX installed (`uv run python scripts/setup_latex.py` -- includes `subfiles` package from Phase 1 Task 1)
 - All dev dependencies installed (`uv sync`)
-- `uv run test-all` passing (non-LaTeX tests green, confirming no regressions from file moves)
-- `uv run test-all -m latex` passing (all LaTeX tests green)
+- `uv run grimoire test all` passing (non-LaTeX tests green, confirming no regressions from file moves)
+- `uv run grimoire test all -m latex` passing (all LaTeX tests green)
 
 ### Phase 1: Mega-document Infrastructure
 
@@ -134,7 +134,7 @@ Items in this table require manual inspection or judgement that automated tests 
 
 **Steps:**
 1. Temporarily add `import logging; logger = logging.getLogger(__name__)` and `logger.warning("COMPILE_LATEX_CALLED")` at the top of `compile_latex()` in `src/promptgrimoire/export/pdf.py` (line ~65).
-2. Run: `uv run test-all -m latex -v 2>&1 | grep -c "COMPILE_LATEX_CALLED"`
+2. Run: `uv run grimoire test all -m latex -v 2>&1 | grep -c "COMPILE_LATEX_CALLED"`
 3. Expected: ~12 (exact breakdown: 2 workspace variants + 1 English mega-doc + 1 i18n mega-doc + 1 error path + 1 simple compile + 1 rich markdown + 2 isolation tests + 1 infrastructure + 1 preamble smoke + 1 string function = 12).
 4. Remove the temporary logging.
 5. If count exceeds 12 significantly, investigate which tests are calling `compile_latex()` unexpectedly.
@@ -224,7 +224,7 @@ Items in this table require manual inspection or judgement that automated tests 
 | AC1.4 `generate_tex_only()` | `TestGenerateTexOnly` (3 tests: basic, general_notes, notes_latex) | Phase 1 step 1.1 |
 | AC1.5 Subfiles compilable | `test_mega_doc_infrastructure.py` (subfile independence) | Phase 1 step 1.2 |
 | AC1.6 Subtest isolation | pytest-subtests in mega-doc and workspace tests | Phase 1 steps 1.3-1.5 |
-| AC1.7 Duplicates deleted | `uv run test-all -m latex` passes after deletion | Phase 1 step 1.6 |
+| AC1.7 Duplicates deleted | `uv run grimoire test all -m latex` passes after deletion | Phase 1 step 1.6 |
 | AC1.8 Isolation tests | `TestCriticalPathIsolation` (margin note, highlight boundary) | Phase 1 step 1.7 |
 | AC2.1 `.sty` compiles | `test_sty_compiles_standalone` | Phase 2 step 2.2 |
 | AC2.2 Output parity | All mega-doc tests pass post-extraction | Phase 2: Output Parity Spot-check |
@@ -244,6 +244,6 @@ Items in this table require manual inspection or judgement that automated tests 
 | AC4.4 Output identity | `test_latex_migration_snapshots.py` (3 snapshots) | Phase 4 step 4.2 |
 | AC4.5 Special chars in tags | `test_latex_render.py` + `test_latex_migration_snapshots.py` | Phase 4 step 4.4 |
 | AC5.1 No file > 550 lines | -- | Phase 5: File Size Verification |
-| AC5.2 `format_annot_latex` in `latex_format.py` | `uv run test-all` (imports resolve) | Phase 5 step 5.2 |
-| AC5.3 `pdf_exporter` in integration conftest | `uv run test-all` (fixture discovery) | Phase 5 step 5.3 |
-| AC5.4 All imports resolve | `uv run test-all` + `uvx ty check` + `uv run ruff check .` | Phase 5 steps 5.4-5.6 |
+| AC5.2 `format_annot_latex` in `latex_format.py` | `uv run grimoire test all` (imports resolve) | Phase 5 step 5.2 |
+| AC5.3 `pdf_exporter` in integration conftest | `uv run grimoire test all` (fixture discovery) | Phase 5 step 5.3 |
+| AC5.4 All imports resolve | `uv run grimoire test all` + `uvx ty check` + `uv run ruff check .` | Phase 5 steps 5.4-5.6 |

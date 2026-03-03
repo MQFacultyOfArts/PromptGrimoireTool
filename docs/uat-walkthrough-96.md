@@ -12,7 +12,7 @@ Use Chrome + an Incognito window, or Chrome + Firefox — each needs its own ses
 uv run python -m promptgrimoire
 
 # 2. Verify seed data users exist
-uv run manage-users list --all
+uv run grimoire admin list --all
 ```
 
 Expected: 4 users — instructor@uni.edu (coordinator), admin@example.com (coordinator),
@@ -84,13 +84,13 @@ asyncio.run(check())
 Now test a truly non-enrolled user:
 14. Open a **new terminal** and remove test@example.com's enrollment:
 ```bash
-uv run manage-users unenroll test@example.com LAWS1100 S1-2026
+uv run grimoire admin unenroll test@example.com LAWS1100 S1-2026
 ```
 15. **Browser A:** Refresh `/courses` — LAWS1100 should no longer appear (or the activity should not be accessible)
 
 16. **Restore enrollment for later tests:**
 ```bash
-uv run manage-users enroll test@example.com LAWS1100 S1-2026 --role student
+uv run grimoire admin enroll test@example.com LAWS1100 S1-2026 --role student
 ```
 
 ---

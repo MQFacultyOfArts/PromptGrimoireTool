@@ -68,7 +68,7 @@ from promptgrimoire.docs.helpers import wait_for_text_walker, select_chars  # re
 Run: `uv run python -c "from promptgrimoire.docs.helpers import wait_for_text_walker, select_chars; print('OK')"`
 Expected: Prints "OK"
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass (E2E helpers still work via re-export)
 
 **Commit:** `refactor: extract annotation helpers to promptgrimoire.docs.helpers for guide scripts`
@@ -170,7 +170,7 @@ Each step should include narrative text via `guide.note()` explaining what the s
 **Testing:**
 
 This is an integration-level guide script. Verification is operational:
-- `uv run make-docs` produces `docs/guides/student-workflow.md`
+- `uv run grimoire docs build` produces `docs/guides/student-workflow.md`
 - The markdown file contains ~10 `##` headings
 - The markdown file contains ~10 `![` image references
 - Screenshots exist in `docs/guides/screenshots/` directory
@@ -178,21 +178,21 @@ This is an integration-level guide script. Verification is operational:
 
 **Verification:**
 
-Run: `uv run make-docs` (requires running PostgreSQL and pandoc)
+Run: `uv run grimoire docs build` (requires running PostgreSQL and pandoc)
 Expected: Produces both `docs/guides/instructor-setup.md` and `docs/guides/student-workflow.md` with screenshots
 
 If the full pipeline is not available, verify the import:
 Run: `uv run python -c "from promptgrimoire.docs.scripts.student_workflow import run_student_guide; print('OK')"`
 
 **UAT Steps:**
-1. [ ] Run: `uv run make-docs`
+1. [ ] Run: `uv run grimoire docs build`
 2. [ ] Open `docs/guides/student-workflow.md` — verify ~10 `##` headings
 3. [ ] Verify ~10 `![` image references in the markdown
 4. [ ] Open screenshots in `docs/guides/screenshots/` — verify highlight outlines present
 5. [ ] Verify screenshots are trimmed (no large white margins)
 
 **Evidence Required:**
-- [ ] `uv run make-docs` exits zero
+- [ ] `uv run grimoire docs build` exits zero
 - [ ] Both `instructor-setup.md` and `student-workflow.md` exist with expected content
 
 **Commit:** `feat: migrate student workflow guide to Python DSL`
@@ -237,7 +237,7 @@ git commit -m "chore: remove all replaced bash guide scripts"
 
 **Step 1: Run make-docs**
 
-Run: `uv run make-docs`
+Run: `uv run grimoire docs build`
 Expected: Full pipeline completes. Both guides produce markdown and screenshots.
 
 **Step 2: Inspect output**
@@ -250,7 +250,7 @@ Verify:
 
 **Step 3: Run existing tests**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass
 
 Run: `uv run ruff check .`

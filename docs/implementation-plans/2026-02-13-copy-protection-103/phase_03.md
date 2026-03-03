@@ -132,7 +132,7 @@ The `protect` boolean determines whether Phase 4 injects client-side protections
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass (no behavioral change yet — just wiring).
@@ -146,9 +146,9 @@ git commit -m "feat: compute copy protection flag in annotation page lifecycle"
 
 **UAT Steps (end of Phase 3):**
 
-1. [ ] Verify tests: `uv run test-all` — all pass, including `TestIsPrivilegedUser`
+1. [ ] Verify tests: `uv run grimoire test all` — all pass, including `TestIsPrivilegedUser`
 2. [ ] Start the app: `uv run python -m promptgrimoire`
-3. [ ] Seed data (`uv run seed-data`), then enable copy protection on the seed activity via SQL: `UPDATE activity SET copy_protection = true WHERE title = 'Annotate Becky Bennett Interview';` — navigate to an annotation page for that activity
+3. [ ] Seed data (`uv run grimoire seed run`), then enable copy protection on the seed activity via SQL: `UPDATE activity SET copy_protection = true WHERE title = 'Annotate Becky Bennett Interview';` — navigate to an annotation page for that activity
 4. [ ] As instructor: verify `protect` is False (no JS injection — DevTools console shows no copy protection script)
 5. [ ] As student: verify `protect` is True (Phase 4 will make this observable — for now, add a temporary `print(f"protect={protect}")` to server logs to verify)
 

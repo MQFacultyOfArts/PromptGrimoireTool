@@ -17,7 +17,7 @@
 This phase implements and tests:
 
 ### parallel-e2e-runner-95.AC1: Parallel execution launches isolated workers
-- **parallel-e2e-runner-95.AC1.1 Success:** `uv run test-e2e --parallel` discovers all `tests/e2e/test_*.py` files and launches one server+pytest pair per file
+- **parallel-e2e-runner-95.AC1.1 Success:** `uv run grimoire e2e run --parallel` discovers all `tests/e2e/test_*.py` files and launches one server+pytest pair per file
 - **parallel-e2e-runner-95.AC1.2 Success:** Each server runs on a distinct port, each backed by its own PostgreSQL database
 - **parallel-e2e-runner-95.AC1.3 Success:** All workers run concurrently (wall-clock time approximately equals slowest single file, not sum of all)
 - **parallel-e2e-runner-95.AC1.4 Failure:** If a server fails to start, all other servers are killed, worker databases dropped, and exit code is non-zero

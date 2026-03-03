@@ -30,10 +30,10 @@ This phase implements and tests:
 
 After this phase is complete, verify manually:
 
-1. Run `uv run test-e2e` — all 10 previously-broken E2E test files pass
-2. Open a workspace in `--headed` mode (`uv run test-e2e -k test_austlii_annotation_workflow --headed`), confirm 10 tag buttons visible in toolbar after page load
+1. Run `uv run grimoire e2e run` — all 10 previously-broken E2E test files pass
+2. Open a workspace in `--headed` mode (`uv run grimoire e2e run -k test_austlii_annotation_workflow --headed`), confirm 10 tag buttons visible in toolbar after page load
 3. Open tag management dialog, confirm `data-testid` attributes are present in DOM via browser DevTools (inspect a tag name input, verify `data-testid="tag-name-input-..."`)
-4. Run `uv run test-e2e -k "test_full_course_setup" -- --seed-tags=false` or verify that `seed_tags=False` parameter is respected (workspace loads without tags in toolbar)
+4. Run `uv run grimoire e2e run -k "test_full_course_setup" -- --seed-tags=false` or verify that `seed_tags=False` parameter is respected (workspace loads without tags in toolbar)
 
 ---
 
@@ -115,7 +115,7 @@ Call `_seed_tags_for_workspace(workspace_id)` which is defined in the same file 
 
 **Verification:**
 
-Run: `uv run test-e2e`
+Run: `uv run grimoire e2e run`
 Expected: All E2E tests pass (10 previously-broken files now work)
 
 **Commit:** `feat: wire seed_tags into E2E workspace helpers`
@@ -152,9 +152,9 @@ Use NiceGUI's `.props(f'data-testid=tag-name-input-{tag.id}')` pattern on `ui.in
 
 **Verification:**
 
-Run: `uv run test-all` (existing tests still pass — data-testid attributes don't affect behaviour)
+Run: `uv run grimoire test all` (existing tests still pass — data-testid attributes don't affect behaviour)
 
-Optionally run `uv run test-e2e -k test_full_course_setup --headed` to visually confirm `data-testid` attributes render in the DOM via browser DevTools.
+Optionally run `uv run grimoire e2e run -k test_full_course_setup --headed` to visually confirm `data-testid` attributes render in the DOM via browser DevTools.
 
 **Commit:** `chore: add data-testid attributes to tag management dialog`
 <!-- END_TASK_3 -->

@@ -306,7 +306,7 @@ Follow project patterns from `docs/testing.md`. Include skip guard. Use `db_sess
 
 **Verification:**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass. New normalisation tests pass.
 
 **Commit:** `test: update and add tests for CourseRole normalisation`

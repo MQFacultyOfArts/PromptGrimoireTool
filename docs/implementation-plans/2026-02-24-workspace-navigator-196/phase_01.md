@@ -175,7 +175,7 @@ Unit tests (no database):
 - General notes included in output.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All new unit tests pass.
 
 **Commit:** `feat: add CRDT text extraction for FTS indexing`
@@ -315,7 +315,7 @@ Additional test cases:
 - Search matches in both document content and workspace search_text — both results returned with correct `source` field.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All new tests pass.
 
 **Commit:** `feat: add FTS query helper searching documents and CRDT content`

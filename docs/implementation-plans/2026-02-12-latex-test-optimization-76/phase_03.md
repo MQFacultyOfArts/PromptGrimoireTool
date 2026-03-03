@@ -475,7 +475,7 @@ The LaTeX body contains all original Unicode characters (Pandoc preserves them f
 **The `body_text=""` default preserves backwards compatibility** — any caller that doesn't pass `body_text` gets Latin-only fonts. This is safe but slow for CJK documents. All production callers MUST pass the body text.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass. If mega-doc tests fail (because `compile_mega_document()` doesn't pass body_text yet), proceed to Task 8 immediately.
 
 **Commit:** `refactor: build_annotation_preamble() uses dynamic font loading via body_text parameter`
@@ -512,7 +512,7 @@ This is the key performance win of Phase 3: English-only mega-docs skip the 4.4s
 Run: `uv run pytest tests/integration/test_mega_doc_infrastructure.py -v`
 Expected: Infrastructure test passes
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All LaTeX tests pass, including i18n mega-doc (CJK fonts loaded dynamically)
 
 **Commit:** `fix: compile_mega_document() passes body_text for dynamic font detection`
@@ -562,8 +562,8 @@ Expected: All tests pass, English compile < 2s
 **Implementation:**
 Verify that dynamic font loading produces no regressions:
 
-1. Run the full LaTeX test suite: `uv run test-all -m latex -v`
-2. Run the full test suite: `uv run test-all`
+1. Run the full LaTeX test suite: `uv run grimoire test all -m latex -v`
+2. Run the full test suite: `uv run grimoire test all`
 3. Verify no test regressions
 4. Run `uv run pytest -m latex --durations=0` — check timing:
    - English mega-doc should complete in ~1-2s (Latin-only fonts, no luaotfload overhead)
@@ -573,7 +573,7 @@ Verify that dynamic font loading produces no regressions:
 The mega-doc tests from Phase 1 are the primary regression guard. If they pass, the font preamble is functionally correct. The English mega-doc's faster compilation is the observable benefit.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, zero regressions
 <!-- END_TASK_10 -->
 <!-- END_SUBCOMPONENT_D -->
@@ -583,8 +583,8 @@ Expected: All tests pass, zero regressions
 ## UAT Steps
 
 1. [ ] Open `src/promptgrimoire/export/unicode_latex.py` — verify `FONT_REGISTRY`, `SCRIPT_TAG_RANGES`, `detect_scripts()`, `build_font_preamble()` exist
-2. [ ] Run `uv run test-all -m latex -v` — all LaTeX tests pass
-3. [ ] Run `uv run test-all` — full suite passes
+2. [ ] Run `uv run grimoire test all -m latex -v` — all LaTeX tests pass
+3. [ ] Run `uv run grimoire test all` — full suite passes
 4. [ ] Run `uv run pytest -m latex --durations=0` — verify English mega-doc completes in <2s
 5. [ ] Verify `.sty` contains `\RequirePackage{fontspec}` (NOT `luatexja-fontspec`)
 6. [ ] Verify `.sty` does NOT contain `\directlua` or `\setmainjfont`

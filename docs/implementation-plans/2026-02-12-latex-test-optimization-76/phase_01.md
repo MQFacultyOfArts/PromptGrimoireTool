@@ -151,7 +151,7 @@ Add `"generate_tex_only"` to the `__all__` list in `src/promptgrimoire/export/__
 Run: `uv run pytest tests/integration/test_pdf_export.py::TestGenerateTexOnly -v`
 Expected: All new tests pass
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All existing tests still pass (export_annotation_pdf behaviour unchanged)
 
 **Commit:** `feat: extract generate_tex_only() from export pipeline for tex-only testing`
@@ -447,7 +447,7 @@ Add test classes to `test_english_mega_doc.py` that assert against `english_mega
 Run: `uv run pytest tests/integration/test_english_mega_doc.py -v`
 Expected: All subtests pass, 1 compile_latex() invocation for this file
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All tests pass across all files
 
 **Commit:** `refactor: consolidate English LaTeX tests into mega-document (38 -> 1 compile)`
@@ -522,7 +522,7 @@ Add test classes to `test_i18n_mega_doc.py`:
 Run: `uv run pytest tests/integration/test_i18n_mega_doc.py -v`
 Expected: All subtests pass, 1 compile_latex() invocation for this file
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All tests pass
 
 **Commit:** `refactor: consolidate i18n LaTeX tests into mega-document (8 -> 1 compile)`
@@ -618,7 +618,7 @@ Delete 3 tests with redundant coverage:
 For each deletion, verify the codepath coverage table at `docs/wip/2026-02-12-latexmk-test-optimization.md` (Part 5, lines 536-563) — every codepath should still have at least one covering test.
 
 **Verification:**
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All remaining tests pass
 
 **Commit:** `test: remove 3 tests with redundant coverage`
@@ -666,10 +666,10 @@ Run: `uv run pytest -m latex --durations=0`
 No individual test should exceed 5s. Mega-document tests should complete in 2-5s each (single compile for multiple assertions).
 
 **Verification:**
-Run: `uv run test-all -m latex -v --tb=short`
+Run: `uv run grimoire test all -m latex -v --tb=short`
 Expected: All tests pass, no regressions
 
-Run: `uv run test-all` (full suite without latex filter)
+Run: `uv run grimoire test all` (full suite without latex filter)
 Expected: All tests pass, no regressions in non-latex tests
 
 **Commit:** (no commit if no changes needed; update audit doc if numbers differ from expectation)
@@ -680,8 +680,8 @@ Expected: All tests pass, no regressions in non-latex tests
 
 ## UAT Steps
 
-1. [ ] Run `uv run test-all -m latex -v` — all LaTeX tests pass
-2. [ ] Run `uv run test-all` — full suite passes (no regressions)
+1. [ ] Run `uv run grimoire test all -m latex -v` — all LaTeX tests pass
+2. [ ] Run `uv run grimoire test all` — full suite passes (no regressions)
 3. [ ] Count `compile_latex()` invocations — should be ~12 (down from 68)
 4. [ ] Run `uv run pytest -m latex --durations=0` — no test exceeds 5s
 5. [ ] Inspect `tests/integration/test_english_mega_doc.py` — verify subfile `.tex` files exist in test output

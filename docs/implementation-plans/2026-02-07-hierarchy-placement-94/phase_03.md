@@ -162,7 +162,7 @@ Start app, navigate to course detail, click "Instantiate" on an Activity with do
 11. [ ] Verify: Template workspace and its document are unchanged (content identical to step 5)
 12. [ ] Test empty template: Create a new Activity, do NOT add documents, click "Instantiate"
 13. [ ] Verify: Redirected to annotation page with empty workspace (no documents, but workspace exists)
-14. [ ] Run all tests: `uv run test-all`
+14. [ ] Run all tests: `uv run grimoire test all`
 15. [ ] Verify: All tests pass
 
 ## Evidence Required

@@ -80,7 +80,7 @@ This ensures every cloned workspace gets a sensible default title regardless of 
 Update any existing tests that assert the cloned workspace has `title=None` — they should now expect `title=activity.title`.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass (updated assertions for title default).
 
 **Commit:** `feat: default cloned workspace title to activity name`
@@ -138,7 +138,7 @@ Replace the workspace title rendering for owned workspaces with an inline-editab
 
 **Verification:**
 Manual: Click pencil → input becomes editable with border. Type new title, press Enter → saves, returns to readonly. Press Escape → reverts. Blur → saves. Refresh → title persists.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add inline title rename with pencil icon on navigator`
 <!-- END_TASK_2 -->
@@ -166,7 +166,7 @@ E2E tests for inline title editing using Playwright:
 Use `page.locator('[data-testid="edit-title-btn"]')` or similar for the pencil icon.
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 Expected: All rename E2E tests pass.
 
 **Commit:** `test: add E2E tests for inline title rename on navigator`
@@ -189,7 +189,7 @@ E2E test verifying default title on workspace clone:
 - Verify the workspace appears in "My Work" with title "Annotate Becky Bennett Interview" (not "Untitled Workspace").
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 Expected: All tests pass.
 
 **Commit:** `test: add E2E test for default title on workspace clone`

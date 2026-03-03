@@ -11,7 +11,7 @@
 Phase 1 produces a Playwright-driven guide script (`personal_grimoire.py`) that runs inside `make_docs()` against a live NiceGUI server. This is integration code -- it drives a browser through real application UI, emitting markdown and screenshots as side effects. It cannot be unit tested in isolation. Its correctness is verified by:
 
 1. **Unit tests of the pipeline** (Phase 2): `test_make_docs.py` mocks the guide functions and verifies call order, arguments, and pandoc PDF generation. These tests run in `test-all` via xdist.
-2. **End-to-end verification** by running `uv run make-docs` and inspecting the output artifacts. This is a human-verified step because it requires a running database, server, and Playwright browser -- infrastructure that only exists in the `make-docs` pipeline, not in the test harness.
+2. **End-to-end verification** by running `uv run grimoire docs build` and inspecting the output artifacts. This is a human-verified step because it requires a running database, server, and Playwright browser -- infrastructure that only exists in the `make-docs` pipeline, not in the test harness.
 
 ---
 
@@ -50,7 +50,7 @@ Phase 1 produces a Playwright-driven guide script (`personal_grimoire.py`) that 
 
 | AC | Criterion | Justification for Human Verification | Verification Approach |
 |----|-----------|--------------------------------------|----------------------|
-| AC2.1 | Student is enrolled in UNIT1234 but navigates to `/annotation` and clicks `create-workspace-btn` | This criterion describes a UI interaction sequence performed by the guide script against a live application. The guide script IS the test -- it will fail (Playwright timeout) if the `create-workspace-btn` does not exist or is not clickable. The underlying workspace creation logic is already covered by existing E2E persona tests (`test_instructor_workflow.py`). | HV1: Run `uv run make-docs` and confirm the guide completes without Playwright errors. Inspect screenshot `your-personal-grimoire-03.png` showing the newly created workspace. |
+| AC2.1 | Student is enrolled in UNIT1234 but navigates to `/annotation` and clicks `create-workspace-btn` | This criterion describes a UI interaction sequence performed by the guide script against a live application. The guide script IS the test -- it will fail (Playwright timeout) if the `create-workspace-btn` does not exist or is not clickable. The underlying workspace creation logic is already covered by existing E2E persona tests (`test_instructor_workflow.py`). | HV1: Run `uv run grimoire docs build` and confirm the guide completes without Playwright errors. Inspect screenshot `your-personal-grimoire-03.png` showing the newly created workspace. |
 | AC2.2 | Created workspace has `activity_id=NULL` and `course_id=NULL` | The guide script creates a workspace by clicking `create-workspace-btn` on the annotation page (not via an activity Start button). The application's workspace creation path from `/annotation` always produces a loose workspace (`activity_id=NULL`, `course_id=NULL`). This behaviour is tested by existing integration tests for workspace CRUD. The guide script verifies it indirectly: if the workspace were associated with an activity, the placement dialog in Section 5 would show it as already placed (not "Unsorted"). | HV1: After running `make-docs`, inspect the placement dialog screenshot (`your-personal-grimoire-09.png` or similar) -- the dialog should show the workspace as unplaced, confirming NULL associations. |
 | AC2.3 | Navigator shows the workspace in the "Unsorted" section | The Navigator's grouping logic (loose workspaces in "Unsorted") is tested by existing navigator integration tests. The guide script captures a screenshot of the Navigator but does not return to verify placement post-creation (the flow is linear, moving forward through sections). | HV3: After running `make-docs` end-to-end, manually navigate to the Navigator as `loose-student@test.example.edu.au` and confirm the workspace appears in "Unsorted" before placement. Alternatively, inspect the Section 5 narrative which closes the arc by placing the workspace. |
 
@@ -83,7 +83,7 @@ Phase 1 produces a Playwright-driven guide script (`personal_grimoire.py`) that 
 
 **Procedure:**
 
-1. Run `uv run make-docs`
+1. Run `uv run grimoire docs build`
 2. Confirm exit code 0 (no Playwright timeouts or application errors)
 3. Verify output file exists:
    ```

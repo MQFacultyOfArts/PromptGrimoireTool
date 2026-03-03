@@ -8,7 +8,7 @@
 
 - Application running locally: `uv run python -m promptgrimoire`
 - Database configured and migrated: `DATABASE_URL` set, Alembic migrations applied
-- `uv run test-all` passing (unit + integration tests green)
+- `uv run grimoire test all` passing (unit + integration tests green)
 - Chrome 105+ or Edge 105+ browser (CSS Custom Highlight API support required)
 - For HV3: two separate browser windows or profiles
 

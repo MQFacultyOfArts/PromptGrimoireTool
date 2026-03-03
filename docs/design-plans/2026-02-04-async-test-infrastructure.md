@@ -17,7 +17,7 @@ The implementation is complete when:
 3. **LibreOffice removed from tests** - `test_cross_env_highlights.py` loads `183-libreoffice.html` fixture directly
 4. **RTF parser tests removed** - `test_rtf_parser.py` deleted (deprecated functionality that keeps erroring)
 5. **Direct subprocess calls fixed** - `test_overlapping_highlights.py` and `test_latex_packages.py` use `await compile_latex()`
-6. **All tests pass** - `uv run test-all` passes
+6. **All tests pass** - `uv run grimoire test all` passes
 7. **Pandoc subprocess is async** - `grep "subprocess.run" src/promptgrimoire/export/latex.py` returns nothing (kpsewhich in unicode_latex.py is OK - runs at import time)
 
 ## Glossary
@@ -94,5 +94,5 @@ The `@pytest.mark.asyncio` decorator pattern is already used throughout the test
 
 **Dependencies:** Phase 2
 
-**Done when:** RTF parser tests removed, `uv run test-all` passes
+**Done when:** RTF parser tests removed, `uv run grimoire test all` passes
 <!-- END_PHASE_3 -->

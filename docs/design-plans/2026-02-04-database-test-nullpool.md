@@ -12,7 +12,7 @@ The solution migrates to NullPool, a connection pooling strategy that disables c
 Database integration tests run with full xdist parallelism - no `xdist_group` clustering.
 
 **Success Criteria:**
-- `uv run test-all` passes with DB tests distributed across workers (not all on gw0)
+- `uv run grimoire test all` passes with DB tests distributed across workers (not all on gw0)
 - No "Future attached to different loop" errors
 - No database rebuild between tests
 - Tests remain isolated by UUID/workspace
@@ -235,7 +235,7 @@ Investigation found current patterns in `tests/integration/`:
 **Dependencies:** Phase 5
 
 **Done when:**
-- `uv run test-all` passes
+- `uv run grimoire test all` passes
 - `uv run pytest tests/integration/test_db_async.py tests/integration/test_workspace_*.py tests/integration/test_course_service.py -n 4 -v 2>&1 | grep -E "^\[gw"` shows tests on gw0, gw1, gw2, gw3
 <!-- END_PHASE_6 -->
 

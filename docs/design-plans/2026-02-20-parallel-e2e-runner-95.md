@@ -6,16 +6,16 @@
 
 The current `test-e2e --parallel` mode passes `-n auto` to pytest-xdist, which attempts to parallelise individual test cases but shares a single NiceGUI server and database. This collapses under database or server state mutations, and xdist's event-loop management conflicts with Playwright's async internals. This design replaces that approach entirely with a custom asyncio orchestrator that gives each E2E test *file* its own isolated NiceGUI server process and its own PostgreSQL database, cloned from the branch test database via `CREATE DATABASE ... TEMPLATE`. Concurrency happens at the file level, not the test level, and no xdist involvement is required.
 
-The orchestrator lives in `src/promptgrimoire/cli.py` and runs in three phases: setup (clone N databases, allocate N ports, start N server processes), run (launch N pytest subprocesses concurrently and collect results), and teardown (kill all server process groups, merge JUnit XML reports, drop worker databases). Each subprocess pair writes to its own log file, keeping output separate. The serial `uv run test-e2e` and `uv run test-e2e-debug` modes are unchanged.
+The orchestrator lives in `src/promptgrimoire/cli.py` and runs in three phases: setup (clone N databases, allocate N ports, start N server processes), run (launch N pytest subprocesses concurrently and collect results), and teardown (kill all server process groups, merge JUnit XML reports, drop worker databases). Each subprocess pair writes to its own log file, keeping output separate. The serial `uv run grimoire e2e run` and `uv run grimoire e2e noretry` modes are unchanged.
 
 ## Definition of Done
 
 A parallel E2E test runner that replaces the current `--parallel` (xdist) mode in `test-e2e`. Each E2E test file gets its own NiceGUI server process on a distinct port, backed by its own PostgreSQL database. All files run concurrently, results aggregated at the end. `test-e2e-debug` keeps fail-fast semantics (kill on first failure).
 
 **Success criteria:**
-- `uv run test-e2e --parallel` launches N servers (one per test file), N databases, runs all files to completion, reports aggregate pass/fail
-- `uv run test-e2e` (no flags) remains serial single-server as today
-- `uv run test-e2e-debug` uses fail-fast: stops all workers when any file fails
+- `uv run grimoire e2e run --parallel` launches N servers (one per test file), N databases, runs all files to completion, reports aggregate pass/fail
+- `uv run grimoire e2e run` (no flags) remains serial single-server as today
+- `uv run grimoire e2e noretry` uses fail-fast: stops all workers when any file fails
 - Wall-clock time approximately equals the slowest single test file
 - No pytest-xdist involvement
 - Worker databases are created automatically and cleaned up (or at least not left dangling indefinitely)
@@ -28,14 +28,14 @@ A parallel E2E test runner that replaces the current `--parallel` (xdist) mode i
 ## Acceptance Criteria
 
 ### parallel-e2e-runner-95.AC1: Parallel execution launches isolated workers
-- **parallel-e2e-runner-95.AC1.1 Success:** `uv run test-e2e --parallel` discovers all `tests/e2e/test_*.py` files and launches one server+pytest pair per file
+- **parallel-e2e-runner-95.AC1.1 Success:** `uv run grimoire e2e run --parallel` discovers all `tests/e2e/test_*.py` files and launches one server+pytest pair per file
 - **parallel-e2e-runner-95.AC1.2 Success:** Each server runs on a distinct port, each backed by its own PostgreSQL database
 - **parallel-e2e-runner-95.AC1.3 Success:** All workers run concurrently (wall-clock time approximately equals slowest single file, not sum of all)
 - **parallel-e2e-runner-95.AC1.4 Failure:** If a server fails to start, all other servers are killed, worker databases dropped, and exit code is non-zero
 
 ### parallel-e2e-runner-95.AC2: Serial mode unchanged
-- **parallel-e2e-runner-95.AC2.1 Success:** `uv run test-e2e` (no flags) runs single-server serial mode exactly as before
-- **parallel-e2e-runner-95.AC2.2 Success:** `uv run test-e2e-debug` runs single-server with `--lf` and `-x` exactly as before
+- **parallel-e2e-runner-95.AC2.1 Success:** `uv run grimoire e2e run` (no flags) runs single-server serial mode exactly as before
+- **parallel-e2e-runner-95.AC2.2 Success:** `uv run grimoire e2e noretry` runs single-server with `--lf` and `-x` exactly as before
 
 ### parallel-e2e-runner-95.AC3: Result aggregation
 - **parallel-e2e-runner-95.AC3.1 Success:** Per-worker JUnit XML files are merged into a single report
@@ -189,7 +189,7 @@ Test fixture patterns from `tests/e2e/conftest.py`:
 
 **Dependencies:** Phase 3 (orchestrator)
 
-**Done when:** `uv run test-e2e --parallel` runs all E2E test files in parallel with isolated servers and databases. `uv run test-e2e` (no flags) still runs serial. `uv run test-e2e-debug` still works as before. Output is readable in both TTY and non-TTY modes.
+**Done when:** `uv run grimoire e2e run --parallel` runs all E2E test files in parallel with isolated servers and databases. `uv run grimoire e2e run` (no flags) still runs serial. `uv run grimoire e2e noretry` still works as before. Output is readable in both TTY and non-TTY modes.
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->

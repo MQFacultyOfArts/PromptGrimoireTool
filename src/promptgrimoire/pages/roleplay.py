@@ -349,90 +349,99 @@ async def roleplay_page() -> None:
         ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
         ui.query("body").classes("roleplay-bg")
 
-        # Upload section (collapsed — Becky Bennett auto-loads below)
-        with (
-            ui.expansion("Load Different Character", icon="upload_file")
-            .classes("w-full mb-4 roleplay-upload")
-            .props('data-testid="roleplay-upload-card"') as upload_expansion
-        ):
-            widgets["upload_expansion"] = upload_expansion
-
-            user_name_input = ui.input(
-                label="Your name (used as {{user}})", value=_get_default_user_name()
-            ).classes("w-64 mb-2")
-            widgets["user_name_input"] = user_name_input
-
-            ui.upload(
-                label="Drop character card JSON here",
-                on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
-                auto_upload=True,
-            ).classes("w-full").props('accept=".json"')
-
-        # Chat section
-        with (
-            ui.card()
-            .classes("w-full")
-            .props('data-testid="roleplay-chat-card"') as chat_card
-        ):
-            widgets["chat_card"] = chat_card
-
-            with ui.row().classes("w-full items-center mb-2"):
-                char_name_label = ui.label("").classes("text-h5")
-                widgets["char_name_label"] = char_name_label
-            scenario_label = ui.label("").classes("text-sm text-gray-600 mb-4")
-            widgets["scenario_label"] = scenario_label
-
+        with ui.column().classes("roleplay-column"):
+            # Upload section (collapsed — Becky Bennett auto-loads below)
             with (
-                ui.scroll_area()
-                .classes("w-full h-96 border rounded p-4 roleplay-chat")
-                .props('data-testid="roleplay-chat-area"') as scroll_area
+                ui.expansion("Load Different Character", icon="upload_file")
+                .classes("w-full mb-4 roleplay-upload")
+                .props('data-testid="roleplay-upload-card"') as upload_expansion
             ):
-                chat_container = ui.column().classes("w-full gap-3")
-            widgets["scroll_area"] = scroll_area
-            widgets["chat_container"] = chat_container
+                widgets["upload_expansion"] = upload_expansion
 
-            with ui.row().classes("w-full mt-4"):
-                message_input = (
-                    ui.input(placeholder="Type your message...")
-                    .classes("flex-grow")
-                    .props('outlined data-testid="roleplay-message-input"')
+                user_name_input = ui.input(
+                    label="Your name (used as {{user}})",
+                    value=_get_default_user_name(),
+                ).classes("w-64 mb-2")
+                widgets["user_name_input"] = user_name_input
+
+                ui.upload(
+                    label="Drop character card JSON here",
+                    on_upload=lambda e: _handle_upload(e, state=state, widgets=widgets),
+                    auto_upload=True,
+                ).classes("w-full").props('accept=".json"')
+
+            # Chat section — transparent card over dark background
+            with (
+                ui.card()
+                .classes("w-full roleplay-card")
+                .props('data-testid="roleplay-chat-card"') as chat_card
+            ):
+                widgets["chat_card"] = chat_card
+
+                char_name_label = (
+                    ui.label("").classes("text-h5").style("color: rgb(220, 220, 210);")
                 )
+                widgets["char_name_label"] = char_name_label
 
-                async def on_send() -> None:
-                    if state["session"]:
-                        await _handle_send(
-                            state["session"],
-                            state["client"],
-                            message_input,
-                            state["log_path"],
-                            chat_container,
-                            scroll_area,
-                            send_button,
-                        )
+                # Scenario hidden — raw placeholder text is not user-facing
+                scenario_label = ui.label("")
+                scenario_label.visible = False
+                widgets["scenario_label"] = scenario_label
 
-                send_button = (
-                    ui.button("Send", on_click=on_send)
-                    .classes("ml-2")
-                    .props('data-testid="roleplay-send-btn"')
+                with (
+                    ui.scroll_area()
+                    .classes("w-full border rounded p-4 roleplay-chat")
+                    .style("height: 60vh;")
+                    .props('data-testid="roleplay-chat-area"') as scroll_area
+                ):
+                    chat_container = ui.column().classes("w-full gap-3")
+                widgets["scroll_area"] = scroll_area
+                widgets["chat_container"] = chat_container
+
+                with ui.row().classes("w-full mt-4"):
+                    message_input = (
+                        ui.input(placeholder="Type your message...")
+                        .classes("flex-grow")
+                        .props('outlined data-testid="roleplay-message-input"')
+                    )
+
+                    async def on_send() -> None:
+                        if state["session"]:
+                            await _handle_send(
+                                state["session"],
+                                state["client"],
+                                message_input,
+                                state["log_path"],
+                                chat_container,
+                                scroll_area,
+                                send_button,
+                            )
+
+                    send_button = (
+                        ui.button("Send", on_click=on_send)
+                        .classes("ml-2")
+                        .props('data-testid="roleplay-send-btn"')
+                    )
+                    message_input.on("keydown.enter", on_send)
+
+                # Export button — disabled until a session is loaded
+                export_button = (
+                    ui.button(
+                        "Export to Workspace",
+                        icon="upload",
+                        on_click=lambda: _handle_export(state),
+                    )
+                    .classes("w-full mt-4")
+                    .props('data-testid="roleplay-export-btn"')
                 )
-                message_input.on("keydown.enter", on_send)
+                if _EXPORT_BTN_INITIAL_DISABLED:
+                    export_button.disable()
+                widgets["export_button"] = export_button
 
-            # Export button — disabled until a session is loaded
-            export_button = (
-                ui.button(
-                    "Export to Workspace",
-                    icon="upload",
-                    on_click=lambda: _handle_export(state),
-                )
-                .classes("w-full mt-4")
-                .props('data-testid="roleplay-export-btn"')
-            )
-            if _EXPORT_BTN_INITIAL_DISABLED:
-                export_button.disable()
-            widgets["export_button"] = export_button
+            with ui.expansion("Session Info", icon="info").classes(
+                "w-full mt-4 roleplay-upload"
+            ):
+                ui.label("Log files are saved to: logs/sessions/")
 
-        with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
-            ui.label("Log files are saved to: logs/sessions/")
-
-        # Auto-load bundled Becky Bennett character card
-        _auto_load_character(state, widgets)
+            # Auto-load bundled Becky Bennett character card
+            _auto_load_character(state, widgets)

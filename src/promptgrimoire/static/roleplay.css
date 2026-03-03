@@ -14,6 +14,20 @@
     z-index: -1;
 }
 
+/* ── Narrower centred column ─────────────────────────────────────── */
+.roleplay-column {
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* ── Transparent chat card (override Quasar q-card white default) ── */
+.roleplay-card {
+    background: transparent !important;
+    box-shadow: none !important;
+    color: rgb(220, 220, 210);
+}
+
 /* ── Chat scroll area ────────────────────────────────────────────── */
 .roleplay-chat {
     background: rgba(23, 23, 23, 0.85);
@@ -21,33 +35,47 @@
     -webkit-backdrop-filter: blur(8px);
     border-radius: 12px;
     padding: 16px;
+    border-color: rgba(220, 220, 210, 0.15) !important;
 }
 
 /* ── Quasar chat message overrides ───────────────────────────────── */
-.q-message {
+.roleplay-chat .q-message {
     color: rgb(220, 220, 210);
     font-family: "Noto Sans", sans-serif;
     font-size: 15px;
 }
 
+/* Message name labels */
+.roleplay-chat .q-message-name {
+    color: rgb(180, 180, 170) !important;
+}
+
 /* User (sent) bubble — !important overrides Quasar's default background */
-.q-message-sent .q-message-text-content {
+.roleplay-chat .q-message-sent .q-message-text-content {
     background: rgba(0, 0, 0, 0.3) !important;
+    color: rgb(220, 220, 210) !important;
 }
 
 /* AI (received) bubble — !important overrides Quasar's default background */
-.q-message-received .q-message-text-content {
+.roleplay-chat .q-message-received .q-message-text-content {
     background: rgba(60, 60, 60, 0.3) !important;
+    color: rgb(220, 220, 210) !important;
+}
+
+/* Kill the Quasar default message text colour overrides */
+.roleplay-chat .q-message-text--sent,
+.roleplay-chat .q-message-text--received {
+    color: rgb(220, 220, 210) !important;
 }
 
 /* Italic / emphasis colour */
-.q-message em,
-.q-message i {
+.roleplay-chat .q-message em,
+.roleplay-chat .q-message i {
     color: rgb(145, 145, 145);
 }
 
 /* Blockquote — orange accent */
-.q-message blockquote {
+.roleplay-chat .q-message blockquote {
     border-left: 3px solid rgb(225, 138, 36);
     background: rgba(0, 0, 0, 0.2);
     padding: 8px 12px;
@@ -55,7 +83,7 @@
 }
 
 /* ── Avatar ──────────────────────────────────────────────────────── */
-.q-avatar img {
+.roleplay-chat .q-avatar img {
     width: 50px;
     height: 50px;
     border-radius: 50%;
@@ -64,8 +92,23 @@
 
 /* ── Upload card styling ─────────────────────────────────────────── */
 .roleplay-upload {
-    background: rgba(23, 23, 23, 0.8);
-    color: rgb(220, 220, 210);
+    background: rgba(23, 23, 23, 0.8) !important;
+    color: rgb(220, 220, 210) !important;
     border: 1px solid rgba(220, 220, 210, 0.2);
     border-radius: 8px;
+}
+
+/* ── Input/button overrides inside roleplay page ───────────────── */
+.roleplay-card .q-field__label,
+.roleplay-card .q-field__native {
+    color: rgb(220, 220, 210) !important;
+}
+
+.roleplay-card .q-field--outlined .q-field__control::before {
+    border-color: rgba(220, 220, 210, 0.3) !important;
+}
+
+/* ── Export button styling ─────────────────────────────────────── */
+.roleplay-card .q-btn {
+    color: rgb(220, 220, 210) !important;
 }

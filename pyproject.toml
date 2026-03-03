@@ -120,6 +120,12 @@ ignore = [
 "src/promptgrimoire/cli/admin.py" = [
     "PLC0415",  # Late imports to avoid heavy DB/auth modules at CLI load time
 ]
+"src/promptgrimoire/cli/seed.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB modules at CLI load time
+]
+"src/promptgrimoire/cli/docs.py" = [
+    "PLC0415",  # Late imports to avoid heavy Playwright/subprocess modules at CLI load time
+]
 "src/promptgrimoire/cli_legacy.py" = [
     "PLC0415",  # Late import of pytest for CLI commands
 ]

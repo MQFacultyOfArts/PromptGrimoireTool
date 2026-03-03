@@ -51,6 +51,7 @@ from promptgrimoire.db.weeks import (
     list_weeks,
     publish_week,
     unpublish_week,
+    update_week,
 )
 from promptgrimoire.db.workspace_documents import workspaces_with_documents
 from promptgrimoire.db.workspaces import (
@@ -66,7 +67,13 @@ from promptgrimoire.pages.ui_helpers import add_option_testids
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from promptgrimoire.db.models import Activity, Course, CourseEnrollment, Workspace
+    from promptgrimoire.db.models import (
+        Activity,
+        Course,
+        CourseEnrollment,
+        Week,
+        Workspace,
+    )
 
 
 class _CourseDetailContext(NamedTuple):
@@ -256,14 +263,35 @@ def _render_peer_workspaces(
                 ).classes("text-xs text-blue-600")
 
 
+def _render_week_management_controls(
+    week: Any,
+    *,
+    on_publish_toggle: Callable[[UUID], Any],
+    on_edit: Callable[[Any], Any] | None = None,
+) -> None:
+    """Render edit and publish/unpublish controls for a week."""
+    with ui.row().classes("gap-1"):
+        if on_edit is not None:
+            ui.button(
+                "Edit",
+                icon="edit",
+                on_click=lambda w=week: on_edit(w),
+            ).props(
+                f"unelevated color=grey-2 text-color=grey-9 dense"
+                f' data-testid="edit-week-btn-{week.id}"'
+            )
+        _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
+
+
 def _render_week_header(
     week: Any,
     *,
     can_view_drafts: bool,
     can_manage: bool,
     on_publish_toggle: Callable[[UUID], Any],
+    on_edit: Callable[[Any], Any] | None = None,
 ) -> None:
-    """Render the week card header row with publish/unpublish controls."""
+    """Render the week card header row with publish/unpublish and edit controls."""
     with ui.row().classes("items-center justify-between w-full"):
         with ui.column().classes("gap-1"):
             ui.label(f"Week {week.week_number}: {week.title}").classes("font-semibold")
@@ -275,7 +303,9 @@ def _render_week_header(
                 ui.label(status).classes("text-sm text-gray-500")
 
         if can_manage:
-            _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
+            _render_week_management_controls(
+                week, on_publish_toggle=on_publish_toggle, on_edit=on_edit
+            )
 
 
 def _render_publish_toggle(
@@ -612,6 +642,45 @@ async def open_activity_settings(activity: Activity) -> None:
     dialog.open()
 
 
+async def open_edit_week(
+    week: Week,
+    course_id: UUID,  # noqa: ARG001 -- reserved for future week-level validation
+    *,
+    on_save: Callable[[], Any],
+) -> None:
+    """Open a dialog to edit week number and title."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Edit Week").classes("text-lg font-bold")
+
+        week_number = ui.number(
+            "Week Number", value=week.week_number, min=1, max=52
+        ).props('data-testid="edit-week-number-input"')
+        title = ui.input("Title", value=week.title).props(
+            'data-testid="edit-week-title-input"'
+        )
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-edit-week-btn"'
+            )
+
+            async def save() -> None:
+                await update_week(
+                    week.id, title=title.value, week_number=int(week_number.value)
+                )
+                week.title = title.value
+                week.week_number = int(week_number.value)
+                dialog.close()
+                ui.notify("Week updated", type="positive")
+                on_save()
+
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-edit-week-btn"'
+            )
+
+    dialog.open()
+
+
 def _get_current_user() -> dict | None:
     """Get current authenticated user from session storage."""
     return app.storage.user.get("auth_user")
@@ -927,6 +996,11 @@ async def course_detail_page(course_id: str) -> None:
                     return
 
                 toggle = _make_publish_toggle(cid, client_id, weeks_list.refresh)
+
+                def _on_week_save() -> None:
+                    weeks_list.refresh()
+                    _broadcast_weeks_refresh(cid, client_id)
+
                 with ui.column().classes("gap-2 w-full max-w-2xl"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -935,6 +1009,9 @@ async def course_detail_page(course_id: str) -> None:
                                 can_view_drafts=can_view_drafts,
                                 can_manage=can_manage,
                                 on_publish_toggle=toggle,
+                                on_edit=lambda w: open_edit_week(
+                                    w, cid, on_save=_on_week_save
+                                ),
                             )
                             await _render_week_activities(
                                 week,

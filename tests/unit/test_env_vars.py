@@ -234,6 +234,8 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "db" / "engine.py",
     # subprocess env override for test database
     _SRC_DIR / "cli_legacy.py",
+    # DEV__AUTH_MOCK env override for doc-gen subprocess
+    _SRC_DIR / "cli" / "docs.py",
 }
 
 _TESTS_DIR = PROJECT_ROOT / "tests"

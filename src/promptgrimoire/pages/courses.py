@@ -202,14 +202,20 @@ def _render_activity_row(
                 icon=btn_icon,
                 on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
             ).props(
-                f"flat dense size=sm color=secondary"
+                f"unelevated color=blue-1 text-color=primary dense"
                 f' data-testid="template-btn-{act.id}"'
             )
             ui.button(
                 "Activity Settings",
                 icon="settings",
                 on_click=lambda a=act: open_activity_settings(a),
-            ).props('outline color=primary dense data-testid="activity-settings-btn"')
+            ).props(
+                "unelevated color=grey-2 text-color=grey-9 dense"
+                ' data-testid="activity-settings-btn"'
+            )
+
+        # Push student actions to far-right of the row
+        ui.space()
 
         if act.id in user_workspace_map:
             # User already has a workspace -- show Resume
@@ -219,16 +225,14 @@ def _render_activity_row(
                 "Resume",
                 icon="play_arrow",
                 on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
-            ).props(
-                f'flat dense size=sm color=primary data-testid="resume-btn-{act.id}"'
-            )
+            ).props(f'flat color=primary dense data-testid="resume-btn-{act.id}"')
         else:
             ui.button(
-                "Start Activity",
+                "Start as Student",
+                icon="person",
                 on_click=lambda a=act.id: _start_activity_handler(a),
             ).props(
-                f"flat dense size=sm color=primary"
-                f' data-testid="start-activity-btn-{act.id}"'
+                f'flat color=primary dense data-testid="start-activity-btn-{act.id}"'
             )
 
     _render_peer_workspaces(peer_workspaces)
@@ -332,7 +336,7 @@ async def _render_week_activities(
             on_click=lambda wid=week.id: ui.navigate.to(
                 f"/courses/{course_id}/weeks/{wid}/activities/new"
             ),
-        ).props('outline color=primary dense data-testid="add-activity-btn"').classes(
+        ).props('flat color=primary dense data-testid="add-activity-btn"').classes(
             "ml-4 mt-1"
         )
 
@@ -634,6 +638,50 @@ async def _check_auth() -> bool:
     return True
 
 
+def _render_course_card(course: Course, enrollment: CourseEnrollment) -> None:
+    """Render a single course card in the units list."""
+    with (
+        ui.card()
+        .classes("w-full cursor-pointer hover:bg-gray-50")
+        .on("click", lambda c=course: ui.navigate.to(f"/courses/{c.id}"))
+        .props(f'data-testid="course-card-{course.id}"')
+    ):
+        with ui.row().classes("items-center justify-between w-full"):
+            with ui.column().classes("gap-1"):
+                ui.label(f"{course.code} - {course.name}").classes("font-semibold")
+                ui.label(f"Semester: {course.semester}").classes(
+                    "text-sm text-gray-500"
+                )
+            ui.badge(enrollment.role).classes("ml-2")
+
+
+async def _render_courses_content(user_id: UUID) -> None:
+    """Render the enrolled courses list and New Unit button."""
+    enrollments = await list_user_enrollments(user_id)
+    enrollment_map = {e.course_id: e for e in enrollments}
+
+    is_instructor = is_privileged_user(_get_current_user()) or any(
+        e.role in _MANAGER_ROLES for e in enrollments
+    )
+
+    courses = await list_courses()
+    enrolled_courses = [c for c in courses if c.id in enrollment_map]
+
+    if not enrolled_courses:
+        ui.label("You are not enrolled in any units.").classes("text-gray-500")
+    else:
+        with ui.column().classes("gap-2 w-full max-w-2xl"):
+            for course in enrolled_courses:
+                _render_course_card(course, enrollment_map[course.id])
+
+    if is_instructor:
+        ui.button(
+            "New Unit",
+            icon="add",
+            on_click=lambda: ui.navigate.to("/courses/new"),
+        ).props('flat color=primary dense data-testid="new-unit-btn"').classes("mt-4")
+
+
 @page_route("/courses", title="Units", icon="school", order=20)
 async def courses_list_page() -> None:
     """List courses page."""
@@ -653,51 +701,11 @@ async def courses_list_page() -> None:
         ).classes("text-red-500")
         return
 
-    with ui.row().classes("items-center mb-4 gap-2"):
-        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            'flat round data-testid="home-btn"'
-        ).tooltip("Home")
-        ui.label("Units").classes("text-2xl font-bold")
+    with page_layout("Units"):
+        ui.add_css(_CSS_FILE)
 
-    # Get enrolled courses for this user
-    enrollments = await list_user_enrollments(user_id)
-    enrollment_map = {e.course_id: e for e in enrollments}
-
-    # Check if user is privileged (admin/instructor Stytch role) or course manager
-    is_instructor = is_privileged_user(_get_current_user()) or any(
-        e.role in _MANAGER_ROLES for e in enrollments
-    )
-
-    if is_instructor:
-        ui.button("New Unit", on_click=lambda: ui.navigate.to("/courses/new")).classes(
-            "mb-4"
-        ).props('data-testid="new-unit-btn"')
-
-    # List courses user is enrolled in
-    courses = await list_courses()
-    enrolled_courses = [c for c in courses if c.id in enrollment_map]
-
-    if not enrolled_courses:
-        ui.label("You are not enrolled in any units.").classes("text-gray-500")
-    else:
-        with ui.column().classes("gap-2 w-full max-w-2xl"):
-            for course in enrolled_courses:
-                enrollment = enrollment_map[course.id]
-                with (
-                    ui.card()
-                    .classes("w-full cursor-pointer hover:bg-gray-50")
-                    .on("click", lambda c=course: ui.navigate.to(f"/courses/{c.id}"))
-                    .props(f'data-testid="course-card-{course.id}"')
-                ):
-                    with ui.row().classes("items-center justify-between w-full"):
-                        with ui.column().classes("gap-1"):
-                            ui.label(f"{course.code} - {course.name}").classes(
-                                "font-semibold"
-                            )
-                            ui.label(f"Semester: {course.semester}").classes(
-                                "text-sm text-gray-500"
-                            )
-                        ui.badge(enrollment.role).classes("ml-2")
+        with ui.column().classes("mx-auto q-pa-lg courses-content-column"):
+            await _render_courses_content(user_id)
 
 
 @ui.page("/courses/new")
@@ -765,21 +773,21 @@ async def create_course_page() -> None:
         )
 
 
+def _render_add_week_btn(course_id: str) -> None:
+    """Render the 'Add Week' list-appender below the weeks list."""
+    ui.button(
+        "Add Week",
+        icon="add",
+        on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
+    ).props('flat color=primary dense data-testid="add-week-btn"').classes("mt-2")
+
+
 def _render_course_action_bar(
     course_id: str, course: Course, *, can_manage: bool
 ) -> None:
-    """Render the action bar with navigation and management buttons."""
+    """Render the action bar with management buttons."""
     if can_manage:
         with ui.row().classes("gap-2 mb-4"):
-            ui.button(
-                "Back to Units",
-                icon="arrow_back",
-                on_click=lambda: ui.navigate.to("/courses"),
-            ).props('flat data-testid="back-to-units-btn"')
-            ui.button(
-                "Add Week",
-                on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
-            ).props('color=primary data-testid="add-week-btn"')
             ui.button(
                 "Manage Enrollments",
                 on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
@@ -789,12 +797,6 @@ def _render_course_action_bar(
                 icon="settings",
                 on_click=lambda: open_course_settings(course),
             ).props('outline color=primary data-testid="course-settings-btn"')
-    else:
-        ui.button(
-            "Back to Units",
-            icon="arrow_back",
-            on_click=lambda: ui.navigate.to("/courses"),
-        ).props('flat data-testid="back-to-units-btn"').classes("mb-4")
 
 
 async def _render_students_without_work(cid: UUID, *, can_view_drafts: bool) -> None:
@@ -875,6 +877,25 @@ async def _resolve_course_detail(
     )
 
 
+def _make_publish_toggle(
+    cid: UUID,
+    client_id: str,
+    refresh: Callable[[], Any],
+) -> Callable[[UUID], Any]:
+    """Create a publish/unpublish toggle callback for a course's weeks."""
+
+    async def _toggle(wid: UUID) -> None:
+        w = await get_week_by_id(wid)
+        if w and w.is_published:
+            await unpublish_week(wid)
+        else:
+            await publish_week(wid)
+        refresh()
+        _broadcast_weeks_refresh(cid, client_id)
+
+    return _toggle
+
+
 @ui.page("/courses/{course_id}")
 async def course_detail_page(course_id: str) -> None:
     """Course detail page with weeks."""
@@ -882,13 +903,9 @@ async def course_detail_page(course_id: str) -> None:
     if ctx is None:
         return
 
-    cid = ctx.cid
-    course = ctx.course
-    user_id = ctx.user_id
-    can_manage = ctx.can_manage
-    can_view_drafts = ctx.can_view_drafts
-    client_id = ctx.client_id
-    client = ui.context.client
+    cid, course = ctx.cid, ctx.course
+    user_id, can_manage = ctx.user_id, ctx.can_manage
+    can_view_drafts, client_id = ctx.can_view_drafts, ctx.client_id
 
     with page_layout(f"{course.code} - {course.name}"):
         ui.add_css(_CSS_FILE)
@@ -909,15 +926,7 @@ async def course_detail_page(course_id: str) -> None:
                     ui.label("No weeks available yet.").classes("text-gray-500")
                     return
 
-                async def _toggle(wid: UUID) -> None:
-                    w = await get_week_by_id(wid)
-                    if w and w.is_published:
-                        await unpublish_week(wid)
-                    else:
-                        await publish_week(wid)
-                    weeks_list.refresh()
-                    _broadcast_weeks_refresh(cid, client_id)
-
+                toggle = _make_publish_toggle(cid, client_id, weeks_list.refresh)
                 with ui.column().classes("gap-2 w-full max-w-2xl"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -925,7 +934,7 @@ async def course_detail_page(course_id: str) -> None:
                                 week,
                                 can_view_drafts=can_view_drafts,
                                 can_manage=can_manage,
-                                on_publish_toggle=_toggle,
+                                on_publish_toggle=toggle,
                             )
                             await _render_week_activities(
                                 week,
@@ -938,10 +947,13 @@ async def course_detail_page(course_id: str) -> None:
 
             await weeks_list()
 
+            if can_manage:
+                _render_add_week_btn(course_id)
+
             await _render_students_without_work(cid, can_view_drafts=can_view_drafts)
 
     # Registered after page_layout block so weeks_list.refresh is bound
-    _register_course_client(cid, client_id, client, weeks_list.refresh)
+    _register_course_client(cid, client_id, ui.context.client, weeks_list.refresh)
 
 
 @ui.page("/courses/{course_id}/weeks/new")

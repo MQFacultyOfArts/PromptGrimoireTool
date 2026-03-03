@@ -2,11 +2,105 @@
 
 Tests avatar parameter wiring in _create_chat_message().
 Verifies AC1.2 (user avatar) and AC1.3 (AI avatar).
+
+Also tests that _render_messages() passes the correct avatar constants
+to _create_chat_message() for each turn type (AC1.2/AC1.3 call-site wiring).
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
+from promptgrimoire.models import Character, Session
+
+
+def _make_mock_container() -> MagicMock:
+    """Return a MagicMock that works as a `with` context manager."""
+    container = MagicMock()
+    container.__enter__ = MagicMock(return_value=container)
+    container.__exit__ = MagicMock(return_value=False)
+    return container
+
+
+def _make_mock_scroll_area() -> MagicMock:
+    """Return a MagicMock with a scroll_to method."""
+    scroll_area = MagicMock()
+    scroll_area.scroll_to = MagicMock()
+    return scroll_area
+
+
+class TestRenderMessagesAvatarWiring:
+    """Tests that _render_messages passes correct avatar constants.
+
+    Verifies the call-site wiring — that _USER_AVATAR is used for user
+    turns and _AI_AVATAR for AI turns — not just that the constants
+    exist on _create_chat_message's signature.
+    """
+
+    @patch("promptgrimoire.pages.roleplay._create_chat_message")
+    def test_user_turn_gets_user_avatar(self, mock_create: MagicMock) -> None:
+        """AC1.2: _render_messages passes _USER_AVATAR for user turns."""
+        from promptgrimoire.pages.roleplay import _USER_AVATAR, _render_messages
+
+        character = Character(name="Becky Bennett")
+        session = Session(character=character, user_name="Jane")
+        session.add_turn("Hello there", is_user=True)
+
+        container = _make_mock_container()
+        scroll_area = _make_mock_scroll_area()
+
+        _render_messages(session, container, scroll_area)
+
+        # Exactly one turn — should be called once
+        mock_create.assert_called_once()
+        _, _, kwargs = mock_create.mock_calls[0]
+        assert kwargs.get("avatar") == _USER_AVATAR
+
+    @patch("promptgrimoire.pages.roleplay._create_chat_message")
+    def test_ai_turn_gets_ai_avatar(self, mock_create: MagicMock) -> None:
+        """AC1.3: _render_messages passes _AI_AVATAR for AI turns."""
+        from promptgrimoire.pages.roleplay import _AI_AVATAR, _render_messages
+
+        character = Character(name="Becky Bennett")
+        session = Session(character=character, user_name="Jane")
+        session.add_turn("Hi, I'm Becky.", is_user=False)
+
+        container = _make_mock_container()
+        scroll_area = _make_mock_scroll_area()
+
+        _render_messages(session, container, scroll_area)
+
+        mock_create.assert_called_once()
+        _, _, kwargs = mock_create.mock_calls[0]
+        assert kwargs.get("avatar") == _AI_AVATAR
+
+    @patch("promptgrimoire.pages.roleplay._create_chat_message")
+    def test_mixed_turns_get_correct_avatars(self, mock_create: MagicMock) -> None:
+        """Both avatar constants used when session has user and AI turns."""
+        from promptgrimoire.pages.roleplay import (
+            _AI_AVATAR,
+            _USER_AVATAR,
+            _render_messages,
+        )
+
+        character = Character(name="Becky Bennett")
+        session = Session(character=character, user_name="Jane")
+        session.add_turn("Hello there", is_user=True)
+        session.add_turn("Hi, I'm Becky.", is_user=False)
+
+        container = _make_mock_container()
+        scroll_area = _make_mock_scroll_area()
+
+        _render_messages(session, container, scroll_area)
+
+        assert mock_create.call_count == 2
+        calls = mock_create.mock_calls
+        # First call: user turn
+        _, _, kwargs0 = calls[0]
+        assert kwargs0.get("avatar") == _USER_AVATAR
+        # Second call: AI turn
+        _, _, kwargs1 = calls[1]
+        assert kwargs1.get("avatar") == _AI_AVATAR
 
 
 class TestAvatarParameter:

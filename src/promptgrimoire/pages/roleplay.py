@@ -216,7 +216,6 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         state["log_path"] = log_path
 
         widgets["upload_expansion"].value = False  # collapse the expansion panel
-        widgets["chat_card"].visible = True
 
         widgets["char_name_label"].text = character.name
         widgets["scenario_label"].text = substitute_placeholders(
@@ -337,21 +336,25 @@ async def roleplay_page() -> None:
             ui.label("Log files are saved to: logs/sessions/")
 
         # Auto-load bundled Becky Bennett character card
-        character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
-        user_name = _get_default_user_name()
+        try:
+            character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
+            user_name = _get_default_user_name()
 
-        session, client, log_path = _setup_session(
-            character, lorebook_entries, user_name
-        )
-        state["session"] = session
-        state["client"] = client
-        state["log_path"] = log_path
+            session, client, log_path = _setup_session(
+                character, lorebook_entries, user_name
+            )
+            state["session"] = session
+            state["client"] = client
+            state["log_path"] = log_path
 
-        char_name_label.text = character.name
-        scenario_label.text = substitute_placeholders(
-            character.scenario or "No scenario",
-            char_name=character.name,
-            user_name=user_name,
-        )
+            char_name_label.text = character.name
+            scenario_label.text = substitute_placeholders(
+                character.scenario or "No scenario",
+                char_name=character.name,
+                user_name=user_name,
+            )
 
-        _render_messages(session, chat_container, scroll_area)
+            _render_messages(session, chat_container, scroll_area)
+        except Exception:
+            ui.notify("Could not auto-load character card", type="negative")
+            upload_expansion.value = True  # open so students can manually load

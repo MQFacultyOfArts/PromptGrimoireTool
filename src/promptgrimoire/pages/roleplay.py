@@ -53,6 +53,9 @@ def _get_default_user_name() -> str:
 
 _USER_AVATAR = "/static/roleplay/user-default.png"
 _AI_AVATAR = "/static/roleplay/becky-bennett.png"
+_BECKY_CARD_PATH = (
+    Path(__file__).parent.parent / "static" / "roleplay" / "becky-bennett.json"
+)
 
 
 def _create_chat_message(
@@ -212,7 +215,7 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         state["client"] = client
         state["log_path"] = log_path
 
-        widgets["upload_card"].visible = False
+        widgets["upload_expansion"].value = False  # collapse the expansion panel
         widgets["chat_card"].visible = True
 
         widgets["char_name_label"].text = character.name
@@ -222,7 +225,8 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
             user_name=user_name,
         )
 
-        # Render initial messages
+        # Clear previous messages and render new ones
+        widgets["chat_container"].clear()
         _render_messages(session, widgets["chat_container"], widgets["scroll_area"])
 
         ui.notify(f"Loaded {character.name}")
@@ -261,14 +265,13 @@ async def roleplay_page() -> None:
         ui.add_head_html('<link rel="stylesheet" href="/static/roleplay.css">')
         ui.query("body").classes("roleplay-bg")
 
-        # Upload section
+        # Upload section (collapsed — Becky Bennett auto-loads below)
         with (
-            ui.card()
+            ui.expansion("Load Different Character", icon="upload_file")
             .classes("w-full mb-4 roleplay-upload")
-            .props('data-testid="roleplay-upload-card"') as upload_card
+            .props('data-testid="roleplay-upload-card"') as upload_expansion
         ):
-            widgets["upload_card"] = upload_card
-            ui.label("Load Character Card").classes("text-h6")
+            widgets["upload_expansion"] = upload_expansion
 
             user_name_input = ui.input(
                 label="Your name (used as {{user}})", value=_get_default_user_name()
@@ -287,7 +290,6 @@ async def roleplay_page() -> None:
             .classes("w-full")
             .props('data-testid="roleplay-chat-card"') as chat_card
         ):
-            chat_card.visible = False
             widgets["chat_card"] = chat_card
 
             with ui.row().classes("w-full items-center mb-2"):
@@ -333,3 +335,23 @@ async def roleplay_page() -> None:
 
         with ui.expansion("Session Info", icon="info").classes("w-full mt-4"):
             ui.label("Log files are saved to: logs/sessions/")
+
+        # Auto-load bundled Becky Bennett character card
+        character, lorebook_entries = parse_character_card(_BECKY_CARD_PATH)
+        user_name = _get_default_user_name()
+
+        session, client, log_path = _setup_session(
+            character, lorebook_entries, user_name
+        )
+        state["session"] = session
+        state["client"] = client
+        state["log_path"] = log_path
+
+        char_name_label.text = character.name
+        scenario_label.text = substitute_placeholders(
+            character.scenario or "No scenario",
+            char_name=character.name,
+            user_name=user_name,
+        )
+
+        _render_messages(session, chat_container, scroll_area)

@@ -253,6 +253,19 @@ await page.mouse.up()
 await page.evaluate("window.getSelection().toString()")  # FORBIDDEN
 ```
 
+**All interactable UI elements MUST have `data-testid` attributes.** E2E tests MUST use `page.get_by_test_id()` — never locate by visible text, placeholder, CSS class, or `get_by_role(name=...)`. Button text changes silently break tests; testids are a stable contract.
+
+```python
+# GOOD — testid locator
+page.get_by_test_id("start-activity-btn").click()
+card.locator("[data-testid^='start-activity-btn-']").first.click()
+
+# BAD — fragile text/role locator
+page.get_by_role("button", name="Start Activity").click()  # BREAKS when text changes
+page.get_by_text("Start Activity").click()  # BREAKS when text changes
+page.locator(".q-item").filter(has_text="Home")  # BREAKS when class changes
+```
+
 **Always scroll into view** before assertions (headless mode quirk):
 ```python
 await locator.scroll_into_view_if_needed()
@@ -273,6 +286,8 @@ Code review will check:
 - [ ] Tests written BEFORE implementation (TDD)
 - [ ] No `any` types without justification
 - [ ] No JavaScript injection in E2E tests
+- [ ] All interactable elements have `data-testid` attributes
+- [ ] E2E tests use `get_by_test_id()` — no text/role/CSS locators
 - [ ] UAT steps provided and testable
 - [ ] Specific files staged (not `git add .`)
 - [ ] Conventional commit message

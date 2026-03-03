@@ -303,7 +303,7 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
-        process = subprocess.Popen(  # nosec B603 -- args from trusted CLI config
+        process = subprocess.Popen(
             all_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

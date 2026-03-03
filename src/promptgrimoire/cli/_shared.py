@@ -56,7 +56,7 @@ def _pre_test_db_cleanup() -> None:
 
     # Run Alembic migrations
     project_root = Path(__file__).parent.parent.parent.parent
-    result = subprocess.run(  # nosec: B603, B607
+    result = subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
         cwd=project_root,
         capture_output=True,

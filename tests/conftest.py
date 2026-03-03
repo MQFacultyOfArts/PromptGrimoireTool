@@ -146,7 +146,7 @@ def load_conversation_fixture(name: str) -> str:
     raise FileNotFoundError(msg)
 
 
-TEST_STORAGE_SECRET = "test-secret-for-e2e"  # nosec B105 — test-only, not a real secret
+TEST_STORAGE_SECRET = "test-secret-for-e2e"  # test-only, not a real secret
 
 
 @pytest.fixture(scope="session")
@@ -447,7 +447,9 @@ def reset_crdt_state(app_server: str) -> Generator[None]:
 
     reset_url = f"{app_server}/api/test/reset-crdt"
     try:
-        with urllib.request.urlopen(reset_url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
+        with urllib.request.urlopen(
+            reset_url, timeout=5
+        ) as resp:  # test-only localhost URL
             if resp.status != 200:
                 pytest.fail(f"Failed to reset CRDT state: {resp.status}")
     except Exception as e:

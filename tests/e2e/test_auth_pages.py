@@ -28,7 +28,7 @@ from promptgrimoire.config import get_settings
 # Use explicit email token format for tests that assert on the email address.
 # MOCK_VALID_MAGIC_TOKEN depends on _pending_email (shared singleton state),
 # which can be polluted by prior tests when pytest-randomly reorders them.
-_EXPLICIT_TEST_TOKEN = "mock-token-test@example.com"  # nosec B105
+_EXPLICIT_TEST_TOKEN = "mock-token-test@example.com"
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

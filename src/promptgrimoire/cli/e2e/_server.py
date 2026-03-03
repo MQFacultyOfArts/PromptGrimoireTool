@@ -30,7 +30,7 @@ def _start_e2e_server(port: int) -> subprocess.Popen[bytes]:
     console.print(f"[blue]Starting NiceGUI server on port {port}...[/]")
     server_log = Path("test-e2e-server.log")
     server_log_fh = server_log.open("w")
-    process = subprocess.Popen(  # nosec B603 — hardcoded test server command
+    process = subprocess.Popen(
         [sys.executable, str(_SERVER_SCRIPT_PATH), str(port)],
         stdout=server_log_fh,
         stderr=subprocess.STDOUT,
@@ -95,7 +95,7 @@ def _start_pyspy(pid: int) -> subprocess.Popen[bytes]:
     out_path = log_dir / f"py-spy-{ts}.json"
 
     console.print(f"[blue]py-spy recording PID {pid} → {out_path}[/]")
-    proc = subprocess.Popen(  # nosec B603
+    proc = subprocess.Popen(
         [
             pyspy,
             "record",

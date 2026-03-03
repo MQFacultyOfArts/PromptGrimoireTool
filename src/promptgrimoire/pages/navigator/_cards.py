@@ -11,6 +11,7 @@ from nicegui import ui
 from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
+    delete_workspace,
     get_user_workspace_for_activity,
     update_workspace_title,
 )
@@ -196,6 +197,117 @@ def render_inline_title_edit(
     )
 
 
+async def _delete_workspace_from_navigator(
+    workspace_id: UUID,
+    card: ui.card,
+    user_id: UUID,
+) -> None:
+    """Show confirmation dialog and delete workspace, removing card from DOM."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Delete this workspace?").classes("text-lg font-bold")
+        ui.label("This cannot be undone.").classes("text-gray-500")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-delete-workspace-btn"'
+            )
+
+            async def confirm() -> None:
+                await delete_workspace(workspace_id, user_id=user_id)
+                dialog.close()
+                card.delete()
+                ui.notify("Workspace deleted", type="positive")
+
+            ui.button("Delete", on_click=confirm).props(
+                'color=negative data-testid="confirm-delete-workspace-btn"'
+            )
+    dialog.open()
+
+
+def _render_workspace_title(
+    row: NavigatorRow,
+    page_state: PageState | None,
+) -> None:
+    """Render workspace title as inline-editable (owner) or link (others)."""
+    title = row.title or row.activity_title or "Untitled"
+    if row.workspace_id is not None and row.permission == "owner":
+        render_inline_title_edit(row, page_state=page_state)
+    elif row.workspace_id is not None:
+        ui.link(
+            title,
+            workspace_url(row.workspace_id),
+        ).classes(
+            "text-base font-medium text-primary "
+            "no-underline hover:underline "
+            "cursor-pointer"
+        ).props(f'data-workspace-id="{row.workspace_id}"')
+    else:
+        ui.label(title).classes("text-base font-medium")
+
+
+def _render_workspace_left_column(
+    row: NavigatorRow,
+    *,
+    show_owner: bool,
+    owner_label: str,
+    snippets: dict[UUID, str] | None,
+    page_state: PageState | None,
+) -> None:
+    """Render the left column: title, breadcrumb, owner, snippet."""
+    with ui.column().classes("flex-grow gap-0"):
+        with ui.row().classes("w-full items-center gap-2"):
+            _render_workspace_title(row, page_state)
+
+        crumb = breadcrumb(row)
+        if crumb:
+            ui.label(crumb).classes("text-xs text-gray-500")
+
+        if show_owner and owner_label:
+            ui.label(f"by {owner_label}").classes("text-xs text-gray-400")
+
+        # sanitize=False is safe: ts_headline only inserts
+        # <mark>/<\/mark> tags from _HEADLINE_OPTIONS; source text
+        # is either HTML-stripped (documents) or plain (search_text).
+        snippet_html = (
+            (snippets or {}).get(row.workspace_id)
+            if row.workspace_id is not None
+            else None
+        )
+        if snippet_html is not None:
+            ui.html(snippet_html, sanitize=False).classes("navigator-snippet")
+
+
+def _render_workspace_right_column(
+    row: NavigatorRow,
+    card: ui.card,
+    page_state: PageState | None,
+) -> None:
+    """Render the right column: date, action button, delete button."""
+    with ui.column().classes("items-end gap-1"):
+        date_str = format_updated_at(row)
+        if date_str:
+            ui.label(date_str).classes("text-xs text-gray-400")
+
+        if row.workspace_id is not None:
+            action = ACTION_LABELS.get(row.permission, "Open")
+            url = workspace_url(row.workspace_id)
+            ui.button(
+                action,
+                on_click=lambda u=url: ui.navigate.to(u),
+            ).props("flat dense size=sm color=primary").classes("navigator-action-btn")
+
+            if row.permission == "owner" and page_state is not None:
+                user_id = page_state["user_id"]
+                ui.button(
+                    icon="delete",
+                    on_click=lambda wid=row.workspace_id, c=card, uid=user_id: (
+                        _delete_workspace_from_navigator(wid, c, uid)
+                    ),
+                ).props(
+                    f"flat round dense size=sm color=negative"
+                    f' data-testid="delete-workspace-card-btn-{row.workspace_id}"'
+                )
+
+
 def render_workspace_entry(
     row: NavigatorRow,
     *,
@@ -205,59 +317,37 @@ def render_workspace_entry(
     page_state: PageState | None = None,
 ) -> None:
     """Render a single workspace entry as a card row."""
-    with (
-        ui.card().classes("w-full p-3 mb-2").props("flat bordered"),
-        ui.row().classes("w-full items-center gap-4"),
-    ):
-        with ui.column().classes("flex-grow gap-0"):
-            with ui.row().classes("w-full items-center gap-2"):
-                title = row.title or row.activity_title or "Untitled"
-                if row.workspace_id is not None and row.permission == "owner":
-                    render_inline_title_edit(row, page_state=page_state)
-                elif row.workspace_id is not None:
-                    ui.link(
-                        title,
-                        workspace_url(row.workspace_id),
-                    ).classes(
-                        "text-base font-medium text-primary "
-                        "no-underline hover:underline "
-                        "cursor-pointer"
-                    ).props(f'data-workspace-id="{row.workspace_id}"')
-                else:
-                    ui.label(title).classes("text-base font-medium")
+    card = ui.card().classes("w-full p-3 mb-2").props("flat bordered")
+    with card, ui.row().classes("w-full items-center gap-4"):
+        _render_workspace_left_column(
+            row,
+            show_owner=show_owner,
+            owner_label=owner_label,
+            snippets=snippets,
+            page_state=page_state,
+        )
+        _render_workspace_right_column(row, card, page_state)
 
-            crumb = breadcrumb(row)
-            if crumb:
-                ui.label(crumb).classes("text-xs text-gray-500")
 
-            if show_owner and owner_label:
-                ui.label(f"by {owner_label}").classes("text-xs text-gray-400")
+async def _start_activity(aid: UUID, uid: UUID) -> None:
+    """Clone an activity workspace or navigate to existing one."""
+    existing = await get_user_workspace_for_activity(aid, uid)
+    if existing is not None:
+        ui.navigate.to(workspace_url(existing.id))
+        return
 
-            # sanitize=False is safe: ts_headline only inserts
-            # <mark>/<\/mark> tags from _HEADLINE_OPTIONS; source text
-            # is either HTML-stripped (documents) or plain (search_text).
-            snippet_html = (
-                (snippets or {}).get(row.workspace_id)
-                if row.workspace_id is not None
-                else None
-            )
-            if snippet_html is not None:
-                ui.html(snippet_html, sanitize=False).classes("navigator-snippet")
+    error = await check_clone_eligibility(aid, uid)
+    if error is not None:
+        ui.notify(error, type="negative")
+        return
 
-        with ui.column().classes("items-end gap-1"):
-            date_str = format_updated_at(row)
-            if date_str:
-                ui.label(date_str).classes("text-xs text-gray-400")
+    try:
+        clone, _doc_map = await clone_workspace_from_activity(aid, uid)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
 
-            if row.workspace_id is not None:
-                action = ACTION_LABELS.get(row.permission, "Open")
-                url = workspace_url(row.workspace_id)
-                ui.button(
-                    action,
-                    on_click=lambda u=url: ui.navigate.to(u),
-                ).props("flat dense size=sm color=primary").classes(
-                    "navigator-action-btn"
-                )
+    ui.navigate.to(workspace_url(clone.id))
 
 
 def render_unstarted_entry(
@@ -279,31 +369,12 @@ def render_unstarted_entry(
 
         with ui.column().classes("items-end gap-1"):
             if row.activity_id is not None:
-
-                async def _start_activity(
-                    aid: UUID = row.activity_id,
-                    uid: UUID = user_id,
-                ) -> None:
-                    existing = await get_user_workspace_for_activity(aid, uid)
-                    if existing is not None:
-                        ui.navigate.to(workspace_url(existing.id))
-                        return
-
-                    error = await check_clone_eligibility(aid, uid)
-                    if error is not None:
-                        ui.notify(error, type="negative")
-                        return
-
-                    try:
-                        clone, _doc_map = await clone_workspace_from_activity(aid, uid)
-                    except ValueError as exc:
-                        ui.notify(str(exc), type="negative")
-                        return
-
-                    ui.navigate.to(workspace_url(clone.id))
-
                 aid = row.activity_id
-                ui.button("Start", on_click=_start_activity).props(
+                uid = user_id
+                ui.button(
+                    "Start",
+                    on_click=lambda a=aid, u=uid: _start_activity(a, u),
+                ).props(
                     "flat dense size=sm color=primary"
                     f' data-testid="start-activity-btn-{aid}"'
                 ).classes("navigator-start-btn")

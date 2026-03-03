@@ -1,0 +1,5 @@
+/* Course management page layout */
+
+.courses-content-column {
+    width: min(100%, 73rem) !important;
+}

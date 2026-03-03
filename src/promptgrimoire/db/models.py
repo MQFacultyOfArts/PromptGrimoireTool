@@ -406,6 +406,9 @@ class WorkspaceDocument(SQLModel, table=True):
             mode (AustLII documents with ``<li value>`` attributes).
         paragraph_map: Maps char-offset (string key) to paragraph number. Empty dict
             is the safe default for documents without a computed map.
+        source_document_id: Nullable FK to the template document this was
+            cloned from. NULL for user-uploaded documents or when the
+            source is deleted (ON DELETE SET NULL).
     """
 
     __tablename__ = "workspace_document"
@@ -427,6 +430,10 @@ class WorkspaceDocument(SQLModel, table=True):
     paragraph_map: dict[str, int] = Field(
         default_factory=dict,
         sa_column=Column(sa.JSON(), nullable=False, server_default="{}"),
+    )
+    source_document_id: UUID | None = Field(
+        default=None,
+        sa_column=_set_null_fk_column("workspace_document.id"),
     )
 
 

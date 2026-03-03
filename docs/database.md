@@ -168,6 +168,7 @@ Document within a workspace.
 | `title` | VARCHAR(500) | nullable |
 | `auto_number_paragraphs` | BOOLEAN | NOT NULL, default TRUE |
 | `paragraph_map` | JSON | NOT NULL, default '{}' |
+| `source_document_id` | UUID | FK → WorkspaceDocument.id (SET NULL), nullable, INDEX |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
 
 **`type`**: Domain string — "source", "draft", "ai_conversation".
@@ -177,6 +178,8 @@ Document within a workspace.
 **`auto_number_paragraphs`**: When `TRUE`, the annotation page generates sequential paragraph numbers and renders them as left-margin labels. When `FALSE`, the document uses its own embedded numbering (e.g. AustLII judgments already carry paragraph numbers).
 
 **`paragraph_map`**: Intentional denormalisation for performance. Stores a materialised JSON mapping of character offsets to paragraph numbers, derived from the document `content` at import time. Avoids recomputing the map on every page render. Similar to `workspace.search_text` — a computed value stored for read performance rather than normalised derivation at query time. Updated by the input pipeline when content changes; never computed at query time.
+
+**`source_document_id`**: Self-referential nullable FK for provenance tracking. Set to the template document's UUID when a document is created by cloning (via `clone_workspace_from_activity()`); `NULL` for user-uploaded documents and pre-migration documents. ON DELETE SET NULL — deleting the template document preserves the clone but clears its provenance link. Indexed for efficient reverse-lookups (finding all clones of a template document).
 
 ## FTS Indexes
 
@@ -314,6 +317,7 @@ Course
               └── template Workspace (RESTRICT, 1:1)
               └── student Workspaces (SET NULL, 1:many via activity_id)
                     └── WorkspaceDocuments (CASCADE)
+                          └── source_document_id → template WorkspaceDocument (SET NULL, self-referential)
                     └── ACLEntries (CASCADE)
                     └── TagGroups (CASCADE)
                     └── Tags (CASCADE, group_id SET NULL on TagGroup delete)
@@ -379,7 +383,7 @@ Workspaces are isolated silos identified by UUID.
 
 1. Creates new Workspace with `activity_id` set and `enable_save_as_draft` copied
 2. Creates ACLEntry granting `"owner"` permission to `user_id`
-3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index, auto_number_paragraphs, paragraph_map) with new UUIDs
+3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index, auto_number_paragraphs, paragraph_map) with new UUIDs; sets `source_document_id` on each clone to the template document's UUID (provenance stamping)
 4. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
 5. Copies all TagGroups and Tags with new UUIDs, builds `group_id_map` and `tag_id_map`
 6. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped and `tag` field remapped via `tag_id_map`, `tag_order` keys remapped, comments are preserved, general notes are copied, client metadata is NOT cloned

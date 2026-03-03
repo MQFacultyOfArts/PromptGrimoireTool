@@ -77,6 +77,8 @@ class TestDeleteWorkspace:
     @pytest.mark.asyncio
     async def test_deletes_workspace(self) -> None:
         """Workspace is deleted."""
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import (
             create_workspace,
             delete_workspace,
@@ -84,8 +86,14 @@ class TestDeleteWorkspace:
         )
 
         workspace = await create_workspace()
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"ws-del-{tag}@test.local",
+            display_name=f"WS Del {tag}",
+        )
+        await grant_permission(workspace.id, user.id, "owner")
 
-        await delete_workspace(workspace.id)
+        await delete_workspace(workspace.id, user_id=user.id)
 
         found = await get_workspace(workspace.id)
         assert found is None
@@ -93,10 +101,16 @@ class TestDeleteWorkspace:
     @pytest.mark.asyncio
     async def test_delete_nonexistent_workspace_is_noop(self) -> None:
         """Deleting nonexistent workspace doesn't raise."""
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspaces import delete_workspace
 
-        # Should not raise
-        await delete_workspace(uuid4())
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"ws-noop-{tag}@test.local",
+            display_name=f"WS Noop {tag}",
+        )
+        # Should not raise — workspace does not exist
+        await delete_workspace(uuid4(), user_id=user.id)
 
 
 class TestAddDocument:
@@ -236,11 +250,19 @@ class TestCascadeDelete:
     @pytest.mark.asyncio
     async def test_deleting_workspace_deletes_documents(self) -> None:
         """Documents are deleted when workspace is deleted."""
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.users import create_user
         from promptgrimoire.db.workspace_documents import add_document, list_documents
         from promptgrimoire.db.workspaces import create_workspace, delete_workspace
 
         workspace = await create_workspace()
         workspace_id = workspace.id
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"ws-cascade-{tag}@test.local",
+            display_name=f"WS Cascade {tag}",
+        )
+        await grant_permission(workspace.id, user.id, "owner")
 
         await add_document(
             workspace_id=workspace.id,
@@ -249,7 +271,7 @@ class TestCascadeDelete:
             source_type="text",
         )
 
-        await delete_workspace(workspace.id)
+        await delete_workspace(workspace.id, user_id=user.id)
 
         # Workspace is gone, so documents must be too (CASCADE)
         docs = await list_documents(workspace_id)

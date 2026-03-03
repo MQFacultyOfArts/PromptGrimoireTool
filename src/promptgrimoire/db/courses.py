@@ -12,10 +12,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import Course, CourseEnrollment
+from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.models import Activity, Course, CourseEnrollment, Week, Workspace
+from promptgrimoire.db.weeks import purge_activity
+from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
 
 async def create_course(
@@ -159,6 +164,104 @@ async def archive_course(course_id: UUID) -> bool:
             return False
         course.is_archived = True
         session.add(course)
+        return True
+
+
+async def _fetch_course_children(
+    session: AsyncSession,
+    course_id: UUID,
+) -> tuple[list[Week], list[Activity]]:
+    """Fetch weeks and activities for a course within a session.
+
+    Returns:
+        Tuple of (weeks, activities) attached to the given session.
+    """
+    week_rows = await session.exec(select(Week).where(Week.course_id == course_id))
+    weeks = list(week_rows.all())
+
+    week_ids = [w.id for w in weeks]
+    if not week_ids:
+        return weeks, []
+
+    activity_rows = await session.exec(
+        select(Activity).where(
+            Activity.week_id.in_(week_ids)  # type: ignore[union-attr]  -- Column has .in_()
+        )
+    )
+    return weeks, list(activity_rows.all())
+
+
+async def delete_course(
+    course_id: UUID,
+    *,
+    force: bool = False,
+) -> bool:
+    """Delete a course and all its weeks, activities, and workspaces.
+
+    When ``force=False`` (default), raises
+    :class:`~promptgrimoire.db.exceptions.DeletionBlockedError` if any
+    activity in this course has student workspaces.  The error carries
+    the aggregate count across all activities in all weeks.
+
+    When ``force=True``, student workspaces are deleted first, then each
+    activity is removed with proper FK ordering (activity first to SET
+    NULL workspace.activity_id, then template workspace), then loose
+    workspaces (course-placed, activity_id IS NULL) are removed, then
+    weeks, then the course itself.
+
+    The UI layer handles role checking (admin or coordinator).  This
+    function does NOT check roles -- that is a UI-layer concern.
+
+    Args:
+        course_id: The course UUID.
+        force: If True, force-delete even with student workspaces.
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    async with get_session() as session:
+        course = await session.get(Course, course_id)
+        if not course:
+            return False
+
+        weeks, activities = await _fetch_course_children(session, course_id)
+
+        # Guard: aggregate student workspace count
+        # TODO(perf): N+1 sessions — has_student_workspaces opens
+        # its own session per call. Replace with single GROUP BY
+        # query if activity counts grow.
+        total_students = 0
+        for act in activities:
+            total_students += await has_student_workspaces(act.id)
+
+        if total_students > 0 and not force:
+            raise DeletionBlockedError(
+                student_workspace_count=total_students,
+            )
+
+        # Purge each activity with proper FK ordering
+        for act in activities:
+            await purge_activity(session, act)
+
+        # Delete loose workspaces (course-placed, no activity)
+        loose_rows = await session.exec(
+            select(Workspace).where(
+                Workspace.course_id == course_id,
+                Workspace.activity_id.is_(None),  # type: ignore[union-attr]  -- Column has .is_()
+            )
+        )
+        for ws in loose_rows.all():
+            await session.delete(ws)
+        await session.flush()
+
+        # Delete weeks
+        for wk in weeks:
+            await session.delete(wk)
+        await session.flush()
+
+        # Delete the course itself
+        await session.delete(course)
+
         return True
 
 

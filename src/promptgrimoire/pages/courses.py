@@ -13,7 +13,8 @@ Route: /courses
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -25,11 +26,13 @@ from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import list_peer_workspaces_with_owners
 from promptgrimoire.db.activities import (
     create_activity,
+    delete_activity,
     list_activities_for_week,
     update_activity,
 )
 from promptgrimoire.db.courses import (
     create_course,
+    delete_course,
     enroll_user,
     get_course_by_id,
     get_enrollment,
@@ -41,31 +44,59 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
+from promptgrimoire.db.exceptions import DeletionBlockedError
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
 from promptgrimoire.db.weeks import (
     create_week,
+    delete_week,
     get_visible_weeks,
+    get_week_by_id,
     list_weeks,
     publish_week,
     unpublish_week,
+    update_week,
 )
 from promptgrimoire.db.workspace_documents import workspaces_with_documents
 from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
+    delete_workspace,
     get_user_workspace_for_activity,
+    has_student_workspaces,
     resolve_tristate,
 )
+from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from promptgrimoire.db.models import Activity, Course, Workspace
+    from promptgrimoire.db.models import (
+        Activity,
+        Course,
+        CourseEnrollment,
+        Week,
+        Workspace,
+    )
+
+
+class _CourseDetailContext(NamedTuple):
+    """Resolved context for the course detail page."""
+
+    cid: UUID
+    course: Course
+    user_id: UUID
+    enrollment: CourseEnrollment
+    can_manage: bool
+    can_view_drafts: bool
+    client_id: str
+
 
 logger = logging.getLogger(__name__)
+
+_CSS_FILE = Path(__file__).resolve().parent.parent / "static" / "courses.css"
 
 # -- Role sets for permission checks --
 # Roles that can create weeks, manage enrollments, edit templates
@@ -74,6 +105,75 @@ _MANAGER_ROLES = frozenset({"coordinator", "instructor"})
 # Track connected clients per course for broadcasting updates
 # course_id -> {client_id -> weeks_list_refresh_func}
 _course_clients: dict[UUID, dict[str, Callable[[], Any]]] = {}
+
+
+async def _confirm_and_delete(
+    *,
+    entity_label: str,
+    delete_fn: Callable[..., Any],
+    entity_id: UUID,
+    is_admin: bool,
+    on_success: Callable[[], Any],
+) -> None:
+    """Show confirmation dialog, call delete_fn, handle DeletionBlockedError.
+
+    For admins, offers force-delete when blocked by student workspaces.
+    """
+
+    async def _do_delete(*, force: bool = False) -> None:
+        try:
+            await delete_fn(entity_id, force=force)
+        except DeletionBlockedError as e:
+            msg = f"Cannot delete: {e.student_workspace_count} student workspaces exist"
+            ui.notify(msg, type="warning")
+            if is_admin:
+                _show_force_dialog(e.student_workspace_count)
+            return
+        ui.notify(
+            f"Deleted {entity_label}",
+            type="positive",
+        )
+        on_success()
+
+    def _show_force_dialog(count: int) -> None:
+        async def _force_delete_click() -> None:
+            await _do_delete(force=True)
+
+        with (
+            ui.dialog() as force_dlg,
+            ui.card().classes("w-96"),
+        ):
+            ui.label(
+                f"Force delete will remove {count}"
+                " student workspaces."
+                " This cannot be undone."
+            ).classes("text-body1")
+            with ui.row().classes("justify-end w-full gap-2 mt-4"):
+                ui.button(
+                    "Cancel",
+                    on_click=force_dlg.close,
+                ).props('flat data-testid="cancel-force-delete-btn"')
+                ui.button(
+                    "Force Delete",
+                    on_click=_force_delete_click,
+                ).props('color=negative data-testid="force-delete-btn"')
+        force_dlg.open()
+
+    with (
+        ui.dialog() as dlg,
+        ui.card().classes("w-96"),
+    ):
+        ui.label(f"Delete {entity_label}? This cannot be undone.").classes("text-body1")
+        with ui.row().classes("justify-end w-full gap-2 mt-4"):
+            ui.button(
+                "Cancel",
+                on_click=dlg.close,
+            ).props('flat data-testid="cancel-delete-btn"')
+            ui.button(
+                "Delete",
+                on_click=_do_delete,
+            ).props('color=negative data-testid="confirm-delete-btn"')
+    dlg.open()
 
 
 async def _build_peer_map(
@@ -112,6 +212,364 @@ async def _build_peer_map(
             for ws, name, uid in peers
         ]
     return peer_map
+
+
+async def _build_user_workspace_map(
+    activities: list[Activity], uid: UUID | None
+) -> dict[UUID, Workspace]:
+    """Build activity_id -> owned Workspace map for Resume detection.
+
+    # TODO: Batch into single query if activity count per week grows
+    """
+    result: dict[UUID, Workspace] = {}
+    if uid is None:
+        return result
+    for act in activities:
+        existing = await get_user_workspace_for_activity(act.id, uid)
+        if existing is not None:
+            result[act.id] = existing
+    return result
+
+
+async def _start_activity_handler(aid: UUID) -> None:
+    """Clone template workspace and navigate to annotation page.
+
+    Used as the on_click handler for "Start Activity" buttons.
+    """
+    uid = _get_user_id()
+    if uid is None:
+        ui.notify("Please log in to start an activity", type="warning")
+        return
+
+    existing = await get_user_workspace_for_activity(aid, uid)
+    if existing is not None:
+        qs = urlencode({"workspace_id": str(existing.id)})
+        ui.navigate.to(f"/annotation?{qs}")
+        return
+
+    error = await check_clone_eligibility(aid, uid)
+    if error is not None:
+        ui.notify(error, type="negative")
+        return
+
+    clone, _doc_map = await clone_workspace_from_activity(aid, uid)
+    qs = urlencode({"workspace_id": str(clone.id)})
+    ui.navigate.to(f"/annotation?{qs}")
+
+
+async def _handle_edit_template(activity_id: UUID, template_workspace_id: UUID) -> None:
+    """Navigate to template workspace, showing clone warning if students have cloned."""
+    qs = urlencode({"workspace_id": str(template_workspace_id)})
+    count = await has_student_workspaces(activity_id)
+    if not count:
+        ui.navigate.to(f"/annotation?{qs}")
+        return
+
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes("w-96").props('data-testid="template-clone-warning-dialog"'),
+    ):
+        ui.label(
+            f"{count} student(s) have cloned this template. "
+            "Changes won't propagate to existing copies."
+        ).classes("text-body1")
+        with ui.row().classes("justify-end w-full gap-2 mt-4"):
+            ui.button(
+                "Cancel",
+                on_click=dialog.close,
+            ).props('flat data-testid="template-clone-warning-cancel-btn"')
+            ui.button(
+                "Continue",
+                on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
+            ).props('color=primary data-testid="template-clone-warning-continue-btn"')
+    dialog.open()
+
+
+async def _handle_delete_workspace(
+    workspace_id: UUID,
+    *,
+    on_success: Callable[[], Any],
+) -> None:
+    """Show confirmation dialog and delete a workspace."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Delete your workspace?").classes("text-lg font-bold")
+        ui.label("You can start fresh by cloning again.").classes("text-gray-500")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-delete-workspace-btn"'
+            )
+
+            async def confirm() -> None:
+                user_id = _get_user_id()
+                if user_id is None:
+                    ui.notify("Not logged in", type="negative")
+                    dialog.close()
+                    return
+                try:
+                    await delete_workspace(workspace_id, user_id=user_id)
+                except PermissionError:
+                    ui.notify("Permission denied", type="negative")
+                    dialog.close()
+                    return
+                dialog.close()
+                ui.notify("Workspace deleted. You can start fresh.", type="positive")
+                on_success()
+
+            ui.button("Delete", on_click=confirm).props(
+                'color=negative data-testid="confirm-delete-workspace-btn"'
+            )
+    dialog.open()
+
+
+def _render_activity_management_controls(
+    act: Activity,
+    *,
+    populated_templates: set[UUID],
+    on_edit: Callable[[Activity], Any] | None = None,
+    on_delete: Callable[[Activity], Any] | None = None,
+) -> None:
+    """Render template, edit, settings, and delete buttons for an activity."""
+    has_content = act.template_workspace_id in populated_templates
+    btn_label = "Edit Template" if has_content else "Create Template"
+    btn_icon = "edit" if has_content else "add"
+    ui.button(
+        btn_label,
+        icon=btn_icon,
+        on_click=lambda a=act: _handle_edit_template(a.id, a.template_workspace_id),
+    ).props(
+        f"unelevated color=blue-1 text-color=primary dense"
+        f' data-testid="template-btn-{act.id}"'
+    )
+    if on_edit is not None:
+        ui.button(
+            "Edit",
+            icon="edit",
+            on_click=lambda a=act: on_edit(a),
+        ).props(
+            f"unelevated color=grey-2 text-color=grey-9 dense"
+            f' data-testid="edit-activity-btn-{act.id}"'
+        )
+    ui.button(
+        "Activity Settings",
+        icon="settings",
+        on_click=lambda a=act: open_activity_settings(a),
+    ).props(
+        "unelevated color=grey-2 text-color=grey-9 dense"
+        ' data-testid="activity-settings-btn"'
+    )
+    if on_delete is not None:
+        ui.button(
+            "Delete",
+            icon="delete",
+            on_click=lambda a=act: on_delete(a),
+        ).props(
+            f'outline color=negative dense data-testid="delete-activity-btn-{act.id}"'
+        )
+
+
+def _render_activity_row(
+    act: Activity,
+    *,
+    can_manage: bool,
+    populated_templates: set[UUID],
+    user_workspace_map: dict[UUID, Workspace],
+    peer_workspaces: list[tuple[str, str, str]] | None = None,
+    on_edit: Callable[[Activity], Any] | None = None,
+    on_delete: Callable[[Activity], Any] | None = None,
+    on_delete_workspace: Callable[[UUID], Any] | None = None,
+) -> None:
+    """Render a single Activity row with buttons."""
+    with (
+        ui.row()
+        .classes("items-center gap-2")
+        .props(f'data-testid="activity-row-{act.id}"')
+    ):
+        ui.icon("assignment").classes("text-gray-400")
+        ui.label(act.title).classes("text-sm font-medium")
+
+        if can_manage:
+            _render_activity_management_controls(
+                act,
+                populated_templates=populated_templates,
+                on_edit=on_edit,
+                on_delete=on_delete,
+            )
+
+        # Push student actions to far-right of the row
+        ui.space()
+
+        if act.id in user_workspace_map:
+            # User already has a workspace -- show Resume + Delete
+            ws = user_workspace_map[act.id]
+            qs = urlencode({"workspace_id": str(ws.id)})
+            ui.button(
+                "Resume",
+                icon="play_arrow",
+                on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
+            ).props(f'flat color=primary dense data-testid="resume-btn-{act.id}"')
+            if on_delete_workspace is not None:
+                ui.button(
+                    icon="delete",
+                    on_click=lambda w=ws: on_delete_workspace(w.id),
+                ).props(
+                    f"flat round dense size=sm color=negative"
+                    f' data-testid="delete-workspace-btn-{ws.id}"'
+                )
+        else:
+            ui.button(
+                "Start as Student",
+                icon="person",
+                on_click=lambda a=act.id: _start_activity_handler(a),
+            ).props(
+                f'flat color=primary dense data-testid="start-activity-btn-{act.id}"'
+            )
+
+    _render_peer_workspaces(peer_workspaces)
+
+
+def _render_peer_workspaces(
+    peer_workspaces: list[tuple[str, str, str]] | None,
+) -> None:
+    """Render peer workspace links below an activity row."""
+    if not peer_workspaces:
+        return
+    with ui.column().classes("ml-8 mt-1 gap-0"):
+        ui.label("Peer Workspaces").classes("text-xs font-medium text-gray-500")
+        for ws_id, title, display_name in peer_workspaces:
+            qs = urlencode({"workspace_id": ws_id})
+            with ui.row().classes("items-center gap-1"):
+                ui.icon("person").classes("text-gray-300 text-sm")
+                ui.link(
+                    f"{display_name} — {title}",
+                    target=f"/annotation?{qs}",
+                ).classes("text-xs text-blue-600")
+
+
+def _render_week_management_controls(
+    week: Any,
+    *,
+    on_publish_toggle: Callable[[UUID], Any],
+    on_edit: Callable[[Any], Any] | None = None,
+    on_delete: Callable[[Any], Any] | None = None,
+) -> None:
+    """Render edit, delete, and publish/unpublish controls for a week."""
+    with ui.row().classes("gap-1"):
+        if on_edit is not None:
+            ui.button(
+                "Edit",
+                icon="edit",
+                on_click=lambda w=week: on_edit(w),
+            ).props(
+                f"unelevated color=grey-2 text-color=grey-9 dense"
+                f' data-testid="edit-week-btn-{week.id}"'
+            )
+        if on_delete is not None:
+            ui.button(
+                "Delete",
+                icon="delete",
+                on_click=lambda w=week: on_delete(w),
+            ).props(
+                f'outline color=negative dense data-testid="delete-week-btn-{week.id}"'
+            )
+        _render_publish_toggle(week, on_publish_toggle=on_publish_toggle)
+
+
+def _render_week_header(
+    week: Any,
+    *,
+    can_view_drafts: bool,
+    can_manage: bool,
+    on_publish_toggle: Callable[[UUID], Any],
+    on_edit: Callable[[Any], Any] | None = None,
+    on_delete: Callable[[Any], Any] | None = None,
+) -> None:
+    """Render week card header with management controls."""
+    with ui.row().classes("items-center justify-between w-full"):
+        with ui.column().classes("gap-1"):
+            ui.label(f"Week {week.week_number}: {week.title}").classes("font-semibold")
+            if can_view_drafts:
+                status = "Published" if week.is_published else "Draft"
+                if week.visible_from:
+                    date_str = week.visible_from.strftime("%Y-%m-%d")
+                    status += f" (visible from {date_str})"
+                ui.label(status).classes("text-sm text-gray-500")
+
+        if can_manage:
+            _render_week_management_controls(
+                week,
+                on_publish_toggle=on_publish_toggle,
+                on_edit=on_edit,
+                on_delete=on_delete,
+            )
+
+
+def _render_publish_toggle(
+    week: Any,
+    *,
+    on_publish_toggle: Callable[[UUID], Any],
+) -> None:
+    """Render publish/unpublish button for a week."""
+    with ui.row().classes("gap-1"):
+        if week.is_published:
+            ui.button(
+                "Unpublish",
+                on_click=lambda wid=week.id: on_publish_toggle(wid),
+            ).props('outline color=primary dense data-testid="unpublish-week-btn"')
+        else:
+            ui.button(
+                "Publish",
+                on_click=lambda wid=week.id: on_publish_toggle(wid),
+            ).props('outline color=primary dense data-testid="publish-week-btn"')
+
+
+async def _render_week_activities(
+    week: Any,
+    *,
+    course_id: str,
+    course: Course,
+    user_id: UUID,
+    can_manage: bool,
+    can_view_drafts: bool,
+    on_edit_activity: Callable[[Activity], Any] | None = None,
+    on_delete_activity: Callable[[Activity], Any] | None = None,
+    on_delete_workspace: Callable[[UUID], Any] | None = None,
+) -> None:
+    """Render the activity list and 'Add Activity' button for a week."""
+    activities = await list_activities_for_week(week.id)
+    if activities:
+        populated = (
+            await workspaces_with_documents(
+                {a.template_workspace_id for a in activities}
+            )
+            if can_manage
+            else set()
+        )
+        ws_map = await _build_user_workspace_map(activities, user_id)
+        peer_map = await _build_peer_map(activities, course, user_id, can_view_drafts)
+        with ui.column().classes("ml-4 gap-1 mt-2"):
+            for act in activities:
+                _render_activity_row(
+                    act,
+                    can_manage=can_manage,
+                    populated_templates=populated,
+                    user_workspace_map=ws_map,
+                    peer_workspaces=peer_map.get(act.id),
+                    on_edit=on_edit_activity,
+                    on_delete=on_delete_activity,
+                    on_delete_workspace=on_delete_workspace,
+                )
+    elif can_manage:
+        ui.label("No activities yet").classes("text-xs text-gray-400 ml-4 mt-1")
+
+    if can_manage:
+        ui.button(
+            "Add Activity",
+            on_click=lambda wid=week.id: ui.navigate.to(
+                f"/courses/{course_id}/weeks/{wid}/activities/new"
+            ),
+        ).props('flat color=primary dense data-testid="add-activity-btn"').classes(
+            "ml-4 mt-1"
+        )
 
 
 # -- Tri-state settings UI config --
@@ -176,6 +634,26 @@ def _broadcast_weeks_refresh(
                 _course_clients[course_id].pop(client_id, None)
 
 
+def _register_course_client(
+    cid: UUID,
+    client_id: str,
+    client: Any,
+    refresh: Callable[[], Any],
+) -> None:
+    """Register a client for broadcast refresh and cleanup on disconnect."""
+    if cid not in _course_clients:
+        _course_clients[cid] = {}
+    _course_clients[cid][client_id] = refresh
+
+    def on_disconnect() -> None:
+        if cid in _course_clients:
+            _course_clients[cid].pop(client_id, None)
+            if not _course_clients[cid]:
+                del _course_clients[cid]
+
+    client.on_disconnect(on_disconnect)
+
+
 async def open_course_settings(course: Course) -> None:
     """Open a dialog to edit course settings.
 
@@ -194,7 +672,9 @@ async def open_course_settings(course: Course) -> None:
             )
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-course-settings-btn"'
+            )
 
             async def save() -> None:
                 kwargs = {
@@ -312,7 +792,9 @@ async def open_activity_settings(activity: Activity) -> None:
             selects[attr] = sel
 
         with ui.row().classes("w-full justify-end gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-activity-settings-btn"'
+            )
 
             async def save() -> None:
                 kwargs: dict[str, Any] = {
@@ -361,6 +843,83 @@ async def open_activity_settings(activity: Activity) -> None:
     dialog.open()
 
 
+async def open_edit_week(
+    week: Week,
+    course_id: UUID,  # noqa: ARG001 -- reserved for future week-level validation
+    *,
+    on_save: Callable[[], Any],
+) -> None:
+    """Open a dialog to edit week number and title."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Edit Week").classes("text-lg font-bold")
+
+        week_number = ui.number(
+            "Week Number", value=week.week_number, min=1, max=52
+        ).props('data-testid="edit-week-number-input"')
+        title = ui.input("Title", value=week.title).props(
+            'data-testid="edit-week-title-input"'
+        )
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-edit-week-btn"'
+            )
+
+            async def save() -> None:
+                await update_week(
+                    week.id, title=title.value, week_number=int(week_number.value)
+                )
+                week.title = title.value
+                week.week_number = int(week_number.value)
+                dialog.close()
+                ui.notify("Week updated", type="positive")
+                on_save()
+
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-edit-week-btn"'
+            )
+
+    dialog.open()
+
+
+async def open_edit_activity(
+    activity: Activity,
+    course_id: UUID,  # noqa: ARG001 -- reserved for future validation
+    *,
+    on_save: Callable[[], Any],
+) -> None:
+    """Open a dialog to edit activity title and description."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Edit Activity").classes("text-lg font-bold")
+
+        title = ui.input("Title", value=activity.title).props(
+            'data-testid="edit-activity-title-input"'
+        )
+        description = ui.textarea(
+            "Description", value=activity.description or ""
+        ).props('data-testid="edit-activity-description-input"')
+
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-edit-activity-btn"'
+            )
+
+            async def save() -> None:
+                desc = description.value or None
+                await update_activity(activity.id, title=title.value, description=desc)
+                activity.title = title.value
+                activity.description = desc
+                dialog.close()
+                ui.notify("Activity updated", type="positive")
+                on_save()
+
+            ui.button("Save", on_click=save).props(
+                'color=primary data-testid="save-edit-activity-btn"'
+            )
+
+    dialog.open()
+
+
 def _get_current_user() -> dict | None:
     """Get current authenticated user from session storage."""
     return app.storage.user.get("auth_user")
@@ -387,6 +946,50 @@ async def _check_auth() -> bool:
     return True
 
 
+def _render_course_card(course: Course, enrollment: CourseEnrollment) -> None:
+    """Render a single course card in the units list."""
+    with (
+        ui.card()
+        .classes("w-full cursor-pointer hover:bg-gray-50")
+        .on("click", lambda c=course: ui.navigate.to(f"/courses/{c.id}"))
+        .props(f'data-testid="course-card-{course.id}"')
+    ):
+        with ui.row().classes("items-center justify-between w-full"):
+            with ui.column().classes("gap-1"):
+                ui.label(f"{course.code} - {course.name}").classes("font-semibold")
+                ui.label(f"Semester: {course.semester}").classes(
+                    "text-sm text-gray-500"
+                )
+            ui.badge(enrollment.role).classes("ml-2")
+
+
+async def _render_courses_content(user_id: UUID) -> None:
+    """Render the enrolled courses list and New Unit button."""
+    enrollments = await list_user_enrollments(user_id)
+    enrollment_map = {e.course_id: e for e in enrollments}
+
+    is_instructor = is_privileged_user(_get_current_user()) or any(
+        e.role in _MANAGER_ROLES for e in enrollments
+    )
+
+    courses = await list_courses()
+    enrolled_courses = [c for c in courses if c.id in enrollment_map]
+
+    if not enrolled_courses:
+        ui.label("You are not enrolled in any units.").classes("text-gray-500")
+    else:
+        with ui.column().classes("gap-2 w-full max-w-2xl"):
+            for course in enrolled_courses:
+                _render_course_card(course, enrollment_map[course.id])
+
+    if is_instructor:
+        ui.button(
+            "New Unit",
+            icon="add",
+            on_click=lambda: ui.navigate.to("/courses/new"),
+        ).props('flat color=primary dense data-testid="new-unit-btn"').classes("mt-4")
+
+
 @page_route("/courses", title="Units", icon="school", order=20)
 async def courses_list_page() -> None:
     """List courses page."""
@@ -406,51 +1009,11 @@ async def courses_list_page() -> None:
         ).classes("text-red-500")
         return
 
-    with ui.row().classes("items-center mb-4 gap-2"):
-        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            'flat round data-testid="home-btn"'
-        ).tooltip("Home")
-        ui.label("Units").classes("text-2xl font-bold")
+    with page_layout("Units"):
+        ui.add_css(_CSS_FILE)
 
-    # Get enrolled courses for this user
-    enrollments = await list_user_enrollments(user_id)
-    enrollment_map = {e.course_id: e for e in enrollments}
-
-    # Check if user is privileged (admin/instructor Stytch role) or course manager
-    is_instructor = is_privileged_user(_get_current_user()) or any(
-        e.role in _MANAGER_ROLES for e in enrollments
-    )
-
-    if is_instructor:
-        ui.button("New Unit", on_click=lambda: ui.navigate.to("/courses/new")).classes(
-            "mb-4"
-        ).props('data-testid="new-unit-btn"')
-
-    # List courses user is enrolled in
-    courses = await list_courses()
-    enrolled_courses = [c for c in courses if c.id in enrollment_map]
-
-    if not enrolled_courses:
-        ui.label("You are not enrolled in any units.").classes("text-gray-500")
-    else:
-        with ui.column().classes("gap-2 w-full max-w-2xl"):
-            for course in enrolled_courses:
-                enrollment = enrollment_map[course.id]
-                with (
-                    ui.card()
-                    .classes("w-full cursor-pointer hover:bg-gray-50")
-                    .on("click", lambda c=course: ui.navigate.to(f"/courses/{c.id}"))
-                    .props(f'data-testid="course-card-{course.id}"')
-                ):
-                    with ui.row().classes("items-center justify-between w-full"):
-                        with ui.column().classes("gap-1"):
-                            ui.label(f"{course.code} - {course.name}").classes(
-                                "font-semibold"
-                            )
-                            ui.label(f"Semester: {course.semester}").classes(
-                                "text-sm text-gray-500"
-                            )
-                        ui.badge(enrollment.role).classes("ml-2")
+        with ui.column().classes("mx-auto q-pa-lg courses-content-column"):
+            await _render_courses_content(user_id)
 
 
 @ui.page("/courses/new")
@@ -513,18 +1076,81 @@ async def create_course_page() -> None:
 
     with ui.row().classes("gap-2 mt-4"):
         ui.button("Create", on_click=submit).props('data-testid="create-course-btn"')
-        ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props("flat")
+        ui.button("Cancel", on_click=lambda: ui.navigate.to("/courses")).props(
+            'flat data-testid="cancel-create-course-btn"'
+        )
 
 
-@ui.page("/courses/{course_id}")
-async def course_detail_page(course_id: str) -> None:
-    """Course detail page with weeks."""
-    if not await _check_auth():
+def _render_add_week_btn(course_id: str) -> None:
+    """Render the 'Add Week' list-appender below the weeks list."""
+    ui.button(
+        "Add Week",
+        icon="add",
+        on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
+    ).props('flat color=primary dense data-testid="add-week-btn"').classes("mt-2")
+
+
+def _render_course_action_bar(
+    course_id: str,
+    course: Course,
+    *,
+    can_manage: bool,
+    can_delete: bool = False,
+    on_delete: Callable[[], Any] | None = None,
+) -> None:
+    """Render the action bar with management buttons."""
+    if can_manage or (can_delete and on_delete is not None):
+        with ui.row().classes("gap-2 mb-4"):
+            if can_manage:
+                ui.button(
+                    "Manage Enrollments",
+                    on_click=lambda: ui.navigate.to(
+                        f"/courses/{course_id}/enrollments"
+                    ),
+                ).props('outline color=primary data-testid="manage-enrollments-btn"')
+                ui.button(
+                    "Unit Settings",
+                    icon="settings",
+                    on_click=lambda: open_course_settings(course),
+                ).props('outline color=primary data-testid="course-settings-btn"')
+            if can_delete and on_delete is not None:
+                ui.button(
+                    "Delete Unit",
+                    icon="delete_forever",
+                    on_click=on_delete,
+                ).props('outline color=negative data-testid="delete-unit-btn"')
+
+
+async def _render_students_without_work(cid: UUID, *, can_view_drafts: bool) -> None:
+    """Render expandable list of students with no workspaces."""
+    if not can_view_drafts:
         return
+    no_work = await list_students_without_workspaces(cid)
+    if not no_work:
+        return
+    with ui.expansion(
+        f"Students with no work ({len(no_work)})",
+        icon="warning",
+    ).classes("w-full max-w-2xl mt-4"):
+        with ui.element("ul").classes("ml-4"):
+            for name, email in no_work:
+                with ui.element("li"):
+                    ui.label(f"{name} ({email})")
+
+
+async def _resolve_course_detail(
+    course_id: str,
+) -> _CourseDetailContext | None:
+    """Validate auth, DB, and enrollment for the course detail page.
+
+    Shows error labels and returns ``None`` on failure.
+    """
+    if not await _check_auth():
+        return None
 
     if not _is_db_available():
         ui.label("Database not configured").classes("text-red-500")
-        return
+        return None
 
     await init_db()
 
@@ -532,284 +1158,187 @@ async def course_detail_page(course_id: str) -> None:
         cid = UUID(course_id)
     except ValueError:
         ui.label("Invalid unit ID").classes("text-red-500")
-        return
+        return None
 
-    # Track this client for broadcasting updates
     await ui.context.client.connected()
-    client = ui.context.client
-    client_id = str(id(client))
+    client_id = str(id(ui.context.client))
 
     course = await get_course_by_id(cid)
-    if not course:
-        ui.label("Unit not found").classes("text-red-500")
-        return
-
     user_id = _get_user_id()
-    if not user_id:
-        ui.label(
-            "User not found in local database. Please log out and log in again."
-        ).classes("text-red-500")
-        return
+    enrollment = (
+        await get_enrollment(course_id=cid, user_id=user_id)
+        if course and user_id
+        else None
+    )
 
-    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
+    if not course or not user_id or not enrollment:
+        _label = (
+            "Unit not found"
+            if not course
+            else (
+                "User not found in local database. Please log out and log in again."
+                if not user_id
+                else "You are not enrolled in this unit"
+            )
+        )
+        ui.label(_label).classes("text-red-500")
+        return None
 
-    if not enrollment:
-        ui.label("You are not enrolled in this unit").classes("text-red-500")
-        return
-
-    # Permission levels:
-    # - can_manage: create weeks, manage enrollments (coordinator/instructor only)
-    # - can_view_drafts: see unpublished weeks, publish/unpublish (includes tutors)
     can_manage = enrollment.role in _MANAGER_ROLES
     staff_roles = await get_staff_roles()
     can_view_drafts = enrollment.role in staff_roles
 
-    # Header
-    with ui.row().classes("items-center gap-4 mb-4"):
-        ui.button(icon="home", on_click=lambda: ui.navigate.to("/")).props(
-            'flat round data-testid="home-btn"'
-        ).tooltip("Home")
-        ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/courses")).props(
-            "flat round"
+    return _CourseDetailContext(
+        cid=cid,
+        course=course,
+        user_id=user_id,
+        enrollment=enrollment,
+        can_manage=can_manage,
+        can_view_drafts=can_view_drafts,
+        client_id=client_id,
+    )
+
+
+def _make_publish_toggle(
+    cid: UUID,
+    client_id: str,
+    refresh: Callable[[], Any],
+) -> Callable[[UUID], Any]:
+    """Create a publish/unpublish toggle callback for a course's weeks."""
+
+    async def _toggle(wid: UUID) -> None:
+        w = await get_week_by_id(wid)
+        if w and w.is_published:
+            await unpublish_week(wid)
+        else:
+            await publish_week(wid)
+        refresh()
+        _broadcast_weeks_refresh(cid, client_id)
+
+    return _toggle
+
+
+@ui.page("/courses/{course_id}")
+async def course_detail_page(course_id: str) -> None:
+    """Course detail page with weeks."""
+    ctx = await _resolve_course_detail(course_id)
+    if ctx is None:
+        return
+
+    cid, course = ctx.cid, ctx.course
+    user_id, can_manage = ctx.user_id, ctx.can_manage
+    can_view_drafts, client_id = ctx.can_view_drafts, ctx.client_id
+
+    auth_user = _get_current_user()
+    can_delete = is_privileged_user(auth_user) or ctx.enrollment.role == "coordinator"
+
+    async def _delete_unit() -> None:
+        await _confirm_and_delete(
+            entity_label=f"unit: {course.name}",
+            delete_fn=delete_course,
+            entity_id=cid,
+            is_admin=is_privileged_user(auth_user),
+            on_success=lambda: ui.navigate.to("/courses"),
         )
-        ui.label(f"{course.code} - {course.name}").classes("text-2xl font-bold")
-        ui.badge(enrollment.role)
-        if can_manage:
-            ui.button(
-                icon="settings",
-                on_click=lambda: open_course_settings(course),
-            ).props('flat round data-testid="course-settings-btn"').tooltip("Settings")
 
-    ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
+    with page_layout(f"{course.code} - {course.name}"):
+        ui.add_css(_CSS_FILE)
 
-    # Week management for coordinators/instructors only
-    if can_manage:
-        with ui.row().classes("gap-2 mb-4"):
-            ui.button(
-                "Add Week",
-                on_click=lambda: ui.navigate.to(f"/courses/{course_id}/weeks/new"),
-            ).props('data-testid="add-week-btn"')
-            ui.button(
-                "Manage Enrollments",
-                on_click=lambda: ui.navigate.to(f"/courses/{course_id}/enrollments"),
-            ).props('flat data-testid="manage-enrollments-btn"')
+        with ui.column().classes("mx-auto q-pa-lg courses-content-column"):
+            ui.badge(ctx.enrollment.role)
+            ui.label(f"Semester: {course.semester}").classes("text-gray-500 mb-4")
 
-    # Weeks list - refreshable for in-place updates
-    ui.label("Weeks").classes("text-xl font-semibold mb-2")
+            _render_course_action_bar(
+                course_id,
+                course,
+                can_manage=can_manage,
+                can_delete=can_delete,
+                on_delete=_delete_unit,
+            )
 
-    async def _build_user_workspace_map(
-        activities: list[Activity], uid: UUID | None
-    ) -> dict[UUID, Workspace]:
-        """Build activity_id -> owned Workspace map for Resume detection.
+            ui.label("Weeks").classes("text-xl font-semibold mb-2")
 
-        # TODO: Batch into single query if activity count per week grows
-        """
-        result: dict[UUID, Workspace] = {}
-        if uid is None:
-            return result
-        for act in activities:
-            existing = await get_user_workspace_for_activity(act.id, uid)
-            if existing is not None:
-                result[act.id] = existing
-        return result
+            @ui.refreshable
+            async def weeks_list() -> None:
+                """Render the weeks list."""
+                weeks = await get_visible_weeks(course_id=cid, user_id=user_id)
+                if not weeks:
+                    ui.label("No weeks available yet.").classes("text-gray-500")
+                    return
 
-    def _render_activity_row(
-        act: Activity,
-        *,
-        can_manage: bool,
-        populated_templates: set[UUID],
-        user_workspace_map: dict[UUID, Workspace],
-        peer_workspaces: list[tuple[str, str, str]] | None = None,
-    ) -> None:
-        """Render a single Activity row with template/start or resume buttons."""
-        with (
-            ui.row()
-            .classes("items-center gap-2")
-            .props(f'data-testid="activity-row-{act.id}"')
-        ):
-            ui.icon("assignment").classes("text-gray-400")
-            ui.label(act.title).classes("text-sm font-medium")
+                toggle = _make_publish_toggle(cid, client_id, weeks_list.refresh)
+
+                def _on_week_save() -> None:
+                    weeks_list.refresh()
+                    _broadcast_weeks_refresh(cid, client_id)
+
+                def _on_activity_save() -> None:
+                    weeks_list.refresh()
+                    _broadcast_weeks_refresh(cid, client_id)
+
+                async def _delete_week_handler(
+                    w: Any,
+                ) -> None:
+                    auth_user = _get_current_user()
+                    await _confirm_and_delete(
+                        entity_label=(f"Week {w.week_number}: {w.title}"),
+                        delete_fn=delete_week,
+                        entity_id=w.id,
+                        is_admin=is_privileged_user(auth_user),
+                        on_success=_on_week_save,
+                    )
+
+                async def _delete_activity_handler(
+                    a: Any,
+                ) -> None:
+                    auth_user = _get_current_user()
+                    await _confirm_and_delete(
+                        entity_label=f"activity: {a.title}",
+                        delete_fn=delete_activity,
+                        entity_id=a.id,
+                        is_admin=is_privileged_user(auth_user),
+                        on_success=_on_activity_save,
+                    )
+
+                async def _delete_workspace_handler(ws_id: UUID) -> None:
+                    await _handle_delete_workspace(ws_id, on_success=_on_activity_save)
+
+                with ui.column().classes("gap-2 w-full"):
+                    for week in weeks:
+                        with ui.card().classes("w-full"):
+                            _render_week_header(
+                                week,
+                                can_view_drafts=can_view_drafts,
+                                can_manage=can_manage,
+                                on_publish_toggle=toggle,
+                                on_edit=lambda w: open_edit_week(
+                                    w, cid, on_save=_on_week_save
+                                ),
+                                on_delete=_delete_week_handler,
+                            )
+                            await _render_week_activities(
+                                week,
+                                course_id=course_id,
+                                course=course,
+                                user_id=user_id,
+                                can_manage=can_manage,
+                                can_view_drafts=can_view_drafts,
+                                on_edit_activity=lambda a: open_edit_activity(
+                                    a, cid, on_save=_on_activity_save
+                                ),
+                                on_delete_activity=_delete_activity_handler,
+                                on_delete_workspace=_delete_workspace_handler,
+                            )
+
+            await weeks_list()
 
             if can_manage:
-                has_content = act.template_workspace_id in populated_templates
-                btn_label = "Edit Template" if has_content else "Create Template"
-                btn_icon = "edit" if has_content else "add"
-                _qs = urlencode({"workspace_id": str(act.template_workspace_id)})
-                ui.button(
-                    btn_label,
-                    icon=btn_icon,
-                    on_click=lambda qs=_qs: ui.navigate.to(f"/annotation?{qs}"),
-                ).props("flat dense size=sm color=secondary")
-                ui.button(
-                    icon="settings",
-                    on_click=lambda a=act: open_activity_settings(a),
-                ).props(
-                    'flat round dense size=sm data-testid="activity-settings-btn"'
-                ).tooltip("Settings")
+                _render_add_week_btn(course_id)
 
-            if act.id in user_workspace_map:
-                # User already has a workspace — show Resume
-                ws = user_workspace_map[act.id]
-                qs = urlencode({"workspace_id": str(ws.id)})
-                ui.button(
-                    "Resume",
-                    icon="play_arrow",
-                    on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
-                ).props("flat dense size=sm color=primary")
-            else:
-                # No workspace yet — show Start Activity
-                async def start_activity(aid: UUID = act.id) -> None:
-                    uid = _get_user_id()
-                    if uid is None:
-                        ui.notify("Please log in to start an activity", type="warning")
-                        return
+            await _render_students_without_work(cid, can_view_drafts=can_view_drafts)
 
-                    existing = await get_user_workspace_for_activity(aid, uid)
-                    if existing is not None:
-                        qs = urlencode({"workspace_id": str(existing.id)})
-                        ui.navigate.to(f"/annotation?{qs}")
-                        return
-
-                    error = await check_clone_eligibility(aid, uid)
-                    if error is not None:
-                        ui.notify(error, type="negative")
-                        return
-
-                    clone, _doc_map = await clone_workspace_from_activity(aid, uid)
-                    qs = urlencode({"workspace_id": str(clone.id)})
-                    ui.navigate.to(f"/annotation?{qs}")
-
-                ui.button("Start Activity", on_click=start_activity).props(
-                    "flat dense size=sm color=primary"
-                )
-
-        # Peer workspace list (gated by allow_sharing in _build_peer_map)
-        if peer_workspaces:
-            with ui.column().classes("ml-8 mt-1 gap-0"):
-                ui.label("Peer Workspaces").classes("text-xs font-medium text-gray-500")
-                for ws_id, title, display_name in peer_workspaces:
-                    qs = urlencode({"workspace_id": ws_id})
-                    with ui.row().classes("items-center gap-1"):
-                        ui.icon("person").classes("text-gray-300 text-sm")
-                        ui.link(
-                            f"{display_name} — {title}",
-                            target=f"/annotation?{qs}",
-                        ).classes("text-xs text-blue-600")
-
-    @ui.refreshable
-    async def weeks_list() -> None:
-        """Render the weeks list with publish/unpublish controls."""
-        weeks = await get_visible_weeks(course_id=cid, user_id=user_id)
-
-        if not weeks:
-            ui.label("No weeks available yet.").classes("text-gray-500")
-            return
-
-        with ui.column().classes("gap-2 w-full max-w-2xl"):
-            for week in weeks:
-                with ui.card().classes("w-full"):
-                    with ui.row().classes("items-center justify-between w-full"):
-                        with ui.column().classes("gap-1"):
-                            ui.label(f"Week {week.week_number}: {week.title}").classes(
-                                "font-semibold"
-                            )
-                            if can_view_drafts:
-                                status = "Published" if week.is_published else "Draft"
-                                if week.visible_from:
-                                    date_str = week.visible_from.strftime("%Y-%m-%d")
-                                    status += f" (visible from {date_str})"
-                                ui.label(status).classes("text-sm text-gray-500")
-
-                        if can_manage:
-                            with ui.row().classes("gap-1"):
-                                if week.is_published:
-
-                                    async def unpub(wid: UUID = week.id) -> None:
-                                        await unpublish_week(wid)
-                                        weeks_list.refresh()
-                                        _broadcast_weeks_refresh(cid, client_id)
-
-                                    ui.button("Unpublish", on_click=unpub).props(
-                                        'flat dense data-testid="unpublish-week-btn"'
-                                    )
-                                else:
-
-                                    async def pub(wid: UUID = week.id) -> None:
-                                        await publish_week(wid)
-                                        weeks_list.refresh()
-                                        _broadcast_weeks_refresh(cid, client_id)
-
-                                    ui.button("Publish", on_click=pub).props(
-                                        'flat dense data-testid="publish-week-btn"'
-                                    )
-
-                    # Activity list under each week
-                    # TODO: Batch into single query if week count grows
-                    activities = await list_activities_for_week(week.id)
-                    if activities:
-                        populated = (
-                            await workspaces_with_documents(
-                                {a.template_workspace_id for a in activities}
-                            )
-                            if can_manage
-                            else set()
-                        )
-                        ws_map = await _build_user_workspace_map(activities, user_id)
-                        peer_map = await _build_peer_map(
-                            activities, course, user_id, can_view_drafts
-                        )
-                        with ui.column().classes("ml-4 gap-1 mt-2"):
-                            for act in activities:
-                                _render_activity_row(
-                                    act,
-                                    can_manage=can_manage,
-                                    populated_templates=populated,
-                                    user_workspace_map=ws_map,
-                                    peer_workspaces=peer_map.get(act.id),
-                                )
-                    elif can_manage:
-                        ui.label("No activities yet").classes(
-                            "text-xs text-gray-400 ml-4 mt-1"
-                        )
-
-                    if can_manage:
-                        ui.button(
-                            "Add Activity",
-                            on_click=lambda wid=week.id: ui.navigate.to(
-                                f"/courses/{course_id}/weeks/{wid}/activities/new"
-                            ),
-                        ).props(
-                            'flat dense size=sm data-testid="add-activity-btn"'
-                        ).classes("ml-4 mt-1")
-
-    await weeks_list()
-
-    # Students with no workspaces (staff only)
-    if can_view_drafts:
-        no_work = await list_students_without_workspaces(cid)
-        if no_work:
-            with ui.expansion(
-                f"Students with no work ({len(no_work)})",
-                icon="warning",
-            ).classes("w-full max-w-2xl mt-4"):
-                with ui.element("ul").classes("ml-4"):
-                    for name, email in no_work:
-                        with ui.element("li"):
-                            ui.label(f"{name} ({email})")
-
-    # Register this client for receiving broadcasts
-    if cid not in _course_clients:
-        _course_clients[cid] = {}
-    _course_clients[cid][client_id] = weeks_list.refresh
-
-    # Cleanup on disconnect
-    def on_disconnect() -> None:
-        if cid in _course_clients:
-            _course_clients[cid].pop(client_id, None)
-            if not _course_clients[cid]:
-                del _course_clients[cid]
-
-    client.on_disconnect(on_disconnect)
+    # Registered after page_layout block so weeks_list.refresh is bound
+    _register_course_client(cid, client_id, ui.context.client, weeks_list.refresh)
 
 
 @ui.page("/courses/{course_id}/weeks/new")
@@ -883,7 +1412,7 @@ async def create_week_page(course_id: str) -> None:
         ui.button("Create", on_click=submit).props('data-testid="create-week-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
-        ).props("flat")
+        ).props('flat data-testid="cancel-create-week-btn"')
 
 
 @ui.page("/courses/{course_id}/weeks/{week_id}/activities/new")
@@ -958,87 +1487,47 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         ui.button("Create", on_click=submit).props('data-testid="create-activity-btn"')
         ui.button(
             "Cancel", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
-        ).props("flat")
+        ).props('flat data-testid="cancel-create-activity-btn"')
 
 
-@ui.page("/courses/{course_id}/enrollments")
-async def manage_enrollments_page(course_id: str) -> None:
-    """Manage course enrollments page."""
-    if not await _check_auth():
-        return
+async def _render_enrollment_card(
+    e: Any,
+    *,
+    cid: UUID,
+    on_remove: Callable[[], Any],
+) -> None:
+    """Render a single enrollment card with user info and remove button."""
+    enrolled_user = await get_user_by_id(e.user_id)
+    display_name = enrolled_user.display_name if enrolled_user else "Unknown"
+    email = enrolled_user.email if enrolled_user else str(e.user_id)
 
-    if not _is_db_available():
-        ui.label("Database not configured").classes("text-red-500")
-        return
-
-    await init_db()
-
-    try:
-        cid = UUID(course_id)
-    except ValueError:
-        ui.label("Invalid unit ID").classes("text-red-500")
-        return
-
-    course = await get_course_by_id(cid)
-    if not course:
-        ui.label("Unit not found").classes("text-red-500")
-        return
-
-    user_id = _get_user_id()
-    if not user_id:
-        ui.label(
-            "User not found in local database. Please log out and log in again."
-        ).classes("text-red-500")
-        return
-
-    enrollment = await get_enrollment(course_id=cid, user_id=user_id)
-
-    if not enrollment or enrollment.role not in _MANAGER_ROLES:
-        ui.label("Only instructors can manage enrollments").classes("text-red-500")
-        return
-
-    ui.label(f"Enrollments for {course.code}").classes("text-2xl font-bold mb-4")
-
-    # Enrollments list - refreshable for in-place updates
-    @ui.refreshable
-    async def enrollments_list() -> None:
-        """Render the enrollments list with add/remove controls."""
-        enrollments = await list_course_enrollments(cid)
-
-        if not enrollments:
-            ui.label("No enrollments").classes("text-gray-500")
-            return
-
-        with ui.column().classes("gap-2 w-full max-w-2xl"):
-            for e in enrollments:
-                # Look up user for display
-                enrolled_user = await get_user_by_id(e.user_id)
-                display_name = (
-                    enrolled_user.display_name if enrolled_user else "Unknown"
+    with ui.card().classes("w-full"):
+        with ui.row().classes("items-center justify-between w-full"):
+            with ui.column().classes("gap-1"):
+                ui.label(display_name).classes("font-semibold")
+                ui.label(email).classes("text-sm text-gray-500")
+                ui.label(f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}").classes(
+                    "text-xs text-gray-400"
                 )
-                email = enrolled_user.email if enrolled_user else str(e.user_id)
+            with ui.row().classes("gap-2 items-center"):
+                ui.badge(e.role)
 
-                with ui.card().classes("w-full"):
-                    with ui.row().classes("items-center justify-between w-full"):
-                        with ui.column().classes("gap-1"):
-                            ui.label(display_name).classes("font-semibold")
-                            ui.label(email).classes("text-sm text-gray-500")
-                            ui.label(
-                                f"Enrolled: {e.created_at.strftime('%Y-%m-%d')}"
-                            ).classes("text-xs text-gray-400")
-                        with ui.row().classes("gap-2 items-center"):
-                            ui.badge(e.role)
+                async def remove(uid: UUID = e.user_id) -> None:
+                    await unenroll_user(course_id=cid, user_id=uid)
+                    ui.notify("Enrollment removed", type="positive")
+                    on_remove()
 
-                            async def remove(uid: UUID = e.user_id) -> None:
-                                await unenroll_user(course_id=cid, user_id=uid)
-                                ui.notify("Enrollment removed", type="positive")
-                                enrollments_list.refresh()
+                ui.button(icon="delete", on_click=remove).props(
+                    f"flat round dense color=negative"
+                    f' data-testid="delete-enrollment-btn-{e.user_id}"'
+                )
 
-                            ui.button(icon="delete", on_click=remove).props(
-                                "flat round dense color=negative"
-                            )
 
-    # Add enrollment form - now uses email to find or create user
+async def _render_add_enrollment_form(
+    cid: UUID,
+    on_added: Callable[[], Any],
+) -> None:
+    """Render the add-enrollment form with email input and role select."""
     with ui.card().classes("mb-4 p-4"):
         ui.label("Add Enrollment").classes("font-semibold mb-2")
         ui.label(
@@ -1065,13 +1554,10 @@ async def manage_enrollments_page(course_id: str) -> None:
                 if not new_email.value:
                     ui.notify("Email is required", type="negative")
                     return
-
-                # Find or create user by email
                 new_user, created = await find_or_create_user(
                     email=new_email.value,
                     display_name=new_email.value.split("@")[0],
                 )
-
                 try:
                     await enroll_user(
                         course_id=cid,
@@ -1082,8 +1568,8 @@ async def manage_enrollments_page(course_id: str) -> None:
                     if created:
                         msg += " (new user created)"
                     ui.notify(msg, type="positive")
-                    new_email.value = ""  # Clear input after add
-                    enrollments_list.refresh()
+                    new_email.value = ""
+                    on_added()
                 except Exception as e:
                     ui.notify(f"Failed to enroll: {e}", type="negative")
 
@@ -1091,9 +1577,41 @@ async def manage_enrollments_page(course_id: str) -> None:
                 'data-testid="add-enrollment-btn"'
             )
 
-    # Render the enrollments list
+
+@ui.page("/courses/{course_id}/enrollments")
+async def manage_enrollments_page(course_id: str) -> None:
+    """Manage course enrollments page."""
+    ctx = await _resolve_course_detail(course_id)
+    if ctx is None:
+        return
+
+    if not ctx.can_manage:
+        ui.label("Only instructors can manage enrollments").classes("text-red-500")
+        return
+
+    cid = ctx.cid
+
+    ui.label(f"Enrollments for {ctx.course.code}").classes("text-2xl font-bold mb-4")
+
+    @ui.refreshable
+    async def enrollments_list() -> None:
+        """Render the enrollments list."""
+        enrollments = await list_course_enrollments(cid)
+        if not enrollments:
+            ui.label("No enrollments").classes("text-gray-500")
+            return
+        with ui.column().classes("gap-2 w-full max-w-2xl"):
+            for e in enrollments:
+                await _render_enrollment_card(
+                    e,
+                    cid=cid,
+                    on_remove=enrollments_list.refresh,
+                )
+
+    await _render_add_enrollment_form(cid, on_added=enrollments_list.refresh)
     await enrollments_list()
 
     ui.button(
-        "Back to Unit", on_click=lambda: ui.navigate.to(f"/courses/{course_id}")
+        "Back to Unit",
+        on_click=lambda: ui.navigate.to(f"/courses/{course_id}"),
     ).props('data-testid="back-to-unit-btn"').classes("mt-4")

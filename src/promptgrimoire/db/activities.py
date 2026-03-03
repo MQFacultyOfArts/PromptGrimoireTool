@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import DeletionBlockedError
 from promptgrimoire.db.models import Activity, Week, Workspace
+from promptgrimoire.db.weeks import purge_activity
+from promptgrimoire.db.workspaces import has_student_workspaces
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -170,30 +173,34 @@ async def update_activity(
         return activity
 
 
-async def delete_activity(activity_id: UUID) -> bool:
+async def delete_activity(
+    activity_id: UUID,
+    *,
+    force: bool = False,
+) -> bool:
     """Delete an activity and its template workspace.
 
-    Deletion order matters due to circular FKs:
-    1. Delete Activity first -- this triggers SET NULL on any
-       student workspace.activity_id references.
-    2. Then delete the orphaned template Workspace, which is now
-       safe because no RESTRICT FK points to it.
+    When ``force=False`` (default), raises
+    :class:`~promptgrimoire.db.exceptions.DeletionBlockedError` if
+    student workspaces exist under this activity.  When ``force=True``,
+    student workspaces are deleted first, then the activity.
 
-    (Activity.template_workspace_id uses RESTRICT, so deleting
-    the Workspace first would be blocked while the Activity exists.)
+    Delegates FK-ordered deletion to :func:`purge_activity`.
     """
     async with get_session() as session:
         activity = await session.get(Activity, activity_id)
         if not activity:
             return False
 
-        template_workspace_id = activity.template_workspace_id
-        await session.delete(activity)
-        await session.flush()
+        # Guard: check for student workspaces
+        count = await has_student_workspaces(activity_id)
+        if count > 0 and not force:
+            raise DeletionBlockedError(
+                student_workspace_count=count,
+            )
 
-        template = await session.get(Workspace, template_workspace_id)
-        if template:
-            await session.delete(template)
+        # Delegate FK-ordered deletion to shared helper
+        await purge_activity(session, activity)
 
         return True
 

@@ -145,6 +145,47 @@ def _build_highlight_card(
     return card
 
 
+def _render_ordered_cards(
+    highlights: list[dict[str, Any]],
+    ordered_ids: list[str],
+    tag_colour: str,
+    tag_name: str,
+    state: PageState,
+    on_locate: Callable[..., Any] | None,
+) -> None:
+    """Render highlight cards respecting tag_order, then unordered remainder.
+
+    Ordered highlights are rendered first (in tag_order sequence), followed
+    by any highlights not yet in the order list. Shows an empty-state hint
+    when the column has no highlights at all.
+
+    Args:
+        highlights: All highlights assigned to this tag.
+        ordered_ids: Ordered highlight IDs from CRDT tag_order.
+        tag_colour: Hex colour for card left borders.
+        tag_name: Display name for card tag label.
+        state: Page state for anonymisation context.
+        on_locate: Optional locate callback for Tab 1 warp.
+    """
+    hl_by_id = {h.get("id", ""): h for h in highlights}
+    rendered_ids: set[str] = set()
+
+    for hid in ordered_ids:
+        if hid in hl_by_id:
+            _build_highlight_card(hl_by_id[hid], tag_colour, tag_name, state, on_locate)
+            rendered_ids.add(hid)
+
+    for hl in highlights:
+        hid = hl.get("id", "")
+        if hid not in rendered_ids:
+            _build_highlight_card(hl, tag_colour, tag_name, state, on_locate)
+
+    if not highlights:
+        ui.label("No highlights").classes(
+            "text-xs text-gray-400 italic p-2 sortable-ignore"
+        )
+
+
 def _build_tag_column(
     tag_name: str,
     tag_colour: str,
@@ -187,9 +228,6 @@ def _build_tag_column(
             "text-white font-bold text-sm px-3 py-1 rounded-t w-full text-center"
         ).style(f"background-color: {tag_colour};")
 
-        # Build ID-to-highlight lookup
-        hl_by_id = {h.get("id", ""): h for h in highlights}
-
         # Create Sortable container for cards
         sortable = Sortable(
             options={
@@ -205,30 +243,9 @@ def _build_tag_column(
         sortable.classes("w-full flex-grow min-h-24 pb-4")
 
         with sortable:
-            # Render ordered highlights first
-            rendered_ids: set[str] = set()
-            for hid in ordered_ids:
-                if hid in hl_by_id:
-                    _build_highlight_card(
-                        hl_by_id[hid],
-                        tag_colour,
-                        tag_name,
-                        state,
-                        on_locate,
-                    )
-                    rendered_ids.add(hid)
-
-            # Append unordered highlights
-            for hl in highlights:
-                hid = hl.get("id", "")
-                if hid not in rendered_ids:
-                    _build_highlight_card(hl, tag_colour, tag_name, state, on_locate)
-
-            # Empty state hint (inside sortable so column is a valid drop target)
-            if not highlights:
-                ui.label("No highlights").classes(
-                    "text-xs text-gray-400 italic p-2 sortable-ignore"
-                )
+            _render_ordered_cards(
+                highlights, ordered_ids, tag_colour, tag_name, state, on_locate
+            )
 
     return column
 
@@ -252,6 +269,9 @@ def render_organise_tab(
     When on_sort_end is provided, cards are wrapped in SortableJS
     containers enabling drag reorder and cross-column moves.
 
+    A document management section is appended below the tag columns,
+    listing all workspace documents with delete controls for owners.
+
     Args:
         panel: The ui.tab_panel element to populate.
         tags: List of TagInfo instances.
@@ -260,6 +280,8 @@ def render_organise_tab(
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
         state: Page state for anonymisation context.
+        documents: Pre-loaded workspace documents. If None, document
+            management section is not rendered.
     """
     # Save scroll position before clearing (h-scroll across columns, v-scroll
     # within the panel). Uses data-testid selector since the element is rebuilt.

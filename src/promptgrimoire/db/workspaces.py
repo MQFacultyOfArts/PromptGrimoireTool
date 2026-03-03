@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -57,6 +58,35 @@ async def get_user_workspace_for_activity(
         return result.first()
 
 
+async def has_student_workspaces(activity_id: UUID) -> int:
+    """Count non-template workspaces for an activity.
+
+    Returns the number of student (cloned) workspaces placed in this
+    activity, excluding the template workspace itself.  A return value
+    of 0 means the activity is safe to delete without force.
+
+    Args:
+        activity_id: The activity UUID.
+
+    Returns:
+        Count of student workspaces (0 = safe to delete).
+    """
+    async with get_session() as session:
+        activity = await session.get(Activity, activity_id)
+        if activity is None:
+            return 0
+
+        result = await session.exec(
+            select(func.count())
+            .select_from(Workspace)
+            .where(
+                Workspace.activity_id == activity_id,
+                Workspace.id != activity.template_workspace_id,
+            )
+        )
+        return result.one()
+
+
 async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | None:
     """Check if a user is eligible to clone a workspace from an activity.
 
@@ -94,12 +124,11 @@ async def check_clone_eligibility(activity_id: UUID, user_id: UUID) -> str | Non
 
         # 4. Week must be visible to the user
         # Staff always have access regardless of publish state
-        if enrollment.role not in staff_roles:
-            # Students need published + visible week
-            if not week.is_published:
-                return "Week is not published"
-            if week.visible_from and week.visible_from > datetime.now(UTC):
-                return "Week is not yet visible"
+        is_student = enrollment.role not in staff_roles
+        if is_student and not week.is_published:
+            return "Week is not published"
+        if is_student and week.visible_from and week.visible_from > datetime.now(UTC):
+            return "Week is not yet visible"
 
         return None
 
@@ -319,16 +348,42 @@ async def get_workspace(workspace_id: UUID) -> Workspace | None:
         return await session.get(Workspace, workspace_id)
 
 
-async def delete_workspace(workspace_id: UUID) -> None:
+async def delete_workspace(workspace_id: UUID, *, user_id: UUID) -> None:
     """Delete a workspace and all its documents (CASCADE).
+
+    Checks that ``user_id`` is a literal owner of the workspace via
+    :class:`ACLEntry` before proceeding.  This is a defence-in-depth
+    check -- the UI layer should also verify ownership.
+
+    Uses a direct ACLEntry query for ``permission == "owner"``, NOT
+    ``resolve_permission()`` which would let admins pass via the full
+    ACL chain.  Admin bypass belongs in the UI layer only.
 
     Args:
         workspace_id: The workspace UUID.
+        user_id: The user attempting the deletion. Must be workspace owner.
+
+    Raises:
+        PermissionError: If ``user_id`` is not the workspace owner.
     """
     async with get_session() as session:
         workspace = await session.get(Workspace, workspace_id)
-        if workspace:
-            await session.delete(workspace)
+        if not workspace:
+            return
+
+        # Check literal ownership via ACLEntry (NOT resolve_permission)
+        owner_entry = await session.exec(
+            select(ACLEntry).where(
+                ACLEntry.workspace_id == workspace_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        if owner_entry.first() is None:
+            msg = "Only workspace owner can delete"
+            raise PermissionError(msg)
+
+        await session.delete(workspace)
 
 
 async def save_workspace_crdt_state(workspace_id: UUID, crdt_state: bytes) -> bool:
@@ -688,6 +743,7 @@ async def clone_workspace_from_activity(
                 order_index=tmpl_doc.order_index,
                 auto_number_paragraphs=tmpl_doc.auto_number_paragraphs,
                 paragraph_map=tmpl_doc.paragraph_map,
+                source_document_id=tmpl_doc.id,
             )
             session.add(cloned_doc)
             await session.flush()

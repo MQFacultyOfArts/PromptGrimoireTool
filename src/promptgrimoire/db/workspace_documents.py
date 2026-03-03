@@ -11,7 +11,8 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import WorkspaceDocument
+from promptgrimoire.db.exceptions import ProtectedDocumentError
+from promptgrimoire.db.models import ACLEntry, WorkspaceDocument
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -143,6 +144,86 @@ async def update_document_paragraph_settings(
         doc.auto_number_paragraphs = auto_number_paragraphs
         doc.paragraph_map = paragraph_map
         session.add(doc)
+
+
+async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
+    """Delete a user-uploaded document.
+
+    Checks that ``user_id`` is a literal owner of the document's workspace
+    via :class:`ACLEntry` before proceeding. This is a defence-in-depth
+    check -- the UI layer should also verify ownership.
+
+    Uses a direct ACLEntry query for ``permission == "owner"``, NOT
+    ``resolve_permission()`` which would let admins pass via the full
+    ACL chain. Admin bypass belongs in the UI layer only.
+
+    Template-cloned documents (where ``source_document_id IS NOT NULL``)
+    are protected and cannot be deleted -- raises
+    :class:`~promptgrimoire.db.exceptions.ProtectedDocumentError`.
+
+    Tags are NOT affected -- they belong to the workspace via
+    ``TagGroup -> Workspace`` FK, not to the document.
+
+    Args:
+        document_id: The document UUID.
+        user_id: The user attempting the deletion. Must be workspace owner.
+
+    Returns:
+        True if deleted, False if not found.
+
+    Raises:
+        ProtectedDocumentError: If the document is a template clone.
+        PermissionError: If ``user_id`` is not the workspace owner.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        doc = result.first()
+        if doc is None:
+            return False
+
+        if doc.source_document_id is not None:
+            raise ProtectedDocumentError(
+                document_id=doc.id,
+                source_document_id=doc.source_document_id,
+            )
+
+        # Check literal ownership via ACLEntry (NOT resolve_permission)
+        owner_entry = await session.exec(
+            select(ACLEntry).where(
+                ACLEntry.workspace_id == doc.workspace_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        if owner_entry.first() is None:
+            msg = f"user {user_id} is not the owner of workspace {doc.workspace_id}"
+            raise PermissionError(msg)
+
+        await session.delete(doc)
+        return True
+
+
+async def count_document_clones(document_id: UUID) -> int:
+    """Count workspace documents that reference this document as their source.
+
+    Used to warn instructors before deleting a template source document
+    that has student clones.
+
+    Args:
+        document_id: The template document UUID to check for clones.
+
+    Returns:
+        Number of documents whose source_document_id matches document_id.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(func.count()).where(
+                WorkspaceDocument.source_document_id == document_id
+            )
+        )
+        return result.one()
 
 
 async def reorder_documents(workspace_id: UUID, document_ids: list[UUID]) -> None:

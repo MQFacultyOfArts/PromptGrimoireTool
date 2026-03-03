@@ -220,7 +220,7 @@ def _render_activity_row(
                 icon="play_arrow",
                 on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
             ).props(
-                f'flat dense size=sm color=primary data-testid="resume-btn-{ws.id}"'
+                f'flat dense size=sm color=primary data-testid="resume-btn-{act.id}"'
             )
         else:
             ui.button(
@@ -940,6 +940,7 @@ async def course_detail_page(course_id: str) -> None:
 
             await _render_students_without_work(cid, can_view_drafts=can_view_drafts)
 
+    # Registered after page_layout block so weeks_list.refresh is bound
     _register_course_client(cid, client_id, client, weeks_list.refresh)
 
 

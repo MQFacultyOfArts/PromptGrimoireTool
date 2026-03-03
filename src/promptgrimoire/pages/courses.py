@@ -61,6 +61,7 @@ from promptgrimoire.db.workspace_documents import workspaces_with_documents
 from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
+    delete_workspace,
     get_user_workspace_for_activity,
     has_student_workspaces,
     resolve_tristate,
@@ -284,6 +285,37 @@ async def _handle_edit_template(activity_id: UUID, template_workspace_id: UUID) 
     dialog.open()
 
 
+async def _handle_delete_workspace(
+    workspace_id: UUID,
+    *,
+    on_success: Callable[[], Any],
+) -> None:
+    """Show confirmation dialog and delete a workspace."""
+    with ui.dialog() as dialog, ui.card().classes("w-96"):
+        ui.label("Delete your workspace?").classes("text-lg font-bold")
+        ui.label("You can start fresh by cloning again.").classes("text-gray-500")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props(
+                'flat data-testid="cancel-delete-workspace-btn"'
+            )
+
+            async def confirm() -> None:
+                user_id = _get_user_id()
+                if user_id is None:
+                    ui.notify("Not logged in", type="negative")
+                    dialog.close()
+                    return
+                await delete_workspace(workspace_id, user_id=user_id)
+                dialog.close()
+                ui.notify("Workspace deleted. You can start fresh.", type="positive")
+                on_success()
+
+            ui.button("Delete", on_click=confirm).props(
+                'color=negative data-testid="confirm-delete-workspace-btn"'
+            )
+    dialog.open()
+
+
 def _render_activity_management_controls(
     act: Activity,
     *,
@@ -339,6 +371,7 @@ def _render_activity_row(
     peer_workspaces: list[tuple[str, str, str]] | None = None,
     on_edit: Callable[[Activity], Any] | None = None,
     on_delete: Callable[[Activity], Any] | None = None,
+    on_delete_workspace: Callable[[UUID], Any] | None = None,
 ) -> None:
     """Render a single Activity row with buttons."""
     with (
@@ -361,7 +394,7 @@ def _render_activity_row(
         ui.space()
 
         if act.id in user_workspace_map:
-            # User already has a workspace -- show Resume
+            # User already has a workspace -- show Resume + Delete
             ws = user_workspace_map[act.id]
             qs = urlencode({"workspace_id": str(ws.id)})
             ui.button(
@@ -369,6 +402,14 @@ def _render_activity_row(
                 icon="play_arrow",
                 on_click=lambda q=qs: ui.navigate.to(f"/annotation?{q}"),
             ).props(f'flat color=primary dense data-testid="resume-btn-{act.id}"')
+            if on_delete_workspace is not None:
+                ui.button(
+                    icon="delete",
+                    on_click=lambda w=ws: on_delete_workspace(w.id),
+                ).props(
+                    f"flat round dense size=sm color=negative"
+                    f' data-testid="delete-workspace-btn-{ws.id}"'
+                )
         else:
             ui.button(
                 "Start as Student",
@@ -486,6 +527,7 @@ async def _render_week_activities(
     can_view_drafts: bool,
     on_edit_activity: Callable[[Activity], Any] | None = None,
     on_delete_activity: Callable[[Activity], Any] | None = None,
+    on_delete_workspace: Callable[[UUID], Any] | None = None,
 ) -> None:
     """Render the activity list and 'Add Activity' button for a week."""
     activities = await list_activities_for_week(week.id)
@@ -509,6 +551,7 @@ async def _render_week_activities(
                     peer_workspaces=peer_map.get(act.id),
                     on_edit=on_edit_activity,
                     on_delete=on_delete_activity,
+                    on_delete_workspace=on_delete_workspace,
                 )
     elif can_manage:
         ui.label("No activities yet").classes("text-xs text-gray-400 ml-4 mt-1")
@@ -1252,6 +1295,9 @@ async def course_detail_page(course_id: str) -> None:
                         on_success=_on_activity_save,
                     )
 
+                async def _delete_workspace_handler(ws_id: UUID) -> None:
+                    await _handle_delete_workspace(ws_id, on_success=_on_activity_save)
+
                 with ui.column().classes("gap-2 w-full"):
                     for week in weeks:
                         with ui.card().classes("w-full"):
@@ -1276,6 +1322,7 @@ async def course_detail_page(course_id: str) -> None:
                                     a, cid, on_save=_on_activity_save
                                 ),
                                 on_delete_activity=_delete_activity_handler,
+                                on_delete_workspace=_delete_workspace_handler,
                             )
 
             await weeks_list()

@@ -45,7 +45,7 @@ class TestSeedDataFromMigration:
         """The seed-data CLI function source doesn't reference Permission model."""
         import inspect
 
-        from promptgrimoire.cli_legacy import seed_data
+        from promptgrimoire.cli.seed import run as seed_data
 
         source = inspect.getsource(seed_data)
         assert "Permission" not in source
@@ -54,7 +54,7 @@ class TestSeedDataFromMigration:
         """The seed-data CLI function source doesn't reference CourseRoleRef model."""
         import inspect
 
-        from promptgrimoire.cli_legacy import seed_data
+        from promptgrimoire.cli.seed import run as seed_data
 
         source = inspect.getsource(seed_data)
         assert "CourseRoleRef" not in source

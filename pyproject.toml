@@ -40,10 +40,6 @@ dependencies = [
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
-test-e2e = "promptgrimoire.cli_legacy:test_e2e"
-test-e2e-slow = "promptgrimoire.cli_legacy:test_e2e_slow"
-test-e2e-noretry = "promptgrimoire.cli_legacy:test_e2e_noretry"
-test-e2e-changed = "promptgrimoire.cli_legacy:test_e2e_changed"
 grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
@@ -134,9 +130,6 @@ ignore = [
     # Intentional late imports, module-level side effects, global state.
     "PLC0415", "E402", "I001", "B023", "PTH123", "ARG001",
     "SIM115", "PLR0915", "PLW0602", "PLW0603", "RUF100",
-]
-"src/promptgrimoire/cli_legacy.py" = [
-    "PLC0415",  # Late import of pytest for CLI commands
 ]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block

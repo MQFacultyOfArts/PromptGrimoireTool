@@ -230,12 +230,16 @@ _ALEMBIC_DIR = PROJECT_ROOT / "alembic"
 _ALLOWED_OS_ENVIRON = {
     # subprocess env pass-through
     _SRC_DIR / "db" / "bootstrap.py",
-    # NullPool coordination flag (set by cli_legacy.py, read by engine.py)
+    # NullPool coordination flag (set by cli/_shared.py, read by engine.py)
     _SRC_DIR / "db" / "engine.py",
     # subprocess env override for test database
-    _SRC_DIR / "cli_legacy.py",
+    _SRC_DIR / "cli" / "_shared.py",
     # DEV__AUTH_MOCK env override for doc-gen subprocess
     _SRC_DIR / "cli" / "docs.py",
+    # E2E runner sets env vars for subprocess coordination (not config reading)
+    _SRC_DIR / "cli" / "e2e" / "__init__.py",
+    # Standalone subprocess script — sets env for isolated NiceGUI server
+    _SRC_DIR / "cli" / "e2e" / "_server_script.py",
 }
 
 _TESTS_DIR = PROJECT_ROOT / "tests"

@@ -421,7 +421,7 @@ class TestNaughtyStudent:
                 card = activity_label.locator(
                     "xpath=ancestor::div[contains(@class, 'q-card')]"
                 )
-                card.get_by_role("button", name="Start Activity").click()
+                card.locator("[data-testid^='start-activity-btn-']").first.click()
 
                 # Wait for annotation page with cloned workspace
                 student_page.wait_for_url(

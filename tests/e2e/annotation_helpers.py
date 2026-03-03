@@ -657,12 +657,12 @@ def navigate_home_via_drawer(page: Page) -> None:
     Args:
         page: Playwright page with ``page_layout`` rendered.
     """
-    home_link = page.locator(".q-item").filter(has_text="Home")
-    if not home_link.first.is_visible():
+    home_link = page.get_by_test_id("nav-home")
+    if not home_link.is_visible():
         page.locator(".q-header .q-btn").first.click()
         page.wait_for_timeout(500)
-    expect(home_link.first).to_be_visible(timeout=5000)
-    home_link.first.click()
+    expect(home_link).to_be_visible(timeout=5000)
+    home_link.click()
 
 
 def scroll_to_char(page: Page, char_offset: int) -> None:
@@ -1009,7 +1009,7 @@ def clone_activity_workspace(
     label = page.get_by_text(activity_title)
     label.wait_for(state="visible", timeout=10000)
     card = label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-    card.get_by_role("button", name="Start Activity").first.click()
+    card.locator("[data-testid^='start-activity-btn-']").first.click()
 
     page.wait_for_url(
         re.compile(r"/annotation\?workspace_id="),

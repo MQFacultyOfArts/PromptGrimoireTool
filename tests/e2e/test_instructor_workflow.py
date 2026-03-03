@@ -144,7 +144,7 @@ def _student_clones_and_sees_content(
         activity_label = student_page.get_by_text(activity_title)
         activity_label.wait_for(state="visible", timeout=10000)
         card = activity_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-        card.get_by_role("button", name="Start Activity").first.click()
+        card.locator("[data-testid^='start-activity-btn-']").first.click()
 
         # Wait for redirect to annotation page with cloned workspace
         student_page.wait_for_url(
@@ -632,7 +632,7 @@ def _run_student_tag_subtests(
         activity_label = student_page.get_by_text("Annotate Becky")
         activity_label.wait_for(state="visible", timeout=10000)
         card = activity_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-        card.get_by_role("button", name="Start Activity").first.click()
+        card.locator("[data-testid^='start-activity-btn-']").first.click()
         student_page.wait_for_url(
             re.compile(r"/annotation\?workspace_id="), timeout=15000
         )

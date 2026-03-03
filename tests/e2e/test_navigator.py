@@ -1359,9 +1359,7 @@ class TestNavigationChrome:
             page.goto(f"{app_server}/courses")
             page.wait_for_timeout(2000)
 
-            home_btn = page.get_by_test_id("home-btn")
-            expect(home_btn.first).to_be_visible(timeout=5000)
-            home_btn.first.click()
+            navigate_home_via_drawer(page)
 
             page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
         finally:

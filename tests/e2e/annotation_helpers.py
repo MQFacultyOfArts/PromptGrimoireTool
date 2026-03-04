@@ -194,8 +194,7 @@ def _lock_tag_in_db(workspace_id: str, tag_name: str) -> None:
     sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
     engine = create_engine(sync_url)
 
-    ws_ns = uuid.UUID(workspace_id)
-    tag_id = str(uuid.uuid5(ws_ns, f"seed-tag-{tag_name}"))
+    tag_id = seed_tag_id(workspace_id, tag_name)
 
     with engine.begin() as conn:
         conn.execute(

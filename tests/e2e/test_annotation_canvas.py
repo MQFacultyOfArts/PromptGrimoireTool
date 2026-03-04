@@ -30,24 +30,29 @@ from tests.e2e.annotation_helpers import (
     select_chars,
     wait_for_text_walker,
 )
+from tests.e2e.conftest import _authenticate_page
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Locator, Page
 
 
-def _parse_tag_name_from_button(btn_text: str) -> str:
-    """Extract the tag name from a toolbar button label.
+def _tag_name_from_toolbar_button(toolbar: Locator, position: int) -> str:
+    """Read the tag name from the toolbar button at a 1-based shortcut position.
 
     Toolbar buttons have labels like "[2] Procedural History".
-    Strips the leading "[N] " shortcut prefix if present.
+    Waits for the button to be visible, then strips the "[N] " prefix.
 
     Args:
-        btn_text: text_content() of the toolbar button element.
+        toolbar: Locator for the tag-toolbar element.
+        position: 1-based shortcut number (e.g. 2 for the "[2]" button).
 
     Returns:
         Tag name with shortcut prefix removed.
     """
-    stripped = btn_text.strip()
+    btn = toolbar.locator("[data-tag-id]").nth(position - 1)
+    btn.wait_for(state="visible", timeout=5000)
+    raw = btn.text_content() or ""
+    stripped = raw.strip()
     if "] " in stripped:
         return stripped.split("] ", 1)[1].strip()
     return stripped
@@ -70,13 +75,8 @@ class TestAnnotationCanvas:
         """
         page = authenticated_page
 
-        # Create a workspace owned by a known email. Re-authenticate
-        # the page with this email so DB lookup succeeds.
-        page_email = f"e2e-canvas-student-{uuid.uuid4().hex[:8]}@test.example.edu.au"
-
-        # Re-authenticate the existing page with our known email
-        page.goto(f"{app_server}/auth/callback?token=mock-token-{page_email}")
-        page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+        # Re-authenticate with a known email so the DB lookup succeeds.
+        page_email = _authenticate_page(page, app_server)
 
         # Step 1: Create workspace via DB with seeded tags
         workspace_id = _create_workspace_via_db(
@@ -126,17 +126,8 @@ class TestAnnotationCanvas:
         # AC4.1 + AC4.3: Keyboard shortcuts apply correct tag
         # ------------------------------------------------------------------
 
-        # Read the tag name at shortcut position "2" (2nd button, 0-indexed=1)
-        key2_btn = toolbar.locator("[data-tag-id]").nth(1)
-        key2_btn.wait_for(state="visible", timeout=5000)
-        key2_raw = key2_btn.text_content() or ""
-        key2_tag_name = _parse_tag_name_from_button(key2_raw)
-
-        # Read the tag name at shortcut position "3" (3rd button, 0-indexed=2)
-        key3_btn = toolbar.locator("[data-tag-id]").nth(2)
-        key3_btn.wait_for(state="visible", timeout=5000)
-        key3_raw = key3_btn.text_content() or ""
-        key3_tag_name = _parse_tag_name_from_button(key3_raw)
+        key2_tag_name = _tag_name_from_toolbar_button(toolbar, position=2)
+        key3_tag_name = _tag_name_from_toolbar_button(toolbar, position=3)
 
         # Press "2" with text selected -- highlight created with tag at position 2
         select_chars(page, 0, 5)
@@ -180,10 +171,10 @@ class TestAnnotationCanvas:
         """
         page = authenticated_page
 
-        # Authenticate as instructor (role-based email)
-        instructor_email = "instructor@uni.edu"
-        page.goto(f"{app_server}/auth/callback?token=mock-token-{instructor_email}")
-        page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+        # Authenticate as instructor
+        instructor_email = _authenticate_page(
+            page, app_server, email="instructor@uni.edu"
+        )
 
         # Step 1: Create workspace via DB with seeded tags
         workspace_id = _create_workspace_via_db(

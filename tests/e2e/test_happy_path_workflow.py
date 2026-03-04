@@ -101,10 +101,8 @@ def _student_start_and_apply_tag(
         toolbar.wait_for(state="visible", timeout=5000)
         toolbar.locator("[data-tag-id]").first.click()
 
-        student_page.wait_for_timeout(500)
-
         first_card = student_page.locator("[data-testid='annotation-card']").first
-        expect(first_card).to_be_visible(timeout=3000)
+        first_card.wait_for(state="visible", timeout=5000)
         expect(first_card.get_by_test_id("tag-select")).to_contain_text(
             "Mammals", timeout=3000
         )
@@ -128,6 +126,7 @@ class TestHappyPathWorkflow:
         semester = "2026-S1"
         student_email = f"student-{uid}@test.edu"
 
+        course_id: str | None = None
         instructor_ctx = browser.new_context()
         page = instructor_ctx.new_page()
 
@@ -162,6 +161,9 @@ class TestHappyPathWorkflow:
         finally:
             page.close()
             instructor_ctx.close()
+
+        if course_id is None:
+            pytest.fail("Instructor setup failed — cannot proceed to student phase")
 
         with subtests.test(msg="student_applies_tag"):
             _student_start_and_apply_tag(

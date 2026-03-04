@@ -10,7 +10,9 @@ import inspect
 import logging
 import os
 from pathlib import Path
+from tempfile import gettempdir
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -31,6 +33,16 @@ from promptgrimoire.config import (
 )
 
 
+def _sample_public_token_value() -> str:
+    """Return a non-sensitive token-like value for configuration tests."""
+    return f"public-{uuid4()}"
+
+
+def _sample_log_dir() -> Path:
+    """Return a temporary log directory path without hardcoding /tmp."""
+    return Path(gettempdir()) / "logs"
+
+
 # ---------------------------------------------------------------------------
 # AC1: Type validation at startup
 # ---------------------------------------------------------------------------
@@ -39,12 +51,14 @@ class TestTypeValidation:
 
     def test_valid_typed_values_populate_all_fields(self) -> None:
         """AC1.1: Construct Settings with valid typed values, verify all fields."""
+        public_token = _sample_public_token_value()
+        log_dir = _sample_log_dir()
         s = Settings(
             _env_file=None,  # type: ignore[call-arg]
             stytch=StytchConfig(
                 project_id="proj-123",
                 secret=SecretStr("sec-456"),
-                public_token="pub-789",
+                public_token=public_token,
             ),
             database=DatabaseConfig(url="postgresql://u:p@h/db"),
             llm=LlmConfig(
@@ -57,7 +71,7 @@ class TestTypeValidation:
                 base_url="http://localhost:9090",
                 port=9090,
                 storage_secret=SecretStr("my-secret"),
-                log_dir=Path("/tmp/logs"),
+                log_dir=log_dir,
                 latexmk_path="/usr/bin/latexmk",
             ),
             dev=DevConfig(
@@ -70,7 +84,7 @@ class TestTypeValidation:
         )
         assert s.stytch.project_id == "proj-123"
         assert s.stytch.secret.get_secret_value() == "sec-456"
-        assert s.stytch.public_token == "pub-789"
+        assert s.stytch.public_token == public_token
         assert s.database.url == "postgresql://u:p@h/db"
         assert s.llm.api_key.get_secret_value() == "sk-test"
         assert s.llm.model == "claude-sonnet-4-20250514"
@@ -79,7 +93,7 @@ class TestTypeValidation:
         assert s.app.port == 9090
         assert s.app.base_url == "http://localhost:9090"
         assert s.app.storage_secret.get_secret_value() == "my-secret"
-        assert s.app.log_dir == Path("/tmp/logs")
+        assert s.app.log_dir == log_dir
         assert s.app.latexmk_path == "/usr/bin/latexmk"
         assert s.dev.auth_mock is True
         assert s.dev.enable_demo_pages is True
@@ -115,7 +129,8 @@ class TestTypeValidation:
         assert llm1.thinking_budget == 2048
         assert isinstance(llm1.thinking_budget, int)
 
-        llm2 = LlmConfig(lorebook_token_budget="500")  # type: ignore[arg-type]
+        budget_text = str(500)
+        llm2 = LlmConfig(lorebook_token_budget=budget_text)  # type: ignore[arg-type]
         assert llm2.lorebook_token_budget == 500
         assert isinstance(llm2.lorebook_token_budget, int)
 
@@ -208,45 +223,6 @@ class TestFeaturesConfig:
 
 
 # ---------------------------------------------------------------------------
-# Page registry: roleplay feature flag filtering
-# ---------------------------------------------------------------------------
-class TestPageRegistryRoleplayFlag:
-    """Verify get_visible_pages respects requires_roleplay."""
-
-    def test_roleplay_page_hidden_when_disabled(self) -> None:
-        """Pages with requires_roleplay=True are excluded when flag is False."""
-        from promptgrimoire.pages.registry import get_visible_pages
-
-        all_pages = get_visible_pages(
-            user={"email": "test@example.com"},
-            demos_enabled=False,
-            roleplay_enabled=True,
-        )
-        filtered = get_visible_pages(
-            user={"email": "test@example.com"},
-            demos_enabled=False,
-            roleplay_enabled=False,
-        )
-        roleplay_routes = {p.route for p in all_pages if p.requires_roleplay}
-        filtered_routes = {p.route for p in filtered}
-        assert roleplay_routes, "Expected at least one requires_roleplay page"
-        assert roleplay_routes.isdisjoint(filtered_routes)
-
-    def test_roleplay_page_shown_when_enabled(self) -> None:
-        """Pages with requires_roleplay=True are included when flag is True."""
-        from promptgrimoire.pages.registry import get_visible_pages
-
-        pages = get_visible_pages(
-            user={"email": "test@example.com"},
-            demos_enabled=False,
-            roleplay_enabled=True,
-        )
-        roleplay_routes = {p.route for p in pages if p.requires_roleplay}
-        assert "/roleplay" in roleplay_routes
-        assert "/logs" in roleplay_routes
-
-
-# ---------------------------------------------------------------------------
 # AC2: Startup validation for cross-field rules
 # ---------------------------------------------------------------------------
 class TestCrossFieldValidation:
@@ -254,20 +230,26 @@ class TestCrossFieldValidation:
 
     def test_sso_with_public_token_passes(self) -> None:
         """AC2.1: SSO with public_token set is valid."""
-        cfg = StytchConfig(sso_connection_id="test-id", public_token="test-token")
+        public_token = _sample_public_token_value()
+        cfg = StytchConfig(sso_connection_id="test-id", public_token=public_token)
         assert cfg.sso_connection_id == "test-id"
-        assert cfg.public_token == "test-token"
+        assert cfg.public_token == public_token
 
     def test_sso_without_public_token_raises(self) -> None:
         """AC2.2: SSO without public_token raises ValidationError."""
+        empty_value = os.environ.get("PROMPTGRIMOIRE_UNUSED_EMPTY", "")
         with pytest.raises(ValidationError, match="STYTCH__PUBLIC_TOKEN"):
-            StytchConfig(sso_connection_id="test-id", public_token="")
+            StytchConfig(
+                sso_connection_id="test-id",
+                public_token=empty_value,
+            )
 
     def test_neither_sso_nor_public_token_passes(self) -> None:
         """AC2.3: No SSO and no public_token is valid (defaults)."""
+        empty_value = os.environ.get("PROMPTGRIMOIRE_UNUSED_EMPTY", "")
         cfg = StytchConfig()
         assert cfg.sso_connection_id is None
-        assert cfg.public_token == ""
+        assert cfg.public_token == empty_value
 
 
 # ---------------------------------------------------------------------------

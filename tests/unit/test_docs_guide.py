@@ -38,7 +38,7 @@ class TestGuideContextManager:
     def _mock_thumbnail(self) -> None:  # type: ignore[override]
         """Auto-mock generate_thumbnail for all tests."""
         with patch(_THUMBNAIL_PATCH):
-            yield  # type: ignore[misc]
+            yield
 
     def test_creates_output_dir_and_writes_markdown(self, tmp_path: Path) -> None:
         """AC1.1: Guide creates output directory and writes .md file on exit."""

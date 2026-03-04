@@ -174,6 +174,37 @@ def _seed_tags_for_workspace(workspace_id: str) -> None:
     engine.dispose()
 
 
+def _lock_tag_in_db(workspace_id: str, tag_name: str) -> None:
+    """Lock a seeded tag via direct SQL update.
+
+    Uses the deterministic UUID from ``seed_tag_id`` to set
+    ``locked = true`` on the tag row.
+
+    Follows the same sync-DB pattern as ``_seed_tags_for_workspace``.
+
+    Args:
+        workspace_id: UUID string of the workspace.
+        tag_name: Name of the seeded tag to lock.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        return
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    ws_ns = uuid.UUID(workspace_id)
+    tag_id = str(uuid.uuid5(ws_ns, f"seed-tag-{tag_name}"))
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE tag SET locked = true WHERE id = CAST(:id AS uuid)"),
+            {"id": tag_id},
+        )
+    engine.dispose()
+
+
 def _create_workspace_via_db(
     user_email: str,
     html_content: str,
@@ -931,7 +962,7 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
 
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
-    card.get_by_role("button", name="Post").click()
+    card.get_by_test_id("post-comment-btn").click()
 
     card.locator("[data-testid='comment']", has_text=text).wait_for(
         state="visible", timeout=10000

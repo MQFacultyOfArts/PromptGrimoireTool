@@ -16,7 +16,6 @@ Traceability:
 
 from __future__ import annotations
 
-import os
 import uuid
 from typing import TYPE_CHECKING
 
@@ -24,6 +23,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
+    _lock_tag_in_db,
     add_comment_to_highlight,
     create_highlight_with_tag,
     seed_tag_id,
@@ -33,35 +33,6 @@ from tests.e2e.annotation_helpers import (
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-
-def _lock_tag_in_db(workspace_id: str, tag_name: str) -> None:
-    """Lock a seeded tag via direct SQL update.
-
-    Uses the deterministic UUID from ``seed_tag_id`` to set
-    ``locked = true`` on the tag row.
-
-    Args:
-        workspace_id: UUID string of the workspace.
-        tag_name: Name of the seeded tag to lock.
-    """
-    from sqlalchemy import create_engine, text
-
-    db_url = os.environ.get("DATABASE__URL", "")
-    if not db_url:
-        return
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    engine = create_engine(sync_url)
-
-    ws_ns = uuid.UUID(workspace_id)
-    tag_id = str(uuid.uuid5(ws_ns, f"seed-tag-{tag_name}"))
-
-    with engine.begin() as conn:
-        conn.execute(
-            text("UPDATE tag SET locked = true WHERE id = CAST(:id AS uuid)"),
-            {"id": tag_id},
-        )
-    engine.dispose()
 
 
 def _parse_tag_name_from_button(btn_text: str) -> str:
@@ -170,7 +141,6 @@ class TestAnnotationCanvas:
         # Press "2" with text selected -- highlight created with tag at position 2
         select_chars(page, 0, 5)
         page.keyboard.press("2")
-        page.wait_for_timeout(500)
 
         first_card = page.locator("[data-testid='annotation-card']").first
         expect(first_card).to_be_visible(timeout=5000)
@@ -181,7 +151,6 @@ class TestAnnotationCanvas:
         # Press "3" with text selected -- highlight created with tag at position 3
         select_chars(page, 10, 20)
         page.keyboard.press("3")
-        page.wait_for_timeout(500)
 
         cards = page.locator("[data-testid='annotation-card']")
         expect(cards).to_have_count(2, timeout=3000)
@@ -193,14 +162,19 @@ class TestAnnotationCanvas:
     def test_instructor_marking_interactions(
         self, authenticated_page: Page, app_server: str
     ) -> None:
-        """AC4.4: Instructor threads a comment and verifies organise tab.
+        """AC4.4: Instructor adds multiple comments and verifies organise tab.
+
+        The application's comment model is sequential: each comment is posted
+        independently via the same Post button on the annotation card.  There
+        is no distinct "reply" affordance — successive comments on the same
+        card accumulate in DOM order.
 
         Steps:
         1. Create workspace via DB with seeded tags
         2. Authenticate as instructor, navigate to workspace
         3. Create a highlight with a known tag via UI
-        4. Add a comment to the highlight
-        5. Thread a reply (second comment) onto the same highlight
+        4. Add first comment to the highlight
+        5. Add a second sequential comment to the same highlight
         6. Switch to Organise tab
         7. Verify the annotation card appears in the correct tag column
         """
@@ -247,23 +221,22 @@ class TestAnnotationCanvas:
             first_card.locator("[data-testid='comment']", has_text=first_comment)
         ).to_be_visible(timeout=5000)
 
-        # Step 5: Thread a reply (second comment on same highlight)
-        reply_comment = f"Follow-up reply {uuid.uuid4().hex[:8]}"
-        add_comment_to_highlight(page, reply_comment, card_index=0)
+        # Step 5: Add a second sequential comment on the same highlight
+        second_comment = f"Follow-up comment {uuid.uuid4().hex[:8]}"
+        add_comment_to_highlight(page, second_comment, card_index=0)
 
-        # Verify both comments are visible (threaded)
+        # Verify both comments are visible (sequential, in DOM order)
         comments = first_card.locator("[data-testid='comment']")
         expect(comments).to_have_count(2, timeout=5000)
         expect(
             first_card.locator("[data-testid='comment']", has_text=first_comment)
         ).to_be_visible()
         expect(
-            first_card.locator("[data-testid='comment']", has_text=reply_comment)
+            first_card.locator("[data-testid='comment']", has_text=second_comment)
         ).to_be_visible()
 
         # Step 6: Switch to Organise tab
         page.get_by_test_id("tab-organise").click()
-        page.wait_for_timeout(1000)
 
         # Step 7: Verify the annotation card appears in the correct tag column
         # The highlight was tagged with the first tag (Jurisdiction)
@@ -281,4 +254,4 @@ class TestAnnotationCanvas:
 
         # Verify comments are rendered on the organise card
         expect(organise_cards.first).to_contain_text(first_comment, timeout=3000)
-        expect(organise_cards.first).to_contain_text(reply_comment, timeout=3000)
+        expect(organise_cards.first).to_contain_text(second_comment, timeout=3000)

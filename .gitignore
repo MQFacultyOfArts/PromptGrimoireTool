@@ -37,6 +37,10 @@ test_all_full.log
 test-all-fixtures.log
 test-e2e.log
 test-e2e-server.log
+test-nicegui-ui.log
+
+# Planning scratch files
+.writing_plan.json
 
 # E2E test screenshots (debug artifacts)
 tests/e2e/screenshots/

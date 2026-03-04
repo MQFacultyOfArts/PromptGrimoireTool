@@ -17,6 +17,7 @@ from nicegui import ui
 from promptgrimoire.config import get_settings
 from promptgrimoire.pages.layout import require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
+from promptgrimoire.pages.roleplay_access import require_roleplay_page_access
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,92 @@ def _render_turn(i: int, turn: dict) -> None:
                 _render_metadata(extra)
 
 
+def _list_log_files(log_dir: Path) -> list[Path]:
+    """Return available JSONL log files, newest first."""
+    if not log_dir.exists():
+        return []
+    return sorted(
+        log_dir.glob("*.jsonl"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def _build_log_selector(
+    log_dir: Path,
+    log_files: list[Path],
+    state: dict,
+    refresh_log_content,
+) -> None:
+    """Render the log file selector and hook it to the refreshable viewer."""
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Select Session Log").classes("text-h6 mb-2")
+
+        file_options = {str(path): path.name for path in log_files}
+
+        def on_select(e) -> None:
+            requested_path = Path(e.value).resolve()
+            safe_base = log_dir.resolve()
+            if not requested_path.is_relative_to(safe_base):
+                logger.warning("Path traversal attempt blocked: %s", e.value)
+                ui.notify("Invalid log file path", type="negative")
+                return
+
+            header, turns = parse_log_file(requested_path)
+            state["selected_path"] = requested_path
+            state["header"] = header
+            state["turns"] = turns
+            refresh_log_content.refresh()
+
+        ui.select(options=file_options, on_change=on_select, label="Log file").classes(
+            "w-full"
+        )
+
+
+def _render_log_content(state: dict) -> None:
+    """Render the currently selected log file contents."""
+    if not state["selected_path"]:
+        ui.label("Select a log file to view").classes("text-gray-500")
+        return
+
+    header = state["header"]
+    turns = state["turns"]
+
+    if header:
+        with ui.card().classes("w-full mb-4 bg-blue-50"):
+            ui.label("Session Info").classes("text-h6 mb-2")
+            with ui.row().classes("gap-4"):
+                char_name = header.get("character_name", "Unknown")
+                ui.label(f"Character: {char_name}").classes("font-bold")
+                ui.label(f"User: {header.get('user_name', 'Unknown')}")
+                ui.label(f"Date: {header.get('create_date', 'Unknown')}")
+
+    ui.label(f"Messages ({len(turns)})").classes("text-h6 mb-2")
+
+    for i, turn in enumerate(turns):
+        _render_turn(i, turn)
+
+
+def _render_log_viewer(log_dir: Path) -> None:
+    """Render the standalone session log viewer."""
+    ui.label("Session Log Viewer").classes("text-h4 mb-4")
+
+    state: dict = {"selected_path": None, "header": None, "turns": []}
+    log_files = _list_log_files(log_dir)
+    if not log_files:
+        ui.label("No log files found in logs/sessions/").classes("text-gray-500")
+        return
+
+    @ui.refreshable
+    def log_content() -> None:
+        _render_log_content(state)
+
+    _build_log_selector(log_dir, log_files, state, log_content)
+
+    with ui.card().classes("w-full"):
+        log_content()
+
+
 @page_route(
     "/logs", title="Session Logs", icon="description", order=40, requires_roleplay=True
 )
@@ -107,68 +194,6 @@ async def logs_page() -> None:
     # Feature flag guard -- require roleplay enabled
     if not require_roleplay_enabled():
         return
-
-    ui.label("Session Log Viewer").classes("text-h4 mb-4")
-
-    log_dir = get_settings().app.log_dir
-    state: dict = {"selected_path": None, "header": None, "turns": []}
-
-    log_files: list[Path] = []
-    if log_dir.exists():
-        log_files = sorted(
-            log_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
-        )
-
-    if not log_files:
-        ui.label("No log files found in logs/sessions/").classes("text-gray-500")
+    if not require_roleplay_page_access():
         return
-
-    with ui.card().classes("w-full mb-4"):
-        ui.label("Select Session Log").classes("text-h6 mb-2")
-
-        file_options = {str(p): p.name for p in log_files}
-
-        def on_select(e) -> None:
-            # CRIT-1: Path traversal protection
-            requested_path = Path(e.value).resolve()
-            safe_base = log_dir.resolve()
-            if not requested_path.is_relative_to(safe_base):
-                logger.warning("Path traversal attempt blocked: %s", e.value)
-                ui.notify("Invalid log file path", type="negative")
-                return
-
-            state["selected_path"] = requested_path
-            header, turns = parse_log_file(requested_path)
-            state["header"] = header
-            state["turns"] = turns
-            log_content.refresh()
-
-        ui.select(options=file_options, on_change=on_select, label="Log file").classes(
-            "w-full"
-        )
-
-    @ui.refreshable
-    def log_content() -> None:
-        if not state["selected_path"]:
-            ui.label("Select a log file to view").classes("text-gray-500")
-            return
-
-        header = state["header"]
-        turns = state["turns"]
-
-        if header:
-            with ui.card().classes("w-full mb-4 bg-blue-50"):
-                ui.label("Session Info").classes("text-h6 mb-2")
-                with ui.row().classes("gap-4"):
-                    char_name = header.get("character_name", "Unknown")
-                    ui.label(f"Character: {char_name}").classes("font-bold")
-                    ui.label(f"User: {header.get('user_name', 'Unknown')}")
-                    ui.label(f"Date: {header.get('create_date', 'Unknown')}")
-
-        ui.label(f"Messages ({len(turns)})").classes("text-h6 mb-2")
-
-        for i, turn in enumerate(turns):
-            _render_turn(i, turn)
-
-    with ui.card().classes("w-full"):
-        log_content()
+    _render_log_viewer(get_settings().app.log_dir)

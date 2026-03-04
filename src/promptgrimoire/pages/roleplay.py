@@ -26,6 +26,7 @@ from promptgrimoire.llm.log import JSONLLogger, generate_log_filename
 from promptgrimoire.models import Character, Session
 from promptgrimoire.pages.layout import page_layout, require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
+from promptgrimoire.pages.roleplay_access import require_roleplay_page_access
 from promptgrimoire.pages.roleplay_export import session_to_html
 from promptgrimoire.parsers.sillytavern import parse_character_card
 
@@ -338,10 +339,7 @@ async def roleplay_page() -> None:
     if not require_roleplay_enabled():
         return
 
-    # Auth guard -- require login
-    auth_user = app.storage.user.get("auth_user")
-    if auth_user is None:
-        ui.navigate.to("/login")
+    if not require_roleplay_page_access():
         return
 
     state: dict = {"session": None, "client": None, "log_path": None}

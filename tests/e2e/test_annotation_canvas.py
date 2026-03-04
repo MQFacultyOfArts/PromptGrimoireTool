@@ -8,6 +8,7 @@ Acceptance Criteria:
 - e2e-instructor-workflow-split.AC4.1: Navigate to pre-seeded workspace, apply tag
 - e2e-instructor-workflow-split.AC4.2: Locked tag shows lock icon, readonly input
 - e2e-instructor-workflow-split.AC4.3: Keyboard shortcuts apply correct tag
+- e2e-instructor-workflow-split.AC4.4: Instructor threads comment and organises cards
 
 Traceability:
 - Design: docs/implementation-plans/2026-03-04-e2e-instructor-workflow-split/phase_03.md
@@ -23,6 +24,8 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
+    add_comment_to_highlight,
+    create_highlight_with_tag,
     seed_tag_id,
     select_chars,
     wait_for_text_walker,
@@ -186,3 +189,96 @@ class TestAnnotationCanvas:
         second_card = cards.nth(1)
         second_card_select = second_card.get_by_test_id("tag-select")
         expect(second_card_select).to_contain_text(key3_tag_name, timeout=3000)
+
+    def test_instructor_marking_interactions(
+        self, authenticated_page: Page, app_server: str
+    ) -> None:
+        """AC4.4: Instructor threads a comment and verifies organise tab.
+
+        Steps:
+        1. Create workspace via DB with seeded tags
+        2. Authenticate as instructor, navigate to workspace
+        3. Create a highlight with a known tag via UI
+        4. Add a comment to the highlight
+        5. Thread a reply (second comment) onto the same highlight
+        6. Switch to Organise tab
+        7. Verify the annotation card appears in the correct tag column
+        """
+        page = authenticated_page
+
+        # Authenticate as instructor (role-based email)
+        instructor_email = "instructor@uni.edu"
+        page.goto(f"{app_server}/auth/callback?token=mock-token-{instructor_email}")
+        page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
+
+        # Step 1: Create workspace via DB with seeded tags
+        workspace_id = _create_workspace_via_db(
+            user_email=instructor_email,
+            html_content=(
+                "<p>The court held that the defendant owed a duty of care "
+                "to the plaintiff in the circumstances of this case.</p>"
+            ),
+            seed_tags=True,
+        )
+
+        # Step 2: Navigate to annotation page
+        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+        wait_for_text_walker(page, timeout=15000)
+
+        toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(toolbar).to_be_visible(timeout=5000)
+
+        # Step 3: Create a highlight with tag index 0 (Jurisdiction)
+        create_highlight_with_tag(page, 0, 15, tag_index=0)
+
+        first_card = page.locator("[data-testid='annotation-card']").first
+        expect(first_card).to_be_visible(timeout=10000)
+
+        # Verify the tag-select is visible (Jurisdiction applied)
+        tag_select = first_card.get_by_test_id("tag-select")
+        expect(tag_select).to_contain_text("Jurisdiction", timeout=5000)
+
+        # Step 4: Add first comment
+        first_comment = f"Initial feedback {uuid.uuid4().hex[:8]}"
+        add_comment_to_highlight(page, first_comment, card_index=0)
+
+        # Verify first comment is visible
+        expect(
+            first_card.locator("[data-testid='comment']", has_text=first_comment)
+        ).to_be_visible(timeout=5000)
+
+        # Step 5: Thread a reply (second comment on same highlight)
+        reply_comment = f"Follow-up reply {uuid.uuid4().hex[:8]}"
+        add_comment_to_highlight(page, reply_comment, card_index=0)
+
+        # Verify both comments are visible (threaded)
+        comments = first_card.locator("[data-testid='comment']")
+        expect(comments).to_have_count(2, timeout=5000)
+        expect(
+            first_card.locator("[data-testid='comment']", has_text=first_comment)
+        ).to_be_visible()
+        expect(
+            first_card.locator("[data-testid='comment']", has_text=reply_comment)
+        ).to_be_visible()
+
+        # Step 6: Switch to Organise tab
+        page.get_by_test_id("tab-organise").click()
+        page.wait_for_timeout(1000)
+
+        # Step 7: Verify the annotation card appears in the correct tag column
+        # The highlight was tagged with the first tag (Jurisdiction)
+        jurisdiction_col = page.locator(
+            '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
+        )
+        expect(jurisdiction_col).to_be_visible(timeout=5000)
+
+        # Verify an organise-card exists in the Jurisdiction column
+        organise_cards = jurisdiction_col.locator('[data-testid="organise-card"]')
+        expect(organise_cards.first).to_be_visible(timeout=5000)
+
+        # Verify the card shows the highlighted text snippet
+        expect(organise_cards.first).to_contain_text("The court held", timeout=3000)
+
+        # Verify comments are rendered on the organise card
+        expect(organise_cards.first).to_contain_text(first_comment, timeout=3000)
+        expect(organise_cards.first).to_contain_text(reply_comment, timeout=3000)

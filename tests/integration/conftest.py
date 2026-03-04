@@ -1,8 +1,9 @@
 """Integration test configuration.
 
 Provides fixtures specific to database integration tests, mega-document
-infrastructure for LaTeX compile-reduction tests, and the pdf_exporter
-factory fixture for PDF export integration tests.
+infrastructure for LaTeX compile-reduction tests, the pdf_exporter
+factory fixture for PDF export integration tests, and the ``nicegui_user``
+fixture for NiceGUI user-simulation integration tests.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import pymupdf
 import pytest
 import pytest_asyncio
+from nicegui.testing.user_simulation import user_simulation
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
@@ -26,7 +28,32 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine
     from uuid import UUID
 
+    from nicegui.testing.user import User
+
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# NiceGUI User Simulation Fixture
+# =============================================================================
+
+_NICEGUI_TEST_APP = Path(__file__).parent / "nicegui_test_app.py"
+
+
+@pytest_asyncio.fixture
+async def nicegui_user() -> AsyncGenerator[User]:
+    """Yield a NiceGUI simulated User connected to the test app.
+
+    Uses ``user_simulation(main_file=...)`` so all ``@ui.page`` routes
+    registered by ``promptgrimoire.pages`` are available.  The simulated
+    user runs in-process -- no browser or server required.
+
+    Tests that use this fixture should also be marked ``@pytest.mark.e2e``
+    because the NiceGUI user simulation conflicts with xdist parallelism
+    (same constraint as Playwright E2E tests).
+    """
+    async with user_simulation(main_file=_NICEGUI_TEST_APP) as u:
+        yield u
+
 
 # =============================================================================
 # PDF Export Test Fixtures

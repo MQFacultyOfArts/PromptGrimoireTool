@@ -17,21 +17,16 @@ Traceability:
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_asyncio
 from nicegui import ElementFilter
 from nicegui.element import Element
-from nicegui.testing.user_simulation import user_simulation
 
 from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from nicegui.element import Element
     from nicegui.testing.user import User
 
@@ -44,8 +39,6 @@ pytestmark = [
     # Excluded from test-all via -m "not e2e"; run directly with -p no:xdist.
     pytest.mark.e2e,
 ]
-
-_MAIN_FILE = Path(__file__).parent / "nicegui_test_app.py"
 
 
 # ---------------------------------------------------------------------------
@@ -127,19 +120,8 @@ def _click_testid(user: User, testid: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Auth helper
 # ---------------------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def user() -> AsyncGenerator[User]:
-    """Yield a NiceGUI simulated User connected to the test app.
-
-    Uses ``user_simulation(main_file=...)`` so all @ui.page routes
-    registered by ``promptgrimoire.pages`` are available.
-    """
-    async with user_simulation(main_file=_MAIN_FILE) as u:
-        yield u
 
 
 async def _authenticate(user: User, *, email: str) -> None:
@@ -235,7 +217,7 @@ class TestDeleteWeekConfirmationDialog:
     """Verify the delete confirmation dialog appears and cancel preserves state."""
 
     @pytest.mark.asyncio
-    async def test_cancel_preserves_week(self, user: User) -> None:
+    async def test_cancel_preserves_week(self, nicegui_user: User) -> None:
         """Click delete on a week, cancel, and verify the week survives (AC2.5).
 
         Steps:
@@ -252,36 +234,36 @@ class TestDeleteWeekConfirmationDialog:
         week_title = "Week to Not Delete"
         week_id = await _create_week(course_id, title=week_title)
 
-        await _authenticate(user, email=email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
         # The week header shows "Week 1: Week to Not Delete"
-        await user.should_see(content=week_title)
+        await nicegui_user.should_see(content=week_title)
 
         # Click the delete-week button
-        _click_testid(user, f"delete-week-btn-{week_id}")
+        _click_testid(nicegui_user, f"delete-week-btn-{week_id}")
         await asyncio.sleep(0.1)
 
         # Confirmation dialog should be visible
-        await _should_see_testid(user, "confirm-delete-btn")
-        await _should_see_testid(user, "cancel-delete-btn")
+        await _should_see_testid(nicegui_user, "confirm-delete-btn")
+        await _should_see_testid(nicegui_user, "cancel-delete-btn")
 
         # Click cancel
-        _click_testid(user, "cancel-delete-btn")
+        _click_testid(nicegui_user, "cancel-delete-btn")
         await asyncio.sleep(0.1)
 
         # Dialog should close -- confirm button gone
-        await _should_not_see_testid(user, "confirm-delete-btn")
+        await _should_not_see_testid(nicegui_user, "confirm-delete-btn")
 
         # Week should still be visible
-        await user.should_see(content=week_title)
+        await nicegui_user.should_see(content=week_title)
 
 
 class TestDeleteWeekSuccess:
     """Verify that confirming delete actually removes the week."""
 
     @pytest.mark.asyncio
-    async def test_delete_removes_week(self, user: User) -> None:
+    async def test_delete_removes_week(self, nicegui_user: User) -> None:
         """Create a week, delete it via UI, verify it disappears (AC2.1).
 
         Steps:
@@ -296,41 +278,41 @@ class TestDeleteWeekSuccess:
         week_title = "Week to Delete"
         week_id = await _create_week(course_id, title=week_title)
 
-        await _authenticate(user, email=email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
-        await user.should_see(content=week_title)
+        await nicegui_user.should_see(content=week_title)
 
         # Click delete
-        _click_testid(user, f"delete-week-btn-{week_id}")
+        _click_testid(nicegui_user, f"delete-week-btn-{week_id}")
         await asyncio.sleep(0.1)
 
         # Confirm deletion
-        await _should_see_testid(user, "confirm-delete-btn")
-        _click_testid(user, "confirm-delete-btn")
+        await _should_see_testid(nicegui_user, "confirm-delete-btn")
+        _click_testid(nicegui_user, "confirm-delete-btn")
         await asyncio.sleep(0.3)
 
         # Week should disappear
-        await user.should_not_see(content=week_title)
+        await nicegui_user.should_not_see(content=week_title)
 
 
 class TestDeleteUnitButtonVisibility:
     """Verify Delete Unit button visibility based on enrollment role."""
 
     @pytest.mark.asyncio
-    async def test_visible_for_coordinator(self, user: User) -> None:
+    async def test_visible_for_coordinator(self, nicegui_user: User) -> None:
         """Coordinator should see the Delete Unit button (AC6.2)."""
         email = "instructor@uni.edu"
         course_id, _code = await _create_course()
         await _enroll(course_id, email, "coordinator")
 
-        await _authenticate(user, email=email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
-        await _should_see_testid(user, "delete-unit-btn")
+        await _should_see_testid(nicegui_user, "delete-unit-btn")
 
     @pytest.mark.asyncio
-    async def test_hidden_for_instructor_role(self, user: User) -> None:
+    async def test_hidden_for_instructor_role(self, nicegui_user: User) -> None:
         """Non-coordinator instructor should NOT see Delete Unit button (AC6.5).
 
         Steps:
@@ -349,17 +331,19 @@ class TestDeleteUnitButtonVisibility:
         # Enroll the test user as instructor (not coordinator)
         await _enroll(course_id, instructor_email, "instructor")
 
-        await _authenticate(user, email=instructor_email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=instructor_email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
         # Page should load (we see the course code as evidence)
-        await user.should_see(content=code)
+        await nicegui_user.should_see(content=code)
 
         # Delete Unit button should NOT be visible
-        await _should_not_see_testid(user, "delete-unit-btn")
+        await _should_not_see_testid(nicegui_user, "delete-unit-btn")
 
     @pytest.mark.asyncio
-    async def test_delete_unit_redirects_to_course_list(self, user: User) -> None:
+    async def test_delete_unit_redirects_to_course_list(
+        self, nicegui_user: User
+    ) -> None:
         """Confirming unit deletion navigates to /courses (AC6.2).
 
         Steps:
@@ -373,33 +357,37 @@ class TestDeleteUnitButtonVisibility:
         course_id, _code = await _create_course()
         await _enroll(course_id, email, "coordinator")
 
-        await _authenticate(user, email=email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
         # Delete Unit button must be present
-        await _should_see_testid(user, "delete-unit-btn")
+        await _should_see_testid(nicegui_user, "delete-unit-btn")
 
         # Click delete unit
-        _click_testid(user, "delete-unit-btn")
+        _click_testid(nicegui_user, "delete-unit-btn")
         await asyncio.sleep(0.1)
 
         # Confirmation dialog must appear
-        await _should_see_testid(user, "confirm-delete-btn")
+        await _should_see_testid(nicegui_user, "confirm-delete-btn")
 
         # Confirm deletion
-        _click_testid(user, "confirm-delete-btn")
+        _click_testid(nicegui_user, "confirm-delete-btn")
 
         # Wait for: DB deletion + on_success callback + background navigation task
         for _ in range(20):
-            if user.back_history and user.back_history[-1] == "/courses":
+            if (
+                nicegui_user.back_history
+                and nicegui_user.back_history[-1] == "/courses"
+            ):
                 break
             await asyncio.sleep(0.1)
 
-        assert user.back_history[-1] == "/courses", (
-            f"expected redirect to /courses, but back_history is {user.back_history!r}"
+        history = nicegui_user.back_history
+        assert history[-1] == "/courses", (
+            f"expected redirect to /courses, but back_history is {history!r}"
         )
         # The courses list renders with the "Units" page title
-        await user.should_see(content="Units")
+        await nicegui_user.should_see(content="Units")
 
 
 # ---------------------------------------------------------------------------
@@ -438,7 +426,7 @@ class TestWorkspaceDelete:
     """
 
     @pytest.mark.asyncio
-    async def test_delete_workspace_from_course_page(self, user: User) -> None:
+    async def test_delete_workspace_from_course_page(self, nicegui_user: User) -> None:
         """Delete a student workspace via UI and verify it reverts to start state.
 
         AC3.1: Owner can delete their workspace.
@@ -472,37 +460,43 @@ class TestWorkspaceDelete:
         activity_id = await _create_activity(week_id, title="Activity to Test")
         ws_id = await _clone_workspace(activity_id, student_user_id)
 
-        await _authenticate(user, email=student_email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=student_email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
         # Resume button should be visible (user has a workspace)
-        await _should_see_testid(user, f"resume-btn-{activity_id}")
+        await _should_see_testid(nicegui_user, f"resume-btn-{activity_id}")
 
         # Click the delete-workspace button
-        _click_testid(user, f"delete-workspace-btn-{ws_id}")
+        _click_testid(nicegui_user, f"delete-workspace-btn-{ws_id}")
         await asyncio.sleep(0.1)
 
         # Confirmation dialog should appear
-        await _should_see_testid(user, "confirm-delete-workspace-btn")
-        await _should_see_testid(user, "cancel-delete-workspace-btn")
+        await _should_see_testid(nicegui_user, "confirm-delete-workspace-btn")
+        await _should_see_testid(nicegui_user, "cancel-delete-workspace-btn")
 
         # Click confirm
-        _click_testid(user, "confirm-delete-workspace-btn")
+        _click_testid(nicegui_user, "confirm-delete-workspace-btn")
 
         # Wait for async delete + refreshable rebuild
         for _ in range(20):
-            if _find_by_testid(user, f"start-activity-btn-{activity_id}") is not None:
+            if (
+                _find_by_testid(
+                    nicegui_user,
+                    f"start-activity-btn-{activity_id}",
+                )
+                is not None
+            ):
                 break
             await asyncio.sleep(0.15)
 
         # After deletion, "Start as Student" button should appear
-        await _should_see_testid(user, f"start-activity-btn-{activity_id}")
+        await _should_see_testid(nicegui_user, f"start-activity-btn-{activity_id}")
 
         # Resume button should be gone
-        await _should_not_see_testid(user, f"resume-btn-{activity_id}")
+        await _should_not_see_testid(nicegui_user, f"resume-btn-{activity_id}")
 
     @pytest.mark.asyncio
-    async def test_non_owner_cannot_see_delete_button(self, user: User) -> None:
+    async def test_non_owner_cannot_see_delete_button(self, nicegui_user: User) -> None:
         """Student B cannot see a delete button for student A's workspace (AC3.4).
 
         The delete-workspace button is only rendered inside the
@@ -540,14 +534,14 @@ class TestWorkspaceDelete:
         ws_id = await _clone_workspace(activity_id, student_a_id)
 
         # Authenticate as student B (no workspace)
-        await _authenticate(user, email=student_b_email)
-        await user.open(f"/courses/{course_id}")
+        await _authenticate(nicegui_user, email=student_b_email)
+        await nicegui_user.open(f"/courses/{course_id}")
 
         # Student B sees Start as Student, not Resume
-        await _should_see_testid(user, f"start-activity-btn-{activity_id}")
+        await _should_see_testid(nicegui_user, f"start-activity-btn-{activity_id}")
 
         # Student A's delete button is NOT visible to student B
-        await _should_not_see_testid(user, f"delete-workspace-btn-{ws_id}")
+        await _should_not_see_testid(nicegui_user, f"delete-workspace-btn-{ws_id}")
 
     # NOTE(AC3.2 navigator gap): Full navigator delete-from-card flow is not
     # tested here because the NiceGUI User harness cannot drive the full

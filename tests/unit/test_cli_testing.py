@@ -23,6 +23,42 @@ from promptgrimoire.cli import app
 runner = CliRunner()
 
 
+def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Capture `_run_pytest` arguments without starting subprocesses."""
+    from promptgrimoire.cli import testing
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_pytest(
+        title: str,
+        log_path,
+        default_args: list[str],
+        extra_args: list[str] | None = None,
+    ) -> int:
+        captured["title"] = title
+        captured["log_path"] = log_path
+        captured["default_args"] = default_args
+        captured["extra_args"] = extra_args
+        return 0
+
+    monkeypatch.setattr(testing, "_run_pytest", _fake_run_pytest)
+    return captured
+
+
+def _marker_expression(default_args: list[str]) -> str:
+    """Return the pytest marker expression from a command arg list."""
+    marker_index = default_args.index("-m")
+    return default_args[marker_index + 1]
+
+
+def _captured_default_args(captured: dict[str, object]) -> list[str]:
+    """Return captured default args with a concrete type for test assertions."""
+    default_args = captured["default_args"]
+    assert isinstance(default_args, list)
+    assert all(isinstance(arg, str) for arg in default_args)
+    return [arg for arg in default_args if isinstance(arg, str)]
+
+
 # ---------------------------------------------------------------------------
 # _parse_collection
 # ---------------------------------------------------------------------------
@@ -418,3 +454,55 @@ class TestTestCommandHelp:
         result = runner.invoke(app, ["test", "placeholder"])
         # Should fail because placeholder is removed
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# CLI test command wiring
+# ---------------------------------------------------------------------------
+class TestTestingCommands:
+    """CLI test commands pass the expected lane exclusion arguments."""
+
+    def test_test_all_excludes_e2e_and_nicegui_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "all"])
+
+        assert result.exit_code == 0, result.output
+        assert _marker_expression(_captured_default_args(captured)) == (
+            "not e2e and not nicegui_ui"
+        )
+        assert captured["title"] == (
+            "Full Test Suite (unit + integration, excludes browser E2E and NiceGUI UI)"
+        )
+
+    def test_test_changed_excludes_e2e_and_nicegui_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "changed"])
+
+        assert result.exit_code == 0, result.output
+        assert _marker_expression(_captured_default_args(captured)) == (
+            "not e2e and not nicegui_ui"
+        )
+        assert captured["title"] == (
+            "Changed Tests (vs main, excludes browser E2E and NiceGUI UI)"
+        )
+
+    def test_test_all_fixtures_excludes_e2e_and_nicegui_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "all-fixtures"])
+
+        assert result.exit_code == 0, result.output
+        assert _marker_expression(_captured_default_args(captured)) == (
+            "not e2e and not nicegui_ui"
+        )
+        assert captured["title"] == (
+            "Full Fixture Corpus (excluding browser E2E and NiceGUI UI)"
+        )

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from rich.progress import TaskID
 
 test_app = typer.Typer(help="Unit and integration test commands.")
+_NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
 
 
 # ---------------------------------------------------------------------------
@@ -373,12 +374,12 @@ def changed_tests(
 
     sys.exit(
         _run_pytest(
-            title="Changed Tests (vs main)",
+            title="Changed Tests (vs main, excludes browser E2E and NiceGUI UI)",
             log_path=Path("test-failures.log"),
             default_args=[
                 "--depper",
                 "-m",
-                "not e2e",
+                _NON_UI_MARKER_EXPRESSION,
                 "-n",
                 "auto",
                 "--dist=worksteal",
@@ -408,11 +409,14 @@ def all_tests(
 
     sys.exit(
         _run_pytest(
-            title="Full Test Suite (unit + integration, excludes E2E)",
+            title=(
+                "Full Test Suite (unit + integration, excludes browser E2E and "
+                "NiceGUI UI)"
+            ),
             log_path=Path("test-all.log"),
             default_args=[
                 "-m",
-                "not e2e",
+                _NON_UI_MARKER_EXPRESSION,
                 "-n",
                 _xdist_worker_count(),
                 "--dist=worksteal",
@@ -440,9 +444,9 @@ def all_fixtures_tests(
 
     sys.exit(
         _run_pytest(
-            title="Full Fixture Corpus (including BLNS/slow)",
+            title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
             log_path=Path("test-all-fixtures.log"),
-            default_args=["-m", "", "-v", "--tb=short"],
+            default_args=["-m", _NON_UI_MARKER_EXPRESSION, "-v", "--tb=short"],
             extra_args=_prepend_filter(ctx.args, filter_expr),
         )
     )

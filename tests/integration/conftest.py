@@ -47,9 +47,9 @@ async def nicegui_user() -> AsyncGenerator[User]:
     registered by ``promptgrimoire.pages`` are available.  The simulated
     user runs in-process -- no browser or server required.
 
-    Tests that use this fixture should also be marked ``@pytest.mark.e2e``
-    because the NiceGUI user simulation conflicts with xdist parallelism
-    (same constraint as Playwright E2E tests).
+    Tests that use this fixture should be marked ``@pytest.mark.nicegui_ui``
+    so the NiceGUI harness stays out of xdist-backed unit/integration
+    commands and runs in its own UI lane.
     """
     async with user_simulation(main_file=_NICEGUI_TEST_APP) as u:
         yield u

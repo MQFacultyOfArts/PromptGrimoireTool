@@ -39,9 +39,9 @@ pytestmark = [
         not get_settings().dev.test_database_url,
         reason="DEV__TEST_DATABASE_URL not configured",
     ),
-    # NiceGUI User harness conflicts with xdist (same as Playwright E2E).
-    # Excluded from test-all via -m "not e2e"; run directly with -p no:xdist.
-    pytest.mark.e2e,
+    # NiceGUI User harness runs in a dedicated UI lane outside xdist.
+    # Excluded from test-all via the dedicated nicegui_ui marker.
+    pytest.mark.nicegui_ui,
 ]
 
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import shutil
 import signal
 import socket
 import sys
@@ -13,6 +15,8 @@ from pathlib import Path
 from junitparser import JUnitXml
 
 from promptgrimoire.cli._shared import console
+from promptgrimoire.cli.e2e._artifacts import write_worker_metadata
+from promptgrimoire.cli.e2e._lanes import WorkerResult
 from promptgrimoire.cli.e2e._server import _SERVER_SCRIPT_PATH
 
 
@@ -57,109 +61,210 @@ def _filter_junitxml_args(user_args: list[str]) -> list[str]:
     return filtered
 
 
-async def _run_e2e_worker(
+def _clean_test_env() -> dict[str, str]:
+    """Return a subprocess environment stripped of pytest/NiceGUI state."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if "PYTEST" not in key and "NICEGUI" not in key
+    }
+
+
+async def _wait_for_server_ready(
+    server: asyncio.subprocess.Process,
+    *,
+    test_file: Path,
+    port: int,
+    server_log_path: Path,
+) -> None:
+    """Wait for a worker server to accept connections or raise a startup error."""
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if server.returncode is not None:
+            msg = (
+                f"Server for {test_file.name} died "
+                f"(exit {server.returncode}); see {server_log_path}"
+            )
+            raise RuntimeError(msg)
+        try:
+            _reader, writer = await asyncio.open_connection("localhost", port)
+            writer.close()
+            await writer.wait_closed()
+            return
+        except OSError:
+            await asyncio.sleep(0.1)
+
+    msg = (
+        f"Server for {test_file.name} did not start within 15 s; see {server_log_path}"
+    )
+    raise RuntimeError(msg)
+
+
+def _collect_playwright_artifacts(worker_dir: Path) -> None:
+    """Copy known Playwright artifact directories into *worker_dir* if present."""
+    playwright_dir = worker_dir / "playwright"
+    known_paths = [
+        Path("test-results"),
+        Path("tests/e2e/screenshots"),
+    ]
+
+    for source in known_paths:
+        if not source.exists():
+            continue
+        target = playwright_dir / source.name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+
+async def _run_pytest_subprocess(
+    cmd: list[str],
+    *,
+    env: dict[str, str],
+    log_path: Path,
+) -> int:
+    """Run one pytest subprocess, streaming output into *log_path*."""
+    with log_path.open("w") as log_file:
+        pytest_proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=log_file,
+            stderr=asyncio.subprocess.STDOUT,
+            env=env,
+        )
+        await pytest_proc.wait()
+        assert pytest_proc.returncode is not None  # noqa: S101 - guaranteed after wait()
+        return pytest_proc.returncode
+
+
+def _build_worker_result(
+    *,
+    test_file: Path,
+    exit_code: int,
+    start_time: float,
+    worker_dir: Path,
+    lane_name: str,
+) -> WorkerResult:
+    """Create and persist a `WorkerResult` for one worker."""
+    result = WorkerResult(
+        file=test_file,
+        exit_code=exit_code,
+        duration_s=time.monotonic() - start_time,
+        artifact_dir=worker_dir,
+    )
+    write_worker_metadata(worker_dir, result, lane_name=lane_name)
+    return result
+
+
+async def run_playwright_file(
     test_file: Path,
     port: int,
     db_url: str,
-    result_dir: Path,
+    worker_dir: Path,
     user_args: list[str],
-) -> tuple[Path, int, float]:
-    """Run a single E2E test file against a dedicated server instance.
-
-    Starts a NiceGUI server subprocess on *port* with *db_url*, waits for it
-    to accept connections, then runs ``pytest -m e2e`` on *test_file*.  Server
-    and pytest stdout/stderr are merged into a single log file under
-    *result_dir*.
-
-    Returns ``(test_file, pytest_exit_code, duration_seconds)``.
-
-    The server process group is always cleaned up in the ``finally`` block,
-    even on cancellation.
-    """
-    clean_env = {
-        k: v for k, v in os.environ.items() if "PYTEST" not in k and "NICEGUI" not in k
-    }
+) -> WorkerResult:
+    """Run one Playwright-backed E2E file with a dedicated server and DB."""
+    worker_dir.mkdir(parents=True, exist_ok=True)
+    clean_env = _clean_test_env()
     clean_env["DATABASE__URL"] = db_url
 
-    log_path = result_dir / f"test-e2e-{test_file.stem}.log"
-    log_fh = log_path.open("w")
+    server_log_path = worker_dir / "server.log"
+    pytest_log_path = worker_dir / "pytest.log"
+    junit_path = worker_dir / "junit.xml"
     server: asyncio.subprocess.Process | None = None
     start_time = time.monotonic()
 
-    try:
-        # -- Start server subprocess --
-        server = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(_SERVER_SCRIPT_PATH),
-            str(port),
-            stdout=log_fh,
-            stderr=asyncio.subprocess.STDOUT,
-            env=clean_env,
-            start_new_session=True,
-        )
-
-        # -- Health check: poll until server accepts connections --
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if server.returncode is not None:
-                raise RuntimeError(
-                    f"Server for {test_file.name} died "
-                    f"(exit {server.returncode}); see {log_path}"
-                )
-            try:
-                _reader, writer = await asyncio.open_connection("localhost", port)
-                writer.close()
-                await writer.wait_closed()
-                break
-            except OSError:
-                await asyncio.sleep(0.1)
-        else:
-            raise RuntimeError(
-                f"Server for {test_file.name} did not start within 15 s; see {log_path}"
+    with server_log_path.open("w") as server_log:
+        try:
+            server = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(_SERVER_SCRIPT_PATH),
+                str(port),
+                stdout=server_log,
+                stderr=asyncio.subprocess.STDOUT,
+                env=clean_env,
+                start_new_session=True,
+            )
+            await _wait_for_server_ready(
+                server,
+                test_file=test_file,
+                port=port,
+                server_log_path=server_log_path,
             )
 
-        # -- Build pytest command --
-        junit_path = result_dir / f"{test_file.stem}.xml"
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "pytest",
-            str(test_file),
-            "-m",
-            "e2e",
-            "--tb=short",
-            f"--junitxml={junit_path}",
-            *_filter_junitxml_args(user_args),
-        ]
-
-        pytest_env = {**clean_env, "E2E_BASE_URL": f"http://localhost:{port}"}
-
-        # -- Run pytest --
-        pytest_proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=log_fh,
-            stderr=asyncio.subprocess.STDOUT,
-            env=pytest_env,
-        )
-        await pytest_proc.wait()
-
-        duration = time.monotonic() - start_time
-        assert pytest_proc.returncode is not None  # noqa: S101 — guaranteed after wait()
-        return (test_file, pytest_proc.returncode, duration)
-
-    finally:
-        # -- Process group cleanup --
-        if server is not None and server.returncode is None:
-            try:
-                os.killpg(os.getpgid(server.pid), signal.SIGTERM)
-                try:
+            cmd = [
+                sys.executable,
+                "-m",
+                "pytest",
+                str(test_file),
+                "-m",
+                "e2e",
+                "--tb=short",
+                f"--junitxml={junit_path}",
+                *_filter_junitxml_args(user_args),
+            ]
+            pytest_env = {**clean_env, "E2E_BASE_URL": f"http://localhost:{port}"}
+            exit_code = await _run_pytest_subprocess(
+                cmd,
+                env=pytest_env,
+                log_path=pytest_log_path,
+            )
+            _collect_playwright_artifacts(worker_dir)
+            return _build_worker_result(
+                test_file=test_file,
+                exit_code=exit_code,
+                start_time=start_time,
+                worker_dir=worker_dir,
+                lane_name="playwright",
+            )
+        finally:
+            if server is not None and server.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(os.getpgid(server.pid), signal.SIGTERM)
+                with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(server.wait(), timeout=2)
-                except TimeoutError:
-                    os.killpg(os.getpgid(server.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        log_fh.close()
+                if server.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(os.getpgid(server.pid), signal.SIGKILL)
+
+
+async def run_nicegui_file(
+    test_file: Path,
+    db_url: str,
+    worker_dir: Path,
+    user_args: list[str],
+) -> WorkerResult:
+    """Run one NiceGUI UI file without starting an external server."""
+    worker_dir.mkdir(parents=True, exist_ok=True)
+    clean_env = _clean_test_env()
+    clean_env["DATABASE__URL"] = db_url
+
+    junit_path = worker_dir / "junit.xml"
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "-m",
+        "nicegui_ui",
+        "--tb=short",
+        f"--junitxml={junit_path}",
+        *_filter_junitxml_args(user_args),
+    ]
+    start_time = time.monotonic()
+    exit_code = await _run_pytest_subprocess(
+        cmd,
+        env=clean_env,
+        log_path=worker_dir / "pytest.log",
+    )
+    return _build_worker_result(
+        test_file=test_file,
+        exit_code=exit_code,
+        start_time=start_time,
+        worker_dir=worker_dir,
+        lane_name="nicegui",
+    )
 
 
 def _worker_status_label(exit_code: int) -> str:
@@ -172,13 +277,13 @@ def _worker_status_label(exit_code: int) -> str:
 
 
 def _print_parallel_summary(
-    results: list[tuple[Path, int, float]],
+    results: list[WorkerResult],
     wall_clock: float,
 ) -> None:
     """Print a compact summary of parallel E2E results (no borders)."""
-    passed = sum(1 for _, c, _ in results if c in (0, 5))
-    failed = sum(1 for _, c, _ in results if c not in (0, 5, -1))
-    cancelled = sum(1 for _, c, _ in results if c == -1)
+    passed = sum(1 for result in results if result.exit_code in (0, 5))
+    failed = sum(1 for result in results if result.exit_code not in (0, 5, -1))
+    cancelled = sum(1 for result in results if result.exit_code == -1)
 
     total = len(results)
     parts = [f"{total} files: {passed} passed"]
@@ -196,7 +301,7 @@ def _merge_junit_xml(result_dir: Path) -> Path:
     Returns the path to the combined file.
     """
     merged = JUnitXml()
-    for xml_path in sorted(result_dir.glob("*.xml")):
+    for xml_path in sorted(result_dir.rglob("junit.xml")):
         if xml_path.name != "combined.xml":
             merged += JUnitXml.fromfile(str(xml_path))
     combined_path = result_dir / "combined.xml"
@@ -205,7 +310,7 @@ def _merge_junit_xml(result_dir: Path) -> Path:
 
 
 def _resolve_failed_task_file(
-    tasks: list[asyncio.Task[tuple[Path, int, float]]],
+    tasks: list[asyncio.Task[WorkerResult]],
     exc: Exception,
     files: list[Path],
 ) -> Path:

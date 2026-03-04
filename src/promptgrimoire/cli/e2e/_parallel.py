@@ -4,26 +4,42 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import shutil
-import tempfile
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
+from promptgrimoire.cli.e2e._artifacts import (
+    create_lane_run_dir,
+    create_retry_dir,
+    create_worker_dir,
+    write_summary_metadata,
+)
+from promptgrimoire.cli.e2e._lanes import (
+    PLAYWRIGHT_LANE,
+    LaneSpec,
+    WorkerResult,
+    discover_lane_files,
+)
 from promptgrimoire.cli.e2e._workers import (
     _allocate_ports,
     _merge_junit_xml,
     _print_parallel_summary,
     _resolve_failed_task_file,
-    _run_e2e_worker,
     _worker_status_label,
+    run_playwright_file,
 )
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.bootstrap import clone_database, drop_database
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+    from pathlib import Path
+
 
 def _resolve_exception_file(
-    tasks: list[asyncio.Task[tuple[Path, int, float]]],
+    tasks: list[asyncio.Task[WorkerResult]],
     exc: Exception,
     files: list[Path],
 ) -> Path:
@@ -40,32 +56,76 @@ def _resolve_exception_file(
 
 
 def _report_worker_progress(
-    result: tuple[Path, int, float],
+    result: WorkerResult,
     done_count: int,
     total: int,
 ) -> None:
     """Print a single worker's completion status."""
-    label = _worker_status_label(result[1])
+    label = _worker_status_label(result.exit_code)
     console.print(
-        f"  [{done_count}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+        f"  [{done_count}/{total}] {result.file.name}: "
+        f"{label} ({result.duration_s:.1f}s)"
     )
 
 
+def _all_results_passed(results: list[WorkerResult]) -> bool:
+    """Return True when every worker exit code is a success or no-test match."""
+    return len(results) > 0 and all(result.exit_code in (0, 5) for result in results)
+
+
+async def _run_worker_for_lane(
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    *,
+    test_file: Path,
+    db_url: str,
+    worker_dir: Path,
+    user_args: list[str],
+    port: int | None = None,
+) -> WorkerResult:
+    """Dispatch a lane-specific worker with the correct runtime contract."""
+    if lane.needs_server:
+        assert port is not None  # noqa: S101 - lane contract guarantees a port
+        playwright_worker = cast(
+            "Callable[[Path, int, str, Path, list[str]], Awaitable[WorkerResult]]",
+            worker,
+        )
+        return await playwright_worker(test_file, port, db_url, worker_dir, user_args)
+
+    nicegui_worker = cast(
+        "Callable[[Path, str, Path, list[str]], Awaitable[WorkerResult]]",
+        worker,
+    )
+    return await nicegui_worker(test_file, db_url, worker_dir, user_args)
+
+
 async def _run_all_workers(
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
     files: list[Path],
     ports: list[int],
     worker_dbs: list[tuple[str, str]],
-    result_dir: Path,
+    worker_dirs: dict[Path, Path],
     user_args: list[str],
-) -> list[tuple[Path, int, float]]:
-    """Run all E2E workers concurrently, printing progress as each finishes."""
+    *,
+    worker_count: int,
+) -> list[WorkerResult]:
+    """Run all lane workers with bounded concurrency and per-file progress."""
     total = len(files)
-    results: list[tuple[Path, int, float]] = []
+    results: list[WorkerResult] = []
+    semaphore = asyncio.Semaphore(worker_count)
 
-    async def _tracked_worker(i: int) -> tuple[Path, int, float]:
-        return await _run_e2e_worker(
-            files[i], ports[i], worker_dbs[i][0], result_dir, user_args
-        )
+    async def _tracked_worker(i: int) -> WorkerResult:
+        async with semaphore:
+            return await _run_worker_for_lane(
+                lane,
+                worker,
+                test_file=files[i],
+                db_url=worker_dbs[i][0],
+                worker_dir=worker_dirs[files[i]],
+                user_args=user_args,
+                port=ports[i] if lane.needs_server else None,
+            )
 
     tasks = [asyncio.create_task(_tracked_worker(i)) for i in range(total)]
 
@@ -75,7 +135,12 @@ async def _run_all_workers(
         except Exception as exc:
             fpath = _resolve_exception_file(tasks, exc, files)
             console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
-            result = (fpath, 1, 0.0)
+            result = WorkerResult(
+                file=fpath,
+                exit_code=1,
+                duration_s=0.0,
+                artifact_dir=worker_dirs[fpath],
+            )
 
         results.append(result)
         _report_worker_progress(result, done_count, total)
@@ -84,10 +149,11 @@ async def _run_all_workers(
 
 
 async def _cancel_and_drain_tasks(
-    tasks: list[asyncio.Task[tuple[Path, int, float]]],
+    tasks: list[asyncio.Task[WorkerResult]],
     completed_files: set[Path],
     files: list[Path],
-) -> list[tuple[Path, int, float]]:
+    worker_dirs: dict[Path, Path],
+) -> list[WorkerResult]:
     """Cancel pending tasks, await their cleanup, and return cancelled entries."""
     console.print("[red]  Fail-fast: cancelling remaining workers[/]")
     for t in tasks:
@@ -101,27 +167,51 @@ async def _cancel_and_drain_tasks(
                 await t
 
     # Return entries for files that never completed
-    return [(f, -1, 0.0) for f in files if f not in completed_files]
+    return [
+        WorkerResult(
+            file=f,
+            exit_code=-1,
+            duration_s=0.0,
+            artifact_dir=worker_dirs[f],
+        )
+        for f in files
+        if f not in completed_files
+    ]
 
 
 async def _run_fail_fast_workers(
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
     files: list[Path],
     ports: list[int],
     worker_dbs: list[tuple[str, str]],
-    result_dir: Path,
+    worker_dirs: dict[Path, Path],
     user_args: list[str],
-) -> list[tuple[Path, int, float]]:
+    *,
+    worker_count: int,
+) -> list[WorkerResult]:
     """Run E2E workers with fail-fast: cancel remaining on first failure."""
-    tasks: list[asyncio.Task[tuple[Path, int, float]]] = [
-        asyncio.create_task(
-            _run_e2e_worker(f, ports[i], worker_dbs[i][0], result_dir, user_args),
-            name=f"e2e-{f.stem}",
-        )
+    semaphore = asyncio.Semaphore(worker_count)
+
+    async def _tracked_worker(i: int) -> WorkerResult:
+        async with semaphore:
+            return await _run_worker_for_lane(
+                lane,
+                worker,
+                test_file=files[i],
+                db_url=worker_dbs[i][0],
+                worker_dir=worker_dirs[files[i]],
+                user_args=user_args,
+                port=ports[i] if lane.needs_server else None,
+            )
+
+    tasks: list[asyncio.Task[WorkerResult]] = [
+        asyncio.create_task(_tracked_worker(i), name=f"e2e-{f.stem}")
         for i, f in enumerate(files)
     ]
 
     total = len(files)
-    results: list[tuple[Path, int, float]] = []
+    results: list[WorkerResult] = []
     completed_files: set[Path] = set()
     done_count = 0
 
@@ -133,15 +223,22 @@ async def _run_fail_fast_workers(
         except Exception as exc:
             fpath = _resolve_failed_task_file(tasks, exc, files)
             console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
-            result = (fpath, 1, 0.0)
+            result = WorkerResult(
+                file=fpath,
+                exit_code=1,
+                duration_s=0.0,
+                artifact_dir=worker_dirs[fpath],
+            )
 
         results.append(result)
-        completed_files.add(result[0])
+        completed_files.add(result.file)
         done_count += 1
         _report_worker_progress(result, done_count, total)
 
-        if result[1] not in (0, 5):
-            cancelled = await _cancel_and_drain_tasks(tasks, completed_files, files)
+        if result.exit_code not in (0, 5):
+            cancelled = await _cancel_and_drain_tasks(
+                tasks, completed_files, files, worker_dirs
+            )
             results.extend(cancelled)
             break
 
@@ -151,24 +248,24 @@ async def _run_fail_fast_workers(
 def _cleanup_parallel_results(
     all_passed: bool,
     worker_dbs: list[tuple[str, str]],
-    result_dir: Path,
-    results: list[tuple[Path, int, float]],
+    run_dir: Path,
+    results: list[WorkerResult],
 ) -> None:
     """Clean up or preserve worker databases and result directory."""
     if all_passed:
         for db_url, _db_name in worker_dbs:
             with contextlib.suppress(Exception):
                 drop_database(db_url)
-        shutil.rmtree(result_dir, ignore_errors=True)
+        shutil.rmtree(run_dir, ignore_errors=True)
         console.print("[green]All passed — cleaned up worker databases and results[/]")
     else:
         console.print("[yellow]Some tests failed — preserving artifacts:[/]")
-        console.print(f"  Results: {result_dir}")
+        console.print(f"  Results: {run_dir}")
         for db_url, db_name in worker_dbs:
             console.print(f"  DB: {db_name} ({db_url})")
-        for test_file, exit_code, _duration in results:
-            if exit_code not in (0, 5, -1):
-                log_path = result_dir / f"test-e2e-{test_file.stem}.log"
+        for result in results:
+            if result.exit_code not in (0, 5, -1):
+                log_path = result.artifact_dir / "pytest.log"
                 console.print(f"  Log: {log_path}")
 
 
@@ -189,44 +286,61 @@ def _print_retry_summary(
 
 
 async def _run_sequential_retries(
-    failed_files: list[Path],
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    failed_results: list[WorkerResult],
     retry_ports: list[int],
     retry_dbs: list[tuple[str, str]],
-    result_dir: Path,
     user_args: list[str],
 ) -> tuple[list[Path], list[Path]]:
     """Execute retry workers sequentially, classifying results as flaky or genuine."""
     genuine_failures: list[Path] = []
     flaky_files: list[Path] = []
-    total = len(failed_files)
+    total = len(failed_results)
 
-    for i, fpath in enumerate(failed_files):
+    for i, failed_result in enumerate(failed_results):
+        retry_dir = create_retry_dir(failed_result.artifact_dir)
         try:
-            result = await _run_e2e_worker(
-                fpath, retry_ports[i], retry_dbs[i][0], result_dir, user_args
+            result = await _run_worker_for_lane(
+                lane,
+                worker,
+                test_file=failed_result.file,
+                db_url=retry_dbs[i][0],
+                worker_dir=retry_dir,
+                user_args=user_args,
+                port=retry_ports[i] if lane.needs_server else None,
             )
         except Exception as exc:
-            console.print(f"[red]Retry worker {fpath.name} raised: {exc}[/]")
-            result = (fpath, 1, 0.0)
+            console.print(
+                f"[red]Retry worker {failed_result.file.name} raised: {exc}[/]"
+            )
+            result = WorkerResult(
+                file=failed_result.file,
+                exit_code=1,
+                duration_s=0.0,
+                artifact_dir=retry_dir,
+            )
 
-        label = _worker_status_label(result[1])
+        label = _worker_status_label(result.exit_code)
         console.print(
-            f"  [retry {i + 1}/{total}] {result[0].name}: {label} ({result[2]:.1f}s)"
+            f"  [retry {i + 1}/{total}] {result.file.name}: "
+            f"{label} ({result.duration_s:.1f}s)"
         )
 
-        if result[1] in (0, 5):
-            flaky_files.append(fpath)
+        if result.exit_code in (0, 5):
+            flaky_files.append(failed_result.file)
         else:
-            genuine_failures.append(fpath)
+            genuine_failures.append(failed_result.file)
 
     return genuine_failures, flaky_files
 
 
 async def _retry_parallel_failures(
-    failed_files: list[Path],
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    failed_results: list[WorkerResult],
     template_db_url: str,
     source_db_name: str,
-    result_dir: Path,
     user_args: list[str],
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed E2E files with fresh servers and databases.
@@ -237,17 +351,26 @@ async def _retry_parallel_failures(
     Returns ``(genuine_failures, flaky_files)``.
     """
     console.print(
-        f"\n[blue]Re-running {len(failed_files)} failed file(s) in isolation...[/]"
+        f"\n[blue]Re-running {len(failed_results)} failed file(s) in isolation...[/]"
     )
 
-    retry_ports = _allocate_ports(len(failed_files))
+    retry_ports = (
+        _allocate_ports(len(failed_results))
+        if lane.needs_server
+        else [0] * len(failed_results)
+    )
     retry_dbs = _create_worker_databases(
-        template_db_url, source_db_name, len(failed_files), suffix="retry"
+        template_db_url, source_db_name, len(failed_results), suffix="retry"
     )
 
     try:
         genuine_failures, flaky_files = await _run_sequential_retries(
-            failed_files, retry_ports, retry_dbs, result_dir, user_args
+            lane,
+            worker,
+            failed_results,
+            retry_ports,
+            retry_dbs,
+            user_args,
         )
         _print_retry_summary(genuine_failures, flaky_files)
         return genuine_failures, flaky_files
@@ -297,51 +420,72 @@ def _create_worker_databases(
 
 
 async def _finalise_parallel_results(
-    results: list[tuple[Path, int, float]],
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    results: list[WorkerResult],
     wall_start: float,
     test_db_url: str,
     source_db_name: str,
-    result_dir: Path,
+    run_dir: Path,
     user_args: list[str],
 ) -> bool:
     """Summarise, retry failures, merge JUnit XML. Returns all_passed."""
-    all_passed = len(results) > 0 and all(code in (0, 5) for _, code, _ in results)
-
     wall_clock = time.monotonic() - wall_start
     _print_parallel_summary(results, wall_clock)
+    all_passed = _all_results_passed(results)
+    flaky_files: list[Path] = []
+    genuine_failures: list[Path] = []
 
     if not all_passed:
-        failed_files = [f for f, code, _ in results if code not in (0, 5, -1)]
-        if failed_files:
-            genuine, _flaky = await _retry_parallel_failures(
-                failed_files,
+        failed_results = [
+            result for result in results if result.exit_code not in (0, 5, -1)
+        ]
+        if failed_results:
+            genuine_failures, flaky_files = await _retry_parallel_failures(
+                lane,
+                worker,
+                failed_results,
                 test_db_url,
                 source_db_name,
-                result_dir,
                 user_args,
             )
-            all_passed = not genuine
+            all_passed = not genuine_failures and all(
+                result.exit_code in (0, 5) for result in results
+            )
 
     with contextlib.suppress(Exception):
-        _merge_junit_xml(result_dir)
+        _merge_junit_xml(run_dir)
+    write_summary_metadata(
+        run_dir,
+        lane.name,
+        results,
+        wall_clock_s=wall_clock,
+        flaky_files=flaky_files,
+        genuine_failures=genuine_failures,
+    )
 
     return all_passed
 
 
-async def _run_parallel_e2e(
+def _default_worker_count(file_count: int) -> int:
+    """Return the bounded worker count for lane execution."""
+    return max(1, min(file_count, max(1, (os.cpu_count() or 4) // 2), 4))
+
+
+async def run_lane_files(
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    *,
     user_args: list[str],
+    worker_count: int | None = None,
     fail_fast: bool = False,
 ) -> int:
-    """Orchestrate parallel E2E test execution with per-file isolation.
-
-    Each test file gets its own cloned database and server instance.
-    Returns 0 if all tests pass, 1 if any failed.
-    """
-    files = sorted(Path("tests/e2e").glob("test_*.py"))
+    """Run all files in *lane* using isolated per-file workers."""
+    files = discover_lane_files(lane)
     if not files:
-        console.print("[yellow]No E2E test files found[/]")
+        console.print(f"[yellow]No {lane.name} test files found[/]")
         return 0
-    console.print(f"[blue]Found {len(files)} test files[/]")
+    console.print(f"[blue]Found {len(files)} {lane.name} test files[/]")
 
     test_db_url = get_settings().dev.test_database_url
     if not test_db_url:
@@ -351,32 +495,65 @@ async def _run_parallel_e2e(
     _pre_test_db_cleanup()
     source_db_name = test_db_url.split("?")[0].rsplit("/", 1)[1]
     worker_dbs = _create_worker_databases(test_db_url, source_db_name, len(files))
-    ports = _allocate_ports(len(files))
-    result_dir = Path(tempfile.mkdtemp(prefix="e2e_parallel_"))
+    ports = _allocate_ports(len(files)) if lane.needs_server else [0] * len(files)
+    run_dir = create_lane_run_dir(lane.artifact_subdir)
+    worker_dirs = {path: create_worker_dir(run_dir, path) for path in files}
+    bounded_worker_count = min(
+        worker_count or _default_worker_count(len(files)), len(files)
+    )
 
     wall_start = time.monotonic()
-    results: list[tuple[Path, int, float]] = []
+    results: list[WorkerResult] = []
     all_passed = False
 
     try:
         if fail_fast:
             results = await _run_fail_fast_workers(
-                files, ports, worker_dbs, result_dir, user_args
+                lane,
+                worker,
+                files,
+                ports,
+                worker_dbs,
+                worker_dirs,
+                user_args,
+                worker_count=bounded_worker_count,
             )
         else:
             results = await _run_all_workers(
-                files, ports, worker_dbs, result_dir, user_args
+                lane,
+                worker,
+                files,
+                ports,
+                worker_dbs,
+                worker_dirs,
+                user_args,
+                worker_count=bounded_worker_count,
             )
 
         all_passed = await _finalise_parallel_results(
+            lane,
+            worker,
             results,
             wall_start,
             test_db_url,
             source_db_name,
-            result_dir,
+            run_dir,
             user_args,
         )
         return 0 if all_passed else 1
 
     finally:
-        _cleanup_parallel_results(all_passed, worker_dbs, result_dir, results)
+        _cleanup_parallel_results(all_passed, worker_dbs, run_dir, results)
+
+
+async def _run_parallel_e2e(
+    user_args: list[str],
+    fail_fast: bool = False,
+) -> int:
+    """Orchestrate parallel Playwright E2E execution with per-file isolation."""
+    return await run_lane_files(
+        PLAYWRIGHT_LANE,
+        run_playwright_file,
+        user_args=user_args,
+        fail_fast=fail_fast,
+    )

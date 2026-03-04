@@ -47,6 +47,14 @@ from tests.e2e.course_helpers import (
     publish_week,
 )
 
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Superseded by test_continuous_workflow.py, test_annotation_canvas.py, "
+        "and NiceGUI integration tests. Will be removed after the new split "
+        "tests have proven stable in CI."
+    ),
+)
+
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests

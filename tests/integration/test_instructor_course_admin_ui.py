@@ -14,17 +14,22 @@ Traceability:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
-from nicegui import ElementFilter
 
 from promptgrimoire.config import get_settings
+from tests.integration.conftest import _authenticate
+from tests.integration.nicegui_helpers import (
+    _click_testid,
+    _find_value_element_by_testid,
+    _set_input_value,
+    _should_not_see_testid,
+    _should_see_testid,
+)
 
 if TYPE_CHECKING:
-    from nicegui.element import Element
-    from nicegui.elements.mixins.value_element import ValueElement
     from nicegui.testing.user import User
 
 pytestmark = [
@@ -35,152 +40,6 @@ pytestmark = [
     # NiceGUI User harness conflicts with xdist (same as Playwright E2E).
     pytest.mark.e2e,
 ]
-
-
-# ---------------------------------------------------------------------------
-# data-testid helpers (copied from test_crud_management_ui.py)
-# ---------------------------------------------------------------------------
-# NiceGUI's ``ElementFilter(marker=...)`` checks ``.mark()`` markers, not
-# ``data-testid`` props.  Since this codebase sets ``data-testid`` via
-# ``.props('data-testid="..."')``, we need custom helpers.
-
-
-def _is_in_open_dialog(el: Element) -> bool:
-    """Check whether *el* is inside a dialog that is currently open."""
-    from nicegui import ui
-
-    parent = el.parent_slot.parent if el.parent_slot else None
-    while parent is not None:
-        if isinstance(parent, ui.dialog):
-            return parent.value  # True when open
-        parent = parent.parent_slot.parent if parent.parent_slot else None
-    return True  # Not inside a dialog — always "visible"
-
-
-def _find_by_testid(user: User, testid: str) -> Element | None:
-    """Return the first element whose ``data-testid`` prop matches *testid*.
-
-    Skips elements inside closed dialogs.
-    """
-    with user:
-        for el in ElementFilter():
-            if not el.visible:
-                continue
-            if el.props.get("data-testid") != testid:
-                continue
-            if not _is_in_open_dialog(el):
-                continue
-            return el
-    return None
-
-
-async def _should_see_testid(user: User, testid: str, *, retries: int = 5) -> None:
-    """Assert that a visible element with the given ``data-testid`` exists."""
-    for _ in range(retries):
-        if _find_by_testid(user, testid) is not None:
-            return
-        await asyncio.sleep(0.1)
-    raise AssertionError(f"expected to see an element with data-testid={testid!r}")
-
-
-async def _should_not_see_testid(user: User, testid: str, *, retries: int = 5) -> None:
-    """Assert that no visible element with the given ``data-testid`` exists."""
-    for _ in range(retries):
-        if _find_by_testid(user, testid) is None:
-            return
-        await asyncio.sleep(0.05)
-    raise AssertionError(f"expected NOT to see an element with data-testid={testid!r}")
-
-
-def _click_testid(user: User, testid: str) -> None:
-    """Click the first visible element matching ``data-testid``.
-
-    Mirrors NiceGUI's ``UserInteraction.click()`` logic: for checkboxes
-    and switches, the event args carry the toggled boolean value; for
-    other elements, args is ``None``.
-    """
-    el = _find_by_testid(user, testid)
-    if el is None:
-        raise AssertionError(
-            f"cannot click: no visible element with data-testid={testid!r}"
-        )
-    from nicegui import events, ui
-
-    for listener in el._event_listeners.values():
-        if listener.element_id != el.id:
-            continue
-        # Switches/checkboxes need the toggled value as args
-        if isinstance(el, (ui.checkbox, ui.switch)):
-            args = not cast("ValueElement", el).value
-        else:
-            args = None
-        event_arguments = events.GenericEventArguments(
-            sender=el, client=el.client, args=args
-        )
-        events.handle_event(listener.handler, event_arguments)
-
-
-def _find_value_element_by_testid(user: User, testid: str) -> ValueElement | None:
-    """Return the first ``ValueElement`` whose ``data-testid`` matches *testid*.
-
-    Same as ``_find_by_testid`` but returns a ``ValueElement`` so that
-    ``.value`` is accessible without type errors.
-    """
-    el = _find_by_testid(user, testid)
-    if el is None:
-        return None
-    return cast("ValueElement", el)
-
-
-def _set_input_value(user: User, testid: str, value: str) -> None:
-    """Set the value of an input element found by ``data-testid``."""
-    el = _find_value_element_by_testid(user, testid)
-    if el is None:
-        raise AssertionError(
-            f"cannot set value: no visible element with data-testid={testid!r}"
-        )
-    el.value = value
-
-
-# ---------------------------------------------------------------------------
-# Auth helper
-# ---------------------------------------------------------------------------
-
-
-async def _authenticate(user: User, *, email: str) -> None:
-    """Establish an authenticated session for the simulated user.
-
-    Mirrors the pattern from test_crud_management_ui.py.
-    """
-    from promptgrimoire.auth.mock import MOCK_INSTRUCTOR_EMAILS
-    from promptgrimoire.db.users import find_or_create_user
-
-    await user.open("/login")
-
-    user_record, _ = await find_or_create_user(
-        email=email,
-        display_name=email.split("@", maxsplit=1)[0],
-    )
-
-    roles = ["stytch_member"]
-    if email in MOCK_INSTRUCTOR_EMAILS:
-        roles.append("instructor")
-
-    with user:
-        from nicegui import app as _app
-
-        _app.storage.user["auth_user"] = {
-            "email": email,
-            "member_id": f"mock-member-{email}",
-            "organization_id": "mock-org-123",
-            "session_token": f"mock-session-{email}",
-            "roles": roles,
-            "name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
-            "display_name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
-            "auth_method": "mock",
-            "user_id": str(user_record.id),
-            "is_admin": False,
-        }
 
 
 # ---------------------------------------------------------------------------

@@ -21,13 +21,17 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
-from nicegui import ElementFilter
-from nicegui.element import Element
 
 from promptgrimoire.config import get_settings
+from tests.integration.conftest import _authenticate
+from tests.integration.nicegui_helpers import (
+    _click_testid,
+    _find_by_testid,
+    _should_not_see_testid,
+    _should_see_testid,
+)
 
 if TYPE_CHECKING:
-    from nicegui.element import Element
     from nicegui.testing.user import User
 
 pytestmark = [
@@ -39,136 +43,6 @@ pytestmark = [
     # Excluded from test-all via -m "not e2e"; run directly with -p no:xdist.
     pytest.mark.e2e,
 ]
-
-
-# ---------------------------------------------------------------------------
-# data-testid helpers
-# ---------------------------------------------------------------------------
-# NiceGUI's ``ElementFilter(marker=...)`` checks ``.mark()`` markers, not
-# ``data-testid`` props.  Since this codebase sets ``data-testid`` via
-# ``.props('data-testid="..."')``, we need custom helpers to locate
-# elements by their ``data-testid`` value.
-
-
-def _is_in_open_dialog(el: Element) -> bool:
-    """Check whether *el* is inside a dialog that is currently open."""
-    from nicegui import ui
-
-    parent = el.parent_slot.parent if el.parent_slot else None
-    while parent is not None:
-        if isinstance(parent, ui.dialog):
-            return parent.value  # True when open
-        parent = parent.parent_slot.parent if parent.parent_slot else None
-    return True  # Not inside a dialog — always "visible"
-
-
-def _find_by_testid(user: User, testid: str) -> Element | None:
-    """Return the first element whose ``data-testid`` prop matches *testid*.
-
-    Skips elements inside closed dialogs.
-    """
-    with user:
-        for el in ElementFilter():
-            if not el.visible:
-                continue
-            if el.props.get("data-testid") != testid:
-                continue
-            if not _is_in_open_dialog(el):
-                continue
-            return el
-    return None
-
-
-async def _should_see_testid(user: User, testid: str, *, retries: int = 5) -> None:
-    """Assert that a visible element with the given ``data-testid`` exists."""
-    for _ in range(retries):
-        if _find_by_testid(user, testid) is not None:
-            return
-        await asyncio.sleep(0.1)
-    raise AssertionError(f"expected to see an element with data-testid={testid!r}")
-
-
-async def _should_not_see_testid(user: User, testid: str, *, retries: int = 5) -> None:
-    """Assert that no visible element with the given ``data-testid`` exists."""
-    for _ in range(retries):
-        if _find_by_testid(user, testid) is None:
-            return
-        await asyncio.sleep(0.05)
-    raise AssertionError(f"expected NOT to see an element with data-testid={testid!r}")
-
-
-def _click_testid(user: User, testid: str) -> None:
-    """Click the first visible element matching ``data-testid``."""
-    el = _find_by_testid(user, testid)
-    if el is None:
-        raise AssertionError(
-            f"cannot click: no visible element with data-testid={testid!r}"
-        )
-    from nicegui import events
-
-    # TODO(2026-03): Replace with public API when NiceGUI exposes a click()
-    # method that works outside the User.find() marker-based lookup.  We use
-    # the same pattern as NiceGUI's UserInteraction.click() internally.
-    # See: https://github.com/zauberzeug/nicegui/issues/XXXX
-    for listener in el._event_listeners.values():
-        if listener.element_id != el.id:
-            continue
-        event_arguments = events.GenericEventArguments(
-            sender=el, client=el.client, args=None
-        )
-        events.handle_event(listener.handler, event_arguments)
-
-
-# ---------------------------------------------------------------------------
-# Auth helper
-# ---------------------------------------------------------------------------
-
-
-async def _authenticate(user: User, *, email: str) -> None:
-    """Establish an authenticated session for the simulated user.
-
-    Instead of hitting ``/auth/callback`` (whose ``ui.navigate.to("/")``
-    creates a background ``user.open()`` that replaces the httpx session
-    cookie and loses the storage written by the callback), we:
-
-    1. Open the login page to establish a session cookie.
-    2. Ensure the User record exists in the DB.
-    3. Write ``auth_user`` directly into ``app.storage.user``.
-
-    This mirrors what ``_set_session_user()`` does in production auth.
-    """
-    from promptgrimoire.auth.mock import MOCK_INSTRUCTOR_EMAILS
-    from promptgrimoire.db.users import find_or_create_user
-
-    # 1. Establish a session (any page will do)
-    await user.open("/login")
-
-    # 2. Ensure user record exists in DB
-    user_record, _ = await find_or_create_user(
-        email=email,
-        display_name=email.split("@", maxsplit=1)[0],
-    )
-
-    # 3. Build the auth_user dict and inject into session storage
-    roles = ["stytch_member"]
-    if email in MOCK_INSTRUCTOR_EMAILS:
-        roles.append("instructor")
-
-    with user:
-        from nicegui import app as _app
-
-        _app.storage.user["auth_user"] = {
-            "email": email,
-            "member_id": f"mock-member-{email}",
-            "organization_id": "mock-org-123",
-            "session_token": f"mock-session-{email}",
-            "roles": roles,
-            "name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
-            "display_name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
-            "auth_method": "mock",
-            "user_id": str(user_record.id),
-            "is_admin": False,
-        }
 
 
 # ---------------------------------------------------------------------------

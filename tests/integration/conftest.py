@@ -56,6 +56,58 @@ async def nicegui_user() -> AsyncGenerator[User]:
 
 
 # =============================================================================
+# NiceGUI Auth Helper
+# =============================================================================
+
+
+async def _authenticate(user: User, *, email: str) -> None:
+    """Establish an authenticated session for the simulated user.
+
+    Instead of hitting ``/auth/callback`` (whose ``ui.navigate.to("/")``
+    creates a background ``user.open()`` that replaces the httpx session
+    cookie and loses the storage written by the callback), we:
+
+    1. Open the login page to establish a session cookie.
+    2. Ensure the User record exists in the DB.
+    3. Write ``auth_user`` directly into ``app.storage.user``.
+
+    This mirrors what ``_set_session_user()`` does in production auth.
+    """
+    from promptgrimoire.auth.mock import MOCK_INSTRUCTOR_EMAILS
+    from promptgrimoire.db.users import find_or_create_user
+
+    # 1. Establish a session (any page will do)
+    await user.open("/login")
+
+    # 2. Ensure user record exists in DB
+    user_record, _ = await find_or_create_user(
+        email=email,
+        display_name=email.split("@", maxsplit=1)[0],
+    )
+
+    # 3. Build the auth_user dict and inject into session storage
+    roles = ["stytch_member"]
+    if email in MOCK_INSTRUCTOR_EMAILS:
+        roles.append("instructor")
+
+    with user:
+        from nicegui import app as _app
+
+        _app.storage.user["auth_user"] = {
+            "email": email,
+            "member_id": f"mock-member-{email}",
+            "organization_id": "mock-org-123",
+            "session_token": f"mock-session-{email}",
+            "roles": roles,
+            "name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
+            "display_name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
+            "auth_method": "mock",
+            "user_id": str(user_record.id),
+            "is_admin": False,
+        }
+
+
+# =============================================================================
 # PDF Export Test Fixtures
 # =============================================================================
 

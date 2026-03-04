@@ -237,19 +237,17 @@ class TestCrossFieldValidation:
 
     def test_sso_without_public_token_raises(self) -> None:
         """AC2.2: SSO without public_token raises ValidationError."""
-        empty_value = os.environ.get("PROMPTGRIMOIRE_UNUSED_EMPTY", "")
         with pytest.raises(ValidationError, match="STYTCH__PUBLIC_TOKEN"):
             StytchConfig(
                 sso_connection_id="test-id",
-                public_token=empty_value,
+                public_token="",
             )
 
     def test_neither_sso_nor_public_token_passes(self) -> None:
         """AC2.3: No SSO and no public_token is valid (defaults)."""
-        empty_value = os.environ.get("PROMPTGRIMOIRE_UNUSED_EMPTY", "")
         cfg = StytchConfig()
         assert cfg.sso_connection_id is None
-        assert cfg.public_token == empty_value
+        assert cfg.public_token == ""
 
 
 # ---------------------------------------------------------------------------

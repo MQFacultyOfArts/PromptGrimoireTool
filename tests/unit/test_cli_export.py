@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    return _ANSI_RE.sub("", text)
+
 
 class TestExportLogHelp:
     """The 'export log' command exposes --tex, --both, and optional user_id."""
@@ -22,12 +30,13 @@ class TestExportLogHelp:
     def test_help_shows_options(self) -> None:
         result = runner.invoke(app, ["export", "log", "--help"])
         assert result.exit_code == 0
-        assert "--tex" in result.output
-        assert "--both" in result.output
+        plain = _strip_ansi(result.output)
+        assert "--tex" in plain
+        assert "--both" in plain
 
     def test_help_shows_user_id_argument(self) -> None:
         result = runner.invoke(app, ["export", "log", "--help"])
-        assert "user_id" in result.output.lower()
+        assert "user_id" in _strip_ansi(result.output).lower()
 
 
 class TestFindExportDir:

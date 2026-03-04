@@ -3,8 +3,8 @@
 Verifies the navigator page at ``/`` renders workspace sections correctly,
 handles authentication, provides workspace navigation, supports search,
 supports inline title rename, supports infinite scroll pagination,
-verifies navigation chrome (home icon) on all pages, and uses correct
-i18n terminology.
+verifies shared navigation drawer behavior on page_layout pages, and uses
+correct i18n terminology.
 
 Acceptance Criteria:
 - workspace-navigator-196.AC2.5: Unauthenticated redirect to login
@@ -26,8 +26,8 @@ Acceptance Criteria:
 - workspace-navigator-196.AC5.2: Infinite scroll loads more rows into correct sections
 - workspace-navigator-196.AC5.4: Fewer than 50 rows -- no additional loading
 - workspace-navigator-196.AC5.5: Multi-page scroll without duplicates
-- workspace-navigator-196.AC6.1: Home icon on annotation tab bar navigates to /
-- workspace-navigator-196.AC6.2: Home icon on roleplay and courses pages navigates to /
+- workspace-navigator-196.AC6.1: Home navigation from annotation tab bar navigates to /
+- workspace-navigator-196.AC6.2: Home navigation from courses page navigates to /
 - workspace-navigator-196.AC6.3: No global header bar imposed on annotation page
 - workspace-navigator-196.AC7.1: All user-facing text displays "Unit" not "Course"
 - workspace-navigator-196.AC7.2: Label configurable via pydantic-settings
@@ -1290,10 +1290,10 @@ class TestNavigator:
 
 
 class TestNavigationChrome:
-    """Tests for home icon navigation buttons on all pages."""
+    """Tests for shared navigation drawer Home navigation."""
 
     @pytest.mark.e2e
-    def test_annotation_home_navigates_to_navigator(
+    def test_annotation_nav_home_navigates_to_navigator(
         self, browser: Browser, app_server: str
     ) -> None:
         """AC6.1: Nav drawer Home link on annotation page navigates to /."""
@@ -1322,36 +1322,10 @@ class TestNavigationChrome:
             context.close()
 
     @pytest.mark.e2e
-    def test_roleplay_home_icon_navigates_to_navigator(
+    def test_courses_nav_home_navigates_to_navigator(
         self, browser: Browser, app_server: str
     ) -> None:
-        """AC6.2: Nav drawer Home link on roleplay page navigates to /."""
-        from promptgrimoire.config import get_settings
-
-        if not get_settings().features.enable_roleplay:
-            pytest.skip("roleplay feature flag disabled")
-
-        context = browser.new_context()
-        page = context.new_page()
-        try:
-            _authenticate_page(page, app_server)
-            page.goto(f"{app_server}/roleplay")
-            page.wait_for_timeout(2000)
-
-            # Navigate home via the shared page_layout nav drawer.
-            navigate_home_via_drawer(page)
-
-            page.wait_for_url(re.compile(r"/$|/\?"), timeout=10000)
-        finally:
-            page.goto("about:blank")
-            page.close()
-            context.close()
-
-    @pytest.mark.e2e
-    def test_courses_home_icon_navigates_to_navigator(
-        self, browser: Browser, app_server: str
-    ) -> None:
-        """AC6.2: Home icon on courses list page navigates to /."""
+        """AC6.2: Nav drawer Home link on courses list page navigates to /."""
         context = browser.new_context()
         page = context.new_page()
         try:

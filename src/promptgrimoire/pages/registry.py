@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Literal
 
 from nicegui import ui
 
+from promptgrimoire.auth import is_privileged_user
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -32,6 +34,36 @@ class PageMeta:
 
 # Global registry of all pages
 _page_registry: dict[str, PageMeta] = {}
+
+
+def _has_roleplay_page_access(
+    user: dict[str, object] | None,
+    roleplay_enabled: bool,
+) -> bool:
+    """Return whether the current user can access roleplay-gated pages."""
+    return roleplay_enabled and is_privileged_user(user)
+
+
+def _is_page_visible(
+    meta: PageMeta,
+    user: dict[str, object] | None,
+    *,
+    demos_enabled: bool,
+    roleplay_enabled: bool,
+) -> bool:
+    """Centralize page visibility checks behind a single capability seam."""
+    is_authenticated = user is not None
+    is_admin = bool(user and user.get("is_admin"))
+    return all(
+        (
+            meta.category != "hidden",
+            not meta.requires_auth or is_authenticated,
+            not meta.requires_admin or is_admin,
+            not meta.requires_demo or demos_enabled,
+            not meta.requires_roleplay
+            or _has_roleplay_page_access(user, roleplay_enabled),
+        )
+    )
 
 
 def page_route(
@@ -86,7 +118,7 @@ def page_route(
 
 
 def get_visible_pages(
-    user: dict | None,
+    user: dict[str, object] | None,
     demos_enabled: bool,
     roleplay_enabled: bool = True,
 ) -> list[PageMeta]:
@@ -100,32 +132,16 @@ def get_visible_pages(
     Returns:
         List of PageMeta for pages the user can access.
     """
-    is_admin = bool(user and user.get("is_admin"))
-    is_authenticated = user is not None
-
-    visible = []
-    for meta in _page_registry.values():
-        # Skip hidden pages
-        if meta.category == "hidden":
-            continue
-
-        # Check auth requirement
-        if meta.requires_auth and not is_authenticated:
-            continue
-
-        # Check admin requirement
-        if meta.requires_admin and not is_admin:
-            continue
-
-        # Check demo requirement
-        if meta.requires_demo and not demos_enabled:
-            continue
-
-        # Check roleplay requirement
-        if meta.requires_roleplay and not roleplay_enabled:
-            continue
-
-        visible.append(meta)
+    visible = [
+        meta
+        for meta in _page_registry.values()
+        if _is_page_visible(
+            meta,
+            user,
+            demos_enabled=demos_enabled,
+            roleplay_enabled=roleplay_enabled,
+        )
+    ]
 
     # Sort by category order, then by order field
     category_order = {"main": 0, "demo": 1, "admin": 2, "auth": 3}
@@ -135,7 +151,7 @@ def get_visible_pages(
 
 
 def get_pages_by_category(
-    user: dict | None,
+    user: dict[str, object] | None,
     demos_enabled: bool,
     roleplay_enabled: bool = True,
 ) -> dict[str, list[PageMeta]]:

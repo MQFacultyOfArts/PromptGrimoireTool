@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -266,3 +267,199 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
     assert genuine_failures == [failed_genuine]
     assert (result_root / failed_flaky.stem / "retry").is_dir()
     assert (result_root / failed_genuine.stem / "retry").is_dir()
+
+
+def test_run_serial_playwright_e2e_selects_only_playwright_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Serial Playwright lane uses `tests/e2e` path boundary, never NiceGUI marker."""
+    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+
+    captured: dict[str, Any] = {}
+
+    def _fake_get_settings() -> object:
+        return object()
+
+    def _fake_pre_test_db_cleanup() -> None:
+        return None
+
+    def _fake_allocate_ports(_n: int) -> list[int]:
+        return [4312]
+
+    def _fake_start_server(_port: int) -> object:
+        return object()
+
+    def _fake_stop_server(_server: object) -> None:
+        return None
+
+    monkeypatch.setattr("promptgrimoire.config.get_settings", _fake_get_settings)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._pre_test_db_cleanup", _fake_pre_test_db_cleanup
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e._allocate_ports", _fake_allocate_ports)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._start_e2e_server", _fake_start_server)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._stop_e2e_server", _fake_stop_server)
+
+    def _fake_run_pytest(
+        *,
+        title: str,
+        log_path: Path,
+        default_args: list[str],
+        extra_args: list[str] | None = None,
+    ) -> int:
+        captured["title"] = title
+        captured["log_path"] = log_path
+        captured["default_args"] = default_args
+        captured["extra_args"] = extra_args
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    try:
+        exit_code = _run_serial_playwright_e2e(
+            ["-k", "test_annotation_nav_home_navigates_to_navigator"],
+            use_pyspy=False,
+            reruns=True,
+        )
+    finally:
+        os.environ.pop("E2E_BASE_URL", None)
+
+    assert exit_code == 0
+    assert captured["default_args"][0] == "tests/e2e"
+    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert "nicegui_ui" not in captured["default_args"]
+    assert "Playwright" in captured["title"]
+
+
+def test_run_playwright_changed_lane_selects_only_playwright_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changed lane stays Playwright-only by explicit path selection."""
+    from promptgrimoire.cli.e2e import run_playwright_changed_lane
+
+    captured: dict[str, Any] = {}
+
+    def _fake_get_settings() -> object:
+        return object()
+
+    def _fake_pre_test_db_cleanup() -> None:
+        return None
+
+    def _fake_allocate_ports(_n: int) -> list[int]:
+        return [4312]
+
+    def _fake_start_server(_port: int) -> object:
+        return object()
+
+    def _fake_stop_server(_server: object) -> None:
+        return None
+
+    monkeypatch.setattr("promptgrimoire.config.get_settings", _fake_get_settings)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._pre_test_db_cleanup", _fake_pre_test_db_cleanup
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e._allocate_ports", _fake_allocate_ports)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._start_e2e_server", _fake_start_server)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._stop_e2e_server", _fake_stop_server)
+
+    def _fake_run_pytest(
+        *,
+        title: str,
+        log_path: Path,
+        default_args: list[str],
+        extra_args: list[str] | None = None,
+    ) -> int:
+        captured["title"] = title
+        captured["log_path"] = log_path
+        captured["default_args"] = default_args
+        captured["extra_args"] = extra_args
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    try:
+        exit_code = run_playwright_changed_lane(["-k", "test_annotation_nav_home"])
+    finally:
+        os.environ.pop("E2E_BASE_URL", None)
+
+    assert exit_code == 0
+    assert captured["default_args"][0] == "tests/e2e"
+    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert "nicegui_ui" not in captured["default_args"]
+    assert "Playwright" in captured["title"]
+
+
+def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Umbrella command is non-fail-fast and always runs both lanes."""
+    from promptgrimoire.cli.e2e import run_all_lanes
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def _fake_playwright(
+        user_args: list[str],
+        *,
+        parallel: bool,
+        fail_fast: bool,
+        py_spy: bool,
+    ) -> int:
+        assert parallel is False
+        assert fail_fast is False
+        assert py_spy is False
+        calls.append(("playwright", user_args))
+        return 1
+
+    def _fake_nicegui(user_args: list[str]) -> int:
+        calls.append(("nicegui", user_args))
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
+    monkeypatch.setattr("promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui)
+
+    exit_code = run_all_lanes(["-k", "combined_filter"])
+
+    assert calls == [
+        ("playwright", ["-k", "combined_filter"]),
+        ("nicegui", ["-k", "combined_filter"]),
+    ]
+    assert exit_code == 1
+
+
+def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Combined exit code is 0 only if both lane helpers return success."""
+    from promptgrimoire.cli.e2e import run_all_lanes
+
+    def _fake_playwright_success(
+        _args: list[str],
+        *,
+        parallel: bool,
+        fail_fast: bool,
+        py_spy: bool,
+    ) -> int:
+        assert parallel is False
+        assert fail_fast is False
+        assert py_spy is False
+        return 0
+
+    def _fake_nicegui_success(_args: list[str]) -> int:
+        return 0
+
+    def _fake_nicegui_failure(_args: list[str]) -> int:
+        return 1
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.run_playwright_lane",
+        _fake_playwright_success,
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui_success
+    )
+    assert run_all_lanes([]) == 0
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui_failure
+    )
+    assert run_all_lanes([]) == 1

@@ -1,0 +1,235 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run ruff lint (includes S security rules)
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run vulture (dead code detection)
+        run: uv run vulture
+
+      # TEMPORARILY DISABLED — 59 pre-existing complexity violations (#254).
+      # Re-enable after cleanup.
+      # - name: Run complexipy (cognitive complexity)
+      #   run: uv run complexipy
+
+      - name: Run pip-audit (dependency vulnerabilities)
+        run: uv run pip-audit
+
+      - name: Run ty type check
+        run: uvx ty@0.0.20 check
+
+  test-all:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        # options: >-
+        #   --health-cmd "pg_isready -U postgres"
+        #   --health-interval 10s
+        #   --health-timeout 5s
+        #   --health-retries 5
+        ports:
+          - 5433:5432
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-test-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install system dependencies
+        run: |
+          if [ -d ~/apt-cache ]; then
+            sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            mecab libmecab-dev \
+            pandoc \
+            poppler-utils \
+            fontconfig \
+            fonts-noto --install-recommends \
+            fonts-texgyre \
+            fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+            fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+            fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+            fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+            fonts-sil-taiheritagepro
+          mkdir -p ~/apt-cache
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Cache TinyTeX
+        uses: actions/cache@v4
+        with:
+          path: ~/.TinyTeX
+          key: tinytex-${{ runner.os }}-${{ hashFiles('scripts/setup_latex.py') }}
+
+      - name: Install TinyTeX and LaTeX packages
+        run: |
+          echo "$HOME/.TinyTeX/bin/x86_64-linux" >> "$GITHUB_PATH"
+          export PATH="$HOME/.TinyTeX/bin/x86_64-linux:$PATH"
+          if [ ! -f ~/.TinyTeX/bin/x86_64-linux/latexmk ]; then
+            uv run python scripts/setup_latex.py
+          fi
+          luaotfload-tool --update --force
+
+      - name: Run unit and integration tests
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/promptgrimoire_test
+          OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
+        run: uv run grimoire test all
+
+  e2e-playwright:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        # options: >-
+        #   --health-cmd "pg_isready -U postgres"
+        #   --health-interval 10s
+        #   --health-timeout 5s
+        #   --health-retries 5
+        ports:
+          - 5433:5432
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mecab libmecab-dev pandoc
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/promptgrimoire_test
+        run: uv run grimoire e2e run
+
+      - name: Upload Playwright lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-playwright-artifacts
+          path: output/test_output/e2e/playwright/**
+          if-no-files-found: ignore
+
+  nicegui-ui:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        # options: >-
+        #   --health-cmd "pg_isready -U postgres"
+        #   --health-interval 10s
+        #   --health-timeout 5s
+        #   --health-retries 5
+        ports:
+          - 5433:5432
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mecab libmecab-dev pandoc
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run NiceGUI UI lane tests
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/promptgrimoire_test
+        run: uv run grimoire e2e nicegui
+
+      - name: Upload NiceGUI lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nicegui-ui-artifacts
+          path: output/test_output/e2e/nicegui/**
+          if-no-files-found: ignore

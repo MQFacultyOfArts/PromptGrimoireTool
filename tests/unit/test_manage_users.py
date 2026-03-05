@@ -1,8 +1,8 @@
-"""Tests for manage-users CLI — argument parsing and subcommand dispatch.
+"""Tests for admin CLI — Typer command wrappers and async command handlers.
 
-Tests parser correctness and command error paths. DB functions are
-already tested in their own suites; these tests mock the DB layer
-and verify CLI output behaviour.
+Tests argument forwarding via CliRunner and command error paths.
+DB functions are already tested in their own suites; these tests mock
+the DB layer and verify CLI output behaviour.
 """
 
 from __future__ import annotations
@@ -14,88 +14,24 @@ from uuid import uuid4
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
+
+from promptgrimoire.cli import app
+from promptgrimoire.cli.admin import (
+    _cmd_admin,
+    _cmd_enroll,
+    _cmd_list,
+    _cmd_show,
+    _format_last_login,
+)
 
 # Patch targets — functions are imported locally inside each _cmd_* function,
 # so we patch at the source module.
 _USERS = "promptgrimoire.db.users"
 _COURSES = "promptgrimoire.db.courses"
-_CLI = "promptgrimoire.cli"
+_CLI = "promptgrimoire.cli.admin"
 
-
-# ---------------------------------------------------------------------------
-# Parser tests (pure — no mocking needed)
-# ---------------------------------------------------------------------------
-
-
-class TestUserParserSubcommands:
-    """Parser recognises all subcommands and their arguments."""
-
-    def _parser(self):
-        from promptgrimoire.cli import _build_user_parser
-
-        return _build_user_parser()
-
-    def test_list_default(self) -> None:
-        args = self._parser().parse_args(["list"])
-        assert args.command == "list"
-        assert args.all is False
-
-    def test_list_with_all_flag(self) -> None:
-        args = self._parser().parse_args(["list", "--all"])
-        assert args.all is True
-
-    def test_show_requires_email(self) -> None:
-        with pytest.raises(SystemExit):
-            self._parser().parse_args(["show"])
-
-    def test_show_parses_email(self) -> None:
-        args = self._parser().parse_args(["show", "user@example.com"])
-        assert args.command == "show"
-        assert args.email == "user@example.com"
-
-    def test_admin_parses_email(self) -> None:
-        args = self._parser().parse_args(["admin", "user@example.com"])
-        assert args.command == "admin"
-        assert args.email == "user@example.com"
-        assert args.remove is False
-
-    def test_admin_remove_flag(self) -> None:
-        args = self._parser().parse_args(["admin", "--remove", "user@example.com"])
-        assert args.remove is True
-
-    def test_enroll_all_positionals(self) -> None:
-        args = self._parser().parse_args(["enroll", "u@ex.com", "LAWS1100", "2026-S1"])
-        assert args.command == "enroll"
-        assert args.email == "u@ex.com"
-        assert args.code == "LAWS1100"
-        assert args.semester == "2026-S1"
-        assert args.role == "student"
-
-    def test_enroll_custom_role(self) -> None:
-        args = self._parser().parse_args(
-            ["enroll", "u@ex.com", "LAWS1100", "2026-S1", "--role", "tutor"]
-        )
-        assert args.role == "tutor"
-
-    def test_unenroll_all_positionals(self) -> None:
-        args = self._parser().parse_args(
-            ["unenroll", "u@ex.com", "LAWS1100", "2026-S1"]
-        )
-        assert args.command == "unenroll"
-        assert args.email == "u@ex.com"
-        assert args.code == "LAWS1100"
-        assert args.semester == "2026-S1"
-
-    def test_role_all_positionals(self) -> None:
-        args = self._parser().parse_args(
-            ["role", "u@ex.com", "LAWS1100", "2026-S1", "instructor"]
-        )
-        assert args.command == "role"
-        assert args.new_role == "instructor"
-
-    def test_no_subcommand_fails(self) -> None:
-        with pytest.raises(SystemExit):
-            self._parser().parse_args([])
+runner = CliRunner()
 
 
 # ---------------------------------------------------------------------------
@@ -107,13 +43,9 @@ class TestFormatLastLogin:
     """_format_last_login returns human-readable login status."""
 
     def test_none_returns_never(self) -> None:
-        from promptgrimoire.cli import _format_last_login
-
         assert _format_last_login(None) == "Never"
 
     def test_datetime_returns_formatted(self) -> None:
-        from promptgrimoire.cli import _format_last_login
-
         dt = datetime(2026, 2, 16, 10, 30, 0, tzinfo=UTC)
         result = _format_last_login(dt)
         assert "2026-02-16" in result
@@ -171,17 +103,147 @@ def _capture_console() -> tuple[Console, StringIO]:
 
 
 # ---------------------------------------------------------------------------
+# CliRunner argument forwarding tests (AC5.5 + AC5.7)
+# ---------------------------------------------------------------------------
+
+
+class TestAdminCliRunner:
+    """Verify Typer argument semantics via CliRunner.
+
+    Replaces argparse parser tests.
+    """
+
+    def test_admin_help_shows_all_subcommands(self) -> None:
+        """AC5.5: CliRunner help test for grimoire admin."""
+        result = runner.invoke(app, ["admin", "--help"])
+        assert result.exit_code == 0
+        for cmd in (
+            "list",
+            "show",
+            "create",
+            "admin",
+            "instructor",
+            "enroll",
+            "unenroll",
+            "role",
+        ):
+            assert cmd in result.output
+
+    def test_admin_remove_flag_forwarded(self) -> None:
+        """AC5.7: --remove flag is received by _cmd_admin."""
+        with patch(f"{_CLI}._cmd_admin", new_callable=AsyncMock) as mock:
+            result = runner.invoke(app, ["admin", "admin", "user@test.com", "--remove"])
+            assert result.exit_code == 0
+            mock.assert_called_once_with("user@test.com", remove=True)
+
+    def test_admin_default_no_remove(self) -> None:
+        """AC5.7: --remove defaults to False."""
+        with patch(f"{_CLI}._cmd_admin", new_callable=AsyncMock) as mock:
+            result = runner.invoke(app, ["admin", "admin", "user@test.com"])
+            assert result.exit_code == 0
+            mock.assert_called_once_with("user@test.com", remove=False)
+
+    def test_show_positional_email(self) -> None:
+        """AC5.7: positional email argument works for show."""
+        with patch(f"{_CLI}._cmd_show", new_callable=AsyncMock) as mock:
+            result = runner.invoke(app, ["admin", "show", "alice@example.com"])
+            assert result.exit_code == 0
+            mock.assert_called_once_with("alice@example.com")
+
+    def test_enroll_positionals_and_role(self) -> None:
+        """AC5.7: enroll forwards 3 positional args and --role option."""
+        with patch(f"{_CLI}._cmd_enroll", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app,
+                [
+                    "admin",
+                    "enroll",
+                    "u@ex.com",
+                    "LAWS1100",
+                    "2026-S1",
+                    "--role",
+                    "tutor",
+                ],
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with(
+                "u@ex.com", "LAWS1100", "2026-S1", role="tutor"
+            )
+
+    def test_enroll_default_role_student(self) -> None:
+        """AC5.7: enroll defaults --role to 'student'."""
+        with patch(f"{_CLI}._cmd_enroll", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app, ["admin", "enroll", "u@ex.com", "LAWS1100", "2026-S1"]
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with(
+                "u@ex.com", "LAWS1100", "2026-S1", role="student"
+            )
+
+    def test_unenroll_positionals(self) -> None:
+        """AC5.7: unenroll forwards 3 positional args."""
+        with patch(f"{_CLI}._cmd_unenroll", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app, ["admin", "unenroll", "u@ex.com", "LAWS1100", "2026-S1"]
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with("u@ex.com", "LAWS1100", "2026-S1")
+
+    def test_role_positionals(self) -> None:
+        """AC5.7: role forwards 4 positional args."""
+        with patch(f"{_CLI}._cmd_role", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app, ["admin", "role", "u@ex.com", "LAWS1100", "2026-S1", "instructor"]
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with(
+                "u@ex.com", "LAWS1100", "2026-S1", "instructor"
+            )
+
+    def test_list_all_flag(self) -> None:
+        """AC5.7: list --all flag is forwarded."""
+        with patch(f"{_CLI}._cmd_list", new_callable=AsyncMock) as mock:
+            result = runner.invoke(app, ["admin", "list", "--all"])
+            assert result.exit_code == 0
+            mock.assert_called_once_with(include_all=True)
+
+    def test_list_default_no_all(self) -> None:
+        """AC5.7: list defaults --all to False."""
+        with patch(f"{_CLI}._cmd_list", new_callable=AsyncMock) as mock:
+            result = runner.invoke(app, ["admin", "list"])
+            assert result.exit_code == 0
+            mock.assert_called_once_with(include_all=False)
+
+    def test_create_positional_and_name_option(self) -> None:
+        """AC5.7: create forwards positional email and --name option."""
+        with patch(f"{_CLI}._cmd_create", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app, ["admin", "create", "new@test.com", "--name", "New User"]
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with("new@test.com", name="New User")
+
+    def test_instructor_remove_flag(self) -> None:
+        """AC5.7: instructor --remove flag is forwarded."""
+        with patch(f"{_CLI}._cmd_instructor", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app, ["admin", "instructor", "teach@uni.edu", "--remove"]
+            )
+            assert result.exit_code == 0
+            mock.assert_called_once_with("teach@uni.edu", remove=True)
+
+
+# ---------------------------------------------------------------------------
 # Command handlers (mock DB layer, verify output)
 # ---------------------------------------------------------------------------
 
 
 class TestCmdList:
-    """manage-users list — tabular user output."""
+    """admin list — tabular user output."""
 
     @pytest.mark.anyio
     async def test_list_shows_user_emails(self) -> None:
-        from promptgrimoire.cli import _cmd_list
-
         con, buf = _capture_console()
         user = _make_user(email="alice@uni.edu", display_name="Alice", is_admin=True)
 
@@ -195,8 +257,6 @@ class TestCmdList:
 
     @pytest.mark.anyio
     async def test_list_empty(self) -> None:
-        from promptgrimoire.cli import _cmd_list
-
         con, buf = _capture_console()
 
         with patch(f"{_USERS}.list_all_users", new_callable=AsyncMock) as mock:
@@ -208,12 +268,10 @@ class TestCmdList:
 
 
 class TestCmdShow:
-    """manage-users show — user details and enrollments."""
+    """admin show — user details and enrollments."""
 
     @pytest.mark.anyio
     async def test_show_user_not_found(self) -> None:
-        from promptgrimoire.cli import _cmd_show
-
         con, buf = _capture_console()
 
         with patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock:
@@ -226,8 +284,6 @@ class TestCmdShow:
 
     @pytest.mark.anyio
     async def test_show_displays_enrollments(self) -> None:
-        from promptgrimoire.cli import _cmd_show
-
         con, buf = _capture_console()
         user = _make_user(email="bob@uni.edu", display_name="Bob")
         course = _make_course()
@@ -256,12 +312,10 @@ class TestCmdShow:
 
 
 class TestCmdAdmin:
-    """manage-users admin — set/remove admin status."""
+    """admin admin — set/remove admin status."""
 
     @pytest.mark.anyio
     async def test_admin_user_not_found(self) -> None:
-        from promptgrimoire.cli import _cmd_admin
-
         con, _buf = _capture_console()
 
         with patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock:
@@ -271,8 +325,6 @@ class TestCmdAdmin:
 
     @pytest.mark.anyio
     async def test_admin_set(self) -> None:
-        from promptgrimoire.cli import _cmd_admin
-
         con, _buf = _capture_console()
         user = _make_user(is_admin=False)
 
@@ -280,7 +332,7 @@ class TestCmdAdmin:
             patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock_get,
             patch(f"{_USERS}.set_admin", new_callable=AsyncMock) as mock_set,
             patch(
-                "promptgrimoire.cli._update_stytch_metadata",
+                f"{_CLI}._update_stytch_metadata",
                 new_callable=AsyncMock,
             ) as mock_stytch,
         ):
@@ -294,8 +346,6 @@ class TestCmdAdmin:
 
     @pytest.mark.anyio
     async def test_admin_remove(self) -> None:
-        from promptgrimoire.cli import _cmd_admin
-
         con, _buf = _capture_console()
         user = _make_user(is_admin=True)
 
@@ -303,7 +353,7 @@ class TestCmdAdmin:
             patch(f"{_USERS}.get_user_by_email", new_callable=AsyncMock) as mock_get,
             patch(f"{_USERS}.set_admin", new_callable=AsyncMock) as mock_set,
             patch(
-                "promptgrimoire.cli._update_stytch_metadata",
+                f"{_CLI}._update_stytch_metadata",
                 new_callable=AsyncMock,
             ) as mock_stytch,
         ):
@@ -317,12 +367,10 @@ class TestCmdAdmin:
 
 
 class TestCmdEnroll:
-    """manage-users enroll — enrol user in course."""
+    """admin enroll — enrol user in course."""
 
     @pytest.mark.anyio
     async def test_enroll_course_not_found(self) -> None:
-        from promptgrimoire.cli import _cmd_enroll
-
         con, _buf = _capture_console()
         user = _make_user()
 
@@ -337,8 +385,6 @@ class TestCmdEnroll:
 
     @pytest.mark.anyio
     async def test_enroll_success(self) -> None:
-        from promptgrimoire.cli import _cmd_enroll
-
         con, buf = _capture_console()
         user = _make_user()
         course = _make_course()

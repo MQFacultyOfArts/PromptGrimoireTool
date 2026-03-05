@@ -13,9 +13,9 @@ The implementation begins with an empirical falsification test to verify whether
 ## Acceptance Criteria
 
 ### unified-test-suite.AC1: Unified test execution
-- **unified-test-suite.AC1.1 Success:** `uv run test-all` runs unit, integration, and E2E tests in a single pytest invocation under xdist parallel execution
+- **unified-test-suite.AC1.1 Success:** `uv run grimoire test all` runs unit, integration, and E2E tests in a single pytest invocation under xdist parallel execution
 - **unified-test-suite.AC1.2 Success:** `uv run test-debug` includes E2E tests when pytest-depper determines they are affected by code changes
-- **unified-test-suite.AC1.3 Success:** `uv run test-all-fixtures` runs all tests including BLNS, slow, and E2E
+- **unified-test-suite.AC1.3 Success:** `uv run grimoire test all-fixtures` runs all tests including BLNS, slow, and E2E
 - **unified-test-suite.AC1.4 Success:** Running `pytest tests/unit/ -n auto` directly (without CLI) skips E2E tests cleanly via `pytest.skip()`
 - **unified-test-suite.AC1.5 Failure:** `app_server` fixture raises clear skip message when `E2E_SERVER_URL` is not set
 
@@ -148,7 +148,7 @@ The `_SERVER_SCRIPT` in `tests/conftest.py` (line 530) and the `app_server` fixt
 
 **Dependencies:** Phase 1 (event loop result determines if xdist_group needed)
 
-**Done when:** `uv run test-all` starts a NiceGUI server, runs all tests (including E2E), and tears down the server. Server URL visible in Rich header panel.
+**Done when:** `uv run grimoire test all` starts a NiceGUI server, runs all tests (including E2E), and tears down the server. Server URL visible in Rich header panel.
 <!-- END_PHASE_2 -->
 
 <!-- START_PHASE_3 -->
@@ -178,7 +178,7 @@ The `_SERVER_SCRIPT` in `tests/conftest.py` (line 530) and the `app_server` fixt
 
 **Dependencies:** Phase 3 (fixtures must be adapted first)
 
-**Done when:** `uv run test-all` runs the full suite (unit + integration + E2E) and passes. `uv run test-debug` includes E2E tests when depper selects them.
+**Done when:** `uv run grimoire test all` runs the full suite (unit + integration + E2E) and passes. `uv run test-debug` includes E2E tests when depper selects them.
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->
@@ -207,7 +207,7 @@ The `_SERVER_SCRIPT` in `tests/conftest.py` (line 530) and the `app_server` fixt
 
 **Dependencies:** Phase 4 (E2E tests must run in unified suite)
 
-**Done when:** Three new E2E tests pass in `uv run test-all`, covering the identified gaps from the deprecated test audit.
+**Done when:** Three new E2E tests pass in `uv run grimoire test all`, covering the identified gaps from the deprecated test audit.
 <!-- END_PHASE_6 -->
 
 <!-- START_PHASE_7 -->

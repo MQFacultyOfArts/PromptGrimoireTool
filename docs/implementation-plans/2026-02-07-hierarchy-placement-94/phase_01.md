@@ -509,7 +509,7 @@ Expected: Annotation page loads with that workspace's documents (or empty if wor
 8. [ ] Click "Add Activity" on Week 1 → enter title "Tutorial 1: Reading Contracts" and description "Read and annotate the sample contract" → submit
 9. [ ] Verify: Activity appears under Week 1 on the course detail page
 10. [ ] Click the Activity → Verify: navigates to annotation page with the template workspace
-11. [ ] Run all tests: `uv run test-all`
+11. [ ] Run all tests: `uv run grimoire test all`
 12. [ ] Verify: All tests pass including Activity CRUD and placement field tests
 
 ## Evidence Required

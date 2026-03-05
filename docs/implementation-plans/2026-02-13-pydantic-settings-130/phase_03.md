@@ -464,7 +464,7 @@ class TestSecretStrMasking:
 Run: `uv run pytest tests/unit/test_auth_client.py -v`
 Expected: All tests pass. `TestAuthConfigValidation` no longer exists. New test classes pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass
 
 **Commit:** `test: rewrite auth config tests for Settings and StytchConfig`

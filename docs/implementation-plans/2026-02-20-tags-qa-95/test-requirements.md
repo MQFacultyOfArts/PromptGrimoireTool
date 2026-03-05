@@ -12,7 +12,7 @@ Note on AC counts: the design plan lists 9 previously-broken E2E files but phase
 
 - **Type:** E2E
 - **Location:** `tests/e2e/` (all 10 annotation E2E test files)
-- **Verification:** Run `uv run test-e2e`. All 10 previously-broken test files pass after `seed_tags=True` is wired into `setup_workspace_with_content()` and `_load_fixture_via_paste()`. The suite must reach 0 failures/errors.
+- **Verification:** Run `uv run grimoire e2e run`. All 10 previously-broken test files pass after `seed_tags=True` is wired into `setup_workspace_with_content()` and `_load_fixture_via_paste()`. The suite must reach 0 failures/errors.
 - **Phase:** 1, Task 2
 
 ### tags-qa-95.AC1.2 Success: `create_highlight_with_tag()` finds toolbar buttons at expected indices after seeding
@@ -26,7 +26,7 @@ Note on AC counts: the design plan lists 9 previously-broken E2E files but phase
 
 - **Type:** E2E (operational verification via the suite, not a dedicated idempotency unit test)
 - **Location:** `tests/e2e/annotation_helpers.py` — `_seed_tags_for_workspace()` uses `ON CONFLICT (id) DO NOTHING` SQL. The E2E tests themselves exercise this implicitly when Phase 2 instructor tests create tags on a workspace that already has seeded tags.
-- **Verification:** After running `uv run test-e2e -k test_full_course_setup`, no duplicate tag rows exist for any workspace. Tag count in the toolbar does not exceed the expected number. No `UNIQUE` constraint errors appear in the server log.
+- **Verification:** After running `uv run grimoire e2e run -k test_full_course_setup`, no duplicate tag rows exist for any workspace. Tag count in the toolbar does not exceed the expected number. No `UNIQUE` constraint errors appear in the server log.
 - **Phase:** 1, Task 1
 
 ### tags-qa-95.AC1.4 Success: `setup_workspace_with_content(seed_tags=False)` creates workspace without tags
@@ -295,7 +295,7 @@ Note on AC counts: the design plan lists 9 previously-broken E2E files but phase
 
 - **Type:** E2E + Integration + Unit (full suite)
 - **Location:** `tests/` (all test files)
-- **Verification:** Run `uv run test-all && uv run test-e2e`. Both commands must exit with 0 failures. Because the refactor is a pure move with no logic changes, all tests written in Phases 1-5 serve as regression coverage. No new tests are written for this AC specifically.
+- **Verification:** Run `uv run grimoire test all && uv run grimoire e2e run`. Both commands must exit with 0 failures. Because the refactor is a pure move with no logic changes, all tests written in Phases 1-5 serve as regression coverage. No new tests are written for this AC specifically.
 - **Phase:** 6, Tasks 1-4 (verified after each task)
 
 ### tags-qa-95.AC7.5 Success: Module count in `__init__.py` and package structure test updated

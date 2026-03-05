@@ -5,7 +5,7 @@
 **Components:**
 - `tests/unit/test_rtf_parser.py` - delete entire file
 
-**Done when:** RTF parser tests removed, `uv run test-all` passes
+**Done when:** RTF parser tests removed, `uv run grimoire test all` passes
 
 ---
 
@@ -23,7 +23,7 @@ git rm tests/unit/test_rtf_parser.py
 
 **Step 2: Run full test suite**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass (no skip messages for RTF parser tests)
 
 **Step 3: Verify no subprocess.run in export pipeline**

@@ -217,7 +217,7 @@ Maps every acceptance criterion from `docs/design-plans/2026-02-08-pdf-export-ch
 | Field | Value |
 |-------|-------|
 | **Type** | Automated (full suite run) |
-| **Test file** | All test files via `uv run test-debug` / `uv run test-all` |
+| **Test file** | All test files via `uv run test-debug` / `uv run grimoire test all` |
 | **Description** | Phase 4 Task 5 runs `uv run test-debug` as final verification. This executes all unit and integration tests (excluding E2E). Any import error from a deleted module, any call to a removed function, or any assertion checking deleted behaviour would surface here. Phase 4 Task 4 explicitly deletes three test files (`test_plain_text_conversion.py`, `test_crlf_char_index_bug.py`, `test_marker_insertion.py`) that test only deleted code. |
 | **Phase** | 4 (Task 4, Task 5) |
 

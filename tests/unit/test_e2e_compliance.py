@@ -48,6 +48,11 @@ ALLOWED_JS_FILES = {
     # set scrollTop on a scrollable div. evaluate() is needed to scroll
     # the navigator container to trigger the infinite scroll handler.
     "test_navigator.py",
+    # Quasar dropdown menu items detach from DOM during NiceGUI re-renders.
+    # page.locator().click() races against detachment; evaluate() finds and
+    # clicks in a single synchronous frame — no Playwright-native alternative.
+    "test_history_tutorial.py",
+    "test_law_student.py",
 }
 
 

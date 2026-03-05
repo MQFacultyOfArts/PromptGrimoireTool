@@ -33,9 +33,9 @@ After this phase is complete, verify manually:
 
 1. Run `uv run alembic upgrade head` — migration applies cleanly, no errors
 2. Check DB: `SELECT next_tag_order, next_group_order FROM workspace LIMIT 5` — counters populated correctly from existing data
-3. Run `uv run test-all` — all unit + integration tests pass, including new concurrent creation tests
-4. Run `uv run test-e2e` — all E2E tests pass (seeded workspaces have correct counter values)
-5. Run `uv run seed-data` — seed data creates tags with correct counter updates
+3. Run `uv run grimoire test all` — all unit + integration tests pass, including new concurrent creation tests
+4. Run `uv run grimoire e2e run` — all E2E tests pass (seeded workspaces have correct counter values)
+5. Run `uv run grimoire seed run` — seed data creates tags with correct counter updates
 
 ---
 
@@ -110,7 +110,7 @@ def downgrade() -> None:
 Run: `uv run alembic upgrade head`
 Expected: Migration applies cleanly. Existing workspaces have correct counter values.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests still pass.
 
 **Commit:** `feat: add next_tag_order/next_group_order counter columns to workspace`
@@ -195,7 +195,7 @@ session.add(workspace)
 
 **Verification:**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass with the refactored functions
 
 **Commit:** `feat: use atomic counter for tag/group order_index assignment`
@@ -236,7 +236,7 @@ Note: need to get `workspace_id` from the first tag/group in the list. If the li
 
 **Verification:**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 **Commit:** `feat: sync counter after tag/group reorder`
@@ -267,7 +267,7 @@ Without this, the first `create_tag()` call on a seeded workspace would claim `o
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_full_course_setup`
+Run: `uv run grimoire e2e run -k test_full_course_setup`
 Expected: Instructor creates a tag via quick-create after clone — gets correct order_index (10, not 0)
 
 **Commit:** `fix: update E2E seed helper for counter columns`

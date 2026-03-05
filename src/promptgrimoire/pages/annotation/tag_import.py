@@ -82,4 +82,6 @@ async def _render_import_section(
                 await _refresh_tag_state(state)
                 ui.notify("Tags imported", type="positive")
 
-            ui.button("Import", on_click=_import_from_activity).props("flat dense")
+            ui.button("Import", on_click=_import_from_activity).props(
+                'flat dense data-testid="tag-import-btn"'
+            )

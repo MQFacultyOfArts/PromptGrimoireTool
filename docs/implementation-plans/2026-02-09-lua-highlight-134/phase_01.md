@@ -124,7 +124,7 @@ Update imports in these test files:
 - `tests/integration/test_chatbot_fixtures.py` — imports `convert_html_to_latex` → from `pandoc`
 - `tests/integration/test_pdf_export.py` — imports `convert_html_to_latex` → from `pandoc`
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass.
 
 **Commit:** `refactor: extract P3 Pandoc conversion functions from latex.py into pandoc.py`
@@ -158,7 +158,7 @@ Update `src/promptgrimoire/export/pdf_export.py`:
 
 **Testing:**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass — public API preserved.
 
 Also verify: `uv run python -c "from promptgrimoire.export import convert_html_to_latex, export_annotation_pdf"`
@@ -193,7 +193,7 @@ Write a test that validates the module split acceptance criteria:
 Run: `uv run pytest tests/unit/export/test_module_split.py -v`
 Expected: All assertions pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: Full suite passes — no regressions.
 
 **Commit:** `test: add module split validation tests for AC3`

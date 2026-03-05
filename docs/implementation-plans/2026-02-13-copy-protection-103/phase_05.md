@@ -86,7 +86,7 @@ E2E testing of actual print behavior is impractical in headless Playwright (prin
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass.
@@ -100,7 +100,7 @@ git commit -m "feat: add CSS print suppression and Ctrl+P intercept for copy pro
 
 **UAT Steps (end of Phase 5):**
 
-1. [ ] Verify tests: `uv run test-all` — all pass
+1. [ ] Verify tests: `uv run grimoire test all` — all pass
 2. [ ] Start the app: `uv run python -m promptgrimoire`
 3. [ ] As student, navigate to annotation page for a protected activity:
    - [ ] Press Ctrl+P (or Cmd+P on Mac) — blocked, toast shown, no print dialog

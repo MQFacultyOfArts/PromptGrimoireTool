@@ -47,6 +47,14 @@ from tests.e2e.course_helpers import (
     publish_week,
 )
 
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Superseded by test_continuous_workflow.py, test_annotation_canvas.py, "
+        "and NiceGUI integration tests. Will be removed after the new split "
+        "tests have proven stable in CI."
+    ),
+)
+
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
     from pytest_subtests import SubTests
@@ -59,11 +67,8 @@ def _fill_template_workspace(page: Page) -> None:
     Expects the page to be on a course detail page with a freshly
     created activity showing a "Create Template" button.
     """
-    # Click "Create Template" to open the template workspace
-    page.get_by_role(
-        "button",
-        name=re.compile(r"Create Template|Edit Template"),
-    ).click()
+    # Click template button to open the template workspace
+    page.locator("[data-testid^='template-btn-']").first.click()
 
     # Wait for the annotation page to load
     page.wait_for_url(
@@ -144,7 +149,7 @@ def _student_clones_and_sees_content(
         activity_label = student_page.get_by_text(activity_title)
         activity_label.wait_for(state="visible", timeout=10000)
         card = activity_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-        card.get_by_role("button", name="Start Activity").first.click()
+        card.locator("[data-testid^='start-activity-btn-']").first.click()
 
         # Wait for redirect to annotation page with cloned workspace
         student_page.wait_for_url(
@@ -229,7 +234,7 @@ def _instructor_open_template(page: Page, app_server: str, course_id: str) -> st
     activity_card = page.get_by_text("Annotate Becky").locator(
         "xpath=ancestor::div[contains(@class, 'q-card')]"
     )
-    activity_card.get_by_role("button", name=re.compile(r"Edit Template")).click()
+    activity_card.locator("[data-testid^='template-btn-']").first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
     wait_for_text_walker(page, timeout=15000)
     template_ws_id = page.url.split("workspace_id=")[1].split("&")[0]
@@ -396,7 +401,7 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
     activity_card = page.get_by_text("Case Brief Practice").locator(
         "xpath=ancestor::div[contains(@class, 'q-card')]"
     )
-    activity_card.get_by_role("button", name=re.compile(r"Create Template")).click()
+    activity_card.locator("[data-testid^='template-btn-']").first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
@@ -632,7 +637,7 @@ def _run_student_tag_subtests(
         activity_label = student_page.get_by_text("Annotate Becky")
         activity_label.wait_for(state="visible", timeout=10000)
         card = activity_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-        card.get_by_role("button", name="Start Activity").first.click()
+        card.locator("[data-testid^='start-activity-btn-']").first.click()
         student_page.wait_for_url(
             re.compile(r"/annotation\?workspace_id="), timeout=15000
         )

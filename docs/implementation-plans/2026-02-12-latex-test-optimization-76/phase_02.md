@@ -189,7 +189,7 @@ Delete the `UNICODE_PREAMBLE` constant (lines 12-117). Keep all other content in
 **CRITICAL regression check:** After this change, the output of `build_annotation_preamble()` should produce a document that compiles identically to before. The content is the same — just packaged in a `.sty` file instead of inline strings.
 
 **Verification:**
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: ALL existing tests pass (mega-doc tests from Phase 1 serve as the safety net)
 
 Run: `uv run pytest tests/integration/test_pdf_export.py -k test_sty_compiles -v`
@@ -261,8 +261,8 @@ Expected: All tests pass with the new import path
 **Implementation:**
 Verify that the `.sty` extraction produces identical output:
 
-1. Run the full LaTeX test suite: `uv run test-all -m latex -v`
-2. Run the full test suite: `uv run test-all`
+1. Run the full LaTeX test suite: `uv run grimoire test all -m latex -v`
+2. Run the full test suite: `uv run grimoire test all`
 3. Verify no test regressions
 
 The mega-doc tests from Phase 1 are the primary regression guard. If they pass, the preamble content is functionally identical.
@@ -270,7 +270,7 @@ The mega-doc tests from Phase 1 are the primary regression guard. If they pass, 
 For a manual spot-check (optional): export a reference document via `generate_tex_only()` and diff the `.tex` content against a pre-extraction baseline. The preamble section should differ only in structure (`\usepackage{promptgrimoire-export}` vs inline content), not in LaTeX semantics.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, zero regressions
 <!-- END_TASK_6 -->
 
@@ -293,7 +293,7 @@ If `generate_tex_only()` is used within `compile_mega_document()`, it may alread
 Run: `uv run pytest tests/integration/test_mega_doc_infrastructure.py -v`
 Expected: Infrastructure test passes (mega-doc compiles with `.sty`)
 
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All mega-doc tests pass
 
 **Commit:** `fix: ensure .sty is copied for mega-document test compilation`
@@ -305,8 +305,8 @@ Expected: All mega-doc tests pass
 ## UAT Steps
 
 1. [ ] Open `src/promptgrimoire/export/promptgrimoire-export.sty` — verify it's readable LaTeX
-2. [ ] Run `uv run test-all -m latex -v` — all LaTeX tests pass
-3. [ ] Run `uv run test-all` — full suite passes
+2. [ ] Run `uv run grimoire test all -m latex -v` — all LaTeX tests pass
+3. [ ] Run `uv run grimoire test all` — full suite passes
 4. [ ] Verify `ANNOTATION_PREAMBLE_BASE` is gone from `preamble.py`
 5. [ ] Verify `UNICODE_PREAMBLE` is gone from `unicode_latex.py`
 6. [ ] Verify `build_annotation_preamble()` now emits `\usepackage{promptgrimoire-export}` + tag colours only

@@ -107,7 +107,7 @@ The only differences from GitHub: provider string is `"google"`, label says "Goo
 **Verification:**
 
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass. New function doesn't break anything (not yet called from login page).
@@ -183,7 +183,7 @@ Tests must verify:
 **Verification:**
 
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass. E2E tests that check for "GitHub" text in OAuth callback may need updating.
@@ -244,4 +244,4 @@ Phase 3 is complete when:
 2. OAuth callback is provider-agnostic (Task 2)
 3. Login page order: AAF → Google → Magic Link → GitHub (Task 2)
 4. Stytch Google OAuth enabled and JIT provisioning configured (Task 3)
-5. `uv run test-all` passes with zero failures
+5. `uv run grimoire test all` passes with zero failures

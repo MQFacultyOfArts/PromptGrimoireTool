@@ -83,8 +83,8 @@ class Guide:
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
     ) -> bool:
         md_path = self._output_dir / f"{self._slug}.md"
         md_path.write_text("\n".join(self._buffer))
@@ -170,8 +170,8 @@ class Step:
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
     ) -> bool:
         if (
             exc_type is None

@@ -145,7 +145,7 @@ Expected: All integration tests pass (including Phase 3 clone tests)
 13. [ ] Verify: No other user cursors or colour badges visible (fresh client state)
 14. [ ] Navigate back to template workspace (click Activity on course page)
 15. [ ] Verify: Template highlights, comments, and document are unchanged
-16. [ ] Run all tests: `uv run test-all`
+16. [ ] Run all tests: `uv run grimoire test all`
 17. [ ] Verify: All tests pass
 
 ## Evidence Required

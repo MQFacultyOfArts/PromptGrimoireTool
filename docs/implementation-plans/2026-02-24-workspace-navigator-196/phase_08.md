@@ -76,7 +76,7 @@ This phase implements and tests:
    - This ensures AC7.2 is satisfied — the label is not just defined but actually consumed in rendering.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Manual: Verify `get_settings().i18n.unit_label` returns `"Unit"` by default.
 
 **Commit:** `feat: add configurable unit_label to i18n settings`
@@ -110,7 +110,7 @@ Add a home icon button before the `ui.tabs()` at line 550. The icon should be vi
 
 **Verification:**
 Manual: Open annotation page. See home icon left of tabs. Click it — navigates to `/`. Verify no global header bar was added. Verify tabs still work normally.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add home icon to annotation page tab bar`
 <!-- END_TASK_2 -->
@@ -144,7 +144,7 @@ Run: `uv run test-changed`
 
 **Verification:**
 Manual: Navigate to roleplay page — see home icon, click to go to `/`. Navigate to courses list page — same. Navigate to course detail page — same.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add home icon to roleplay and courses pages`
 <!-- END_TASK_3 -->
@@ -170,7 +170,7 @@ E2E tests for home icon navigation using Playwright:
 - AC6.3: Navigate to annotation page. Verify NO global header bar exists (no `q-header` element outside the page's own structure, or verify the annotation page layout is unchanged). Verify the home icon is a small button, not a header bar.
 
 **Verification:**
-Run: `uv run test-e2e -k test_nav`
+Run: `uv run grimoire e2e run -k test_nav`
 
 **Commit:** `test: add E2E tests for home icon navigation chrome`
 <!-- END_TASK_4 -->
@@ -192,8 +192,8 @@ E2E tests for i18n terminology:
 - AC7.2: This is best verified as an integration test rather than E2E (environment variable override). Create an integration test that verifies `get_settings().i18n.unit_label` returns `"Unit"` by default. Optionally, test that overriding `I18N__UNIT_LABEL` changes the value.
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
-Run: `uv run test-changed` (for integration test)
+Run: `uv run grimoire e2e run -k test_navigator`
+Run: `uv run grimoire test changed` (for integration test)
 
 **Commit:** `test: add tests for i18n unit label configuration`
 <!-- END_TASK_5 -->

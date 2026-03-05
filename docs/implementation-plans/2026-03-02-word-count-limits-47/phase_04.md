@@ -87,7 +87,7 @@ Integration test (requires DB): create Activity with word_limit=500, resolve wor
 
 **Verification:**
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass.
 
 **Commit:** `feat: populate PageState word fields from PlacementContext`
@@ -294,7 +294,7 @@ AC4.7 verified in Phase 6 E2E. For unit testing, the badge formatting is already
 Run: `uvx ty check`
 Expected: No type errors.
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass.
 
 **Commit:** `feat: wire word count update into Yjs event handler`
@@ -308,7 +308,7 @@ Expected: All tests pass.
 
 **Step 1: Run full test suite**
 
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All tests pass, no regressions.
 
 **Step 2: Run linting and type checking**

@@ -41,7 +41,7 @@ The implementation includes a comprehensive test corpus: Big List of Naughty Str
 
 - [ ] Core unicode tests (CJK + common emoji) run on every `pytest` invocation
 - [ ] BLNS corpus tests available via `pytest -m blns`
-- [ ] `uv run test-all-fixtures` runs full corpus including BLNS and slow LaTeX tests
+- [ ] `uv run grimoire test all-fixtures` runs full corpus including BLNS and slow LaTeX tests
 - [ ] `uv run test-debug` excludes BLNS and slow tests
 - [ ] LaTeX export renders CJK text correctly (Japanese, Chinese, Korean)
 - [ ] LaTeX export renders emoji correctly (including ZWJ sequences)
@@ -127,7 +127,7 @@ Test runner scripts follow existing pattern in `scripts/test_debug.py`.
 - Decision documented: fontspec fallback OR detect-and-wrap
 - `pytest --collect-only` shows markers registered
 - `uv run pytest` excludes `blns` and `slow` by default (but runs `blns_injection` always)
-- `uv run test-all-fixtures` runs without marker filtering
+- `uv run grimoire test all-fixtures` runs without marker filtering
 - `uv run test-debug` continues to work (excludes slow tests)
 <!-- END_PHASE_1 -->
 

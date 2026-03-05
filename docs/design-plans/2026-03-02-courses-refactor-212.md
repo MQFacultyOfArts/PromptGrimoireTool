@@ -152,7 +152,7 @@ The `user` fixture requires enabling `-p nicegui.testing.user_plugin` in pytest 
 
 **Dependencies:** None
 
-**Done when:** Both spike tests pass, existing tests unaffected by plugin addition, `uv run test-all` green. Confirms the `user` fixture handles async pages, auth gates, and UI rendering in this project.
+**Done when:** Both spike tests pass, existing tests unaffected by plugin addition, `uv run grimoire test all` green. Confirms the `user` fixture handles async pages, auth gates, and UI rendering in this project.
 <!-- END_PHASE_1 -->
 
 <!-- START_PHASE_2 -->
@@ -166,7 +166,7 @@ The `user` fixture requires enabling `-p nicegui.testing.user_plugin` in pytest 
 
 **Dependencies:** Phase 1 (user fixture validated)
 
-**Done when:** All new tests pass, `uv run test-all` green
+**Done when:** All new tests pass, `uv run grimoire test all` green
 - Covers: `courses-refactor-212.AC1.1`, `courses-refactor-212.AC1.2`, `courses-refactor-212.AC1.3`
 <!-- END_PHASE_2 -->
 
@@ -252,7 +252,7 @@ The `user` fixture requires enabling `-p nicegui.testing.user_plugin` in pytest 
 
 **Dependencies:** Phase 6 (decomposition complete)
 
-**Done when:** Documentation reflects actual structure, `uv run test-e2e` passes, `uv run test-all` passes
+**Done when:** Documentation reflects actual structure, `uv run grimoire e2e run` passes, `uv run grimoire test all` passes
 - Covers: `courses-refactor-212.AC5.1`
 <!-- END_PHASE_7 -->
 

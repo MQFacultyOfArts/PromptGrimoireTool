@@ -183,13 +183,20 @@ class TestLawStudent:
                 expect(first_card).to_be_visible(timeout=5000)
                 tag_select = first_card.get_by_test_id("tag-select")
 
-                # Click dropdown to open menu
+                # Open dropdown and select via JS evaluate to avoid
+                # DOM detachment from NiceGUI re-renders. JS finds
+                # and clicks the option in a single synchronous frame.
                 tag_select.click()
-
-                # Wait for dropdown menu and select Procedural History
-                page.locator(".q-menu .q-item").filter(
-                    has_text="Procedural History"
-                ).click()
+                page.wait_for_selector(".q-menu", state="visible", timeout=5000)
+                page.evaluate(
+                    """() => {
+                        for (const el of document
+                            .querySelectorAll('.q-menu .q-item'))
+                            if (el.textContent
+                                .includes('Procedural History'))
+                                { el.click(); return; }
+                    }"""
+                )
 
                 # Verify tag changed (dropdown displays new tag)
                 expect(tag_select).to_contain_text("Procedural History", timeout=5000)

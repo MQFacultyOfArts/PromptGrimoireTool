@@ -292,7 +292,7 @@ Additional test cases:
 - Instructor view: enrolled student with zero workspaces appears as a row with `workspace_id=NULL` in shared_in_unit section.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: All new tests pass.
 
 **Commit:** `test: add integration tests for navigator data loader`

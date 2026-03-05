@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-02-27*
+*Last updated: 2026-03-05*
 
 ## TDD is Mandatory
 
@@ -12,6 +12,24 @@
 No feature code without corresponding tests. Playwright for E2E, pytest for unit/integration.
 
 ## E2E Test Guidelines
+
+### Lane Command Contract
+
+The E2E surface is split into explicit lanes:
+
+- `uv run grimoire e2e run` runs the **Playwright** lane only (`tests/e2e`).
+- `uv run grimoire e2e nicegui` runs the **NiceGUI** lane only (`tests/integration` allowlist).
+- `uv run grimoire e2e all` runs Playwright first, then NiceGUI, for a local full-suite umbrella run.
+
+`uv run grimoire test all` excludes both `e2e` and `nicegui_ui` markers so browser and NiceGUI harness tests do not contaminate the regular xdist unit/integration lane.
+
+Artifacts from lane runs are written under:
+
+- Local Playwright lane: `output/test_output/e2e/playwright/...`
+- Local NiceGUI lane: `output/test_output/e2e/nicegui/...`
+- CI uploads:
+  - `e2e-playwright-artifacts`
+  - `nicegui-ui-artifacts`
 
 ### JavaScript in E2E Tests
 
@@ -192,6 +210,7 @@ Custom markers are defined in `pyproject.toml` under `[tool.pytest.ini_options]`
 |--------|---------|---------|
 | `slow` | Long-running tests | Deselected (`-m "not slow"`) |
 | `e2e` | Playwright end-to-end tests | Excluded from `test-all` (`-m "not e2e"`) |
+| `nicegui_ui` | NiceGUI user-simulation integration lane | Excluded from `test-all` (`-m "not e2e and not nicegui_ui"`) |
 | `blns` | Big List of Naughty Strings | Opt-in (`-m blns`) |
 | `latex` | Tests requiring TinyTeX/system fonts | Included by default |
 

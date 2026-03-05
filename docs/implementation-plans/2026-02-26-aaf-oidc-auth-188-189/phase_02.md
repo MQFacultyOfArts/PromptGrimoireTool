@@ -77,7 +77,7 @@ This is backwards-compatible — all existing AuthResult constructors use keywor
 **Verification:**
 
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All existing tests pass unchanged (the new field has a default value).
@@ -288,7 +288,7 @@ This requires database access — use the `db_session` async fixture from `tests
 
 ```bash
 uv run pytest tests/integration/test_auth_upsert.py -v
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass. The upsert integration test confirms returning users are updated, not duplicated.
@@ -335,4 +335,4 @@ Phase 2 is complete when:
 3. `StytchB2BClient` and `MockAuthClient` pass through `trusted_metadata` (Task 3)
 4. SSO callback merges derived roles with Stytch roles (Task 4)
 5. Stytch attribute mapping configured (Task 5)
-6. `uv run test-all` passes with zero failures
+6. `uv run grimoire test all` passes with zero failures

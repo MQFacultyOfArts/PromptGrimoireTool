@@ -148,8 +148,8 @@ These acceptance criteria require human verification because they involve browse
 
 - PostgreSQL running with `DATABASE_URL` configured
 - `uv run alembic upgrade head` applied (Phase 1 migration)
-- `uv run seed-data` completes without error
-- `uv run test-all` passes (all automated tests green)
+- `uv run grimoire seed run` completes without error
+- `uv run grimoire test all` passes (all automated tests green)
 - Two browser sessions available: one for instructor role, one for student role
 
 ### Phase 1 UAT: Data Model & Migration
@@ -158,22 +158,22 @@ These acceptance criteria require human verification because they involve browse
 |------|--------|----------|
 | 1 | Run `uv run alembic current` | Shows the copy protection migration as head |
 | 2 | Run `uv run python -m promptgrimoire` | App starts without error |
-| 3 | Run `uv run seed-data` | Completes without error (existing seed path defaults `copy_protection` to NULL) |
-| 4 | Run `uv run test-all` | All pass, including `TestCopyProtectionResolution` tests |
+| 3 | Run `uv run grimoire seed run` | Completes without error (existing seed path defaults `copy_protection` to NULL) |
+| 4 | Run `uv run grimoire test all` | All pass, including `TestCopyProtectionResolution` tests |
 
 ### Phase 2 UAT: Activity CRUD
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Run `uv run test-all` | All pass, including new CRUD round-trip tests in `TestActivityCRUD` |
+| 1 | Run `uv run grimoire test all` | All pass, including new CRUD round-trip tests in `TestActivityCRUD` |
 | 2 | Run `uv run python -m promptgrimoire` | App starts without error |
-| 3 | Run `uv run seed-data` | Completes without error |
+| 3 | Run `uv run grimoire seed run` | Completes without error |
 
 ### Phase 3 UAT: Role Check & Protection Decision
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Run `uv run test-all` | All pass, including `TestIsPrivilegedUser` tests |
+| 1 | Run `uv run grimoire test all` | All pass, including `TestIsPrivilegedUser` tests |
 | 2 | Run `uv run python -m promptgrimoire` | App starts without error |
 | 3 | Enable copy protection on seed activity via SQL: `UPDATE activity SET copy_protection = true WHERE title = 'Annotate Becky Bennett Interview';` | Row updated |
 | 4 | As instructor: navigate to annotation page for the protected activity | No copy protection JS in DevTools console, `protect=False` in server logs (temporary debug line) |
@@ -183,8 +183,8 @@ These acceptance criteria require human verification because they involve browse
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Run `uv run test-all` | All pass |
-| 2 | Run `uv run seed-data` | Completes without error |
+| 1 | Run `uv run grimoire test all` | All pass |
+| 2 | Run `uv run grimoire seed run` | Completes without error |
 | 3 | As student, navigate to annotation page for a protected activity | Lock icon chip with amber background visible in workspace header |
 | 4 | Hover over lock chip | Tooltip reads "Copy protection is enabled for this activity" |
 | 5 | Select text in Tab 1 document content, press Ctrl+C | Copy blocked; toast notification "Copying is disabled for this activity." appears top-right |
@@ -204,7 +204,7 @@ These acceptance criteria require human verification because they involve browse
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Run `uv run test-all` | All pass |
+| 1 | Run `uv run grimoire test all` | All pass |
 | 2 | As student, navigate to annotation page for a protected activity | Page loads normally |
 | 3 | Press Ctrl+P (or Cmd+P on Mac) | Print dialog does NOT open; toast notification shown |
 | 4 | Use browser menu File > Print | Print preview shows "Printing is disabled for this activity." message instead of tab panel content |
@@ -216,8 +216,8 @@ These acceptance criteria require human verification because they involve browse
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Run `uv run test-all` | All pass |
-| 2 | Run `uv run seed-data` | Completes without error |
+| 1 | Run `uv run grimoire test all` | All pass |
+| 2 | Run `uv run grimoire seed run` | Completes without error |
 | 3 | Navigate to course detail page | Gear icon visible in course header |
 | 4 | Click gear icon | Course settings dialog opens |
 | 5 | Verify "Default copy protection" toggle is visible | Toggle reflects current course state (True after seed-data) |

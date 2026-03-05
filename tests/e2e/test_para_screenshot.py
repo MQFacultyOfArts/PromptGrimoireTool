@@ -4,8 +4,8 @@ Parametrised over all conversation fixtures. Identifies novel
 formatting contexts (speaker turns, headings, lists, blockquotes,
 tables, code blocks, thinking blocks) and takes targeted screenshots.
 
-Run all:   uv run test-e2e tests/e2e/test_para_screenshot.py -xvs
-Run one:   uv run test-e2e tests/e2e/test_para_screenshot.py -xvs -k cooking
+Run all:   uv run grimoire e2e run tests/e2e/test_para_screenshot.py -xvs
+Run one:   uv run grimoire e2e run tests/e2e/test_para_screenshot.py -xvs -k cooking
 
 Screenshots: tests/e2e/screenshots/<prefix>_*.png
 """

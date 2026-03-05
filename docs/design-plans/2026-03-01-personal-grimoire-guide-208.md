@@ -49,7 +49,7 @@ A third guide script, "Your Personal Grimoire", runs within the existing `make_d
 - **Placement dialog**: A UI dialog on the annotation page that allows a student to retroactively associate a loose workspace with a specific Unit, Week, and Activity via cascading select inputs.
 - **Placement chip**: The UI element in the annotation header that opens the placement dialog when clicked.
 - **Guide DSL**: A small internal Python library (`guide.py`, `screenshot.py`) that provides context managers for writing documentation scripts. It wraps Playwright browser automation and handles markdown emission and screenshot capture.
-- **`make_docs()` pipeline**: The CLI entry point (`uv run make-docs`) that runs all guide scripts in sequence and assembles the documentation site. Guide scripts execute in a fixed order; later scripts may depend on state created by earlier ones.
+- **`make_docs()` pipeline**: The CLI entry point (`uv run grimoire docs build`) that runs all guide scripts in sequence and assembles the documentation site. Guide scripts execute in a fixed order; later scripts may depend on state created by earlier ones.
 - **UNIT1234**: The fictional unit (course) used as shared seed data across all three guide scripts. Created by the instructor guide; referenced by the student and personal grimoire guides.
 - **Navigator**: The application's workspace-browsing page (route `/`), which groups workspaces by unit/week/activity and includes an "Unsorted" section for loose workspaces.
 - **Locus of control**: Term from the pedagogical framework (Ballsun-Stanton & Torrington, 2025) describing whether a student treats AI as an external authority or as a tool they direct. The guide's narrative arc moves students toward internal (self-directed) locus of control.

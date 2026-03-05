@@ -243,7 +243,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Covers:** 130-pydantic-settings.AC1 (type validation), 130-pydantic-settings.AC2 (startup validation), 130-pydantic-settings.AC5 (.env.example sync)
 
-**Done when:** `uv run test-all` passes. Settings construction with missing/invalid types raises `ValidationError`. SSO cross-validation rejects `sso_connection_id` without `public_token`.
+**Done when:** `uv run grimoire test all` passes. Settings construction with missing/invalid types raises `ValidationError`. SSO cross-validation rejects `sso_connection_id` without `public_token`.
 <!-- END_PHASE_2 -->
 
 <!-- START_PHASE_3 -->
@@ -261,7 +261,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Covers:** 130-pydantic-settings.AC3 (AuthConfig replacement), 130-pydantic-settings.AC4 (SecretStr for secrets)
 
-**Done when:** `uv run test-all` passes. Auth mock mode works via `DEV__AUTH_MOCK=true`. No `os.environ` calls remain in auth module.
+**Done when:** `uv run grimoire test all` passes. Auth mock mode works via `DEV__AUTH_MOCK=true`. No `os.environ` calls remain in auth module.
 <!-- END_PHASE_3 -->
 
 <!-- START_PHASE_4 -->
@@ -279,7 +279,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Covers:** 130-pydantic-settings.AC1 (type validation for database_echo bool, port int)
 
-**Done when:** `uv run test-all` passes. Database initialisation respects `DATABASE__URL`. LaTeX export respects `APP__LATEXMK_PATH`. No `os.environ` calls remain in db/ or export/ modules.
+**Done when:** `uv run grimoire test all` passes. Database initialisation respects `DATABASE__URL`. LaTeX export respects `APP__LATEXMK_PATH`. No `os.environ` calls remain in db/ or export/ modules.
 <!-- END_PHASE_4 -->
 
 <!-- START_PHASE_5 -->
@@ -297,7 +297,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Covers:** 130-pydantic-settings.AC1 (type validation for thinking_budget int), 130-pydantic-settings.AC4 (SecretStr for api_key)
 
-**Done when:** `uv run test-all` passes. No module-level `os.environ` constants remain. Roleplay page reads model/budget from Settings. Logviewer reads log_dir from Settings.
+**Done when:** `uv run grimoire test all` passes. No module-level `os.environ` constants remain. Roleplay page reads model/budget from Settings. Logviewer reads log_dir from Settings.
 <!-- END_PHASE_5 -->
 
 <!-- START_PHASE_6 -->
@@ -316,7 +316,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Covers:** 130-pydantic-settings.AC6 (load_dotenv elimination)
 
-**Done when:** `uv run test-all` passes. Zero `os.environ.get()` calls remain in application code. Zero `load_dotenv()` calls remain anywhere. `uv run python -m promptgrimoire` starts successfully with `.env` using new var names.
+**Done when:** `uv run grimoire test all` passes. Zero `os.environ.get()` calls remain in application code. Zero `load_dotenv()` calls remain anywhere. `uv run python -m promptgrimoire` starts successfully with `.env` using new var names.
 <!-- END_PHASE_6 -->
 
 <!-- START_PHASE_7 -->
@@ -331,7 +331,7 @@ The project root detection pattern in `db/bootstrap.py` (`Path(__file__).parent.
 
 **Dependencies:** Phase 6
 
-**Done when:** `uv run test-all` passes. `ruff check` clean. `ty check` clean. No `os.environ.get()`, `os.getenv()`, or `load_dotenv()` calls in application or test code. `python-dotenv` removed from dependencies (unless pydantic-settings requires it as a transitive dependency for `.env` reading).
+**Done when:** `uv run grimoire test all` passes. `ruff check` clean. `ty check` clean. No `os.environ.get()`, `os.getenv()`, or `load_dotenv()` calls in application or test code. `python-dotenv` removed from dependencies (unless pydantic-settings requires it as a transitive dependency for `.env` reading).
 <!-- END_PHASE_7 -->
 
 ## Additional Considerations

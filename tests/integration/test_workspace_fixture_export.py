@@ -73,7 +73,7 @@ def _extract_pdf_text(pdf_path: Path) -> str:
     for detecting tofu/missing glyphs — it emits U+FFFD replacement
     characters for glyphs the PDF couldn't render.
     """
-    result = subprocess.run(  # nosec B603, B607
+    result = subprocess.run(
         ["pdftotext", str(pdf_path), "-"],
         capture_output=True,
         text=True,

@@ -84,6 +84,7 @@ sudo apt install -y \
   ufw \
   unattended-upgrades apt-listchanges \
   pandoc \
+  poppler-utils \
   pngquant \
   curl \
   fontconfig \
@@ -394,7 +395,7 @@ Record the `saml-connection-live-...` ID for `STYTCH__SSO_CONNECTION_ID` in `.en
 - Click "Login with AAF"
 - Authenticate via MQ OneID
 - Should return to app with active session
-- Staff users should have `instructor` role (check via `manage-users show`)
+- Staff users should have `instructor` role (check via `grimoire admin show`)
 
 #### Google OAuth Setup
 
@@ -412,7 +413,7 @@ Record the `saml-connection-live-...` ID for `STYTCH__SSO_CONNECTION_ID` in `.en
 
 Stytch email domain JIT provisioning requires at least one existing member with a verified email from each allowed domain. Before students can self-provision via Google OAuth:
 
-1. Manually create one member with `@students.mq.edu.au` email (via magic link or `manage-users create`)
+1. Manually create one member with `@students.mq.edu.au` email (via magic link or `grimoire admin create`)
 2. After that, student JIT works automatically
 
 > **Ref:** [AAF OIDC Integration](https://tutorials.aaf.edu.au/openid-connect-integration), [AAF Federation Manager](https://manager.aaf.edu.au/), [AAF Test Federation](https://manager.test.aaf.edu.au/), [Stytch B2B SSO](https://stytch.com/docs/b2b/guides/sso/overview), [Stytch OAuth](https://stytch.com/docs/b2b/guides/oauth/overview)
@@ -968,7 +969,7 @@ sudo /usr/local/bin/promptgrimoire-backup
 
 ## Ongoing Operations
 
-All `manage-users` commands below use the `grimoire-run` helper (installed in Step 8).
+All `grimoire admin` commands below use the `grimoire-run` helper (installed in Step 8).
 
 ### Create a unit and add an instructor
 
@@ -977,13 +978,13 @@ All `manage-users` commands below use the `grimoire-run` helper (installed in St
 2. **Enrol your colleague** — they must have logged in at least once (AAF/magic link auto-creates their account). Then:
 
 ```bash
-grimoire-run manage-users enroll colleague@mq.edu.au LAWS1100 2026-S1 --role instructor
+grimoire-run grimoire admin enroll colleague@mq.edu.au LAWS1100 2026-S1 --role instructor
 ```
 
 3. **Grant Stytch instructor role** — this gives org-level privilege (copy-protection bypass, `is_privileged_user()` = true):
 
 ```bash
-grimoire-run manage-users instructor colleague@mq.edu.au
+grimoire-run grimoire admin instructor colleague@mq.edu.au
 ```
 
 Step 2 is the *course-level* role (can manage weeks, activities, settings for that unit). Step 3 is the *org-level* Stytch role (bypasses copy protection globally, sees all workspaces as owner). Both are needed for full instructor access.
@@ -992,30 +993,30 @@ Step 2 is the *course-level* role (can manage weeks, activities, settings for th
 
 ```bash
 # List all users who have logged in
-grimoire-run manage-users list
+grimoire-run grimoire admin list
 
 # List all users including pre-created
-grimoire-run manage-users list --all
+grimoire-run grimoire admin list --all
 
 # Show a user's details and enrollments
-grimoire-run manage-users show colleague@mq.edu.au
+grimoire-run grimoire admin show colleague@mq.edu.au
 
 # Pre-create a user (before they've logged in)
-grimoire-run manage-users create colleague@mq.edu.au --name "Jane Smith"
+grimoire-run grimoire admin create colleague@mq.edu.au --name "Jane Smith"
 
 # Grant/revoke org-level admin
-grimoire-run manage-users admin colleague@mq.edu.au
-grimoire-run manage-users admin colleague@mq.edu.au --remove
+grimoire-run grimoire admin admin colleague@mq.edu.au
+grimoire-run grimoire admin admin colleague@mq.edu.au --remove
 
 # Grant/revoke Stytch instructor role
-grimoire-run manage-users instructor colleague@mq.edu.au
-grimoire-run manage-users instructor colleague@mq.edu.au --remove
+grimoire-run grimoire admin instructor colleague@mq.edu.au
+grimoire-run grimoire admin instructor colleague@mq.edu.au --remove
 
 # Change a user's course role
-grimoire-run manage-users role colleague@mq.edu.au LAWS1100 2026-S1 coordinator
+grimoire-run grimoire admin role colleague@mq.edu.au LAWS1100 2026-S1 coordinator
 
 # Remove a user from a course
-grimoire-run manage-users unenroll colleague@mq.edu.au LAWS1100 2026-S1
+grimoire-run grimoire admin unenroll colleague@mq.edu.au LAWS1100 2026-S1
 ```
 
 **Available course roles** (in ascending privilege): `student`, `tutor`, `instructor`, `coordinator`. Roles marked `is_staff` (`instructor`, `coordinator`) can see unpublished weeks, manage activities, and edit locked tags.
@@ -1026,9 +1027,9 @@ Three independent layers determine what a user can do:
 
 | Layer | Scope | Grants | Set via |
 |-------|-------|--------|---------|
-| **Org admin** | Global | Owner of all workspaces, bypasses all ACLs | `manage-users admin` |
-| **Stytch instructor** | Global | `is_privileged_user()` = true, bypasses copy protection | `manage-users instructor` (or AAF `eduperson_affiliation=staff`) |
-| **Course role** | Per-unit | `student`/`tutor`/`instructor`/`coordinator` — controls week visibility, activity settings, tag locks | `manage-users enroll --role` or `manage-users role` |
+| **Org admin** | Global | Owner of all workspaces, bypasses all ACLs | `grimoire admin admin` |
+| **Stytch instructor** | Global | `is_privileged_user()` = true, bypasses copy protection | `grimoire admin instructor` (or AAF `eduperson_affiliation=staff`) |
+| **Course role** | Per-unit | `student`/`tutor`/`instructor`/`coordinator` — controls week visibility, activity settings, tag locks | `grimoire admin enroll --role` or `grimoire admin role` |
 
 A user typically needs both a **course role** (to see the unit's content) and the **Stytch instructor role** (for global privileges). Org admin is reserved for you.
 
@@ -1106,7 +1107,7 @@ sudo fail2ban-client set haproxy-http-flood unbanip <ip>
 For dev/test environments only — creates mock users, a LAWS1100 course, weeks, activities, and a legal case brief tag template:
 
 ```bash
-grimoire-run seed-data
+grimoire-run grimoire seed run
 ```
 
 Idempotent — safe to run multiple times.

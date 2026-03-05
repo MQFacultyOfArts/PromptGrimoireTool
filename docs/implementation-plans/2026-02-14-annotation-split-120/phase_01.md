@@ -24,8 +24,8 @@ This phase implements and tests:
 - **120-annotation-split.AC2.5 Success:** No `_COPY_PROTECTION_JS` Python string constant remains in the codebase
 
 ### 120-annotation-split.AC4: No logic changes (partial — Phase 1 contribution)
-- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run test-all`)
-- **120-annotation-split.AC4.2 Success:** E2E tests pass (`uv run test-e2e`)
+- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run grimoire test all`)
+- **120-annotation-split.AC4.2 Success:** E2E tests pass (`uv run grimoire e2e run`)
 
 ---
 
@@ -166,7 +166,7 @@ The other test classes (`TestCopyProtectionInactiveStates`, `TestInjectCopyProte
 **Verification:**
 
 ```bash
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass (2471+)
 
 # Verify constant is gone
@@ -211,7 +211,7 @@ Tests verify structural invariants (AC2.1, AC2.2, AC2.5). No mocking needed — 
 uv run pytest tests/unit/test_annotation_js_extraction.py -v
 # Expected: All guard tests pass
 
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass including new guard tests
 ```
 
@@ -231,10 +231,10 @@ uv run test-all
 Run the full test suite and E2E tests to verify no regressions:
 
 ```bash
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass
 
-uv run test-e2e
+uv run grimoire e2e run
 # Expected: All E2E tests pass (scroll-sync and copy protection exercised by annotation E2E tests)
 ```
 

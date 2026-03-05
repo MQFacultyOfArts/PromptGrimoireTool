@@ -30,11 +30,11 @@ This phase implements and tests:
 
 After this phase is complete, verify manually:
 
-1. Run `uv run test-e2e -k test_austlii_annotation_workflow --headed` and observe:
+1. Run `uv run grimoire e2e run -k test_austlii_annotation_workflow --headed` and observe:
    - After highlights exist, click a comment input and type "1" — character appears in input, no new highlight created
    - Select text in document, press "a" — no highlight created (only digit keys 1-0 trigger highlights)
    - Navigate to Organise tab — no "Untagged" column header visible (all highlights have tags)
-2. Run `uv run test-e2e -k test_austlii_annotation_workflow` (headless) — all 21 subtests pass
+2. Run `uv run grimoire e2e run -k test_austlii_annotation_workflow` (headless) — all 21 subtests pass
 
 ---
 
@@ -102,7 +102,7 @@ All assertions use Playwright `expect()` for visibility/value checks and direct 
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_austlii_annotation_workflow`
+Run: `uv run grimoire e2e run -k test_austlii_annotation_workflow`
 Expected: All 21 subtests pass (18 existing + 3 new)
 
 **Commit:** `test: add keyboard shortcut isolation E2E subtests`

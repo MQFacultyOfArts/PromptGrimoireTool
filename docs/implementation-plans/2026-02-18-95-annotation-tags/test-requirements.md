@@ -66,7 +66,7 @@ Every acceptance criterion from the design plan is mapped below to either an aut
 
 **Phase/task:** Phase 1 / Task 8
 
-**Note:** Seed data requires a running database with workspaces created by the `seed-data` script. The implementation plan explicitly calls for verification via `uv run seed-data` and checking console output. No automated test is planned because the seed function depends on the full `_seed_enrolment_and_weeks()` workflow which creates courses, weeks, activities, and template workspaces -- this is infrastructure-level setup, not unit-testable in isolation. See Human Verification section below.
+**Note:** Seed data requires a running database with workspaces created by the `seed-data` script. The implementation plan explicitly calls for verification via `uv run grimoire seed run` and checking console output. No automated test is planned because the seed function depends on the full `_seed_enrolment_and_weeks()` workflow which creates courses, weeks, activities, and template workspaces -- this is infrastructure-level setup, not unit-testable in isolation. See Human Verification section below.
 
 ---
 
@@ -845,9 +845,9 @@ Every acceptance criterion from the design plan is mapped below to either an aut
 **Why it cannot be automated:** Seed data requires the full `seed-data` CLI pipeline which creates courses, weeks, activities, and template workspaces in a running PostgreSQL database. This is infrastructure-level setup that depends on the full application context.
 
 **Verification approach:**
-1. Run `uv run seed-data` against a configured database.
+1. Run `uv run grimoire seed run` against a configured database.
 2. Verify console output shows tag seeding messages (not "Tags exist" on first run).
-3. Run `uv run seed-data` again. Verify "Tags exist" message (idempotent).
+3. Run `uv run grimoire seed run` again. Verify "Tags exist" message (idempotent).
 4. Inspect the database: verify 1 TagGroup named "Legal Case Brief" and 10 Tags with the expected names and colours exist on the template workspace.
 
 ---

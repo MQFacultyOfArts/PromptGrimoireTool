@@ -384,7 +384,7 @@ Every `on_client_delete()` call now logs timing for each phase:
 
 ### py-spy Integration (cli.py)
 
-`uv run test-e2e --py-spy` launches `py-spy record` against the server
+`uv run grimoire e2e run --py-spy` launches `py-spy record` against the server
 process in the background, producing a speedscope JSON flamegraph in
 `logs/py-spy-{timestamp}.json`.
 

@@ -9,17 +9,17 @@
 
 - PostgreSQL running with `DATABASE__URL` pointing to the worktree database (`promptgrimoire_95_annotation_tags`)
 - `uv run alembic upgrade head` completed
-- `uv run test-all` passing (2712 tests, 0 failures)
+- `uv run grimoire test all` passing (2712 tests, 0 failures)
 - Application running via `uv run python -m promptgrimoire`
-- At least one course with a week, activity, and template workspace seeded via `uv run seed-data`
+- At least one course with a week, activity, and template workspace seeded via `uv run grimoire seed run`
 - Two user accounts: one instructor (admin or instructor role), one student (enrolled in the course)
 
 ## Phase 1: Seed Data Verification (AC1.3)
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1.1 | Run `uv run seed-data` against a fresh database (after `alembic upgrade head`) | Console output includes tag seeding messages. No "Tags exist" message. |
-| 1.2 | Run `uv run seed-data` a second time | Console output shows "Tags exist" or similar idempotency message. No duplicate rows created. |
+| 1.1 | Run `uv run grimoire seed run` against a fresh database (after `alembic upgrade head`) | Console output includes tag seeding messages. No "Tags exist" message. |
+| 1.2 | Run `uv run grimoire seed run` a second time | Console output shows "Tags exist" or similar idempotency message. No duplicate rows created. |
 | 1.3 | Query `tag_group` table: `SELECT name FROM tag_group WHERE workspace_id = (SELECT template_workspace_id FROM activity WHERE title LIKE '%Legal%' LIMIT 1);` | One row: "Legal Case Brief" |
 | 1.4 | Query `tag` table for that workspace: `SELECT name, color FROM tag WHERE workspace_id = <template_ws_id> ORDER BY order_index;` | 10 rows with colorblind-accessible hex colours matching the seed data palette. |
 

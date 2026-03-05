@@ -29,7 +29,7 @@ This phase implements and tests:
 - **120-annotation-split.AC3.4 Success:** Dependency graph is acyclic (no circular imports at module load time)
 
 ### 120-annotation-split.AC4: No logic changes
-- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run test-all`)
+- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run grimoire test all`)
 - **120-annotation-split.AC4.3 Edge:** Test import paths updated but test logic unchanged
 
 ---
@@ -207,7 +207,7 @@ All arrows go "down" (toward leaf modules) except `__init__.py → workspace.py`
 uv run python -c "from promptgrimoire.pages.annotation import annotation_page, PageState; print('OK')"
 
 # Full test suite
-uv run test-all
+uv run grimoire test all
 # Expected: Tests fail with import errors (test paths not yet updated — fixed in Task 2)
 ```
 
@@ -285,7 +285,7 @@ from promptgrimoire.pages import annotation
 **Verification:**
 
 ```bash
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass (2471+)
 ```
 
@@ -331,7 +331,7 @@ Tests verify structural invariants (AC1.1–1.3, AC1.6, AC3.3). No mocking neede
 uv run pytest tests/unit/test_annotation_package_structure.py -v
 # Expected: All guard tests pass
 
-uv run test-all
+uv run grimoire test all
 # Expected: All tests pass including new guard tests
 ```
 

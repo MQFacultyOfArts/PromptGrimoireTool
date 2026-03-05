@@ -122,7 +122,7 @@ uv run pytest tests/integration/test_paragraph_numbering.py::TestUploadDialogAut
 uv run pytest tests/unit/input_pipeline/test_paragraph_map.py tests/integration/test_paragraph_numbering.py tests/unit/export/test_pdf_export_para_map.py tests/unit/test_annotation_doc.py -v -k "para"
 
 # All unit + integration tests (standard CI gate)
-uv run test-all
+uv run grimoire test all
 
 # Type checking (must be clean at every phase)
 uvx ty check

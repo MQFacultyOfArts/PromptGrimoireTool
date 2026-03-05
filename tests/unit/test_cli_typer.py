@@ -1,0 +1,87 @@
+"""CliRunner help tests for all Typer sub-apps and import boundary guard."""
+
+from __future__ import annotations
+
+import importlib
+import re
+
+from typer.testing import CliRunner
+
+from promptgrimoire.cli import app
+
+runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(result) -> str:
+    """Strip ANSI escape codes from CliRunner output.
+
+    Rich emits colour codes when GitHub Actions sets FORCE_COLOR or the
+    runner appears to be a TTY.  CliRunner's ``env`` parameter does not
+    override ``os.environ`` so NO_COLOR cannot reliably suppress them.
+    """
+    return _ANSI_RE.sub("", result.output)
+
+
+def test_grimoire_help() -> None:
+    """Root app --help lists all sub-apps."""
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    for name in ("test", "e2e", "admin", "seed", "export", "docs"):
+        assert name in _plain(result)
+
+
+def test_grimoire_test_help() -> None:
+    result = runner.invoke(app, ["test", "--help"])
+    assert result.exit_code == 0
+
+
+def test_grimoire_e2e_help() -> None:
+    result = runner.invoke(app, ["e2e", "--help"])
+    assert result.exit_code == 0
+    for name in ("run", "slow", "noretry", "changed", "nicegui", "all"):
+        assert name in _plain(result)
+
+
+def test_grimoire_e2e_nicegui_help() -> None:
+    """NiceGUI lane command exposes the same filter surface as other e2e commands."""
+    result = runner.invoke(app, ["e2e", "nicegui", "--help"])
+    assert result.exit_code == 0
+    assert "--filter" in _plain(result)
+    assert "-k" in _plain(result)
+
+
+def test_grimoire_e2e_all_help() -> None:
+    """Umbrella command help is exposed in the e2e command surface."""
+    result = runner.invoke(app, ["e2e", "all", "--help"])
+    assert result.exit_code == 0
+    assert "--filter" in _plain(result)
+    assert "-k" in _plain(result)
+
+
+def test_grimoire_admin_help() -> None:
+    result = runner.invoke(app, ["admin", "--help"])
+    assert result.exit_code == 0
+
+
+def test_grimoire_seed_help() -> None:
+    result = runner.invoke(app, ["seed", "--help"])
+    assert result.exit_code == 0
+
+
+def test_grimoire_export_help() -> None:
+    result = runner.invoke(app, ["export", "--help"])
+    assert result.exit_code == 0
+
+
+def test_grimoire_docs_help() -> None:
+    result = runner.invoke(app, ["docs", "--help"])
+    assert result.exit_code == 0
+
+
+def test_old_import_path_not_exported() -> None:
+    """Guard: old function names must NOT be importable from promptgrimoire.cli."""
+    mod = importlib.import_module("promptgrimoire.cli")
+    for name in ("test_all", "test_changed", "seed_data", "manage_users", "make_docs"):
+        assert not hasattr(mod, name), f"promptgrimoire.cli should not export {name!r}"

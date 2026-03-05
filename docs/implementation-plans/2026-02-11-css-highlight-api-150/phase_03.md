@@ -255,7 +255,7 @@ Combines AC1.1 (highlights render without char spans) and AC2.1 (selection produ
 Run: `uv run pytest tests/e2e/test_annotation_highlight_api.py -v`
 Expected: All tests pass
 
-Run: `uv run test-all` (ensure no regressions across entire test suite)
+Run: `uv run grimoire test all` (ensure no regressions across entire test suite)
 Expected: All tests pass
 
 **Commit:** `test: add E2E integration test for CSS Custom Highlight API annotation flow`

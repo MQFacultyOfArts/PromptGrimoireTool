@@ -311,8 +311,8 @@ LIMIT :lim
 _HEADLINE_OPTIONS = (
     "MaxWords=35, MinWords=15, MaxFragments=3, StartSel=<mark>, StopSel=</mark>"
 )
-# nosec B608 -- f-string only interpolates module constants (_NAV_CTE,
-# _HEADLINE_OPTIONS); all user input is bound via :query.
+# S608 suppressed via per-file-ignore: f-string only interpolates module constants
+# (_NAV_CTE, _HEADLINE_OPTIONS); all user input is bound via :query.
 _SEARCH_SQL = text(
     _NAV_CTE
     + f"""\
@@ -360,7 +360,7 @@ FROM nav
 JOIN best_fts ON best_fts.ws_id = nav.workspace_id
 ORDER BY best_fts.rank DESC
 LIMIT :lim
-"""  # nosec B608
+"""
 )
 
 

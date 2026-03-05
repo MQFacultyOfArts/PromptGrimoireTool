@@ -59,7 +59,7 @@ This is an infrastructure fix. Verification is operational — an existing E2E t
 Run: `uv run pytest tests/e2e/test_remote_presence_e2e.py -v -x --timeout=30 -m e2e` (this test uses `two_authenticated_contexts`)
 Expected: Test completes without 10-second timeout; passes or fails on its own assertions, not on fixture setup.
 
-If no single-test runner is available, run: `uv run test-e2e -k "remote_presence"` to verify through the full E2E harness.
+If no single-test runner is available, run: `uv run grimoire e2e run -k "remote_presence"` to verify through the full E2E harness.
 
 **Commit:** `fix(e2e): replace data-char-index waits with _textNodes readiness in conftest fixtures`
 <!-- END_TASK_1 -->

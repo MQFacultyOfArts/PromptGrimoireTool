@@ -211,7 +211,7 @@ uv run pytest tests/e2e/test_annotation_tabs.py -v -k "test_pdf_export"
 ### Full regression (unit + integration, excludes E2E)
 
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 ### Smart test selection (based on changed files)

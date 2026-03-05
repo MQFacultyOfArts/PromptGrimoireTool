@@ -1,8 +1,9 @@
 """Integration test configuration.
 
 Provides fixtures specific to database integration tests, mega-document
-infrastructure for LaTeX compile-reduction tests, and the pdf_exporter
-factory fixture for PDF export integration tests.
+infrastructure for LaTeX compile-reduction tests, the pdf_exporter
+factory fixture for PDF export integration tests, and the ``nicegui_user``
+fixture for NiceGUI user-simulation integration tests.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import pymupdf
 import pytest
 import pytest_asyncio
+from nicegui.testing.user_simulation import user_simulation
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import LaTeXCompilationError, compile_latex
@@ -26,7 +28,84 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine
     from uuid import UUID
 
+    from nicegui.testing.user import User
+
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# NiceGUI User Simulation Fixture
+# =============================================================================
+
+_NICEGUI_TEST_APP = Path(__file__).parent / "nicegui_test_app.py"
+
+
+@pytest_asyncio.fixture
+async def nicegui_user() -> AsyncGenerator[User]:
+    """Yield a NiceGUI simulated User connected to the test app.
+
+    Uses ``user_simulation(main_file=...)`` so all ``@ui.page`` routes
+    registered by ``promptgrimoire.pages`` are available.  The simulated
+    user runs in-process -- no browser or server required.
+
+    Tests that use this fixture should be marked ``@pytest.mark.nicegui_ui``
+    so the NiceGUI harness stays out of xdist-backed unit/integration
+    commands and runs in its own UI lane.
+    """
+    async with user_simulation(main_file=_NICEGUI_TEST_APP) as u:
+        yield u
+
+
+# =============================================================================
+# NiceGUI Auth Helper
+# =============================================================================
+
+
+async def _authenticate(user: User, *, email: str) -> None:
+    """Establish an authenticated session for the simulated user.
+
+    Instead of hitting ``/auth/callback`` (whose ``ui.navigate.to("/")``
+    creates a background ``user.open()`` that replaces the httpx session
+    cookie and loses the storage written by the callback), we:
+
+    1. Open the login page to establish a session cookie.
+    2. Ensure the User record exists in the DB.
+    3. Write ``auth_user`` directly into ``app.storage.user``.
+
+    This mirrors what ``_set_session_user()`` does in production auth.
+    """
+    from promptgrimoire.auth.mock import MOCK_INSTRUCTOR_EMAILS
+    from promptgrimoire.db.users import find_or_create_user
+
+    # 1. Establish a session (any page will do)
+    await user.open("/login")
+
+    # 2. Ensure user record exists in DB
+    user_record, _ = await find_or_create_user(
+        email=email,
+        display_name=email.split("@", maxsplit=1)[0],
+    )
+
+    # 3. Build the auth_user dict and inject into session storage
+    roles = ["stytch_member"]
+    if email in MOCK_INSTRUCTOR_EMAILS:
+        roles.append("instructor")
+
+    with user:
+        from nicegui import app as _app
+
+        _app.storage.user["auth_user"] = {
+            "email": email,
+            "member_id": f"mock-member-{email}",
+            "organization_id": "mock-org-123",
+            "session_token": f"mock-session-{email}",
+            "roles": roles,
+            "name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
+            "display_name": email.split("@", maxsplit=1)[0].replace(".", " ").title(),
+            "auth_method": "mock",
+            "user_id": str(user_record.id),
+            "is_admin": False,
+        }
+
 
 # =============================================================================
 # PDF Export Test Fixtures

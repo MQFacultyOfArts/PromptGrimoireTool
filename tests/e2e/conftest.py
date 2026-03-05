@@ -68,7 +68,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
     # Log diagnostics AFTER cleanup has had time to run
     try:
         url = f"{base_url}/api/test/diagnostics"
-        with urllib.request.urlopen(url, timeout=5) as resp:  # nosec B310 — test-only localhost URL
+        with urllib.request.urlopen(url, timeout=5) as resp:  # test-only localhost URL
             data = json.loads(resp.read().decode())
         _diag_logger.debug(
             "DIAG: pool=%s clients=%s tasks=%s task_names=%s",
@@ -84,7 +84,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
     try:
         cleanup_url = f"{base_url}/api/test/cleanup"
         req = urllib.request.Request(cleanup_url, method="POST", data=b"")
-        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=5) as resp:
             cleanup_data = json.loads(resp.read().decode())
         _diag_logger.debug(
             "CLEANUP: deleted=%s orphan_wait=%s tasks=%s->%s",
@@ -93,7 +93,7 @@ def _e2e_post_test_cleanup() -> Generator[None]:
             cleanup_data.get("tasks_before"),
             cleanup_data.get("tasks_after"),
         )
-    except Exception:  # nosec B110 — cleanup is best-effort, failures are harmless
+    except Exception:  # cleanup is best-effort, failures are harmless
         pass
 
 

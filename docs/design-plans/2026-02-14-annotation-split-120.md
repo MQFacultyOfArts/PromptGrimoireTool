@@ -41,8 +41,8 @@ The approach uses direct submodule imports (no re-exports from `__init__.py`) to
 - **120-annotation-split.AC3.4 Success:** Dependency graph is acyclic (no circular imports at module load time)
 
 ### 120-annotation-split.AC4: No logic changes
-- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run test-all`)
-- **120-annotation-split.AC4.2 Success:** E2E tests pass (`uv run test-e2e`)
+- **120-annotation-split.AC4.1 Success:** All existing tests pass (`uv run grimoire test all`)
+- **120-annotation-split.AC4.2 Success:** E2E tests pass (`uv run grimoire e2e run`)
 - **120-annotation-split.AC4.3 Edge:** Test import paths updated but test logic unchanged
 
 ### 120-annotation-split.AC5: Documentation updated
@@ -156,7 +156,7 @@ All patterns (package structure, static JS, satellite modules) already exist in 
 
 **Dependencies:** None (first phase)
 
-**Done when:** `uv run test-all` passes. Manual smoke test confirms scroll-sync and copy protection work in browser. E2E tests (`uv run test-e2e`) pass.
+**Done when:** `uv run grimoire test all` passes. Manual smoke test confirms scroll-sync and copy protection work in browser. E2E tests (`uv run grimoire e2e run`) pass.
 <!-- END_PHASE_1 -->
 
 <!-- START_PHASE_2 -->
@@ -178,7 +178,7 @@ All patterns (package structure, static JS, satellite modules) already exist in 
 
 **Dependencies:** Phase 1 (JS extraction — changes the code being moved)
 
-**Done when:** `annotation.py` no longer exists as a file. `uv run test-all` passes. Guard test verifies `annotation.py` is a directory, not a file.
+**Done when:** `annotation.py` no longer exists as a file. `uv run grimoire test all` passes. Guard test verifies `annotation.py` is a directory, not a file.
 <!-- END_PHASE_2 -->
 
 <!-- START_PHASE_3 -->
@@ -194,7 +194,7 @@ All patterns (package structure, static JS, satellite modules) already exist in 
 
 **Dependencies:** Phase 2 (package directory must exist)
 
-**Done when:** `uv run test-all` passes. No `annotation_organise.py`, `annotation_respond.py`, or `annotation_tags.py` files remain at the `pages/` level.
+**Done when:** `uv run grimoire test all` passes. No `annotation_organise.py`, `annotation_respond.py`, or `annotation_tags.py` files remain at the `pages/` level.
 <!-- END_PHASE_3 -->
 
 <!-- START_PHASE_4 -->

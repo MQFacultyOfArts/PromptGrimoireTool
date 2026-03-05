@@ -21,7 +21,7 @@
 
 Run:
 ```bash
-cd /home/brian/people/Brian/PromptGrimoire/.worktrees/database-test-nullpool && uv run test-all
+cd /home/brian/people/Brian/PromptGrimoire/.worktrees/database-test-nullpool && uv run grimoire test all
 ```
 
 Expected: All tests pass
@@ -105,7 +105,7 @@ rm /tmp/xdist_output.txt
 
 ## Phase 6 Success Criteria
 
-1. ✅ `uv run test-all` passes
+1. ✅ `uv run grimoire test all` passes
 2. ✅ DB tests distributed across multiple xdist workers (not clustered on gw0)
 3. ✅ No "Future attached to different loop" or "Event loop is closed" errors
 4. ✅ Database NOT rebuilt between tests (canary survives if implemented)
@@ -116,7 +116,7 @@ rm /tmp/xdist_output.txt
 Database integration tests run with full xdist parallelism - no `xdist_group` clustering.
 
 **Success Criteria:**
-- `uv run test-all` passes with DB tests distributed across workers (not all on gw0)
+- `uv run grimoire test all` passes with DB tests distributed across workers (not all on gw0)
 - No "Future attached to different loop" errors
 - No database rebuild between tests
 - Tests remain isolated by UUID/workspace

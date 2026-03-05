@@ -246,7 +246,7 @@ Update `_pre_test_db_cleanup()` (lines 23-77):
 6. Keep `import os` — still needed for `os.environ` assignment.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All 2354+ tests pass. No `load_dotenv` import in conftest.py. `_pre_test_db_cleanup()` uses `get_settings()`.
 
 Run: `uv run ruff check tests/conftest.py src/promptgrimoire/cli.py`

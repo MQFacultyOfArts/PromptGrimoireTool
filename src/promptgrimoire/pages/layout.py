@@ -78,12 +78,65 @@ def require_roleplay_enabled() -> bool:
 
 def _nav_item(label: str, route: str, icon: str | None = None) -> None:
     """Create a navigation item in the drawer."""
-    with ui.item(on_click=lambda: ui.navigate.to(route)).classes("w-full"):
+    slug = label.lower().replace(" ", "-")
+    with (
+        ui.item(on_click=lambda: ui.navigate.to(route))
+        .classes("w-full")
+        .props(f'data-testid="nav-{slug}"')
+    ):
         if icon:
             with ui.item_section().props("avatar"):
                 ui.icon(icon)
         with ui.item_section():
             ui.item_label(label)
+
+
+def _render_nav_category(
+    category: str,
+    pages_by_cat: dict,
+    category_labels: dict,
+) -> None:
+    """Render a single navigation category section."""
+    pages = pages_by_cat.get(category, [])
+    if not pages:
+        return
+    label = category_labels.get(category)
+    if label:
+        ui.separator().classes("q-my-md")
+        ui.label(label).classes("text-caption q-px-md text-grey-7")
+    for page in pages:
+        _nav_item(page.title, page.route, page.icon)
+
+
+def _render_nav_drawer(user: dict | None, drawer_open: bool) -> ui.left_drawer:
+    """Build the left navigation drawer from the page registry."""
+    drawer = ui.left_drawer(value=drawer_open).classes("bg-grey-2")
+    with drawer:
+        ui.label("Navigation").classes("text-h6 q-pa-md")
+        ui.separator()
+
+        category_labels = {"main": None, "demo": "Demos", "admin": "Admin"}
+        pages_by_cat = get_pages_by_category(user, demos_enabled(), roleplay_enabled())
+
+        with ui.list().props("padding"):
+            for category in ["main", "demo", "admin"]:
+                _render_nav_category(category, pages_by_cat, category_labels)
+
+    return drawer
+
+
+def _render_header(title: str, user: dict | None) -> ui.button:
+    """Build the header bar. Returns the menu button for drawer wiring."""
+    with ui.header().classes("bg-primary items-center q-py-xs"):
+        menu_btn = ui.button(icon="menu").props("flat color=white")
+        ui.label(title).classes("text-h6 text-white q-ml-sm")
+        ui.element("div").classes("flex-grow")
+        if user:
+            ui.label(user.get("email", "")).classes("text-white text-body2 q-mr-md")
+            ui.button(icon="logout", on_click=lambda: ui.navigate.to("/logout")).props(
+                "flat color=white"
+            ).tooltip("Logout")
+    return menu_btn
 
 
 @contextmanager
@@ -116,24 +169,8 @@ def page_layout(
         The footer element when ``footer=True``, otherwise ``None``.
     """
     user = _get_session_user()
+    menu_btn = _render_header(title, user)
 
-    # Create header
-    with ui.header().classes("bg-primary items-center q-py-xs"):
-        # Menu button (toggles drawer)
-        menu_btn = ui.button(icon="menu").props("flat color=white")
-        ui.label(title).classes("text-h6 text-white q-ml-sm")
-
-        # Spacer
-        ui.element("div").classes("flex-grow")
-
-        # User info
-        if user:
-            ui.label(user.get("email", "")).classes("text-white text-body2 q-mr-md")
-            ui.button(icon="logout", on_click=lambda: ui.navigate.to("/logout")).props(
-                "flat color=white"
-            ).tooltip("Logout")
-
-    # Create footer (Quasar q-footer: fixed bottom, auto-pads q-page)
     footer_el: ui.element | None = None
     if footer:
         footer_el = (
@@ -143,41 +180,7 @@ def page_layout(
             .style("box-shadow: 0 -2px 4px rgba(0,0,0,0.1);")
         )
 
-    # Create left drawer
-    with ui.left_drawer(value=drawer_open).classes("bg-grey-2") as drawer:
-        ui.label("Navigation").classes("text-h6 q-pa-md")
-        ui.separator()
-
-        with ui.list().props("padding"):
-            # Build navigation dynamically from page registry
-            pages_by_cat = get_pages_by_category(
-                user, demos_enabled(), roleplay_enabled()
-            )
-
-            # Category display config
-            category_labels = {
-                "main": None,  # No header for main section
-                "demo": "Demos",
-                "admin": "Admin",
-            }
-
-            for category in ["main", "demo", "admin"]:
-                pages = pages_by_cat.get(category, [])
-                if not pages:
-                    continue
-
-                # Add section header (except for main)
-                label = category_labels.get(category)
-                if label:
-                    ui.separator().classes("q-my-md")
-                    ui.label(label).classes("text-caption q-px-md text-grey-7")
-
-                for page in pages:
-                    _nav_item(page.title, page.route, page.icon)
-
-    # Connect menu button to drawer
+    drawer = _render_nav_drawer(user, drawer_open)
     menu_btn.on("click", drawer.toggle)
 
-    # Yield footer element (if any) to caller.
-    # No wrapper div — pages manage their own padding and layout.
     yield footer_el

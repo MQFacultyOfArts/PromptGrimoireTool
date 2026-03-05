@@ -35,22 +35,13 @@ dependencies = [
     "jieba>=0.42.1",
     "mecab-python3>=1.0.12",
     "unidic-lite>=1.0.8",
+    "typer>=0.15.0",
+    "cryptography>=46.0.5",
 ]
 
 [project.scripts]
 promptgrimoire = "promptgrimoire:main"
-test-changed = "promptgrimoire.cli:test_changed"
-test-all = "promptgrimoire.cli:test_all"
-test-e2e = "promptgrimoire.cli:test_e2e"
-test-e2e-slow = "promptgrimoire.cli:test_e2e_slow"
-test-e2e-noretry = "promptgrimoire.cli:test_e2e_noretry"
-test-e2e-changed = "promptgrimoire.cli:test_e2e_changed"
-test-all-fixtures = "promptgrimoire.cli:test_all_fixtures"
-seed-data = "promptgrimoire.cli:seed_data"
-set-admin = "promptgrimoire.cli:set_admin"
-manage-users = "promptgrimoire.cli:manage_users"
-show-export-log = "promptgrimoire.cli:show_export_log"
-make-docs = "promptgrimoire.cli:make_docs"
+grimoire = "promptgrimoire.cli:app"
 load-test-data = "promptgrimoire.cli_loadtest:load_test_data"
 
 [build-system]
@@ -75,6 +66,7 @@ select = [
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "ARG",    # flake8-unused-arguments
+    "S",      # flake8-bandit (security)
     "SIM",    # flake8-simplify
     "TCH",    # flake8-type-checking
     "PTH",    # flake8-use-pathlib
@@ -85,11 +77,31 @@ select = [
 ignore = [
     "PLR0913",  # Too many arguments
     "PLR2004",  # Magic value comparison
+    "S404",     # subprocess import (CLI tooling uses subprocess intentionally)
+    "S603",     # subprocess call without shell check (controlled args in CLI)
+    "S607",     # partial executable path (uv, playwright, etc.)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "PLC0415",  # Allow imports inside test functions (needed for mocking)
+    "S101",     # Assertions are the primary test mechanism
+    "S105",     # Hardcoded test tokens/passwords are intentional in test fixtures
+    "S106",     # Hardcoded test tokens passed as arguments are intentional
+    "S108",     # /tmp paths in test config are intentional
+    "S110",     # Bare except:pass used in test cleanup/teardown
+    "S310",     # URL open in test fixtures uses controlled localhost URLs
+]
+"src/promptgrimoire/export/pandoc.py" = [
+    "S101",     # Assert after proc.communicate() — returncode guaranteed non-None
+]
+"src/promptgrimoire/pages/auth.py" = [
+    "S101",     # Type-narrowing asserts after _validate_token guarantees
+    "S105",     # False positive: token_type == "sso" is not a hardcoded password
+]
+"src/promptgrimoire/auth/mock.py" = [
+    "S105",     # Mock auth module — hardcoded test tokens are intentional
+    "S324",     # md5 used for deterministic ID generation, not cryptographic purposes
 ]
 "src/promptgrimoire/auth/factory.py" = [
     "PLC0415",  # Intentional lazy imports for conditional client loading
@@ -99,6 +111,18 @@ ignore = [
 ]
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
+]
+"src/promptgrimoire/pages/annotation/workspace.py" = [
+    "S101",     # Type-narrowing asserts for permission validation and state guards
+]
+"src/promptgrimoire/pages/annotation/content_form.py" = [
+    "S608",     # False positive: f-string constructs HTML/JS, not SQL
+]
+"src/promptgrimoire/pages/roleplay.py" = [
+    "S108",     # /tmp path for transient file upload parsing
+]
+"src/promptgrimoire/pages/sync_demo.py" = [
+    "S110",     # Bare except:pass — client may have disconnected
 ]
 "src/promptgrimoire/pages/courses.py" = [
     "PLR0915",  # Page function needs many statements for UI setup
@@ -110,6 +134,9 @@ ignore = [
 "src/promptgrimoire/db/workspaces.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with crdt
 ]
+"src/promptgrimoire/db/navigator.py" = [
+    "S608",     # f-string SQL interpolates only module constants; user input is :query bound
+]
 "src/promptgrimoire/db/tags.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies with workspaces/crdt
 ]
@@ -117,8 +144,37 @@ ignore = [
     "PLC0415",  # Late imports to avoid circular dependencies with db
     "PLW0603",  # Global singleton pattern is intentional
 ]
-"src/promptgrimoire/cli.py" = [
-    "PLC0415",  # Late import of pytest for CLI commands
+"src/promptgrimoire/cli/admin.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB/auth modules at CLI load time
+]
+"src/promptgrimoire/cli/seed.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB modules at CLI load time
+]
+"src/promptgrimoire/cli/_shared.py" = [
+    "PLC0415",  # Deferred imports in _pre_test_db_cleanup to avoid heavy DB modules at CLI load time
+]
+"src/promptgrimoire/cli/docs.py" = [
+    "PLC0415",  # Late imports to avoid heavy Playwright/subprocess modules at CLI load time
+]
+"src/promptgrimoire/cli/testing.py" = [
+    "PLC0415",  # Deferred config import to avoid pydantic-settings loading at import time
+]
+"src/promptgrimoire/cli/e2e/__init__.py" = [
+    "PLC0415",  # Deferred imports to avoid heavy config/parallel modules at CLI load time
+]
+"src/promptgrimoire/cli/e2e/_server_script.py" = [
+    # Standalone subprocess script — not a regular importable module.
+    # Intentional late imports, module-level side effects, global state.
+    "PLC0415", "E402", "I001", "B023", "PTH123", "ARG001",
+    "SIM115", "PLR0915", "PLW0602", "PLW0603", "RUF100",
+    # Security rules: intentional test secrets, /tmp paths, bare except.
+    "S101", "S105", "S106", "S108", "S110",
+]
+"src/promptgrimoire/cli_loadtest.py" = [
+    "S311",     # Test fixture generation uses pseudo-random, not crypto
+]
+"scripts/save_clipboard_fixture.py" = [
+    "S311",     # Dev script uses pseudo-random for lorem ipsum, not crypto
 ]
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block
@@ -142,6 +198,7 @@ addopts = "-ra -q -m 'not blns and not slow'"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
+    "nicegui_ui: marks in-process NiceGUI user_simulation UI tests",
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
 ]
@@ -167,9 +224,6 @@ min_confidence = 80
 paths = ["src/promptgrimoire"]
 max_complexity_allowed = 15
 exclude = ["*/migrations/*"]
-
-[tool.bandit]
-  skips = ["B101", "B404", "B603", "B607"]
 
 [dependency-groups]
 dev = [
@@ -198,4 +252,5 @@ dev = [
     "vulture>=2.14",
     "complexipy>=5.2.0",
     "mkdocs-glightbox>=0.5.2",
+    "pip-audit>=2.10.0",
 ]

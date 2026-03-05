@@ -102,7 +102,7 @@ Create `navigator.py` registered at `/` via `@page_route`. The page function:
 Delete `index.py` since navigator replaces it entirely.
 
 **Verification:**
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 Expected: No import errors. Existing tests that reference `index_page` may need updating if any exist.
 
 **Commit:** `feat: create navigator page skeleton with auth and data loading`
@@ -150,7 +150,7 @@ Add rendering logic that groups `NavigatorRow` objects by section and renders th
 
 **Verification:**
 Run: `uv run python -m promptgrimoire` and manually verify sections render with seed data.
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: render navigator sections with grouping, navigation, and anonymisation`
 <!-- END_TASK_2 -->
@@ -182,7 +182,7 @@ Handle errors (activity not found, template missing) with `ui.notify` error mess
 
 **Verification:**
 Manual: Click "Start" on an unstarted activity. Verify navigation to new workspace. Refresh navigator — activity moves from "Unstarted" to "My Work".
-Run: `uv run test-changed`
+Run: `uv run grimoire test changed`
 
 **Commit:** `feat: add Start button to clone activity template and navigate`
 <!-- END_TASK_3 -->
@@ -211,7 +211,7 @@ Tests must verify:
 Use `authenticated_page` fixture for auth. Set up test data via direct DB operations (follow `_create_workspace_via_db` pattern from `tests/e2e/annotation_helpers.py`). Use course_helpers for course/week/activity setup.
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 Expected: All navigator E2E tests pass.
 
 **Commit:** `test: add E2E tests for navigator page sections and navigation`
@@ -238,7 +238,7 @@ E2E test for the "Start" button on unstarted activities:
 - Verify the activity now appears under "My Work" (no longer under "Unstarted").
 
 **Verification:**
-Run: `uv run test-e2e -k test_navigator`
+Run: `uv run grimoire e2e run -k test_navigator`
 Expected: All navigator E2E tests pass.
 
 **Commit:** `test: add E2E test for Start button clone and navigate`

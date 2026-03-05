@@ -212,7 +212,7 @@ git commit -m "chore: add public exports for docs package"
 
 **Step 1: Run all tests**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass (2980+ tests), no regressions
 
 Run: `uv run pytest tests/unit/test_docs_guide.py tests/unit/test_docs_screenshot.py -v`

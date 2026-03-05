@@ -189,7 +189,7 @@ Run: `uv run pytest tests/e2e/test_card_interaction.py -v`
 - css-highlight-api.AC8.4: Automated grep test — `tests/unit/test_no_char_span_queries.py` that reads `annotation.py` source and asserts no `data-char-index` string appears in any JS code blocks
 
 **Verification:**
-Run: `uv run test-all` (full suite, ensure no broken tests)
+Run: `uv run grimoire test all` (full suite, ensure no broken tests)
 Run: `uv run pytest tests/e2e/ -v` (all E2E tests pass)
 
 **Commit:** `refactor: remove char-span E2E tests, update helpers, document coverage`

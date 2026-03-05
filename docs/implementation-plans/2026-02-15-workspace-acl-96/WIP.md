@@ -36,4 +36,4 @@ Two commits (cherry-pickable to main):
 
 ## Test State
 
-2370 passed, 181 skipped (`uv run test-all` on 2026-02-16). All integration tests skip due to no `DEV__TEST_DATABASE_URL`.
+2370 passed, 181 skipped (`uv run grimoire test all` on 2026-02-16). All integration tests skip due to no `DEV__TEST_DATABASE_URL`.

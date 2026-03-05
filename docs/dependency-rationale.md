@@ -320,3 +320,17 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Static site generator for HTML documentation. Renders guide markdown and screenshots into a themed HTML site deployable to GitHub Pages.
 **Evidence:** `mkdocs.yml` — site configuration. `src/promptgrimoire/cli.py` — `mkdocs build` invoked by `make_docs()`.
 **Serves:** Instructors and students (browsable user guides), developers (local preview via `mkdocs serve`).
+
+### pip-audit
+
+**Added:** 2026-03-03
+**Design plan:** docs/design-plans/2026-03-03-ci-harness.md
+**Claim:** Scans installed Python packages against known CVE databases. Catches dependency vulnerabilities before they reach production.
+**Evidence:** CI quality job runs `uv run pip-audit` to scan the locked environment.
+**Serves:** Developers and CI (supply-chain security gate).
+
+### ~~bandit~~ (REMOVED)
+
+**Removed:** 2026-03-03
+**Design plan:** docs/design-plans/2026-03-03-ci-harness.md
+**Reason:** Replaced by ruff's `S` rule set, which reimplements Bandit's security checks natively with 10-100x better performance. Rule skips (B101→S101, B404→S404, B603→S603, B607→S607) carry over to ruff configuration.

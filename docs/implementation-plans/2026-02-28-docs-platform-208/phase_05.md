@@ -189,7 +189,7 @@ Expected: All tests pass
 
 **Step 1: Run make-docs**
 
-Run: `uv run make-docs`
+Run: `uv run grimoire docs build`
 Expected: Full pipeline: guides -> mkdocs build -> Pandoc PDFs -> cleanup
 
 **Step 2: Verify HTML site**
@@ -215,7 +215,7 @@ Expected: Local preview server starts at `http://localhost:8000`. Navigation bet
 
 **Step 5: Run tests**
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `uv run ruff check .`

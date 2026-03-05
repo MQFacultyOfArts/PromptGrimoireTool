@@ -382,7 +382,7 @@ Tests:
 Run: `uv run pytest tests/integration/test_enforcement.py -v`
 Expected: All tests pass.
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All existing tests pass alongside new enforcement tests.
 
 **Commit:** `test: add integration tests for enforcement and revocation`

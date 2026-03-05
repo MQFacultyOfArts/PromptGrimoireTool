@@ -116,7 +116,7 @@ Update these imports to use `latex_format` directly. The re-export in `highlight
 **Step 4: Add `format_annot_latex` to `export/__init__.py`** if it's part of the public API.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, no import errors
 
 Run: `wc -l src/promptgrimoire/export/highlight_spans.py`
@@ -173,7 +173,7 @@ Note: `_inline_context_at` is only called by `_detect_inline_boundaries`, so it 
 - `_build_span_tag()` — may reference constants
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `wc -l src/promptgrimoire/export/highlight_spans.py`
@@ -248,7 +248,7 @@ If any unit tests use it, they should be reclassified as integration tests (they
 
 **Verification:**
 Run: `uv run pytest tests/integration/ -v --co` (collect only, verify fixture discovery)
-Run: `uv run test-all -m latex`
+Run: `uv run grimoire test all -m latex`
 Expected: All tests pass, no fixture-not-found errors
 
 **Commit:** `refactor: move pdf_exporter fixture to tests/integration/conftest.py`
@@ -283,7 +283,7 @@ If used by integration tests too, the helpers should go in root conftest or a sh
 **Step 3: Move any BLNS fixtures** that depend on these helpers.
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 Run: `wc -l tests/conftest.py`
@@ -337,7 +337,7 @@ Fix any broken imports. Common issues:
 **Verification:**
 Run: `uvx ty check`
 Run: `uv run ruff check .`
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All pass, no import errors
 
 **Commit:** `fix: resolve import paths after file splits` (only if fixes needed)
@@ -358,11 +358,11 @@ Final verification of all Phase 5 acceptance criteria:
 1. **AC5.1:** `wc -l src/promptgrimoire/export/*.py | sort -rn` — no file exceeds 550
 2. **AC5.2:** `grep -l "def format_annot_latex" src/promptgrimoire/export/` — shows `latex_format.py` only
 3. **AC5.3:** `grep -l "def pdf_exporter" tests/` — shows `tests/integration/conftest.py` only
-4. **AC5.4:** `uv run test-all` — all tests pass
-5. Full suite: `uv run test-all` — zero regressions
+4. **AC5.4:** `uv run grimoire test all` — all tests pass
+5. Full suite: `uv run grimoire test all` — zero regressions
 
 **Verification:**
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass, zero regressions
 <!-- END_TASK_7 -->
 <!-- END_SUBCOMPONENT_C -->
@@ -374,7 +374,7 @@ Expected: All tests pass, zero regressions
 1. [ ] Run `wc -l src/promptgrimoire/export/*.py | sort -rn` — no file exceeds 550 lines
 2. [ ] Verify `format_annot_latex()` is in `export/latex_format.py`
 3. [ ] Verify `pdf_exporter` fixture is in `tests/integration/conftest.py`
-4. [ ] Run `uv run test-all` — full suite passes
+4. [ ] Run `uv run grimoire test all` — full suite passes
 5. [ ] Run `uvx ty check` — type checking passes
 6. [ ] Run `uv run ruff check .` — linting passes
 

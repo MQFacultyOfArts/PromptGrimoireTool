@@ -151,7 +151,7 @@ def main() -> None:
     print(f"Starting application on http://0.0.0.0:{port}")
 
     ui.run(
-        host="0.0.0.0",  # nosec B104
+        host="0.0.0.0",  # noqa: S104 — intentional bind for docker/server
         port=port,
         title="Macquarie University Annotation Tool and Prompt Grimoire",
         reload=settings.app.reload,

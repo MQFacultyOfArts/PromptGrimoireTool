@@ -97,9 +97,9 @@ git commit -m "feat: add copy_protection parameter to create_activity and update
 
 **UAT Steps (end of Phase 2):**
 
-1. [ ] Verify tests: `uv run test-all` — all pass, including new CRUD round-trip tests
+1. [ ] Verify tests: `uv run grimoire test all` — all pass, including new CRUD round-trip tests
 2. [ ] Start the app: `uv run python -m promptgrimoire`
-3. [ ] Seed data: `uv run seed-data` — completes without error
+3. [ ] Seed data: `uv run grimoire seed run` — completes without error
 
 **Evidence Required:**
 - [ ] Test output showing all `TestActivityCRUD` copy_protection tests green

@@ -31,7 +31,7 @@ This phase implements and tests:
 
 After this phase is complete, verify manually:
 
-1. Run `uv run test-all && uv run test-e2e` — all tests pass after refactor (AC7.4)
+1. Run `uv run grimoire test all && uv run grimoire e2e run` — all tests pass after refactor (AC7.4)
 2. Check file sizes: `wc -l src/promptgrimoire/pages/annotation/tag_management*.py src/promptgrimoire/pages/annotation/tag_import.py src/promptgrimoire/pages/annotation/tag_quick_create.py` — no file exceeds ~400 lines (AC7.1)
 3. Verify import graph is one-way: `grep -r "from.*tag_management_save import\|from.*tag_management_rows import\|from.*tag_import import\|from.*tag_quick_create import\|from.*tag_management import" src/promptgrimoire/pages/annotation/tag_*.py` — verify no cycles (AC7.2)
 4. Confirm `regionPriority` function is gone: `grep -r "regionPriority" src/promptgrimoire/static/` — no matches (AC7.3)
@@ -60,7 +60,7 @@ The `regionPriority()` function at line 166-172 is called at line 156 inside `ap
 
 **Verification:**
 
-Run: `uv run test-e2e -k test_annotation_highlight_api`
+Run: `uv run grimoire e2e run -k test_annotation_highlight_api`
 Expected: Highlight rendering and stacking order unchanged
 
 **Commit:** `refactor: remove vestigial regionPriority from annotation-highlight.js`
@@ -171,7 +171,7 @@ Callers in `_build_management_callbacks` and `_build_group_callbacks` construct 
 
 **Verification:**
 
-Run: `uv run test-all && uv run test-e2e`
+Run: `uv run grimoire test all && uv run grimoire e2e run`
 Expected: All tests pass unchanged
 
 **Commit:** `refactor: split tag_management.py into 5 files`
@@ -213,7 +213,7 @@ Keep `Any` for Sortable-specific events if the exact type is unclear from NiceGU
 Run: `uvx ty check`
 Expected: No new type errors
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 **Commit:** `refactor: replace Any types with concrete types in tag management`
@@ -275,7 +275,7 @@ Update docstring from "13 authored modules" to "17 authored modules".
 Run: `uv run pytest tests/unit/test_annotation_package_structure.py -v`
 Expected: test_all_authored_modules_exist passes with 17 modules
 
-Run: `uv run test-all`
+Run: `uv run grimoire test all`
 Expected: All tests pass
 
 **Commit:** `chore: update module count to 17 after tag_management split`

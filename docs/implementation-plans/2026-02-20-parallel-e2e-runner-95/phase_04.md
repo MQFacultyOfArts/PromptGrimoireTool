@@ -17,8 +17,8 @@
 This phase implements and tests:
 
 ### parallel-e2e-runner-95.AC2: Serial mode unchanged
-- **parallel-e2e-runner-95.AC2.1 Success:** `uv run test-e2e` (no flags) runs single-server serial mode exactly as before
-- **parallel-e2e-runner-95.AC2.2 Success:** `uv run test-e2e-debug` runs single-server with `--lf` and `-x` exactly as before
+- **parallel-e2e-runner-95.AC2.1 Success:** `uv run grimoire e2e run` (no flags) runs single-server serial mode exactly as before
+- **parallel-e2e-runner-95.AC2.2 Success:** `uv run grimoire e2e noretry` runs single-server with `--lf` and `-x` exactly as before
 
 ### parallel-e2e-runner-95.AC5: Process cleanup (partial — fail-fast wiring)
 - **parallel-e2e-runner-95.AC5.2 Success:** Fail-fast mode (test-e2e-debug) kills remaining workers on first failure
@@ -114,8 +114,8 @@ Parse `--fail-fast` the same way as `--parallel`: check `sys.argv`, remove if pr
 **Testing:**
 
 This is a CLI integration change. Verification is operational:
-- `uv run test-e2e --help` should still work (no crash)
-- `uv run test-e2e` (no flags) should run serial mode exactly as before
+- `uv run grimoire e2e run --help` should still work (no crash)
+- `uv run grimoire e2e run` (no flags) should run serial mode exactly as before
 
 Full E2E verification of parallel mode happens in the UAT step.
 
@@ -140,17 +140,17 @@ Expected: No lint or format errors
 
 Verify that the serial modes still work exactly as before:
 
-1. **`uv run test-e2e` (serial mode):** Should start one server, run all E2E tests with `-x` (fail-fast), stop server. No behavioural change.
+1. **`uv run grimoire e2e run` (serial mode):** Should start one server, run all E2E tests with `-x` (fail-fast), stop server. No behavioural change.
 
-2. **`uv run test-e2e-debug` (debug mode):** Should start one server, run with `--lf -x --tb=long -v`, stop server. No behavioural change.
+2. **`uv run grimoire e2e noretry` (debug mode):** Should start one server, run with `--lf -x --tb=long -v`, stop server. No behavioural change.
 
 The `test_e2e_debug()` function is NOT modified in this phase — it was confirmed unchanged at cli.py:810-856.
 
 **Verification:**
-Run: `uv run test-e2e -k test_browser_gate` (serial, single quick test)
+Run: `uv run grimoire e2e run -k test_browser_gate` (serial, single quick test)
 Expected: Server starts, test runs, server stops. Exit code 0 if test passes.
 
-Run: `uv run test-e2e-debug -k test_browser_gate` (debug, single quick test)
+Run: `uv run grimoire e2e noretry -k test_browser_gate` (debug, single quick test)
 Expected: Server starts, test runs with verbose output, server stops.
 
 **Commit:** No commit needed (verification only)
@@ -169,7 +169,7 @@ This is the full end-to-end UAT for the parallel orchestrator.
 
 **UAT Steps:**
 
-1. Run: `uv run test-e2e --parallel`
+1. Run: `uv run grimoire e2e run --parallel`
 2. Verify: Console output shows "Found N test files" (expect 16)
 3. Verify: Console output shows worker databases being created
 4. Verify: Console output shows per-file results (PASS/FAIL with duration)
@@ -179,13 +179,13 @@ This is the full end-to-end UAT for the parallel orchestrator.
 8. Verify: No orphan server processes remain (check with `ps aux | grep promptgrimoire`)
 
 **With -k filter:**
-1. Run: `uv run test-e2e --parallel -k test_browser_gate`
+1. Run: `uv run grimoire e2e run --parallel -k test_browser_gate`
 2. Verify: Most workers show exit code 5 (no tests collected), treated as pass
 3. Verify: Only the matching test file actually runs tests
 4. Verify: Overall exit code is 0
 
 **Fail-fast mode (AC5.2):**
-1. Run: `uv run test-e2e --parallel --fail-fast`
+1. Run: `uv run grimoire e2e run --parallel --fail-fast`
 2. If any test file fails, verify: remaining workers are killed promptly (not waiting for all to finish)
 3. Verify: Summary shows which file failed and which were cancelled
 4. Verify: Exit code is non-zero

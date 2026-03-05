@@ -153,7 +153,7 @@ This is a UI component — functional testing requires E2E. Unit tests can verif
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass.
@@ -254,7 +254,7 @@ AC verification:
 
 Run:
 ```bash
-uv run test-all
+uv run grimoire test all
 ```
 
 Expected: All tests pass.
@@ -302,7 +302,7 @@ This allows testing copy protection immediately after seeding without manual con
 
 Run:
 ```bash
-uv run seed-data
+uv run grimoire seed run
 ```
 
 Expected: Seed completes successfully. Verify by checking the database or loading the annotation page.
@@ -316,9 +316,9 @@ git commit -m "chore: enable copy protection in seed data for development testin
 
 **UAT Steps (end of Phase 6):**
 
-1. [ ] Verify tests: `uv run test-all` — all pass
+1. [ ] Verify tests: `uv run grimoire test all` — all pass
 2. [ ] Start the app: `uv run python -m promptgrimoire`
-3. [ ] Seed data: `uv run seed-data`
+3. [ ] Seed data: `uv run grimoire seed run`
 4. [ ] Navigate to course detail page:
    - [ ] Click gear icon — course settings dialog opens
    - [ ] Verify "Default copy protection" toggle is visible and reflects current state

@@ -144,7 +144,7 @@ B2C does not support custom OIDC connections. Remove entirely:
 9. [ ] Update `src/promptgrimoire/pages/auth.py` — remove SSO UI, remove org validation
 10. [ ] Update tests — remove SSO tests, update org_id assertions
 11. [ ] Remove env vars: STYTCH__DEFAULT_ORG_ID, STYTCH__SSO_CONNECTION_ID, STYTCH__PUBLIC_TOKEN
-12. [ ] Run `uv run test-all` — verify all tests pass
+12. [ ] Run `uv run grimoire test all` — verify all tests pass
 13. [ ] Manual test: magic link + Google OAuth work end-to-end
 ```
 
@@ -166,4 +166,4 @@ ls -la docs/b2c-fallback.md
 Phase 6 is complete when:
 1. `docs/b2c-fallback.md` exists with complete migration guide (Task 1)
 2. Document covers: what changes, what stays, what's lost, what's gained, estimated effort (AC5.2)
-3. `uv run test-all` passes with zero failures (no code changes, so should be trivially true)
+3. `uv run grimoire test all` passes with zero failures (no code changes, so should be trivially true)

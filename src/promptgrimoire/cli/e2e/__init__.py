@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import typer
 
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, _prepend_filter, console
+from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ from promptgrimoire.cli.e2e._workers import _allocate_ports as _allocate_ports
 from promptgrimoire.cli.testing import _run_pytest
 
 e2e_app = typer.Typer(help="End-to-end test commands.")
-_PLAYWRIGHT_TEST_PATH = "tests/e2e"
+_PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
 
 
 async def _run_nicegui_e2e(user_args: list[str]) -> int:
@@ -86,6 +87,8 @@ def run_nicegui_lane(user_args: list[str]) -> int:
 
 def run_all_lanes(user_args: list[str]) -> int:
     """Run Playwright then NiceGUI lanes sequentially (always run both)."""
+    # Keep umbrella orchestration serial for deterministic diagnostics and simpler
+    # lane sequencing; users can run `e2e run --parallel` separately when needed.
     console.print("[blue]Running Playwright lane...[/]")
     playwright_exit = run_playwright_lane(
         user_args,

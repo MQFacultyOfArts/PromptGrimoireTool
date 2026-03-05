@@ -34,6 +34,34 @@ class _FakeAsyncProcess:
         return self.returncode
 
 
+@pytest.fixture
+def patch_serial_playwright_infra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch shared infra used by serial Playwright command helpers."""
+
+    def _fake_get_settings() -> object:
+        return object()
+
+    def _fake_pre_test_db_cleanup() -> None:
+        return None
+
+    def _fake_allocate_ports(_n: int) -> list[int]:
+        return [4312]
+
+    def _fake_start_server(_port: int) -> object:
+        return object()
+
+    def _fake_stop_server(_server: object) -> None:
+        return None
+
+    monkeypatch.setattr("promptgrimoire.config.get_settings", _fake_get_settings)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._pre_test_db_cleanup", _fake_pre_test_db_cleanup
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e._allocate_ports", _fake_allocate_ports)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._start_e2e_server", _fake_start_server)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._stop_e2e_server", _fake_stop_server)
+
+
 @pytest.mark.asyncio
 async def test_run_playwright_file_sets_server_then_pytest_env(
     monkeypatch: pytest.MonkeyPatch,
@@ -271,34 +299,12 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
 
 def test_run_serial_playwright_e2e_selects_only_playwright_path(
     monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Serial Playwright lane uses `tests/e2e` path boundary, never NiceGUI marker."""
     from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
 
     captured: dict[str, Any] = {}
-
-    def _fake_get_settings() -> object:
-        return object()
-
-    def _fake_pre_test_db_cleanup() -> None:
-        return None
-
-    def _fake_allocate_ports(_n: int) -> list[int]:
-        return [4312]
-
-    def _fake_start_server(_port: int) -> object:
-        return object()
-
-    def _fake_stop_server(_server: object) -> None:
-        return None
-
-    monkeypatch.setattr("promptgrimoire.config.get_settings", _fake_get_settings)
-    monkeypatch.setattr(
-        "promptgrimoire.cli.e2e._pre_test_db_cleanup", _fake_pre_test_db_cleanup
-    )
-    monkeypatch.setattr("promptgrimoire.cli.e2e._allocate_ports", _fake_allocate_ports)
-    monkeypatch.setattr("promptgrimoire.cli.e2e._start_e2e_server", _fake_start_server)
-    monkeypatch.setattr("promptgrimoire.cli.e2e._stop_e2e_server", _fake_stop_server)
 
     def _fake_run_pytest(
         *,
@@ -333,34 +339,12 @@ def test_run_serial_playwright_e2e_selects_only_playwright_path(
 
 def test_run_playwright_changed_lane_selects_only_playwright_path(
     monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
 ) -> None:
     """Changed lane stays Playwright-only by explicit path selection."""
     from promptgrimoire.cli.e2e import run_playwright_changed_lane
 
     captured: dict[str, Any] = {}
-
-    def _fake_get_settings() -> object:
-        return object()
-
-    def _fake_pre_test_db_cleanup() -> None:
-        return None
-
-    def _fake_allocate_ports(_n: int) -> list[int]:
-        return [4312]
-
-    def _fake_start_server(_port: int) -> object:
-        return object()
-
-    def _fake_stop_server(_server: object) -> None:
-        return None
-
-    monkeypatch.setattr("promptgrimoire.config.get_settings", _fake_get_settings)
-    monkeypatch.setattr(
-        "promptgrimoire.cli.e2e._pre_test_db_cleanup", _fake_pre_test_db_cleanup
-    )
-    monkeypatch.setattr("promptgrimoire.cli.e2e._allocate_ports", _fake_allocate_ports)
-    monkeypatch.setattr("promptgrimoire.cli.e2e._start_e2e_server", _fake_start_server)
-    monkeypatch.setattr("promptgrimoire.cli.e2e._stop_e2e_server", _fake_stop_server)
 
     def _fake_run_pytest(
         *,
@@ -379,6 +363,42 @@ def test_run_playwright_changed_lane_selects_only_playwright_path(
 
     try:
         exit_code = run_playwright_changed_lane(["-k", "test_annotation_nav_home"])
+    finally:
+        os.environ.pop("E2E_BASE_URL", None)
+
+    assert exit_code == 0
+    assert captured["default_args"][0] == "tests/e2e"
+    assert captured["default_args"][1:3] == ["-m", "e2e"]
+    assert "nicegui_ui" not in captured["default_args"]
+    assert "Playwright" in captured["title"]
+
+
+def test_run_playwright_noretry_lane_selects_only_playwright_path(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
+) -> None:
+    """Noretry lane stays Playwright-only by explicit path selection."""
+    from promptgrimoire.cli.e2e import run_playwright_noretry_lane
+
+    captured: dict[str, Any] = {}
+
+    def _fake_run_pytest(
+        *,
+        title: str,
+        log_path: Path,
+        default_args: list[str],
+        extra_args: list[str] | None = None,
+    ) -> int:
+        captured["title"] = title
+        captured["log_path"] = log_path
+        captured["default_args"] = default_args
+        captured["extra_args"] = extra_args
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    try:
+        exit_code = run_playwright_noretry_lane(["-k", "test_annotation_nav_home"])
     finally:
         os.environ.pop("E2E_BASE_URL", None)
 

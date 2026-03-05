@@ -250,16 +250,22 @@ def _user_adds_comment(
         ctx.close()
 
 
-def _assert_tex_is_valid(tex_text: str, perspective: str) -> None:
-    """Assert TeX output is structurally valid (not vacuous)."""
-    assert tex_text, f"{perspective}: TeX output is empty"
-    assert r"\begin{document}" in tex_text, (
-        f"{perspective}: TeX missing \\begin{{document}}"
-    )
-    assert r"\end{document}" in tex_text, (
-        f"{perspective}: TeX missing \\end{{document}}"
-    )
-    assert r"\annot" in tex_text, (
+def _assert_tex_is_valid(tex_text: object, perspective: str) -> None:
+    """Assert export output is structurally valid (not vacuous).
+
+    Handles both .tex source (fast mode) and PDF extracted text (slow mode).
+    """
+    is_pdf = getattr(tex_text, "is_pdf", False)
+    assert tex_text, f"{perspective}: export output is empty"
+    if is_pdf:
+        # PDF text won't contain LaTeX commands — just verify non-empty
+        # (the `in` checks for names/comments in the caller do the real work)
+        return
+    # Non-PDF: extract raw text for LaTeX-specific assertions
+    raw = getattr(tex_text, "text", str(tex_text))
+    assert r"\begin{document}" in raw, f"{perspective}: TeX missing \\begin{{document}}"
+    assert r"\end{document}" in raw, f"{perspective}: TeX missing \\end{{document}}"
+    assert r"\annot" in raw, (
         f"{perspective}: TeX has no \\annot commands (no highlights exported)"
     )
 

@@ -180,15 +180,33 @@ class TestWordCountExport:
                     page.get_by_test_id("wc-export-anyway-btn").click()
 
                 download = dl.value
-                tex_path = download.path()
-                assert tex_path is not None
-                tex_text = Path(tex_path).read_text(encoding="utf-8")
+                dl_path = download.path()
+                assert dl_path is not None
+                raw = Path(dl_path).read_bytes()
+
+                if raw[:4] == b"%PDF":
+                    # Slow mode — extract text from compiled PDF
+                    import pymupdf
+
+                    doc = pymupdf.open(dl_path)
+                    export_text = "".join(p.get_text() for p in doc)
+                    doc.close()
+                    is_pdf = True
+                else:
+                    export_text = raw.decode("utf-8")
+                    is_pdf = False
 
             with subtests.test(msg="AC5.3: TeX output contains snitch badge"):
-                # The snitch badge uses \fcolorbox for over-limit
-                assert "Exceeded" in tex_text or "fcolorbox" in tex_text, (
-                    f"Expected snitch badge in TeX output, got: {tex_text[:500]}"
-                )
+                if is_pdf:
+                    # In rendered PDF, check for the visible badge text
+                    assert "Exceeded" in export_text, (
+                        f"Expected 'Exceeded' in PDF text, got: {export_text[:500]}"
+                    )
+                else:
+                    # In .tex source, check for LaTeX command or text
+                    assert "Exceeded" in export_text or "fcolorbox" in export_text, (
+                        f"Expected snitch badge in TeX output, got: {export_text[:500]}"
+                    )
         finally:
             page.goto("about:blank")
             page.close()

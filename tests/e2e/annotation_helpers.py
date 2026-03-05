@@ -1092,23 +1092,74 @@ def export_pdf_text(page: Page) -> str:
         pytest.skip("PDF export timed out (TinyTeX not installed?)")
 
 
-def export_annotation_tex_text(page: Page) -> str:
-    """Click Export PDF and return the downloaded TeX source.
+def _normalise_pdf_text(s: str) -> str:
+    """Normalise PDF-extracted text for fuzzy comparison.
 
-    The E2E server monkey-patches ``compile_latex`` to a no-op, so clicking
-    Export PDF produces a ``.tex`` file instead of a ``.pdf``.  This exercises
-    the **exact same data-gathering path** as the real export (PageState with
-    live CRDT), avoiding stale-data bugs from separate API endpoints.
+    LuaLaTeX converts straight quotes to typographic quotes, and PyMuPDF
+    inserts line breaks at PDF column boundaries.  Both transformations
+    break naive ``in`` checks, so we normalise before comparing.
+    """
+    import re
+
+    s = s.replace("\u2018", "'").replace("\u2019", "'")
+    s = s.replace("\u201c", '"').replace("\u201d", '"')
+    return re.sub(r"\s+", " ", s)
+
+
+class ExportResult:
+    """Result of an annotation export — adapts to .tex (fast) or .pdf (slow) mode.
+
+    In fast mode (default ``e2e run``), ``compile_latex`` is monkey-patched
+    to a no-op so the download is a ``.tex`` file.  In slow mode
+    (``e2e slow``), compilation runs and the download is a real PDF.
+
+    Attributes:
+        text: Extracted text — raw LaTeX source (.tex) or PyMuPDF-extracted
+              plaintext (.pdf).
+        is_pdf: ``True`` when the download was a compiled PDF.
+    """
+
+    def __init__(self, text: str, *, is_pdf: bool) -> None:
+        self.text = text
+        self.is_pdf = is_pdf
+
+    def __contains__(self, item: str) -> bool:
+        if self.is_pdf:
+            # LuaLaTeX converts straight quotes to typographic quotes and
+            # PyMuPDF inserts line breaks; normalise both sides for comparison.
+            return _normalise_pdf_text(item) in _normalise_pdf_text(self.text)
+        return item in self.text
+
+
+def export_annotation_tex_text(page: Page) -> ExportResult:
+    """Click Export PDF and return the downloaded content.
+
+    Detects whether the download is a ``.tex`` file (fast mode) or a
+    compiled PDF (slow mode) and returns an :class:`ExportResult` with
+    the appropriate text extraction.
+
+    The result supports ``in`` checks (``"word" in result``) so most
+    existing assertions work unchanged.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
 
     Returns:
-        Generated LaTeX source as text.
+        :class:`ExportResult` with extracted text and format flag.
     """
     with page.expect_download(timeout=60000) as dl:
         page.get_by_role("button", name="Export PDF").click()
 
     download = dl.value
-    tex_path = download.path()
-    return Path(tex_path).read_text(encoding="utf-8")
+    file_path = download.path()
+    raw = Path(file_path).read_bytes()
+
+    if raw[:4] == b"%PDF":
+        import pymupdf
+
+        doc = pymupdf.open(file_path)
+        pdf_text = "".join(p.get_text() for p in doc)
+        doc.close()
+        return ExportResult(re.sub(r"-\n", "", pdf_text), is_pdf=True)
+
+    return ExportResult(raw.decode("utf-8"), is_pdf=False)

@@ -25,7 +25,6 @@ Traceability:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -43,6 +42,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
+    export_annotation_tex_text,
     setup_workspace_with_content,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -261,6 +261,7 @@ class TestTranslationStudent:
         i18n content survives the full pipeline.
         """
         comment_uuid = ""
+        result = None
 
         context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
         page = context.new_page()
@@ -287,47 +288,27 @@ class TestTranslationStudent:
 
                 comment_uuid = _post_comment_on_first_card(page)
 
+                # Post a second comment with emoji to test #274
+                emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
+                card = page.locator(ANNOTATION_CARD).first
+                card.click()
+                page.get_by_test_id("comment-input").first.fill(emoji_comment)
+                card.get_by_text("Post").click()
+                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
+
             with subtests.test(msg="export_pdf"):
                 try:
-                    # Start download listener before clicking export
-                    with page.expect_download(timeout=120000) as download_info:
-                        page.get_by_role("button", name="Export PDF").click()
-
-                    download = download_info.value
-                    dl_path = Path(download.path())
-                    content_bytes = dl_path.read_bytes()
-
-                    # E2E server may produce .tex (fast mode) or .pdf (slow mode)
-                    is_pdf = content_bytes[:5] == b"%PDF-"
-
-                    if is_pdf:
-                        assert len(content_bytes) > 20_000, (
-                            f"PDF too small: {len(content_bytes)} bytes"
-                        )
-                        import pymupdf
-
-                        doc = pymupdf.open(dl_path)
-                        text = "".join(p.get_text() for p in doc)
-                        doc.close()
-                        text = re.sub(r"-\n", "", text)
-                    else:
-                        text = content_bytes.decode("utf-8")
+                    result = export_annotation_tex_text(page)
 
                     # UUID comment string must appear
-                    assert comment_uuid in text, (
+                    assert comment_uuid in result, (
                         "Comment UUID not found in exported content"
                     )
 
-                    # CJK characters: always present in .tex source,
-                    # may be encoded differently in PDF content streams.
-                    has_cjk = any(char in text for char in "\u7ef4\u57fa\u767e\u79d1")
-                    if is_pdf and not has_cjk:
-                        pytest.skip(
-                            "CJK chars not found in PDF text extraction "
-                            "(encoding may differ); UUID verification passed"
-                        )
-                    elif not is_pdf:
-                        assert has_cjk, "CJK chars not found in TeX source"
+                    # CJK characters must survive the full pipeline
+                    assert any(char in result for char in "\u7ef4\u57fa\u767e\u79d1"), (
+                        "CJK chars (维基百科) not found in exported content"
+                    )
 
                 except PlaywrightTimeoutError:
                     pytest.skip("PDF export timed out (TinyTeX not installed?)")
@@ -335,6 +316,12 @@ class TestTranslationStudent:
                     if "Download" in str(e):
                         pytest.skip(f"PDF download failed: {e}")
                     raise
+
+            with subtests.test(msg="export_emoji_gh274"):
+                # Emoji must survive the full pipeline (#274)
+                assert result is not None, "export_pdf subtest must run first"
+                if "\U0001f389" not in result:
+                    pytest.xfail("Emoji 🎉 not in export — #274 open")
 
         finally:
             page.close()

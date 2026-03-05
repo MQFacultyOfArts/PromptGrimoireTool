@@ -15,14 +15,36 @@ by their ``data-testid`` value.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, cast
 
 from nicegui import ElementFilter
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nicegui.element import Element
     from nicegui.elements.mixins.value_element import ValueElement
     from nicegui.testing.user import User
+
+
+# ---------------------------------------------------------------------------
+# Wait helpers
+# ---------------------------------------------------------------------------
+
+
+async def wait_for[T](
+    condition: Callable[[], T], timeout: float = 5.0, interval: float = 0.05
+) -> T:
+    """Wait for condition to be truthy."""
+    start = time.monotonic()
+    while True:
+        result = condition()
+        if result:
+            return result
+        if time.monotonic() - start > timeout:
+            raise TimeoutError(f"Condition not met within {timeout}s")
+        await asyncio.sleep(interval)
 
 
 # ---------------------------------------------------------------------------

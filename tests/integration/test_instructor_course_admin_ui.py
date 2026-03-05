@@ -13,7 +13,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -27,6 +26,7 @@ from tests.integration.nicegui_helpers import (
     _set_input_value,
     _should_not_see_testid,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
@@ -106,7 +106,6 @@ class TestCreateCourseValidation:
 
         # Click Create without filling fields
         _click_testid(nicegui_user, "create-course-btn")
-        await asyncio.sleep(0.1)
 
         # Should see the validation notification
         await nicegui_user.should_see("All fields are required")
@@ -136,14 +135,13 @@ class TestCreateCourseValidation:
         _click_testid(nicegui_user, "create-course-btn")
 
         # Wait for navigation to the course detail page
-        for _ in range(20):
-            if (
+        await wait_for(
+            lambda: (
                 nicegui_user.back_history
                 and "/courses/" in nicegui_user.back_history[-1]
                 and nicegui_user.back_history[-1] != "/courses/new"
-            ):
-                break
-            await asyncio.sleep(0.1)
+            )
+        )
 
         # Should have navigated away from /courses/new
         history = nicegui_user.back_history
@@ -191,13 +189,12 @@ class TestAddWeekAndPublish:
         _click_testid(nicegui_user, "create-week-btn")
 
         # Wait for navigation back to course detail
-        for _ in range(20):
-            if (
+        await wait_for(
+            lambda: (
                 nicegui_user.back_history
                 and nicegui_user.back_history[-1] == f"/courses/{course_id}"
-            ):
-                break
-            await asyncio.sleep(0.1)
+            )
+        )
 
         # Re-open the course detail page to see the week
         await nicegui_user.open(f"/courses/{course_id}")
@@ -210,7 +207,6 @@ class TestAddWeekAndPublish:
 
         # Click Publish
         _click_testid(nicegui_user, "publish-week-btn")
-        await asyncio.sleep(0.3)
 
         # After publishing, should see "Published" and the Unpublish button
         await _should_see_testid(nicegui_user, "unpublish-week-btn")
@@ -264,13 +260,12 @@ class TestAddActivity:
         _click_testid(nicegui_user, "create-activity-btn")
 
         # Wait for navigation back to course detail
-        for _ in range(20):
-            if (
+        await wait_for(
+            lambda: (
                 nicegui_user.back_history
                 and nicegui_user.back_history[-1] == f"/courses/{course_id}"
-            ):
-                break
-            await asyncio.sleep(0.1)
+            )
+        )
 
         # Re-open the course detail page to see the activity
         await nicegui_user.open(f"/courses/{course_id}")
@@ -310,7 +305,6 @@ class TestCourseSettingsCopyProtection:
 
         # Click Unit Settings button
         _click_testid(nicegui_user, "course-settings-btn")
-        await asyncio.sleep(0.2)
 
         # Settings dialog should be open with the title
         await _should_see_testid(nicegui_user, "course-settings-title")
@@ -324,9 +318,16 @@ class TestCourseSettingsCopyProtection:
 
         # Click the switch to toggle it
         _click_testid(nicegui_user, "course-default_copy_protection-switch")
-        await asyncio.sleep(0.1)
 
         # Verify the switch value changed
+        def switch_value_changed() -> bool:
+            switch = _find_value_element_by_testid(
+                nicegui_user, "course-default_copy_protection-switch"
+            )
+            return switch is not None and switch.value != original_value
+
+        await wait_for(switch_value_changed)
+
         cp_switch_after = _find_value_element_by_testid(
             nicegui_user, "course-default_copy_protection-switch"
         )
@@ -337,7 +338,6 @@ class TestCourseSettingsCopyProtection:
 
         # Click Save
         _click_testid(nicegui_user, "save-course-settings-btn")
-        await asyncio.sleep(0.2)
 
         # Dialog should close
         await _should_not_see_testid(nicegui_user, "course-settings-title")
@@ -347,7 +347,7 @@ class TestCourseSettingsCopyProtection:
 
         # Re-open settings to verify persistence
         _click_testid(nicegui_user, "course-settings-btn")
-        await asyncio.sleep(0.2)
+        await _should_see_testid(nicegui_user, "course-settings-title")
 
         cp_switch_reopened = _find_value_element_by_testid(
             nicegui_user, "course-default_copy_protection-switch"
@@ -391,7 +391,6 @@ class TestEnrollStudent:
 
         # Click Add button
         _click_testid(nicegui_user, "add-enrollment-btn")
-        await asyncio.sleep(0.3)
 
         # Should see success notification
         await nicegui_user.should_see("Enrollment added")

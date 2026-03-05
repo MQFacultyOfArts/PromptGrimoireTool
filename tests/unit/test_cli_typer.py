@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from promptgrimoire.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def test_grimoire_help() -> None:

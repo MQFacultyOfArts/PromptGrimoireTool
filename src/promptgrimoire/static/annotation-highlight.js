@@ -23,6 +23,7 @@
 const WHITESPACE_RE = /[\s\u00a0]/;
 const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE']);
 const BLOCK_TAGS = new Set([
+    'HTML','BODY',
     'TABLE','TBODY','THEAD','TFOOT','TR','TD','TH',
     'UL','OL','LI','DL','DT','DD',
     'DIV','SECTION','ARTICLE','ASIDE','HEADER','FOOTER','NAV','MAIN',

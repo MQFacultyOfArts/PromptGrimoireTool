@@ -112,10 +112,12 @@ jobs:
 
       - name: Install TinyTeX and LaTeX packages
         run: |
+          echo "$HOME/.TinyTeX/bin/x86_64-linux" >> "$GITHUB_PATH"
+          export PATH="$HOME/.TinyTeX/bin/x86_64-linux:$PATH"
           if [ ! -f ~/.TinyTeX/bin/x86_64-linux/latexmk ]; then
             uv run python scripts/setup_latex.py
           fi
-          ~/.TinyTeX/bin/x86_64-linux/luaotfload-tool --update --force
+          luaotfload-tool --update --force
 
       - name: Run unit and integration tests
         env:

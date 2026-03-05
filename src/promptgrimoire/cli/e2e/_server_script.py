@@ -15,6 +15,7 @@ for key in list(os.environ.keys()):
 os.environ["DEV__AUTH_MOCK"] = "true"
 os.environ["APP__STORAGE_SECRET"] = "test-secret-for-e2e"
 # asyncio debug DISABLED — it causes event loop blocks (linecache.checkcache)
+os.environ.setdefault("STYTCH__DEFAULT_ORG_ID", "mock-org-test")
 os.environ.setdefault("STYTCH__SSO_CONNECTION_ID", "test-sso-connection-id")
 os.environ.setdefault("STYTCH__PUBLIC_TOKEN", "test-public-token")
 

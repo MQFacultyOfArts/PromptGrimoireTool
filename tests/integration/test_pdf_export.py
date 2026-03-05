@@ -363,6 +363,38 @@ class TestResponseDraftCompile:
         assert r"\begin{itemize}" in tex_content
         assert "overall conclusion" in tex_content
 
+    @pytest.mark.asyncio
+    async def test_export_with_strikethrough_markdown_gh263(
+        self, tmp_path: Path
+    ) -> None:
+        """GH-263: Strikethrough in response draft must not crash LaTeX.
+
+        Pandoc converts ~~text~~ to \\st{text}, which requires the ulem
+        or soul package. Without it, LuaLaTeX fails with
+        'Undefined control sequence \\st' and produces an empty PDF.
+
+        Reproduction data from workspace 3188eb40 (prod).
+        """
+        html = "<p>Source document.</p>"
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        markdown = "**~~mom~~**"
+        notes_latex = await markdown_to_latex_notes(markdown)
+
+        pdf_path = await export_annotation_pdf(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            notes_latex=notes_latex,
+            output_dir=tmp_path,
+        )
+
+        assert pdf_path.exists()
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF, not empty"
+
 
 @requires_pandoc
 class TestGenerateTexOnly:

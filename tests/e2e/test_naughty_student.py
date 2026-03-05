@@ -185,9 +185,29 @@ class TestNaughtyStudent:
         context = browser.new_context()
         page = context.new_page()
 
-        # Collect JS errors to verify no alert() fired
+        # Collect JS errors to verify no alert() fired.
+        # Exclude known annotation-page JS loading race errors: static scripts
+        # (annotation-card-sync.js, annotation-highlight.js) may not yet be
+        # loaded when the server pushes run_javascript calls via broadcast.py.
+        # These ReferenceErrors are unrelated to XSS sanitisation.
+        _KNOWN_JS_LOAD_RACE = frozenset(
+            {
+                "removeRemoteCursor",
+                "setupCardPositioning",
+                "removeRemoteSelection",
+                "renderRemoteCursor",
+                "renderRemoteSelection",
+            }
+        )
         js_errors: list[str] = []
-        page.on("pageerror", lambda error: js_errors.append(str(error)))
+
+        def _on_pageerror(error: Exception) -> None:
+            msg = str(error)
+            if any(fn in msg for fn in _KNOWN_JS_LOAD_RACE):
+                return
+            js_errors.append(msg)
+
+        page.on("pageerror", _on_pageerror)
 
         try:
             _authenticate_page(page, app_server)

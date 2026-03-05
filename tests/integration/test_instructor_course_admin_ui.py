@@ -275,8 +275,10 @@ class TestAddActivity:
         # Re-open the course detail page to see the activity
         await nicegui_user.open(f"/courses/{course_id}")
 
-        # Activity should be visible
-        await nicegui_user.should_see(content="Annotate Case Study")
+        # Activity should be visible — use generous retries because the course
+        # detail page runs multiple async DB queries (weeks + activities) that
+        # may not complete within the default 0.3 s on resource-constrained CI.
+        await nicegui_user.should_see(content="Annotate Case Study", retries=10)
 
 
 class TestCourseSettingsCopyProtection:

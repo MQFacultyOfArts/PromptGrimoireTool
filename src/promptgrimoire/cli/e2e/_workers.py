@@ -74,6 +74,8 @@ def _apply_worker_database_env(clean_env: dict[str, str], db_url: str) -> None:
     """Configure worker DB env so branch suffixing doesn't rewrite clone names."""
     clean_env["DATABASE__URL"] = db_url
     clean_env["DEV__TEST_DATABASE_URL"] = db_url
+    # "0" disables per-branch URL suffixing in subprocess settings resolution.
+    # Without this, cloned names like "..._w0" become "..._w0_<branch>" and fail.
     clean_env["DEV__BRANCH_DB_SUFFIX"] = "0"
 
 

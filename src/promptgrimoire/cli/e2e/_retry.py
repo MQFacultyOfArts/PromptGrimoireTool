@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Awaitable, Callable  # noqa: TC003
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from promptgrimoire.cli._shared import console
 from promptgrimoire.cli.e2e._artifacts import create_retry_dir
 from promptgrimoire.cli.e2e._lanes import LaneSpec, WorkerResult
 from promptgrimoire.cli.e2e._workers import _worker_status_label
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 def _get_last_failed() -> list[str]:
@@ -184,6 +187,7 @@ async def retry_failed_files_in_isolation(
     user_args: list[str],
     retry_dbs: list[tuple[str, str]],
     retry_ports: list[int],
+    run_worker_for_lane: Callable[..., Awaitable[WorkerResult]],
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed files in isolation and classify flaky vs genuine failures."""
     genuine_failures: list[Path] = []
@@ -193,22 +197,15 @@ async def retry_failed_files_in_isolation(
     for i, failed_file in enumerate(failed_files):
         retry_dir = create_retry_dir(result_root / failed_file.stem)
         try:
-            if lane.needs_server:
-                assert retry_ports[i] != 0  # noqa: S101 - lane contract requires server
-                result = await worker(
-                    failed_file,
-                    retry_ports[i],
-                    retry_dbs[i][0],
-                    retry_dir,
-                    user_args,
-                )
-            else:
-                result = await worker(
-                    failed_file,
-                    retry_dbs[i][0],
-                    retry_dir,
-                    user_args,
-                )
+            result = await run_worker_for_lane(
+                lane,
+                worker,
+                test_file=failed_file,
+                db_url=retry_dbs[i][0],
+                worker_dir=retry_dir,
+                user_args=user_args,
+                port=retry_ports[i] if lane.needs_server else None,
+            )
         except Exception as exc:
             console.print(f"[red]Retry worker {failed_file.name} raised: {exc}[/]")
             result = WorkerResult(

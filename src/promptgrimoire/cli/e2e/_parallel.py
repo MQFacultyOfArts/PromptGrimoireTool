@@ -325,6 +325,7 @@ async def _retry_parallel_failures(
             user_args=user_args,
             retry_dbs=retry_dbs,
             retry_ports=retry_ports,
+            run_worker_for_lane=_run_worker_for_lane,
         )
         _print_retry_summary(genuine_failures, flaky_files)
         return genuine_failures, flaky_files

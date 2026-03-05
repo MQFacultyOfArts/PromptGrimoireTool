@@ -238,6 +238,19 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
             artifact_dir=worker_dir,
         )
 
+    async def _fake_run_worker_for_lane(
+        _lane: Any,
+        worker: Any,
+        *,
+        test_file: Path,
+        db_url: str,
+        worker_dir: Path,
+        user_args: list[str],
+        port: int | None = None,
+    ) -> WorkerResult:
+        assert port is None
+        return await worker(test_file, db_url, worker_dir, user_args)
+
     genuine_failures, flaky_files = await retry_failed_files_in_isolation(
         NICEGUI_LANE,
         _fake_nicegui_worker,
@@ -246,6 +259,7 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
         user_args=[],
         retry_dbs=retry_dbs,
         retry_ports=[0, 0],
+        run_worker_for_lane=_fake_run_worker_for_lane,
     )
 
     assert flaky_files == [failed_flaky]

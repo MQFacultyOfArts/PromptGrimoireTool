@@ -193,6 +193,23 @@ def test_discover_lane_files_uses_explicit_nicegui_allowlist(tmp_path: Path) -> 
     assert discover_lane_files(nicegui_lane) == [course_admin, template_ui, crud_ui]
 
 
+def test_discover_nicegui_files_handles_missing_allowlist_entries(
+    tmp_path: Path,
+) -> None:
+    """Missing allowlist files are skipped rather than raising errors."""
+    from promptgrimoire.cli.e2e._lanes import discover_nicegui_files
+
+    integration_dir = tmp_path / "integration"
+    integration_dir.mkdir()
+    only_existing = integration_dir / "test_instructor_template_ui.py"
+    only_existing.write_text("def test_other() -> None:\n    assert True\n")
+
+    assert discover_nicegui_files(integration_dir) == [only_existing]
+
+    only_existing.unlink()
+    assert discover_nicegui_files(integration_dir) == []
+
+
 @pytest.mark.asyncio
 async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
     monkeypatch: pytest.MonkeyPatch,

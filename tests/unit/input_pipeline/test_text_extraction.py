@@ -166,3 +166,83 @@ class TestExtractTextFromHtml:
         chars = extract_text_from_html("<p><span>A </span><span>B</span></p>")
         text = "".join(chars)
         assert text == "A B"
+
+    # --- Bug #267: inter-paragraph whitespace must not produce phantom chars ---
+
+    def test_inter_paragraph_newlines_skipped(self) -> None:
+        """Whitespace-only text nodes between paragraphs must be skipped.
+
+        Bug #267: extract_text_from_html parses standalone HTML where
+        inter-paragraph whitespace (e.g. ``\\n\\n`` between ``</p>``
+        and ``<p>``) has parent ``<body>``.  But the browser renders
+        inside ``<div id="doc-container">`` where the same whitespace
+        has parent ``<div>`` — a block container.  The JS walker skips
+        whitespace-only text in block containers, so the Python walker
+        must match.
+
+        Without this fix, each inter-paragraph gap adds a phantom
+        space character, causing cumulative negative drift in
+        annotation citation offsets.
+        """
+        # Standalone HTML: \n\n between paragraphs, parent is <body>
+        html = "<html><body><p>AAA</p>\n\n<p>BBB</p>\n\n<p>CCC</p></body></html>"
+        chars = extract_text_from_html(html)
+        text = "".join(chars)
+
+        # Must NOT contain phantom spaces between paragraph text.
+        # "AAABBBCCC" is what the browser's JS walker produces.
+        assert text == "AAABBBCCC", (
+            f"Phantom whitespace between paragraphs: {text!r}. "
+            f"Expected 'AAABBBCCC' (9 chars), got {len(text)} chars. "
+            f"Inter-paragraph whitespace nodes with parent <body> must "
+            f"be skipped, same as <div> parents."
+        )
+
+    def test_inter_paragraph_whitespace_with_comment_fragment(self) -> None:
+        """Real-world Word paste HTML with fragments and o:p tags.
+
+        Reproduces the exact structure from bug #267 production data:
+        Word-pasted legal documents with ``<!--StartFragment-->``,
+        ``<o:p></o:p>`` namespace tags, and ``\\n\\n`` between paragraphs.
+        """
+        html = (
+            "<!--StartFragment--><html><head></head><body>"
+            "<p>Court of Criminal Appeal<o:p></o:p></p>\n\n"
+            "<p>Case Name: Shen v R<o:p></o:p></p>\n\n"
+            "<p>Citation: [2024] NSWCCA 252<o:p></o:p></p>"
+            "<!--EndFragment--></body></html>"
+        )
+        chars = extract_text_from_html(html)
+        text = "".join(chars)
+
+        # "Shen v R" must start at the same offset regardless of
+        # whether parsed standalone or inside a <div>
+        shen_pos = text.find("Shen v R")
+        assert shen_pos != -1, f"'Shen v R' not found in extracted text: {text!r}"
+
+        # Without phantom spaces: "Court of Criminal Appeal" (24)
+        # + "Case Name: " (11) = 35 chars before "Shen v R"
+        expected_prefix = "Court of Criminal AppealCase Name: "
+        assert text[:shen_pos] == expected_prefix, (
+            f"Offset drift detected: text before 'Shen v R' is "
+            f"{text[:shen_pos]!r} ({shen_pos} chars), "
+            f"expected {expected_prefix!r} ({len(expected_prefix)} chars). "
+            f"Delta: {shen_pos - len(expected_prefix)} phantom chars from "
+            f"inter-paragraph whitespace."
+        )
+
+    def test_body_and_html_treated_as_block_containers(self) -> None:
+        """<body> and <html> must skip whitespace-only children.
+
+        Both <body> and <html> are block-level containers. Whitespace-only
+        text nodes that are direct children of these elements are formatting
+        indentation, not document content — same as whitespace inside <div>,
+        <table>, etc.
+        """
+        # Whitespace between block children of <body>
+        html = "<html><body>\n<p>X</p>\n<p>Y</p>\n</body></html>"
+        chars = extract_text_from_html(html)
+        text = "".join(chars)
+        assert text == "XY", (
+            f"Whitespace-only text nodes in <body> should be skipped: {text!r}"
+        )

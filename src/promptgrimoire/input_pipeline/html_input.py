@@ -39,6 +39,8 @@ _STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
 # set in walkTextNodes (annotation-highlight.js) for char-index parity.
 _BLOCK_TAGS = frozenset(
     (
+        "html",
+        "body",
         "table",
         "tbody",
         "thead",

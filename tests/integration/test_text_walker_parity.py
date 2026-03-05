@@ -79,6 +79,7 @@ _JS_EXTRACT_TEXT = """
 (() => {
     const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE']);
     const BLOCK = new Set([
+        'HTML','BODY',
         'TABLE','TBODY','THEAD','TFOOT','TR','TD','TH',
         'UL','OL','LI','DL','DT','DD',
         'DIV','SECTION','ARTICLE','ASIDE','HEADER','FOOTER','NAV','MAIN',

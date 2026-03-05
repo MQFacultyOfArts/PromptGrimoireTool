@@ -49,19 +49,18 @@ class TestHighlightRendering:
 
         # Select text and create highlight via tag button
         select_text_range(page, "defendant")
-        page.wait_for_timeout(300)
 
-        # Click first tag button (Jurisdiction)
+        # Wait for and click first tag button (Jurisdiction)
         tag_btn = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_btn.wait_for(state="visible")
         tag_btn.click()
-        page.wait_for_timeout(500)
 
         # Verify no char spans in DOM
         char_spans = page.locator("#doc-container span.char")
         expect(char_spans).to_have_count(0)
 
-        # Verify highlight is registered in CSS.highlights
-        has_highlight = page.evaluate(
+        # Wait for and verify highlight is registered in CSS.highlights
+        page.wait_for_function(
             """() => {
                 for (const name of CSS.highlights.keys()) {
                     if (name.startsWith('hl-')) return true;
@@ -69,7 +68,6 @@ class TestHighlightRendering:
                 return false;
             }"""
         )
-        assert has_highlight, "Expected at least one hl-* entry in CSS.highlights"
 
     def test_multiple_tags_render_with_distinct_highlights(
         self, authenticated_page: Page, app_server: str
@@ -88,28 +86,35 @@ class TestHighlightRendering:
 
         # Create highlight with first tag (index 0 = jurisdiction)
         select_text_range(page, "New South Wales")
-        page.wait_for_timeout(300)
-        page.locator("[data-testid='tag-toolbar'] button").nth(0).click()
-        page.wait_for_timeout(500)
+        tag_btn_0 = page.locator("[data-testid='tag-toolbar'] button").nth(0)
+        tag_btn_0.wait_for(state="visible")
+        tag_btn_0.click()
+
+        # Wait for first highlight to be applied
+        page.wait_for_function(
+            """() => {
+                for (const name of CSS.highlights.keys()) {
+                    if (name.startsWith('hl-')) return true;
+                }
+                return false;
+            }"""
+        )
 
         # Create highlight with second tag (index 1)
         select_text_range(page, "negligence")
-        page.wait_for_timeout(300)
-        page.locator("[data-testid='tag-toolbar'] button").nth(1).click()
-        page.wait_for_timeout(500)
+        tag_btn_1 = page.locator("[data-testid='tag-toolbar'] button").nth(1)
+        tag_btn_1.wait_for(state="visible")
+        tag_btn_1.click()
 
-        # Verify two distinct hl-* entries in CSS.highlights
-        highlight_names = page.evaluate(
+        # Wait for and verify two distinct hl-* entries in CSS.highlights
+        page.wait_for_function(
             """() => {
                 const names = [];
                 for (const name of CSS.highlights.keys()) {
                     if (name.startsWith('hl-')) names.push(name);
                 }
-                return names;
+                return names.length >= 2;
             }"""
-        )
-        assert len(highlight_names) >= 2, (
-            f"Expected at least 2 distinct hl-* highlights, got: {highlight_names}"
         )
 
     def test_highlight_spans_across_block_boundaries(
@@ -138,23 +143,22 @@ class TestHighlightRendering:
                 emitEvent('selection_made', {start_char: 10, end_char: endChar});
             }"""
         )
-        page.wait_for_timeout(300)
 
-        # Click first tag button
-        page.locator("[data-testid='tag-toolbar'] button").first.click()
-        page.wait_for_timeout(500)
+        # Wait for and click first tag button
+        tag_btn = page.locator("[data-testid='tag-toolbar'] button").first
+        tag_btn.wait_for(state="visible")
+        tag_btn.click()
 
-        # Verify a highlight entry exists
-        highlight_count = page.evaluate(
+        # Wait for and verify a highlight entry exists
+        page.wait_for_function(
             """() => {
                 let count = 0;
                 for (const name of CSS.highlights.keys()) {
                     if (name.startsWith('hl-')) count++;
                 }
-                return count;
+                return count >= 1;
             }"""
         )
-        assert highlight_count >= 1, "Expected highlight to span across block boundary"
 
     def test_invalid_offsets_silently_skipped(
         self, authenticated_page: Page, app_server: str
@@ -188,9 +192,12 @@ class TestHighlightRendering:
                         {start_char: 99999, end_char: 99999}, // beyond doc length
                     ]
                 });
+
+                // Signal completion by creating a dummy element or just resolving
+                window.__applyHighlightsDone = true;
             }"""
         )
-        page.wait_for_timeout(300)
+        page.wait_for_function("() => window.__applyHighlightsDone === true")
 
         # Should not crash — verify page is still responsive
         title = page.evaluate("() => document.title")
@@ -221,27 +228,33 @@ class TestHighlightRendering:
 
         # Create first highlight on "defendant was negligent" (tag 0)
         select_text_range(page, "defendant was negligent")
-        page.wait_for_timeout(300)
-        page.locator("[data-testid='tag-toolbar'] button").nth(0).click()
-        page.wait_for_timeout(500)
+        tag_btn_0 = page.locator("[data-testid='tag-toolbar'] button").nth(0)
+        tag_btn_0.wait_for(state="visible")
+        tag_btn_0.click()
+
+        # Wait for first highlight
+        page.wait_for_function(
+            """() => {
+                for (const name of CSS.highlights.keys()) {
+                    if (name.startsWith('hl-')) return true;
+                }
+                return false;
+            }"""
+        )
 
         # Create second highlight on "negligent in their" (tag 1, overlaps first)
         select_text_range(page, "negligent in their")
-        page.wait_for_timeout(300)
-        page.locator("[data-testid='tag-toolbar'] button").nth(1).click()
-        page.wait_for_timeout(500)
+        tag_btn_1 = page.locator("[data-testid='tag-toolbar'] button").nth(1)
+        tag_btn_1.wait_for(state="visible")
+        tag_btn_1.click()
 
-        # Verify both highlight entries exist with distinct names
-        highlight_names = page.evaluate(
+        # Wait for and verify both highlight entries exist with distinct names
+        page.wait_for_function(
             """() => {
                 const names = [];
                 for (const name of CSS.highlights.keys()) {
                     if (name.startsWith('hl-')) names.push(name);
                 }
-                return names;
+                return names.length >= 2;
             }"""
-        )
-        assert len(highlight_names) >= 2, (
-            f"Expected 2+ hl-* highlights for overlapping ranges, "
-            f"got: {highlight_names}"
         )

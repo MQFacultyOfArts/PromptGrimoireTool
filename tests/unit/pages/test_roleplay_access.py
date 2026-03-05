@@ -45,6 +45,38 @@ class TestRequireRoleplayPageAccess:
             )
             mock_ui.navigate.to.assert_not_called()
 
+    def test_allows_non_privileged_when_privilege_not_required(self) -> None:
+        """Students pass the guard when roleplay_require_privileged is False."""
+        from promptgrimoire.config import get_settings
+
+        settings = get_settings()
+        patched = settings.model_copy(
+            update={
+                "features": settings.features.model_copy(
+                    update={"roleplay_require_privileged": False}
+                )
+            }
+        )
+        with (
+            patch(
+                "promptgrimoire.pages.roleplay_access._get_session_user",
+                return_value={
+                    "email": "student@example.edu",
+                    "is_admin": False,
+                    "roles": [],
+                },
+            ),
+            patch("promptgrimoire.pages.roleplay_access.ui") as mock_ui,
+            patch(
+                "promptgrimoire.pages.roleplay_access.get_settings",
+                return_value=patched,
+            ),
+        ):
+            assert roleplay_access.require_roleplay_page_access() is True
+
+            mock_ui.notify.assert_not_called()
+            mock_ui.navigate.to.assert_not_called()
+
     def test_allows_privileged_user(self) -> None:
         """Privileged users retain standalone roleplay page access."""
         with (

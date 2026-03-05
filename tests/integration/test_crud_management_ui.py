@@ -16,7 +16,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -29,6 +28,7 @@ from tests.integration.nicegui_helpers import (
     _find_by_testid,
     _should_not_see_testid,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
@@ -116,7 +116,6 @@ class TestDeleteWeekConfirmationDialog:
 
         # Click the delete-week button
         _click_testid(nicegui_user, f"delete-week-btn-{week_id}")
-        await asyncio.sleep(0.1)
 
         # Confirmation dialog should be visible
         await _should_see_testid(nicegui_user, "confirm-delete-btn")
@@ -124,7 +123,6 @@ class TestDeleteWeekConfirmationDialog:
 
         # Click cancel
         _click_testid(nicegui_user, "cancel-delete-btn")
-        await asyncio.sleep(0.1)
 
         # Dialog should close -- confirm button gone
         await _should_not_see_testid(nicegui_user, "confirm-delete-btn")
@@ -159,15 +157,13 @@ class TestDeleteWeekSuccess:
 
         # Click delete
         _click_testid(nicegui_user, f"delete-week-btn-{week_id}")
-        await asyncio.sleep(0.1)
 
         # Confirm deletion
         await _should_see_testid(nicegui_user, "confirm-delete-btn")
         _click_testid(nicegui_user, "confirm-delete-btn")
-        await asyncio.sleep(0.3)
 
         # Week should disappear
-        await nicegui_user.should_not_see(content=week_title)
+        await nicegui_user.should_not_see(content=week_title, retries=20)
 
 
 class TestDeleteUnitButtonVisibility:
@@ -239,7 +235,6 @@ class TestDeleteUnitButtonVisibility:
 
         # Click delete unit
         _click_testid(nicegui_user, "delete-unit-btn")
-        await asyncio.sleep(0.1)
 
         # Confirmation dialog must appear
         await _should_see_testid(nicegui_user, "confirm-delete-btn")
@@ -248,13 +243,12 @@ class TestDeleteUnitButtonVisibility:
         _click_testid(nicegui_user, "confirm-delete-btn")
 
         # Wait for: DB deletion + on_success callback + background navigation task
-        for _ in range(20):
-            if (
+        await wait_for(
+            lambda: (
                 nicegui_user.back_history
                 and nicegui_user.back_history[-1] == "/courses"
-            ):
-                break
-            await asyncio.sleep(0.1)
+            )
+        )
 
         history = nicegui_user.back_history
         assert history[-1] == "/courses", (
@@ -342,7 +336,6 @@ class TestWorkspaceDelete:
 
         # Click the delete-workspace button
         _click_testid(nicegui_user, f"delete-workspace-btn-{ws_id}")
-        await asyncio.sleep(0.1)
 
         # Confirmation dialog should appear
         await _should_see_testid(nicegui_user, "confirm-delete-workspace-btn")
@@ -352,16 +345,15 @@ class TestWorkspaceDelete:
         _click_testid(nicegui_user, "confirm-delete-workspace-btn")
 
         # Wait for async delete + refreshable rebuild
-        for _ in range(20):
-            if (
+        await wait_for(
+            lambda: (
                 _find_by_testid(
                     nicegui_user,
                     f"start-activity-btn-{activity_id}",
                 )
                 is not None
-            ):
-                break
-            await asyncio.sleep(0.15)
+            )
+        )
 
         # After deletion, "Start as Student" button should appear
         await _should_see_testid(nicegui_user, f"start-activity-btn-{activity_id}")

@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 import importlib
+import re
 
 from typer.testing import CliRunner
 
 from promptgrimoire.cli import app
 
-runner = CliRunner(env={"NO_COLOR": "1"})
+runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(result) -> str:
+    """Strip ANSI escape codes from CliRunner output.
+
+    Rich emits colour codes when GitHub Actions sets FORCE_COLOR or the
+    runner appears to be a TTY.  CliRunner's ``env`` parameter does not
+    override ``os.environ`` so NO_COLOR cannot reliably suppress them.
+    """
+    return _ANSI_RE.sub("", result.output)
 
 
 def test_grimoire_help() -> None:
@@ -16,7 +29,7 @@ def test_grimoire_help() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     for name in ("test", "e2e", "admin", "seed", "export", "docs"):
-        assert name in result.output
+        assert name in _plain(result)
 
 
 def test_grimoire_test_help() -> None:
@@ -28,23 +41,23 @@ def test_grimoire_e2e_help() -> None:
     result = runner.invoke(app, ["e2e", "--help"])
     assert result.exit_code == 0
     for name in ("run", "slow", "noretry", "changed", "nicegui", "all"):
-        assert name in result.output
+        assert name in _plain(result)
 
 
 def test_grimoire_e2e_nicegui_help() -> None:
     """NiceGUI lane command exposes the same filter surface as other e2e commands."""
     result = runner.invoke(app, ["e2e", "nicegui", "--help"])
     assert result.exit_code == 0
-    assert "--filter" in result.output
-    assert "-k" in result.output
+    assert "--filter" in _plain(result)
+    assert "-k" in _plain(result)
 
 
 def test_grimoire_e2e_all_help() -> None:
     """Umbrella command help is exposed in the e2e command surface."""
     result = runner.invoke(app, ["e2e", "all", "--help"])
     assert result.exit_code == 0
-    assert "--filter" in result.output
-    assert "-k" in result.output
+    assert "--filter" in _plain(result)
+    assert "-k" in _plain(result)
 
 
 def test_grimoire_admin_help() -> None:

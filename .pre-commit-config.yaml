@@ -40,6 +40,16 @@ repos:
         # cli_loadtest.py, roleplay.py: pre-existing complexity, tracked in #253.
         exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$)'
 
+  # Prune orphaned .pyc files (source deleted, stale bytecode remains)
+  - repo: local
+    hooks:
+      - id: prune-orphan-pyc
+        name: prune orphaned .pyc files
+        entry: uv run python scripts/prune_orphan_pyc.py
+        language: system
+        always_run: true
+        pass_filenames: false
+
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

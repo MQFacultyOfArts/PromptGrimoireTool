@@ -51,7 +51,7 @@ REQUIRED_PACKAGES = [
     "fontspec",  # System font support
     "luacolor",  # Color support for LuaLaTeX
     "xcolor",  # Color support
-    "soul",  # Underlining/highlighting (fallback)
+    "soul",  # Strikethrough (\st) — Pandoc 3.x emits \st{}
     # Page layout
     "geometry",  # Page layout
     "marginalia",  # Auto-stacking margin notes (LuaLaTeX)

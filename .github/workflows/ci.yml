@@ -123,7 +123,7 @@ jobs:
           OSFONTDIR: /usr/share/fonts:/usr/share/texmf/fonts
         run: uv run grimoire test all
 
-  e2e:
+  e2e-playwright:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -173,3 +173,61 @@ jobs:
         env:
           DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
         run: uv run grimoire e2e run
+
+      - name: Upload Playwright lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-playwright-artifacts
+          path: output/test_output/e2e/playwright/**
+          if-no-files-found: ignore
+
+  nicegui-ui:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mecab libmecab-dev pandoc
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run NiceGUI UI lane tests
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+        run: uv run grimoire e2e nicegui
+
+      - name: Upload NiceGUI lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nicegui-ui-artifacts
+          path: output/test_output/e2e/nicegui/**
+          if-no-files-found: ignore

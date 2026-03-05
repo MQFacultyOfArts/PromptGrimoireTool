@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import shutil
 import time
@@ -37,22 +38,20 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
-def _resolve_exception_file(
-    tasks: list[asyncio.Task[WorkerResult]],
-    exc: Exception,
-    files: list[Path],
-) -> Path:
-    """Find which test file raised *exc* by matching across indexed tasks."""
-    for j, t in enumerate(tasks):
-        if not t.done() or t.cancelled():
-            continue
-        try:
-            t.result()
-        except Exception as t_exc:
-            if t_exc is exc:
-                return files[j]
-    return files[0]  # fallback
+
+def _drop_database_with_debug(db_url: str, *, context: str) -> None:
+    """Drop *db_url* and log cleanup failures at debug level."""
+    try:
+        drop_database(db_url)
+    except Exception:
+        logger.debug(
+            "Failed to drop database during %s: %s",
+            context,
+            db_url,
+            exc_info=True,
+        )
 
 
 def _report_worker_progress(
@@ -127,13 +126,16 @@ async def _run_all_workers(
                 port=ports[i] if lane.needs_server else None,
             )
 
-    tasks = [asyncio.create_task(_tracked_worker(i)) for i in range(total)]
+    tasks: list[asyncio.Task[WorkerResult]] = [
+        asyncio.create_task(_tracked_worker(i), name=f"e2e-{f.stem}")
+        for i, f in enumerate(files)
+    ]
 
     for done_count, future in enumerate(asyncio.as_completed(tasks), 1):
         try:
             result = await future
         except Exception as exc:
-            fpath = _resolve_exception_file(tasks, exc, files)
+            fpath = _resolve_failed_task_file(tasks, exc, files)
             console.print(f"[red]Worker {fpath.name} raised: {exc}[/]")
             result = WorkerResult(
                 file=fpath,
@@ -254,8 +256,7 @@ def _cleanup_parallel_results(
     """Clean up or preserve worker databases and result directory."""
     if all_passed:
         for db_url, _db_name in worker_dbs:
-            with contextlib.suppress(Exception):
-                drop_database(db_url)
+            _drop_database_with_debug(db_url, context="parallel result cleanup")
         shutil.rmtree(run_dir, ignore_errors=True)
         console.print("[green]All passed — cleaned up worker databases and results[/]")
     else:
@@ -377,8 +378,7 @@ async def _retry_parallel_failures(
 
     finally:
         for url, _ in retry_dbs:
-            with contextlib.suppress(Exception):
-                drop_database(url)
+            _drop_database_with_debug(url, context="retry database cleanup")
 
 
 def _create_worker_databases(
@@ -400,8 +400,7 @@ def _create_worker_databases(
     # Drop stale databases from interrupted previous runs
     for i in range(count):
         stale_url = f"{base_url}/{source_db_name}_{suffix}{i}{query}"
-        with contextlib.suppress(Exception):
-            drop_database(stale_url)
+        _drop_database_with_debug(stale_url, context="stale worker database cleanup")
 
     # Clone fresh databases
     worker_dbs: list[tuple[str, str]] = []
@@ -412,8 +411,7 @@ def _create_worker_databases(
             worker_dbs.append((db_url, target_name))
     except Exception:
         for url, _ in worker_dbs:
-            with contextlib.suppress(Exception):
-                drop_database(url)
+            _drop_database_with_debug(url, context="worker database rollback")
         raise
 
     return worker_dbs
@@ -449,12 +447,17 @@ async def _finalise_parallel_results(
                 source_db_name,
                 user_args,
             )
-            all_passed = not genuine_failures and all(
-                result.exit_code in (0, 5) for result in results
+            # Retries re-run every failed file.
+            # If none fail on retry, treat them as flaky.
+            # Cancelled workers (`-1`) were never executed and still fail the lane.
+            all_passed = not genuine_failures and not any(
+                result.exit_code == -1 for result in results
             )
 
-    with contextlib.suppress(Exception):
+    try:
         _merge_junit_xml(run_dir)
+    except Exception:
+        logger.debug("Failed to merge JUnit XML in %s", run_dir, exc_info=True)
     write_summary_metadata(
         run_dir,
         lane.name,

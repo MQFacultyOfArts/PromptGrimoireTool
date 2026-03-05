@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from promptgrimoire.cli.e2e._workers import (
     _allocate_ports,
     _filter_junitxml_args,
@@ -137,3 +139,152 @@ def test_all_results_passed_treats_exit_code_5_as_non_fatal(tmp_path: Path) -> N
     ]
 
     assert _all_results_passed(results) is True
+
+
+def test_discover_lane_files_selects_nicegui_marker_files(tmp_path: Path) -> None:
+    """Lane discovery selects Playwright files by path and NiceGUI by marker."""
+    from promptgrimoire.cli.e2e._lanes import (
+        NICEGUI_LANE,
+        PLAYWRIGHT_LANE,
+        LaneSpec,
+        discover_lane_files,
+        discover_nicegui_files,
+    )
+
+    e2e_dir = tmp_path / "e2e"
+    e2e_dir.mkdir()
+    playwright_a = e2e_dir / "test_a.py"
+    playwright_b = e2e_dir / "test_b.py"
+    playwright_a.write_text("def test_a() -> None:\n    assert True\n")
+    playwright_b.write_text("def test_b() -> None:\n    assert True\n")
+    (e2e_dir / "helpers.py").write_text("def helper() -> None:\n    pass\n")
+
+    integration_dir = tmp_path / "integration"
+    integration_dir.mkdir()
+    nicegui_marked = integration_dir / "test_ui_marked.py"
+    nicegui_unmarked = integration_dir / "test_ui_unmarked.py"
+    nicegui_marked.write_text(
+        "import pytest\npytestmark = pytest.mark.nicegui_ui\n\n"
+        "def test_ui() -> None:\n    assert True\n"
+    )
+    nicegui_unmarked.write_text("def test_other() -> None:\n    assert True\n")
+
+    assert discover_nicegui_files(integration_dir) == [nicegui_marked]
+
+    playwright_lane = LaneSpec(
+        name=PLAYWRIGHT_LANE.name,
+        test_paths=(e2e_dir,),
+        marker_expr=PLAYWRIGHT_LANE.marker_expr,
+        needs_server=PLAYWRIGHT_LANE.needs_server,
+        artifact_subdir=PLAYWRIGHT_LANE.artifact_subdir,
+    )
+    nicegui_lane = LaneSpec(
+        name=NICEGUI_LANE.name,
+        test_paths=(integration_dir,),
+        marker_expr=NICEGUI_LANE.marker_expr,
+        needs_server=NICEGUI_LANE.needs_server,
+        artifact_subdir=NICEGUI_LANE.artifact_subdir,
+    )
+
+    assert discover_lane_files(playwright_lane) == [playwright_a, playwright_b]
+    assert discover_lane_files(nicegui_lane) == [nicegui_marked]
+
+
+@pytest.mark.asyncio
+async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed file that passes on retry is marked as flaky, not a final failure."""
+    from promptgrimoire.cli.e2e import _parallel
+    from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    failed_result = WorkerResult(
+        file=Path("tests/e2e/test_flaky.py"),
+        exit_code=1,
+        duration_s=0.4,
+        artifact_dir=tmp_path / "worker-flaky",
+    )
+
+    async def _fake_retry_parallel_failures(
+        *_args, **_kwargs
+    ) -> tuple[list[Path], list[Path]]:
+        return [], [failed_result.file]
+
+    async def _unused_worker(*_args, **_kwargs) -> WorkerResult:
+        raise AssertionError("worker should not be invoked by this test")
+
+    monkeypatch.setattr(
+        _parallel, "_retry_parallel_failures", _fake_retry_parallel_failures
+    )
+    monkeypatch.setattr(
+        _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
+    )
+
+    all_passed = await _parallel._finalise_parallel_results(
+        PLAYWRIGHT_LANE,
+        _unused_worker,
+        [failed_result],
+        0.0,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        "test_db",
+        run_dir,
+        [],
+    )
+
+    assert all_passed is True
+
+
+@pytest.mark.asyncio
+async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Cancelled workers are not retried and keep the lane in a failing state."""
+    from promptgrimoire.cli.e2e import _parallel
+    from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    failed_result = WorkerResult(
+        file=Path("tests/e2e/test_flaky.py"),
+        exit_code=1,
+        duration_s=0.4,
+        artifact_dir=tmp_path / "worker-flaky",
+    )
+    cancelled_result = WorkerResult(
+        file=Path("tests/e2e/test_cancelled.py"),
+        exit_code=-1,
+        duration_s=0.0,
+        artifact_dir=tmp_path / "worker-cancelled",
+    )
+
+    async def _fake_retry_parallel_failures(
+        *_args, **_kwargs
+    ) -> tuple[list[Path], list[Path]]:
+        return [], [failed_result.file]
+
+    async def _unused_worker(*_args, **_kwargs) -> WorkerResult:
+        raise AssertionError("worker should not be invoked by this test")
+
+    monkeypatch.setattr(
+        _parallel, "_retry_parallel_failures", _fake_retry_parallel_failures
+    )
+    monkeypatch.setattr(
+        _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
+    )
+
+    all_passed = await _parallel._finalise_parallel_results(
+        PLAYWRIGHT_LANE,
+        _unused_worker,
+        [failed_result, cancelled_result],
+        0.0,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        "test_db",
+        run_dir,
+        [],
+    )
+
+    assert all_passed is False

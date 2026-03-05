@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, cast
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
 from promptgrimoire.cli.e2e._artifacts import (
     create_lane_run_dir,
-    create_retry_dir,
     create_worker_dir,
     write_summary_metadata,
 )
@@ -23,6 +22,7 @@ from promptgrimoire.cli.e2e._lanes import (
     WorkerResult,
     discover_lane_files,
 )
+from promptgrimoire.cli.e2e._retry import retry_failed_files_in_isolation
 from promptgrimoire.cli.e2e._workers import (
     _allocate_ports,
     _merge_junit_xml,
@@ -286,62 +286,13 @@ def _print_retry_summary(
             console.print(f"  {f.name}")
 
 
-async def _run_sequential_retries(
-    lane: LaneSpec,
-    worker: Callable[..., Awaitable[WorkerResult]],
-    failed_results: list[WorkerResult],
-    retry_ports: list[int],
-    retry_dbs: list[tuple[str, str]],
-    user_args: list[str],
-) -> tuple[list[Path], list[Path]]:
-    """Execute retry workers sequentially, classifying results as flaky or genuine."""
-    genuine_failures: list[Path] = []
-    flaky_files: list[Path] = []
-    total = len(failed_results)
-
-    for i, failed_result in enumerate(failed_results):
-        retry_dir = create_retry_dir(failed_result.artifact_dir)
-        try:
-            result = await _run_worker_for_lane(
-                lane,
-                worker,
-                test_file=failed_result.file,
-                db_url=retry_dbs[i][0],
-                worker_dir=retry_dir,
-                user_args=user_args,
-                port=retry_ports[i] if lane.needs_server else None,
-            )
-        except Exception as exc:
-            console.print(
-                f"[red]Retry worker {failed_result.file.name} raised: {exc}[/]"
-            )
-            result = WorkerResult(
-                file=failed_result.file,
-                exit_code=1,
-                duration_s=0.0,
-                artifact_dir=retry_dir,
-            )
-
-        label = _worker_status_label(result.exit_code)
-        console.print(
-            f"  [retry {i + 1}/{total}] {result.file.name}: "
-            f"{label} ({result.duration_s:.1f}s)"
-        )
-
-        if result.exit_code in (0, 5):
-            flaky_files.append(failed_result.file)
-        else:
-            genuine_failures.append(failed_result.file)
-
-    return genuine_failures, flaky_files
-
-
 async def _retry_parallel_failures(
     lane: LaneSpec,
     worker: Callable[..., Awaitable[WorkerResult]],
     failed_results: list[WorkerResult],
     template_db_url: str,
     source_db_name: str,
+    run_dir: Path,
     user_args: list[str],
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed E2E files with fresh servers and databases.
@@ -363,15 +314,17 @@ async def _retry_parallel_failures(
     retry_dbs = _create_worker_databases(
         template_db_url, source_db_name, len(failed_results), suffix="retry"
     )
+    failed_files = [result.file for result in failed_results]
 
     try:
-        genuine_failures, flaky_files = await _run_sequential_retries(
+        genuine_failures, flaky_files = await retry_failed_files_in_isolation(
             lane,
             worker,
-            failed_results,
-            retry_ports,
-            retry_dbs,
-            user_args,
+            failed_files=failed_files,
+            result_root=run_dir,
+            user_args=user_args,
+            retry_dbs=retry_dbs,
+            retry_ports=retry_ports,
         )
         _print_retry_summary(genuine_failures, flaky_files)
         return genuine_failures, flaky_files
@@ -445,6 +398,7 @@ async def _finalise_parallel_results(
                 failed_results,
                 test_db_url,
                 source_db_name,
+                run_dir,
                 user_args,
             )
             # Retries re-run every failed file.

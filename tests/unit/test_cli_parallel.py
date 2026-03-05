@@ -141,8 +141,8 @@ def test_all_results_passed_treats_exit_code_5_as_non_fatal(tmp_path: Path) -> N
     assert _all_results_passed(results) is True
 
 
-def test_discover_lane_files_selects_nicegui_marker_files(tmp_path: Path) -> None:
-    """Lane discovery selects Playwright files by path and NiceGUI by marker."""
+def test_discover_lane_files_uses_explicit_nicegui_allowlist(tmp_path: Path) -> None:
+    """Lane discovery selects NiceGUI files via the fixed Phase 3 allowlist."""
     from promptgrimoire.cli.e2e._lanes import (
         NICEGUI_LANE,
         PLAYWRIGHT_LANE,
@@ -161,15 +161,18 @@ def test_discover_lane_files_selects_nicegui_marker_files(tmp_path: Path) -> Non
 
     integration_dir = tmp_path / "integration"
     integration_dir.mkdir()
-    nicegui_marked = integration_dir / "test_ui_marked.py"
-    nicegui_unmarked = integration_dir / "test_ui_unmarked.py"
-    nicegui_marked.write_text(
-        "import pytest\npytestmark = pytest.mark.nicegui_ui\n\n"
-        "def test_ui() -> None:\n    assert True\n"
-    )
-    nicegui_unmarked.write_text("def test_other() -> None:\n    assert True\n")
+    course_admin = integration_dir / "test_instructor_course_admin_ui.py"
+    template_ui = integration_dir / "test_instructor_template_ui.py"
+    crud_ui = integration_dir / "test_crud_management_ui.py"
+    excluded = integration_dir / "test_some_other_ui.py"
+    for path in (course_admin, template_ui, crud_ui, excluded):
+        path.write_text("def test_other() -> None:\n    assert True\n")
 
-    assert discover_nicegui_files(integration_dir) == [nicegui_marked]
+    assert discover_nicegui_files(integration_dir) == [
+        course_admin,
+        template_ui,
+        crud_ui,
+    ]
 
     playwright_lane = LaneSpec(
         name=PLAYWRIGHT_LANE.name,
@@ -187,7 +190,7 @@ def test_discover_lane_files_selects_nicegui_marker_files(tmp_path: Path) -> Non
     )
 
     assert discover_lane_files(playwright_lane) == [playwright_a, playwright_b]
-    assert discover_lane_files(nicegui_lane) == [nicegui_marked]
+    assert discover_lane_files(nicegui_lane) == [course_admin, template_ui, crud_ui]
 
 
 @pytest.mark.asyncio

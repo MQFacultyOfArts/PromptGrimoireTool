@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Awaitable, Callable  # noqa: TC003
 from pathlib import Path
 
 from promptgrimoire.cli._shared import console
+from promptgrimoire.cli.e2e._artifacts import create_retry_dir
+from promptgrimoire.cli.e2e._lanes import LaneSpec, WorkerResult
+from promptgrimoire.cli.e2e._workers import _worker_status_label
 
 
 def _get_last_failed() -> list[str]:
@@ -169,3 +173,60 @@ def _retry_e2e_tests_in_isolation(
     _print_retry_outcome(flaky, genuine_failures)
 
     return 1 if genuine_failures else 0
+
+
+async def retry_failed_files_in_isolation(
+    lane: LaneSpec,
+    worker: Callable[..., Awaitable[WorkerResult]],
+    *,
+    failed_files: list[Path],
+    result_root: Path,
+    user_args: list[str],
+    retry_dbs: list[tuple[str, str]],
+    retry_ports: list[int],
+) -> tuple[list[Path], list[Path]]:
+    """Re-run failed files in isolation and classify flaky vs genuine failures."""
+    genuine_failures: list[Path] = []
+    flaky_files: list[Path] = []
+    total = len(failed_files)
+
+    for i, failed_file in enumerate(failed_files):
+        retry_dir = create_retry_dir(result_root / failed_file.stem)
+        try:
+            if lane.needs_server:
+                assert retry_ports[i] != 0  # noqa: S101 - lane contract requires server
+                result = await worker(
+                    failed_file,
+                    retry_ports[i],
+                    retry_dbs[i][0],
+                    retry_dir,
+                    user_args,
+                )
+            else:
+                result = await worker(
+                    failed_file,
+                    retry_dbs[i][0],
+                    retry_dir,
+                    user_args,
+                )
+        except Exception as exc:
+            console.print(f"[red]Retry worker {failed_file.name} raised: {exc}[/]")
+            result = WorkerResult(
+                file=failed_file,
+                exit_code=1,
+                duration_s=0.0,
+                artifact_dir=retry_dir,
+            )
+
+        label = _worker_status_label(result.exit_code)
+        console.print(
+            f"  [retry {i + 1}/{total}] {result.file.name}: "
+            f"{label} ({result.duration_s:.1f}s)"
+        )
+
+        if result.exit_code in (0, 5):
+            flaky_files.append(failed_file)
+        else:
+            genuine_failures.append(failed_file)
+
+    return genuine_failures, flaky_files

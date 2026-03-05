@@ -27,6 +27,16 @@ def test_grimoire_test_help() -> None:
 def test_grimoire_e2e_help() -> None:
     result = runner.invoke(app, ["e2e", "--help"])
     assert result.exit_code == 0
+    for name in ("run", "slow", "noretry", "changed", "nicegui"):
+        assert name in result.output
+
+
+def test_grimoire_e2e_nicegui_help() -> None:
+    """NiceGUI lane command exposes the same filter surface as other e2e commands."""
+    result = runner.invoke(app, ["e2e", "nicegui", "--help"])
+    assert result.exit_code == 0
+    assert "--filter" in result.output
+    assert "-k" in result.output
 
 
 def test_grimoire_admin_help() -> None:

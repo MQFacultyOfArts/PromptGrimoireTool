@@ -43,6 +43,12 @@ NICEGUI_LANE = LaneSpec(
     artifact_subdir="nicegui",
 )
 
+_NICEGUI_ALLOWLIST: tuple[str, ...] = (
+    "test_instructor_course_admin_ui.py",
+    "test_instructor_template_ui.py",
+    "test_crud_management_ui.py",
+)
+
 
 def _discover_test_files(base_dir: Path) -> list[Path]:
     """Return sorted `test_*.py` files under *base_dir*."""
@@ -55,12 +61,10 @@ def discover_playwright_files(base_dir: Path = Path("tests/e2e")) -> list[Path]:
 
 
 def discover_nicegui_files(base_dir: Path = Path("tests/integration")) -> list[Path]:
-    """Discover NiceGUI UI files by marker annotation."""
-    nicegui_files: list[Path] = []
-    for path in _discover_test_files(base_dir):
-        if "pytest.mark.nicegui_ui" in path.read_text():
-            nicegui_files.append(path)
-    return nicegui_files
+    """Discover NiceGUI UI files from the explicit allowlist."""
+    # Phase 3 intentionally uses a fixed allowlist for lane stability.
+    # Generalised marker/AST discovery can be revisited after the lane is proven stable.
+    return [path for name in _NICEGUI_ALLOWLIST if (path := base_dir / name).exists()]
 
 
 def discover_lane_files(lane: LaneSpec) -> list[Path]:

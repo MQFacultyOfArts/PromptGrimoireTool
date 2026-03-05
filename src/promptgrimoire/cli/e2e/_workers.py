@@ -70,6 +70,13 @@ def _clean_test_env() -> dict[str, str]:
     }
 
 
+def _apply_worker_database_env(clean_env: dict[str, str], db_url: str) -> None:
+    """Configure worker DB env so branch suffixing doesn't rewrite clone names."""
+    clean_env["DATABASE__URL"] = db_url
+    clean_env["DEV__TEST_DATABASE_URL"] = db_url
+    clean_env["DEV__BRANCH_DB_SUFFIX"] = "0"
+
+
 async def _wait_for_server_ready(
     server: asyncio.subprocess.Process,
     *,
@@ -167,7 +174,7 @@ async def run_playwright_file(
     """Run one Playwright-backed E2E file with a dedicated server and DB."""
     worker_dir.mkdir(parents=True, exist_ok=True)
     clean_env = _clean_test_env()
-    clean_env["DATABASE__URL"] = db_url
+    _apply_worker_database_env(clean_env, db_url)
 
     server_log_path = worker_dir / "server.log"
     pytest_log_path = worker_dir / "pytest.log"
@@ -238,7 +245,7 @@ async def run_nicegui_file(
     """Run one NiceGUI UI file without starting an external server."""
     worker_dir.mkdir(parents=True, exist_ok=True)
     clean_env = _clean_test_env()
-    clean_env["DATABASE__URL"] = db_url
+    _apply_worker_database_env(clean_env, db_url)
 
     junit_path = worker_dir / "junit.xml"
     cmd = [

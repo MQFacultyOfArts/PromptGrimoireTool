@@ -87,6 +87,8 @@ async def test_run_playwright_file_sets_server_then_pytest_env(
     assert len(calls) == 2
     assert "promptgrimoire/cli/e2e/_server_script.py" in str(calls[0]["cmd"][1])
     assert calls[0]["env"]["DATABASE__URL"].endswith("/test_db")
+    assert calls[0]["env"]["DEV__TEST_DATABASE_URL"].endswith("/test_db")
+    assert calls[0]["env"]["DEV__BRANCH_DB_SUFFIX"] == "0"
     assert calls[0]["start_new_session"] is True
 
     assert calls[1]["cmd"][2] == "pytest"
@@ -96,6 +98,8 @@ async def test_run_playwright_file_sets_server_then_pytest_env(
     assert "--junitxml=ignored.xml" not in calls[1]["cmd"]
     assert f"--junitxml={worker_dir / 'junit.xml'}" in calls[1]["cmd"]
     assert calls[1]["env"]["DATABASE__URL"].endswith("/test_db")
+    assert calls[1]["env"]["DEV__TEST_DATABASE_URL"].endswith("/test_db")
+    assert calls[1]["env"]["DEV__BRANCH_DB_SUFFIX"] == "0"
     assert calls[1]["env"]["E2E_BASE_URL"] == "http://localhost:4321"
 
     assert result.file == Path("tests/e2e/test_browser_gate.py")
@@ -150,6 +154,8 @@ async def test_run_nicegui_file_omits_server_and_base_url(
     assert calls[0]["cmd"][2] == "pytest"
     assert "nicegui_ui" in calls[0]["cmd"]
     assert calls[0]["env"]["DATABASE__URL"].endswith("/test_db")
+    assert calls[0]["env"]["DEV__TEST_DATABASE_URL"].endswith("/test_db")
+    assert calls[0]["env"]["DEV__BRANCH_DB_SUFFIX"] == "0"
     assert "E2E_BASE_URL" not in calls[0]["env"]
     assert calls[0]["start_new_session"] is False
 
@@ -158,3 +164,91 @@ async def test_run_nicegui_file_omits_server_and_base_url(
     assert result.artifact_dir == worker_dir
     assert (worker_dir / "pytest.log").exists()
     assert (worker_dir / "worker.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_nicegui_e2e_routes_command_to_nicegui_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The NiceGUI command wrapper dispatches the dedicated lane and worker."""
+    from promptgrimoire.cli.e2e import _run_nicegui_e2e
+    from promptgrimoire.cli.e2e._lanes import NICEGUI_LANE
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_lane_files(
+        lane: Any,
+        worker: Any,
+        *,
+        user_args: list[str],
+        worker_count: int | None = None,
+        fail_fast: bool = False,
+    ) -> int:
+        captured["lane"] = lane
+        captured["worker"] = worker
+        captured["user_args"] = user_args
+        captured["worker_count"] = worker_count
+        captured["fail_fast"] = fail_fast
+        return 0
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._parallel.run_lane_files",
+        _fake_run_lane_files,
+    )
+
+    exit_code = await _run_nicegui_e2e(["-k", "tag_management"])
+
+    assert exit_code == 0
+    assert captured["lane"] == NICEGUI_LANE
+    assert captured["lane"].name == "nicegui"
+    assert captured["worker"].__name__ == "run_nicegui_file"
+    assert captured["user_args"] == ["-k", "tag_management"]
+    assert captured["worker_count"] == 1
+    assert captured["fail_fast"] is False
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
+    tmp_path: Path,
+) -> None:
+    """File-based retries classify flaky vs genuine and write retry subdirs."""
+    from promptgrimoire.cli.e2e._lanes import NICEGUI_LANE, WorkerResult
+    from promptgrimoire.cli.e2e._retry import retry_failed_files_in_isolation
+
+    result_root = tmp_path / "run"
+    failed_flaky = Path("tests/integration/test_instructor_template_ui.py")
+    failed_genuine = Path("tests/integration/test_crud_management_ui.py")
+    failed_files = [failed_flaky, failed_genuine]
+    retry_dbs = [
+        ("postgresql+asyncpg://user:pass@localhost/test_db_retry0", "test_db_retry0"),
+        ("postgresql+asyncpg://user:pass@localhost/test_db_retry1", "test_db_retry1"),
+    ]
+
+    async def _fake_nicegui_worker(
+        test_file: Path,
+        _db_url: str,
+        worker_dir: Path,
+        _user_args: list[str],
+    ) -> WorkerResult:
+        exit_code = 0 if test_file == failed_flaky else 1
+        return WorkerResult(
+            file=test_file,
+            exit_code=exit_code,
+            duration_s=0.25,
+            artifact_dir=worker_dir,
+        )
+
+    genuine_failures, flaky_files = await retry_failed_files_in_isolation(
+        NICEGUI_LANE,
+        _fake_nicegui_worker,
+        failed_files=failed_files,
+        result_root=result_root,
+        user_args=[],
+        retry_dbs=retry_dbs,
+        retry_ports=[0, 0],
+    )
+
+    assert flaky_files == [failed_flaky]
+    assert genuine_failures == [failed_genuine]
+    assert (result_root / failed_flaky.stem / "retry").is_dir()
+    assert (result_root / failed_genuine.stem / "retry").is_dir()

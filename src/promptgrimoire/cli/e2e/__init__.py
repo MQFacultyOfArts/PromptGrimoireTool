@@ -28,6 +28,20 @@ from promptgrimoire.cli.testing import _run_pytest
 e2e_app = typer.Typer(help="End-to-end test commands.")
 
 
+async def _run_nicegui_e2e(user_args: list[str]) -> int:
+    """Run only NiceGUI E2E files in isolated subprocesses."""
+    from promptgrimoire.cli.e2e._lanes import NICEGUI_LANE
+    from promptgrimoire.cli.e2e._parallel import run_lane_files
+    from promptgrimoire.cli.e2e._workers import run_nicegui_file
+
+    return await run_lane_files(
+        NICEGUI_LANE,
+        run_nicegui_file,
+        user_args=user_args,
+        worker_count=1,
+    )
+
+
 @e2e_app.command(
     "run",
     context_settings={
@@ -72,6 +86,32 @@ def run(
         sys.exit(exit_code)
 
     _run_serial_e2e(args, use_pyspy=py_spy, reruns=True)
+
+
+@e2e_app.command(
+    "nicegui",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def nicegui(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
+    """Run only NiceGUI lane files with per-file DB/process isolation."""
+    from promptgrimoire.config import get_settings
+
+    get_settings()
+    args = _prepend_filter(ctx.args, filter_expr)
+    try:
+        exit_code = asyncio.run(_run_nicegui_e2e(args))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted — cleaning up...[/]")
+        exit_code = 130
+    sys.exit(exit_code)
 
 
 @e2e_app.command(

@@ -30,6 +30,17 @@ e2e_app = typer.Typer(help="End-to-end test commands.")
 _PLAYWRIGHT_TEST_PATH = str(PLAYWRIGHT_LANE.test_paths[0])
 
 
+def _has_test_path(args: list[str]) -> bool:
+    """Return True if args contains an explicit test file or directory path."""
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        path_part = arg.split("::")[0]
+        if Path(path_part).exists():
+            return True
+    return False
+
+
 async def _run_nicegui_e2e(user_args: list[str]) -> int:
     """Run only NiceGUI E2E files in isolated subprocesses."""
     from promptgrimoire.cli.e2e._lanes import NICEGUI_LANE
@@ -232,19 +243,22 @@ def run_playwright_noretry_lane(user_args: list[str]) -> int:
 
     os.environ["E2E_BASE_URL"] = url
 
+    default_args = [
+        "-m",
+        "e2e",
+        "-x",
+        "-v",
+        "--tb=short",
+        "--log-cli-level=WARNING",
+    ]
+    if not _has_test_path(user_args):
+        default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
+
     try:
         exit_code = _run_pytest(
             title=f"Playwright Debug (no retries, -x) — server {url}",
             log_path=Path("test-e2e.log"),
-            default_args=[
-                _PLAYWRIGHT_TEST_PATH,
-                "-m",
-                "e2e",
-                "-x",
-                "-v",
-                "--tb=short",
-                "--log-cli-level=WARNING",
-            ],
+            default_args=default_args,
             extra_args=user_args,
         )
     finally:
@@ -285,21 +299,24 @@ def run_playwright_changed_lane(user_args: list[str]) -> int:
 
     os.environ["E2E_BASE_URL"] = url
 
+    default_args = [
+        "-m",
+        "e2e",
+        "--ff",
+        "--depper",
+        "--tb=long",
+        "--log-cli-level=WARNING",
+        "-v",
+    ]
+    if not _has_test_path(user_args):
+        default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
+
     try:
         log_path = Path("test-e2e.log")
         exit_code = _run_pytest(
             title=f"Playwright Changed Tests (vs main) — server {url}",
             log_path=log_path,
-            default_args=[
-                _PLAYWRIGHT_TEST_PATH,
-                "-m",
-                "e2e",
-                "--ff",
-                "--depper",
-                "--tb=long",
-                "--log-cli-level=WARNING",
-                "-v",
-            ],
+            default_args=default_args,
             extra_args=user_args,
         )
         if exit_code not in (0, 5):
@@ -361,7 +378,6 @@ def _run_serial_playwright_e2e(
         pyspy_process = _start_pyspy(server_process.pid)
 
     default_args = [
-        _PLAYWRIGHT_TEST_PATH,
         "-m",
         "e2e",
         "--ff",
@@ -369,6 +385,9 @@ def _run_serial_playwright_e2e(
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
+    if not _has_test_path(extra_args):
+        default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
+
     if reruns:
         default_args += ["--reruns", "3"]
 

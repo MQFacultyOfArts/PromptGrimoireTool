@@ -151,11 +151,15 @@ def main() -> None:
     print(f"Starting application on http://0.0.0.0:{port}")
 
     ui.run(
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=port,
+        title="Macquarie University Annotation Tool and Prompt Grimoire",
         reload=settings.app.reload,
+        show=False,
         storage_secret=storage_secret,
-    )  # nosec B104
+        reconnect_timeout=30.0,
+        show_welcome_message=False,
+    )
 
 
 if __name__ in {"__main__", "__mp_main__"}:

@@ -81,6 +81,7 @@ class FeaturesConfig(BaseModel):
     """Feature flags for enabling/disabling application capabilities."""
 
     enable_roleplay: bool = True
+    roleplay_require_privileged: bool = True
     enable_file_upload: bool = True
     enable_multi_document: bool = False
 

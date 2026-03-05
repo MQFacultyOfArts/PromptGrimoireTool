@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal
 from nicegui import ui
 
 from promptgrimoire.auth import is_privileged_user
+from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -41,7 +42,11 @@ def _has_roleplay_page_access(
     roleplay_enabled: bool,
 ) -> bool:
     """Return whether the current user can access roleplay-gated pages."""
-    return roleplay_enabled and is_privileged_user(user)
+    if not roleplay_enabled:
+        return False
+    if not get_settings().features.roleplay_require_privileged:
+        return user is not None
+    return is_privileged_user(user)
 
 
 def _is_page_visible(

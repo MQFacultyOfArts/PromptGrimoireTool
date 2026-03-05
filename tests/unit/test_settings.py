@@ -176,6 +176,7 @@ class TestFeaturesConfig:
         """Feature flag defaults: roleplay/file_upload on, multi_document off."""
         cfg = FeaturesConfig()
         assert cfg.enable_roleplay is True
+        assert cfg.roleplay_require_privileged is True
         assert cfg.enable_file_upload is True
         assert cfg.enable_multi_document is False
 

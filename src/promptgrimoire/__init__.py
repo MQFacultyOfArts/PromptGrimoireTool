@@ -153,8 +153,12 @@ def main() -> None:
     ui.run(
         host="0.0.0.0",  # noqa: S104 — intentional bind for docker/server
         port=port,
+        title="Macquarie University Annotation Tool and Prompt Grimoire",
         reload=settings.app.reload,
+        show=False,
         storage_secret=storage_secret,
+        reconnect_timeout=30.0,
+        show_welcome_message=False,
     )
 
 

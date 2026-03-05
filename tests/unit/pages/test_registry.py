@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import promptgrimoire.pages
 from promptgrimoire.pages.registry import get_visible_pages
 
@@ -62,6 +64,24 @@ class TestPageRegistryRoleplayVisibility:
     def test_roleplay_pages_shown_for_privileged_user(self) -> None:
         """Privileged users retain standalone roleplay navigation access."""
         routes = _visible_routes(_privileged_user(), roleplay_enabled=True)
+
+        assert "/roleplay" in routes
+        assert "/logs" in routes
+
+    def test_roleplay_pages_visible_to_students_when_privilege_not_required(
+        self,
+    ) -> None:
+        """Students see roleplay nav when roleplay_require_privileged is False."""
+        settings = promptgrimoire.pages.registry.get_settings()
+        patched = settings.model_copy(
+            update={
+                "features": settings.features.model_copy(
+                    update={"roleplay_require_privileged": False}
+                )
+            }
+        )
+        with patch("promptgrimoire.pages.registry.get_settings", return_value=patched):
+            routes = _visible_routes(_non_privileged_user(), roleplay_enabled=True)
 
         assert "/roleplay" in routes
         assert "/logs" in routes

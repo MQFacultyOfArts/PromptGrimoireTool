@@ -87,6 +87,7 @@ def run_nicegui_lane(user_args: list[str]) -> int:
 
 def run_all_lanes(user_args: list[str]) -> int:
     """Run Playwright then NiceGUI lanes sequentially (always run both)."""
+    _clear_lastfailed_cache()
     # Keep umbrella orchestration serial for deterministic diagnostics and simpler
     # lane sequencing; users can run `e2e run --parallel` separately when needed.
     console.print("[blue]Running Playwright lane...[/]")
@@ -193,6 +194,7 @@ def slow(
             _prepend_filter(ctx.args, filter_expr),
             use_pyspy=False,
             reruns=True,
+            clear_cache=True,
         )
     )
 
@@ -312,16 +314,34 @@ def run_playwright_changed_lane(user_args: list[str]) -> int:
 # -------------------------------------------------------------------
 
 
+def _clear_lastfailed_cache() -> None:
+    """Remove stale pytest lastfailed cache.
+
+    The cache persists across runs with different markers (-m "e2e" vs
+    unmarked).  When ``e2e slow`` or ``e2e all`` re-runs failures in
+    isolation, stale entries from previous ``test all`` runs bleed
+    through and cause spurious "genuine failures".  Clearing the cache
+    before big runs ensures the retry only sees failures from *this* run.
+    """
+    cache_file = Path(".pytest_cache/v/cache/lastfailed")
+    if cache_file.exists():
+        cache_file.unlink()
+
+
 def _run_serial_playwright_e2e(
     extra_args: list[str],
     *,
     use_pyspy: bool,
     reruns: bool,
+    clear_cache: bool = False,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
 
     get_settings()
+
+    if clear_cache:
+        _clear_lastfailed_cache()
 
     if use_pyspy:
         _check_ptrace_scope()

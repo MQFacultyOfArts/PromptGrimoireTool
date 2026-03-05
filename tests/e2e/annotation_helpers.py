@@ -1099,7 +1099,6 @@ def _normalise_pdf_text(s: str) -> str:
     inserts line breaks at PDF column boundaries.  Both transformations
     break naive ``in`` checks, so we normalise before comparing.
     """
-    import re
 
     s = s.replace("\u2018", "'").replace("\u2019", "'")
     s = s.replace("\u201c", '"').replace("\u201d", '"')

@@ -74,6 +74,7 @@ No UI, no business logic, no CRDT integration — just tables, models, and migra
 - **CHECK constraint**: A SQL constraint that rejects rows whose column values violate a boolean expression. Used here to enforce type-specific invariants.
 - **CRDT (Conflict-free Replicated Data Type)**: The real-time collaboration mechanism used for annotation workspace content (via `pycrdt`). Deliberately out of scope for this seam.
 - **Extension table (PK-as-FK)**: A 1:1 relational pattern where a table's primary key is also a foreign key to a parent table, enforcing at most one extension row per parent row. Used here for `WargameConfig`.
+- **Discriminator-enforcing composite FK**: A pattern where child tables carry a constant type column and reference the parent via composite FK `(id, type)`, making the database reject children attached to the wrong parent subtype. Used here on `WargameConfig` and `WargameTeam`.
 - **GM (Game Master)**: The instructor running a wargame scenario. Certain columns (e.g. `game_state_text`) are visible only to the GM; enforced by application logic.
 - **JSONB**: PostgreSQL's binary JSON column type. Used for `WargameMessage.metadata`.
 - **ModelMessage / message_history**: PydanticAI types representing AI conversation turns. The design stores messages in normalised columns and reconstructs `list[ModelMessage]` at call time.
@@ -89,7 +90,7 @@ No UI, no business logic, no CRDT integration — just tables, models, and migra
 
 ### Approach: Type Discriminator + Extension Tables
 
-Activity becomes polymorphic via a `type` VARCHAR column. The existing Activity table retains all shared fields (title, description, week placement, timestamps). Type-specific configuration lives in 1:1 extension tables keyed by `activity_id`.
+Activity becomes polymorphic via a `type` VARCHAR column. The existing Activity table retains all shared fields (title, description, week placement, timestamps). Type-specific configuration lives in 1:1 extension tables keyed by `activity_id`. Child tables enforce subtype correctness via discriminator-enforcing composite FKs: each child carries a constant `activity_type = 'wargame'` column and references `activity(id, type)`, so the database itself rejects children attached to the wrong activity type.
 
 For wargame activities, the extension chain is:
 
@@ -114,6 +115,9 @@ ALTER TABLE activity
   ADD COLUMN type VARCHAR(50) NOT NULL DEFAULT 'annotation',
   ALTER COLUMN template_workspace_id DROP NOT NULL;
 
+-- Composite key for discriminator-enforcing child FKs
+ALTER TABLE activity ADD CONSTRAINT uq_activity_id_type UNIQUE (id, type);
+
 -- Annotation activities must have a template workspace
 ALTER TABLE activity ADD CONSTRAINT ck_activity_annotation_requires_template
   CHECK (type != 'annotation' OR template_workspace_id IS NOT NULL);
@@ -127,12 +131,18 @@ ALTER TABLE activity ADD CONSTRAINT ck_activity_wargame_no_template
 
 ```sql
 CREATE TABLE wargame_config (
-  activity_id  UUID PRIMARY KEY
-    REFERENCES activity(id) ON DELETE CASCADE,
+  activity_id    UUID PRIMARY KEY,
+  activity_type  VARCHAR(50) NOT NULL DEFAULT 'wargame',
   system_prompt      TEXT NOT NULL,
   scenario_bootstrap TEXT NOT NULL,
   timer_delta        INTERVAL,
   timer_wall_clock   TIME,
+  CONSTRAINT ck_wargame_config_activity_type
+    CHECK (activity_type = 'wargame'),
+  CONSTRAINT fk_wargame_config_activity_wargame
+    FOREIGN KEY (activity_id, activity_type)
+    REFERENCES activity (id, type)
+    ON DELETE CASCADE,
   CONSTRAINT ck_wargame_config_timer_exactly_one
     CHECK (num_nonnulls(timer_delta, timer_wall_clock) = 1)
 );
@@ -143,8 +153,8 @@ CREATE TABLE wargame_config (
 ```sql
 CREATE TABLE wargame_team (
   id                   UUID PRIMARY KEY,
-  activity_id          UUID NOT NULL
-    REFERENCES activity(id) ON DELETE CASCADE,
+  activity_id          UUID NOT NULL,
+  activity_type        VARCHAR(50) NOT NULL DEFAULT 'wargame',
   codename             VARCHAR(100) NOT NULL,
   current_round        INTEGER NOT NULL DEFAULT 0,
   round_state          VARCHAR(50) NOT NULL DEFAULT 'drafting',
@@ -152,6 +162,12 @@ CREATE TABLE wargame_team (
   game_state_text      TEXT,
   student_summary_text TEXT,
   created_at           TIMESTAMPTZ NOT NULL,
+  CONSTRAINT ck_wargame_team_activity_type
+    CHECK (activity_type = 'wargame'),
+  CONSTRAINT fk_wargame_team_activity_wargame
+    FOREIGN KEY (activity_id, activity_type)
+    REFERENCES activity (id, type)
+    ON DELETE CASCADE,
   CONSTRAINT uq_wargame_team_activity_codename
     UNIQUE (activity_id, codename)
 );
@@ -221,6 +237,8 @@ This design follows established PromptGrimoire conventions discovered via codeba
 **Named constraints** — CHECK constraints use `ck_table_purpose`, unique constraints use `uq_table_columns`, foreign keys use `fk_table_column`, indexes use `ix_table_column`. Expression indexes use `idx_table_description`. (From `docs/database.md`.)
 
 **1:1 extension via PK-as-FK** — not yet used in the codebase, but a standard SQLAlchemy pattern. WargameConfig uses `activity_id` as both PK and FK, enforcing 1:1. This is a new pattern for this project.
+
+**Discriminator-enforcing composite FK** — also new. Child tables (WargameConfig, WargameTeam) carry a constant `activity_type = 'wargame'` column and reference `activity(id, type)` via composite FK. This makes the database reject child rows attached to the wrong activity type, rather than relying on application code. Requires a UNIQUE constraint on `activity(id, type)` as the FK target.
 
 **ACL extensibility** — `docs/database.md` (line 309) documents the planned approach: "When roleplay sessions or other resource types need ACL, add a nullable FK column (e.g., `roleplay_session_id`) with a CHECK constraint ensuring exactly one FK is set." This design follows that documented plan.
 

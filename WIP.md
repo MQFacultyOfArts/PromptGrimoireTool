@@ -16,12 +16,12 @@
   - `tests/e2e/test_organise_perf.py` (marked as `perf`)
   - `tests/e2e/test_word_count.py`
   - `tests/e2e/test_instructor_workflow.py` (deleted; superseded)
+  - `tests/e2e/test_html_paste_whitespace.py`
 
 ## Next Up (Remaining YOLO Syncs)
 
 - `tests/e2e/test_navigator.py` (32 instances)
 - `tests/e2e/test_annotation_drag.py` (20 instances)
-- `tests/e2e/test_html_paste_whitespace.py` (10 instances)
 
 ---
 

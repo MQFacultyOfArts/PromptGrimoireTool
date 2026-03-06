@@ -134,6 +134,21 @@ class TestCreateCourseValidation:
 
         _click_testid(nicegui_user, "create-course-btn")
 
+        # Wait for the true boundary: the course exists in the database
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+
+        async def course_created() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Course).where(Course.code == code)
+                )
+                return result.first() is not None
+
+        await wait_for(course_created)
+
         # Wait for navigation to the course detail page
         await wait_for(
             lambda: (
@@ -188,6 +203,23 @@ class TestAddWeekAndPublish:
         # Click Create
         _click_testid(nicegui_user, "create-week-btn")
 
+        # Wait for the true boundary: the week exists in the database
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Week
+
+        async def week_created() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Week).where(
+                        Week.course_id == course_id, Week.title == "Introduction Week"
+                    )
+                )
+                return result.first() is not None
+
+        await wait_for(week_created)
+
         # Wait for navigation back to course detail
         await wait_for(
             lambda: (
@@ -207,6 +239,17 @@ class TestAddWeekAndPublish:
 
         # Click Publish
         _click_testid(nicegui_user, "publish-week-btn")
+
+        # Wait for true boundary: week state transitions to published in DB
+        async def week_published() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Week).where(Week.course_id == course_id)
+                )
+                week = result.scalar_one_or_none()
+                return week is not None and week.is_published is True
+
+        await wait_for(week_published)
 
         # After publishing, should see "Published" and the Unpublish button
         await _should_see_testid(nicegui_user, "unpublish-week-btn")
@@ -258,6 +301,24 @@ class TestAddActivity:
 
         # Click Create
         _click_testid(nicegui_user, "create-activity-btn")
+
+        # Wait for the true boundary: the activity exists in the database
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Activity
+
+        async def activity_created() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Activity).where(
+                        Activity.week_id == week_id,
+                        Activity.title == "Annotate Case Study",
+                    )
+                )
+                return result.first() is not None
+
+        await wait_for(activity_created)
 
         # Wait for navigation back to course detail
         await wait_for(
@@ -319,7 +380,7 @@ class TestCourseSettingsCopyProtection:
         # Click the switch to toggle it
         _click_testid(nicegui_user, "course-default_copy_protection-switch")
 
-        # Verify the switch value changed
+        # Wait for the UI switch to reflect the change
         def switch_value_changed() -> bool:
             switch = _find_value_element_by_testid(
                 nicegui_user, "course-default_copy_protection-switch"
@@ -338,6 +399,25 @@ class TestCourseSettingsCopyProtection:
 
         # Click Save
         _click_testid(nicegui_user, "save-course-settings-btn")
+
+        # Wait for the true boundary: DB update completes
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+
+        async def db_protection_changed() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Course).where(Course.id == course_id)
+                )
+                course = result.scalar_one_or_none()
+                return (
+                    course is not None
+                    and course.default_copy_protection != original_value
+                )
+
+        await wait_for(db_protection_changed)
 
         # Dialog should close
         await _should_not_see_testid(nicegui_user, "course-settings-title")

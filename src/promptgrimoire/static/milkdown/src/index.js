@@ -62,6 +62,7 @@ async function createEditor(rootEl, initialMd, onYjsUpdate, fragmentName) {
     features: {
       "image-block": false, // no image upload support
       "code-mirror": false, // no code block syntax highlighting
+      "latex": false, // requires code-mirror; not needed
     },
   });
 

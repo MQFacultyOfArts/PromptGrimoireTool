@@ -46,6 +46,9 @@ except RuntimeError as exc:
 # Regex to strip Unicode format characters (category Cf)
 _FORMAT_CHARS_RE = re.compile(r"[\u200b-\u200f\u2028-\u202f\u2060-\u2069\ufeff]")
 
+# Regex to strip HTML <br> tags (Milkdown serialises empty paragraphs as <br />)
+_HTML_BR_RE = re.compile(r"<br\s*/?>")
+
 # Regex to strip markdown link/image URLs: [text](url) -> [text]
 _MARKDOWN_IMAGE_RE = re.compile(r"!\[")
 _MARKDOWN_LINK_URL_RE = re.compile(r"\]\([^)]*\)")
@@ -58,9 +61,11 @@ def normalise_text(text: str) -> str:
     1. NFKC Unicode normalisation (AC1.9)
     2. Strip zero-width / format characters (AC1.8)
     3. Strip markdown link/image URLs (AC1.6)
+    4. Replace HTML <br> tags with newline (#262)
     """
     text = unicodedata.normalize("NFKC", text)
     text = _FORMAT_CHARS_RE.sub("", text)
+    text = _HTML_BR_RE.sub("\n", text)
     text = _MARKDOWN_IMAGE_RE.sub("[", text)
     text = _MARKDOWN_LINK_URL_RE.sub("]", text)
 

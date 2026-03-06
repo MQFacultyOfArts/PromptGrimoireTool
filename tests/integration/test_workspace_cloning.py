@@ -550,6 +550,34 @@ class TestCloneCRDT:
         assert clone_doc.get_general_notes() == "Instructor notes for this activity"
 
     @pytest.mark.asyncio
+    async def test_response_draft_markdown_cloned(self) -> None:
+        """Response draft markdown from template is cloned."""
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.workspaces import (
+            clone_workspace_from_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, _, activity = await _make_activity_with_docs(num_docs=1)
+        user = await _make_clone_user()
+
+        doc = AnnotationDocument("setup")
+        md_field = doc.response_draft_markdown
+        with doc.doc.transaction():
+            md_field += "Template response text"
+        await save_workspace_crdt_state(
+            activity.template_workspace_id,
+            doc.get_full_state(),
+        )
+
+        clone, _doc_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        assert clone.crdt_state is not None
+        clone_doc = AnnotationDocument("verify")
+        clone_doc.apply_update(clone.crdt_state)
+        assert clone_doc.get_response_draft_markdown() == "Template response text"
+
+    @pytest.mark.asyncio
     async def test_multiple_highlights_across_documents_remapped(self) -> None:
         """Highlights referencing different docs are each remapped correctly.
 

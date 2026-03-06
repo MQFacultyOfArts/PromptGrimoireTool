@@ -39,6 +39,7 @@ library references during development.
 
 ## guides
 
+- [Flight Rules](guides/flight-rules.md)
 - [PromptGrimoire Guides](guides/index.md)
 
 ## lark
@@ -71,6 +72,15 @@ library references during development.
 - [List available models with pricing, capabilities, context length, and supported parameters](openrouter/models-api.md)
 - [Using pydantic-ai with OpenRouter via OpenAI-compatible interface](openrouter/pydantic-ai-integration.md)
 
+## operation-solano-dawn
+
+- [Operation Solano Dawn Planning](operation-solano-dawn/README.md)
+- [Operation Solano Dawn Brainstorming Notes](operation-solano-dawn/brainstorming-notes.md)
+- [Operation Solano Dawn - Wargame Simulation Platform - Product Requirements Document](operation-solano-dawn/client-prd.md)
+- [Operation Solano Dawn: Final Epic and Seam Issues](operation-solano-dawn/final-epic-and-seams.md)
+- [Operation Solano Dawn Internal Design Draft](operation-solano-dawn/internal-design-draft.md)
+- [Operation Solano Dawn Internal Spec Outline](operation-solano-dawn/internal-spec-outline.md)
+
 ## pandoc
 
 - [Lua filter API for AST manipulation during conversion](pandoc/lua-filters.md)
@@ -87,6 +97,7 @@ library references during development.
 - [Translation Annotation & Iteration Tool - Product Requirements Document](prds/2026-01-28-translation-annotation-tool-prd.md)
 - [Ancient History AI Annotation Tool - Product Requirements Document](prds/2026-01-30-ancient-history-annotation-tool-prd.md)
 - [LLM Playground Design](prds/2026-02-10-llm-playground.md)
+- [Operation Solano Dawn - Wargame Simulation Platform - Product Requirements Document](prds/2026-03-04-operation-solano-dawn-wargame-prd.md)
 
 ## pycrdt
 

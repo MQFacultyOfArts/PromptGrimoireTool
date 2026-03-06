@@ -42,6 +42,21 @@ class TestNormaliseText:
                 "[a] and [b]",
                 id="nested-complex-multiple-links",
             ),
+            pytest.param(
+                "hello<br />world",
+                "hello\nworld",
+                id="html-br-self-closing-space-to-newline",
+            ),
+            pytest.param(
+                "hello<br/>world",
+                "hello\nworld",
+                id="html-br-self-closing-to-newline",
+            ),
+            pytest.param(
+                "hello<br>world",
+                "hello\nworld",
+                id="html-br-open-to-newline",
+            ),
         ],
     )
     def test_normalise_text(self, input_text: str, expected: str) -> None:
@@ -257,6 +272,15 @@ class TestWordCount:
             " \ucd5c\uace0\uc758 \ubc95\ub960\uc785\ub2c8\ub2e4"
         )
         assert word_count(korean) == 4
+
+    def test_milkdown_br_not_counted(self) -> None:
+        """#262: Milkdown <br /> not counted as word."""
+        assert word_count("hello\n\n<br />\n\nworld") == 2
+
+    def test_many_br_tags_not_inflating(self) -> None:
+        """#262: Many <br /> must not inflate count."""
+        md = "word\n\n" + "<br />\n\n" * 100 + "another"
+        assert word_count(md) == 2
 
 
 class TestWordCountAntiGaming:

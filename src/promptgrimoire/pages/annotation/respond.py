@@ -21,6 +21,7 @@ Traceability:
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -184,6 +185,42 @@ def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
     return False
 
 
+def _filter_highlights(
+    highlights: list[dict[str, Any]],
+    active_filter: str,
+    tag_name: str = "",
+) -> list[dict[str, Any]]:
+    """Filter highlights by text content or author, optionally matching tag name."""
+    if not active_filter:
+        return highlights
+    return [
+        hl
+        for hl in highlights
+        if _matches_filter(hl, active_filter)
+        or (tag_name and active_filter.lower() in tag_name.lower())
+    ]
+
+
+def _tracked_expansion(
+    tag_name: str,
+    accordion_state: dict[str, bool] | None,
+) -> ui.expansion:
+    """Create an expansion panel that tracks its open/closed state."""
+    is_open = accordion_state.get(tag_name, True) if accordion_state else True
+    exp = (
+        ui.expansion(tag_name, value=is_open)
+        .classes("w-full")
+        .props(f'data-testid="respond-tag-group" data-tag-name="{tag_name}"')
+    )
+    if accordion_state is not None:
+
+        def _track(e: Any, name: str = tag_name) -> None:
+            accordion_state[name] = bool(e.value)
+
+        exp.on_value_change(_track)
+    return exp
+
+
 def _build_reference_panel(
     tags: list[TagInfo],
     crdt_doc: AnnotationDocument,
@@ -216,50 +253,22 @@ def _build_reference_panel(
         )
         return
 
-    # Apply text filter if provided
     active_filter = filter_text.strip() if filter_text else ""
 
-    def _expansion_for(tag_name: str) -> ui.expansion:
-        """Create an expansion panel that tracks its open/closed state."""
-        is_open = accordion_state.get(tag_name, True) if accordion_state else True
-        exp = (
-            ui.expansion(tag_name, value=is_open)
-            .classes("w-full")
-            .props(f'data-testid="respond-tag-group" data-tag-name="{tag_name}"')
-        )
-        if accordion_state is not None:
-
-            def _track(e: Any, name: str = tag_name) -> None:
-                accordion_state[name] = bool(e.value)
-
-            exp.on_value_change(_track)
-        return exp
-
-    # Render grouped highlights
     for tag_info in tags:
-        highlights_for_tag = tagged_highlights[tag_info.name]
-        if active_filter:
-            highlights_for_tag = [
-                hl
-                for hl in highlights_for_tag
-                if _matches_filter(hl, active_filter)
-                or active_filter.lower() in tag_info.name.lower()
-            ]
-        if not highlights_for_tag:
+        filtered = _filter_highlights(
+            tagged_highlights[tag_info.name], active_filter, tag_info.name
+        )
+        if not filtered:
             continue
-
-        with _expansion_for(tag_info.name):
-            for hl in highlights_for_tag:
+        with _tracked_expansion(tag_info.name, accordion_state):
+            for hl in filtered:
                 _build_reference_card(hl, tag_info.colour, tag_info.name, on_locate)
 
-    # Untagged highlights
-    if active_filter:
-        untagged_highlights = [
-            hl for hl in untagged_highlights if _matches_filter(hl, active_filter)
-        ]
-    if untagged_highlights:
-        with _expansion_for("Untagged"):
-            for hl in untagged_highlights:
+    untagged_filtered = _filter_highlights(untagged_highlights, active_filter)
+    if untagged_filtered:
+        with _tracked_expansion("Untagged", accordion_state):
+            for hl in untagged_filtered:
                 _build_reference_card(hl, "#999999", "Untagged", on_locate)
 
 
@@ -410,6 +419,11 @@ def _setup_yjs_event_handler(
     ui.on("respond_yjs_update", on_yjs_update)
 
 
+def _seed_editor_from_markdown(md: str) -> None:
+    """Seed the Milkdown editor with cloned markdown content."""
+    ui.context.client.run_javascript(f"window._setMilkdownMarkdown({json.dumps(md)})")
+
+
 async def render_respond_tab(
     panel: ui.element,
     tags: list[TagInfo],
@@ -532,15 +546,18 @@ async def render_respond_tab(
     # Wait for WebSocket, then initialize the editor
     await ui.context.client.connected()
 
-    # Initialize Milkdown editor with response_draft fragment binding
+    # Initialize Milkdown editor with response_draft fragment binding.
+    # The await is critical: createEditor is async (it does await crepe.create()
+    # internally). Without awaiting, __milkdownCrepe is not yet set when
+    # subsequent calls like _setMilkdownMarkdown fire, causing them to no-op.
     await ui.run_javascript(
         f"""
         const root = document.getElementById('{editor_id}');
         if (root && window._createMilkdownEditor) {{
-            window._createMilkdownEditor(root, '', function(b64Update) {{
+            await window._createMilkdownEditor(root, '', function(b64Update) {{
                 emitEvent('respond_yjs_update', {{update: b64Update}});
             }}, '{_FRAGMENT_NAME}');
-            'editor-init-started';
+            'editor-init-done';
         }} else {{
             console.error(
                 '[respond-tab] bundle not loaded or #{editor_id} missing'
@@ -563,6 +580,12 @@ async def render_respond_tab(
             client_id[:8],
             len(full_state),
         )
+
+    # Seed editor from cloned markdown when XmlFragment is empty (fresh clone)
+    initial_md = crdt_doc.get_response_draft_markdown()
+    if initial_md and not str(crdt_doc.response_draft):
+        logger.debug("RESPOND_SEED ws=%s md_len=%d", workspace_key, len(initial_md))
+        _seed_editor_from_markdown(initial_md)
 
     def refresh_references() -> None:
         """Re-render the reference panel with current CRDT state.

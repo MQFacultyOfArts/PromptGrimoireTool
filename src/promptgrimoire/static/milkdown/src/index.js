@@ -3,6 +3,7 @@ import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 
 import { collab, collabServiceCtx } from "@milkdown/plugin-collab";
+import { replaceAll } from "@milkdown/utils";
 import * as Y from "yjs";
 
 // --- Base64 helpers for Uint8Array <-> string transport ---
@@ -56,10 +57,14 @@ async function createEditor(rootEl, initialMd, onYjsUpdate, fragmentName) {
   const ydoc = new Y.Doc();
   window.__milkdownYDoc = ydoc;
 
-  // Use all default features — do NOT disable CodeMirror (Milkdown 7.x bug).
   const crepe = new Crepe({
     root: rootEl,
     defaultValue: initialMd || "",
+    features: {
+      "image-block": false, // no image upload support
+      "code-mirror": false, // no code block syntax highlighting
+      "latex": false, // requires code-mirror; not needed
+    },
   });
 
   // Register the collab plugin on the underlying editor BEFORE create()
@@ -108,9 +113,7 @@ window._getMilkdownMarkdown = function () {
 
 window._setMilkdownMarkdown = function (md) {
   if (!window.__milkdownCrepe) return;
-  console.warn(
-    "[milkdown-bundle] setMarkdown requires editor recreation (spike limitation)"
-  );
+  window.__milkdownCrepe.editor.action(replaceAll(md));
 };
 
 /**

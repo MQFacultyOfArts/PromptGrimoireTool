@@ -585,8 +585,8 @@ def _replay_crdt_state(
     Loads the template's CRDT state into a temporary AnnotationDocument,
     creates a fresh AnnotationDocument for the clone, and replays all
     highlights (with remapped document_id and tag values), comments,
-    general notes, and tag_order. Client metadata is deliberately NOT
-    replayed (AC4.9).
+    general notes, response draft markdown, and tag_order. Client
+    metadata is deliberately NOT replayed (AC4.9).
 
     If template has no crdt_state, the clone gets None (AC4.10).
 
@@ -651,6 +651,13 @@ def _replay_crdt_state(
     notes = template_doc.get_general_notes()
     if notes:
         clone_doc.set_general_notes(notes)
+
+    # Clone response draft markdown
+    response_md = template_doc.get_response_draft_markdown()
+    if response_md:
+        md_field = clone_doc.response_draft_markdown
+        with clone_doc.doc.transaction():
+            md_field += response_md
 
     # Rebuild tag_order with remapped tag keys and highlight IDs
     for tag_key in list(dict(template_doc.tag_order)):

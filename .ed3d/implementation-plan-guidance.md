@@ -1,6 +1,6 @@
 # Implementation Plan Guidance for PromptGrimoire
 
-**Last updated:** 2026-03-02
+**Last updated:** 2026-03-07
 
 ## UAT is Critical
 
@@ -287,6 +287,47 @@ await expect(locator).to_be_visible()
 2. **All models must be imported before schema operations** - Import `promptgrimoire.db.models` to register tables with SQLModel.metadata
 3. **Pages requiring DB must check availability** - Use `os.environ.get("DATABASE_URL")` and show a helpful error if not configured
 4. **Use `verify_schema()` at startup** - Fail fast if tables are missing
+
+## Design-Implementation Alignment Checks
+
+### Before Implementation (Planning Gate)
+
+After writing the implementation plan but before executing it, compare each phase against the design document. Flag any divergences:
+
+- Schema contracts that differ from the design doc (new columns, different constraint patterns, changed FK strategies)
+- Architectural decisions made in the implementation plan that the design doc doesn't cover
+- Improvements over the design (e.g. stronger DBA contracts) that should be adopted
+
+**If the implementation plan improves on the design:** Update the design doc to match. The design doc is the canonical record — it must reflect what will actually be built.
+
+**If the implementation plan contradicts the design without improvement:** Fix the implementation plan to match the design.
+
+Commit design doc updates with a clear message referencing the implementation plan's rationale.
+
+### After Implementation (Finalisation Gate)
+
+After all phases are complete and tests pass, compare what was actually built against the design document:
+
+- Do the schema contracts in the design doc match the actual migration?
+- Do the SQLModel classes match the design doc's described structure?
+- Were any design decisions changed during implementation that the design doc doesn't reflect?
+
+**Update the design doc to reflect reality.** The design doc is a living record, not a frozen spec. If implementation revealed that a different approach was needed, the design doc should say so (with a note explaining why).
+
+### Complexipy Check Per Phase
+
+After completing each implementation phase, run complexipy on all modified files:
+
+```bash
+uv run complexipy <modified-file-1> <modified-file-2> ...
+```
+
+- Pre-commit blocks functions with cognitive complexity > 15, but **file-level** complexity is also a concern
+- If a file's total complexity is growing (especially > 100), note it as a refactoring candidate
+- If the phase introduced functions near the threshold (complexity 10-15), flag them as at-risk
+- Include complexipy results in the phase completion notes
+
+This prevents complexity from accumulating silently across phases.
 
 ## Review Criteria
 

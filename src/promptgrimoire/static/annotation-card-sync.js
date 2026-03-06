@@ -55,8 +55,16 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       var sc = parseInt(card.dataset.startChar);
       var cr = charOffsetToRect(nodes, sc);
       if (cr.width === 0 && cr.height === 0) return null;
+      // Cache height on the element so hidden cards (display:none,
+      // offsetHeight=0) use their last-known height (#284).
+      var h = card.offsetHeight;
+      if (h > 0) {
+        card.dataset.cachedHeight = h;
+      } else {
+        h = parseInt(card.dataset.cachedHeight) || 80;
+      }
       return {card: card, startChar: sc,
-        height: card.offsetHeight,
+        height: h,
         targetY: (cr.top - docRect.top) - cOff};
     }).filter(Boolean);
     cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
@@ -89,10 +97,11 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
   window._positionCards = positionCards;
   window.addEventListener('scroll', onScroll, {passive: true});
 
-  // Re-attach MutationObserver on each highlights-ready
-  // because the annotations-container DOM element may have
-  // been replaced by Vue re-rendering.
-  document.addEventListener('highlights-ready', function() {
+  // Attach MutationObserver and position cards.
+  // Called on each highlights-ready event AND at setup if highlights
+  // are already ready (fixes race where init_js fires highlights-ready
+  // before this listener is registered — #236).
+  function onHighlightsReady() {
     var ac = document.getElementById(sidebarId);
     if (!ac) return;
     if (ac !== _lastAnnC) {
@@ -102,7 +111,15 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       _lastAnnC = ac;
     }
     requestAnimationFrame(positionCards);
-  });
+  }
+
+  document.addEventListener('highlights-ready', onHighlightsReady);
+
+  // If highlights were already applied before this listener was
+  // registered (SPA navigation with cached scripts), catch up now.
+  if (window._highlightsReady) {
+    onHighlightsReady();
+  }
 
   // Card hover via event delegation on document
   // (survives DOM replacement)

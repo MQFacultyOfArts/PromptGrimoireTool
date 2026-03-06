@@ -63,6 +63,9 @@ class AnnotationDocument:
         self.doc["client_meta"] = Map()  # {client_id: {name, color}}
         self.doc["general_notes"] = Text()  # Collaborative text for general notes
         self.doc["tag_order"] = Map()  # {tag_name: Array([highlight_id, ...])}
+        # Tag metadata Maps (tag lifecycle refactor)
+        self.doc["tags"] = Map()  # {tag_uuid: {name, colour, ...}}
+        self.doc["tag_groups"] = Map()  # {group_uuid: {name, ...}}
         self.doc["response_draft"] = XmlFragment()  # Milkdown/ProseMirror document
         self.doc["response_draft_markdown"] = Text()  # Plain markdown mirror
 
@@ -96,6 +99,16 @@ class AnnotationDocument:
     def tag_order(self) -> Map:
         """Get the tag_order Map."""
         return self.doc["tag_order"]
+
+    @property
+    def tags(self) -> Map:
+        """Get the tags Map."""
+        return self.doc["tags"]
+
+    @property
+    def tag_groups(self) -> Map:
+        """Get the tag_groups Map."""
+        return self.doc["tag_groups"]
 
     @property
     def response_draft(self) -> XmlFragment:
@@ -456,6 +469,81 @@ class AnnotationDocument:
             _origin_var.reset(token)
 
         return True
+
+    # --- Tag CRUD operations ---
+
+    def set_tag(
+        self,
+        tag_id: str | UUID,
+        name: str,
+        colour: str,
+        order_index: int,
+        *,
+        group_id: str | UUID | None = None,
+        description: str | None = None,
+        highlights: list[str] | None = None,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Write a complete tag dict to the tags Map.
+
+        Args:
+            tag_id: Unique tag identifier.
+            name: Display name for the tag.
+            colour: Hex colour string.
+            order_index: Sort order within its group.
+            group_id: Optional parent tag group ID.
+            description: Optional tag description.
+            highlights: Ordered list of highlight IDs.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tags[str(tag_id)] = {
+                "name": name,
+                "colour": colour,
+                "group_id": (str(group_id) if group_id is not None else None),
+                "description": description,
+                "order_index": order_index,
+                "highlights": highlights or [],
+            }
+        finally:
+            _origin_var.reset(token)
+
+    def get_tag(self, tag_id: str | UUID) -> dict[str, Any] | None:
+        """Get a tag by ID.
+
+        Args:
+            tag_id: Tag identifier.
+
+        Returns:
+            Tag data dict or None if not found.
+        """
+        return self.tags.get(str(tag_id))
+
+    def delete_tag(
+        self,
+        tag_id: str | UUID,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Remove a tag from the tags Map.
+
+        Args:
+            tag_id: Tag identifier.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tags.pop(str(tag_id), None)
+        finally:
+            _origin_var.reset(token)
+
+    def list_tags(self) -> dict[str, dict[str, Any]]:
+        """Return all tags as {tag_id: tag_data}.
+
+        Returns:
+            Dict of all tags, empty if none.
+        """
+        return dict(self.tags.items())
 
     # --- Comment operations ---
 

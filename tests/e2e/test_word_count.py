@@ -56,8 +56,9 @@ class TestWordCountSettings:
             ).click()
             # Quasar renders select options in a teleported q-menu;
             # use q-item text filter (same pattern as test_instructor_workflow)
-            authenticated_page.wait_for_timeout(300)
-            authenticated_page.locator(".q-item").filter(has_text="Hard").click()
+            hard_option = authenticated_page.locator(".q-item").filter(has_text="Hard")
+            hard_option.wait_for(state="visible")
+            hard_option.click()
 
         # Save settings
         authenticated_page.get_by_test_id("save-activity-settings-btn").click()
@@ -120,7 +121,7 @@ class TestWordCountSettings:
 
 @pytest.mark.e2e
 class TestWordCountExport:
-    def test_soft_enforcement_warning(
+    def test_soft_enforcement_warning(  # noqa: PLR0915
         self, browser: Browser, app_server: str, subtests: SubTests
     ) -> None:
         """Verify soft enforcement shows warning and allows export."""
@@ -128,7 +129,10 @@ class TestWordCountExport:
 
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -146,27 +150,35 @@ class TestWordCountExport:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
+            wait_for_text_walker(page, timeout=15000)
 
             # Switch to Respond tab and type enough words to exceed limit
             page.get_by_test_id("tab-respond").click()
-            page.wait_for_timeout(1000)
 
             editor = (
                 page.get_by_test_id("milkdown-editor-container")
                 .locator("[contenteditable]")
                 .first
             )
+            editor.wait_for(state="visible", timeout=5000)
             editor.click()
+
+            # 1. Test the "under limit" side of the boundary first
+            page.keyboard.type("Initial safe text", delay=10)
+            badge = page.get_by_test_id("word-count-badge")
+            expect(badge).to_contain_text("3", timeout=10000)
+            expect(badge).not_to_contain_text("(over limit)")
+
+            # 2. Cross the boundary
             page.keyboard.type(
-                "This is a test response with many words to exceed"
+                " is now extended with many words to exceed"
                 " the word limit for testing purposes here",
                 delay=10,
             )
 
-            # Wait for Yjs sync
-            page.wait_for_timeout(3000)
+            # 3. Test the explicit boundary violation
+            # Wait for Yjs sync by waiting for word count badge to hit violation state
+            expect(badge).to_contain_text("(over limit)", timeout=10000)
 
             with subtests.test(msg="AC5.1: Export shows warning dialog"):
                 page.get_by_test_id("export-pdf-btn").click()
@@ -218,7 +230,10 @@ class TestWordCountExport:
         """Verify dialog shows under-minimum violation."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -236,23 +251,48 @@ class TestWordCountExport:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
+            wait_for_text_walker(page, timeout=15000)
 
             # Switch to Respond tab and type only a few words
             page.get_by_test_id("tab-respond").click()
-            page.wait_for_timeout(1000)
 
             editor = (
                 page.get_by_test_id("milkdown-editor-container")
                 .locator("[contenteditable]")
                 .first
             )
+            editor.wait_for(state="visible", timeout=5000)
             editor.click()
+
+            # 1. Verify we start in the violation state (under minimum)
+            badge = page.get_by_test_id("word-count-badge")
+            expect(badge).to_contain_text("(below minimum)", timeout=10000)
+
+            # 2. Paste enough text to exceed the high minimum (200 words)
+            page.evaluate(
+                """(text) => {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.setData('text/plain', text);
+                    const event = new ClipboardEvent('paste', {
+                        clipboardData: dataTransfer,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    document.querySelector('[contenteditable]').dispatchEvent(event);
+                }""",
+                "word " * 205,
+            )
+
+            # 3. Verify we crossed the boundary and are safely OVER the minimum
+            expect(badge).not_to_contain_text("(below minimum)", timeout=10000)
+
+            # 4. Cross back under the boundary by clearing the text
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Delete")
             page.keyboard.type("Just five little words.", delay=10)
 
-            # Wait for Yjs sync
-            page.wait_for_timeout(3000)
+            # 5. Test the explicit boundary violation returned
+            expect(badge).to_contain_text("(below minimum)", timeout=10000)
 
             with subtests.test(msg="AC5.5: Under-minimum violation"):
                 page.get_by_test_id("export-pdf-btn").click()
@@ -269,7 +309,10 @@ class TestWordCountExport:
         """Verify hard enforcement blocks export entirely."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -286,27 +329,34 @@ class TestWordCountExport:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
+            wait_for_text_walker(page, timeout=15000)
 
             # Switch to Respond tab and type enough words to exceed limit
             page.get_by_test_id("tab-respond").click()
-            page.wait_for_timeout(1000)
 
             editor = (
                 page.get_by_test_id("milkdown-editor-container")
                 .locator("[contenteditable]")
                 .first
             )
+            editor.wait_for(state="visible", timeout=5000)
             editor.click()
+
+            # 1. Test the "under limit" side of the boundary first
+            page.keyboard.type("Initial safe text", delay=10)
+            badge = page.get_by_test_id("word-count-badge")
+            expect(badge).to_contain_text("3", timeout=10000)
+            expect(badge).not_to_contain_text("(over limit)")
+
+            # 2. Cross the boundary
             page.keyboard.type(
-                "This is a response with many words exceeding the configured"
+                " is a response with many words exceeding the configured"
                 " word limit for hard enforcement testing",
                 delay=10,
             )
 
-            # Wait for Yjs sync
-            page.wait_for_timeout(3000)
+            # 3. Test the explicit boundary violation
+            expect(badge).to_contain_text("(over limit)", timeout=10000)
 
             with subtests.test(msg="AC6.1: Export blocked with dialog"):
                 page.get_by_test_id("export-pdf-btn").click()
@@ -340,7 +390,10 @@ class TestWordCountBadge:
         """AC4.1, AC4.7: Badge visible with limits and updates live."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -355,7 +408,7 @@ class TestWordCountBadge:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
+            wait_for_text_walker(page, timeout=15000)
 
             with subtests.test(msg="AC4.1: Badge visible with limits"):
                 badge = page.get_by_test_id("word-count-badge")
@@ -364,7 +417,6 @@ class TestWordCountBadge:
             with subtests.test(msg="AC4.7: Badge updates live after typing"):
                 # Switch to Respond tab
                 page.get_by_test_id("tab-respond").click()
-                page.wait_for_timeout(1000)
 
                 # Type text in editor
                 editor = (
@@ -372,21 +424,18 @@ class TestWordCountBadge:
                     .locator("[contenteditable]")
                     .first
                 )
+                editor.wait_for(state="visible", timeout=5000)
                 editor.click()
                 page.keyboard.type("word " * 10, delay=20)
 
-                # Wait for Yjs sync
-                page.wait_for_timeout(2000)
-
-                # Verify badge text updated
+                # Wait for Yjs sync and verify badge text updated
                 badge = page.get_by_test_id("word-count-badge")
-                expect(badge).to_contain_text("Words:")
+                expect(badge).to_contain_text("10", timeout=10000)
 
             with subtests.test(msg="AC4.1: Badge visible on Annotate tab"):
                 page.get_by_test_id("tab-annotate").click()
-                page.wait_for_timeout(500)
                 badge = page.get_by_test_id("word-count-badge")
-                expect(badge).to_be_visible()
+                expect(badge).to_be_visible(timeout=5000)
         finally:
             page.goto("about:blank")
             page.close()
@@ -398,7 +447,10 @@ class TestWordCountBadge:
         """AC4.2: Badge hidden when no limits configured."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_via_db
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_via_db,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -413,7 +465,7 @@ class TestWordCountBadge:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
+            wait_for_text_walker(page, timeout=15000)
 
             badge = page.get_by_test_id("word-count-badge")
             expect(badge).not_to_be_visible(timeout=5000)
@@ -426,7 +478,10 @@ class TestWordCountBadge:
         """AC4.1: Badge visible when only word_minimum is set (no word_limit)."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -441,7 +496,7 @@ class TestWordCountBadge:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
+            wait_for_text_walker(page, timeout=15000)
 
             badge = page.get_by_test_id("word-count-badge")
             expect(badge).to_be_visible(timeout=10000)
@@ -456,7 +511,10 @@ class TestWordCountBadge:
         """AC4.1: Badge visible when only word_limit is set (no word_minimum)."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import _create_workspace_with_word_limits
+        from tests.e2e.annotation_helpers import (
+            _create_workspace_with_word_limits,
+            wait_for_text_walker,
+        )
         from tests.e2e.conftest import _authenticate_page
 
         context = browser.new_context()
@@ -471,7 +529,7 @@ class TestWordCountBadge:
             )
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-            page.wait_for_load_state("networkidle")
+            wait_for_text_walker(page, timeout=15000)
 
             badge = page.get_by_test_id("word-count-badge")
             expect(badge).to_be_visible(timeout=10000)

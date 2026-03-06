@@ -466,7 +466,7 @@ class TestEdgeCases:
         """data-annots includes para_ref stored in highlight dict."""
         html = "<p>some text</p>"
         hl = _make_hl(0, 4, tag="jurisdiction", author="Bob", para_ref="[5]")
-        word_to_legal_para = {0: 5, 1: 5, 2: 5, 3: 5}
+        word_to_legal_para: dict[int, int | None] = {0: 5, 1: 5, 2: 5, 3: 5}
         result = compute_highlight_spans(
             html, [hl], {"jurisdiction": "#3366cc"}, word_to_legal_para
         )

@@ -13,7 +13,7 @@ class TestAnonymiseHighlightsForExport:
         """Other users' highlight authors are replaced with anonymous labels."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Alice Smith",
@@ -40,7 +40,7 @@ class TestAnonymiseHighlightsForExport:
         """Viewer's own highlights keep real author name."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Bob Jones",
@@ -64,7 +64,7 @@ class TestAnonymiseHighlightsForExport:
         """Instructors see real author names even with anonymisation on."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Alice Smith",
@@ -88,7 +88,7 @@ class TestAnonymiseHighlightsForExport:
         """When anonymous_sharing is False, all names are real."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Alice Smith",
@@ -112,7 +112,7 @@ class TestAnonymiseHighlightsForExport:
         """Comment authors within highlights are also anonymised."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Alice Smith",
@@ -159,7 +159,7 @@ class TestAnonymiseHighlightsForExport:
         """
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Prof. Smith",
@@ -195,7 +195,7 @@ class TestAnonymiseHighlightsForExport:
         """
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Prof. Smith",
@@ -229,7 +229,7 @@ class TestAnonymiseHighlightsForExport:
         """Returns new dicts, does not mutate the input highlights."""
         from promptgrimoire.pages.annotation.pdf_export import anonymise_highlights
 
-        highlights = [
+        highlights: list[dict[str, object]] = [
             {
                 "id": "h1",
                 "author": "Alice Smith",
@@ -249,7 +249,7 @@ class TestAnonymiseHighlightsForExport:
             privileged_user_ids=frozenset(),
         )
 
-        assert highlights[0]["author"] == "Alice Smith"
-        comments = highlights[0]["comments"]
-        assert isinstance(comments, list)
-        assert comments[0]["author"] == "Carol Davis"
+        original: dict[str, object] = highlights[0]
+        assert original["author"] == "Alice Smith"
+        original_comments: list[dict[str, object]] = highlights[0]["comments"]  # type: ignore[assignment]
+        assert original_comments[0]["author"] == "Carol Davis"

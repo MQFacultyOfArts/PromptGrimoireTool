@@ -72,7 +72,9 @@ class TestPageRegistryRoleplayVisibility:
         self,
     ) -> None:
         """Students see roleplay nav when roleplay_require_privileged is False."""
-        settings = promptgrimoire.pages.registry.get_settings()
+        from promptgrimoire.pages.registry import get_settings
+
+        settings = get_settings()
         patched = settings.model_copy(
             update={
                 "features": settings.features.model_copy(

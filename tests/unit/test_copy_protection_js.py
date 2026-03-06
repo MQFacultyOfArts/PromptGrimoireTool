@@ -62,7 +62,7 @@ class TestCopyProtectionInactiveStates:
             copy_protection=False,
         )
         # Student (no roles) should still not be protected
-        student_user = {"roles": ["student"]}
+        student_user: dict[str, object] = {"roles": ["student"]}
         assert _compute_protect(ctx, student_user) is False
 
     def test_ac4_13_loose_workspace_not_protected(self) -> None:
@@ -73,7 +73,7 @@ class TestCopyProtectionInactiveStates:
         """
         ctx = PlacementContext(placement_type="loose")
         assert ctx.copy_protection is False
-        student_user = {"roles": ["student"]}
+        student_user: dict[str, object] = {"roles": ["student"]}
         assert _compute_protect(ctx, student_user) is False
 
     def test_protection_active_when_enabled_for_student(self) -> None:
@@ -87,7 +87,7 @@ class TestCopyProtectionInactiveStates:
             course_code="TEST1000",
             copy_protection=True,
         )
-        student_user = {"roles": ["student"]}
+        student_user: dict[str, object] = {"roles": ["student"]}
         assert _compute_protect(ctx, student_user) is True
 
     def test_protection_bypassed_for_instructor(self) -> None:
@@ -99,7 +99,7 @@ class TestCopyProtectionInactiveStates:
             course_code="TEST1000",
             copy_protection=True,
         )
-        instructor_user = {"roles": ["instructor"]}
+        instructor_user: dict[str, object] = {"roles": ["instructor"]}
         assert _compute_protect(ctx, instructor_user) is False
 
     def test_protection_bypassed_for_org_admin(self) -> None:

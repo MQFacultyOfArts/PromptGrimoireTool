@@ -79,7 +79,7 @@ def is_privileged_user(auth_user: dict[str, object] | None) -> bool:
     roles = auth_user.get("roles")
     if not isinstance(roles, list):
         return False
-    return bool(_PRIVILEGED_ROLES & set(roles))
+    return bool(_PRIVILEGED_ROLES & {r for r in roles if isinstance(r, str)})
 
 
 async def check_workspace_access(

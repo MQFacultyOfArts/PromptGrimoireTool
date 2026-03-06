@@ -242,7 +242,22 @@ class TestDeleteUnitButtonVisibility:
         # Confirm deletion
         _click_testid(nicegui_user, "confirm-delete-btn")
 
-        # Wait for: DB deletion + on_success callback + background navigation task
+        # Wait for the true boundary: DB deletion
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Course
+
+        async def course_deleted() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Course).where(Course.id == course_id)
+                )
+                return result.first() is None
+
+        await wait_for(course_deleted)
+
+        # Wait for the background navigation task to complete
         await wait_for(
             lambda: (
                 nicegui_user.back_history
@@ -344,7 +359,22 @@ class TestWorkspaceDelete:
         # Click confirm
         _click_testid(nicegui_user, "confirm-delete-workspace-btn")
 
-        # Wait for async delete + refreshable rebuild
+        # Wait for the true boundary: DB deletion
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+
+        async def workspace_deleted() -> bool:
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Workspace).where(Workspace.id == ws_id)
+                )
+                return result.first() is None
+
+        await wait_for(workspace_deleted)
+
+        # Wait for async delete + refreshable rebuild to finish on the UI side
         await wait_for(
             lambda: (
                 _find_by_testid(

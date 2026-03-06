@@ -1103,3 +1103,106 @@ class TestHydrateTagsFromDb:
 
         group = doc.get_tag_group("group-1")
         assert group is not None
+
+
+class TestWorkspaceTagsFromCrdt:
+    """Tests for workspace_tags_from_crdt() pure function."""
+
+    def test_empty_crdt_returns_empty_list(self) -> None:
+        """Empty CRDT doc returns empty list."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert result == []
+
+    def test_tags_with_all_fields_populated(self) -> None:
+        """Tags with all fields produce correct TagInfo instances."""
+        from promptgrimoire.pages.annotation.tags import (
+            TagInfo,
+            workspace_tags_from_crdt,
+        )
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        doc.set_tag(
+            "tag-1",
+            "Jurisdiction",
+            "#ff0000",
+            0,
+            group_id="group-1",
+            description="Legal jurisdiction",
+        )
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 1
+        assert result[0] == TagInfo(
+            name="Jurisdiction",
+            colour="#ff0000",
+            raw_key="tag-1",
+            group_name="Legal Issues",
+            group_colour="#3366cc",
+            description="Legal jurisdiction",
+        )
+
+    def test_group_metadata_resolved_from_tag_groups_map(self) -> None:
+        """Group name and colour are resolved from tag_groups Map."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Analysis", 0, colour="#aabbcc")
+        doc.set_tag("tag-1", "Facts", "#112233", 0, group_id="group-1")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert result[0].group_name == "Analysis"
+        assert result[0].group_colour == "#aabbcc"
+
+    def test_ungrouped_tags_appear_after_grouped_tags(self) -> None:
+        """Tags without groups appear after grouped tags."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Group A", 0)
+        doc.set_tag("tag-grouped", "Grouped Tag", "#ff0000", 0, group_id="group-1")
+        doc.set_tag("tag-ungrouped", "Ungrouped Tag", "#00ff00", 0)
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 2
+        assert result[0].name == "Grouped Tag"
+        assert result[1].name == "Ungrouped Tag"
+        assert result[1].group_name is None
+
+    def test_ordered_by_group_order_index_then_tag_order_index(self) -> None:
+        """Tags ordered by group order_index then tag order_index."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-b", "Group B", 1)
+        doc.set_tag_group("group-a", "Group A", 0)
+        doc.set_tag("tag-b1", "B First", "#ff0000", 0, group_id="group-b")
+        doc.set_tag("tag-b2", "B Second", "#ff0000", 1, group_id="group-b")
+        doc.set_tag("tag-a1", "A First", "#00ff00", 0, group_id="group-a")
+        doc.set_tag("tag-a2", "A Second", "#00ff00", 1, group_id="group-a")
+
+        result = workspace_tags_from_crdt(doc)
+
+        names = [t.name for t in result]
+        assert names == ["A First", "A Second", "B First", "B Second"]
+
+    def test_tag_without_matching_group_has_none_group_fields(self) -> None:
+        """Tag referencing non-existent group has None group fields."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag("tag-1", "Orphan", "#ff0000", 0, group_id="nonexistent-group")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 1
+        assert result[0].group_name is None
+        assert result[0].group_colour is None

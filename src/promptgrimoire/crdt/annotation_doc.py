@@ -784,6 +784,160 @@ class AnnotationDocument:
             _origin_var.reset(token)
 
 
+def _hydrate_crdt_from_db(
+    doc: AnnotationDocument,
+    db_tags: list[Any],
+    db_groups: list[Any],
+    workspace_id: UUID,
+) -> None:
+    """Populate empty CRDT maps from DB rows (AC1.5)."""
+    group_dicts = [
+        {
+            "id": str(g.id),
+            "name": g.name,
+            "colour": g.color,
+            "order_index": g.order_index,
+        }
+        for g in db_groups
+    ]
+    tag_dicts = [
+        {
+            "id": str(t.id),
+            "name": t.name,
+            "colour": t.color,
+            "order_index": t.order_index,
+            "group_id": str(t.group_id) if t.group_id else None,
+            "description": t.description,
+        }
+        for t in db_tags
+    ]
+    doc.hydrate_tags_from_db(tag_dicts, group_dicts)
+    logger.info(
+        "Hydrated CRDT from DB for workspace %s: %d tags, %d groups",
+        workspace_id,
+        len(db_tags),
+        len(db_groups),
+    )
+
+
+def _reconcile_crdt_with_db(
+    doc: AnnotationDocument,
+    db_tags: list[Any],
+    db_groups: list[Any],
+    crdt_tags: dict[str, Any],
+    crdt_groups: dict[str, Any],
+    workspace_id: UUID,
+) -> bool:
+    """Add missing DB entries to CRDT and remove orphans (AC1.6).
+
+    Returns True if any changes were made.
+    """
+    db_tag_ids = {str(t.id) for t in db_tags}
+    db_group_ids = {str(g.id) for g in db_groups}
+    changed = False
+
+    for tag in db_tags:
+        tag_id_str = str(tag.id)
+        if tag_id_str not in crdt_tags:
+            logger.warning(
+                "Workspace %s: DB tag %s (%s) missing from CRDT, adding",
+                workspace_id,
+                tag_id_str,
+                tag.name,
+            )
+            doc.set_tag(
+                tag_id_str,
+                tag.name,
+                tag.color,
+                tag.order_index,
+                group_id=str(tag.group_id) if tag.group_id else None,
+                description=tag.description,
+            )
+            changed = True
+
+    for group in db_groups:
+        group_id_str = str(group.id)
+        if group_id_str not in crdt_groups:
+            logger.warning(
+                "Workspace %s: DB group %s (%s) missing from CRDT, adding",
+                workspace_id,
+                group_id_str,
+                group.name,
+            )
+            doc.set_tag_group(
+                group_id_str,
+                group.name,
+                group.order_index,
+                colour=group.color,
+            )
+            changed = True
+
+    for crdt_tag_id in list(crdt_tags):
+        if crdt_tag_id not in db_tag_ids:
+            logger.warning(
+                "Workspace %s: CRDT tag %s not in DB, removing",
+                workspace_id,
+                crdt_tag_id,
+            )
+            doc.delete_tag(crdt_tag_id)
+            changed = True
+
+    for crdt_group_id in list(crdt_groups):
+        if crdt_group_id not in db_group_ids:
+            logger.warning(
+                "Workspace %s: CRDT group %s not in DB, removing",
+                workspace_id,
+                crdt_group_id,
+            )
+            doc.delete_tag_group(crdt_group_id)
+            changed = True
+
+    return changed
+
+
+async def _ensure_crdt_tag_consistency(
+    doc: AnnotationDocument,
+    workspace_id: UUID,
+) -> None:
+    """Hydrate or reconcile CRDT tag maps against DB state.
+
+    Called on every workspace load. If CRDT tags/tag_groups maps are
+    empty but DB has rows, hydrate from DB. If both have data, add any
+    DB entries missing from CRDT (DB is authoritative). Log discrepancies
+    at WARNING level.
+    """
+    from promptgrimoire.db.tags import (
+        list_tag_groups_for_workspace,
+        list_tags_for_workspace,
+    )
+
+    db_tags = await list_tags_for_workspace(workspace_id)
+    db_groups = await list_tag_groups_for_workspace(workspace_id)
+    crdt_tags = doc.list_tags()
+    crdt_groups = doc.list_tag_groups()
+
+    if not crdt_tags and not crdt_groups and (db_tags or db_groups):
+        _hydrate_crdt_from_db(doc, db_tags, db_groups, workspace_id)
+        changed = True
+    else:
+        changed = _reconcile_crdt_with_db(
+            doc, db_tags, db_groups, crdt_tags, crdt_groups, workspace_id
+        )
+
+    if changed:
+        try:
+            from promptgrimoire.db.workspaces import (
+                save_workspace_crdt_state,
+            )
+
+            await save_workspace_crdt_state(workspace_id, doc.get_full_state())
+        except Exception:
+            logger.exception(
+                "Failed to persist CRDT state after consistency check for workspace %s",
+                workspace_id,
+            )
+
+
 # Registry for managing multiple annotation documents
 class AnnotationDocumentRegistry:
     """Registry for managing multiple annotation documents by ID."""
@@ -837,6 +991,9 @@ class AnnotationDocumentRegistry:
                 logger.debug("Loaded workspace %s from database", workspace_id)
         except Exception:
             logger.exception("Failed to load workspace %s from database", workspace_id)
+
+        # Ensure CRDT tag maps are consistent with DB
+        await _ensure_crdt_tag_consistency(doc, workspace_id)
 
         self._documents[doc_id] = doc
 

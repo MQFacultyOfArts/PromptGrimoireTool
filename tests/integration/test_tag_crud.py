@@ -1640,3 +1640,110 @@ class TestReorderTagGroupsCrdt:
         r2 = await get_tag_group(g2.id)
         assert r2 is not None and r2.order_index == 0
         assert r1 is not None and r1.order_index == 1
+
+
+class TestCrdtTagConsistency:
+    """Tests for _ensure_crdt_tag_consistency on workspace load.
+
+    Verifies AC1.5 (hydration) and AC1.6 (reconciliation).
+    """
+
+    @pytest.mark.asyncio
+    async def test_consistency_hydrates_empty_crdt_from_db(self) -> None:
+        """AC1.5: CRDT maps empty + DB has tags -> CRDT hydrated from DB."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Consistency Group")
+        tag = await create_tag(
+            ws_id,
+            name="Consistency Tag",
+            color="#112233",
+            group_id=group.id,
+            description="Test",
+        )
+
+        # Create a fresh CRDT doc with NO tag data
+        doc = AnnotationDocument("test-consistency")
+        assert doc.list_tags() == {}
+        assert doc.list_tag_groups() == {}
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # CRDT should now have the tag and group from DB
+        crdt_tags = doc.list_tags()
+        crdt_groups = doc.list_tag_groups()
+        assert str(tag.id) in crdt_tags
+        assert str(group.id) in crdt_groups
+        assert crdt_tags[str(tag.id)]["name"] == "Consistency Tag"
+        assert crdt_groups[str(group.id)]["name"] == "Consistency Group"
+
+    @pytest.mark.asyncio
+    async def test_consistency_reconciles_missing_tag(self) -> None:
+        """AC1.6: CRDT has some tags but missing one from DB -> missing added."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag1 = await create_tag(ws_id, name="Present", color="#111111")
+        tag2 = await create_tag(ws_id, name="Missing", color="#222222")
+
+        # Pre-populate CRDT with only tag1
+        doc = AnnotationDocument("test-reconcile")
+        doc.set_tag(str(tag1.id), "Present", "#111111", 0)
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # tag2 should now be in CRDT
+        crdt_tags = doc.list_tags()
+        assert str(tag2.id) in crdt_tags
+        assert crdt_tags[str(tag2.id)]["name"] == "Missing"
+
+    @pytest.mark.asyncio
+    async def test_consistency_empty_db_empty_crdt_no_error(self) -> None:
+        """Edge: Empty DB + empty CRDT -> no changes, no errors."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-empty")
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        assert doc.list_tags() == {}
+        assert doc.list_tag_groups() == {}
+
+    @pytest.mark.asyncio
+    async def test_consistency_removes_crdt_tag_not_in_db(self) -> None:
+        """Edge: CRDT has tag not in DB -> tag removed from CRDT."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # CRDT has a tag that doesn't exist in DB
+        doc = AnnotationDocument("test-orphan")
+        doc.set_tag("orphan-tag-id", "Orphan", "#ff0000", 0)
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # Orphan tag should be removed
+        assert doc.get_tag("orphan-tag-id") is None

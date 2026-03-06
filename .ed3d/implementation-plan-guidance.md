@@ -337,8 +337,8 @@ Before raising a PR, **both** test suites must pass:
 # Full unit + integration suite
 uv run grimoire test all
 
-# Full E2E suite (starts server, serial fail-fast)
-uv run grimoire e2e run
+# Full E2E suite (starts server)
+uv run grimoire e2e all
 ```
 
 Do not raise a PR with either suite failing. If E2E tests fail on unrelated issues, document them explicitly in the PR description.

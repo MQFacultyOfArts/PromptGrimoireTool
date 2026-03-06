@@ -1029,3 +1029,454 @@ class TestConcurrentTagCreation:
 
         assert group_a.order_index != group_b.order_index
         assert {group_a.order_index, group_b.order_index} == {0, 1}
+
+
+# ── Phase 2: DB-CRDT Dual Write ──────────────────────────────────────
+
+
+class TestCreateTagCrdt:
+    """Tests for create_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_writes_to_both_db_and_crdt(self) -> None:
+        """create_tag with crdt_doc writes tag metadata to both DB and CRDT.
+
+        Verifies AC1.1: matching fields in both stores.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-create")
+        tag = await create_tag(
+            ws_id,
+            name="Jurisdiction",
+            color="#1f77b4",
+            description="Legal jurisdiction",
+            crdt_doc=doc,
+        )
+
+        # Verify DB row
+        from promptgrimoire.db.tags import get_tag
+
+        db_tag = await get_tag(tag.id)
+        assert db_tag is not None
+        assert db_tag.name == "Jurisdiction"
+        assert db_tag.color == "#1f77b4"
+
+        # Verify CRDT entry
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "Jurisdiction"
+        assert crdt_tag["colour"] == "#1f77b4"
+        assert crdt_tag["order_index"] == tag.order_index
+        assert crdt_tag["description"] == "Legal jurisdiction"
+        assert crdt_tag["highlights"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_tag_without_crdt_doc_no_crash(self) -> None:
+        """create_tag without crdt_doc creates DB row without error.
+
+        Edge case: existing callers pass no crdt_doc.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="NoCrdt", color="#000000")
+        assert tag.name == "NoCrdt"
+
+    @pytest.mark.asyncio
+    async def test_create_tag_with_group_writes_group_id_to_crdt(self) -> None:
+        """create_tag with group_id includes group_id in CRDT entry.
+
+        Verifies AC1.1: group_id field synced.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-group")
+        group = await create_tag_group(ws_id, name="Legal")
+        tag = await create_tag(
+            ws_id,
+            name="WithGroup",
+            color="#aabbcc",
+            group_id=group.id,
+            crdt_doc=doc,
+        )
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["group_id"] == str(group.id)
+
+
+class TestCreateTagGroupCrdt:
+    """Tests for create_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_group_writes_to_both_db_and_crdt(self) -> None:
+        """create_tag_group with crdt_doc writes to both DB and CRDT.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-create-group")
+        group = await create_tag_group(ws_id, name="Evidence", crdt_doc=doc)
+
+        # Verify DB row
+        from promptgrimoire.db.tags import get_tag_group
+
+        db_group = await get_tag_group(group.id)
+        assert db_group is not None
+        assert db_group.name == "Evidence"
+
+        # Verify CRDT entry
+        crdt_group = doc.get_tag_group(group.id)
+        assert crdt_group is not None
+        assert crdt_group["name"] == "Evidence"
+        assert crdt_group["order_index"] == group.order_index
+
+    @pytest.mark.asyncio
+    async def test_create_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """create_tag_group without crdt_doc creates DB row without error."""
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        assert group.name == "NoCrdt"
+
+
+class TestUpdateTagCrdt:
+    """Tests for update_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.2.
+    """
+
+    @pytest.mark.asyncio
+    async def test_update_tag_writes_to_crdt(self) -> None:
+        """update_tag with crdt_doc updates CRDT entry with new name.
+
+        Verifies AC1.2.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-update")
+        tag = await create_tag(ws_id, name="Original", color="#000000", crdt_doc=doc)
+
+        updated = await update_tag(tag.id, name="Renamed", crdt_doc=doc)
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_preserves_highlights_in_crdt(self) -> None:
+        """update_tag preserves existing highlights list in CRDT.
+
+        Verifies AC1.2: metadata update does not clobber highlights.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-preserve")
+        tag = await create_tag(ws_id, name="HasHL", color="#111111", crdt_doc=doc)
+
+        # Manually add highlights to CRDT tag
+        doc.set_tag(
+            tag_id=tag.id,
+            name="HasHL",
+            colour="#111111",
+            order_index=tag.order_index,
+            highlights=["hl-1", "hl-2"],
+        )
+
+        updated = await update_tag(tag.id, color="#222222", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["colour"] == "#222222"
+        assert crdt_tag["highlights"] == ["hl-1", "hl-2"]
+
+    @pytest.mark.asyncio
+    async def test_update_tag_without_crdt_doc_no_crash(self) -> None:
+        """update_tag without crdt_doc updates DB without error."""
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="NoCrdt", color="#000000")
+        updated = await update_tag(tag.id, name="Renamed")
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_creates_crdt_entry_if_missing(self) -> None:
+        """update_tag with crdt_doc creates CRDT entry if tag was created without it.
+
+        Edge case: tag created without crdt_doc, then updated with one.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # Create without crdt_doc
+        tag = await create_tag(ws_id, name="NoDoc", color="#aaa000")
+
+        # Update with crdt_doc
+        doc = AnnotationDocument("test-late-crdt")
+        updated = await update_tag(tag.id, name="NowHasDoc", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "NowHasDoc"
+
+
+class TestUpdateTagGroupCrdt:
+    """Tests for update_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_update_tag_group_writes_to_crdt(self) -> None:
+        """update_tag_group with crdt_doc updates CRDT entry.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, update_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-update-group")
+        group = await create_tag_group(ws_id, name="Original", crdt_doc=doc)
+
+        updated = await update_tag_group(group.id, name="Renamed", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_group = doc.get_tag_group(group.id)
+        assert crdt_group is not None
+        assert crdt_group["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """update_tag_group without crdt_doc updates DB without error."""
+        from promptgrimoire.db.tags import create_tag_group, update_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        updated = await update_tag_group(group.id, name="Renamed")
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+
+class TestDeleteTagCrdt:
+    """Tests for delete_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.3.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_removes_from_crdt(self) -> None:
+        """delete_tag with crdt_doc removes tag from CRDT tags Map.
+
+        Verifies AC1.3.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete")
+        tag = await create_tag(ws_id, name="ToDelete", color="#ff0000", crdt_doc=doc)
+
+        # Verify tag exists in CRDT before delete
+        assert doc.get_tag(tag.id) is not None
+
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify tag removed from CRDT
+        assert doc.get_tag(tag.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_removes_highlights_from_crdt(self) -> None:
+        """delete_tag with crdt_doc removes highlights and tag_order.
+
+        Verifies AC1.3: highlights and tag_order entry cleaned up.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-hl")
+        tag = await create_tag(ws_id, name="WithHL", color="#ff0000", crdt_doc=doc)
+
+        # Add highlights to CRDT
+        tag_str = str(tag.id)
+        hl_id = doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag=tag_str,
+            text="test",
+            author="test",
+        )
+        doc.set_tag_order(tag_str, [hl_id])
+
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify highlights and tag_order removed
+        assert doc.get_all_highlights() == []
+        assert tag_str not in doc.tag_order
+        assert doc.get_tag(tag.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_without_crdt_doc_uses_db_cleanup(self) -> None:
+        """delete_tag without crdt_doc still does DB-based CRDT cleanup.
+
+        Regression test for existing TestDeleteTagCrdtCleanup behaviour.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="DbCleanup", color="#ff0000")
+
+        # Build CRDT state with highlights
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        hl_id = doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag=tag_str,
+            text="test",
+            author="test",
+        )
+        doc.set_tag_order(tag_str, [hl_id])
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Delete without crdt_doc — should use DB-based cleanup
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+
+        # Verify DB-saved CRDT state is cleaned up
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+
+        doc2 = AnnotationDocument("verify")
+        doc2.apply_update(ws_after.crdt_state)
+        assert doc2.get_all_highlights() == []
+        assert tag_str not in doc2.tag_order
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_no_crdt_entry_no_crash(self) -> None:
+        """delete_tag with crdt_doc when tag has no CRDT entry does not crash.
+
+        Edge case: tag created without crdt_doc, deleted with one.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # Create without crdt_doc
+        tag = await create_tag(ws_id, name="NoEntry", color="#000000")
+
+        # Delete with crdt_doc
+        doc = AnnotationDocument("test-no-entry")
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+
+class TestDeleteTagGroupCrdt:
+    """Tests for delete_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_group_removes_from_crdt(self) -> None:
+        """delete_tag_group with crdt_doc removes group from CRDT.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, delete_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-group")
+        group = await create_tag_group(ws_id, name="ToDelete", crdt_doc=doc)
+
+        # Verify exists in CRDT
+        assert doc.get_tag_group(group.id) is not None
+
+        deleted = await delete_tag_group(group.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify removed from CRDT
+        assert doc.get_tag_group(group.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """delete_tag_group without crdt_doc deletes DB row without error."""
+        from promptgrimoire.db.tags import create_tag_group, delete_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        deleted = await delete_tag_group(group.id)
+        assert deleted is True

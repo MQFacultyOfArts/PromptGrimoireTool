@@ -545,6 +545,119 @@ class AnnotationDocument:
         """
         return dict(self.tags.items())
 
+    # --- Tag group CRUD operations ---
+
+    def set_tag_group(
+        self,
+        group_id: str | UUID,
+        name: str,
+        order_index: int,
+        *,
+        colour: str | None = None,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Write a complete tag group dict to the tag_groups Map.
+
+        Args:
+            group_id: Unique group identifier.
+            name: Display name for the group.
+            order_index: Sort order among groups.
+            colour: Optional hex colour string.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tag_groups[str(group_id)] = {
+                "name": name,
+                "colour": colour,
+                "order_index": order_index,
+            }
+        finally:
+            _origin_var.reset(token)
+
+    def get_tag_group(self, group_id: str | UUID) -> dict[str, Any] | None:
+        """Get a tag group by ID.
+
+        Args:
+            group_id: Group identifier.
+
+        Returns:
+            Group data dict or None if not found.
+        """
+        return self.tag_groups.get(str(group_id))
+
+    def delete_tag_group(
+        self,
+        group_id: str | UUID,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Remove a tag group from the tag_groups Map.
+
+        Args:
+            group_id: Group identifier.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tag_groups.pop(str(group_id), None)
+        finally:
+            _origin_var.reset(token)
+
+    def list_tag_groups(self) -> dict[str, dict[str, Any]]:
+        """Return all tag groups as {group_id: group_data}.
+
+        Returns:
+            Dict of all tag groups, empty if none.
+        """
+        return dict(self.tag_groups.items())
+
+    # --- Hydration ---
+
+    def hydrate_tags_from_db(
+        self,
+        tags: list[dict[str, Any]],
+        groups: list[dict[str, Any]],
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Populate CRDT Maps from DB query results.
+
+        Full replacement -- DB values overwrite existing CRDT entries.
+        DB is authoritative. Entries already in the CRDT that are *not*
+        in the input lists are left untouched (use explicit delete for
+        removal).
+
+        Args:
+            tags: List of tag dicts with keys: id, name, colour,
+                order_index, and optional group_id, description,
+                highlights.
+            groups: List of group dicts with keys: id, name,
+                order_index, and optional colour.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            for group in groups:
+                self.tag_groups[str(group["id"])] = {
+                    "name": group["name"],
+                    "colour": group.get("colour"),
+                    "order_index": group["order_index"],
+                }
+            for tag in tags:
+                self.tags[str(tag["id"])] = {
+                    "name": tag["name"],
+                    "colour": tag["colour"],
+                    "group_id": (
+                        str(tag["group_id"])
+                        if tag.get("group_id") is not None
+                        else None
+                    ),
+                    "description": tag.get("description"),
+                    "order_index": tag["order_index"],
+                    "highlights": tag.get("highlights", []),
+                }
+        finally:
+            _origin_var.reset(token)
+
     # --- Comment operations ---
 
     def add_comment(

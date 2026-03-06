@@ -855,3 +855,251 @@ class TestTagCrud:
         assert tag is not None
         assert tag["name"] == "Facts"
         assert tag["colour"] == "#ff0000"
+
+
+class TestTagGroupCrud:
+    """Tests for tag group CRUD methods on AnnotationDocument (AC1.4)."""
+
+    def test_set_tag_group_stores_all_fields(self) -> None:
+        """AC1.4: set_tag_group stores name, colour, order_index."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+        assert group["order_index"] == 0
+
+    def test_set_tag_group_colour_defaults_to_none(self) -> None:
+        """set_tag_group without colour stores None."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Facts", 0)
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["colour"] is None
+
+    def test_set_tag_group_overwrites_existing(self) -> None:
+        """AC1.4: Calling set_tag_group again with same ID overwrites."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Old Name", 0, colour="#000000")
+        doc.set_tag_group("group-1", "New Name", 1, colour="#ffffff")
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "New Name"
+        assert group["colour"] == "#ffffff"
+        assert group["order_index"] == 1
+
+    def test_delete_tag_group_removes_group(self) -> None:
+        """AC1.4: delete_tag_group removes the group."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Facts", 0)
+        doc.delete_tag_group("group-1")
+
+        assert doc.get_tag_group("group-1") is None
+
+    def test_get_tag_group_nonexistent_returns_none(self) -> None:
+        """Edge: get_tag_group on non-existent ID returns None."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_tag_group("nonexistent") is None
+
+    def test_delete_tag_group_nonexistent_does_not_raise(self) -> None:
+        """Edge: delete_tag_group on non-existent ID does not raise."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.delete_tag_group("nonexistent")  # Should not raise
+
+    def test_list_tag_groups_empty(self) -> None:
+        """Edge: list_tag_groups on empty doc returns empty dict."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.list_tag_groups() == {}
+
+    def test_list_tag_groups_returns_all(self) -> None:
+        """list_tag_groups returns all stored groups."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        doc.set_tag_group("group-2", "Facts", 1, colour="#ff0000")
+
+        groups = doc.list_tag_groups()
+        assert len(groups) == 2
+        assert "group-1" in groups
+        assert "group-2" in groups
+        assert groups["group-1"]["name"] == "Legal Issues"
+        assert groups["group-2"]["name"] == "Facts"
+
+    def test_tag_group_syncs_between_docs(self) -> None:
+        """CRDT sync: group data syncs between two docs."""
+        doc1 = AnnotationDocument("test-doc")
+        doc2 = AnnotationDocument("test-doc")
+
+        # Sync initial state
+        doc2.apply_update(doc1.get_full_state())
+
+        # Write group to doc1
+        doc1.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        update = doc1.doc.get_update()
+
+        # Apply to doc2
+        doc2.apply_update(update)
+
+        group = doc2.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+
+
+class TestHydrateTagsFromDb:
+    """Tests for hydrate_tags_from_db method (AC1.5, AC1.6)."""
+
+    def test_hydrate_populates_empty_doc(self) -> None:
+        """AC1.5: hydrate_tags_from_db on empty doc populates tags and groups."""
+        doc = AnnotationDocument("test-doc")
+
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Legal Issues",
+                "colour": "#3366cc",
+                "order_index": 0,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Jurisdiction",
+                "colour": "#ff0000",
+                "order_index": 0,
+                "group_id": "group-1",
+                "description": "Legal jurisdiction",
+                "highlights": ["h1", "h2"],
+            },
+            {
+                "id": "tag-2",
+                "name": "Facts",
+                "colour": "#00ff00",
+                "order_index": 1,
+                "group_id": None,
+                "description": None,
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        # Verify group
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+        assert group["order_index"] == 0
+
+        # Verify tag with all fields
+        tag1 = doc.get_tag("tag-1")
+        assert tag1 is not None
+        assert tag1["name"] == "Jurisdiction"
+        assert tag1["colour"] == "#ff0000"
+        assert tag1["order_index"] == 0
+        assert tag1["group_id"] == "group-1"
+        assert tag1["description"] == "Legal jurisdiction"
+        assert list(tag1["highlights"]) == ["h1", "h2"]
+
+        # Verify tag with defaults
+        tag2 = doc.get_tag("tag-2")
+        assert tag2 is not None
+        assert tag2["name"] == "Facts"
+        assert tag2["group_id"] is None
+        assert tag2["description"] is None
+        assert tag2["highlights"] == []
+
+    def test_hydrate_overwrites_stale_data(self) -> None:
+        """AC1.6: hydrate_tags_from_db overwrites existing CRDT entries (DB wins)."""
+        doc = AnnotationDocument("test-doc")
+
+        # Pre-populate with stale data
+        doc.set_tag("tag-1", "Stale Name", "#000000", 0)
+        doc.set_tag_group("group-1", "Stale Group", 0, colour="#000000")
+
+        # Hydrate with DB data
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Fresh Group",
+                "colour": "#ffffff",
+                "order_index": 1,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Fresh Name",
+                "colour": "#ffffff",
+                "order_index": 1,
+                "group_id": "group-1",
+                "description": "Updated",
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["name"] == "Fresh Name"
+        assert tag["colour"] == "#ffffff"
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Fresh Group"
+        assert group["colour"] == "#ffffff"
+
+    def test_hydrate_empty_lists_no_error(self) -> None:
+        """Edge: Empty lists produce no errors and do not remove existing entries."""
+        doc = AnnotationDocument("test-doc")
+
+        # Pre-populate
+        doc.set_tag("tag-1", "Facts", "#ff0000", 0)
+        doc.set_tag_group("group-1", "Legal", 0)
+
+        doc.hydrate_tags_from_db([], [])
+
+        # Existing entries should remain
+        assert doc.get_tag("tag-1") is not None
+        assert doc.get_tag_group("group-1") is not None
+
+    def test_hydrate_tag_with_group_reference(self) -> None:
+        """Edge: Tags with group_id referencing a group resolve."""
+        doc = AnnotationDocument("test-doc")
+
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Analysis",
+                "colour": "#3366cc",
+                "order_index": 0,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Key Facts",
+                "colour": "#ff0000",
+                "order_index": 0,
+                "group_id": "group-1",
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["group_id"] == "group-1"
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None

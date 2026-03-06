@@ -56,10 +56,13 @@ async function createEditor(rootEl, initialMd, onYjsUpdate, fragmentName) {
   const ydoc = new Y.Doc();
   window.__milkdownYDoc = ydoc;
 
-  // Use all default features — do NOT disable CodeMirror (Milkdown 7.x bug).
   const crepe = new Crepe({
     root: rootEl,
     defaultValue: initialMd || "",
+    features: {
+      "image-block": false, // no image upload support
+      "code-mirror": false, // no code block syntax highlighting
+    },
   });
 
   // Register the collab plugin on the underlying editor BEFORE create()

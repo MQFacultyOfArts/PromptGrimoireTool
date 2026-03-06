@@ -619,12 +619,13 @@ class AnnotationDocument:
         groups: list[dict[str, Any]],
         origin_client_id: str | None = None,
     ) -> None:
-        """Populate CRDT Maps from DB query results.
+        """Upsert CRDT Maps from DB query results.
 
-        Full replacement -- DB values overwrite existing CRDT entries.
-        DB is authoritative. Entries already in the CRDT that are *not*
-        in the input lists are left untouched (use explicit delete for
-        removal).
+        For every tag/group in the input lists, writes (or overwrites)
+        the corresponding CRDT entry with DB values. DB is authoritative:
+        if a CRDT entry already exists with the same ID, it is replaced.
+        Entries already in the CRDT whose IDs are *not* in the input
+        lists are left untouched -- this method never deletes.
 
         Args:
             tags: List of tag dicts with keys: id, name, colour,
@@ -637,12 +638,16 @@ class AnnotationDocument:
         token = _origin_var.set(origin_client_id)
         try:
             for group in groups:
+                # NOTE: schema must stay in sync with set_tag_group manually —
+                # shared origin token prevents delegation
                 self.tag_groups[str(group["id"])] = {
                     "name": group["name"],
                     "colour": group.get("colour"),
                     "order_index": group["order_index"],
                 }
             for tag in tags:
+                # NOTE: schema must stay in sync with set_tag manually —
+                # shared origin token prevents delegation
                 self.tags[str(tag["id"])] = {
                     "name": tag["name"],
                     "colour": tag["colour"],

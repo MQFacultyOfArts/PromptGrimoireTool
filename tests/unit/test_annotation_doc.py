@@ -745,7 +745,7 @@ class TestTagCrud:
         assert tag["order_index"] == 0
         assert tag["group_id"] == "group-1"
         assert tag["description"] == "Legal jurisdiction"
-        assert tag["highlights"] == []
+        assert list(tag["highlights"]) == []
 
     def test_set_tag_defaults(self) -> None:
         """set_tag optional fields default correctly."""
@@ -757,7 +757,7 @@ class TestTagCrud:
         assert tag is not None
         assert tag["group_id"] is None
         assert tag["description"] is None
-        assert tag["highlights"] == []
+        assert list(tag["highlights"]) == []
 
     def test_set_tag_overwrites_existing(self) -> None:
         """AC1.2: Calling set_tag again overwrites name/colour/description."""
@@ -1017,7 +1017,7 @@ class TestHydrateTagsFromDb:
         assert tag2["name"] == "Facts"
         assert tag2["group_id"] is None
         assert tag2["description"] is None
-        assert tag2["highlights"] == []
+        assert list(tag2["highlights"]) == []
 
     def test_hydrate_overwrites_stale_data(self) -> None:
         """AC1.6: hydrate_tags_from_db overwrites existing CRDT entries (DB wins)."""

@@ -52,6 +52,11 @@ library references during development.
 - [LaTeX package for multi-file projects with standalone compilation](lualatex/subfiles-reference.md)
 - [Why LaTeX export tests use AST parsing instead of string matching](lualatex/test-ast-validation.md)
 
+## milkdown
+
+- [Crepe high-level editor API — constructor, features, featureConfigs, getMarkdown, setReadonly, events](milkdown/crepe-api.md)
+- [Editor actions — replaceAll, insert, getMarkdown, callCommand, direct ProseMirror access](milkdown/editor-actions.md)
+
 ## nicegui
 
 - [Quasar color theming with ui.colors(), custom colors for branding](nicegui/colors.md)

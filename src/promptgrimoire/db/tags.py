@@ -97,15 +97,15 @@ async def create_tag_group(
         await session.flush()
         await session.refresh(group)
 
-        if crdt_doc is not None:
-            crdt_doc.set_tag_group(
-                group_id=group.id,
-                name=group.name,
-                order_index=group.order_index,
-                colour=group.color,
-            )
+    if crdt_doc is not None:
+        crdt_doc.set_tag_group(
+            group_id=group.id,
+            name=group.name,
+            order_index=group.order_index,
+            colour=group.color,
+        )
 
-        return group
+    return group
 
 
 async def get_tag_group(group_id: UUID) -> TagGroup | None:
@@ -153,15 +153,15 @@ async def update_tag_group(
         await session.flush()
         await session.refresh(group)
 
-        if crdt_doc is not None:
-            crdt_doc.set_tag_group(
-                group_id=group.id,
-                name=group.name,
-                order_index=group.order_index,
-                colour=group.color,
-            )
+    if crdt_doc is not None:
+        crdt_doc.set_tag_group(
+            group_id=group.id,
+            name=group.name,
+            order_index=group.order_index,
+            colour=group.color,
+        )
 
-        return group
+    return group
 
 
 async def delete_tag_group(
@@ -182,10 +182,10 @@ async def delete_tag_group(
 
         await session.delete(group)
 
-        if crdt_doc is not None:
-            crdt_doc.delete_tag_group(group_id)
+    if crdt_doc is not None:
+        crdt_doc.delete_tag_group(group_id)
 
-        return True
+    return True
 
 
 async def list_tag_groups_for_workspace(workspace_id: UUID) -> list[TagGroup]:
@@ -271,18 +271,18 @@ async def create_tag(
         await session.flush()
         await session.refresh(tag)
 
-        if crdt_doc is not None:
-            crdt_doc.set_tag(
-                tag_id=tag.id,
-                name=tag.name,
-                colour=tag.color,
-                order_index=tag.order_index,
-                group_id=tag.group_id,
-                description=tag.description,
-                highlights=[],
-            )
+    if crdt_doc is not None:
+        crdt_doc.set_tag(
+            tag_id=tag.id,
+            name=tag.name,
+            colour=tag.color,
+            order_index=tag.order_index,
+            group_id=tag.group_id,
+            description=tag.description,
+            highlights=[],
+        )
 
-        return tag
+    return tag
 
 
 async def get_tag(tag_id: UUID) -> Tag | None:
@@ -397,10 +397,10 @@ async def update_tag(
         await session.flush()
         await session.refresh(tag)
 
-        if crdt_doc is not None:
-            _sync_tag_to_crdt(tag, crdt_doc)
+    if crdt_doc is not None:
+        _sync_tag_to_crdt(tag, crdt_doc)
 
-        return tag
+    return tag
 
 
 async def delete_tag(
@@ -742,7 +742,7 @@ def _cleanup_crdt_highlights_on_doc(
     for hl_id in to_remove:
         try:
             doc.remove_highlight(hl_id)
-        except Exception:  # CRDT corruption should not block cleanup
+        except ValueError, KeyError:  # CRDT corruption should not block cleanup
             logger.warning("Failed to remove highlight %s during tag cleanup", hl_id)
 
     # Remove the tag_order entry (silently skip if missing)
@@ -786,7 +786,7 @@ async def _cleanup_crdt_highlights_from_db(
         for hl_id in to_remove:
             try:
                 doc.remove_highlight(hl_id)
-            except Exception:  # CRDT corruption should not block cleanup
+            except ValueError, KeyError:  # CRDT corruption should not block cleanup
                 logger.warning(
                     "Failed to remove highlight %s during tag cleanup", hl_id
                 )

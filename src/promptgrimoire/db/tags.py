@@ -464,7 +464,42 @@ async def list_tags_for_workspace(workspace_id: UUID) -> list[Tag]:
 # ── Reorder ──────────────────────────────────────────────────────────
 
 
-async def reorder_tags(tag_ids: list[UUID]) -> None:
+def _sync_tag_order_to_crdt(tag_ids: list[UUID], crdt_doc: AnnotationDocument) -> None:
+    """Update order_index for each tag in the CRDT doc."""
+    for idx, tag_id in enumerate(tag_ids):
+        existing = crdt_doc.get_tag(tag_id)
+        if existing:
+            crdt_doc.set_tag(
+                tag_id=tag_id,
+                name=existing["name"],
+                colour=existing["colour"],
+                order_index=idx,
+                group_id=existing.get("group_id"),
+                description=existing.get("description"),
+                highlights=existing.get("highlights", []),
+            )
+
+
+def _sync_group_order_to_crdt(
+    group_ids: list[UUID], crdt_doc: AnnotationDocument
+) -> None:
+    """Update order_index for each tag group in the CRDT doc."""
+    for idx, gid in enumerate(group_ids):
+        existing = crdt_doc.get_tag_group(gid)
+        if existing:
+            crdt_doc.set_tag_group(
+                group_id=gid,
+                name=existing["name"],
+                order_index=idx,
+                colour=existing.get("colour"),
+            )
+
+
+async def reorder_tags(
+    tag_ids: list[UUID],
+    *,
+    crdt_doc: AnnotationDocument | None = None,
+) -> None:
     """Set tag order_index values to match the given list order.
 
     Takes an ordered list of tag UUIDs and sets each tag's
@@ -473,6 +508,7 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
 
     Args:
         tag_ids: Ordered list of tag UUIDs.
+        crdt_doc: Optional live AnnotationDocument for CRDT dual-write.
 
     Raises:
         ValueError: If any tag ID is not found.
@@ -499,8 +535,15 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
             {"count": len(tag_ids), "ws_id": str(workspace_id)},
         )
 
+    if crdt_doc is not None:
+        _sync_tag_order_to_crdt(tag_ids, crdt_doc)
 
-async def reorder_tag_groups(group_ids: list[UUID]) -> None:
+
+async def reorder_tag_groups(
+    group_ids: list[UUID],
+    *,
+    crdt_doc: AnnotationDocument | None = None,
+) -> None:
     """Set tag group order_index values to match the given list order.
 
     Takes an ordered list of TagGroup UUIDs and sets each group's
@@ -509,6 +552,7 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
 
     Args:
         group_ids: Ordered list of TagGroup UUIDs.
+        crdt_doc: Optional live AnnotationDocument for CRDT dual-write.
 
     Raises:
         ValueError: If any group ID is not found.
@@ -534,6 +578,9 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
             text("UPDATE workspace SET next_group_order = :count WHERE id = :ws_id"),
             {"count": len(group_ids), "ws_id": str(workspace_id)},
         )
+
+    if crdt_doc is not None:
+        _sync_group_order_to_crdt(group_ids, crdt_doc)
 
 
 # ── Import from activity ─────────────────────────────────────────────

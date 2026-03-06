@@ -1480,3 +1480,163 @@ class TestDeleteTagGroupCrdt:
         group = await create_tag_group(ws_id, name="NoCrdt")
         deleted = await delete_tag_group(group.id)
         assert deleted is True
+
+
+class TestReorderTagsCrdt:
+    """Tests for reorder_tags with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.1 (order_index sync).
+    """
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_updates_crdt_order_index(self) -> None:
+        """reorder_tags with crdt_doc updates order_index in CRDT entries.
+
+        Verifies AC1.1: order_index synced to CRDT.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-tags")
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000", crdt_doc=doc)
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000", crdt_doc=doc)
+        t3 = await create_tag(ws_id, name="Tag3", color="#cc0000", crdt_doc=doc)
+
+        # Reorder: Tag3, Tag1, Tag2
+        await reorder_tags([t3.id, t1.id, t2.id], crdt_doc=doc)
+
+        crdt_t1 = doc.get_tag(t1.id)
+        crdt_t2 = doc.get_tag(t2.id)
+        crdt_t3 = doc.get_tag(t3.id)
+
+        assert crdt_t3 is not None and crdt_t3["order_index"] == 0
+        assert crdt_t1 is not None and crdt_t1["order_index"] == 1
+        assert crdt_t2 is not None and crdt_t2["order_index"] == 2
+
+        # Verify names preserved
+        assert crdt_t1["name"] == "Tag1"
+        assert crdt_t2["name"] == "Tag2"
+        assert crdt_t3["name"] == "Tag3"
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_without_crdt_doc_no_crash(self) -> None:
+        """reorder_tags without crdt_doc updates DB only, no crash.
+
+        Edge case: existing callers pass no crdt_doc.
+        """
+        from promptgrimoire.db.tags import create_tag, get_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000")
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000")
+
+        # Should not crash
+        await reorder_tags([t2.id, t1.id])
+
+        r1 = await get_tag(t1.id)
+        r2 = await get_tag(t2.id)
+        assert r2 is not None and r2.order_index == 0
+        assert r1 is not None and r1.order_index == 1
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_preserves_crdt_highlights(self) -> None:
+        """reorder_tags preserves existing highlights in CRDT entries.
+
+        Verifies AC1.1: only order_index changes, highlights preserved.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-highlights")
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000", crdt_doc=doc)
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000", crdt_doc=doc)
+
+        # Manually add a highlight to t1's CRDT entry
+        crdt_t1 = doc.get_tag(t1.id)
+        assert crdt_t1 is not None
+        doc.set_tag(
+            tag_id=t1.id,
+            name=crdt_t1["name"],
+            colour=crdt_t1["colour"],
+            order_index=crdt_t1["order_index"],
+            group_id=crdt_t1.get("group_id"),
+            description=crdt_t1.get("description"),
+            highlights=["highlight-1"],
+        )
+
+        # Reorder
+        await reorder_tags([t2.id, t1.id], crdt_doc=doc)
+
+        crdt_t1_after = doc.get_tag(t1.id)
+        assert crdt_t1_after is not None
+        assert crdt_t1_after["highlights"] == ["highlight-1"]
+
+
+class TestReorderTagGroupsCrdt:
+    """Tests for reorder_tag_groups with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4 (group order sync).
+    """
+
+    @pytest.mark.asyncio
+    async def test_reorder_tag_groups_updates_crdt_order_index(self) -> None:
+        """reorder_tag_groups with crdt_doc updates order_index in CRDT.
+
+        Verifies AC1.4: group order_index synced.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, reorder_tag_groups
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-groups")
+        g1 = await create_tag_group(ws_id, name="G1", crdt_doc=doc)
+        g2 = await create_tag_group(ws_id, name="G2", crdt_doc=doc)
+        g3 = await create_tag_group(ws_id, name="G3", crdt_doc=doc)
+
+        # Reverse order
+        await reorder_tag_groups([g3.id, g2.id, g1.id], crdt_doc=doc)
+
+        crdt_g1 = doc.get_tag_group(g1.id)
+        crdt_g2 = doc.get_tag_group(g2.id)
+        crdt_g3 = doc.get_tag_group(g3.id)
+
+        assert crdt_g3 is not None and crdt_g3["order_index"] == 0
+        assert crdt_g2 is not None and crdt_g2["order_index"] == 1
+        assert crdt_g1 is not None and crdt_g1["order_index"] == 2
+
+        # Verify names preserved
+        assert crdt_g1["name"] == "G1"
+        assert crdt_g2["name"] == "G2"
+        assert crdt_g3["name"] == "G3"
+
+    @pytest.mark.asyncio
+    async def test_reorder_tag_groups_without_crdt_doc_no_crash(self) -> None:
+        """reorder_tag_groups without crdt_doc updates DB only, no crash."""
+        from promptgrimoire.db.tags import (
+            create_tag_group,
+            get_tag_group,
+            reorder_tag_groups,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        g1 = await create_tag_group(ws_id, name="G1")
+        g2 = await create_tag_group(ws_id, name="G2")
+
+        await reorder_tag_groups([g2.id, g1.id])
+
+        r1 = await get_tag_group(g1.id)
+        r2 = await get_tag_group(g2.id)
+        assert r2 is not None and r2.order_index == 0
+        assert r1 is not None and r1.order_index == 1

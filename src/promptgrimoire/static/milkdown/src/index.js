@@ -112,9 +112,7 @@ window._getMilkdownMarkdown = function () {
 
 window._setMilkdownMarkdown = function (md) {
   if (!window.__milkdownCrepe) return;
-  console.warn(
-    "[milkdown-bundle] setMarkdown requires editor recreation (spike limitation)"
-  );
+  window.__milkdownCrepe.setMarkdown(md);
 };
 
 /**

@@ -21,6 +21,7 @@ Traceability:
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -562,6 +563,13 @@ async def render_respond_tab(
             workspace_key,
             client_id[:8],
             len(full_state),
+        )
+
+    # Seed editor from cloned markdown when XmlFragment is empty (fresh clone)
+    initial_md = crdt_doc.get_response_draft_markdown()
+    if initial_md and not str(crdt_doc.response_draft):
+        ui.context.client.run_javascript(
+            f"window._setMilkdownMarkdown({json.dumps(initial_md)})"
         )
 
     def refresh_references() -> None:

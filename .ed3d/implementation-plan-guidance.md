@@ -329,6 +329,20 @@ uv run complexipy <modified-file-1> <modified-file-2> ...
 
 This prevents complexity from accumulating silently across phases.
 
+## Pre-PR Gate
+
+Before raising a PR, **both** test suites must pass:
+
+```bash
+# Full unit + integration suite
+uv run grimoire test all
+
+# Full E2E suite (starts server, serial fail-fast)
+uv run grimoire e2e run
+```
+
+Do not raise a PR with either suite failing. If E2E tests fail on unrelated issues, document them explicitly in the PR description.
+
 ## Review Criteria
 
 Code review will check:

@@ -91,7 +91,7 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
     page.evaluate(
         """(html) => {
             const plainText = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
+            window.__clipboardWritePromise = navigator.clipboard.write([
                 new ClipboardItem({
                     'text/html': new Blob([html], { type: 'text/html' }),
                     'text/plain': new Blob([plainText], { type: 'text/plain' })
@@ -101,14 +101,15 @@ def simulate_html_paste(page: Page, html_content: str) -> None:
         html_content,
     )
 
-    # Small delay for clipboard write to complete
-    page.wait_for_timeout(100)
+    page.wait_for_function(
+        "async () => { await window.__clipboardWritePromise; return true; }"
+    )
 
     # Trigger paste with Ctrl+V
     page.keyboard.press("Control+v")
 
     # Wait for paste handler to process (console shows [PASTE] message)
-    page.wait_for_timeout(500)
+    expect(editor).to_contain_text("Content pasted", timeout=5000)
 
 
 class TestHTMLPasteWhitespace:
@@ -135,11 +136,6 @@ class TestHTMLPasteWhitespace:
         # Screenshot after paste (editor still shows placeholder)
         page.screenshot(path=str(SCREENSHOT_DIR / "02_after_paste_editor.png"))
 
-        # Check that paste was captured (placeholder message appears)
-        editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
-        # Should show "Content pasted" placeholder, not raw HTML
-        expect(editor).to_contain_text("Content pasted", timeout=3000)
-
         # Click Add Document to process
         page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
 
@@ -149,15 +145,15 @@ class TestHTMLPasteWhitespace:
             timeout=15000,
         )
 
-        # Wait for rendering to stabilize
-        page.wait_for_timeout(500)
+        # Give the browser one animation frame to paint the newly injected DOM nodes
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Scroll down to see the content (it may be below the fold)
         page.evaluate(
             "document.getElementById('doc-container').scrollTop = "
             "document.getElementById('doc-container').scrollHeight * 0.1"
         )
-        page.wait_for_timeout(200)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Screenshot the rendered document
         page.screenshot(path=str(SCREENSHOT_DIR / "03_rendered_document.png"))
@@ -197,7 +193,9 @@ class TestHTMLPasteWhitespace:
                     }
                 }
             """)
-            page.wait_for_timeout(200)
+            page.evaluate(
+                "() => new Promise(resolve => requestAnimationFrame(resolve))"
+            )
             page.screenshot(path=str(SCREENSHOT_DIR / "05_grounds_of_appeal.png"))
 
             # Check that paragraph 4 content is present
@@ -252,14 +250,14 @@ class TestHTMLPasteWhitespace:
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
         )
-        page.wait_for_timeout(500)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Scroll to make Case Name visible
         page.evaluate(
             "document.getElementById('doc-container').scrollTop = "
             "document.getElementById('doc-container').scrollHeight * 0.1"
         )
-        page.wait_for_timeout(200)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Screenshot the table layout
         page.screenshot(path=str(SCREENSHOT_DIR / "06_table_layout.png"))
@@ -342,7 +340,7 @@ class TestParagraphNumberingAndIndent:
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
         )
-        page.wait_for_timeout(500)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Find and measure indent of "Ground 1" text
         # Use a tree walker to find the text node, then walk up for margin-left
@@ -442,7 +440,7 @@ class TestParagraphNumberingAndIndent:
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
         )
-        page.wait_for_timeout(500)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Check if ordered lists with start attribute are rendered
         # This checks the actual DOM structure
@@ -503,7 +501,7 @@ class TestParagraphNumberingAndIndent:
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
         )
-        page.wait_for_timeout(500)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         # Calculate highest paragraph number from ol start + li count
         highest_para = page.evaluate("""() => {

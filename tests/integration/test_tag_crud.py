@@ -1747,3 +1747,93 @@ class TestCrdtTagConsistency:
 
         # Orphan tag should be removed
         assert doc.get_tag("orphan-tag-id") is None
+
+
+class TestCrdtPrimaryRendering:
+    """Tests for CRDT-primary tag rendering (Task 3).
+
+    Verifies that workspace_tags_from_crdt() produces the same output
+    as workspace_tags() after consistency check, validating the rendering
+    switch from DB to CRDT.
+    """
+
+    @pytest.mark.asyncio
+    async def test_crdt_primary_matches_db_query(self) -> None:
+        """After consistency check, CRDT-primary matches DB query output."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags,
+            workspace_tags_from_crdt,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            update_tag_group,
+        )
+
+        group = await create_tag_group(ws_id, name="Legal")
+        await update_tag_group(group.id, color="#aa0000")
+        await create_tag(
+            ws_id,
+            name="Jurisdiction",
+            color="#3366cc",
+            group_id=group.id,
+            description="Courts",
+        )
+        await create_tag(ws_id, name="Ungrouped", color="#ff9900")
+
+        # Build CRDT via consistency check (simulates workspace load)
+        doc = AnnotationDocument("test-crdt-primary")
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # Compare outputs
+        db_result = await workspace_tags(ws_id)
+        crdt_result = workspace_tags_from_crdt(doc)
+
+        assert len(crdt_result) == len(db_result)
+        for crdt_tag, db_tag in zip(crdt_result, db_result, strict=True):
+            assert crdt_tag.name == db_tag.name
+            assert crdt_tag.colour == db_tag.colour
+            assert crdt_tag.raw_key == db_tag.raw_key
+            assert crdt_tag.group_name == db_tag.group_name
+            assert crdt_tag.group_colour == db_tag.group_colour
+            assert crdt_tag.description == db_tag.description
+
+    @pytest.mark.asyncio
+    async def test_crdt_primary_ordering_matches_db(self) -> None:
+        """CRDT-primary preserves group-then-tag ordering from DB."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags,
+            workspace_tags_from_crdt,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        g1 = await create_tag_group(ws_id, name="Group A")
+        g2 = await create_tag_group(ws_id, name="Group B")
+        await create_tag(ws_id, name="A-Tag1", color="#111111", group_id=g1.id)
+        await create_tag(ws_id, name="A-Tag2", color="#222222", group_id=g1.id)
+        await create_tag(ws_id, name="B-Tag1", color="#333333", group_id=g2.id)
+        await create_tag(ws_id, name="Ungrouped", color="#444444")
+
+        doc = AnnotationDocument("test-crdt-ordering")
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        db_names = [t.name for t in await workspace_tags(ws_id)]
+        crdt_names = [t.name for t in workspace_tags_from_crdt(doc)]
+
+        assert crdt_names == db_names

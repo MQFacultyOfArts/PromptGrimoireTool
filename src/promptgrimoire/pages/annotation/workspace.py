@@ -57,7 +57,7 @@ from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.respond import render_respond_tab, word_count
 from promptgrimoire.pages.annotation.tag_management import open_tag_management
 from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
-from promptgrimoire.pages.annotation.tags import workspace_tags
+from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
@@ -363,7 +363,9 @@ async def _resolve_workspace_context(
         word_limit=ctx.word_limit,
         word_limit_enforcement=ctx.word_limit_enforcement,
     )
-    state.tag_info_list = await workspace_tags(workspace_id)
+    # Tags from CRDT (populated by consistency check in get_or_create)
+    if state.crdt_doc is not None:
+        state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
 
     return state, ctx, protect, can_create_tags, workspace.shared_with_class
 

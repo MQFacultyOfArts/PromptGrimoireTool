@@ -25,7 +25,7 @@ async def _refresh_tag_state(
     *,
     reload_crdt: bool = False,
 ) -> None:
-    """Reload tags from DB and rebuild highlight CSS.
+    """Reload tags from CRDT and rebuild highlight CSS, then broadcast.
 
     Args:
         state: Page state to update.
@@ -40,10 +40,11 @@ async def _refresh_tag_state(
         _update_highlight_css,
     )
     from promptgrimoire.pages.annotation.tags import (  # noqa: PLC0415
-        workspace_tags,
+        workspace_tags_from_crdt,
     )
 
-    state.tag_info_list = await workspace_tags(state.workspace_id)
+    if state.crdt_doc is not None:
+        state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
     _update_highlight_css(state)
 
     # Rebuild the highlight menu if it exists
@@ -66,6 +67,10 @@ async def _refresh_tag_state(
         _push_highlights_to_client(state)
         if state.refresh_annotations:
             state.refresh_annotations()
+
+    # Broadcast tag state change to other connected clients
+    if state.broadcast_update:
+        await state.broadcast_update()
 
 
 async def _save_single_tag(

@@ -117,6 +117,21 @@ def _notify_other_clients(workspace_key: str, exclude_client_id: str) -> None:
                 task.add_done_callback(_background_tasks.discard)
 
 
+def _rebuild_tag_state_from_crdt(state: PageState) -> None:
+    """Rebuild tag_info_list from CRDT maps after a remote update.
+
+    Called by handle_update_from_other so receiving clients pick up
+    tag creates, edits, and deletes broadcast by the originating client.
+    """
+    if state.crdt_doc is None:
+        return
+    from promptgrimoire.pages.annotation.tags import (  # noqa: PLC0415
+        workspace_tags_from_crdt,
+    )
+
+    state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
+
+
 def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7
     workspace_id: UUID,
     client: Client,
@@ -204,6 +219,7 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
 
     # Callback for receiving updates from other clients
     async def handle_update_from_other() -> None:
+        _rebuild_tag_state_from_crdt(state)
         _update_highlight_css(state)
         _update_user_count(state)
         if state.refresh_annotations:

@@ -1206,3 +1206,81 @@ class TestWorkspaceTagsFromCrdt:
         assert len(result) == 1
         assert result[0].group_name is None
         assert result[0].group_colour is None
+
+
+class TestTagSyncViaCrdt:
+    """Tests for CRDT sync pathway used by broadcast (Task 4).
+
+    Verifies that tags set on one AnnotationDocument propagate to
+    another via get_full_state/apply_update, which is the mechanism
+    the broadcast callback relies on.
+    """
+
+    def test_sync_tag_from_doc_a_to_doc_b(self) -> None:
+        """Tag set on doc A appears on doc B after sync."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync initial state so both docs share the same baseline
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        # Set a tag on doc A
+        doc_a.set_tag("tag-1", "Synced Tag", "#cc3366", 0)
+
+        # Sync doc A's state to doc B
+        doc_b.apply_update(doc_a.get_full_state())
+
+        result = workspace_tags_from_crdt(doc_b)
+        assert len(result) == 1
+        assert result[0].name == "Synced Tag"
+        assert result[0].colour == "#cc3366"
+        assert result[0].raw_key == "tag-1"
+
+    def test_sync_tag_update_propagates(self) -> None:
+        """Tag colour update on doc A propagates to doc B."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync baselines
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        # Create then update tag
+        doc_a.set_tag("tag-1", "Colour Test", "#000000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.set_tag("tag-1", "Colour Test", "#ff0000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+
+        result = workspace_tags_from_crdt(doc_b)
+        assert result[0].colour == "#ff0000"
+
+    def test_sync_tag_deletion_propagates(self) -> None:
+        """Tag deleted on doc A disappears from doc B."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync baselines
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        doc_a.set_tag("tag-1", "Doomed", "#ff0000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+        assert len(workspace_tags_from_crdt(doc_b)) == 1
+
+        doc_a.delete_tag("tag-1")
+        doc_b.apply_update(doc_a.get_full_state())
+
+        assert len(workspace_tags_from_crdt(doc_b)) == 0

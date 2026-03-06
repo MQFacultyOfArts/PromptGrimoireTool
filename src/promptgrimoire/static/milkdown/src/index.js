@@ -3,6 +3,7 @@ import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 
 import { collab, collabServiceCtx } from "@milkdown/plugin-collab";
+import { replaceAll } from "@milkdown/utils";
 import * as Y from "yjs";
 
 // --- Base64 helpers for Uint8Array <-> string transport ---
@@ -112,7 +113,7 @@ window._getMilkdownMarkdown = function () {
 
 window._setMilkdownMarkdown = function (md) {
   if (!window.__milkdownCrepe) return;
-  window.__milkdownCrepe.setMarkdown(md);
+  window.__milkdownCrepe.editor.action(replaceAll(md));
 };
 
 /**

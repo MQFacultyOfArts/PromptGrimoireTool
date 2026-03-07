@@ -45,6 +45,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
+    expand_card,
     scroll_to_char,
     select_chars,
     wait_for_text_walker,
@@ -53,6 +54,7 @@ from tests.e2e.conftest import _authenticate_page
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestLawStudent:
     """Law student persona: annotating an AustLII case judgment."""
 
@@ -129,17 +131,24 @@ class TestLawStudent:
                 # Generate unique comment identifier
                 uuid1 = uuid4().hex
 
-                # Click annotation card to ensure comment input is visible
-                page.locator("[data-testid='annotation-card']").first.click()
+                # Expand annotation card to ensure comment input is visible
+                expand_card(page, 0)
 
                 # Find comment input and add comment
                 comment_input = page.get_by_test_id("comment-input").first
                 comment_input.fill(uuid1)
 
                 # Post comment
-                page.locator("[data-testid='annotation-card']").first.get_by_text(
-                    "Post"
+                page.locator("[data-testid='annotation-card']").first.get_by_test_id(
+                    "post-comment-btn"
                 ).click()
+
+                # Server re-render after post may collapse the card — re-expand
+                card = page.locator("[data-testid='annotation-card']").first
+                card.locator("[data-testid='comment']", has_text=uuid1).wait_for(
+                    state="attached", timeout=10000
+                )
+                expand_card(page, 0)
 
                 # Verify comment appears
                 expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
@@ -157,17 +166,22 @@ class TestLawStudent:
                 # Generate second unique comment identifier
                 uuid2 = uuid4().hex
 
-                # Click second card
-                page.locator("[data-testid='annotation-card']").nth(1).click()
+                # Expand second card
+                expand_card(page, 1)
 
                 # Find comment input on second card
                 comment_input = page.get_by_test_id("comment-input").nth(1)
                 comment_input.fill(uuid2)
 
                 # Post second comment
-                page.locator("[data-testid='annotation-card']").nth(1).get_by_text(
-                    "Post"
-                ).click()
+                card2 = page.locator("[data-testid='annotation-card']").nth(1)
+                card2.get_by_test_id("post-comment-btn").click()
+
+                # Server re-render after post may collapse the card — re-expand
+                card2.locator("[data-testid='comment']", has_text=uuid2).wait_for(
+                    state="attached", timeout=10000
+                )
+                expand_card(page, 1)
 
                 # Verify second comment appears
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
@@ -181,6 +195,7 @@ class TestLawStudent:
                 # Select first card's tag dropdown
                 first_card = page.locator("[data-testid='annotation-card']").first
                 expect(first_card).to_be_visible(timeout=5000)
+                expand_card(page, 0)
                 tag_select = first_card.get_by_test_id("tag-select")
 
                 # Open dropdown and select via JS evaluate to avoid
@@ -208,9 +223,6 @@ class TestLawStudent:
                 # Press "5" for Reasons tag
                 page.keyboard.press("5")
 
-                # Wait briefly for highlight processing
-                page.wait_for_timeout(500)
-
                 # Verify third annotation card appears
                 expect(
                     page.locator("[data-testid='annotation-card']").nth(2)
@@ -233,6 +245,7 @@ class TestLawStudent:
 
                 third_card = page.locator("[data-testid='annotation-card']").nth(2)
                 expect(third_card).to_be_visible(timeout=5000)
+                expand_card(page, 2)
                 comment_input = third_card.get_by_test_id("comment-input")
                 comment_input.click()
                 page.keyboard.press("1")
@@ -246,11 +259,9 @@ class TestLawStudent:
                     == highlight_count
                 )
 
-                # Wait to catch any async highlight creation
-                page.wait_for_timeout(500)
-                assert (
-                    page.locator("[data-testid='annotation-card']").count()
-                    == highlight_count
+                # Verify no async highlight creation occurred
+                expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+                    highlight_count, timeout=2000
                 )
 
                 # Clear the input for subsequent tests (re-scroll in case
@@ -271,13 +282,9 @@ class TestLawStudent:
                 # Press letter key -- JS handler only responds to digits 1-0
                 page.keyboard.press("a")
 
-                # Wait for any async processing
-                page.wait_for_timeout(500)
-
                 # Highlight count unchanged
-                assert (
-                    page.locator("[data-testid='annotation-card']").count()
-                    == highlight_count
+                expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+                    highlight_count, timeout=2000
                 )
 
                 # Click elsewhere to deselect
@@ -286,9 +293,6 @@ class TestLawStudent:
             with subtests.test(msg="organise_tab"):
                 # Click Organise tab
                 page.get_by_test_id("tab-organise").click()
-
-                # Wait for organise content to render
-                page.wait_for_timeout(1000)
 
                 # Verify organise cards appear
                 expect(
@@ -330,7 +334,7 @@ class TestLawStudent:
                 locate_btn = card.locator("button").first
                 expect(locate_btn).to_be_visible(timeout=3000)
                 locate_btn.click()
-                page.wait_for_timeout(1000)
+                page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
                 annotate_tab = page.get_by_test_id("tab-annotate")
@@ -346,7 +350,6 @@ class TestLawStudent:
             with subtests.test(msg="organise_return_after_warp"):
                 # Return to Organise tab — content should still be rendered
                 page.get_by_test_id("tab-organise").click()
-                page.wait_for_timeout(500)
                 columns = page.locator('[data-testid="organise-columns"]')
                 expect(columns).to_be_visible(timeout=3000)
                 organise_tab = page.get_by_test_id("tab-organise")
@@ -387,7 +390,7 @@ class TestLawStudent:
                 locate_btn = ref_card.locator("button").first
                 expect(locate_btn).to_be_visible(timeout=3000)
                 locate_btn.click()
-                page.wait_for_timeout(1000)
+                page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
                 annotate_tab = page.get_by_test_id("tab-annotate")
@@ -409,7 +412,11 @@ class TestLawStudent:
                 expect(
                     page.locator("[data-testid='annotation-card']").first
                 ).to_be_visible(timeout=10000)
+
+                # Cards default to collapsed after reload — expand to check comments
+                expand_card(page, 0)
                 expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
+                expand_card(page, 1)
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf_with_annotations"):

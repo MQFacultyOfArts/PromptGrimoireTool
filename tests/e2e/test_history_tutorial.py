@@ -31,6 +31,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     create_highlight_with_tag,
+    expand_card,
     select_chars,
 )
 
@@ -44,6 +45,7 @@ USER_COUNT = "[data-testid='user-count']"
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestHistoryTutorial:
     """Two history students collaborating on a shared annotation workspace."""
 
@@ -91,12 +93,20 @@ class TestHistoryTutorial:
             # Generate unique comment text
             comment_uuid = uuid4().hex
 
-            # Click first annotation card to ensure comment input visible
-            page1.locator(ANNOTATION_CARD).first.click()
+            # Expand first annotation card to ensure comment input visible
+            expand_card(page1, 0)
 
             # Fill and post comment
             page1.get_by_test_id("comment-input").first.fill(comment_uuid)
-            page1.locator(ANNOTATION_CARD).first.get_by_text("Post").click()
+            page1.locator(ANNOTATION_CARD).first.get_by_test_id(
+                "post-comment-btn"
+            ).click()
+
+            # Server re-render after post may collapse the card — re-expand
+            page1.locator(ANNOTATION_CARD).first.locator(
+                "[data-testid='comment']", has_text=comment_uuid
+            ).wait_for(state="attached", timeout=10000)
+            expand_card(page1, 0)
 
             # Verify comment appears on page1
             expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
@@ -109,6 +119,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="student_a_changes_tag"):
             # Change first card's tag from Jurisdiction to Procedural History
+            expand_card(page1, 0)
             first_card = page1.locator(ANNOTATION_CARD).first
             tag_select = first_card.get_by_test_id("tag-select")
 
@@ -153,7 +164,6 @@ class TestHistoryTutorial:
         with subtests.test(msg="cross_tab_organise_sync"):
             # Student B switches to Organise tab
             page2.get_by_test_id("tab-organise").click()
-            page2.wait_for_timeout(1000)
             expect(page2.locator('[data-testid="organise-columns"]')).to_be_visible(
                 timeout=5000
             )
@@ -192,12 +202,14 @@ class TestHistoryTutorial:
         with subtests.test(msg="warp_does_not_affect_other_user"):
             # Student A switches to Organise tab and clicks locate
             page1.get_by_test_id("tab-organise").click()
-            page1.wait_for_timeout(1000)
+            expect(page1.locator('[data-testid="organise-columns"]')).to_be_visible(
+                timeout=5000
+            )
 
             card = page1.locator('[data-testid="organise-card"]').first
             expect(card).to_be_visible(timeout=3000)
             card.locator("button").first.click()
-            page1.wait_for_timeout(1000)
+            page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
             # Student A should be warped to Annotate tab
             expect(page1.get_by_test_id("tab-annotate")).to_have_attribute(
@@ -217,9 +229,8 @@ class TestHistoryTutorial:
 
             # Student A types in the Milkdown editor
             editor1.locator(".ProseMirror").click()
-            page1.wait_for_timeout(500)
+            page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
             page1.keyboard.type("Collaborative analysis notes")
-            page1.wait_for_timeout(2000)
 
             # Student B (already on Respond tab) should see the text
             prosemirror2 = page2.locator(

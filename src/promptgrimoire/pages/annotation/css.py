@@ -289,7 +289,7 @@ _PAGE_CSS = """
         left: 0;
         right: 0;
         border-radius: 4px;
-        padding: 8px 12px;
+        padding: 0;
         margin-bottom: 8px;
         cursor: pointer;
         transition: top 0.15s ease-out, box-shadow 0.2s;

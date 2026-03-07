@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
@@ -26,6 +27,7 @@ from tests.e2e.annotation_helpers import (
     _lock_tag_in_db,
     add_comment_to_highlight,
     create_highlight_with_tag,
+    expand_card,
     seed_tag_id,
     select_chars,
     wait_for_text_walker,
@@ -58,6 +60,7 @@ def _tag_name_from_toolbar_button(toolbar: Locator, position: int) -> str:
     return stripped
 
 
+@pytest.mark.cards
 class TestAnnotationCanvas:
     """Canvas-level E2E tests using pre-seeded workspaces."""
 
@@ -136,6 +139,7 @@ class TestAnnotationCanvas:
         first_card = page.locator("[data-testid='annotation-card']").first
         expect(first_card).to_be_visible(timeout=5000)
 
+        expand_card(page, 0)
         first_card_select = first_card.get_by_test_id("tag-select")
         expect(first_card_select).to_contain_text(key2_tag_name, timeout=3000)
 
@@ -147,6 +151,7 @@ class TestAnnotationCanvas:
         expect(cards).to_have_count(2, timeout=3000)
 
         second_card = cards.nth(1)
+        expand_card(page, 1)
         second_card_select = second_card.get_by_test_id("tag-select")
         expect(second_card_select).to_contain_text(key3_tag_name, timeout=3000)
 

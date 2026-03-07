@@ -690,7 +690,6 @@ def navigate_home_via_drawer(page: Page) -> None:
     home_link = page.get_by_test_id("nav-home")
     if not home_link.is_visible():
         page.locator(".q-header .q-btn").first.click()
-        page.wait_for_timeout(500)
     expect(home_link).to_be_visible(timeout=5000)
     home_link.click()
 
@@ -716,7 +715,7 @@ def scroll_to_char(page: Page, char_offset: int) -> None:
         }""",
         char_offset,
     )
-    page.wait_for_timeout(500)
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
 
 def drag_sortable_item(source: Locator, target: Locator) -> None:
@@ -808,7 +807,6 @@ def setup_workspace_with_content(
 
     # Wait for the text walker to initialise
     wait_for_text_walker(page, timeout=timeout)
-    page.wait_for_timeout(200)
 
     if seed_tags:
         workspace_id = page.url.split("workspace_id=")[1].split("&")[0]
@@ -857,7 +855,7 @@ def select_text_range(page: Page, text: str) -> None:
         }""",
         text,
     )
-    page.wait_for_timeout(200)
+    page.locator("[data-testid='tag-toolbar']").wait_for(state="visible", timeout=5000)
 
 
 def _load_fixture_via_paste(
@@ -919,11 +917,9 @@ def _load_fixture_via_paste(
         }""",
         html_content,
     )
-    page.wait_for_timeout(100)
 
     # Trigger paste
     page.keyboard.press("Control+v")
-    page.wait_for_timeout(500)
 
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)
@@ -948,28 +944,94 @@ def _load_fixture_via_paste(
 # ---------------------------------------------------------------------------
 
 
+def expand_card(page: Page, card_index: int = 0) -> None:
+    """Expand an annotation card's detail section.
+
+    Clicks the card's expand button and waits for the detail section
+    to become visible, then waits one animation frame for
+    ``positionCards()`` to re-run.
+
+    Following test-audit patterns: state-based waits, no sleeps.
+
+    Args:
+        page: Playwright page with annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+
+    detail = card.get_by_test_id("card-detail")
+    if detail.is_visible():
+        return  # already expanded
+
+    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn.click()
+
+    detail.wait_for(state="visible", timeout=5000)
+    # Wait one animation frame for positionCards() to re-run
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+
+
+def collapse_card(page: Page, card_index: int = 0) -> None:
+    """Collapse an annotation card's detail section.
+
+    Clicks the card's expand button (toggles to collapse) and waits
+    for the detail section to become hidden, then waits one animation
+    frame for ``positionCards()`` to re-run.
+
+    Following test-audit patterns: state-based waits, no sleeps.
+
+    Args:
+        page: Playwright page with annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+
+    detail = card.get_by_test_id("card-detail")
+    if not detail.is_visible():
+        return  # already collapsed
+
+    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn.click()
+
+    detail.wait_for(state="hidden", timeout=5000)
+    # Wait one animation frame for positionCards() to re-run
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+
+
 def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> None:
     """Add a comment to an annotation card via the Post button.
+
+    Automatically expands the card if collapsed, since the comment
+    input is inside the detail section.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
         text: Comment text to post.
         card_index: 0-based index of the annotation card.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
 
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
     card.get_by_test_id("post-comment-btn").click()
 
-    card.locator("[data-testid='comment']", has_text=text).wait_for(
-        state="visible", timeout=10000
-    )
+    # Server re-render after post may collapse the card (detail section resets
+    # to hidden). Wait for the comment to exist in the DOM, then re-expand.
+    comment = card.locator("[data-testid='comment']", has_text=text)
+    comment.wait_for(state="attached", timeout=10000)
+    expand_card(page, card_index)
+    comment.wait_for(state="visible", timeout=5000)
 
 
 def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:
     """Get author names from comments on an annotation card.
+
+    Automatically expands the card if collapsed, since comments
+    are inside the detail section.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
@@ -978,14 +1040,18 @@ def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:
     Returns:
         List of author display names in DOM order.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
     labels = card.locator("[data-testid='comment-author']")
     return [labels.nth(i).inner_text() for i in range(labels.count())]
 
 
 def count_comment_delete_buttons(page: Page, *, card_index: int = 0) -> int:
     """Count visible delete buttons on an annotation card.
+
+    Automatically expands the card if collapsed, since delete
+    buttons are inside the detail section.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
@@ -994,8 +1060,9 @@ def count_comment_delete_buttons(page: Page, *, card_index: int = 0) -> int:
     Returns:
         Number of delete buttons visible.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
     return card.locator("[data-testid='comment-delete']").count()
 
 
@@ -1014,7 +1081,7 @@ def toggle_share_with_class(page: Page) -> None:
     toggle.wait_for(state="visible", timeout=5000)
     if toggle.get_attribute("aria-checked") != "true":
         toggle.click()
-    page.wait_for_timeout(500)
+    expect(toggle).to_have_attribute("aria-checked", "true", timeout=5000)
 
 
 def clone_activity_workspace(

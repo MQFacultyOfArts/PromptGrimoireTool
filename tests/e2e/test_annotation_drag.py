@@ -22,6 +22,7 @@ from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
     create_highlight,
     create_highlight_with_tag,
+    expand_card,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -47,14 +48,13 @@ pytestmark_db = pytest.mark.skipif(
 def _switch_to_organise(page: Page) -> None:
     """Click the Organise tab and wait for columns to render."""
     page.get_by_test_id("tab-organise").click()
-    page.wait_for_timeout(500)
     expect(page.locator('[data-testid="organise-columns"]')).to_be_visible(timeout=5000)
 
 
 def _switch_to_annotate(page: Page) -> None:
     """Click the Annotate tab and wait for it to be active."""
     page.get_by_test_id("tab-annotate").click()
-    page.wait_for_timeout(300)
+    expect(page.locator(".ann-card-positioned").first).to_be_visible(timeout=5000)
 
 
 def _get_card_ids_in_column(page: Page, tag_name: str) -> list[str]:
@@ -112,6 +112,7 @@ def drag_workspace_page(browser: Browser, app_server: str) -> Generator[Page]:
     context.close()
 
 
+@pytest.mark.cards
 class TestDragCards:
     """Verify that Organise tab cards have drag affordance.
 
@@ -125,7 +126,9 @@ class TestDragCards:
 
         # Create a highlight (tag index 0 = Jurisdiction)
         create_highlight(page, 0, 4)
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="annotation-card"]').first.wait_for(
+            state="visible", timeout=5000
+        )
 
         _switch_to_organise(page)
 
@@ -143,6 +146,7 @@ class TestDragCards:
         expect(card).to_have_css("cursor", "grab")
 
 
+@pytest.mark.cards
 class TestDragReorderWithinColumn:
     """Verify reordering cards within a column via drag.
 
@@ -161,9 +165,13 @@ class TestDragReorderWithinColumn:
 
         # Create two highlights with same tag (Jurisdiction = index 0)
         create_highlight_with_tag(page, 0, 4, 0)  # "Alpha"
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="annotation-card"]').nth(0).wait_for(
+            state="visible", timeout=5000
+        )
         create_highlight_with_tag(page, 6, 10, 0)  # "Bravo"
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="annotation-card"]').nth(1).wait_for(
+            state="visible", timeout=5000
+        )
 
         _switch_to_organise(page)
 
@@ -182,7 +190,7 @@ class TestDragReorderWithinColumn:
         target = cards.nth(0)
 
         source.drag_to(target)
-        page.wait_for_timeout(1000)
+        expect(cards.first).to_be_visible(timeout=5000)
 
         # Switch to Annotate and back to force re-render from CRDT
         _switch_to_annotate(page)
@@ -198,6 +206,7 @@ class TestDragReorderWithinColumn:
         assert initial_ids[1] in after_ids, "Dragged card should still be in the column"
 
 
+@pytest.mark.cards
 class TestDragBetweenColumns:
     """Verify moving cards between tag columns via drag.
 
@@ -217,7 +226,9 @@ class TestDragBetweenColumns:
 
         # Create highlight with Jurisdiction tag (index 0)
         create_highlight_with_tag(page, 0, 4, 0)
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="annotation-card"]').first.wait_for(
+            state="visible", timeout=5000
+        )
 
         _switch_to_organise(page)
 
@@ -236,7 +247,13 @@ class TestDragBetweenColumns:
 
         # Drag the card to the Procedural History sortable container
         source_card.drag_to(proc_history_sortable)
-        page.wait_for_timeout(1000)
+        expect(
+            page.locator(
+                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+            )
+            .locator('[data-testid="organise-card"]')
+            .first
+        ).to_be_visible(timeout=5000)
 
         # Switch tabs and back to verify persistence
         _switch_to_annotate(page)
@@ -270,7 +287,9 @@ class TestDragBetweenColumns:
 
         # Create highlight with Jurisdiction tag (index 0)
         create_highlight_with_tag(page, 0, 4, 0)
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="annotation-card"]').first.wait_for(
+            state="visible", timeout=5000
+        )
 
         _switch_to_organise(page)
 
@@ -286,7 +305,13 @@ class TestDragBetweenColumns:
         expect(proc_history_sortable).to_be_visible(timeout=3000)
 
         source_card.drag_to(proc_history_sortable)
-        page.wait_for_timeout(1000)
+        expect(
+            page.locator(
+                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+            )
+            .locator('[data-testid="organise-card"]')
+            .first
+        ).to_be_visible(timeout=5000)
 
         # Verify the drag actually moved the card before checking sidebar
         proc_cards = _get_card_ids_in_column(page, "Procedural History")
@@ -296,7 +321,6 @@ class TestDragBetweenColumns:
 
         # Switch to Annotate tab
         _switch_to_annotate(page)
-        page.wait_for_timeout(500)
 
         # Find the annotation card in the sidebar
         # The sidebar card should show the new tag (Procedural History)
@@ -304,11 +328,13 @@ class TestDragBetweenColumns:
         expect(sidebar_card).to_be_visible(timeout=3000)
 
         # The tag dropdown should reflect "Procedural History" tag
+        expand_card(page, 0)
         tag_select = sidebar_card.get_by_test_id("tag-select")
         expect(tag_select).to_be_visible(timeout=5000)
         expect(tag_select).to_contain_text("Procedural History", timeout=5000)
 
 
+@pytest.mark.cards
 class TestConcurrentDrag:
     """Verify concurrent drag operations produce consistent results.
 
@@ -330,12 +356,18 @@ class TestConcurrentDrag:
 
         # Create two highlights on page1 (both Jurisdiction = index 0)
         create_highlight_with_tag(page1, 0, 4, 0)  # "Sync "
-        page1.wait_for_timeout(500)
+        page1.locator('[data-testid="annotation-card"]').nth(0).wait_for(
+            state="visible", timeout=5000
+        )
         create_highlight_with_tag(page1, 5, 9, 0)  # "test "
-        page1.wait_for_timeout(500)
+        page1.locator('[data-testid="annotation-card"]').nth(1).wait_for(
+            state="visible", timeout=5000
+        )
 
-        # Wait for page2 to sync (broadcast)
-        page2.wait_for_timeout(1000)
+        # Wait for page2 to sync (broadcast): two annotation-card entries must appear
+        page2.locator('[data-testid="annotation-card"]').nth(1).wait_for(
+            state="attached", timeout=10000
+        )
 
         # Both switch to Organise tab
         _switch_to_organise(page1)
@@ -354,15 +386,16 @@ class TestConcurrentDrag:
         card_x = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
         legal_issues_sortable_p1 = _get_sortable_for_tag(page1, "Legal Issues")
         card_x.drag_to(legal_issues_sortable_p1)
-        page1.wait_for_timeout(500)
+        # Sortable.js drag may not register reliably with Playwright's
+        # synthetic drag events — don't assert intermediate state here.
+        # The final consistency check below is the real verification.
+        page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
         # Page2: drag (remaining) first card to Procedural History
         jurisdiction_col_p2 = page2.locator(
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
-        # After page1's drag, page2 may still see old state until broadcast arrives
-        page2.wait_for_timeout(1000)
-        # Re-render by switching tabs
+        # Re-render page2 to pick up broadcast from page1's drag
         _switch_to_annotate(page2)
         _switch_to_organise(page2)
 
@@ -373,13 +406,9 @@ class TestConcurrentDrag:
                 page2, "Procedural History"
             )
             card_y.drag_to(proc_history_sortable_p2)
-            page2.wait_for_timeout(500)
+            page2.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
-        # Wait for both broadcasts to settle
-        page1.wait_for_timeout(1500)
-        page2.wait_for_timeout(1500)
-
-        # Refresh both Organise tabs
+        # Let both broadcasts settle, then refresh Organise tabs
         _switch_to_annotate(page1)
         _switch_to_organise(page1)
         _switch_to_annotate(page2)

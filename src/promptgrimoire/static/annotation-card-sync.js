@@ -2,7 +2,8 @@
  * annotation-card-sync.js — Scroll-synced card positioning and hover interaction.
  *
  * Positions annotation sidebar cards to track their highlight's vertical
- * position in the document. Cards for off-screen highlights are hidden.
+ * position in the document. All cards are always visible (collapsed cards
+ * are small enough that hiding off-screen cards is unnecessary).
  *
  * Depends on globals from annotation-highlight.js (loaded first):
  *   - walkTextNodes(root)
@@ -55,22 +56,23 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       var sc = parseInt(card.dataset.startChar);
       var cr = charOffsetToRect(nodes, sc);
       if (cr.width === 0 && cr.height === 0) return null;
+      // Cache height on the element so hidden cards (display:none,
+      // offsetHeight=0) use their last-known height (#284).
+      var h = card.offsetHeight;
+      if (h > 0) {
+        card.dataset.cachedHeight = h;
+      } else {
+        h = parseInt(card.dataset.cachedHeight) || 80;
+      }
       return {card: card, startChar: sc,
-        height: card.offsetHeight,
+        height: h,
         targetY: (cr.top - docRect.top) - cOff};
     }).filter(Boolean);
     cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
-    var vT = 0, vB = window.innerHeight - (window._toolbarHeight || 60);
     var minY = 0;
     for (var i = 0; i < cardInfos.length; i++) {
       var info = cardInfos[i];
-      var sc2 = info.startChar;
-      var ec2 = parseInt(info.card.dataset.endChar) || sc2;
-      var sr = charOffsetToRect(nodes, sc2);
-      var er = charOffsetToRect(nodes, Math.max(ec2 - 1, sc2));
-      var inView = er.bottom > vT && sr.top < vB;
       info.card.style.position = 'absolute';
-      if (!inView) { info.card.style.display = 'none'; continue; }
       info.card.style.display = '';
       var y = Math.max(info.targetY, minY);
       info.card.style.top = y + 'px';
@@ -89,10 +91,11 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
   window._positionCards = positionCards;
   window.addEventListener('scroll', onScroll, {passive: true});
 
-  // Re-attach MutationObserver on each highlights-ready
-  // because the annotations-container DOM element may have
-  // been replaced by Vue re-rendering.
-  document.addEventListener('highlights-ready', function() {
+  // Attach MutationObserver and position cards.
+  // Called on each highlights-ready event AND at setup if highlights
+  // are already ready (fixes race where init_js fires highlights-ready
+  // before this listener is registered — #236).
+  function onHighlightsReady() {
     var ac = document.getElementById(sidebarId);
     if (!ac) return;
     if (ac !== _lastAnnC) {
@@ -102,7 +105,15 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       _lastAnnC = ac;
     }
     requestAnimationFrame(positionCards);
-  });
+  }
+
+  document.addEventListener('highlights-ready', onHighlightsReady);
+
+  // If highlights were already applied before this listener was
+  // registered (SPA navigation with cached scripts), catch up now.
+  if (window._highlightsReady) {
+    onHighlightsReady();
+  }
 
   // Card hover via event delegation on document
   // (survives DOM replacement)

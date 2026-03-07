@@ -2,11 +2,16 @@
 
 Builds and refreshes the annotation sidebar cards that display
 highlight metadata, comments, and action buttons.
+
+Cards default to a compact header (~28px) showing essential metadata.
+Clicking the expand chevron reveals the full detail section with
+tag select, text preview, and comments.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from nicegui import ui
@@ -22,12 +27,18 @@ from promptgrimoire.pages.annotation.highlights import (
 logger = logging.getLogger(__name__)
 
 
-def _build_expandable_text(full_text: str) -> None:
-    """Build expandable text preview for annotation card.
+def _author_initials(name: str) -> str:
+    """Derive compact initials from a display name.
 
-    Args:
-        full_text: The full highlighted text.
+    Splits on whitespace and hyphens, takes first char of each segment,
+    joins with dots.  "Brian Ballsun-Stanton" -> "B.B.S.", "Ada" -> "A."
     """
+    segments = re.split(r"[\s\-]+", name)
+    return ".".join(s[0].upper() for s in segments if s) + "."
+
+
+def _build_expandable_text(full_text: str) -> None:
+    """Build expandable text preview for annotation card."""
     is_long = len(full_text) > 80
     if is_long:
         truncated_text = full_text[:80] + "..."
@@ -104,91 +115,97 @@ def _build_comment_delete_btn(
     ).tooltip("Delete comment")
 
 
+def _build_single_comment(
+    state: PageState,
+    highlight_id: str,
+    comment: dict[str, Any],
+) -> None:
+    """Build a single comment display within a card."""
+    c_author_raw = comment.get("author", "Unknown")
+    c_text = comment.get("text", "")
+    c_user_id = comment.get("user_id")
+    c_id = comment.get("id", "")
+    c_author = anonymise_author(
+        author=c_author_raw,
+        user_id=c_user_id,
+        viewing_user_id=state.user_id,
+        anonymous_sharing=state.is_anonymous,
+        viewer_is_privileged=state.viewer_is_privileged,
+        author_is_privileged=(
+            c_user_id is not None and c_user_id in state.privileged_user_ids
+        ),
+    )
+    with (
+        ui.element("div")
+        .classes("bg-gray-100 p-2 rounded mt-1")
+        .props('data-testid="comment"')
+    ):
+        with ui.row().classes("w-full justify-between items-center"):
+            ui.label(c_author).classes("text-xs font-bold").props(
+                'data-testid="comment-author"'
+            )
+            if state.can_delete_content(c_user_id):
+                _build_comment_delete_btn(state, highlight_id, c_id)
+        ui.label(c_text).classes("text-sm")
+
+
+def _make_add_comment_handler(
+    state: PageState,
+    highlight_id: str,
+    comment_input: ui.input,
+) -> Any:
+    """Create an async handler for posting a new comment."""
+
+    async def add_comment(
+        hid: str = highlight_id,
+        inp: ui.input = comment_input,
+    ) -> None:
+        if inp.value and inp.value.strip() and state.crdt_doc:
+            state.crdt_doc.add_comment(
+                hid,
+                state.user_name,
+                inp.value.strip(),
+                user_id=state.user_id,
+            )
+            inp.value = ""
+
+            pm = get_persistence_manager()
+            pm.mark_dirty_workspace(
+                state.workspace_id,
+                state.crdt_doc.doc_id,
+                last_editor=state.user_name,
+            )
+            await pm.force_persist_workspace(state.workspace_id)
+
+            if state.save_status:
+                state.save_status.text = "Saved"
+            if state.refresh_annotations:
+                state.refresh_annotations()
+            if state.broadcast_update:
+                await state.broadcast_update()
+
+    return add_comment
+
+
 def _build_comments_section(
     state: PageState,
     highlight_id: str,
     comments: list[dict[str, Any]],
 ) -> None:
-    """Build comments display and input for an annotation card.
-
-    Args:
-        state: Page state with CRDT and persistence info.
-        highlight_id: ID of the highlight to add comments to.
-        comments: Existing comments list from highlight.
-    """
-    # Display existing comments in chronological order
+    """Build comments display and input for an annotation card."""
     if comments:
         ui.separator()
         sorted_comments = sorted(comments, key=lambda c: c.get("created_at", ""))
         for comment in sorted_comments:
-            c_author_raw = comment.get("author", "Unknown")
-            c_text = comment.get("text", "")
-            c_user_id = comment.get("user_id")
-            c_id = comment.get("id", "")
-            c_author = anonymise_author(
-                author=c_author_raw,
-                user_id=c_user_id,
-                viewing_user_id=state.user_id,
-                anonymous_sharing=state.is_anonymous,
-                viewer_is_privileged=state.viewer_is_privileged,
-                author_is_privileged=(
-                    c_user_id is not None and c_user_id in state.privileged_user_ids
-                ),
-            )
-            with (
-                ui.element("div")
-                .classes("bg-gray-100 p-2 rounded mt-1")
-                .props('data-testid="comment"')
-            ):
-                with ui.row().classes("w-full justify-between items-center"):
-                    ui.label(c_author).classes("text-xs font-bold").props(
-                        'data-testid="comment-author"'
-                    )
-                    if state.can_delete_content(c_user_id):
-                        _build_comment_delete_btn(state, highlight_id, c_id)
-                ui.label(c_text).classes("text-sm")
+            _build_single_comment(state, highlight_id, comment)
 
-    # Comment input -- only for users who can annotate
     if state.can_annotate:
         comment_input = (
             ui.input(placeholder="Add comment...")
             .props('dense data-testid="comment-input"')
             .classes("w-full mt-2")
         )
-
-        async def add_comment(
-            hid: str = highlight_id,
-            inp: ui.input = comment_input,
-        ) -> None:
-            if inp.value and inp.value.strip() and state.crdt_doc:
-                state.crdt_doc.add_comment(
-                    hid,
-                    state.user_name,
-                    inp.value.strip(),
-                    user_id=state.user_id,
-                )
-                inp.value = ""
-
-                # Persist
-                pm = get_persistence_manager()
-                pm.mark_dirty_workspace(
-                    state.workspace_id,
-                    state.crdt_doc.doc_id,
-                    last_editor=state.user_name,
-                )
-                await pm.force_persist_workspace(state.workspace_id)
-
-                if state.save_status:
-                    state.save_status.text = "Saved"
-
-                # Refresh cards to show new comment
-                if state.refresh_annotations:
-                    state.refresh_annotations()
-
-                # Broadcast to other clients
-                if state.broadcast_update:
-                    await state.broadcast_update()
-
+        add_comment = _make_add_comment_handler(state, highlight_id, comment_input)
         ui.button("Post", on_click=add_comment).props(
             'dense size=sm data-testid="post-comment-btn"'
         ).classes("mt-1")
@@ -204,16 +221,9 @@ def _build_para_ref_editor(
     Default state shows a static label. Clicking switches to an inline
     input. On blur or Enter the new value is saved to CRDT, persisted,
     and the display swaps back to the label.
-
-    Args:
-        state: Page state with CRDT and persistence info.
-        highlight_id: ID of the highlight to update.
-        para_ref: Current paragraph reference string.
     """
     # Mutable container so finish_edit always falls back to the most recently
     # saved value, not the stale value captured at construction time.
-    # If the user edits [3] → [3a] (saved), then opens again and clears the
-    # field, we must restore [3a], not [3].
     current: list[str] = [para_ref]
 
     # Container holds label and input; only one visible at a time
@@ -268,128 +278,198 @@ def _build_para_ref_editor(
     inp.on("keydown.enter", finish_edit)
 
 
-def _build_card_header(
+def _make_tag_change_handler(
     state: PageState,
     highlight_id: str,
     tag_str: str,
+    card: ui.card,
+) -> Any:
+    """Create an async handler for tag dropdown changes."""
+
+    async def on_tag_change(
+        e: Any,
+        hid: str = highlight_id,
+        crd: ui.card = card,
+    ) -> None:
+        new_tag = e.value
+        if state.crdt_doc and new_tag != tag_str:
+            state.crdt_doc.update_highlight_tag(hid, new_tag)
+            pm = get_persistence_manager()
+            pm.mark_dirty_workspace(
+                state.workspace_id,
+                state.crdt_doc.doc_id,
+                last_editor=state.user_name,
+            )
+            await pm.force_persist_workspace(state.workspace_id)
+            if state.save_status:
+                state.save_status.text = "Saved"
+            _update_highlight_css(state)
+            new_color = state.tag_colours().get(new_tag, "#999999")
+            crd.style(f"border-left: 4px solid {new_color};")
+            if state.broadcast_update:
+                await state.broadcast_update()
+
+    return on_tag_change
+
+
+def _build_compact_header(
+    state: PageState,
+    *,
+    tag_display: str,
     color: str,
+    initials: str,
+    para_ref: str,
+    comment_count: int,
     start_char: int,
     end_char: int,
+    highlight_id: str,
+    highlight_user_id: str | None,
     card: ui.card,
-    highlight_user_id: str | None = None,
-) -> None:
-    """Build annotation card header with tag display and action buttons.
+) -> tuple[ui.row, ui.button]:
+    """Build the always-visible compact card header.
 
-    Renders an interactive tag dropdown + delete button when the user
-    can annotate, or a static tag label for viewers.
-
-    Args:
-        state: Page state with permission context.
-        highlight_id: Highlight ID for CRDT operations.
-        tag_str: Raw tag string from CRDT.
-        color: Hex colour for tag display.
-        start_char: Start char offset for go-to-highlight.
-        end_char: End char offset for go-to-highlight.
-        card: Parent card element (for border colour update).
-        highlight_user_id: Stytch user ID of the highlight creator.
+    Returns (header_row, chevron) for wiring toggle logic.
+    The entire row is clickable; the chevron provides the visual indicator.
     """
-    with ui.row().classes("w-full justify-between items-center"):
-        if state.can_annotate:
-            # Interactive tag dropdown for changing tag type
-            tag_options = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+    header_row = (
+        ui.row()
+        .classes("w-full items-center gap-1 cursor-pointer")
+        .style("min-height: 20px; padding: 4px 8px;")
+    )
+    with header_row:
+        # Colour dot
+        ui.element("div").style(
+            f"width: 8px; height: 8px; border-radius: 50%; "
+            f"background-color: {color}; flex-shrink: 0;"
+        )
+        # Tag name (static label)
+        ui.label(tag_display).classes("text-xs font-bold truncate").style(
+            f"color: {color}; max-width: 100px;"
+        )
+        # Author initials
+        ui.label(initials).classes("text-xs text-gray-500")
+        # Para ref
+        if para_ref:
+            ui.label(para_ref).classes("text-xs font-mono text-gray-400")
+        # Comment count badge
+        if comment_count > 0:
+            ui.label(str(comment_count)).classes(
+                "text-xs bg-blue-100 text-blue-700 rounded-full px-1"
+            ).props('data-testid="comment-count"')
+        # Spacer pushes buttons to the right
+        ui.element("div").style("flex-grow: 1;")
 
-            async def on_tag_change(
-                e: Any,
+        # Expand/collapse chevron
+        chevron = (
+            ui.button(icon="expand_more")
+            .props('flat dense size=xs data-testid="card-expand-btn"')
+            .tooltip("Expand card")
+        )
+
+        # Locate button (available to all)
+        async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
+            js = _render_js(
+                t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
+                t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
+            )
+            await ui.run_javascript(js)
+
+        ui.button(icon="my_location", on_click=goto_highlight).props(
+            "flat dense size=xs"
+        ).tooltip("Go to highlight")
+
+        # Delete button (if permitted)
+        if state.can_delete_content(highlight_user_id):
+
+            async def do_delete(
                 hid: str = highlight_id,
-                crd: ui.card = card,
+                c: ui.card = card,
             ) -> None:
-                new_tag = e.value
-                if state.crdt_doc and new_tag != tag_str:
-                    state.crdt_doc.update_highlight_tag(hid, new_tag)
-                    pm = get_persistence_manager()
-                    pm.mark_dirty_workspace(
-                        state.workspace_id,
-                        state.crdt_doc.doc_id,
-                        last_editor=state.user_name,
-                    )
-                    await pm.force_persist_workspace(state.workspace_id)
-                    if state.save_status:
-                        state.save_status.text = "Saved"
-                    _update_highlight_css(state)
-                    # Update card border color
-                    new_color = state.tag_colours().get(new_tag, "#999999")
-                    crd.style(f"border-left: 4px solid {new_color};")
-                    if state.broadcast_update:
-                        await state.broadcast_update()
+                await _delete_highlight(state, hid, c)
 
-            ui.select(
-                tag_options,
-                value=tag_str,
-                on_change=on_tag_change,
-            ).props('dense borderless data-testid="tag-select"').classes(
-                "text-sm font-bold"
-            ).style(f"color: {color}; min-width: 120px;")
-        else:
-            # Static tag label for viewers
-            display_tag = tag_str.replace("_", " ").title()
-            ui.label(display_tag).classes("text-sm font-bold").style(f"color: {color};")
-
-        with ui.row().classes("gap-1"):
-            # Go-to-highlight button (available to all)
-            async def goto_highlight(sc: int = start_char, ec: int = end_char) -> None:
-                js = _render_js(
-                    t"scrollToCharOffset(window._textNodes, {sc}, {ec});"
-                    t"throbHighlight(window._textNodes, {sc}, {ec}, 800);"
-                )
-                await ui.run_javascript(js)
-
-            ui.button(icon="my_location", on_click=goto_highlight).props(
+            ui.button(icon="close", on_click=do_delete).props(
                 "flat dense size=xs"
-            ).tooltip("Go to highlight")
+            ).tooltip("Delete highlight")
 
-            if state.can_delete_content(highlight_user_id):
+    return header_row, chevron
 
-                async def do_delete(
-                    hid: str = highlight_id,
-                    c: ui.card = card,
-                ) -> None:
-                    await _delete_highlight(state, hid, c)
 
-                ui.button(icon="close", on_click=do_delete).props(
-                    "flat dense size=xs"
-                ).tooltip("Delete highlight")
+def _build_detail_section(
+    state: PageState,
+    *,
+    highlight_id: str,
+    tag_str: str,
+    color: str,
+    display_author: str,
+    para_ref: str,
+    full_text: str,
+    comments: list[dict[str, Any]],
+    card: ui.card,
+) -> None:
+    """Build the expandable detail section of an annotation card."""
+    # Tag select (annotators only)
+    if state.can_annotate:
+        tag_options = {ti.raw_key: ti.name for ti in (state.tag_info_list or [])}
+        on_change = _make_tag_change_handler(state, highlight_id, tag_str, card)
+        ui.select(
+            tag_options,
+            value=tag_str,
+            on_change=on_change,
+        ).props('dense borderless data-testid="tag-select"').classes(
+            "text-sm font-bold"
+        ).style(f"color: {color}; min-width: 120px;")
+
+    # Full author and editable para_ref
+    with ui.row().classes("gap-2 items-center"):
+        ui.label(f"by {display_author}").classes("text-xs text-gray-500")
+        if para_ref:
+            _build_para_ref_editor(state, highlight_id, para_ref)
+
+    # Highlighted text preview
+    if full_text:
+        _build_expandable_text(full_text)
+
+    # Comments
+    _build_comments_section(state, highlight_id, comments)
 
 
 def _build_annotation_card(
     state: PageState,
     highlight: dict[str, Any],
 ) -> ui.card:
-    """Build an annotation card for a highlight.
-
-    Args:
-        state: Page state with CRDT and containers.
-        highlight: Highlight dict from CRDT.
-
-    Returns:
-        The created card element.
-    """
+    """Build an annotation card with compact header and expandable detail."""
     highlight_id = highlight.get("id", "")
     tag_str = highlight.get("tag", "highlight")
     author = highlight.get("author", "Unknown")
     full_text = highlight.get("text", "")
-
-    # Get char positions for scroll-sync positioning
     start_char = highlight.get("start_char", 0)
     end_char = highlight.get("end_char", start_char)
-
-    # Get para_ref if stored
     para_ref = highlight.get("para_ref", "")
+    comments: list[dict[str, Any]] = highlight.get("comments", [])
 
-    # Get tag color from workspace tag info
     tag_colours = state.tag_colours()
     color = tag_colours.get(tag_str, "#999999")
 
-    # Use ann-card-positioned for scroll-sync positioning
+    # Derive display values — look up human-readable name from tag info
+    tag_display = tag_str.replace("_", " ").title()
+    if state.tag_info_list:
+        for ti in state.tag_info_list:
+            if ti.raw_key == tag_str:
+                tag_display = ti.name
+                break
+    hl_user_id = highlight.get("user_id")
+    display_author = anonymise_author(
+        author=author,
+        user_id=hl_user_id,
+        viewing_user_id=state.user_id,
+        anonymous_sharing=state.is_anonymous,
+        viewer_is_privileged=state.viewer_is_privileged,
+        author_is_privileged=(
+            hl_user_id is not None and hl_user_id in state.privileged_user_ids
+        ),
+    )
+    initials = _author_initials(display_author)
+
     card = (
         ui.card()
         .classes("ann-card-positioned")
@@ -403,40 +483,65 @@ def _build_annotation_card(
     )
 
     with card:
-        _build_card_header(
+        # Compact header (always visible)
+        header_row, chevron = _build_compact_header(
             state,
-            highlight_id,
-            tag_str,
-            color,
-            start_char,
-            end_char,
-            card,
-            highlight_user_id=highlight.get("user_id"),
+            tag_display=tag_display,
+            color=color,
+            initials=initials,
+            para_ref=para_ref,
+            comment_count=len(comments),
+            start_char=start_char,
+            end_char=end_char,
+            highlight_id=highlight_id,
+            highlight_user_id=hl_user_id,
+            card=card,
         )
 
-        # Author and para_ref on same line
-        hl_user_id = highlight.get("user_id")
-        display_author = anonymise_author(
-            author=author,
-            user_id=hl_user_id,
-            viewing_user_id=state.user_id,
-            anonymous_sharing=state.is_anonymous,
-            viewer_is_privileged=state.viewer_is_privileged,
-            author_is_privileged=(
-                hl_user_id is not None and hl_user_id in state.privileged_user_ids
-            ),
+        # Detail section (collapsed by default, carries its own padding)
+        detail = (
+            ui.element("div")
+            .classes("w-full")
+            .props('data-testid="card-detail"')
+            .style("padding: 0 8px 8px 8px;")
         )
-        with ui.row().classes("gap-2 items-center"):
-            ui.label(f"by {display_author}").classes("text-xs text-gray-500")
-            if para_ref:
-                _build_para_ref_editor(state, highlight_id, para_ref)
+        detail.set_visibility(False)
 
-        # Highlighted text preview - expandable if long
-        if full_text:
-            _build_expandable_text(full_text)
+        with detail:
+            _build_detail_section(
+                state,
+                highlight_id=highlight_id,
+                tag_str=tag_str,
+                color=color,
+                display_author=display_author,
+                para_ref=para_ref,
+                full_text=full_text,
+                comments=comments,
+                card=card,
+            )
 
-        # Comments section
-        _build_comments_section(state, highlight_id, highlight.get("comments", []))
+        # Restore expansion state from previous render cycle
+        if highlight_id in state.expanded_cards:
+            detail.set_visibility(True)
+            chevron.props('icon="expand_less"')
+
+        # Wire expand/collapse toggle — click anywhere on header row
+        async def toggle_detail(
+            d: ui.element = detail,
+            ch: ui.button = chevron,
+            hid: str = highlight_id,
+        ) -> None:
+            if d.visible:
+                d.set_visibility(False)
+                ch.props('icon="expand_more"')
+                state.expanded_cards.discard(hid)
+            else:
+                d.set_visibility(True)
+                ch.props('icon="expand_less"')
+                state.expanded_cards.add(hid)
+            await ui.run_javascript("requestAnimationFrame(window._positionCards)")
+
+        header_row.on("click", toggle_detail)
 
     return card
 

@@ -210,6 +210,9 @@ class PageState:
     # Annotation cards
     annotations_container: ui.element | None = None
     annotation_cards: dict[str, ui.card] | None = None
+    expanded_cards: set[str] = field(
+        default_factory=set
+    )  # highlight IDs currently expanded
     refresh_annotations: Any | None = None  # Callable to refresh cards
     broadcast_update: Any | None = None  # Callable to broadcast to other clients
     broadcast_cursor: Any | None = None  # Callable to broadcast cursor position

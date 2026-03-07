@@ -71,6 +71,7 @@ def _create_workspace_no_tags(user_email: str) -> str:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestEmptyTagFloatingMenu:
     """Floating highlight menu behaviour in zero-tag and with-tag workspaces."""
 
@@ -124,9 +125,9 @@ class TestEmptyTagFloatingMenu:
 
                 dialog.get_by_role("button", name="Cancel").click()
 
-                page.wait_for_timeout(500)
+                dialog.wait_for(state="hidden", timeout=5000)
                 cards = page.locator("[data-testid='annotation-card']")
-                expect(cards).to_have_count(0)
+                expect(cards).to_have_count(0, timeout=5000)
 
             with subtests.test(msg="ac1_5_reselect_after_cancel"):
                 # AC1.5 (selection state): After cancelling, the user can
@@ -180,7 +181,6 @@ class TestEmptyTagFloatingMenu:
             with subtests.test(msg="ac1_3_new_button_alongside_tags"):
                 # AC1.3: With tags now existing, "+ New" alongside tag buttons
                 page.locator("#doc-container").click(position={"x": 5, "y": 5})
-                page.wait_for_timeout(500)
 
                 select_chars(page, 30, 50)
 
@@ -199,6 +199,7 @@ class TestEmptyTagFloatingMenu:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestEmptyTagNoPermission:
     """Floating menu for users without tag creation permission."""
 
@@ -275,6 +276,7 @@ def _create_tag_via_toolbar(page: Page, tag_name: str) -> None:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestToolbarExpandedLabels:
     """Toolbar button labels expand when fewer than 5 tags exist.
 
@@ -396,6 +398,7 @@ class TestToolbarExpandedLabels:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestToolbarTooltips:
     """Tooltips on toolbar action buttons at all tag counts.
 
@@ -433,7 +436,11 @@ class TestToolbarTooltips:
                 # AC3.3: Hover manage button, verify tooltip
                 # Move mouse away first to dismiss previous tooltip
                 page.mouse.move(0, 0)
-                page.wait_for_timeout(300)
+                prev_tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Create a new tag for highlighting and annotating text",
+                )
+                expect(prev_tooltip).to_be_hidden(timeout=3000)
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()
@@ -482,7 +489,11 @@ class TestToolbarTooltips:
             with subtests.test(msg="ac3_3_manage_tooltip_at_five_plus"):
                 # AC3.3 at 5+: Hover manage button
                 page.mouse.move(0, 0)
-                page.wait_for_timeout(300)
+                prev_tooltip = page.get_by_role(
+                    "tooltip",
+                    name="Create a new tag for highlighting and annotating text",
+                )
+                expect(prev_tooltip).to_be_hidden(timeout=3000)
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()

@@ -90,6 +90,9 @@ uv run grimoire e2e run --parallel
 # Run E2E tests (smart selection based on changes)
 uv run grimoire e2e changed
 
+# Run card-specific E2E tests
+uv run grimoire e2e cards
+
 # Run linting
 uv run ruff check .
 

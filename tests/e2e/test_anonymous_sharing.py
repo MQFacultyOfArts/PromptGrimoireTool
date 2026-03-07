@@ -215,7 +215,9 @@ def _owner_creates_content(
 
         with subtests.test(msg="owner_creates_highlight_and_comment"):
             create_highlight(page, 0, 13)
-            page.wait_for_timeout(500)
+            page.locator("[data-testid='annotation-card']").first.wait_for(
+                state="visible", timeout=5000
+            )
             add_comment_to_highlight(page, "Owner's comment here")
 
         return workspace_id
@@ -529,6 +531,7 @@ def _assert_commenter_perspective(
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestAnonymousSharing:
     """Three-perspective anonymous sharing verification."""
 

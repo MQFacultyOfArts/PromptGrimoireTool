@@ -194,13 +194,15 @@ docstring-code-format = true
 testpaths = ["tests/unit", "tests/integration", "tests/e2e"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-ra -q -m 'not blns and not slow'"
+addopts = "-ra -q -m 'not blns and not slow and not perf'"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
     "nicegui_ui: marks in-process NiceGUI user_simulation UI tests",
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
+    "perf: marks performance baseline tests (skip with '-m \"not perf\"')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
+    "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
 ]
 filterwarnings = [
     # SQLModel session.execute() warning handled in tests/conftest.py

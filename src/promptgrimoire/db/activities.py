@@ -60,6 +60,7 @@ async def create_activity(
 
         activity = Activity(
             week_id=week_id,
+            type="annotation",
             title=title,
             description=description,
             copy_protection=copy_protection,
@@ -110,6 +111,17 @@ async def get_activity(activity_id: UUID) -> Activity | None:
         return await session.get(Activity, activity_id)
 
 
+def _apply_sentinel_fields(model: Activity, **fields: object) -> None:
+    """Set model attributes for non-sentinel values.
+
+    Each kwarg whose value is not ``...`` (Ellipsis) is assigned
+    to the corresponding attribute on *model*.
+    """
+    for attr, value in fields.items():
+        if value is not ...:
+            setattr(model, attr, value)
+
+
 async def update_activity(
     activity_id: UUID,
     title: str | None = None,
@@ -143,22 +155,19 @@ async def update_activity(
 
         if title is not None:
             activity.title = title
-        if description is not ...:
-            activity.description = description
-        if copy_protection is not ...:
-            activity.copy_protection = copy_protection
-        if allow_sharing is not ...:
-            activity.allow_sharing = allow_sharing
-        if anonymous_sharing is not ...:
-            activity.anonymous_sharing = anonymous_sharing
-        if allow_tag_creation is not ...:
-            activity.allow_tag_creation = allow_tag_creation
-        if word_minimum is not ...:
-            activity.word_minimum = word_minimum
-        if word_limit is not ...:
-            activity.word_limit = word_limit
-        if word_limit_enforcement is not ...:
-            activity.word_limit_enforcement = word_limit_enforcement
+
+        # Apply sentinel-guarded partial updates: Ellipsis means "not provided".
+        _apply_sentinel_fields(
+            activity,
+            description=description,
+            copy_protection=copy_protection,
+            allow_sharing=allow_sharing,
+            anonymous_sharing=anonymous_sharing,
+            allow_tag_creation=allow_tag_creation,
+            word_minimum=word_minimum,
+            word_limit=word_limit,
+            word_limit_enforcement=word_limit_enforcement,
+        )
 
         # Cross-field validation on the resolved state
         validate_word_count_limits(

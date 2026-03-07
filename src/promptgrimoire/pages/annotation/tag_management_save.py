@@ -86,6 +86,38 @@ async def _refresh_tag_state(
         await state.broadcast_update()
 
 
+async def _save_all_modified_rows(
+    tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],
+    group_row_inputs: dict[UUID, dict[str, Any]],
+    update_tag: Callable[..., Awaitable[object]],
+    update_tag_group: Callable[..., Awaitable[object]],
+    *,
+    bypass_lock: bool = False,
+    crdt_doc: AnnotationDocument | None = None,
+) -> None:
+    """Save all modified tag and group rows.
+
+    Iterates every row in *tag_row_inputs* and *group_row_inputs* and
+    calls the single-row save for any that have changes.  Called by the
+    "Done" button before closing the management dialog.
+    """
+    for tag_id in list(tag_row_inputs):
+        await _save_single_tag(
+            tag_id,
+            tag_row_inputs,
+            update_tag,
+            bypass_lock=bypass_lock,
+            crdt_doc=crdt_doc,
+        )
+    for group_id in list(group_row_inputs):
+        await _save_single_group(
+            group_id,
+            group_row_inputs,
+            update_tag_group,
+            crdt_doc=crdt_doc,
+        )
+
+
 async def _save_single_tag(
     tag_id: UUID,
     tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],

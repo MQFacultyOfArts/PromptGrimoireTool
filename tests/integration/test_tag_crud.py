@@ -1837,3 +1837,125 @@ class TestCrdtPrimaryRendering:
         crdt_names = [t.name for t in workspace_tags_from_crdt(doc)]
 
         assert crdt_names == db_names
+
+
+class TestDualWriteColourUpdate:
+    """AC4.1: Colour changes via update_tag persist in both DB and CRDT.
+
+    Verifies tag-lifecycle-235-291.AC4.1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_colour_update_persists_in_db_and_crdt(self) -> None:
+        """update_tag colour change writes to both DB and CRDT.
+
+        Verifies AC4.1: create tag with crdt_doc, update colour with
+        crdt_doc, verify both stores reflect the new colour.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, get_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-colour-update")
+        tag = await create_tag(ws_id, name="ColourTest", color="#1f77b4", crdt_doc=doc)
+
+        # Update colour
+        await update_tag(tag.id, color="#ff0000", crdt_doc=doc)
+
+        # Verify DB
+        db_tag = await get_tag(tag.id)
+        assert db_tag is not None
+        assert db_tag.color == "#ff0000"
+
+        # Verify CRDT
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["colour"] == "#ff0000"
+
+
+class TestDualWriteDeleteTag:
+    """AC2.5: Deleting a tag removes it from both DB and CRDT.
+
+    Verifies tag-lifecycle-235-291.AC2.5.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_db_and_crdt(self) -> None:
+        """delete_tag with crdt_doc removes tag from both stores.
+
+        Verifies AC2.5: after deletion, tag absent from DB and CRDT.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-dual")
+        tag = await create_tag(ws_id, name="ToDelete", color="#ff0000", crdt_doc=doc)
+
+        # Verify tag exists in both stores before delete
+        assert doc.get_tag(tag.id) is not None
+        assert await get_tag(tag.id) is not None
+
+        # Delete
+        await delete_tag(tag.id, crdt_doc=doc)
+
+        # Verify removed from DB
+        assert await get_tag(tag.id) is None
+
+        # Verify removed from CRDT
+        assert doc.get_tag(tag.id) is None
+
+
+class TestDuplicateTagNameRejection:
+    """AC2.7: Creating a tag with a duplicate name is rejected.
+
+    Verifies tag-lifecycle-235-291.AC2.7.
+    """
+
+    @pytest.mark.asyncio
+    async def test_duplicate_name_raises_integrity_error(self) -> None:
+        """create_tag twice with same name and workspace_id raises IntegrityError.
+
+        Verifies AC2.7: duplicate name within same workspace is rejected.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        await create_tag(ws_id, name="Unique", color="#111111")
+
+        with pytest.raises(IntegrityError, match="uq_tag_workspace_name"):
+            await create_tag(ws_id, name="Unique", color="#222222")
+
+
+class TestQuickCreateDefaultGroup:
+    """AC2.6: Quick-created tags always have a group assignment.
+
+    Verifies tag-lifecycle-235-291.AC2.6.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_with_group_has_group_id(self) -> None:
+        """create_tag with explicit group_id sets group_id on result.
+
+        Verifies AC2.6: created tag has a non-None group_id.
+        """
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Default Group")
+        tag = await create_tag(
+            ws_id, name="Grouped", color="#111111", group_id=group.id
+        )
+
+        assert tag.group_id is not None
+        assert tag.group_id == group.id

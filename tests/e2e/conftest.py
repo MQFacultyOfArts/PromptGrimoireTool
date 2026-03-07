@@ -136,12 +136,13 @@ def _grant_workspace_access(
         conn.execute(
             text("""
                 INSERT INTO acl_entry
-                    (id, workspace_id, user_id, permission,
+                    (id, workspace_id, team_id, user_id, permission,
                      created_at)
                 VALUES
                     (gen_random_uuid(), CAST(:ws AS uuid),
-                     :uid, :perm, now())
+                     NULL, :uid, :perm, now())
                 ON CONFLICT (workspace_id, user_id)
+                    WHERE workspace_id IS NOT NULL
                 DO UPDATE SET permission = :perm
             """),
             {"ws": workspace_id, "uid": row[0], "perm": permission},

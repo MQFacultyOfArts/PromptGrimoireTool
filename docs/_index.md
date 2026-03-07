@@ -39,7 +39,6 @@ library references during development.
 
 ## guides
 
-- [Flight Rules](guides/flight-rules.md)
 - [PromptGrimoire Guides](guides/index.md)
 
 ## lark
@@ -97,7 +96,6 @@ library references during development.
 - [Translation Annotation & Iteration Tool - Product Requirements Document](prds/2026-01-28-translation-annotation-tool-prd.md)
 - [Ancient History AI Annotation Tool - Product Requirements Document](prds/2026-01-30-ancient-history-annotation-tool-prd.md)
 - [LLM Playground Design](prds/2026-02-10-llm-playground.md)
-- [Operation Solano Dawn - Wargame Simulation Platform - Product Requirements Document](prds/2026-03-04-operation-solano-dawn-wargame-prd.md)
 
 ## pycrdt
 

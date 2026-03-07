@@ -12,7 +12,7 @@ they reveal where the test suite is redundant or incomplete.
 > 95-annotation-tags, workspace-navigator-196,
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
-> tags-214, and word-count-limits-47 branches.
+> tags-214, word-count-limits-47, and wargame-schema-294 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -1818,9 +1818,17 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 ### Expected tables list updated
 **File:** tests/unit/test_db_schema.py (modified)
-1. get_expected_tables() now returns 12 tables including permission, course_role, acl_entry, tag_group, tag
+1. get_expected_tables() now returns 15 tables including wargame_config, wargame_team, wargame_message
 
-**Verifies:** Schema verification function knows about all tables including tag tables
+**Verifies:** Schema verification function knows about all tables including wargame tables
+
+### Activity metadata includes discriminator CHECK constraints
+**File:** tests/unit/test_db_schema.py::test_activity_metadata_includes_discriminator_check_constraints
+1. Import Activity model and inspect __table_args__
+2. Filter for CheckConstraint instances
+3. Assert ck_activity_type_known, ck_activity_annotation_requires_template, and ck_activity_wargame_no_template are present
+
+**Verifies:** Activity table metadata carries all three discriminator CHECK constraints
 
 ## Annotation Tags -- Tag Model Defaults (Unit)
 
@@ -4244,3 +4252,341 @@ It catches any divergence that would cause highlights to render at wrong positio
 4. Assert resolved permission is "owner"
 
 **Verifies:** AC3.1 -- exported workspace has owner ACL for the exporting user
+
+## Wargame Model Validation (Unit)
+
+### Activity rejects unknown type
+**File:** tests/unit/test_wargame_models.py::TestActivityTypeValidation::test_activity_rejects_unknown_type
+1. model_validate Activity with type="unknown"
+2. Assert ValueError matching "activity type must be 'annotation' or 'wargame'"
+
+**Verifies:** Activity type discriminator rejects values outside the known domain
+
+### Annotation activity requires template workspace
+**File:** tests/unit/test_wargame_models.py::TestActivityTypeValidation::test_annotation_activity_requires_template_workspace
+1. model_validate Activity with type="annotation" and no template_workspace_id
+2. Assert ValueError matching "annotation activities require template_workspace_id"
+
+**Verifies:** Annotation activities enforce template workspace requirement at model level
+
+### Wargame activity must not define template workspace
+**File:** tests/unit/test_wargame_models.py::TestActivityTypeValidation::test_wargame_activity_must_not_define_template_workspace
+1. model_validate Activity with type="wargame" and a template_workspace_id set
+2. Assert ValueError matching "wargame activities must not set template_workspace_id"
+
+**Verifies:** Wargame activities reject template workspace at model level
+
+### WargameConfig accepts timer_delta only
+**File:** tests/unit/test_wargame_models.py::TestWargameConfigValidation::test_accepts_timer_delta_only
+1. model_validate WargameConfig with timer_delta=15min, timer_wall_clock=None
+2. Assert activity_type defaults to "wargame", timer fields correct
+
+**Verifies:** Relative timer mode is a valid configuration
+
+### WargameConfig accepts timer_wall_clock only
+**File:** tests/unit/test_wargame_models.py::TestWargameConfigValidation::test_accepts_timer_wall_clock_only
+1. model_validate WargameConfig with timer_delta=None, timer_wall_clock=09:30
+2. Assert activity_type defaults to "wargame", timer fields correct
+
+**Verifies:** Wall-clock timer mode is a valid configuration
+
+### WargameConfig rejects both timer fields unset
+**File:** tests/unit/test_wargame_models.py::TestWargameConfigValidation::test_rejects_both_timer_fields_unset
+1. model_validate WargameConfig with both timer fields None
+2. Assert ValueError matching "exactly one of timer_delta or timer_wall_clock"
+
+**Verifies:** Timer exclusivity -- at least one must be set
+
+### WargameConfig rejects both timer fields set
+**File:** tests/unit/test_wargame_models.py::TestWargameConfigValidation::test_rejects_both_timer_fields_set
+1. model_validate WargameConfig with both timer fields populated
+2. Assert ValueError matching "exactly one of timer_delta or timer_wall_clock"
+
+**Verifies:** Timer exclusivity -- at most one must be set
+
+### WargameConfig rejects non-wargame activity type
+**File:** tests/unit/test_wargame_models.py::TestWargameConfigValidation::test_rejects_non_wargame_activity_type
+1. model_validate WargameConfig with activity_type="annotation"
+2. Assert ValueError matching "wargame config activity_type must be 'wargame'"
+
+**Verifies:** Child discriminator stays fixed at "wargame"
+
+### WargameTeam defaults activity_type to wargame
+**File:** tests/unit/test_wargame_models.py::TestWargameTeamValidation::test_defaults_activity_type_to_wargame
+1. model_validate WargameTeam with activity_id and codename only
+2. Assert activity_type is "wargame"
+
+**Verifies:** Team discriminator defaults correctly
+
+### WargameTeam rejects non-wargame activity type
+**File:** tests/unit/test_wargame_models.py::TestWargameTeamValidation::test_rejects_non_wargame_activity_type
+1. model_validate WargameTeam with activity_type="annotation"
+2. Assert ValueError matching "wargame team activity_type must be 'wargame'"
+
+**Verifies:** Team discriminator rejects wrong parent type
+
+### ACLEntry workspace target is valid
+**File:** tests/unit/test_wargame_models.py::TestAclEntryTargetValidation::test_workspace_target_is_valid
+1. model_validate ACLEntry with workspace_id set, team_id=None
+2. Assert both fields are correct
+
+**Verifies:** Existing workspace-target ACL shape still valid
+
+### ACLEntry team target is valid
+**File:** tests/unit/test_wargame_models.py::TestAclEntryTargetValidation::test_team_target_is_valid
+1. model_validate ACLEntry with workspace_id=None, team_id set
+2. Assert both fields are correct
+
+**Verifies:** New team-target ACL shape is accepted
+
+### ACLEntry rejects both targets set
+**File:** tests/unit/test_wargame_models.py::TestAclEntryTargetValidation::test_rejects_both_workspace_and_team_targets
+1. model_validate ACLEntry with both workspace_id and team_id set
+2. Assert ValueError matching "exactly one of workspace_id or team_id"
+
+**Verifies:** Exactly-one-target invariant at model level
+
+### ACLEntry rejects no targets set
+**File:** tests/unit/test_wargame_models.py::TestAclEntryTargetValidation::test_rejects_missing_workspace_and_team_targets
+1. model_validate ACLEntry with both workspace_id and team_id None
+2. Assert ValueError matching "exactly one of workspace_id or team_id"
+
+**Verifies:** Exactly-one-target invariant at model level (neither set case)
+
+## Wargame Schema Constraints (Integration)
+
+### Activity type discriminator
+
+#### Insert without type uses annotation default
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_insert_without_type_uses_annotation_default
+1. Raw SQL INSERT into activity without type column
+2. Read back via get_activity
+3. Assert type defaults to "annotation"
+
+**Verifies:** Backward compatibility -- legacy inserts without type get annotation default
+
+#### Rejects unknown activity type
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_rejects_unknown_activity_type
+1. Raw SQL INSERT with type="unknown"
+2. Assert IntegrityError matching ck_activity_type_known
+
+**Verifies:** Database CHECK constraint rejects invalid discriminator values
+
+#### create_activity defaults to annotation type
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_create_activity_defaults_to_annotation_type
+1. Call create_activity with title only
+2. Assert type="annotation" and template_workspace_id is not None
+
+**Verifies:** High-level CRUD preserves existing annotation default path
+
+#### Accepts wargame activity without template workspace
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_accepts_wargame_activity_without_template_workspace
+1. Create Activity with type="wargame", no template_workspace_id
+2. Assert type="wargame" and template_workspace_id is None
+
+**Verifies:** Wargame activities are valid without template workspaces
+
+#### Rejects annotation without template workspace
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_rejects_annotation_activity_without_template_workspace
+1. Insert Activity with type="annotation" and no template_workspace_id
+2. Assert IntegrityError matching ck_activity_annotation_requires_template
+
+**Verifies:** Database CHECK enforces annotation template requirement
+
+#### Rejects wargame with template workspace
+**File:** tests/integration/test_wargame_schema.py::TestActivityTypeDiscriminator::test_rejects_wargame_activity_with_template_workspace
+1. Insert Activity with type="wargame" and a template_workspace_id
+2. Assert IntegrityError matching ck_activity_wargame_no_template
+
+**Verifies:** Database CHECK prevents wargame activities from having templates
+
+### WargameConfig table
+
+#### Accepts timer_delta only
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_accepts_timer_delta_only
+1. Create wargame activity, insert WargameConfig with timer_delta=30min
+2. Flush and refresh, assert timer fields and activity_type correct
+
+**Verifies:** Relative timer mode persists to database
+
+#### Accepts timer_wall_clock only
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_accepts_timer_wall_clock_only
+1. Create wargame activity, insert WargameConfig with timer_wall_clock=09:00
+2. Flush and refresh, assert timer fields and activity_type correct
+
+**Verifies:** Wall-clock timer mode persists to database
+
+#### Rejects both timer fields null
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_rejects_both_timer_fields_null
+1. Insert WargameConfig with both timer fields None
+2. Assert IntegrityError matching ck_wargame_config_timer_exactly_one
+
+**Verifies:** Database CHECK enforces timer exclusivity
+
+#### Rejects both timer fields set
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_rejects_both_timer_fields_set
+1. Insert WargameConfig with both timer fields populated
+2. Assert IntegrityError matching ck_wargame_config_timer_exactly_one
+
+**Verifies:** Database CHECK enforces timer exclusivity (both set)
+
+#### Rejects config for annotation activity
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_rejects_config_for_annotation_activity
+1. Create annotation activity, try to insert WargameConfig
+2. Assert IntegrityError matching fk_wargame_config_activity_wargame
+
+**Verifies:** Composite FK prevents config attachment to non-wargame activities
+
+#### Rejects non-wargame child discriminator
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_rejects_non_wargame_child_discriminator
+1. Create wargame activity, insert WargameConfig with activity_type="annotation"
+2. Assert IntegrityError matching ck_wargame_config_activity_type
+
+**Verifies:** Child-side CHECK constraint rejects wrong discriminator
+
+#### Deleting activity cascades to config
+**File:** tests/integration/test_wargame_schema.py::TestWargameConfigTable::test_deleting_activity_cascades_to_config
+1. Create wargame activity with config, delete the activity
+2. Assert config row is None
+
+**Verifies:** CASCADE DELETE propagates from Activity to WargameConfig
+
+### WargameTeam table
+
+#### Defaults and unique codename within activity
+**File:** tests/integration/test_wargame_schema.py::TestWargameTeamTable::test_defaults_and_unique_codename_within_activity
+1. Create two teams (Alpha, Bravo) under same activity
+2. Assert defaults: current_round=0, round_state="drafting", etc.
+3. Try to create duplicate "Alpha", assert IntegrityError matching uq_wargame_team_activity_codename
+
+**Verifies:** Team defaults apply and codename uniqueness is scoped per activity
+
+#### Rejects team for annotation activity
+**File:** tests/integration/test_wargame_schema.py::TestWargameTeamTable::test_rejects_team_for_annotation_activity
+1. Create annotation activity, try to insert WargameTeam
+2. Assert IntegrityError matching fk_wargame_team_activity_wargame
+
+**Verifies:** Composite FK prevents team attachment to non-wargame activities
+
+#### Deleting activity cascades to teams
+**File:** tests/integration/test_wargame_schema.py::TestWargameTeamTable::test_deleting_activity_cascades_to_teams
+1. Create wargame activity with team, delete the activity
+2. Assert team row is None
+
+**Verifies:** CASCADE DELETE propagates from Activity to WargameTeam
+
+### WargameMessage table
+
+#### Orders messages by sequence number not timestamps
+**File:** tests/integration/test_wargame_schema.py::TestWargameMessageTable::test_orders_messages_by_sequence_number_not_timestamps
+1. Insert 3 messages with sequence_no 2,1,3 and deliberately reversed created_at timestamps
+2. Query ORDER BY sequence_no
+3. Assert order is [1,2,3] and content matches expected order
+4. Assert message with seq 1 has later created_at than seq 2
+
+**Verifies:** Canonical order is sequence_no, not timestamps
+
+#### Roles and unique sequence per team
+**File:** tests/integration/test_wargame_schema.py::TestWargameMessageTable::test_roles_and_unique_sequence_per_team
+1. Insert messages with roles "user", "assistant", "system" at seq 1,2,3
+2. Try to insert duplicate seq 2, assert IntegrityError matching uq_wargame_message_team_sequence
+
+**Verifies:** Multiple roles accepted; duplicate sequence_no rejected
+
+#### Updates earlier message in place without reordering
+**File:** tests/integration/test_wargame_schema.py::TestWargameMessageTable::test_updates_earlier_message_in_place_without_reordering
+1. Insert 2 messages (seq 1 and 2)
+2. Update seq 1: change content, set thinking, metadata_json, edited_at
+3. Re-query ORDER BY sequence_no
+4. Assert seq order unchanged, content/thinking/metadata updated, edited_at set
+
+**Verifies:** In-place edits preserve canonical order and update payload fields
+
+#### Deleting team cascades to messages
+**File:** tests/integration/test_wargame_schema.py::TestWargameMessageTable::test_deleting_team_cascades_to_messages
+1. Create team with one message, delete the team
+2. Assert message row is None
+
+**Verifies:** CASCADE DELETE propagates from WargameTeam to WargameMessage
+
+### ACL team extension
+
+#### Workspace target entry remains valid
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_workspace_target_entry_remains_valid
+1. Create user and workspace, insert ACLEntry with workspace_id set, team_id=None
+2. Assert entry persists with correct fields
+
+**Verifies:** Existing workspace-target ACL path unbroken by team extension
+
+#### Team target entry is valid
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_team_target_entry_is_valid
+1. Create wargame team and user, insert ACLEntry with team_id set, workspace_id=None
+2. Assert entry persists with correct fields
+
+**Verifies:** New team-target ACL path works at database level
+
+#### Rejects ACL entry with both targets set
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_rejects_acl_entry_with_both_targets_set
+1. Insert ACLEntry with both workspace_id and team_id set
+2. Assert IntegrityError matching ck_acl_entry_exactly_one_target
+
+**Verifies:** Database CHECK enforces exactly-one-target invariant
+
+#### Rejects ACL entry with no target set
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_rejects_acl_entry_with_no_target_set
+1. Insert ACLEntry with both workspace_id and team_id None
+2. Assert IntegrityError matching ck_acl_entry_exactly_one_target
+
+**Verifies:** Database CHECK enforces exactly-one-target invariant (neither set)
+
+#### Workspace target uniqueness preserved
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_workspace_target_uniqueness_preserved
+1. Insert workspace ACL entry, try to insert duplicate (workspace_id, user_id)
+2. Assert IntegrityError matching uq_acl_entry_workspace_user
+
+**Verifies:** Partial unique index on workspace-target entries
+
+#### Team target uniqueness enforced
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_team_target_uniqueness_enforced
+1. Insert team ACL entry, try to insert duplicate (team_id, user_id)
+2. Assert IntegrityError matching uq_acl_entry_team_user
+
+**Verifies:** Partial unique index on team-target entries
+
+#### Deleting team cascades team ACL entries
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_deleting_team_cascades_team_acl_entries
+1. Create team with ACL entry, delete the team
+2. Assert ACL entry row is None
+
+**Verifies:** CASCADE DELETE propagates from WargameTeam to team-target ACLEntry
+
+#### list_entries_for_user returns workspace and team targets
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_list_entries_for_user_returns_workspace_and_team_targets
+1. Create user with one workspace ACL and one team ACL entry
+2. Call list_entries_for_user
+3. Assert 2 entries returned, one workspace-target and one team-target
+
+**Verifies:** ACL listing includes both target types
+
+#### Workspace owner subquery ignores team entries
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_workspace_owner_subquery_ignores_team_entries
+1. Create user with team ACL (workspace_id=NULL) and a shared workspace
+2. Call list_peer_workspaces
+3. Assert returns shared workspace without NULL poisoning error
+
+**Verifies:** NULL-safe workspace owner subquery in peer listing
+
+#### Workspace owner lookup with names ignores team entries
+**File:** tests/integration/test_wargame_schema.py::TestAclEntryTeamExtension::test_workspace_owner_lookup_with_names_ignores_team_entries
+1. Create requester with team ACL (workspace_id=NULL), owner with workspace ACL, shared workspace
+2. Call list_peer_workspaces_with_owners
+3. Assert returns workspace with correct owner name
+
+**Verifies:** NULL-safe owner-name peer listing ignores team ACL rows
+
+## Sharing Controls (Integration -- modified for wargame-schema-294)
+
+**File:** tests/integration/test_sharing_controls.py (modified)
+- Existing grant_share tests now additionally assert `entry.team_id is None` to confirm workspace-target shape after ACL polymorphism was added
+
+**Verifies:** Existing sharing flow produces workspace-target ACL entries (not accidentally team-target)

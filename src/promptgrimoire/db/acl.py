@@ -1,7 +1,7 @@
-"""ACL (Access Control List) operations for workspace permissions.
+"""ACL (Access Control List) operations for workspace and team permissions.
 
 Provides grant, revoke, query, and permission resolution operations
-for per-user, per-workspace permission entries.
+for per-user permission entries.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
@@ -44,12 +45,17 @@ async def grant_permission(
     async with get_session() as session:
         stmt = pg_insert(ACLEntry).values(
             workspace_id=workspace_id,
+            team_id=None,
             user_id=user_id,
             permission=permission,
             created_at=datetime.now(UTC),
         )
+        # Team-target ACL rows satisfy num_nonnulls(workspace_id, team_id) = 1
+        # with workspace_id NULL, so workspace upserts must target the
+        # workspace-only partial unique index explicitly.
         stmt = stmt.on_conflict_do_update(
-            constraint="uq_acl_entry_workspace_user",
+            index_elements=["workspace_id", "user_id"],
+            index_where=sa.text("workspace_id IS NOT NULL"),
             set_={"permission": stmt.excluded.permission},
         )
         await session.execute(stmt)
@@ -131,7 +137,10 @@ async def list_accessible_workspaces(
         result = await session.exec(
             select(Workspace, ACLEntry.permission)
             .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement
-            .where(ACLEntry.user_id == user_id)
+            .where(
+                ACLEntry.user_id == user_id,
+                ACLEntry.workspace_id != None,  # noqa: E711
+            )
             .order_by(Workspace.created_at)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
         )
         return list(result.all())
@@ -213,11 +222,34 @@ async def list_activity_workspaces(
             .where(
                 Workspace.activity_id == activity_id,
                 ACLEntry.permission == "owner",
+                ACLEntry.workspace_id != None,  # noqa: E711
             )
             .order_by(Workspace.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs
         )
         rows = list(result.all())
         return [(ws, perm, uid) for ws, perm, uid in rows if ws.id != template_id]
+
+
+async def _resolve_workspace_course(
+    session: AsyncSession, workspace: Workspace
+) -> tuple[Course | None, Activity | None]:
+    """Walk Workspace → (Activity → Week →) Course hierarchy.
+
+    Returns (course, activity) where activity is None for course-placed
+    or loose workspaces.
+    """
+    if workspace.activity_id is not None:
+        activity = await session.get(Activity, workspace.activity_id)
+        if activity is not None:
+            week = await session.get(Week, activity.week_id)
+            if week is not None:
+                course = await session.get(Course, week.course_id)
+                return course, activity
+        return None, activity
+    if workspace.course_id is not None:
+        course = await session.get(Course, workspace.course_id)
+        return course, None
+    return None, None
 
 
 async def _derive_enrollment_permission(
@@ -230,27 +262,11 @@ async def _derive_enrollment_permission(
     Students get "peer" if the activity allows sharing and the workspace
     has opted in via shared_with_class.
     """
-    # Find workspace
     workspace = await session.get(Workspace, workspace_id)
     if workspace is None:
         return None
 
-    # Resolve Course and optional Activity from workspace placement
-    course: Course | None = None
-    activity: Activity | None = None
-
-    if workspace.activity_id is not None:
-        # Activity-placed: Activity -> Week -> Course
-        activity = await session.get(Activity, workspace.activity_id)
-        if activity is not None:
-            week = await session.get(Week, activity.week_id)
-            if week is not None:
-                course = await session.get(Course, week.course_id)
-    elif workspace.course_id is not None:
-        # Course-placed: direct
-        course = await session.get(Course, workspace.course_id)
-
-    # Loose workspaces or broken hierarchy: no enrollment derivation
+    course, activity = await _resolve_workspace_course(session, workspace)
     if course is None:
         return None
 
@@ -401,43 +417,74 @@ async def grant_share(
         raise PermissionError("cannot grant owner permission via sharing")
 
     async with get_session() as session:
-        if not grantor_is_staff:
-            entry = await session.exec(
-                select(ACLEntry)
-                .where(
-                    ACLEntry.workspace_id == workspace_id,
-                    ACLEntry.user_id == grantor_id,
-                )
-                .with_for_update()
-            )
-            grantor_entry = entry.one_or_none()
-            if grantor_entry is None or grantor_entry.permission != "owner":
-                raise PermissionError("only workspace owners can share")
-
-            if not sharing_allowed:
-                raise PermissionError("sharing is not allowed for this workspace")
-
-        existing = await session.exec(
-            select(ACLEntry).where(
-                ACLEntry.workspace_id == workspace_id,
-                ACLEntry.user_id == recipient_id,
-            )
+        await _validate_share_grantor(
+            session, workspace_id, grantor_id, sharing_allowed, grantor_is_staff
         )
-        acl_entry = existing.one_or_none()
-        if acl_entry is not None:
-            if acl_entry.permission == "owner":
-                raise PermissionError("cannot modify owner permission via sharing")
-            acl_entry.permission = permission
-        else:
-            acl_entry = ACLEntry(
-                workspace_id=workspace_id,
-                user_id=recipient_id,
-                permission=permission,
-            )
-            session.add(acl_entry)
-        await session.flush()
-        await session.refresh(acl_entry)
-        return acl_entry
+        return await _upsert_share_entry(
+            session, workspace_id, recipient_id, permission
+        )
+
+
+async def _validate_share_grantor(
+    session: AsyncSession,
+    workspace_id: UUID,
+    grantor_id: UUID,
+    sharing_allowed: bool,
+    grantor_is_staff: bool,
+) -> None:
+    """Check that the grantor may share this workspace.
+
+    Staff bypass ownership checks. Non-staff must own the workspace
+    (locked with FOR UPDATE) and sharing must be enabled.
+    """
+    if grantor_is_staff:
+        return
+
+    entry = await session.exec(
+        select(ACLEntry)
+        .where(
+            ACLEntry.workspace_id == workspace_id,
+            ACLEntry.user_id == grantor_id,
+        )
+        .with_for_update()
+    )
+    grantor_entry = entry.one_or_none()
+    if grantor_entry is None or grantor_entry.permission != "owner":
+        raise PermissionError("only workspace owners can share")
+
+    if not sharing_allowed:
+        raise PermissionError("sharing is not allowed for this workspace")
+
+
+async def _upsert_share_entry(
+    session: AsyncSession,
+    workspace_id: UUID,
+    recipient_id: UUID,
+    permission: str,
+) -> ACLEntry:
+    """Create or update an ACL entry for a share recipient."""
+    existing = await session.exec(
+        select(ACLEntry).where(
+            ACLEntry.workspace_id == workspace_id,
+            ACLEntry.user_id == recipient_id,
+        )
+    )
+    acl_entry = existing.one_or_none()
+    if acl_entry is not None:
+        if acl_entry.permission == "owner":
+            raise PermissionError("cannot modify owner permission via sharing")
+        acl_entry.permission = permission
+    else:
+        acl_entry = ACLEntry(
+            workspace_id=workspace_id,
+            team_id=None,
+            user_id=recipient_id,
+            permission=permission,
+        )
+        session.add(acl_entry)
+    await session.flush()
+    await session.refresh(acl_entry)
+    return acl_entry
 
 
 async def get_privileged_user_ids_for_workspace(
@@ -520,12 +567,15 @@ async def list_peer_workspaces(
         activity = await session.get(Activity, activity_id)
         template_id = activity.template_workspace_id if activity else None
 
-        # Subquery: workspace IDs owned by the requesting user
+        # Team-target ACL rows satisfy num_nonnulls(workspace_id, team_id) = 1
+        # with workspace_id NULL, so this NOT IN subquery must exclude NULLs
+        # explicitly to avoid NULL poisoning workspace-only peer discovery.
         owned_subq = (
             select(ACLEntry.workspace_id)
             .where(
                 ACLEntry.user_id == exclude_user_id,
                 ACLEntry.permission == "owner",
+                ACLEntry.workspace_id != None,  # noqa: E711
             )
             .scalar_subquery()
         )
@@ -567,11 +617,15 @@ async def list_peer_workspaces_with_owners(
         activity = await session.get(Activity, activity_id)
         template_id = activity.template_workspace_id if activity else None
 
+        # Team-target ACL rows satisfy num_nonnulls(workspace_id, team_id) = 1
+        # with workspace_id NULL, so this NOT IN subquery must exclude NULLs
+        # explicitly to keep workspace-owner filtering NULL-safe.
         owned_subq = (
             select(ACLEntry.workspace_id)
             .where(
                 ACLEntry.user_id == exclude_user_id,
                 ACLEntry.permission == "owner",
+                ACLEntry.workspace_id != None,  # noqa: E711
             )
             .scalar_subquery()
         )

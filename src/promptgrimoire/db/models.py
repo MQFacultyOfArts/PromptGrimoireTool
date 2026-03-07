@@ -5,7 +5,7 @@ These models define the core database schema for users, classes, and conversatio
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from typing import Any, Self
 from uuid import UUID, uuid4
 
@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
@@ -264,7 +265,9 @@ class Activity(SQLModel, table=True):
     Attributes:
         id: Primary key UUID, auto-generated.
         week_id: Foreign key to Week (CASCADE DELETE).
+        type: Activity type discriminator ("annotation" or "wargame").
         template_workspace_id: Foreign key to Workspace (RESTRICT DELETE).
+            Required for annotation activities; NULL for wargame activities.
         title: Activity title (e.g., "Annotate Becky Bennett Interview").
         description: Optional markdown description of the activity.
         copy_protection: Tri-state copy protection
@@ -273,15 +276,38 @@ class Activity(SQLModel, table=True):
         updated_at: Timestamp when activity was last modified.
     """
 
+    __table_args__ = (
+        UniqueConstraint("id", "type", name="uq_activity_id_type"),
+        CheckConstraint(
+            "type IN ('annotation', 'wargame')",
+            name="ck_activity_type_known",
+        ),
+        CheckConstraint(
+            "type != 'annotation' OR template_workspace_id IS NOT NULL",
+            name="ck_activity_annotation_requires_template",
+        ),
+        CheckConstraint(
+            "type != 'wargame' OR template_workspace_id IS NULL",
+            name="ck_activity_wargame_no_template",
+        ),
+    )
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     week_id: UUID = Field(sa_column=_cascade_fk_column("week.id"))
+    type: str = Field(
+        default="annotation",
+        sa_column=Column(String(50), nullable=False, server_default="annotation"),
+    )
+    # Compatibility shim: keep the historical UUID annotation during the schema
+    # seam so annotation-era callers do not need a broad UUID | None update yet.
     template_workspace_id: UUID = Field(
+        default=None,
         sa_column=Column(
             Uuid(),
             ForeignKey("workspace.id", ondelete="RESTRICT"),
-            nullable=False,
+            nullable=True,
             unique=True,
-        )
+        ),
     )
     title: str = Field(max_length=200)
     description: str | None = Field(
@@ -326,6 +352,181 @@ class Activity(SQLModel, table=True):
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
     updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+    @model_validator(mode="after")
+    def _check_type_template_requirements(self) -> Self:
+        """Ensure Activity type and template workspace invariants hold."""
+        if self.type not in {"annotation", "wargame"}:
+            msg = "activity type must be 'annotation' or 'wargame'"
+            raise ValueError(msg)
+        if self.type == "annotation" and self.template_workspace_id is None:
+            msg = "annotation activities require template_workspace_id"
+            raise ValueError(msg)
+        if self.type == "wargame" and self.template_workspace_id is not None:
+            msg = "wargame activities must not set template_workspace_id"
+            raise ValueError(msg)
+        return self
+
+
+class WargameConfig(SQLModel, table=True):
+    """Wargame configuration extension for Activity.
+
+    PK-as-FK one-to-one table for wargame-specific configuration fields.
+    Exactly one timer mode must be configured: relative delta or wall-clock.
+    """
+
+    __tablename__ = "wargame_config"
+    __table_args__ = (
+        CheckConstraint(
+            "activity_type = 'wargame'",
+            name="ck_wargame_config_activity_type",
+        ),
+        sa.ForeignKeyConstraint(
+            ["activity_id", "activity_type"],
+            ["activity.id", "activity.type"],
+            name="fk_wargame_config_activity_wargame",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "num_nonnulls(timer_delta, timer_wall_clock) = 1",
+            name="ck_wargame_config_timer_exactly_one",
+        ),
+    )
+
+    activity_id: UUID = Field(
+        sa_column=Column(
+            Uuid(),
+            nullable=False,
+            primary_key=True,
+        )
+    )
+    activity_type: str = Field(
+        default="wargame",
+        sa_column=Column(String(50), nullable=False, server_default="wargame"),
+    )
+    system_prompt: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    scenario_bootstrap: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    timer_delta: timedelta | None = Field(
+        default=None, sa_column=Column(sa.Interval(), nullable=True)
+    )
+    timer_wall_clock: time | None = Field(
+        default=None, sa_column=Column(sa.Time(), nullable=True)
+    )
+
+    @model_validator(mode="after")
+    def _check_activity_type(self) -> Self:
+        """Ensure the child discriminator remains fixed at wargame."""
+        if self.activity_type != "wargame":
+            msg = "wargame config activity_type must be 'wargame'"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _check_timer_exclusivity(self) -> Self:
+        """Ensure exactly one timer field is configured."""
+        has_delta = self.timer_delta is not None
+        has_wall_clock = self.timer_wall_clock is not None
+        if has_delta == has_wall_clock:
+            msg = "exactly one of timer_delta or timer_wall_clock must be set"
+            raise ValueError(msg)
+        return self
+
+
+class WargameTeam(SQLModel, table=True):
+    """Team resource within a wargame activity."""
+
+    __tablename__ = "wargame_team"
+    __table_args__ = (
+        CheckConstraint(
+            "activity_type = 'wargame'",
+            name="ck_wargame_team_activity_type",
+        ),
+        sa.ForeignKeyConstraint(
+            ["activity_id", "activity_type"],
+            ["activity.id", "activity.type"],
+            name="fk_wargame_team_activity_wargame",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "activity_id",
+            "codename",
+            name="uq_wargame_team_activity_codename",
+        ),
+        sa.Index("ix_wargame_team_activity_id", "activity_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    activity_id: UUID = Field(
+        sa_column=Column(
+            Uuid(),
+            nullable=False,
+        )
+    )
+    activity_type: str = Field(
+        default="wargame",
+        sa_column=Column(String(50), nullable=False, server_default="wargame"),
+    )
+    codename: str = Field(max_length=100)
+    current_round: int = Field(default=0)
+    round_state: str = Field(default="drafting", max_length=50)
+    current_deadline: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    game_state_text: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    student_summary_text: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+    @model_validator(mode="after")
+    def _check_activity_type(self) -> Self:
+        """Ensure the child discriminator remains fixed at wargame."""
+        if self.activity_type != "wargame":
+            msg = "wargame team activity_type must be 'wargame'"
+            raise ValueError(msg)
+        return self
+
+
+class WargameMessage(SQLModel, table=True):
+    """Canonical per-team message log for wargame turns.
+
+    Message order is defined only by ``sequence_no``. ``created_at`` and
+    ``edited_at`` are audit fields and must not be used to derive order.
+    Earlier-turn edits or regenerations update rows in place.
+    """
+
+    __tablename__ = "wargame_message"
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id",
+            "sequence_no",
+            name="uq_wargame_message_team_sequence",
+        ),
+        sa.Index("ix_wargame_message_team_id", "team_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    team_id: UUID = Field(sa_column=_cascade_fk_column("wargame_team.id"))
+    sequence_no: int = Field()
+    role: str = Field(max_length=50)
+    content: str = Field(sa_column=Column(sa.Text(), nullable=False))
+    thinking: str | None = Field(
+        default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    metadata_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column("metadata", JSONB, nullable=True),
+    )
+    edited_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
 
@@ -512,19 +713,36 @@ class Tag(SQLModel, table=True):
 
 
 class ACLEntry(SQLModel, table=True):
-    """Per-user, per-workspace permission grant.
+    """Per-user permission grant for either a workspace or a wargame team.
 
-    One entry per (workspace, user) pair. Permission level can be updated
-    via upsert. Cascade-deletes when the Workspace or User is deleted.
+    Exactly one target FK (workspace_id or team_id) must be set.
     """
 
     __tablename__ = "acl_entry"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "user_id", name="uq_acl_entry_workspace_user"),
+        CheckConstraint(
+            "num_nonnulls(workspace_id, team_id) = 1",
+            name="ck_acl_entry_exactly_one_target",
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    workspace_id: UUID = Field(sa_column=_cascade_fk_column("workspace.id"))
+    workspace_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid(),
+            ForeignKey("workspace.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
+    )
+    team_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid(),
+            ForeignKey("wargame_team.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
+    )
     user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
     permission: str = Field(
         sa_column=Column(
@@ -536,3 +754,13 @@ class ACLEntry(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
+
+    @model_validator(mode="after")
+    def _check_exactly_one_target(self) -> Self:
+        """Ensure ACL entry targets exactly one resource type."""
+        has_workspace_target = self.workspace_id is not None
+        has_team_target = self.team_id is not None
+        if has_workspace_target == has_team_target:
+            msg = "exactly one of workspace_id or team_id must be set"
+            raise ValueError(msg)
+        return self

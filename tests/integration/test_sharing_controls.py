@@ -97,6 +97,8 @@ class TestGrantShareSuccess:
         )
         assert entry.permission == "editor"
         assert entry.user_id == data["recipient"].id
+        assert entry.workspace_id == data["workspace_id"]
+        assert entry.team_id is None
 
     @pytest.mark.asyncio
     async def test_owner_shares_as_viewer(self) -> None:
@@ -115,6 +117,8 @@ class TestGrantShareSuccess:
             sharing_allowed=True,
         )
         assert entry.permission == "viewer"
+        assert entry.workspace_id == data["workspace_id"]
+        assert entry.team_id is None
 
     @pytest.mark.asyncio
     async def test_staff_bypasses_sharing_flag(self) -> None:
@@ -134,6 +138,8 @@ class TestGrantShareSuccess:
             grantor_is_staff=True,
         )
         assert entry.permission == "editor"
+        assert entry.workspace_id == data["workspace_id"]
+        assert entry.team_id is None
 
     @pytest.mark.asyncio
     async def test_share_updates_existing_entry(self) -> None:
@@ -161,6 +167,7 @@ class TestGrantShareSuccess:
         recipient_entries = [e for e in entries if e.user_id == data["recipient"].id]
         assert len(recipient_entries) == 1
         assert recipient_entries[0].permission == "viewer"
+        assert recipient_entries[0].team_id is None
 
 
 class TestGrantShareRejection:

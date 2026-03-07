@@ -724,6 +724,7 @@ async def clone_workspace_from_activity(
         # Grant owner permission to cloning user
         acl_entry = ACLEntry(
             workspace_id=clone.id,
+            team_id=None,
             user_id=user_id,
             permission="owner",
         )

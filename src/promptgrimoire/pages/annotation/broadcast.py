@@ -132,135 +132,83 @@ def _rebuild_tag_state_from_crdt(state: PageState) -> None:
     state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
 
 
-def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 7
-    workspace_id: UUID,
-    client: Client,
+async def _broadcast_cursor_update(
+    workspace_key: str,
+    client_id: str,
+    state: PageState,
+    char_index: int | None,
+) -> None:
+    """Broadcast cursor position to all other clients in the workspace."""
+    clients = _workspace_presence.get(workspace_key, {})
+    if client_id in clients:
+        clients[client_id].cursor_char = char_index
+    if char_index is None:
+        js = _render_js(t"removeRemoteCursor({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
+        return
+    color = state.user_color
+    for cid, presence in list(clients.items()):
+        if cid == client_id or presence.nicegui_client is None:
+            continue
+        name = resolve_broadcast_label(
+            sender_name=state.user_name,
+            sender_user_id=state.user_id,
+            receiver_user_id=presence.user_id,
+            is_anonymous=state.is_anonymous,
+            receiver_is_privileged=presence.viewer_is_privileged,
+            sender_is_privileged=state.viewer_is_privileged,
+        )
+        js = _render_js(
+            t"renderRemoteCursor("
+            t"document.getElementById('doc-container')"
+            t", {client_id}, {char_index}"
+            t", {name}, {color})"
+        )
+        with contextlib.suppress(Exception):
+            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+
+
+async def _broadcast_selection_update(
+    workspace_key: str,
+    client_id: str,
+    state: PageState,
+    start: int | None,
+    end: int | None,
+) -> None:
+    """Broadcast text selection to all other clients in the workspace."""
+    clients = _workspace_presence.get(workspace_key, {})
+    if client_id in clients:
+        clients[client_id].selection_start = start
+        clients[client_id].selection_end = end
+    if start is None or end is None:
+        js = _render_js(t"removeRemoteSelection({client_id})")
+        await _broadcast_js_to_others(workspace_key, client_id, js)
+        return
+    color = state.user_color
+    for cid, presence in list(clients.items()):
+        if cid == client_id or presence.nicegui_client is None:
+            continue
+        name = resolve_broadcast_label(
+            sender_name=state.user_name,
+            sender_user_id=state.user_id,
+            receiver_user_id=presence.user_id,
+            is_anonymous=state.is_anonymous,
+            receiver_is_privileged=presence.viewer_is_privileged,
+            sender_is_privileged=state.viewer_is_privileged,
+        )
+        js = _render_js(
+            t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
+        )
+        with contextlib.suppress(Exception):
+            await presence.nicegui_client.run_javascript(js, timeout=2.0)
+
+
+def _replay_existing_cursors(
+    workspace_key: str,
+    client_id: str,
     state: PageState,
 ) -> None:
-    """Set up client synchronization for real-time updates.
-
-    Registers the client, creates broadcast function, and sets up disconnect handler.
-    """
-    client_id = str(uuid4())
-    workspace_key = str(workspace_id)
-    state.client_id = client_id
-    state.user_color = _get_user_color(state.user_name)
-
-    # Create broadcast function for annotation updates
-    async def broadcast_update() -> None:
-        for cid, cstate in list(_workspace_presence.get(workspace_key, {}).items()):
-            if cid != client_id and cstate.callback:
-                with contextlib.suppress(Exception):
-                    await cstate.invoke_callback()
-
-    state.broadcast_update = broadcast_update
-
-    # Create broadcast function for cursor updates -- JS-targeted (AC3.4)
-    async def broadcast_cursor(char_index: int | None) -> None:
-        clients = _workspace_presence.get(workspace_key, {})
-        if client_id in clients:
-            clients[client_id].cursor_char = char_index
-        if char_index is None:
-            js = _render_js(t"removeRemoteCursor({client_id})")
-            await _broadcast_js_to_others(workspace_key, client_id, js)
-            return
-        color = state.user_color
-        for cid, presence in list(clients.items()):
-            if cid == client_id or presence.nicegui_client is None:
-                continue
-            name = resolve_broadcast_label(
-                sender_name=state.user_name,
-                sender_user_id=state.user_id,
-                receiver_user_id=presence.user_id,
-                is_anonymous=state.is_anonymous,
-                receiver_is_privileged=presence.viewer_is_privileged,
-                sender_is_privileged=state.viewer_is_privileged,
-            )
-            js = _render_js(
-                t"renderRemoteCursor("
-                t"document.getElementById('doc-container')"
-                t", {client_id}, {char_index}"
-                t", {name}, {color})"
-            )
-            with contextlib.suppress(Exception):
-                await presence.nicegui_client.run_javascript(js, timeout=2.0)
-
-    state.broadcast_cursor = broadcast_cursor
-
-    # Create broadcast function for selection updates -- JS-targeted (AC3.4)
-    async def broadcast_selection(start: int | None, end: int | None) -> None:
-        clients = _workspace_presence.get(workspace_key, {})
-        if client_id in clients:
-            clients[client_id].selection_start = start
-            clients[client_id].selection_end = end
-        if start is None or end is None:
-            js = _render_js(t"removeRemoteSelection({client_id})")
-            await _broadcast_js_to_others(workspace_key, client_id, js)
-            return
-        color = state.user_color
-        for cid, presence in list(clients.items()):
-            if cid == client_id or presence.nicegui_client is None:
-                continue
-            name = resolve_broadcast_label(
-                sender_name=state.user_name,
-                sender_user_id=state.user_id,
-                receiver_user_id=presence.user_id,
-                is_anonymous=state.is_anonymous,
-                receiver_is_privileged=presence.viewer_is_privileged,
-                sender_is_privileged=state.viewer_is_privileged,
-            )
-            js = _render_js(
-                t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
-            )
-            with contextlib.suppress(Exception):
-                await presence.nicegui_client.run_javascript(js, timeout=2.0)
-
-    state.broadcast_selection = broadcast_selection
-
-    # Callback for receiving updates from other clients
-    async def handle_update_from_other() -> None:
-        _rebuild_tag_state_from_crdt(state)
-        _update_highlight_css(state)
-        _update_user_count(state)
-        if state.refresh_annotations:
-            state.refresh_annotations()
-        # Refresh Organise tab if client is currently viewing it (Phase 4)
-        if state.active_tab == "Organise" and state.refresh_organise:
-            state.refresh_organise()
-        # Refresh Respond reference panel if client is currently viewing it
-        if state.active_tab == "Respond" and state.refresh_respond_references:
-            state.refresh_respond_references()
-
-    # Register this client
-    if workspace_key not in _workspace_presence:
-        _workspace_presence[workspace_key] = {}
-
-    # Resolve user_id for revocation lookup
-    auth_user = app.storage.user.get("auth_user")
-    client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
-
-    _workspace_presence[workspace_key][client_id] = _RemotePresence(
-        name=state.user_name,
-        color=state.user_color,
-        nicegui_client=client,
-        callback=handle_update_from_other,
-        user_id=client_user_id,
-        viewer_is_privileged=state.viewer_is_privileged,
-        is_owner=state.is_owner,
-    )
-    logger.debug(
-        "CLIENT_REGISTERED: ws=%s client=%s total=%d",
-        workspace_key,
-        client_id[:8],
-        len(_workspace_presence[workspace_key]),
-    )
-
-    # Update own user count and notify others
-    _update_user_count(state)
-    _notify_other_clients(workspace_key, client_id)
-
-    # Send existing remote cursors/selections to newly connected client,
-    # resolving names per-receiver for anonymisation.
+    """Send existing remote cursors/selections to a newly connected client."""
     for cid, presence in list(_workspace_presence.get(workspace_key, {}).items()):
         if cid == client_id:
             continue
@@ -293,56 +241,157 @@ def _setup_client_sync(  # noqa: PLR0915  # TODO(2026-02): refactor after Phase 
             )
             ui.run_javascript(js)
 
-    # Delete handler — runs only when the client is permanently removed
-    # (after reconnect_timeout expires with no reconnection).
-    # NiceGUI 3.0+ changed on_disconnect to fire on reconnects too,
-    # so heavy cleanup must use on_delete. See docs/nicegui/lifecycle.md.
-    async def on_client_delete() -> None:
-        t0 = _time.monotonic()
-        logger.warning(
-            "DELETE[%s] ws=%s start",
+
+async def _handle_client_delete(
+    workspace_key: str,
+    client_id: str,
+    workspace_id: UUID,
+) -> None:
+    """Clean up when a client is permanently removed.
+
+    Runs after reconnect_timeout expires with no reconnection.
+    """
+    t0 = _time.monotonic()
+    logger.warning("DELETE[%s] ws=%s start", client_id, workspace_id)
+
+    last_client = False
+    if workspace_key in _workspace_presence:
+        _workspace_presence[workspace_key].pop(client_id, None)
+        if not _workspace_presence[workspace_key]:
+            del _workspace_presence[workspace_key]
+            last_client = True
+        removal_js = _render_js(
+            t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
+        )
+        remaining = list(_workspace_presence.get(workspace_key, {}).items())
+        for _cid, presence in remaining:
+            if presence.nicegui_client is not None:
+                with contextlib.suppress(Exception):
+                    await presence.nicegui_client.run_javascript(
+                        removal_js,
+                        timeout=2.0,
+                    )
+            if presence.callback:
+                with contextlib.suppress(Exception):
+                    await presence.invoke_callback()
+
+    pm = get_persistence_manager()
+    await pm.force_persist_workspace(workspace_id)
+
+    if last_client:
+        doc_id = f"ws-{workspace_id}"
+        pm.evict_workspace(workspace_id, doc_id)
+        _workspace_registry.remove(doc_id)
+
+    logger.warning(
+        "DELETE[%s] total: %.3fs last=%s",
+        client_id,
+        _time.monotonic() - t0,
+        last_client,
+    )
+
+
+async def _handle_remote_update(state: PageState) -> None:
+    """Process a CRDT update received from another client.
+
+    Rebuilds tag state, CSS, toolbar, annotations, and any
+    tab-specific views that are currently active.
+    """
+    _rebuild_tag_state_from_crdt(state)
+    _update_highlight_css(state)
+    if state.refresh_toolbar:
+        await state.refresh_toolbar()
+    _update_user_count(state)
+    if state.refresh_annotations:
+        state.refresh_annotations()
+    if state.active_tab == "Organise" and state.refresh_organise:
+        state.refresh_organise()
+    if state.active_tab == "Respond" and state.refresh_respond_references:
+        state.refresh_respond_references()
+
+
+def _setup_client_sync(
+    workspace_id: UUID,
+    client: Client,
+    state: PageState,
+) -> None:
+    """Set up client synchronization for real-time updates.
+
+    Registers the client, creates broadcast function, and sets up disconnect handler.
+    """
+    client_id = str(uuid4())
+    workspace_key = str(workspace_id)
+    state.client_id = client_id
+    state.user_color = _get_user_color(state.user_name)
+
+    # Create broadcast function for annotation updates
+    async def broadcast_update() -> None:
+        for cid, cstate in list(_workspace_presence.get(workspace_key, {}).items()):
+            if cid != client_id and cstate.callback:
+                with contextlib.suppress(Exception):
+                    await cstate.invoke_callback()
+
+    state.broadcast_update = broadcast_update
+
+    async def broadcast_cursor(char_index: int | None) -> None:
+        await _broadcast_cursor_update(
+            workspace_key,
             client_id,
-            workspace_id,
+            state,
+            char_index,
         )
 
-        last_client = False
-        if workspace_key in _workspace_presence:
-            _workspace_presence[workspace_key].pop(client_id, None)
-            # Clean up empty workspace dict to prevent slow memory leak
-            if not _workspace_presence[workspace_key]:
-                del _workspace_presence[workspace_key]
-                last_client = True
-            # Remove this client's cursor/selection and refresh UI for all remaining
-            removal_js = _render_js(
-                t"removeRemoteCursor({client_id});removeRemoteSelection({client_id})"
-            )
-            remaining = list(_workspace_presence.get(workspace_key, {}).items())
-            for _cid, presence in remaining:
-                if presence.nicegui_client is not None:
-                    with contextlib.suppress(Exception):
-                        await presence.nicegui_client.run_javascript(
-                            removal_js, timeout=2.0
-                        )
-                if presence.callback:
-                    with contextlib.suppress(Exception):
-                        await presence.invoke_callback()
+    state.broadcast_cursor = broadcast_cursor
 
-        pm = get_persistence_manager()
-        await pm.force_persist_workspace(workspace_id)
-
-        # Evict CRDT doc from registries when last client leaves.
-        # This prevents unbounded memory growth from accumulated pycrdt
-        # documents. The doc is re-loaded from DB on the next visit.
-        if last_client:
-            doc_id = f"ws-{workspace_id}"
-            pm.evict_workspace(workspace_id, doc_id)
-            _workspace_registry.remove(doc_id)
-
-        logger.warning(
-            "DELETE[%s] total: %.3fs last=%s",
+    async def broadcast_selection(start: int | None, end: int | None) -> None:
+        await _broadcast_selection_update(
+            workspace_key,
             client_id,
-            _time.monotonic() - t0,
-            last_client,
+            state,
+            start,
+            end,
+        )
+
+    state.broadcast_selection = broadcast_selection
+
+    async def handle_update_from_other() -> None:
+        await _handle_remote_update(state)
+
+    # Register this client
+    if workspace_key not in _workspace_presence:
+        _workspace_presence[workspace_key] = {}
+
+    # Resolve user_id for revocation lookup
+    auth_user = app.storage.user.get("auth_user")
+    client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
+
+    _workspace_presence[workspace_key][client_id] = _RemotePresence(
+        name=state.user_name,
+        color=state.user_color,
+        nicegui_client=client,
+        callback=handle_update_from_other,
+        user_id=client_user_id,
+        viewer_is_privileged=state.viewer_is_privileged,
+        is_owner=state.is_owner,
+    )
+    logger.debug(
+        "CLIENT_REGISTERED: ws=%s client=%s total=%d",
+        workspace_key,
+        client_id[:8],
+        len(_workspace_presence[workspace_key]),
+    )
+
+    # Update own user count and notify others
+    _update_user_count(state)
+    _notify_other_clients(workspace_key, client_id)
+
+    _replay_existing_cursors(workspace_key, client_id, state)
+
+    async def on_client_delete() -> None:
+        await _handle_client_delete(
+            workspace_key,
+            client_id,
+            workspace_id,
         )
 
     client.on_delete(on_client_delete)

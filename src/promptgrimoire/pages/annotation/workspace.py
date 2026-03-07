@@ -398,6 +398,8 @@ def _create_tag_callbacks(
                 footer=state.toolbar_container,
             )
 
+    state.refresh_toolbar = _rebuild_toolbar
+
     async def on_add_tag() -> None:
         await open_quick_create(state)
         await _rebuild_toolbar()

@@ -3,14 +3,20 @@
 Renders individual tag rows, group headers, and the full tag list
 content for the management dialog. Imports save helpers from
 ``tag_management_save`` (the leaf module).
+
+Tag and group rows use ``bind_value()`` to two-way sync NiceGUI inputs
+with plain model dicts. The "Done" button saves all modified rows on
+close; colour changes trigger a debounced immediate save for live
+feedback.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from nicegui import events, ui
+from nicegui import ui
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +24,140 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from uuid import UUID
 
+    from nicegui.timer import Timer
+
     from promptgrimoire.db.models import Tag, TagGroup
-    from promptgrimoire.pages.annotation.tag_management import TagRowInputs
+    from promptgrimoire.pages.annotation.tag_management import (
+        TagRowInputs,
+    )
+
+
+# ── Element creation helpers ────────────────────────────────────────
+
+
+def _create_move_buttons(
+    entity_id: Any,
+    *,
+    on_move: Callable[[Any, int], Awaitable[None]],
+    index: int,
+    total: int,
+    prefix: str,
+) -> None:
+    """Render up/down move buttons for a tag or group row."""
+    up_btn = (
+        ui.button(
+            icon="arrow_upward",
+            on_click=lambda _e, eid=entity_id: on_move(eid, -1),
+        )
+        .props(f"flat round dense size=xs data-testid={prefix}-move-up-{entity_id}")
+        .tooltip(f"Move {prefix} up")
+    )
+    if index == 0:
+        up_btn.props("disable")
+    down_btn = (
+        ui.button(
+            icon="arrow_downward",
+            on_click=lambda _e, eid=entity_id: on_move(eid, 1),
+        )
+        .props(f"flat round dense size=xs data-testid={prefix}-move-down-{entity_id}")
+        .tooltip(f"Move {prefix} down")
+    )
+    if index >= total - 1:
+        down_btn.props("disable")
+
+
+def _create_color_input(
+    model: dict[str, Any],
+    key: str,
+    *,
+    testid: str,
+) -> ui.color_input:
+    """Create a colour picker bound to ``model[key]``."""
+    _props = f'data-testid={testid} dense input-class="hidden"'
+    return (
+        ui.color_input(value=model[key], preview=True)
+        .bind_value(model, key)
+        .props(_props)
+        .classes("shrink-0")
+        .style("width: 3rem")
+    )
+
+
+def _setup_color_debounce(
+    color_input: ui.color_input,
+    save_coro: Callable[[], Any],
+) -> None:
+    """Attach a debounced save to a colour input's change event.
+
+    Cancels previous pending timer on each change, then schedules a
+    0.3 s one-shot timer to trigger the save coroutine.
+    """
+    pending_timer: Timer | None = None
+
+    def _on_color_change() -> None:
+        nonlocal pending_timer
+        if pending_timer is not None:
+            pending_timer.active = False
+        pending_timer = ui.timer(
+            0.3,
+            lambda: asyncio.create_task(save_coro()),
+            once=True,
+        )
+
+    color_input.on("change", _on_color_change)
+
+
+# ── Tag row field helpers ────────────────────────────────────────────
+
+
+def _create_tag_fields(
+    model: dict[str, Any],
+    tag_id: Any,
+    *,
+    group_options: dict[str, str],
+    can_edit: bool,
+    on_field_save: (Callable[[Any], Awaitable[None]] | None),
+) -> None:
+    """Create and bind the name, colour, description, and group inputs."""
+    model_dict: dict[str, Any] = cast("dict[str, Any]", model)
+    color_input = _create_color_input(
+        model_dict,
+        "color",
+        testid=f"tag-color-input-{tag_id}",
+    )
+
+    name_input = (
+        ui.input(label="Name", value=model["name"])
+        .bind_value(model, "name")
+        .props(f"maxlength=100 data-testid=tag-name-input-{tag_id}")
+        .classes("w-40")
+    )
+    desc_input = (
+        ui.input(label="Description", value=model["description"])
+        .bind_value(model, "description")
+        .classes("flex-1 min-w-0")
+    )
+    group_sel = (
+        ui.select(
+            options=group_options,
+            value=model["group_id"],
+            clearable=True,
+            label="Group",
+        )
+        .bind_value(model, "group_id")
+        .classes("w-32")
+    )
+
+    if can_edit and on_field_save is not None:
+        _setup_color_debounce(
+            color_input,
+            lambda tid=tag_id: on_field_save(tid),
+        )
+
+    if not can_edit:
+        for inp in (name_input, color_input, desc_input):
+            inp.props("readonly")
+        group_sel.props("disable")
 
 
 # ── Tag row rendering helper ─────────────────────────────────────────
@@ -32,148 +170,84 @@ def _render_tag_row(
     is_instructor: bool,
     group_options: dict[str, str],
     on_delete: Callable[[UUID, str], None],
-    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None = None,
-    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
+    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None) = None,
+    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
     tag_index: int = 0,
     total_tags: int = 1,
     row_collector: dict[UUID, TagRowInputs] | None = None,
-    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
+    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
 ) -> None:
     """Render a single tag row with inline editing controls.
 
-    Inputs are collected into ``row_collector`` for save-on-blur. When any
-    field loses focus, changed values are saved immediately.
+    Values are stored in a model dict and kept in sync with inputs
+    via ``bind_value()``. The model dict is stored in
+    ``row_collector`` for the "Done" button to save all changes.
 
     Parameters
     ----------
     tag:
         A Tag model instance.
     can_edit:
-        Whether inputs should be editable (False for locked tags viewed
-        by non-instructors).
+        Whether inputs should be editable.
     is_instructor:
-        Whether the current user is an instructor on a template workspace.
+        Whether the current user is an instructor.
     group_options:
-        Mapping of group UUID string -> group name for the group select.
+        Mapping of group UUID string -> group name.
     on_delete:
         Sync callback ``(tag_id, tag_name) -> None``.
     on_lock_toggle:
-        Async callback ``(tag_id, locked) -> None``. Shown only for instructors.
+        Async callback ``(tag_id, locked) -> None``.
     on_move_tag:
         Async callback ``(tag_id, direction) -> None``.
-        ``direction`` is ``-1`` (up) or ``1`` (down).
     tag_index:
-        Zero-based position of this tag within its group.
+        Zero-based position within its group.
     total_tags:
-        Total number of tags in this group (for disabling buttons).
+        Total tags in this group.
     row_collector:
-        Mutable dict to store input refs and original values for batch save.
+        Mutable dict to store model dicts for batch save.
+    on_field_save:
+        Async callback for immediate save (colour debounce).
     """
+    # Model dict — bind_value keeps this in sync with inputs
+    model: TagRowInputs = {
+        "name": tag.name,
+        "color": tag.color,
+        "description": tag.description or "",
+        "group_id": (str(tag.group_id) if tag.group_id else None),
+        "orig_name": tag.name,
+        "orig_color": tag.color,
+        "orig_desc": tag.description or "",
+        "orig_group": (str(tag.group_id) if tag.group_id else None),
+    }
+
     with ui.row().classes("items-center w-full gap-1"):
         # Drag handle
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
-        # Move up/down buttons for keyboard-accessible reordering
+        # Move up/down buttons
         if on_move_tag is not None:
-            up_btn = (
-                ui.button(
-                    icon="arrow_upward",
-                    on_click=lambda _e, t=tag: on_move_tag(t.id, -1),
-                )
-                .props(f"flat round dense size=xs data-testid=tag-move-up-{tag.id}")
-                .tooltip("Move tag up")
+            _create_move_buttons(
+                tag.id,
+                on_move=on_move_tag,
+                index=tag_index,
+                total=total_tags,
+                prefix="tag",
             )
-            if tag_index == 0:
-                up_btn.props("disable")
-            down_btn = (
-                ui.button(
-                    icon="arrow_downward",
-                    on_click=lambda _e, t=tag: on_move_tag(t.id, 1),
-                )
-                .props(f"flat round dense size=xs data-testid=tag-move-down-{tag.id}")
-                .tooltip("Move tag down")
-            )
-            if tag_index >= total_tags - 1:
-                down_btn.props("disable")
 
-        # Colour picker (before name for visual prominence)
-        _color_props = (
-            f'data-testid=tag-color-input-{tag.id} dense input-class="hidden"'
-        )
-        color_input = (
-            ui.color_input(value=tag.color, preview=True)
-            .props(_color_props)
-            .classes("shrink-0")
-            .style("width: 3rem")
+        # Editable fields (colour, name, description, group)
+        _create_tag_fields(
+            cast("dict[str, Any]", model),
+            tag.id,
+            group_options=group_options,
+            can_edit=can_edit,
+            on_field_save=on_field_save,
         )
 
-        # Editable fields
-        name_input = (
-            ui.input(label="Name", value=tag.name)
-            .props(f"maxlength=100 data-testid=tag-name-input-{tag.id}")
-            .classes("w-40")
+        # Lock toggle + delete button
+        _render_lock_toggle(
+            tag,
+            is_instructor=is_instructor,
+            on_lock_toggle=on_lock_toggle,
         )
-        desc_input = ui.input(label="Description", value=tag.description or "").classes(
-            "flex-1 min-w-0"
-        )
-        group_sel = ui.select(
-            options=group_options,
-            value=str(tag.group_id) if tag.group_id else None,
-            clearable=True,
-            label="Group",
-        ).classes("w-32")
-
-        # Auto-save on blur for each editable field
-        if can_edit and on_field_save is not None:
-
-            async def _blur_save(
-                _e: events.GenericEventArguments, tid: UUID = tag.id
-            ) -> None:
-                logger.debug(
-                    "_blur_save fired for tag %s, color.value=%r",
-                    tid,
-                    color_input.value,
-                )
-                await on_field_save(tid)
-
-            async def _color_save(
-                _e: events.ValueChangeEventArguments, tid: UUID = tag.id
-            ) -> None:
-                logger.debug(
-                    "_color_save fired for tag %s, new=%r",
-                    tid,
-                    _e.value,
-                )
-                await on_field_save(tid)
-
-            for inp in (name_input, desc_input):
-                inp.on("blur", _blur_save)
-            color_input.on_value_change(_color_save)
-            group_sel.on("update:model-value", _blur_save)
-
-        if not can_edit:
-            for inp in (name_input, color_input, desc_input):
-                inp.props("readonly")
-            group_sel.props("disable")
-
-        # Lock toggle + delete button (side by side)
-        if is_instructor and on_lock_toggle is not None:
-            lock_icon = "lock" if tag.locked else "lock_open"
-            lock_tip = "Unlock tag" if tag.locked else "Lock tag"
-
-            async def _toggle_lock(
-                _e: events.ClickEventArguments,
-                tid: UUID = tag.id,
-                cur: bool = tag.locked,
-            ) -> None:
-                await on_lock_toggle(tid, not cur)
-
-            ui.button(icon=lock_icon, on_click=_toggle_lock).props(
-                f"flat round dense data-testid=tag-lock-icon-{tag.id}"
-            ).tooltip(lock_tip)
-        elif tag.locked:
-            ui.icon("lock").classes("text-gray-400").props(
-                f"data-testid=tag-lock-icon-{tag.id}"
-            ).tooltip("Locked")
 
         del_btn = (
             ui.button(
@@ -189,18 +263,36 @@ def _render_tag_row(
         if not can_edit:
             del_btn.props("disable")
 
-        # Collect input refs for batch save
+        # Store model dict for batch save on dialog close
         if row_collector is not None and can_edit:
-            row_collector[tag.id] = {
-                "name": name_input,
-                "color": color_input,
-                "desc": desc_input,
-                "group": group_sel,
-                "orig_name": tag.name,
-                "orig_color": tag.color,
-                "orig_desc": tag.description or "",
-                "orig_group": str(tag.group_id) if tag.group_id else None,
-            }
+            row_collector[tag.id] = model
+
+
+def _render_lock_toggle(
+    tag: Tag,
+    *,
+    is_instructor: bool,
+    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
+) -> None:
+    """Render the lock/unlock button or icon for a tag row."""
+    if is_instructor and on_lock_toggle is not None:
+        lock_icon = "lock" if tag.locked else "lock_open"
+        lock_tip = "Unlock tag" if tag.locked else "Lock tag"
+
+        async def _toggle_lock(
+            _e: Any,
+            tid: UUID = tag.id,
+            cur: bool = tag.locked,
+        ) -> None:
+            await on_lock_toggle(tid, not cur)
+
+        ui.button(icon=lock_icon, on_click=_toggle_lock).props(
+            f"flat round dense data-testid=tag-lock-icon-{tag.id}"
+        ).tooltip(lock_tip)
+    elif tag.locked:
+        ui.icon("lock").classes("text-gray-400").props(
+            f"data-testid=tag-lock-icon-{tag.id}"
+        ).tooltip("Locked")
 
 
 # ── Group header rendering helper ────────────────────────────────────
@@ -210,63 +302,50 @@ def _render_group_header(
     group: TagGroup,
     *,
     on_delete_group: Callable[[UUID, str], None],
-    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None,
+    on_move_group: (Callable[[UUID, int], Awaitable[None]] | None) = None,
     group_index: int = 0,
     total_groups: int = 1,
     row_collector: dict[UUID, dict[str, Any]] | None = None,
-    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None,
+    on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
 ) -> None:
-    """Render a group header with name input, colour, and delete button.
+    """Render a group header with name input, colour, and delete.
 
-    Input refs are stored in ``row_collector`` for save-on-blur.
+    Values are stored in a model dict kept in sync via
+    ``bind_value()``.
     """
+    model: dict[str, Any] = {
+        "name": group.name,
+        "color": group.color or "",
+        "orig_name": group.name,
+        "orig_color": group.color or "",
+    }
+
     with (
         ui.row()
         .classes("items-center w-full gap-2 mt-4 mb-1")
         .props(f"data-testid=tag-group-header-{group.id}")
     ):
         ui.icon("drag_indicator").classes("drag-handle cursor-move text-gray-400")
-        # Move up/down buttons for keyboard-accessible reordering
+        # Move up/down buttons
         if on_move_group is not None:
-            up_btn = (
-                ui.button(
-                    icon="arrow_upward",
-                    on_click=lambda _e, g=group: on_move_group(g.id, -1),
-                )
-                .props(f"flat round dense size=xs data-testid=group-move-up-{group.id}")
-                .tooltip("Move group up")
+            _create_move_buttons(
+                group.id,
+                on_move=on_move_group,
+                index=group_index,
+                total=total_groups,
+                prefix="group",
             )
-            if group_index == 0:
-                up_btn.props("disable")
-            down_btn = (
-                ui.button(
-                    icon="arrow_downward",
-                    on_click=lambda _e, g=group: on_move_group(g.id, 1),
-                )
-                .props(
-                    f"flat round dense size=xs data-testid=group-move-down-{group.id}"
-                )
-                .tooltip("Move group down")
-            )
-            if group_index >= total_groups - 1:
-                down_btn.props("disable")
         ui.icon("folder").classes("text-blue-600")
-        group_name_input = (
-            ui.input(value=group.name)
+        (
+            ui.input(value=model["name"])
+            .bind_value(model, "name")
             .props(f"maxlength=100 data-testid=group-name-input-{group.id}")
             .classes("font-bold text-blue-800")
         )
-        _grp_color_props = (
-            f'data-testid=group-color-input-{group.id} dense input-class="hidden"'
-        )
-        group_color_input = (
-            ui.color_input(
-                value=group.color or "",
-                preview=True,
-            )
-            .props(_grp_color_props)
-            .classes("shrink-0")
-            .style("width: 3rem")
+        group_color_input = _create_color_input(
+            model,
+            "color",
+            testid=f"group-color-input-{group.id}",
         )
         ui.button(
             icon="delete",
@@ -275,30 +354,16 @@ def _render_group_header(
             f"flat round dense color=negative data-testid=group-delete-btn-{group.id}"
         ).tooltip("Delete group")
 
-        # Auto-save on blur for group fields
+        # Debounced colour save for immediate visual feedback
         if on_group_field_save is not None:
+            _setup_color_debounce(
+                group_color_input,
+                lambda gid=group.id: on_group_field_save(gid),
+            )
 
-            async def _blur_save(
-                _e: events.GenericEventArguments, gid: UUID = group.id
-            ) -> None:
-                await on_group_field_save(gid)
-
-            async def _group_color_save(
-                _e: events.ValueChangeEventArguments, gid: UUID = group.id
-            ) -> None:
-                await on_group_field_save(gid)
-
-            group_name_input.on("blur", _blur_save)
-            group_color_input.on_value_change(_group_color_save)
-
-    # Collect input refs for save-on-blur
+    # Store model dict for batch save on dialog close
     if row_collector is not None:
-        row_collector[group.id] = {
-            "name": group_name_input,
-            "color": group_color_input,
-            "orig_name": group.name,
-            "orig_color": group.color or "",
-        }
+        row_collector[group.id] = model
 
 
 # ── Parameterised confirmation dialog ────────────────────────────────
@@ -313,23 +378,19 @@ def _open_confirm_delete(
     """Show a confirmation dialog before deleting a tag or group.
 
     Collapses the former ``_open_confirm_delete_tag`` and
-    ``_open_confirm_delete_group`` into a single parameterised function.
+    ``_open_confirm_delete_group`` into a single parameterised
+    function.
 
     Parameters
     ----------
     entity_name:
-        Display name shown in the dialog title (e.g. "tag 'Evidence'"
-        or "group 'Legal'").
+        Display name shown in the dialog title.
     body_text:
-        Explanatory text shown below the title (highlight count or
-        "Tags will become ungrouped.").
+        Explanatory text shown below the title.
     delete_fn:
-        Zero-arg async callable that performs the actual deletion.
-        The caller constructs this closure with the appropriate ID,
-        ``bypass_lock``, and error handling.
+        Zero-arg async callable that performs the deletion.
     on_confirmed:
-        Async callback ``(entity_name) -> None`` called after successful
-        deletion.
+        Async callback called after successful deletion.
     """
     with ui.dialog() as dlg, ui.card():
         ui.label(f"Delete {entity_name}?").classes("font-bold")
@@ -361,19 +422,24 @@ def _render_group_tags(
     is_instructor: bool,
     group_options: dict[str, str],
     on_delete_tag: Callable[[UUID, str], None],
-    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None,
-    on_tag_reorder: Any,  # Sortable on_end handler -- exact type unclear
-    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
-    tag_row_collector: dict[UUID, TagRowInputs] | None = None,
-    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
+    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
+    on_tag_reorder: Any,
+    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
+    tag_row_collector: (dict[UUID, TagRowInputs] | None) = None,
+    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
 ) -> None:
-    """Render tags within a group, wrapped in a Sortable for drag reorder."""
-    from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
+    """Render tags within a group in a Sortable."""
+    from promptgrimoire.elements.sortable.sortable import (  # noqa: PLC0415
+        Sortable,
+    )
 
     total_tags = len(group_tags)
     with Sortable(
         on_end=on_tag_reorder,
-        options={"handle": ".drag-handle", "animation": 150},
+        options={
+            "handle": ".drag-handle",
+            "animation": 150,
+        },
     ):
         for idx, tag in enumerate(group_tags):
             tag_ids.append(tag.id)
@@ -403,30 +469,35 @@ def _render_tag_list_content(
     on_delete_group: Callable[[UUID, str], None],
     on_add_tag: Callable[[UUID | None], Awaitable[None]],
     on_add_group: Callable[[], Awaitable[None]],
-    on_lock_toggle: Callable[[UUID, bool], Awaitable[None]] | None,
-    on_tag_reorder_for_group: Any,  # Sortable on_end handler -- exact type unclear
-    on_group_reorder: Any,  # Sortable on_end handler -- exact type unclear
-    on_move_group: Callable[[UUID, int], Awaitable[None]] | None = None,
-    on_move_tag: Callable[[UUID, int], Awaitable[None]] | None = None,
+    on_lock_toggle: (Callable[[UUID, bool], Awaitable[None]] | None),
+    on_tag_reorder_for_group: Any,
+    on_group_reorder: Any,
+    on_move_group: (Callable[[UUID, int], Awaitable[None]] | None) = None,
+    on_move_tag: (Callable[[UUID, int], Awaitable[None]] | None) = None,
     tag_id_lists: dict[UUID | None, list[UUID]],
     group_id_list: list[UUID],
     tag_row_collector: dict[UUID, TagRowInputs],
     group_row_collector: dict[UUID, dict[str, Any]],
-    on_field_save: Callable[[UUID], Awaitable[None]] | None = None,
-    on_group_field_save: Callable[[UUID], Awaitable[None]] | None = None,
+    on_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
+    on_group_field_save: (Callable[[UUID], Awaitable[None]] | None) = None,
 ) -> None:
-    """Render all tag groups and ungrouped tags inside the content area.
+    """Render all tag groups and ungrouped tags.
 
-    Wraps groups in a top-level Sortable for group reordering and each
-    group's tags in a nested Sortable for tag reordering. Input refs are
-    stored in the collector dicts for save-on-blur.
+    Wraps groups in a top-level Sortable for group reordering and
+    each group's tags in a nested Sortable for tag reordering.
+    Model dicts are stored in the collector dicts for batch save.
     """
-    from promptgrimoire.elements.sortable.sortable import Sortable  # noqa: PLC0415
+    from promptgrimoire.elements.sortable.sortable import (  # noqa: PLC0415
+        Sortable,
+    )
 
     # Groups section -- wrapped in Sortable for group reorder
     with Sortable(
         on_end=on_group_reorder,
-        options={"handle": ".drag-handle", "animation": 150},
+        options={
+            "handle": ".drag-handle",
+            "animation": 150,
+        },
     ):
         total_groups = len(groups)
         for idx, group in enumerate(groups):
@@ -435,7 +506,6 @@ def _render_tag_list_content(
             tag_ids: list[UUID] = []
             tag_id_lists[group.id] = tag_ids
 
-            # Each group section is a wrapper div (Sortable child)
             with ui.column().classes("w-full"):
                 _render_group_header(
                     group,

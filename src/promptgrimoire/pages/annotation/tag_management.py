@@ -62,17 +62,17 @@ class ManagementCallbacks(GroupCallbacks, TagReorderCallbacks):
 
 
 class TagRowInputs(TypedDict):
-    """Input element references and original values for a single tag row.
+    """Model dict for a single tag row, populated by ``bind_value()``.
 
-    Used by ``_save_single_tag`` and ``_render_tag_row`` to track live
-    NiceGUI input widgets alongside the last-saved values so save-on-blur
-    can detect changes and skip unnecessary DB writes.
+    Values are kept in sync with NiceGUI inputs via two-way binding.
+    ``_save_single_tag`` reads current values directly from this dict
+    and compares against ``orig_*`` to detect changes.
     """
 
-    name: ui.input
-    color: ui.color_input
-    desc: ui.input
-    group: ui.select
+    name: str
+    color: str
+    description: str
+    group_id: str | None
     orig_name: str
     orig_color: str
     orig_desc: str

@@ -88,7 +88,7 @@ async def _refresh_tag_state(
 
 async def _save_single_tag(
     tag_id: UUID,
-    tag_row_inputs: dict[UUID, TagRowInputs],
+    tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],
     update_tag: Callable[..., Awaitable[object]],
     *,
     bypass_lock: bool = False,
@@ -102,10 +102,10 @@ async def _save_single_tag(
     if not inputs:
         logger.debug("_save_single_tag: no inputs for %s", tag_id)
         return True
-    name = inputs["name"].value
-    color = inputs["color"].value
-    desc = inputs["desc"].value
-    group_val = inputs["group"].value
+    name = inputs["name"]
+    color = inputs["color"]
+    desc = inputs["description"]
+    group_val = inputs["group_id"]
     logger.debug(
         "_save_single_tag: tag=%s name=%r color=%r (orig=%r) desc=%r group=%r",
         tag_id,
@@ -167,8 +167,8 @@ async def _save_single_group(
     inputs = group_row_inputs.get(group_id)
     if not inputs:
         return True
-    name = inputs["name"].value
-    color = inputs["color"].value
+    name = inputs["name"]
+    color = inputs["color"]
     if name == inputs["orig_name"] and color == inputs["orig_color"]:
         return True  # No changes
     try:

@@ -238,11 +238,15 @@ def _render_group_header(
             .props(f"maxlength=100 data-testid=group-name-input-{group.id}")
             .classes("font-bold text-blue-800")
         )
-        group_color_input = ui.color_input(
-            value=group.color or "",
-            label="Bg",
-            preview=True,
-        ).classes("w-20")
+        group_color_input = (
+            ui.color_input(
+                value=group.color or "",
+                label="Bg",
+                preview=True,
+            )
+            .props(f"data-testid=group-color-input-{group.id}")
+            .classes("w-20")
+        )
         ui.button(
             icon="delete",
             on_click=lambda _e, g=group: on_delete_group(g.id, g.name),

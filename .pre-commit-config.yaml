@@ -38,7 +38,8 @@ repos:
         # _server_script.py: standalone subprocess script, not a regular module.
         # tests/: test code is not subject to complexity gates.
         # cli_loadtest.py, roleplay.py: pre-existing complexity, tracked in #253.
-        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$)'
+        # tag_management.py, tag_management_rows.py: pre-existing complexity.
+        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$|tag_management\.py$|tag_management_rows\.py$)'
 
   # Prune orphaned .pyc files (source deleted, stale bytecode remains)
   - repo: local

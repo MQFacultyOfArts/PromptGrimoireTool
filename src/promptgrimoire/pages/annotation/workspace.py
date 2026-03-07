@@ -518,6 +518,7 @@ async def _build_tab_panels(
             crdt_doc = await _workspace_registry.get_or_create_for_workspace(
                 workspace_id
             )
+            state.crdt_doc = crdt_doc
             logger.debug("[RENDER] CRDT doc loaded")
 
             documents = await list_documents(workspace_id)

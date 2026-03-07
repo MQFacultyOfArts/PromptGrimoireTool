@@ -207,14 +207,21 @@ async def open_tag_management(
 
             async def _save_tag_field(tag_id: UUID) -> None:
                 ok = await _save_single_tag(
-                    tag_id, tag_row_inputs, update_tag, bypass_lock=is_instructor
+                    tag_id,
+                    tag_row_inputs,
+                    update_tag,
+                    bypass_lock=is_instructor,
+                    crdt_doc=state.crdt_doc,
                 )
                 if ok:
                     await _refresh_tag_state(state)
 
             async def _save_group_field(group_id: UUID) -> None:
                 ok = await _save_single_group(
-                    group_id, group_row_inputs, update_tag_group
+                    group_id,
+                    group_row_inputs,
+                    update_tag_group,
+                    crdt_doc=state.crdt_doc,
                 )
                 if ok:
                     await _refresh_tag_state(state)
@@ -289,6 +296,7 @@ def _build_group_callbacks(
             await create_tag_group(
                 workspace_id=state.workspace_id,
                 name="New group",
+                crdt_doc=state.crdt_doc,
             )
         except PermissionError:
             ui.notify("Tag creation not allowed", type="negative")
@@ -300,7 +308,7 @@ def _build_group_callbacks(
         if indices is None:
             return
         new_order = _reorder_list(group_id_list, *indices)
-        await reorder_tag_groups(new_order)
+        await reorder_tag_groups(new_order, crdt_doc=state.crdt_doc)
         await render_tag_list()
 
     async def _move_group(group_id: UUID, direction: int) -> None:
@@ -313,14 +321,14 @@ def _build_group_callbacks(
         if new_idx < 0 or new_idx >= len(group_id_list):
             return
         new_order = _reorder_list(group_id_list, old_idx, new_idx)
-        await reorder_tag_groups(new_order)
+        await reorder_tag_groups(new_order, crdt_doc=state.crdt_doc)
         await render_tag_list()
 
     def _delete_group(gid: UUID, gname: str) -> None:
         async def _do_delete() -> None:
             from promptgrimoire.db.tags import delete_tag_group  # noqa: PLC0415
 
-            await delete_tag_group(gid)
+            await delete_tag_group(gid, crdt_doc=state.crdt_doc)
 
         _open_confirm_delete(
             entity_name=f"group '{gname}'",
@@ -351,7 +359,7 @@ def _build_tag_reorder_callbacks(
         if indices is None:
             return
         new_order = _reorder_list(tag_id_lists.get(group_id, []), *indices)
-        await reorder_tags(new_order)
+        await reorder_tags(new_order, crdt_doc=state.crdt_doc)
         await _refresh_tag_state(state)
         await render_tag_list()
 
@@ -367,7 +375,7 @@ def _build_tag_reorder_callbacks(
                 if new_idx < 0 or new_idx >= len(id_list):
                     return
                 new_order = _reorder_list(id_list, old_idx, new_idx)
-                await reorder_tags(new_order)
+                await reorder_tags(new_order, crdt_doc=state.crdt_doc)
                 await _refresh_tag_state(state)
                 await render_tag_list()
                 return
@@ -430,6 +438,7 @@ def _build_management_callbacks(
                 name=name,
                 color=_PRESET_PALETTE[0],
                 group_id=group_id,
+                crdt_doc=state.crdt_doc,
             )
         except PermissionError:
             ui.notify("Tag creation not allowed", type="negative")
@@ -450,7 +459,7 @@ def _build_management_callbacks(
 
     async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
         try:
-            await update_tag(tag_id, locked=locked)
+            await update_tag(tag_id, locked=locked, crdt_doc=state.crdt_doc)
         except Exception as exc:
             ui.notify(f"Failed to update lock: {exc}", type="negative")
             return
@@ -478,7 +487,7 @@ def _build_management_callbacks(
         async def _do_delete() -> None:
             from promptgrimoire.db.tags import delete_tag  # noqa: PLC0415
 
-            await delete_tag(tid, bypass_lock=is_instructor)
+            await delete_tag(tid, bypass_lock=is_instructor, crdt_doc=state.crdt_doc)
 
         _open_confirm_delete(
             entity_name=f"tag '{tname}'",

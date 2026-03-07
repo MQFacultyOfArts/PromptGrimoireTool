@@ -55,7 +55,7 @@ def workspace_tags_from_crdt(crdt_doc: AnnotationDocument) -> list[TagInfo]:
 
     max_order = float("inf")
 
-    def _sort_key(item: tuple[str, dict]) -> tuple[float, int]:  # type: ignore[type-arg]
+    def _sort_key(item: tuple[str, dict]) -> tuple[float, int]:
         _tag_id, tag_data = item
         group_id = tag_data.get("group_id")
         grp = groups.get(group_id) if group_id else None

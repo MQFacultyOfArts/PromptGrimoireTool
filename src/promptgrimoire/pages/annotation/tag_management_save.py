@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
     from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tag_management import TagRowInputs
 
@@ -88,6 +89,7 @@ async def _save_single_tag(
     update_tag: Callable[..., Awaitable[object]],
     *,
     bypass_lock: bool = False,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> bool:
     """Auto-save a single tag's current input values on blur.
 
@@ -95,6 +97,7 @@ async def _save_single_tag(
     """
     inputs = tag_row_inputs.get(tag_id)
     if not inputs:
+        logger.debug("_save_single_tag: no inputs for %s", tag_id)
         return True
     name = inputs["name"].value
     color = inputs["color"].value
@@ -116,6 +119,7 @@ async def _save_single_tag(
             description=desc or None,
             group_id=gid,
             bypass_lock=bypass_lock,
+            crdt_doc=crdt_doc,
         )
     except ValueError as exc:
         ui.notify(str(exc), type="warning")
@@ -140,6 +144,8 @@ async def _save_single_group(
     group_id: UUID,
     group_row_inputs: dict[UUID, dict[str, Any]],
     update_tag_group: Callable[..., Awaitable[object]],
+    *,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> bool:
     """Auto-save a single group's current input values on blur.
 
@@ -153,7 +159,9 @@ async def _save_single_group(
     if name == inputs["orig_name"] and color == inputs["orig_color"]:
         return True  # No changes
     try:
-        await update_tag_group(group_id, name=name, color=color or None)
+        await update_tag_group(
+            group_id, name=name, color=color or None, crdt_doc=crdt_doc
+        )
     except Exception as exc:
         ui.notify(f"Failed to save group: {exc}", type="negative")
         return False

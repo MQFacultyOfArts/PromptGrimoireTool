@@ -520,17 +520,25 @@ def _build_annotation_card(
                 card=card,
             )
 
+        # Restore expansion state from previous render cycle
+        if highlight_id in state.expanded_cards:
+            detail.set_visibility(True)
+            chevron.props('icon="expand_less"')
+
         # Wire expand/collapse toggle — click anywhere on header row
         async def toggle_detail(
             d: ui.element = detail,
             ch: ui.button = chevron,
+            hid: str = highlight_id,
         ) -> None:
             if d.visible:
                 d.set_visibility(False)
                 ch.props('icon="expand_more"')
+                state.expanded_cards.discard(hid)
             else:
                 d.set_visibility(True)
                 ch.props('icon="expand_less"')
+                state.expanded_cards.add(hid)
             await ui.run_javascript("requestAnimationFrame(window._positionCards)")
 
         header_row.on("click", toggle_detail)

@@ -326,6 +326,61 @@ def run_playwright_changed_lane(user_args: list[str]) -> int:
     return exit_code
 
 
+@e2e_app.command(
+    "cards",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def cards(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
+    """Run card-touching E2E tests (marked with @pytest.mark.cards)."""
+    args = _prepend_filter(ctx.args, filter_expr)
+    sys.exit(run_playwright_cards_lane(args))
+
+
+def run_playwright_cards_lane(user_args: list[str]) -> int:
+    """Run card-touching Playwright tests in serial mode."""
+    from promptgrimoire.config import get_settings
+
+    get_settings()
+    _pre_test_db_cleanup()
+
+    port = _allocate_ports(1)[0]
+
+    url = f"http://localhost:{port}"
+    server_process = _start_e2e_server(port)
+    console.print(f"[green]Server ready at {url}[/]")
+
+    os.environ["E2E_BASE_URL"] = url
+
+    default_args = [
+        "-m",
+        "e2e and cards",
+        "-v",
+        "--tb=short",
+        "--log-cli-level=WARNING",
+    ]
+    if not _has_test_path(user_args):
+        default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
+
+    try:
+        exit_code = _run_pytest(
+            title=f"Playwright Card Tests (-m cards) — server {url}",
+            log_path=Path("test-e2e.log"),
+            default_args=default_args,
+            extra_args=user_args,
+        )
+    finally:
+        _stop_e2e_server(server_process)
+    return exit_code
+
+
 # -------------------------------------------------------------------
 # Shared serial-mode helper (used by `run` and `slow`)
 # -------------------------------------------------------------------

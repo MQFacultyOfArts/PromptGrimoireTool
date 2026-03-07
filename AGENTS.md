@@ -39,6 +39,7 @@ uv run grimoire e2e run                 # E2E tests (serial, starts server)
 uv run grimoire e2e run -k "pattern"    # E2E tests filtered by keyword
 uv run grimoire e2e run --parallel      # E2E tests in parallel (xdist)
 uv run grimoire e2e changed             # Smart selection E2E tests
+uv run grimoire e2e cards               # Card-specific E2E tests (@pytest.mark.cards)
 
 # Code Quality
 uv run ruff check .         # Linting

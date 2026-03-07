@@ -12,7 +12,7 @@ they reveal where the test suite is redundant or incomplete.
 > 95-annotation-tags, workspace-navigator-196,
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
-> tags-214, word-count-limits-47, and wargame-schema-294 branches.
+> tags-214, word-count-limits-47, wargame-schema-294, and card-layout-236 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -4590,3 +4590,105 @@ It catches any divergence that would cause highlights to render at wrong positio
 - Existing grant_share tests now additionally assert `entry.team_id is None` to confirm workspace-target shape after ACL polymorphism was added
 
 **Verifies:** Existing sharing flow produces workspace-target ACL entries (not accidentally team-target)
+
+## Card Positioning (E2E)
+
+### Initial positioning -- non-zero, no overlap
+**File:** tests/e2e/test_card_layout.py::TestCardPositioning::test_initial_positioning_non_zero_no_overlap
+1. Create workspace with a paragraph of text, seed tags
+2. Create 3 highlights at different character offsets (0-20, 40-60, 80-100)
+3. Wait for positionCards() via requestAnimationFrame
+4. Read computed `style.top` for each card
+5. Assert all tops >= 0 and strictly increasing
+
+**Verifies:** AC1.1 -- cards get non-zero top values and do not overlap after initial positioning
+
+### Scroll recovery -- no solitaire collapse
+**File:** tests/e2e/test_card_layout.py::TestCardPositioning::test_scroll_recovery_no_solitaire_collapse
+1. Create workspace with long document (top paragraph + 40 filler paragraphs)
+2. Create 2 highlights near the top, record their top positions
+3. Scroll doc-container to bottom, then back to top
+4. Wait for positionCards() and cards to become visible
+5. Assert positions restored within 5px tolerance
+
+**Verifies:** AC1.3 -- cards restore at original positions after scroll away and back
+
+### Height cache on hidden cards
+**File:** tests/e2e/test_card_layout.py::TestCardPositioning::test_height_cache_on_hidden_cards
+1. Create workspace with long document
+2. Create a highlight near the top, wait for card visible
+3. Scroll to bottom so card is hidden
+4. Read `data-cached-height` attribute from the card element
+5. Assert attribute exists and has a positive integer value
+
+**Verifies:** AC1.4 -- hidden cards have data-cached-height with positive value for layout calculations
+
+### Race condition -- highlights ready flag
+**File:** tests/e2e/test_card_layout.py::TestCardPositioning::test_race_condition_highlights_ready
+1. Create workspace, visit annotation page, create a highlight
+2. Navigate away (/) then back to annotation page (SPA navigation)
+3. Wait for `window._highlightsReady === true`
+4. Wait for positionCards() via requestAnimationFrame
+5. Assert card is visible with non-negative top value
+
+**Verifies:** AC1.2 -- cards positioned correctly after SPA navigation with pre-existing highlights
+
+### Fallback height when never cached
+**File:** tests/e2e/test_card_layout.py::TestCardPositioning::test_fallback_height_when_height_never_cached
+1. Create workspace with long document
+2. Create a highlight near top, wait for card visible
+3. Immediately scroll to bottom before positionCards() can cache height
+4. Scroll back to top
+5. Assert card is visible with non-negative top (using 80px fallback)
+
+**Verifies:** AC1.5 -- card uses 80px fallback when data-cached-height was never set
+
+## Collapsed Cards (E2E)
+
+### Default collapsed with compact header
+**File:** tests/e2e/test_card_layout.py::TestCollapsedCards::test_default_collapsed_with_compact_header
+1. Create workspace, create a highlight
+2. Assert card is visible
+3. Assert card-detail section is hidden (collapsed by default)
+4. Assert card-expand-btn is visible in compact header
+
+**Verifies:** AC2.1 -- cards are collapsed by default with compact header visible
+
+### Expand and collapse toggle
+**File:** tests/e2e/test_card_layout.py::TestCollapsedCards::test_expand_collapse_toggle
+1. Create workspace, create a highlight
+2. Call expand_card() -- click expand button, wait for detail visible
+3. Assert tag-select and comment-input are visible in expanded detail
+4. Call collapse_card() -- click collapse button, wait for detail hidden
+5. Assert card-detail is hidden again
+
+**Verifies:** AC2.2 + AC2.3 -- expand shows full detail section, collapse hides it
+
+### Author initials in compact header
+**File:** tests/e2e/test_card_layout.py::TestCollapsedCards::test_author_initials_in_compact_header
+1. Create workspace, create a highlight
+2. Read card inner text while collapsed
+3. Assert text matches regex `[A-Z]\.` (dot-separated initials pattern)
+
+**Verifies:** AC2.4 -- compact header shows author initials (e.g. "B.B.S.")
+
+### Push down on expand
+**File:** tests/e2e/test_card_layout.py::TestCollapsedCards::test_push_down_on_expand
+1. Create workspace, create 2 highlights
+2. Record second card's top position
+3. Expand the first card
+4. Wait for positionCards() to re-run
+5. Assert second card's top position increased
+
+**Verifies:** AC2.5 -- expanding first card pushes subsequent cards down
+
+### Viewer sees no tag select or comment input
+**File:** tests/e2e/test_card_layout.py::TestCollapsedCards::test_viewer_sees_no_tag_select_or_comment_input
+1. Owner creates workspace with a highlight (separate browser context)
+2. Close owner context
+3. Viewer opens same workspace with "viewer" permission (separate browser context)
+4. Expand the card
+5. Assert tag-select count is 0
+6. Assert comment-input count is 0
+
+**Verifies:** AC2.6 + AC2.7 -- viewer cannot see tag dropdown or comment input in expanded cards

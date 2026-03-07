@@ -98,11 +98,11 @@ def _cancel_pending_timers(
     Done-button batch save.
     """
     for rows in (tag_row_inputs, group_row_inputs):
-        for row in rows.values():  # type: ignore[union-attr]
-            timer = row.get("_pending_timer")  # type: ignore[union-attr]
+        for row in rows.values():
+            timer = row.get("_pending_timer")
             if timer is not None:
                 timer.active = False
-                row["_pending_timer"] = None  # type: ignore[literal-required]
+                row["_pending_timer"] = None  # type: ignore[literal-required]  # runtime-only key not in TypedDict
 
 
 async def _create_tag_or_notify(

@@ -212,58 +212,6 @@ class TestCardPositioning:
             f"Card 1 position drifted: {top1_before} -> {top1_after}"
         )
 
-    def test_height_cache_on_hidden_cards(
-        self,
-        authenticated_page: Page,
-        app_server: str,
-    ) -> None:
-        """AC1.4: Hidden cards have data-cached-height with a positive value.
-
-        Creates a highlight near the top, scrolls it off-screen, and
-        verifies the card element has a ``data-cached-height`` attribute
-        with a positive integer value.
-        """
-        page = authenticated_page
-        page_email = _authenticate_page(page, app_server)
-
-        workspace_id = _create_workspace_via_db(
-            user_email=page_email,
-            html_content=(
-                "<p>Short top paragraph for height cache test.</p>"
-                + "<p>Filler content. </p>" * 50
-                + "<p>Bottom of the document.</p>"
-            ),
-            seed_tags=True,
-        )
-
-        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-        wait_for_text_walker(page, timeout=15000)
-
-        toolbar = page.locator("[data-testid='tag-toolbar']")
-        expect(toolbar).to_be_visible(timeout=5000)
-
-        # Create a highlight near the top
-        create_highlight_with_tag(page, 0, 20, tag_index=0)
-        first_card = page.locator("[data-testid='annotation-card']").first
-        expect(first_card).to_be_visible(timeout=10000)
-
-        _wait_for_position_cards(page)
-
-        # Scroll to the bottom so the card is hidden
-        page.evaluate(
-            """() => {
-                const dc = document.getElementById('doc-container');
-                if (dc) dc.scrollTop = dc.scrollHeight;
-                else window.scrollTo(0, document.body.scrollHeight);
-            }"""
-        )
-        _wait_for_position_cards(page)
-
-        # Check cached-height attribute (card may be display:none after scroll)
-        cached = first_card.get_attribute("data-cached-height")
-        assert cached is not None, "Expected data-cached-height attribute to be set"
-        assert int(cached) > 0, f"Expected positive data-cached-height, got {cached}"
-
     def test_race_condition_highlights_ready(
         self,
         authenticated_page: Page,
@@ -317,68 +265,6 @@ class TestCardPositioning:
 
         top = _get_card_top(page, 0)
         assert top >= 0, f"Card top is negative after SPA navigation: {top}"
-
-    def test_fallback_height_when_height_never_cached(
-        self,
-        authenticated_page: Page,
-        app_server: str,
-    ) -> None:
-        """AC1.5: Card uses 80px fallback when data-cached-height was never set.
-
-        Creates a highlight, then immediately scrolls the card out of view
-        before ``positionCards()`` can cache its height.  On scroll back the
-        card must still position correctly (positive top) using the 80px
-        fallback defined in ``annotation-card-sync.js``.
-        """
-        page = authenticated_page
-        page_email = _authenticate_page(page, app_server)
-
-        workspace_id = _create_workspace_via_db(
-            user_email=page_email,
-            html_content=(
-                "<p>Fallback height test paragraph near the top.</p>"
-                + "<p>Filler content. </p>" * 60
-                + "<p>Bottom anchor paragraph.</p>"
-            ),
-            seed_tags=True,
-        )
-
-        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
-        wait_for_text_walker(page, timeout=15000)
-
-        toolbar = page.locator("[data-testid='tag-toolbar']")
-        expect(toolbar).to_be_visible(timeout=5000)
-
-        create_highlight_with_tag(page, 0, 15, tag_index=0)
-        first_card = page.locator("[data-testid='annotation-card']").first
-        expect(first_card).to_be_visible(timeout=10000)
-
-        # Immediately scroll to the bottom before positionCards() can cache the
-        # card height — forcing the 80px fallback path in annotation-card-sync.js
-        page.evaluate(
-            """() => {
-                const dc = document.getElementById('doc-container');
-                if (dc) dc.scrollTop = dc.scrollHeight;
-                else window.scrollTo(0, document.body.scrollHeight);
-            }"""
-        )
-
-        # Scroll back to the top so the card re-enters the viewport
-        page.evaluate(
-            """() => {
-                const dc = document.getElementById('doc-container');
-                if (dc) dc.scrollTop = 0;
-                else window.scrollTo(0, 0);
-            }"""
-        )
-        _wait_for_position_cards(page)
-
-        expect(first_card).to_be_visible(timeout=10000)
-
-        top = _get_card_top(page, 0)
-        assert top >= 0, (
-            f"Card top is negative after fallback-height scroll cycle: {top}"
-        )
 
 
 # ---------------------------------------------------------------------------

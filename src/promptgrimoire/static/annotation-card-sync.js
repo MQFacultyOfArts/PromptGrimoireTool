@@ -2,7 +2,8 @@
  * annotation-card-sync.js — Scroll-synced card positioning and hover interaction.
  *
  * Positions annotation sidebar cards to track their highlight's vertical
- * position in the document. Cards for off-screen highlights are hidden.
+ * position in the document. All cards are always visible (collapsed cards
+ * are small enough that hiding off-screen cards is unnecessary).
  *
  * Depends on globals from annotation-highlight.js (loaded first):
  *   - walkTextNodes(root)
@@ -68,17 +69,10 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
         targetY: (cr.top - docRect.top) - cOff};
     }).filter(Boolean);
     cardInfos.sort(function(a, b) { return a.startChar - b.startChar; });
-    var vT = 0, vB = window.innerHeight - (window._toolbarHeight || 60);
     var minY = 0;
     for (var i = 0; i < cardInfos.length; i++) {
       var info = cardInfos[i];
-      var sc2 = info.startChar;
-      var ec2 = parseInt(info.card.dataset.endChar) || sc2;
-      var sr = charOffsetToRect(nodes, sc2);
-      var er = charOffsetToRect(nodes, Math.max(ec2 - 1, sc2));
-      var inView = er.bottom > vT && sr.top < vB;
       info.card.style.position = 'absolute';
-      if (!inView) { info.card.style.display = 'none'; continue; }
       info.card.style.display = '';
       var y = Math.max(info.targetY, minY);
       info.card.style.top = y + 'px';

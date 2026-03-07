@@ -31,6 +31,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     create_highlight_with_tag,
+    expand_card,
     select_chars,
 )
 
@@ -44,6 +45,7 @@ USER_COUNT = "[data-testid='user-count']"
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestHistoryTutorial:
     """Two history students collaborating on a shared annotation workspace."""
 
@@ -91,8 +93,8 @@ class TestHistoryTutorial:
             # Generate unique comment text
             comment_uuid = uuid4().hex
 
-            # Click first annotation card to ensure comment input visible
-            page1.locator(ANNOTATION_CARD).first.click()
+            # Expand first annotation card to ensure comment input visible
+            expand_card(page1, 0)
 
             # Fill and post comment
             page1.get_by_test_id("comment-input").first.fill(comment_uuid)
@@ -109,6 +111,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="student_a_changes_tag"):
             # Change first card's tag from Jurisdiction to Procedural History
+            expand_card(page1, 0)
             first_card = page1.locator(ANNOTATION_CARD).first
             tag_select = first_card.get_by_test_id("tag-select")
 

@@ -45,6 +45,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
+    expand_card,
     scroll_to_char,
     select_chars,
     wait_for_text_walker,
@@ -53,6 +54,7 @@ from tests.e2e.conftest import _authenticate_page
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestLawStudent:
     """Law student persona: annotating an AustLII case judgment."""
 
@@ -129,8 +131,8 @@ class TestLawStudent:
                 # Generate unique comment identifier
                 uuid1 = uuid4().hex
 
-                # Click annotation card to ensure comment input is visible
-                page.locator("[data-testid='annotation-card']").first.click()
+                # Expand annotation card to ensure comment input is visible
+                expand_card(page, 0)
 
                 # Find comment input and add comment
                 comment_input = page.get_by_test_id("comment-input").first
@@ -157,8 +159,8 @@ class TestLawStudent:
                 # Generate second unique comment identifier
                 uuid2 = uuid4().hex
 
-                # Click second card
-                page.locator("[data-testid='annotation-card']").nth(1).click()
+                # Expand second card
+                expand_card(page, 1)
 
                 # Find comment input on second card
                 comment_input = page.get_by_test_id("comment-input").nth(1)
@@ -181,6 +183,7 @@ class TestLawStudent:
                 # Select first card's tag dropdown
                 first_card = page.locator("[data-testid='annotation-card']").first
                 expect(first_card).to_be_visible(timeout=5000)
+                expand_card(page, 0)
                 tag_select = first_card.get_by_test_id("tag-select")
 
                 # Open dropdown and select via JS evaluate to avoid
@@ -233,6 +236,7 @@ class TestLawStudent:
 
                 third_card = page.locator("[data-testid='annotation-card']").nth(2)
                 expect(third_card).to_be_visible(timeout=5000)
+                expand_card(page, 2)
                 comment_input = third_card.get_by_test_id("comment-input")
                 comment_input.click()
                 page.keyboard.press("1")

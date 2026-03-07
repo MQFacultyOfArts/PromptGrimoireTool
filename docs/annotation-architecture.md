@@ -1,6 +1,6 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-08*
 
 The annotation page (`pages/annotation/`) is a 22-module package split from a monolith.
 
@@ -11,7 +11,7 @@ The annotation page uses `page_layout(footer=True)` to get a Quasar `q-footer` e
 **Key elements:**
 - `#tag-toolbar-wrapper` -- The `q-footer` element containing the tag toolbar (fixed bottom, z-index managed by Quasar)
 - `#highlight-menu` -- Popup menu for highlight creation (z-index 110, above toolbar; flips above selection if it would overlap toolbar)
-- `.annotations-sidebar` -- Card sidebar uses `position: relative`; cards hide when their highlight scrolls off-screen
+- `.annotations-sidebar` -- Card sidebar uses `position: relative`; cards are always visible (compact by default, expandable on click). `annotation-card-sync.js` caches card heights via `data-cached-height` so layout remains stable when cards are collapsed
 
 `page_layout()` yields the footer element (or `None`). Pages manage their own content padding -- the layout no longer wraps content in a `q-pa-lg` div.
 
@@ -55,6 +55,17 @@ Two new modules support word count limits in the annotation page:
 - `word_count_enforcement.py` -- Re-export shim. The canonical implementation lives at `src/promptgrimoire/word_count_enforcement.py` (package root). This shim keeps annotation-package imports working. Only export-related code may import enforcement symbols (AC7 guard tests enforce this).
 
 `PageState` carries four word count fields populated from `PlacementContext` during `_resolve_workspace_context()`: `word_minimum`, `word_limit`, `word_limit_enforcement`, and `word_count_badge` (the live `ui.label` element). The badge updates on every keystroke in the respond tab via `word_count()` from `src/promptgrimoire/word_count.py`.
+
+## Card Layout (Compact/Expandable)
+
+Annotation cards (`cards.py`) use a two-tier layout:
+
+- **Compact header** (always visible, ~28px) -- colour dot, tag name, author initials (`_author_initials()`), paragraph reference, comment count badge, locate/delete buttons, and expand chevron. The entire header row is clickable to toggle expansion.
+- **Detail section** (hidden by default) -- tag select dropdown (annotators only), full author name, editable paragraph reference, text preview, and comments with input.
+
+`PageState.expanded_cards: set[str]` tracks which highlight IDs are currently expanded. This set survives annotation refreshes (card rebuilds) so expansion state is preserved across CRDT updates and broadcast refreshes.
+
+`annotation-card-sync.js` positions cards absolutely based on their highlight's character offset in the document. It caches each card's `offsetHeight` into `data-cached-height` so that collapsed cards (which have `offsetHeight=0` when hidden) use their last-known height for layout calculations. Fallback height is 80px when no cache exists.
 
 ## Guard Tests
 

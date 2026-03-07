@@ -159,6 +159,7 @@ def _create_tag_fields(
             label="Group",
         )
         .bind_value(model, "group_id")
+        .props(f"data-testid=tag-group-select-{tag_id}")
         .classes("w-32")
     )
 

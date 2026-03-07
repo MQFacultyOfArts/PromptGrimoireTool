@@ -56,6 +56,10 @@ ALLOWED_JS_FILES = {
     # Card layout tests read inline style.top (no Playwright-native API)
     # and programmatically scroll doc-container for positioning assertions.
     "test_card_layout.py",
+    # Colour input uses input-class="hidden", so Playwright fill() cannot
+    # interact with it. JS native setter injection is the only reliable way
+    # to programmatically set the colour value and trigger Vue reactivity.
+    "test_tag_colour.py",
 }
 
 

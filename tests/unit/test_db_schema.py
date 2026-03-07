@@ -34,6 +34,9 @@ def test_all_models_registered() -> None:
         "tag_group",
         "user",
         "week",
+        "wargame_config",
+        "wargame_message",
+        "wargame_team",
         "workspace",
         "workspace_document",
     }
@@ -49,12 +52,12 @@ def test_all_models_registered() -> None:
 
 
 def test_get_expected_tables_returns_all_tables() -> None:
-    """get_expected_tables() returns all 12 table names."""
+    """get_expected_tables() returns all 15 table names."""
     from promptgrimoire.db import get_expected_tables
 
     tables = get_expected_tables()
 
-    assert len(tables) == 12
+    assert len(tables) == 15
     assert "acl_entry" in tables
     assert "activity" in tables
     assert "course" in tables
@@ -65,8 +68,49 @@ def test_get_expected_tables_returns_all_tables() -> None:
     assert "tag_group" in tables
     assert "user" in tables
     assert "week" in tables
+    assert "wargame_config" in tables
+    assert "wargame_message" in tables
+    assert "wargame_team" in tables
     assert "workspace" in tables
     assert "workspace_document" in tables
+
+
+def test_activity_metadata_includes_discriminator_check_constraints() -> None:
+    """Activity metadata exposes the discriminator CHECK constraints."""
+    from sqlalchemy import CheckConstraint
+    from sqlmodel import SQLModel
+
+    import promptgrimoire.db.models  # noqa: F401 - import registers tables
+
+    activity_table = SQLModel.metadata.tables["activity"]
+    check_names = {
+        constraint.name
+        for constraint in activity_table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {
+        "ck_activity_type_known",
+        "ck_activity_annotation_requires_template",
+        "ck_activity_wargame_no_template",
+    } <= check_names
+
+
+def test_activity_metadata_includes_composite_unique_key() -> None:
+    """Activity metadata exposes the composite key needed by subtype FKs."""
+    from sqlalchemy import UniqueConstraint
+    from sqlmodel import SQLModel
+
+    import promptgrimoire.db.models  # noqa: F401 - import registers tables
+
+    activity_table = SQLModel.metadata.tables["activity"]
+    unique_names = {
+        constraint.name
+        for constraint in activity_table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+
+    assert "uq_activity_id_type" in unique_names
 
 
 def test_is_db_configured_returns_false_when_unset() -> None:

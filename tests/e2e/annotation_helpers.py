@@ -690,7 +690,6 @@ def navigate_home_via_drawer(page: Page) -> None:
     home_link = page.get_by_test_id("nav-home")
     if not home_link.is_visible():
         page.locator(".q-header .q-btn").first.click()
-        page.wait_for_timeout(500)
     expect(home_link).to_be_visible(timeout=5000)
     home_link.click()
 
@@ -716,7 +715,7 @@ def scroll_to_char(page: Page, char_offset: int) -> None:
         }""",
         char_offset,
     )
-    page.wait_for_timeout(500)
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
 
 def drag_sortable_item(source: Locator, target: Locator) -> None:
@@ -808,7 +807,6 @@ def setup_workspace_with_content(
 
     # Wait for the text walker to initialise
     wait_for_text_walker(page, timeout=timeout)
-    page.wait_for_timeout(200)
 
     if seed_tags:
         workspace_id = page.url.split("workspace_id=")[1].split("&")[0]
@@ -857,7 +855,7 @@ def select_text_range(page: Page, text: str) -> None:
         }""",
         text,
     )
-    page.wait_for_timeout(200)
+    page.locator("[data-testid='tag-toolbar']").wait_for(state="visible", timeout=5000)
 
 
 def _load_fixture_via_paste(
@@ -919,11 +917,9 @@ def _load_fixture_via_paste(
         }""",
         html_content,
     )
-    page.wait_for_timeout(100)
 
     # Trigger paste
     page.keyboard.press("Control+v")
-    page.wait_for_timeout(500)
 
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)
@@ -1082,7 +1078,7 @@ def toggle_share_with_class(page: Page) -> None:
     toggle.wait_for(state="visible", timeout=5000)
     if toggle.get_attribute("aria-checked") != "true":
         toggle.click()
-    page.wait_for_timeout(500)
+    expect(toggle).to_have_attribute("aria-checked", "true", timeout=5000)
 
 
 def clone_activity_workspace(

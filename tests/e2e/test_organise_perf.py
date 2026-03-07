@@ -82,9 +82,11 @@ def perf_workspace(authenticated_page: Page, app_server: str) -> Generator[Page]
     setup_workspace_with_content(authenticated_page, app_server, _CONTENT)
     page = authenticated_page
 
-    for start, end, tag_idx in _HIGHLIGHTS:
+    for i, (start, end, tag_idx) in enumerate(_HIGHLIGHTS):
         create_highlight_with_tag(page, start, end, tag_idx)
-        page.wait_for_timeout(300)
+        page.locator("[data-testid='annotation-card']").nth(i).wait_for(
+            state="visible", timeout=5000
+        )
 
     yield page
 

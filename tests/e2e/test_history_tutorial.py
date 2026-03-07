@@ -156,7 +156,6 @@ class TestHistoryTutorial:
         with subtests.test(msg="cross_tab_organise_sync"):
             # Student B switches to Organise tab
             page2.get_by_test_id("tab-organise").click()
-            page2.wait_for_timeout(1000)
             expect(page2.locator('[data-testid="organise-columns"]')).to_be_visible(
                 timeout=5000
             )
@@ -195,12 +194,14 @@ class TestHistoryTutorial:
         with subtests.test(msg="warp_does_not_affect_other_user"):
             # Student A switches to Organise tab and clicks locate
             page1.get_by_test_id("tab-organise").click()
-            page1.wait_for_timeout(1000)
+            expect(page1.locator('[data-testid="organise-columns"]')).to_be_visible(
+                timeout=5000
+            )
 
             card = page1.locator('[data-testid="organise-card"]').first
             expect(card).to_be_visible(timeout=3000)
             card.locator("button").first.click()
-            page1.wait_for_timeout(1000)
+            page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
             # Student A should be warped to Annotate tab
             expect(page1.get_by_test_id("tab-annotate")).to_have_attribute(
@@ -220,9 +221,8 @@ class TestHistoryTutorial:
 
             # Student A types in the Milkdown editor
             editor1.locator(".ProseMirror").click()
-            page1.wait_for_timeout(500)
+            page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
             page1.keyboard.type("Collaborative analysis notes")
-            page1.wait_for_timeout(2000)
 
             # Student B (already on Respond tab) should see the text
             prosemirror2 = page2.locator(

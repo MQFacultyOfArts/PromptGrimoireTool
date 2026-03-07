@@ -211,9 +211,6 @@ class TestLawStudent:
                 # Press "5" for Reasons tag
                 page.keyboard.press("5")
 
-                # Wait briefly for highlight processing
-                page.wait_for_timeout(500)
-
                 # Verify third annotation card appears
                 expect(
                     page.locator("[data-testid='annotation-card']").nth(2)
@@ -250,11 +247,9 @@ class TestLawStudent:
                     == highlight_count
                 )
 
-                # Wait to catch any async highlight creation
-                page.wait_for_timeout(500)
-                assert (
-                    page.locator("[data-testid='annotation-card']").count()
-                    == highlight_count
+                # Verify no async highlight creation occurred
+                expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+                    highlight_count, timeout=2000
                 )
 
                 # Clear the input for subsequent tests (re-scroll in case
@@ -275,13 +270,9 @@ class TestLawStudent:
                 # Press letter key -- JS handler only responds to digits 1-0
                 page.keyboard.press("a")
 
-                # Wait for any async processing
-                page.wait_for_timeout(500)
-
                 # Highlight count unchanged
-                assert (
-                    page.locator("[data-testid='annotation-card']").count()
-                    == highlight_count
+                expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+                    highlight_count, timeout=2000
                 )
 
                 # Click elsewhere to deselect
@@ -290,9 +281,6 @@ class TestLawStudent:
             with subtests.test(msg="organise_tab"):
                 # Click Organise tab
                 page.get_by_test_id("tab-organise").click()
-
-                # Wait for organise content to render
-                page.wait_for_timeout(1000)
 
                 # Verify organise cards appear
                 expect(
@@ -334,7 +322,7 @@ class TestLawStudent:
                 locate_btn = card.locator("button").first
                 expect(locate_btn).to_be_visible(timeout=3000)
                 locate_btn.click()
-                page.wait_for_timeout(1000)
+                page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
                 annotate_tab = page.get_by_test_id("tab-annotate")
@@ -350,7 +338,6 @@ class TestLawStudent:
             with subtests.test(msg="organise_return_after_warp"):
                 # Return to Organise tab — content should still be rendered
                 page.get_by_test_id("tab-organise").click()
-                page.wait_for_timeout(500)
                 columns = page.locator('[data-testid="organise-columns"]')
                 expect(columns).to_be_visible(timeout=3000)
                 organise_tab = page.get_by_test_id("tab-organise")
@@ -391,7 +378,7 @@ class TestLawStudent:
                 locate_btn = ref_card.locator("button").first
                 expect(locate_btn).to_be_visible(timeout=3000)
                 locate_btn.click()
-                page.wait_for_timeout(1000)
+                page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
                 annotate_tab = page.get_by_test_id("tab-annotate")

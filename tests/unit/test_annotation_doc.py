@@ -533,6 +533,106 @@ class TestTagOrder:
 
         assert doc2.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
 
+    def test_set_tag_order_syncs_tags_map_highlights(self) -> None:
+        """set_tag_order also writes highlights to tags Map entry."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="tag-1", name="Issue", colour="#ff0000", order_index=0)
+
+        doc.set_tag_order("tag-1", ["h1", "h2", "h3"])
+
+        tag_entry = doc.get_tag("tag-1")
+        assert tag_entry is not None
+        assert tag_entry["highlights"] == ["h1", "h2", "h3"]
+
+    def test_set_tag_order_no_crash_when_tag_not_in_tags_map(self) -> None:
+        """set_tag_order still writes tag_order when tag not in tags Map."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_order("nonexistent-tag", ["h1", "h2"])
+
+        assert doc.get_tag_order("nonexistent-tag") == ["h1", "h2"]
+        assert doc.get_tag("nonexistent-tag") is None
+
+    def test_move_highlight_updates_tags_map_highlights(self) -> None:
+        """move_highlight_to_tag updates highlights field in tags Map for both tags."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=["existing-h"],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+            highlights=["other-h"],
+        )
+        h1 = doc.add_highlight(0, 5, "issue", "text", "author")
+        doc.set_tag_order("issue", [h1])
+        doc.set_tag_order("facts", [])
+        # Refresh tags Map highlights to match tag_order after set_tag_order sync
+        # (set_tag_order now syncs, so reset to known state for the move test)
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+        )
+
+        doc.move_highlight_to_tag(h1, from_tag="issue", to_tag="facts")
+
+        from_entry = doc.get_tag("issue")
+        assert from_entry is not None
+        assert h1 not in from_entry["highlights"]
+
+        to_entry = doc.get_tag("facts")
+        assert to_entry is not None
+        assert h1 in to_entry["highlights"]
+
+    def test_move_highlight_tags_map_no_entry_graceful(self) -> None:
+        """move_highlight_to_tag is graceful when tags Map lacks entries."""
+        doc = AnnotationDocument("test-doc")
+        h1 = doc.add_highlight(0, 5, "old", "text", "author")
+        doc.set_tag_order("old", [h1])
+
+        # Tags Map has no entries for "old" or "new" -- should not crash
+        result = doc.move_highlight_to_tag(h1, from_tag="old", to_tag="new")
+
+        assert result is True
+        assert doc.get_tag_order("old") == []
+        assert doc.get_tag_order("new") == [h1]
+
+    def test_move_highlight_reorder_same_tag_updates_tags_map(self) -> None:
+        """Reordering within same tag updates tags Map highlights."""
+        doc = AnnotationDocument("test-doc")
+        h1 = doc.add_highlight(0, 5, "tag-a", "a", "author")
+        h2 = doc.add_highlight(6, 10, "tag-a", "b", "author")
+        doc.set_tag(
+            tag_id="tag-a",
+            name="Tag A",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+        doc.set_tag_order("tag-a", [h1, h2])
+
+        # Move h2 to position 0 within same tag (from_tag=None skips removal)
+        doc.move_highlight_to_tag(h2, from_tag="tag-a", to_tag="tag-a", position=0)
+
+        tag_entry = doc.get_tag("tag-a")
+        assert tag_entry is not None
+        assert tag_entry["highlights"] == [h2, h1]
+
 
 class TestResponseDraft:
     """Tests for response_draft XmlFragment field."""

@@ -414,8 +414,24 @@ class AnnotationDocument:
         token = _origin_var.set(origin_client_id)
         try:
             self.tag_order[tag] = Array(highlight_ids)
+            # Sync tags Map highlights field (dual write for transition)
+            self._sync_tag_highlights(tag, highlight_ids)
         finally:
             _origin_var.reset(token)
+
+    def _sync_tag_highlights(self, tag_id: str, highlights: list[str]) -> None:
+        """Write highlights list to tags Map entry if it exists (dual-write helper)."""
+        entry = self.get_tag(tag_id)
+        if entry is not None:
+            self.set_tag(
+                tag_id=tag_id,
+                name=entry["name"],
+                colour=entry["colour"],
+                order_index=entry["order_index"],
+                group_id=entry.get("group_id"),
+                description=entry.get("description"),
+                highlights=highlights,
+            )
 
     def move_highlight_to_tag(
         self,
@@ -453,6 +469,9 @@ class AnnotationDocument:
                     source_ids.remove(highlight_id)
                     self.tag_order[from_tag] = Array(source_ids)
 
+                # Dual-write: sync tags Map highlights
+                self._sync_tag_highlights(from_tag, source_ids)
+
             # Insert into target tag order
             target_ids = self.get_tag_order(to_tag)
             if position == -1:
@@ -460,6 +479,9 @@ class AnnotationDocument:
             else:
                 target_ids.insert(position, highlight_id)
             self.tag_order[to_tag] = Array(target_ids)
+
+            # Dual-write: sync tags Map highlights
+            self._sync_tag_highlights(to_tag, target_ids)
 
             # Update the highlight's tag field
             hl_data = dict(self.highlights[highlight_id])

@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import select_chars, wait_for_text_walker
+from tests.e2e.annotation_helpers import expand_card, select_chars, wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
     add_activity,
@@ -103,6 +103,7 @@ def _student_start_and_apply_tag(
 
         first_card = student_page.locator("[data-testid='annotation-card']").first
         first_card.wait_for(state="visible", timeout=5000)
+        expand_card(student_page, 0)
         expect(first_card.get_by_test_id("tag-select")).to_contain_text(
             "Mammals", timeout=3000
         )
@@ -112,6 +113,7 @@ def _student_start_and_apply_tag(
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestHappyPathWorkflow:
     def test_happy_path_workflow(
         self,

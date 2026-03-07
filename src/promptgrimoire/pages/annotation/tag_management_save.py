@@ -184,28 +184,17 @@ async def _save_single_tag(
     """
     inputs = tag_row_inputs.get(tag_id)
     if not inputs:
-        logger.debug("_save_single_tag: no inputs for %s", tag_id)
         return True
     name = inputs["name"]
     color = inputs["color"]
     desc = inputs["description"]
     group_val = inputs["group_id"]
-    logger.debug(
-        "_save_single_tag: tag=%s name=%r color=%r (orig=%r) desc=%r group=%r",
-        tag_id,
-        name,
-        color,
-        inputs["orig_color"],
-        desc,
-        group_val,
-    )
     if (
         name == inputs["orig_name"]
         and color == inputs["orig_color"]
         and desc == inputs["orig_desc"]
         and group_val == inputs["orig_group"]
     ):
-        logger.debug("_save_single_tag: no changes detected for %s", tag_id)
         return True  # No changes
     gid = UUID(group_val) if group_val else None
     try:

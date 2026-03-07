@@ -13,12 +13,9 @@ feedback.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

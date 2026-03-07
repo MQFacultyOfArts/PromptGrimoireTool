@@ -556,38 +556,12 @@ class TestTagOrder:
     def test_move_highlight_updates_tags_map_highlights(self) -> None:
         """move_highlight_to_tag updates highlights field in tags Map for both tags."""
         doc = AnnotationDocument("test-doc")
-        doc.set_tag(
-            tag_id="issue",
-            name="Issue",
-            colour="#ff0000",
-            order_index=0,
-            highlights=["existing-h"],
-        )
-        doc.set_tag(
-            tag_id="facts",
-            name="Facts",
-            colour="#00ff00",
-            order_index=1,
-            highlights=["other-h"],
-        )
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "issue", "text", "author")
+        # Establish canonical pre-move state via set_tag_order (which syncs tags Map)
         doc.set_tag_order("issue", [h1])
         doc.set_tag_order("facts", [])
-        # Refresh tags Map highlights to match tag_order after set_tag_order sync
-        # (set_tag_order now syncs, so reset to known state for the move test)
-        doc.set_tag(
-            tag_id="issue",
-            name="Issue",
-            colour="#ff0000",
-            order_index=0,
-            highlights=[h1],
-        )
-        doc.set_tag(
-            tag_id="facts",
-            name="Facts",
-            colour="#00ff00",
-            order_index=1,
-        )
 
         doc.move_highlight_to_tag(h1, from_tag="issue", to_tag="facts")
 

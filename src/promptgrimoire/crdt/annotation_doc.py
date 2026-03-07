@@ -468,9 +468,8 @@ class AnnotationDocument:
                 if highlight_id in source_ids:
                     source_ids.remove(highlight_id)
                     self.tag_order[from_tag] = Array(source_ids)
-
-                # Dual-write: sync tags Map highlights
-                self._sync_tag_highlights(from_tag, source_ids)
+                    # Dual-write: sync tags Map highlights (only when removal occurred)
+                    self._sync_tag_highlights(from_tag, source_ids)
 
             # Insert into target tag order
             target_ids = self.get_tag_order(to_tag)

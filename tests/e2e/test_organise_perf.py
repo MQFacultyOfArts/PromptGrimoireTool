@@ -89,6 +89,7 @@ def perf_workspace(authenticated_page: Page, app_server: str) -> Generator[Page]
     yield page
 
 
+@pytest.mark.cards
 class TestOrganiseTabPerformance:
     """Baseline performance measurement for Organise tab."""
 

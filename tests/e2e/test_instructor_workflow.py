@@ -32,6 +32,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _seed_tags_for_workspace,
+    expand_card,
     seed_group_id,
     seed_tag_id,
     select_chars,
@@ -599,6 +600,7 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
     expect(first_card).to_be_visible(timeout=3000)
 
     # The card's tag select should show the tag name for shortcut "2"
+    expand_card(student_page, 0)
     first_card_select = first_card.get_by_test_id("tag-select")
     expect(first_card_select).to_contain_text(key2_tag_name, timeout=3000)
 
@@ -612,6 +614,7 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
 
     # The second card's tag select should show the tag name for shortcut "3"
     second_card = cards.nth(1)
+    expand_card(student_page, 1)
     second_card_select = second_card.get_by_test_id("tag-select")
     expect(second_card_select).to_contain_text(key3_tag_name, timeout=3000)
 
@@ -663,6 +666,7 @@ def _run_student_tag_subtests(
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestInstructorWorkflow:
     """Instructor persona: course setup from scratch."""
 

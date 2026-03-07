@@ -71,6 +71,7 @@ def _create_workspace_no_tags(user_email: str) -> str:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestEmptyTagFloatingMenu:
     """Floating highlight menu behaviour in zero-tag and with-tag workspaces."""
 
@@ -199,6 +200,7 @@ class TestEmptyTagFloatingMenu:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestEmptyTagNoPermission:
     """Floating menu for users without tag creation permission."""
 
@@ -275,6 +277,7 @@ def _create_tag_via_toolbar(page: Page, tag_name: str) -> None:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestToolbarExpandedLabels:
     """Toolbar button labels expand when fewer than 5 tags exist.
 
@@ -396,6 +399,7 @@ class TestToolbarExpandedLabels:
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestToolbarTooltips:
     """Tooltips on toolbar action buttons at all tag counts.
 

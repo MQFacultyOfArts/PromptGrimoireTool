@@ -117,6 +117,7 @@ MIXED_TEXT = (
 
 
 @pytest.mark.e2e
+@pytest.mark.cards
 class TestTranslationStudent:
     """Translation student persona: annotating multilingual content."""
 

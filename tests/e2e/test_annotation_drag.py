@@ -22,6 +22,7 @@ from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
     create_highlight,
     create_highlight_with_tag,
+    expand_card,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -112,6 +113,7 @@ def drag_workspace_page(browser: Browser, app_server: str) -> Generator[Page]:
     context.close()
 
 
+@pytest.mark.cards
 class TestDragCards:
     """Verify that Organise tab cards have drag affordance.
 
@@ -143,6 +145,7 @@ class TestDragCards:
         expect(card).to_have_css("cursor", "grab")
 
 
+@pytest.mark.cards
 class TestDragReorderWithinColumn:
     """Verify reordering cards within a column via drag.
 
@@ -198,6 +201,7 @@ class TestDragReorderWithinColumn:
         assert initial_ids[1] in after_ids, "Dragged card should still be in the column"
 
 
+@pytest.mark.cards
 class TestDragBetweenColumns:
     """Verify moving cards between tag columns via drag.
 
@@ -304,11 +308,13 @@ class TestDragBetweenColumns:
         expect(sidebar_card).to_be_visible(timeout=3000)
 
         # The tag dropdown should reflect "Procedural History" tag
+        expand_card(page, 0)
         tag_select = sidebar_card.get_by_test_id("tag-select")
         expect(tag_select).to_be_visible(timeout=5000)
         expect(tag_select).to_contain_text("Procedural History", timeout=5000)
 
 
+@pytest.mark.cards
 class TestConcurrentDrag:
     """Verify concurrent drag operations produce consistent results.
 

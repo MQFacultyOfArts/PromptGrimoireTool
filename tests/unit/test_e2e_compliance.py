@@ -53,6 +53,9 @@ ALLOWED_JS_FILES = {
     # clicks in a single synchronous frame — no Playwright-native alternative.
     "test_history_tutorial.py",
     "test_law_student.py",
+    # Card layout tests read inline style.top (no Playwright-native API)
+    # and programmatically scroll doc-container for positioning assertions.
+    "test_card_layout.py",
 }
 
 

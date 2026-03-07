@@ -75,8 +75,11 @@ async def _refresh_tag_state(
         if ws and ws.crdt_state:
             state.crdt_doc.apply_update(ws.crdt_state)
         _push_highlights_to_client(state)
-        if state.refresh_annotations:
-            state.refresh_annotations()
+
+    # Always refresh annotation cards when tags change — card borders
+    # use tag colours, so any colour/name change needs a card rebuild.
+    if state.refresh_annotations:
+        state.refresh_annotations()
 
     # Broadcast tag state change to other connected clients
     if state.broadcast_update:

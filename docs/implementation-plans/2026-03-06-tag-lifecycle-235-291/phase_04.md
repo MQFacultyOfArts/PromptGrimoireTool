@@ -280,3 +280,19 @@ Expected: No matches (all blur handlers removed)
 **Commit:** No commit needed — verification only
 
 <!-- END_TASK_6 -->
+
+---
+
+## UAT Notes from Phase 3 (address during this phase)
+
+1. **Dialog closes on other tab during broadcast:** When a tag colour/name change is broadcast, the receiving client's management dialog closes because `_refresh_tag_state` rebuilds tag UI. At minimum, raise a toast notification instead of silently closing. Ideally, preserve dialog state across broadcast updates.
+
+2. **Description field on its own line:** The tag row is crowded (drag handle, move buttons, colour picker, name, description, group, lock, delete). Move description to a second line to give it proper space.
+
+3. **Expandable description:** Consider `autogrow` on the description input, or a show/hide toggle for longer descriptions.
+
+4. **Field sizing:** Name and group use fixed widths (`w-40`, `w-32`) that don't adapt to available space. Consider flex-based sizing.
+
+5. **Colour picker space:** The `ui.color_input` with hidden text still reserves wrapper space from the `q-input` frame. Consider replacing with a plain `ui.button` + `ui.color_picker` to eliminate the dead space. The `_save_single_tag` system reads `color_input.value`, so the replacement needs to expose `.value` compatibly.
+
+6. **Lock/unlock tooltip clarity:** The lock toggle is only visible to instructors, but its purpose isn't obvious. Add a descriptive tooltip explaining that locked tags can't be edited by students.

@@ -231,7 +231,7 @@ def _find_tag_input_by_name(page: Page, tag_name: str) -> str:
 def _instructor_open_template(page: Page, app_server: str, course_id: str) -> str:
     """Navigate to template workspace, return workspace_id."""
     page.goto(f"{app_server}/courses/{course_id}")
-    page.wait_for_timeout(500)
+    page.get_by_text("Annotate Becky").wait_for(state="visible", timeout=5000)
     activity_card = page.get_by_text("Annotate Becky").locator(
         "xpath=ancestor::div[contains(@class, 'q-card')]"
     )
@@ -277,8 +277,7 @@ def _instructor_add_tag_via_management(page: Page, template_ws_id: str) -> None:
 
     # Add tag — the backend creates it with a default name ("New tag")
     add_btn.click()
-    page.wait_for_timeout(500)
-    expect(name_inputs).to_have_count(count_before + 1, timeout=3000)
+    expect(name_inputs).to_have_count(count_before + 1, timeout=5000)
 
     # Find the newly created tag's input within the Analysis group section.
     # We scope to the group section to avoid accidentally picking up ungrouped
@@ -296,8 +295,8 @@ def _instructor_add_tag_via_management(page: Page, template_ws_id: str) -> None:
     new_input.clear()
     new_input.fill("Facts")
     new_input.blur()
-    # Wait for the blur-save WebSocket round-trip before closing the dialog
-    page.wait_for_timeout(800)
+    # Wait for the blur-save WebSocket round-trip: value must persist in the input
+    expect(new_input).to_have_value("Facts", timeout=5000)
 
     # Close dialog — Done button refreshes toolbar and closes
     dialog.locator("[data-testid='tag-management-done-btn']").click()
@@ -331,7 +330,8 @@ def _instructor_lock_tag(page: Page, template_ws_id: str) -> None:
     lock_btn = dialog.locator(f"[data-testid='tag-lock-icon-{jurisdiction_id}']")
     expect(lock_btn).to_be_visible(timeout=3000)
     lock_btn.click()
-    page.wait_for_timeout(500)
+    # Wait for lock state to update: icon text changes to "lock"
+    expect(lock_btn.locator("i.q-icon")).to_have_text("lock", timeout=5000)
 
     # Close and reopen to verify lock persisted
     dialog.locator("[data-testid='tag-management-done-btn']").click()
@@ -365,7 +365,9 @@ def _instructor_reorder_groups(page: Page, template_ws_id: str) -> None:
     move_up_btn = dialog.locator(f"[data-testid='group-move-up-{sources_gid}']")
     expect(move_up_btn).to_be_visible(timeout=3000)
     move_up_btn.click()
-    page.wait_for_timeout(500)
+    # Wait for the Sources group header to appear before the Analysis header
+    sources_header = dialog.locator(f"[data-testid='tag-group-header-{sources_gid}']")
+    sources_header.wait_for(state="visible", timeout=5000)
 
     # Close and reopen to verify order persisted
     dialog.locator("[data-testid='tag-management-done-btn']").click()
@@ -395,7 +397,7 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
     """AC2.5: Import tags from first activity into second activity."""
     # Navigate back to course page and create second activity
     page.goto(f"{app_server}/courses/{course_id}")
-    page.wait_for_timeout(500)
+    page.get_by_text("Annotate Becky").wait_for(state="visible", timeout=5000)
     add_activity(page, title="Case Brief Practice")
 
     # Fill second activity's template
@@ -424,14 +426,14 @@ def _instructor_import_tags(page: Page, app_server: str, course_id: str) -> None
     import_section = dialog.locator("[data-testid='tag-import-section']")
     expect(import_section).to_be_visible(timeout=5000)
     import_section.get_by_test_id("tag-import-source-select").click()
-    page.wait_for_timeout(300)
-    page.locator(".q-item").filter(has_text="Annotate Becky").click()
-    page.wait_for_timeout(300)
+    becky_item = page.locator(".q-item").filter(has_text="Annotate Becky")
+    becky_item.wait_for(state="visible", timeout=5000)
+    becky_item.click()
     import_section.get_by_role("button", name="Import").click()
-    page.wait_for_timeout(1000)
 
-    # Verify imported tags appear
+    # Verify imported tags appear (wait for at least one tag to appear)
     name_inputs = dialog.locator("[data-testid^='tag-name-input-']")
+    expect(name_inputs.first).to_be_visible(timeout=10000)
     assert name_inputs.count() > 0, "Expected imported tags in dialog"
     dialog.locator("[data-testid='tag-management-done-btn']").click()
     expect(dialog).to_be_hidden(timeout=5000)
@@ -516,7 +518,8 @@ def _student_edit_unlocked_tag(student_page: Page) -> None:
     name_input.clear()
     name_input.fill("Key Principles")
     name_input.blur()
-    student_page.wait_for_timeout(500)
+    # Wait for blur-save round-trip: value must persist in the input
+    expect(name_input).to_have_value("Key Principles", timeout=5000)
 
     # Close and reopen to verify persistence
     dialog.locator("[data-testid='tag-management-done-btn']").click()
@@ -545,7 +548,9 @@ def _student_reorder_tags(student_page: Page) -> None:
     move_down_btns = dialog.locator("[data-testid^='tag-move-down-']")
     if move_down_btns.count() >= 1:
         move_down_btns.first.click()
-        student_page.wait_for_timeout(500)
+        # Wait for the done button to remain interactive after reorder saves
+        done_btn = dialog.locator("[data-testid='tag-management-done-btn']")
+        done_btn.wait_for(state="visible", timeout=5000)
 
     dialog.locator("[data-testid='tag-management-done-btn']").click()
     expect(dialog).to_be_hidden(timeout=5000)
@@ -594,10 +599,9 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
     # AC3.5: Press "2" with text selected — highlight created with tag at position 2
     select_chars(student_page, 0, 5)
     student_page.keyboard.press("2")
-    student_page.wait_for_timeout(500)
 
     first_card = student_page.locator("[data-testid='annotation-card']").first
-    expect(first_card).to_be_visible(timeout=3000)
+    first_card.wait_for(state="visible", timeout=5000)
 
     # The card's tag select should show the tag name for shortcut "2"
     expand_card(student_page, 0)
@@ -607,7 +611,6 @@ def _student_keyboard_shortcuts(student_page: Page) -> None:
     # AC3.6: Press "3" with text selected — highlight created with tag at position 3
     select_chars(student_page, 10, 20)
     student_page.keyboard.press("3")
-    student_page.wait_for_timeout(500)
 
     cards = student_page.locator("[data-testid='annotation-card']")
     expect(cards).to_have_count(2, timeout=3000)
@@ -764,7 +767,9 @@ class TestInstructorWorkflow:
 
             with subtests.test(msg="enrol_second_student"):
                 page.goto(f"{app_server}/courses/{course_id}")
-                page.wait_for_timeout(500)
+                page.get_by_text("Annotate Becky").wait_for(
+                    state="visible", timeout=5000
+                )
                 enrol_student(page, email=student2_email)
 
             _run_student_tag_subtests(

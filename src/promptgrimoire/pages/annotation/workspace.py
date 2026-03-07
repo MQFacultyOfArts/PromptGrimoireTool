@@ -363,9 +363,8 @@ async def _resolve_workspace_context(
         word_limit=ctx.word_limit,
         word_limit_enforcement=ctx.word_limit_enforcement,
     )
-    # Tags from CRDT (populated by consistency check in get_or_create)
-    if state.crdt_doc is not None:
-        state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
+    # NOTE: tag_info_list is populated later in _build_tab_panels after
+    # crdt_doc is loaded (state.crdt_doc is None at this point).
 
     return state, ctx, protect, can_create_tags, workspace.shared_with_class
 
@@ -519,7 +518,8 @@ async def _build_tab_panels(
                 workspace_id
             )
             state.crdt_doc = crdt_doc
-            logger.debug("[RENDER] CRDT doc loaded")
+            state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
+            logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
 
             documents = await list_documents(workspace_id)
             logger.debug("[RENDER] documents loaded: count=%d", len(documents))

@@ -7,9 +7,12 @@ content for the management dialog. Imports save helpers from
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from nicegui import events, ui
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -92,32 +95,32 @@ def _render_tag_row(
             if tag_index >= total_tags - 1:
                 down_btn.props("disable")
 
-        # Colour swatch
-        ui.element("div").classes("w-6 h-6 rounded-full shrink-0").style(
-            f"background-color: {tag.color}",
+        # Colour picker (before name for visual prominence)
+        _color_props = (
+            f'data-testid=tag-color-input-{tag.id} dense input-class="hidden"'
+        )
+        color_input = (
+            ui.color_input(value=tag.color, preview=True)
+            .props(_color_props)
+            .classes("shrink-0")
+            .style("width: 3rem")
         )
 
         # Editable fields
         name_input = (
-            ui.input(value=tag.name)
+            ui.input(label="Name", value=tag.name)
             .props(f"maxlength=100 data-testid=tag-name-input-{tag.id}")
             .classes("w-40")
         )
-        color_input = (
-            ui.color_input(value=tag.color, preview=True)
-            .props(f"data-testid=tag-color-input-{tag.id}")
-            .classes("w-28")
+        desc_input = ui.input(label="Description", value=tag.description or "").classes(
+            "flex-1 min-w-0"
         )
-        desc_input = ui.input(
-            value=tag.description or "",
-            placeholder="Description",
-        ).classes("flex-1")
         group_sel = ui.select(
             options=group_options,
             value=str(tag.group_id) if tag.group_id else None,
             clearable=True,
             label="Group",
-        ).classes("w-40")
+        ).classes("w-32")
 
         # Auto-save on blur for each editable field
         if can_edit and on_field_save is not None:
@@ -125,11 +128,26 @@ def _render_tag_row(
             async def _blur_save(
                 _e: events.GenericEventArguments, tid: UUID = tag.id
             ) -> None:
+                logger.debug(
+                    "_blur_save fired for tag %s, color.value=%r",
+                    tid,
+                    color_input.value,
+                )
+                await on_field_save(tid)
+
+            async def _color_save(
+                _e: events.ValueChangeEventArguments, tid: UUID = tag.id
+            ) -> None:
+                logger.debug(
+                    "_color_save fired for tag %s, new=%r",
+                    tid,
+                    _e.value,
+                )
                 await on_field_save(tid)
 
             for inp in (name_input, desc_input):
                 inp.on("blur", _blur_save)
-            color_input.on("change", _blur_save)
+            color_input.on_value_change(_color_save)
             group_sel.on("update:model-value", _blur_save)
 
         if not can_edit:
@@ -238,14 +256,17 @@ def _render_group_header(
             .props(f"maxlength=100 data-testid=group-name-input-{group.id}")
             .classes("font-bold text-blue-800")
         )
+        _grp_color_props = (
+            f'data-testid=group-color-input-{group.id} dense input-class="hidden"'
+        )
         group_color_input = (
             ui.color_input(
                 value=group.color or "",
-                label="Bg",
                 preview=True,
             )
-            .props(f"data-testid=group-color-input-{group.id}")
-            .classes("w-20")
+            .props(_grp_color_props)
+            .classes("shrink-0")
+            .style("width: 3rem")
         )
         ui.button(
             icon="delete",
@@ -262,8 +283,13 @@ def _render_group_header(
             ) -> None:
                 await on_group_field_save(gid)
 
+            async def _group_color_save(
+                _e: events.ValueChangeEventArguments, gid: UUID = group.id
+            ) -> None:
+                await on_group_field_save(gid)
+
             group_name_input.on("blur", _blur_save)
-            group_color_input.on("change", _blur_save)
+            group_color_input.on_value_change(_group_color_save)
 
     # Collect input refs for save-on-blur
     if row_collector is not None:

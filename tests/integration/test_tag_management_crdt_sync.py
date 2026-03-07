@@ -116,8 +116,8 @@ class TestTagColourEditUpdatesCrdt:
 
             color_el = _find_value_element_by_testid(user, f"tag-color-input-{tag.id}")
             assert color_el is not None, "colour input not found"
-            color_el.value = "#ff0000"
-            await _fire_event_listeners_async(color_el, "change")
+            color_el.set_value("#ff0000")
+            await asyncio.sleep(0.3)  # Allow async on_value_change handlers to complete
 
             # Verify via DB: update_tag writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag
@@ -202,8 +202,8 @@ class TestGroupColourEditUpdatesCrdt:
                 user, f"group-color-input-{group.id}"
             )
             assert group_color_el is not None, "group colour input not found"
-            group_color_el.value = "#00ff00"
-            await _fire_event_listeners_async(group_color_el, "change")
+            group_color_el.set_value("#00ff00")
+            await asyncio.sleep(0.3)  # Allow async on_value_change handlers to complete
 
             # Verify via DB: update_tag_group writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag_group

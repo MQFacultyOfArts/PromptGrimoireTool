@@ -20,6 +20,8 @@ from promptgrimoire.pages.annotation.tag_management_rows import (
     _render_tag_list_content,
 )
 from promptgrimoire.pages.annotation.tag_management_save import (
+    _cancel_pending_timers,
+    _create_tag_or_notify,
     _refresh_tag_state,
     _save_all_modified_rows,
     _save_single_group,
@@ -137,38 +139,6 @@ def _delete_confirmation_body(highlight_count: int) -> str:
         s = "s" if highlight_count != 1 else ""
         return f"This will remove {highlight_count} highlight{s} using this tag."
     return "This tag has no highlights."
-
-
-async def _create_tag_or_notify(
-    create_tag_fn: Callable[..., Awaitable[object]],
-    state: PageState,
-    name: str,
-    color: str,
-    group_id: UUID | None,
-) -> object | None:
-    """Create a tag via *create_tag_fn* with dual-write; notify on failure.
-
-    Returns the created tag, or None if creation failed.
-    """
-    try:
-        return await create_tag_fn(
-            workspace_id=state.workspace_id,
-            name=name,
-            color=color,
-            group_id=group_id,
-            crdt_doc=state.crdt_doc,
-        )
-    except PermissionError:
-        ui.notify("Tag creation not allowed", type="negative")
-        return None
-    except Exception as exc:
-        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
-
-        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
-            ui.notify(f"A tag named '{name}' already exists", type="warning")
-        else:
-            ui.notify(f"Failed to create tag: {exc}", type="negative")
-        return None
 
 
 # ── Reorder helpers ──────────────────────────────────────────────────
@@ -339,6 +309,7 @@ async def open_tag_management(
 
         # "Done" button -- saves all modified rows, refreshes, and closes
         async def _save_all_and_close() -> None:
+            _cancel_pending_timers(tag_row_inputs, group_row_inputs)
             await _save_all_modified_rows(
                 tag_row_inputs,
                 group_row_inputs,

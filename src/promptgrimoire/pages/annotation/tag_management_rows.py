@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
@@ -86,23 +86,41 @@ def _create_color_input(
 def _setup_color_debounce(
     color_input: ui.color_input,
     save_coro: Callable[[], Any],
+    row_model: dict[str, Any],
 ) -> None:
     """Attach a debounced save to a colour input's change event.
 
     Cancels previous pending timer on each change, then schedules a
     0.3 s one-shot timer to trigger the save coroutine.
+
+    The pending ``Timer`` is stored in ``row_model["_pending_timer"]``
+    so that ``_save_all_modified_rows`` can cancel it before executing a
+    batch save (Done button), eliminating the race condition where both
+    the debounce timer and the batch save call ``update_tag`` concurrently.
+
+    Parameters
+    ----------
+    color_input:
+        The colour input element whose change event triggers the debounce.
+    save_coro:
+        Zero-arg async callable that performs the save.
+    row_model:
+        The model dict for this row.  The pending timer is stored under
+        the key ``"_pending_timer"`` and reset to ``None`` after firing.
     """
-    pending_timer: Timer | None = None
 
     def _on_color_change() -> None:
-        nonlocal pending_timer
-        if pending_timer is not None:
-            pending_timer.active = False
-        pending_timer = ui.timer(
-            0.3,
-            lambda: asyncio.create_task(save_coro()),
-            once=True,
-        )
+        existing: Timer | None = row_model.get("_pending_timer")
+        if existing is not None:
+            existing.active = False
+
+        _task_store: list[asyncio.Task[None]] = []
+
+        def _fire() -> None:
+            row_model["_pending_timer"] = None
+            _task_store.append(asyncio.create_task(save_coro()))
+
+        row_model["_pending_timer"] = ui.timer(0.3, _fire, once=True)
 
     color_input.on("change", _on_color_change)
 
@@ -119,9 +137,8 @@ def _create_tag_fields(
     on_field_save: (Callable[[Any], Awaitable[None]] | None),
 ) -> None:
     """Create and bind the name, colour, description, and group inputs."""
-    model_dict: dict[str, Any] = cast("dict[str, Any]", model)
     color_input = _create_color_input(
-        model_dict,
+        model,
         "color",
         testid=f"tag-color-input-{tag_id}",
     )
@@ -152,6 +169,7 @@ def _create_tag_fields(
         _setup_color_debounce(
             color_input,
             lambda tid=tag_id: on_field_save(tid),
+            model,
         )
 
     if not can_edit:
@@ -235,7 +253,7 @@ def _render_tag_row(
 
         # Editable fields (colour, name, description, group)
         _create_tag_fields(
-            cast("dict[str, Any]", model),
+            model,  # type: ignore[arg-type]  # TagRowInputs is a dict at runtime
             tag.id,
             group_options=group_options,
             can_edit=can_edit,
@@ -359,6 +377,7 @@ def _render_group_header(
             _setup_color_debounce(
                 group_color_input,
                 lambda gid=group.id: on_group_field_save(gid),
+                model,
             )
 
     # Store model dict for batch save on dialog close

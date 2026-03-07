@@ -86,6 +86,58 @@ async def _refresh_tag_state(
         await state.broadcast_update()
 
 
+def _cancel_pending_timers(
+    tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],
+    group_row_inputs: dict[UUID, dict[str, Any]],
+) -> None:
+    """Cancel pending debounce timers before a batch save.
+
+    ``_setup_color_debounce`` stores a ``Timer`` under the runtime-only
+    key ``"_pending_timer"`` in each model dict.  Cancelling them here
+    prevents a race between a still-pending 0.3 s colour save and the
+    Done-button batch save.
+    """
+    for rows in (tag_row_inputs, group_row_inputs):
+        for row in rows.values():  # type: ignore[union-attr]
+            timer = row.get("_pending_timer")  # type: ignore[union-attr]
+            if timer is not None:
+                timer.active = False
+                row["_pending_timer"] = None  # type: ignore[literal-required]
+
+
+async def _create_tag_or_notify(
+    create_tag_fn: Callable[..., Awaitable[object]],
+    state: PageState,
+    name: str,
+    color: str,
+    group_id: UUID | None,
+) -> object | None:
+    """Create a tag via *create_tag_fn* with dual-write; notify on failure.
+
+    Shared error handling for both the management dialog and quick create.
+    Returns the created tag, or ``None`` if creation failed.
+    """
+    try:
+        return await create_tag_fn(
+            workspace_id=state.workspace_id,
+            name=name,
+            color=color,
+            group_id=group_id,
+            crdt_doc=state.crdt_doc,
+        )
+    except PermissionError:
+        ui.notify("Tag creation not allowed", type="negative")
+        return None
+    except Exception as exc:
+        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+
+        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
+            ui.notify(f"A tag named '{name}' already exists", type="warning")
+        else:
+            ui.notify(f"Failed to create tag: {exc}", type="negative")
+        return None
+
+
 async def _save_all_modified_rows(
     tag_row_inputs: dict[UUID, TagRowInputs] | dict[UUID, dict[str, Any]],
     group_row_inputs: dict[UUID, dict[str, Any]],

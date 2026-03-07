@@ -14,11 +14,11 @@ from nicegui import ui
 
 from promptgrimoire.pages.annotation.tag_management import _PRESET_PALETTE
 from promptgrimoire.pages.annotation.tag_management_save import (
+    _create_tag_or_notify,
     _refresh_tag_state,
 )
 
 if TYPE_CHECKING:
-    from promptgrimoire.db.models import Tag
     from promptgrimoire.pages.annotation import PageState
 
 _SWATCH_BASE = "w-8 h-8 min-w-0 p-0 rounded-full"
@@ -77,37 +77,46 @@ def _build_colour_picker(
     return swatch_buttons, color_el
 
 
-async def _create_tag_or_notify(
+async def _quick_create_save(
     state: PageState,
-    name: str,
-    color: str,
-    group_id: UUID | None,
-) -> Tag | None:
-    """Create a tag with dual-write; notify and return None on failure."""
+    name_input: ui.input,
+    selected_color: list[str],
+    group_select: ui.select,
+    saved_start: int | None,
+    saved_end: int | None,
+) -> bool:
+    """Validate, create tag, optionally add highlight. Return True on success."""
+    tag_name = name_input.value
+    if not tag_name or not tag_name.strip():
+        ui.notify("Name is required", type="warning")
+        return False
+
     from promptgrimoire.db.tags import create_tag  # noqa: PLC0415
 
-    try:
-        return await create_tag(
-            workspace_id=state.workspace_id,
-            name=name,
-            color=color,
-            group_id=group_id,
-            crdt_doc=state.crdt_doc,
-        )
-    except PermissionError:
-        ui.notify("Tag creation not allowed", type="negative")
-        return None
-    except Exception as exc:
-        from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    group_id = UUID(group_select.value) if group_select.value else None
+    new_tag = await _create_tag_or_notify(
+        create_tag,
+        state,
+        tag_name.strip(),
+        selected_color[0],
+        group_id,
+    )
+    if new_tag is None:
+        return False
 
-        if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
-            ui.notify(
-                f"A tag named '{name}' already exists",
-                type="warning",
-            )
-        else:
-            ui.notify(f"Failed to create tag: {exc}", type="negative")
-        return None
+    await _refresh_tag_state(state)
+
+    tag_id = getattr(new_tag, "id", None)
+    if saved_start is not None and saved_end is not None and tag_id is not None:
+        from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+            _add_highlight,
+        )
+
+        state.selection_start = saved_start
+        state.selection_end = saved_end
+        await _add_highlight(state, str(tag_id))
+
+    return True
 
 
 async def open_quick_create(state: PageState) -> None:
@@ -158,35 +167,20 @@ async def open_quick_create(state: PageState) -> None:
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
             async def _save() -> None:
-                tag_name = name_input.value
-                if not tag_name or not tag_name.strip():
-                    ui.notify("Name is required", type="warning")
-                    return
-
-                group_id = UUID(group_select.value) if group_select.value else None
-                new_tag = await _create_tag_or_notify(
+                ok = await _quick_create_save(
                     state,
-                    tag_name.strip(),
-                    selected_color[0],
-                    group_id,
+                    name_input,
+                    selected_color,
+                    group_select,
+                    saved_start,
+                    saved_end,
                 )
-                if new_tag is None:
+                if not ok:
                     return
-
-                await _refresh_tag_state(state)
-
-                if saved_start is not None and saved_end is not None:
-                    from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
-                        _add_highlight,
-                    )
-
-                    state.selection_start = saved_start
-                    state.selection_end = saved_end
-                    await _add_highlight(state, str(new_tag.id))
 
                 dialog.close()
                 ui.notify(
-                    f"Tag '{tag_name.strip()}' created",
+                    f"Tag '{name_input.value}' created",
                     type="positive",
                 )
 

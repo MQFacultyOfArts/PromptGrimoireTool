@@ -1,9 +1,13 @@
 """NiceGUI User-harness tests: tag management edits propagate to CRDT.
 
-Regression tests for Phase 3 CRDT-primary rendering. When a user edits
-a tag's name, colour, or group metadata via the management dialog, the
-CRDT must be updated so that workspace_tags_from_crdt() reflects the
-change. Without this, the rendering (now CRDT-primary) shows stale data.
+Regression tests for Phase 3/4 CRDT-primary rendering. When a user edits
+a tag's name, colour, or group metadata via the management dialog and
+clicks Done, the CRDT must be updated so that workspace_tags_from_crdt()
+reflects the change.
+
+Phase 4 replaced save-on-blur with bind_value() model dicts + batch save
+on Done. These tests set element values, then click the Done button to
+trigger ``_save_all_and_close``.
 
 Acceptance Criteria:
 - tag-lifecycle-235-291.AC2.3: Editing a tag's name updates on all clients
@@ -11,16 +15,15 @@ Acceptance Criteria:
 
 Traceability:
 - Issues: #235, #291
-- Phase: docs/implementation-plans/2026-03-06-tag-lifecycle-235-291/phase_03.md
+- Phase: docs/implementation-plans/2026-03-06-tag-lifecycle-235-291/phase_04.md
 
 Verification strategy:
     Each test verifies the dual-write by reading the tag/group back from
-    the DB after firing the save-on-blur event. The DB write and the CRDT
-    write happen in the same ``update_tag`` / ``update_tag_group`` call
-    path (CRDT write via ``_sync_tag_to_crdt`` when ``crdt_doc`` is not
-    None). We verify via DB because the in-memory CRDT registry has a
-    split-brain problem under ``user_simulation``: each context creates a
-    new registry singleton while page handler closures capture the old one.
+    the DB after clicking Done. The DB write and the CRDT write happen in
+    the same ``update_tag`` / ``update_tag_group`` call path (CRDT write
+    via ``_sync_tag_to_crdt`` when ``crdt_doc`` is not None). We verify
+    via DB because the in-memory CRDT registry has a split-brain problem
+    under ``user_simulation``.
 """
 
 from __future__ import annotations
@@ -37,7 +40,6 @@ from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _click_testid,
     _find_value_element_by_testid,
-    _fire_event_listeners_async,
     _should_see_testid,
 )
 
@@ -117,7 +119,10 @@ class TestTagColourEditUpdatesCrdt:
             color_el = _find_value_element_by_testid(user, f"tag-color-input-{tag.id}")
             assert color_el is not None, "colour input not found"
             color_el.set_value("#ff0000")
-            await asyncio.sleep(0.3)  # Allow async on_value_change handlers to complete
+
+            # Click Done to trigger batch save
+            _click_testid(user, "tag-management-done-btn")
+            await asyncio.sleep(0.5)
 
             # Verify via DB: update_tag writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag
@@ -155,8 +160,11 @@ class TestTagNameEditUpdatesCrdt:
 
             name_el = _find_value_element_by_testid(user, f"tag-name-input-{tag.id}")
             assert name_el is not None, "name input not found"
-            name_el.value = "NewName"
-            await _fire_event_listeners_async(name_el, "blur")
+            name_el.set_value("NewName")
+
+            # Click Done to trigger batch save
+            _click_testid(user, "tag-management-done-btn")
+            await asyncio.sleep(0.5)
 
             # Verify via DB: update_tag writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag
@@ -203,7 +211,10 @@ class TestGroupColourEditUpdatesCrdt:
             )
             assert group_color_el is not None, "group colour input not found"
             group_color_el.set_value("#00ff00")
-            await asyncio.sleep(0.3)  # Allow async on_value_change handlers to complete
+
+            # Click Done to trigger batch save
+            _click_testid(user, "tag-management-done-btn")
+            await asyncio.sleep(0.5)
 
             # Verify via DB: update_tag_group writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag_group

@@ -150,13 +150,12 @@ async def open_quick_create(state: PageState) -> None:
 
         _build_colour_picker(selected_color)
 
-        # AC2.6: default to first group so tags always have a group assignment
-        default_group = next(iter(group_options), None)
+        # Default to ungrouped — tags appear at the end of the list
         group_select = (
             ui.select(
                 label="Group",
                 options=group_options,
-                value=default_group,
+                value=None,
                 clearable=True,
             )
             .classes("w-full")

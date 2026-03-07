@@ -1936,17 +1936,14 @@ class TestDuplicateTagNameRejection:
 
 
 class TestQuickCreateDefaultGroup:
-    """AC2.6: Quick-created tags always have a group assignment.
+    """AC2.6: Quick-created tags get explicit group when selected, ungrouped otherwise.
 
     Verifies tag-lifecycle-235-291.AC2.6.
     """
 
     @pytest.mark.asyncio
     async def test_create_tag_with_group_has_group_id(self) -> None:
-        """create_tag with explicit group_id sets group_id on result.
-
-        Verifies AC2.6: created tag has a non-None group_id.
-        """
+        """create_tag with explicit group_id sets group_id on result."""
         from promptgrimoire.db.tags import create_tag, create_tag_group
 
         _, activity = await _make_course_week_activity()
@@ -1961,45 +1958,22 @@ class TestQuickCreateDefaultGroup:
         assert tag.group_id == group.id
 
     @pytest.mark.asyncio
-    async def test_create_tag_with_ui_default_group(self) -> None:
-        """UI default group path: group_id comes from next(iter(group_options), None).
+    async def test_create_tag_without_group_is_ungrouped(self) -> None:
+        """Quick-create with no group selected creates ungrouped tag.
 
-        Simulates the quick-create dialog's default group selection:
-        list the workspace groups, take the first one as the default,
-        and pass its id to create_tag — without the caller supplying an
-        explicit group_id separately.  Verifies AC2.6: the created tag
-        has a non-None group_id matching the first available group.
+        The quick-create dialog defaults to no group (ungrouped).
+        Tags without a group appear at the end of the tag list.
         """
-        from promptgrimoire.db.tags import (
-            create_tag,
-            create_tag_group,
-            list_tag_groups_for_workspace,
-        )
+        from promptgrimoire.db.tags import create_tag
 
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
-        # Pre-create a group so group_options is non-empty
-        await create_tag_group(ws_id, name="First Group")
-
-        # Replicate the UI logic: build group_options dict then pick first key
-        groups = await list_tag_groups_for_workspace(ws_id)
-        group_options: dict[str, str] = {str(g.id): g.name for g in groups}
-        default_group_str = next(iter(group_options), None)
-
-        # The UI converts the string key back to UUID before calling create_tag
-        from uuid import UUID
-
-        default_group_id = UUID(default_group_str) if default_group_str else None
-
         tag = await create_tag(
             ws_id,
-            name="UIDefaultGrouped",
+            name="Ungrouped",
             color="#222222",
-            group_id=default_group_id,
+            group_id=None,
         )
 
-        assert tag.group_id is not None, (
-            "tag must have a group_id when UI picks default"
-        )
-        assert str(tag.group_id) == default_group_str
+        assert tag.group_id is None

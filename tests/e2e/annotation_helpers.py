@@ -1031,6 +1031,9 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
 def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:
     """Get author names from comments on an annotation card.
 
+    Automatically expands the card if collapsed, since comments
+    are inside the detail section.
+
     Args:
         page: Playwright page with an annotation workspace loaded.
         card_index: 0-based index of the annotation card.
@@ -1038,14 +1041,18 @@ def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:
     Returns:
         List of author display names in DOM order.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
     labels = card.locator("[data-testid='comment-author']")
     return [labels.nth(i).inner_text() for i in range(labels.count())]
 
 
 def count_comment_delete_buttons(page: Page, *, card_index: int = 0) -> int:
     """Count visible delete buttons on an annotation card.
+
+    Automatically expands the card if collapsed, since delete
+    buttons are inside the detail section.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
@@ -1054,8 +1061,9 @@ def count_comment_delete_buttons(page: Page, *, card_index: int = 0) -> int:
     Returns:
         Number of delete buttons visible.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
     return card.locator("[data-testid='comment-delete']").count()
 
 

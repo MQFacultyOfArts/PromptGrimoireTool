@@ -98,7 +98,15 @@ class TestHistoryTutorial:
 
             # Fill and post comment
             page1.get_by_test_id("comment-input").first.fill(comment_uuid)
-            page1.locator(ANNOTATION_CARD).first.get_by_text("Post").click()
+            page1.locator(ANNOTATION_CARD).first.get_by_test_id(
+                "post-comment-btn"
+            ).click()
+
+            # Server re-render after post may collapse the card — re-expand
+            page1.locator(ANNOTATION_CARD).first.locator(
+                "[data-testid='comment']", has_text=comment_uuid
+            ).wait_for(state="attached", timeout=10000)
+            expand_card(page1, 0)
 
             # Verify comment appears on page1
             expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=10000)

@@ -80,6 +80,11 @@ def _post_comment_on_first_card(page: Page, comment_uuid: str) -> None:
     card.get_by_test_id("comment-input").fill(comment_uuid)
     card.get_by_test_id("post-comment-btn").click()
 
+    # Server re-render after post may collapse the card — re-expand
+    comment = card.locator("[data-testid='comment']", has_text=comment_uuid)
+    comment.wait_for(state="attached", timeout=10000)
+    expand_card(page, 0)
+
 
 # --- Test content strings ---
 # Reused from test_annotation_cjk.py (deleted Phase 8)
@@ -298,6 +303,12 @@ class TestTranslationStudent:
                 card = page.locator(ANNOTATION_CARD).first
                 card.get_by_test_id("comment-input").fill(emoji_comment)
                 card.get_by_test_id("post-comment-btn").click()
+
+                # Server re-render after post may collapse the card — re-expand
+                card.locator(
+                    "[data-testid='comment']", has_text=emoji_comment
+                ).wait_for(state="attached", timeout=10000)
+                expand_card(page, 0)
                 expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf"):

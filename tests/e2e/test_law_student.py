@@ -139,9 +139,16 @@ class TestLawStudent:
                 comment_input.fill(uuid1)
 
                 # Post comment
-                page.locator("[data-testid='annotation-card']").first.get_by_text(
-                    "Post"
+                page.locator("[data-testid='annotation-card']").first.get_by_test_id(
+                    "post-comment-btn"
                 ).click()
+
+                # Server re-render after post may collapse the card — re-expand
+                card = page.locator("[data-testid='annotation-card']").first
+                card.locator("[data-testid='comment']", has_text=uuid1).wait_for(
+                    state="attached", timeout=10000
+                )
+                expand_card(page, 0)
 
                 # Verify comment appears
                 expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
@@ -167,9 +174,14 @@ class TestLawStudent:
                 comment_input.fill(uuid2)
 
                 # Post second comment
-                page.locator("[data-testid='annotation-card']").nth(1).get_by_text(
-                    "Post"
-                ).click()
+                card2 = page.locator("[data-testid='annotation-card']").nth(1)
+                card2.get_by_test_id("post-comment-btn").click()
+
+                # Server re-render after post may collapse the card — re-expand
+                card2.locator("[data-testid='comment']", has_text=uuid2).wait_for(
+                    state="attached", timeout=10000
+                )
+                expand_card(page, 1)
 
                 # Verify second comment appears
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
@@ -400,7 +412,11 @@ class TestLawStudent:
                 expect(
                     page.locator("[data-testid='annotation-card']").first
                 ).to_be_visible(timeout=10000)
+
+                # Cards default to collapsed after reload — expand to check comments
+                expand_card(page, 0)
                 expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
+                expand_card(page, 1)
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf_with_annotations"):

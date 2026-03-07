@@ -948,16 +948,76 @@ def _load_fixture_via_paste(
 # ---------------------------------------------------------------------------
 
 
+def expand_card(page: Page, card_index: int = 0) -> None:
+    """Expand an annotation card's detail section.
+
+    Clicks the card's expand button and waits for the detail section
+    to become visible, then waits one animation frame for
+    ``positionCards()`` to re-run.
+
+    Following test-audit patterns: state-based waits, no sleeps.
+
+    Args:
+        page: Playwright page with annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+
+    detail = card.get_by_test_id("card-detail")
+    if detail.is_visible():
+        return  # already expanded
+
+    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn.click()
+
+    detail.wait_for(state="visible", timeout=5000)
+    # Wait one animation frame for positionCards() to re-run
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+
+
+def collapse_card(page: Page, card_index: int = 0) -> None:
+    """Collapse an annotation card's detail section.
+
+    Clicks the card's expand button (toggles to collapse) and waits
+    for the detail section to become hidden, then waits one animation
+    frame for ``positionCards()`` to re-run.
+
+    Following test-audit patterns: state-based waits, no sleeps.
+
+    Args:
+        page: Playwright page with annotation workspace loaded.
+        card_index: 0-based index of the annotation card.
+    """
+    card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    card.wait_for(state="visible", timeout=10000)
+
+    detail = card.get_by_test_id("card-detail")
+    if not detail.is_visible():
+        return  # already collapsed
+
+    expand_btn = card.get_by_test_id("card-expand-btn")
+    expand_btn.click()
+
+    detail.wait_for(state="hidden", timeout=5000)
+    # Wait one animation frame for positionCards() to re-run
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+
+
 def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> None:
     """Add a comment to an annotation card via the Post button.
+
+    Automatically expands the card if collapsed, since the comment
+    input is inside the detail section.
 
     Args:
         page: Playwright page with an annotation workspace loaded.
         text: Comment text to post.
         card_index: 0-based index of the annotation card.
     """
+    expand_card(page, card_index)
+
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    card.wait_for(state="visible", timeout=10000)
 
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)

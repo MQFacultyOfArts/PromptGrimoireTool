@@ -122,7 +122,7 @@ def _setup_color_debounce(
 
         row_model["_pending_timer"] = ui.timer(0.3, _fire, once=True)
 
-    color_input.on("update:model-value", _on_color_change)
+    color_input.on_value_change(_on_color_change)
 
 
 # ── Tag row field helpers ────────────────────────────────────────────

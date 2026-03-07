@@ -64,7 +64,12 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:
 - Schema & Persistence: `docs/database.md`
+- Wargame Schema Design: `docs/design-plans/2026-03-06-wargame-schema-294.md`
 - Collaboration (CRDT): `docs/ARCHITECTURE.md`
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Export Pipeline: `docs/export.md`
 - Testing: `docs/testing.md`
+
+### Database Model Summary
+
+15 SQLModel table classes. Activity uses a `type` discriminator (`"annotation"` | `"wargame"`) with composite FK enforcement. ACLEntry targets either a workspace or a wargame team (exactly one, CHECK-enforced). Wargame extension tables: WargameConfig (1:1 on Activity), WargameTeam (per-activity teams), WargameMessage (per-team message log ordered by `sequence_no`).

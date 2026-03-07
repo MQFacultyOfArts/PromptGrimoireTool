@@ -127,11 +127,13 @@ src/promptgrimoire/
 ├── export/              # PDF/LaTeX export (see docs/export.md)
 ├── auth/                # Stytch integration + workspace access check
 ├── db/                  # Database (see docs/database.md)
-│   ├── acl.py           # ACL operations (grant, revoke, resolve, share)
+│   ├── acl.py           # ACL operations (grant, revoke, resolve, share) for workspaces and teams
+│   ├── activities.py    # Activity CRUD (create, get, update, delete)
 │   ├── crdt_extraction.py # Pure CRDT-to-text extraction for FTS indexing
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit
 │   ├── roles.py         # Cached staff role queries
-│   └── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
+│   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
+│   └── workspaces.py    # Workspace CRUD (create, get)
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
@@ -170,7 +172,23 @@ The `cache-docs` skill automatically saves fetched documentation to `docs/`. Eve
 
 PostgreSQL with SQLModel. Schema migrations via Alembic. Full schema and design decisions in [docs/database.md](docs/database.md).
 
-12 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry.
+15 SQLModel classes: User, Course, CourseEnrollment, Week, Activity, Workspace, WorkspaceDocument, TagGroup, Tag, Permission, CourseRoleRef, ACLEntry, WargameConfig, WargameTeam, WargameMessage.
+
+### Activity Type Discriminator
+
+Activity has a `type` field (`"annotation"` or `"wargame"`) enforced by CHECK constraints. Annotation activities require `template_workspace_id`; wargame activities must not set it. Composite FK `(id, type)` lets child tables (WargameConfig, WargameTeam) enforce type-safe references via discriminator-enforcing foreign keys.
+
+### Wargame Schema (Activity Extension)
+
+Three new tables extend the Activity model for wargame scenarios:
+
+- **WargameConfig** -- PK-as-FK one-to-one on Activity. Holds `system_prompt`, `scenario_bootstrap`, and exactly one timer mode (`timer_delta` XOR `timer_wall_clock`).
+- **WargameTeam** -- Teams within a wargame activity. Codename unique per activity. Tracks `current_round`, `round_state`, `current_deadline`, `game_state_text`, `student_summary_text`.
+- **WargameMessage** -- Per-team message log. Ordered by `sequence_no` (not timestamps). Supports in-place edits (`edited_at`, `thinking`, `metadata_json`).
+
+### ACL Target Polymorphism
+
+ACLEntry supports two target types: `workspace_id` or `team_id`. Exactly one must be set (enforced by CHECK constraint `ck_acl_entry_exactly_one_target` and model validator). Partial unique indexes enforce `(workspace_id, user_id)` and `(team_id, user_id)` uniqueness independently. ACL queries filter on `workspace_id IS NOT NULL` to avoid NULL poisoning from team-target rows.
 
 ### Full-Text Search (FTS)
 

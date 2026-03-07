@@ -71,15 +71,15 @@ def _setup_and_highlight(
     expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
 
-def _post_comment_on_first_card(page: Page) -> str:
-    """Click first annotation card, post a UUID comment, return the UUID."""
-    comment_uuid = uuid4().hex
-    card = page.locator(ANNOTATION_CARD).first
-    card.click()
-    page.get_by_test_id("comment-input").first.fill(comment_uuid)
-    card.get_by_text("Post").click()
-    expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
-    return comment_uuid
+def _post_comment_on_first_card(page: Page, comment_uuid: str) -> None:
+    """Post a comment on the first annotation card."""
+    from tests.e2e.annotation_helpers import expand_card
+
+    expand_card(page, 0)
+
+    card = page.locator("[data-testid='annotation-card']").first
+    card.get_by_test_id("comment-input").fill(comment_uuid)
+    card.get_by_test_id("post-comment-btn").click()
 
 
 # --- Test content strings ---
@@ -242,7 +242,9 @@ class TestTranslationStudent:
                 expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
             with subtests.test(msg="add_comment_with_uuid"):
-                _post_comment_on_first_card(page)
+                comment_uuid = uuid4().hex
+                _post_comment_on_first_card(page, comment_uuid)
+                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
 
         finally:
             page.close()
@@ -286,14 +288,18 @@ class TestTranslationStudent:
                 create_highlight_with_tag(page, 10, 40, tag_index=0)
                 expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
-                comment_uuid = _post_comment_on_first_card(page)
+                comment_uuid = uuid4().hex
+                _post_comment_on_first_card(page, comment_uuid)
+                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
 
                 # Post a second comment with emoji to test #274
+                from tests.e2e.annotation_helpers import expand_card
+
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
+                expand_card(page, 0)
                 card = page.locator(ANNOTATION_CARD).first
-                card.click()
-                page.get_by_test_id("comment-input").first.fill(emoji_comment)
-                card.get_by_text("Post").click()
+                card.get_by_test_id("comment-input").fill(emoji_comment)
+                card.get_by_test_id("post-comment-btn").click()
                 expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf"):

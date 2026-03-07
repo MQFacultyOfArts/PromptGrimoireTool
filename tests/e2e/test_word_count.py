@@ -268,20 +268,10 @@ class TestWordCountExport:
             badge = page.get_by_test_id("word-count-badge")
             expect(badge).to_contain_text("(below minimum)", timeout=10000)
 
-            # 2. Paste enough text to exceed the high minimum (200 words)
-            page.evaluate(
-                """(text) => {
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.setData('text/plain', text);
-                    const event = new ClipboardEvent('paste', {
-                        clipboardData: dataTransfer,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    document.querySelector('[contenteditable]').dispatchEvent(event);
-                }""",
-                "word " * 205,
-            )
+            # 2. Insert enough text to exceed the high minimum (200 words)
+            # We use insert_text rather than type() to avoid Milkdown performance issues
+            # with character-by-character typing of large strings.
+            page.keyboard.insert_text("word " * 205)
 
             # 3. Verify we crossed the boundary and are safely OVER the minimum
             expect(badge).not_to_contain_text("(below minimum)", timeout=10000)

@@ -8,10 +8,13 @@ to avoid circular dependencies.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from nicegui import ui
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -45,6 +48,12 @@ async def _refresh_tag_state(
 
     if state.crdt_doc is not None:
         state.tag_info_list = workspace_tags_from_crdt(state.crdt_doc)
+    else:
+        logger.warning(
+            "_refresh_tag_state: crdt_doc is None for workspace %s, "
+            "tag_info_list not updated",
+            state.workspace_id,
+        )
     _update_highlight_css(state)
 
     # Rebuild the highlight menu if it exists

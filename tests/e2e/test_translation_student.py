@@ -42,6 +42,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
     create_highlight_with_tag,
+    expand_card,
     export_annotation_tex_text,
     setup_workspace_with_content,
 )
@@ -73,8 +74,6 @@ def _setup_and_highlight(
 
 def _post_comment_on_first_card(page: Page, comment_uuid: str) -> None:
     """Post a comment on the first annotation card."""
-    from tests.e2e.annotation_helpers import expand_card
-
     expand_card(page, 0)
 
     card = page.locator("[data-testid='annotation-card']").first
@@ -294,8 +293,6 @@ class TestTranslationStudent:
                 expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
 
                 # Post a second comment with emoji to test #274
-                from tests.e2e.annotation_helpers import expand_card
-
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
                 expand_card(page, 0)
                 card = page.locator(ANNOTATION_CARD).first

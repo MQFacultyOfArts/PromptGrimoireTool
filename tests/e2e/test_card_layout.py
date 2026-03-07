@@ -11,6 +11,7 @@ Traceability:
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -40,6 +41,7 @@ def _get_card_top(page: Page, card_index: int) -> float:
     Cards are absolutely positioned by ``positionCards()`` in
     ``annotation-card-sync.js``, so ``style.top`` is always set.
     """
+    # evaluate() needed — no Playwright-native way to read inline style.top
     return (
         page.locator("[data-testid='annotation-card']")
         .nth(card_index)
@@ -257,12 +259,125 @@ class TestCardPositioning:
         )
         _wait_for_position_cards(page)
 
-        # Check cached-height attribute via JS (card may be display:none)
-        cached_height = first_card.evaluate(
-            "el => parseInt(el.dataset.cachedHeight) || 0"
+        # Check cached-height attribute (card may be display:none after scroll)
+        cached = first_card.get_attribute("data-cached-height")
+        assert cached is not None, "Expected data-cached-height attribute to be set"
+        assert int(cached) > 0, f"Expected positive data-cached-height, got {cached}"
+
+    def test_race_condition_highlights_ready(
+        self,
+        authenticated_page: Page,
+        app_server: str,
+    ) -> None:
+        """AC1.2: Cards positioned after SPA navigation with pre-existing highlights.
+
+        Verifies that ``window._highlightsReady`` is set before asserting card
+        positions, guarding against the race where ``setupCardPositioning()``
+        fires before highlights have been applied on SPA navigation.
+
+        After the ready flag is confirmed, cards must have positive ``top``
+        values without any scroll required.
+        """
+        page = authenticated_page
+        page_email = _authenticate_page(page, app_server)
+
+        workspace_id = _create_workspace_via_db(
+            user_email=page_email,
+            html_content=(
+                "<p>The court found that the defendant had breached "
+                "the applicable standard of care in these circumstances.</p>"
+            ),
+            seed_tags=True,
         )
-        assert cached_height > 0, (
-            f"Expected positive data-cached-height, got {cached_height}"
+
+        # First visit: create the highlight so it persists in the DB
+        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+        wait_for_text_walker(page, timeout=15000)
+
+        toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(toolbar).to_be_visible(timeout=5000)
+
+        create_highlight_with_tag(page, 0, 20, tag_index=0)
+        expect(page.locator("[data-testid='annotation-card']").first).to_be_visible(
+            timeout=10000
+        )
+
+        # SPA navigate away then back — the highlight is now pre-existing
+        page.goto(f"{app_server}/")
+        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+
+        # Wait for the highlights-ready flag set by annotation-highlight.js
+        page.wait_for_function("() => window._highlightsReady === true", timeout=10000)
+
+        # Cards must be positioned without any manual scroll
+        _wait_for_position_cards(page)
+
+        card = page.locator("[data-testid='annotation-card']").first
+        expect(card).to_be_visible(timeout=10000)
+
+        top = _get_card_top(page, 0)
+        assert top >= 0, f"Card top is negative after SPA navigation: {top}"
+
+    def test_fallback_height_when_height_never_cached(
+        self,
+        authenticated_page: Page,
+        app_server: str,
+    ) -> None:
+        """AC1.5: Card uses 80px fallback when data-cached-height was never set.
+
+        Creates a highlight, then immediately scrolls the card out of view
+        before ``positionCards()`` can cache its height.  On scroll back the
+        card must still position correctly (positive top) using the 80px
+        fallback defined in ``annotation-card-sync.js``.
+        """
+        page = authenticated_page
+        page_email = _authenticate_page(page, app_server)
+
+        workspace_id = _create_workspace_via_db(
+            user_email=page_email,
+            html_content=(
+                "<p>Fallback height test paragraph near the top.</p>"
+                + "<p>Filler content. </p>" * 60
+                + "<p>Bottom anchor paragraph.</p>"
+            ),
+            seed_tags=True,
+        )
+
+        page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
+        wait_for_text_walker(page, timeout=15000)
+
+        toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(toolbar).to_be_visible(timeout=5000)
+
+        create_highlight_with_tag(page, 0, 15, tag_index=0)
+        first_card = page.locator("[data-testid='annotation-card']").first
+        expect(first_card).to_be_visible(timeout=10000)
+
+        # Immediately scroll to the bottom before positionCards() can cache the
+        # card height — forcing the 80px fallback path in annotation-card-sync.js
+        page.evaluate(
+            """() => {
+                const dc = document.getElementById('doc-container');
+                if (dc) dc.scrollTop = dc.scrollHeight;
+                else window.scrollTo(0, document.body.scrollHeight);
+            }"""
+        )
+
+        # Scroll back to the top so the card re-enters the viewport
+        page.evaluate(
+            """() => {
+                const dc = document.getElementById('doc-container');
+                if (dc) dc.scrollTop = 0;
+                else window.scrollTo(0, 0);
+            }"""
+        )
+        _wait_for_position_cards(page)
+
+        expect(first_card).to_be_visible(timeout=10000)
+
+        top = _get_card_top(page, 0)
+        assert top >= 0, (
+            f"Card top is negative after fallback-height scroll cycle: {top}"
         )
 
 
@@ -392,11 +507,14 @@ class TestCollapsedCards:
         card = page.locator("[data-testid='annotation-card']").first
         expect(card).to_be_visible(timeout=10000)
 
-        # The compact header text should contain initials ending with "."
-        # (e.g. "E.T.Abcd1234." for "e2e-test-abcd1234@...")
+        # The compact header text should contain initials in "X." or "X.Y." form.
+        # The annotation card has no dedicated testid for initials (the label is
+        # built inline in _build_compact_header), so we match by pattern.
+        # e2e auth emails look like "e2e-test-{uuid}@..." → initials "E.T.{X}."
         card_text = card.inner_text()
-        assert "." in card_text, (
-            f"Expected dot-separated initials in compact header, got: {card_text}"
+        assert re.search(r"[A-Z]\.", card_text), (
+            f"Expected dot-separated initials (e.g. 'E.T.') in compact header, "
+            f"got: {card_text!r}"
         )
 
     def test_push_down_on_expand(

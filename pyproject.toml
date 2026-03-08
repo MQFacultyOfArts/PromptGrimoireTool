@@ -147,6 +147,9 @@ ignore = [
 "src/promptgrimoire/cli/admin.py" = [
     "PLC0415",  # Late imports to avoid heavy DB/auth modules at CLI load time
 ]
+"src/promptgrimoire/cli/migrate.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB/CRDT modules at CLI load time
+]
 "src/promptgrimoire/cli/seed.py" = [
     "PLC0415",  # Late imports to avoid heavy DB modules at CLI load time
 ]

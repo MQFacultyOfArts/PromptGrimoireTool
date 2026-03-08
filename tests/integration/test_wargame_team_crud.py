@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
-from promptgrimoire.db.models import Activity, Course, Week
+from promptgrimoire.db.models import ACLEntry, Activity, Course, WargameMessage, Week
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -225,3 +225,63 @@ class TestRenameTeam:
         from promptgrimoire.db.wargames import rename_team
 
         assert await rename_team(uuid4(), "BRAVO") is None
+
+
+class TestDeleteTeam:
+    """Service-level tests for team deletion."""
+
+    @pytest.mark.asyncio
+    async def test_delete_team_removes_team_acl_entries_and_messages(self) -> None:
+        """AC3.3: delete_team cascades through dependent rows."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.wargames import create_team, delete_team, get_team
+
+        activity = await _make_wargame_activity("delete-team")
+        team = await create_team(activity.id, codename="ALPHA")
+        user = await create_user(
+            email=f"wargame-delete-{uuid4().hex[:8]}@test.local",
+            display_name="Delete Team User",
+        )
+
+        async with get_session() as session:
+            acl_entry = ACLEntry(
+                workspace_id=None,
+                team_id=team.id,
+                user_id=user.id,
+                permission="viewer",
+            )
+            message = WargameMessage(
+                team_id=team.id,
+                sequence_no=1,
+                role="user",
+                content="hello",
+            )
+            session.add(acl_entry)
+            session.add(message)
+            await session.flush()
+            acl_entry_id = acl_entry.id
+            message_id = message.id
+
+        deleted = await delete_team(team.id)
+
+        assert deleted is True
+        assert await get_team(team.id) is None
+
+        async with get_session() as session:
+            assert await session.get(ACLEntry, acl_entry_id) is None
+            assert await session.get(WargameMessage, message_id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_team_returns_false_for_missing_team(self) -> None:
+        """Missing teams return False and preserve unrelated rows."""
+        from promptgrimoire.db.wargames import create_team, delete_team, get_team
+
+        activity = await _make_wargame_activity("delete-missing")
+        kept = await create_team(activity.id, codename="KEEP-ME")
+
+        assert await delete_team(uuid4()) is False
+
+        persisted = await get_team(kept.id)
+        assert persisted is not None
+        assert persisted.codename == "KEEP-ME"

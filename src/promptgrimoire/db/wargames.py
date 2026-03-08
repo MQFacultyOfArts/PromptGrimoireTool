@@ -193,3 +193,26 @@ async def rename_team(team_id: UUID, codename: str) -> WargameTeam | None:
 
         await session.refresh(team)
         return team
+
+
+async def delete_team(team_id: UUID) -> bool:
+    """Delete a team by primary key.
+
+    Parameters
+    ----------
+    team_id : UUID
+        Team identifier to delete.
+
+    Returns
+    -------
+    bool
+        True when a row was deleted, otherwise False.
+    """
+    async with get_session() as session:
+        team = await session.get(WargameTeam, team_id)
+        if team is None:
+            return False
+
+        await session.delete(team)
+        await session.flush()
+        return True

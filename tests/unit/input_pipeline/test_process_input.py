@@ -5,8 +5,10 @@ Custom Highlight API on the client side — no char spans are produced.
 """
 
 import pytest
+from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.html_input import process_input
+from tests.conftest import load_conversation_fixture
 
 
 class TestProcessInput:
@@ -64,3 +66,23 @@ class TestProcessInput:
         # Clean HTML — no char spans (highlighting uses CSS Highlight API)
         assert "data-char-index" not in result
         assert '<span class="char"' not in result
+
+    @pytest.mark.asyncio
+    async def test_chatcraft_fixture_preserves_blockquotes_and_code_blocks(
+        self,
+    ) -> None:
+        """Real ChatCraft cards keep rich block structure through process_input()."""
+        html = load_conversation_fixture("chatcraft_sonnet-232")
+
+        result = await process_input(
+            html,
+            source_type="html",
+            platform_hint="chatcraft",
+        )
+        tree = LexborHTMLParser(result)
+
+        assert len(tree.css("blockquote")) >= 1
+        assert len(tree.css("pre")) >= 1
+        assert len(tree.css("code")) >= 1
+        assert "The above summary is nested:" in result
+        assert "CONTROL PARAGRAPH." in result

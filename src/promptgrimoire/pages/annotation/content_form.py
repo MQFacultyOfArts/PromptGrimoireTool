@@ -27,6 +27,8 @@ from promptgrimoire.pages.dialogs import show_content_type_dialog
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from nicegui.elements.editor import Editor
+
     from promptgrimoire.input_pipeline.html_input import ContentType
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,69 @@ async def _handle_file_upload(
     except Exception as exc:
         logger.exception("Failed to process uploaded file")
         ui.notify(f"Failed to process file: {exc}", type="negative")
+
+
+async def _handle_add_document_submission(
+    workspace_id: UUID,
+    content_input: Editor,
+    paste_var: str,
+    platform_var: str,
+) -> None:
+    """Process the editor contents and persist a new source document."""
+    stored = await ui.run_javascript(f"window.{paste_var}")
+    platform_hint = await ui.run_javascript(f"window.{platform_var}")
+    content, from_paste = (stored, True) if stored else (content_input.value, False)
+
+    if not content or not content.strip():
+        ui.notify("Please enter or paste some content", type="warning")
+        return
+
+    # Skip dialog if HTML was captured from paste - we know it's HTML.
+    # For direct paste, auto-detect paragraph numbering mode.
+    if from_paste:
+        confirmed_type: ContentType = "html"
+        auto_number_override: bool | None = None  # use auto-detect
+    else:
+        dialog_result = await show_content_type_dialog(
+            detect_content_type(content),
+            content[:500],
+            source_numbering_detected=detect_source_numbering(content),
+        )
+        if dialog_result is None:
+            return  # User cancelled
+        confirmed_type, auto_number_from_dialog = dialog_result
+        auto_number_override = auto_number_from_dialog
+
+    try:
+        processed_html = await process_input(
+            content=content,
+            source_type=confirmed_type,
+            platform_hint=platform_hint,
+        )
+        if auto_number_override is not None:
+            # User chose a value in the dialog — honour it
+            auto_number = auto_number_override
+            para_map = build_paragraph_map_for_json(
+                processed_html, auto_number=auto_number
+            )
+        else:
+            # Paste path — auto-detect
+            auto_number, para_map = _detect_paragraph_numbering(processed_html)
+        await add_document(
+            workspace_id=workspace_id,
+            type="source",
+            content=processed_html,
+            source_type=confirmed_type,
+            title=None,
+            auto_number_paragraphs=auto_number,
+            paragraph_map=para_map,
+        )
+        content_input.value = ""
+        ui.notify("Document added successfully", type="positive")
+        ui.navigate.to(_annotation_url(workspace_id))
+    except Exception as exc:
+        logger.exception("Failed to add document")
+        ui.notify(f"Failed to add document: {exc}", type="negative")
 
 
 def _render_add_content_form(workspace_id: UUID) -> None:
@@ -574,17 +639,20 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             // (name, date, avatar, URL)
                             iDoc.querySelectorAll('.chakra-card')
                                 .forEach(card => {{
-                                const spans = card.querySelectorAll(
-                                    'span[title]');
-                                if (spans.length === 0) return;
-                                const title = spans[0]
-                                    .getAttribute('title') || '';
+                                const headerLabel = card.querySelector(
+                                    '.chakra-card__header h2')
+                                    ?.textContent?.trim() || '';
+                                const title = card.querySelector(
+                                    '.chakra-card__header span[title]')
+                                    ?.getAttribute('title') || '';
+                                const label = headerLabel || title;
+                                if (!label) return;
                                 let role;
-                                if (title === 'System Prompt') {{
+                                if (label === 'System Prompt') {{
                                     role = 'system';
                                 }} else if (
-                                    title.indexOf(' ') === -1
-                                    && title.indexOf('-') !== -1
+                                    label.indexOf(' ') === -1
+                                    && label.indexOf('-') !== -1
                                 ) {{
                                     role = 'assistant';
                                 }} else {{
@@ -593,7 +661,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 card.setAttribute(
                                     'data-speaker', role);
                                 card.setAttribute(
-                                    'data-speaker-name', title);
+                                    'data-speaker-name', label);
                                 // Remove entire card header —
                                 // contains name, date, avatar, URL
                                 card.querySelectorAll(
@@ -620,6 +688,33 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                             ].forEach(sel =>
                                 iDoc.querySelectorAll(sel)
                                     .forEach(el => el.remove()));
+                            const topLevelBodyChild = node => {{
+                                let cur = node;
+                                while (cur
+                                    && cur.parentElement !== iDoc.body) {{
+                                    cur = cur.parentElement;
+                                }}
+                                return cur;
+                            }};
+                            const firstTurn = iDoc.querySelector(
+                                '.chakra-card[data-speaker]');
+                            if (firstTurn) {{
+                                let child = iDoc.body.firstElementChild;
+                                const firstTurnContainer = topLevelBodyChild(
+                                    firstTurn);
+                                while (child
+                                    && child !== firstTurnContainer) {{
+                                    const nextChild =
+                                        child.nextElementSibling;
+                                    child.remove();
+                                    child = nextChild;
+                                }}
+                            }}
+                            // Remove remaining page-summary cards that
+                            // are not actual conversation turns.
+                            iDoc.querySelectorAll(
+                                '.chakra-card:not([data-speaker])'
+                            ).forEach(card => card.remove());
                         }}
 
                         // Unwrap hyperlinks: replace <a href="url">text</a>
@@ -716,6 +811,11 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 if (el.hasAttribute('data-speaker')
                                     || el.hasAttribute(
                                         'data-thinking')) return;
+                                // Preserve whitespace-only spans and
+                                // wrappers inside code blocks; ChatCraft
+                                // syntax highlighting uses them for
+                                // meaningful spacing between tokens.
+                                if (el.closest('pre, code')) return;
                                 const text = el.textContent?.trim();
                                 const noBr = el.innerHTML.replace(/<br\\s*\\/?>/gi, '');
                                 const htmlNoBr = noBr.trim();
@@ -760,12 +860,35 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                         // text from the <code> element.
                         doc.querySelectorAll('pre').forEach(
                             pre => {{
-                            const code = pre.querySelector(
-                                'code');
+                            const codeNodes = Array.from(
+                                pre.querySelectorAll('code'));
+                            const code = codeNodes.reduce(
+                                (best, node) => {{
+                                if (!best) return node;
+                                const bestLen = (
+                                    best.textContent || '').length;
+                                const nodeLen = (
+                                    node.textContent || '').length;
+                                return nodeLen > bestLen
+                                    ? node
+                                    : best;
+                            }}, null);
                             if (code) {{
-                                // Preserve the text content
-                                // (includes literal newlines)
-                                const txt = code.textContent;
+                                // Preserve the richest text source.
+                                // ChatCraft code blocks include a
+                                // header <code> for the language
+                                // label ("python") plus a separate
+                                // body <code> for the real snippet.
+                                // Falling back to the whole <pre>
+                                // text avoids collapsing the block to
+                                // just the language label.
+                                const codeTxt =
+                                    code.textContent || '';
+                                const preTxt =
+                                    pre.textContent || '';
+                                const txt = preTxt.length > codeTxt.length
+                                    ? preTxt
+                                    : codeTxt;
                                 // Replace pre content with
                                 // just <code>text</code>
                                 const newCode =
@@ -801,6 +924,8 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                         const allSp = Array.from(
                             doc.querySelectorAll('[data-speaker]'));
                         const spSet = new Set(allSp);
+                        const isLabelOnlySpeaker = (node) =>
+                            !(node.textContent || '').trim();
                         const toRemove = [];
                         for (let i = 0; i < allSp.length - 1;
                                 i++) {{
@@ -810,6 +935,16 @@ def _render_add_content_form(workspace_id: UUID) -> None:
                                 'data-speaker');
                             const nxtRole = nxt.getAttribute(
                                 'data-speaker');
+                            // Deduping only makes sense for the
+                            // empty speaker-marker divs injected for
+                            // other platforms. ChatCraft stores the
+                            // role on the card itself; removing a
+                            // contentful node would drop the whole
+                            // turn.
+                            if (!isLabelOnlySpeaker(cur)
+                                || !isLabelOnlySpeaker(nxt)) {{
+                                continue;
+                            }}
                             // (a) Same role = always duplicate
                             if (curRole === nxtRole) {{
                                 toRemove.push(cur);
@@ -884,61 +1019,12 @@ def _render_add_content_form(workspace_id: UUID) -> None:
 
     async def handle_add_document() -> None:
         """Process input and add document to workspace."""
-        # Try to get pasted content from JS storage (bypasses websocket limit)
-        stored = await ui.run_javascript(f"window.{paste_var}")
-        platform_hint = await ui.run_javascript(f"window.{platform_var}")
-        content, from_paste = (stored, True) if stored else (content_input.value, False)
-
-        if not content or not content.strip():
-            ui.notify("Please enter or paste some content", type="warning")
-            return
-
-        # Skip dialog if HTML was captured from paste - we know it's HTML.
-        # For direct paste, auto-detect paragraph numbering mode.
-        if from_paste:
-            confirmed_type: ContentType = "html"
-            auto_number_override: bool | None = None  # use auto-detect
-        else:
-            dialog_result = await show_content_type_dialog(
-                detect_content_type(content),
-                content[:500],
-                source_numbering_detected=detect_source_numbering(content),
-            )
-            if dialog_result is None:
-                return  # User cancelled
-            confirmed_type, auto_number_from_dialog = dialog_result
-            auto_number_override = auto_number_from_dialog
-
-        try:
-            processed_html = await process_input(
-                content=content,
-                source_type=confirmed_type,
-                platform_hint=platform_hint,
-            )
-            if auto_number_override is not None:
-                # User chose a value in the dialog — honour it
-                auto_number = auto_number_override
-                para_map = build_paragraph_map_for_json(
-                    processed_html, auto_number=auto_number
-                )
-            else:
-                # Paste path — auto-detect
-                auto_number, para_map = _detect_paragraph_numbering(processed_html)
-            await add_document(
-                workspace_id=workspace_id,
-                type="source",
-                content=processed_html,
-                source_type=confirmed_type,
-                title=None,
-                auto_number_paragraphs=auto_number,
-                paragraph_map=para_map,
-            )
-            content_input.value = ""
-            ui.notify("Document added successfully", type="positive")
-            ui.navigate.to(_annotation_url(workspace_id))
-        except Exception as exc:
-            logger.exception("Failed to add document")
-            ui.notify(f"Failed to add document: {exc}", type="negative")
+        await _handle_add_document_submission(
+            workspace_id=workspace_id,
+            content_input=content_input,
+            paste_var=paste_var,
+            platform_var=platform_var,
+        )
 
     ui.button("Add Document", on_click=handle_add_document).props(
         'data-testid="add-document-btn"'

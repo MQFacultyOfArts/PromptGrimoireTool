@@ -2259,8 +2259,11 @@ class TestListImportableWorkspaces:
         await grant_permission(ws_id, user.id, "viewer")
 
         results = await list_importable_workspaces(user.id)
-        ws_ids = [ws.id for ws, _ in results]
+        ws_ids = [ws.id for ws, *_ in results]
         assert ws_id in ws_ids
+        # Verify tag names are returned
+        match = next(r for r in results if r[0].id == ws_id)
+        assert match[2] == ["SomeTag"]
 
     @pytest.mark.asyncio
     async def test_workspace_without_tags_excluded(self) -> None:
@@ -2279,7 +2282,7 @@ class TestListImportableWorkspaces:
         await grant_permission(ws_id, user.id, "viewer")
 
         results = await list_importable_workspaces(user.id)
-        ws_ids = [ws.id for ws, _ in results]
+        ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids
 
     @pytest.mark.asyncio
@@ -2300,7 +2303,7 @@ class TestListImportableWorkspaces:
         await grant_permission(ws_id, user.id, "viewer")
 
         results = await list_importable_workspaces(user.id, exclude_workspace_id=ws_id)
-        ws_ids = [ws.id for ws, _ in results]
+        ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids
 
     @pytest.mark.asyncio
@@ -2320,5 +2323,5 @@ class TestListImportableWorkspaces:
         )
 
         results = await list_importable_workspaces(user.id)
-        ws_ids = [ws.id for ws, _ in results]
+        ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids

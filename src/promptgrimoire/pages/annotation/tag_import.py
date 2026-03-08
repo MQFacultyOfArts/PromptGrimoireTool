@@ -20,7 +20,23 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from promptgrimoire.db.models import Workspace
     from promptgrimoire.pages.annotation import PageState
+
+
+def _build_workspace_options(
+    workspaces: list[tuple[Workspace, str | None, list[str]]],
+) -> dict[str, str]:
+    """Build select options with tag preview from importable workspaces."""
+    options: dict[str, str] = {}
+    for ws, course_name, tag_names in workspaces:
+        title = ws.title or "Untitled workspace"
+        prefix = f"{course_name} / " if course_name else ""
+        tag_preview = ", ".join(tag_names[:5])
+        if len(tag_names) > 5:
+            tag_preview += f" (+{len(tag_names) - 5})"
+        options[str(ws.id)] = f"{prefix}{title} — {tag_preview}"
+    return options
 
 
 async def _render_import_section(
@@ -45,34 +61,25 @@ async def _render_import_section(
         exclude_workspace_id=state.workspace_id,
     )
 
-    if not workspaces:
-        ui.separator().classes("my-2")
-        with ui.column().classes("w-full").props("data-testid=tag-import-section"):
-            ui.label("Import tags from another workspace").classes(
-                "text-sm font-bold mt-2"
-            )
-            ui.label("No accessible workspaces with tags").classes(
-                "text-sm text-gray-400"
-            )
-        return
-
-    workspace_options: dict[str, str] = {
-        str(ws.id): f"{course_name} / {ws.title}"
-        if course_name
-        else (ws.title or str(ws.id))
-        for ws, course_name in workspaces
-    }
-
     ui.separator().classes("my-2")
     with ui.column().classes("w-full").props("data-testid=tag-import-section"):
         ui.label("Import tags from another workspace").classes("text-sm font-bold mt-2")
-        with ui.row().classes("items-center gap-2"):
+
+        if not workspaces:
+            ui.label("No accessible workspaces with tags").classes(
+                "text-sm text-gray-400"
+            )
+            return
+
+        workspace_options = _build_workspace_options(workspaces)
+
+        with ui.row().classes("items-center gap-2 w-full"):
             ws_select = (
                 ui.select(
                     options=workspace_options,
                     label="Source workspace",
                 )
-                .classes("w-64")
+                .classes("flex-grow")
                 .props('data-testid="import-workspace-select"')
             )
 

@@ -492,24 +492,25 @@ async def _upsert_share_entry(
 async def list_importable_workspaces(
     user_id: UUID,
     exclude_workspace_id: UUID | None = None,
-) -> list[tuple[Workspace, str | None]]:
+) -> list[tuple[Workspace, str | None, list[str]]]:
     """List workspaces with tags that the user can read from.
 
-    Returns (workspace, course_name) tuples, ordered by course name
-    then workspace title. Excludes the specified workspace (typically
-    the target) and workspaces with no tags.
+    Returns (workspace, course_name, tag_names) tuples, ordered by
+    course name then workspace title.  Excludes the specified workspace
+    (typically the target) and workspaces with no tags.  Deduplicates
+    workspaces whose tag sets are identical (keeps first by sort order).
 
-    Uses two batched queries instead of a per-workspace loop:
-    1. A single EXISTS/IN query to find workspace IDs with tags.
-    2. A single LEFT JOIN query to resolve course names for all
-       qualifying workspaces in one round-trip.
+    Uses three batched queries:
+    1. Workspace IDs that have at least one tag.
+    2. Course name resolution via LEFT JOIN.
+    3. Tag names per workspace for preview and dedup.
 
     Args:
         user_id: The requesting user's UUID.
         exclude_workspace_id: Workspace to exclude (e.g. the import target).
 
     Returns:
-        List of (Workspace, course_name) tuples.
+        List of (Workspace, course_name, tag_names) tuples.
     """
     accessible = await list_accessible_workspaces(user_id)
 
@@ -540,11 +541,6 @@ async def list_importable_workspaces(
         ws_ids_with_tags = [ws.id for ws in workspaces_with_tags]
 
         # --- Batch 2: resolve course name for all qualifying workspaces ---
-        # Two LEFT JOIN paths for course resolution:
-        #   Path A (via activity): workspace.activity_id → activity.week_id
-        #                          → week.course_id → course_a.name
-        #   Path B (direct):       workspace.course_id → course_b.name
-        # COALESCE picks whichever path resolves.
         course_a = aliased(Course, flat=True)
         course_b = aliased(Course, flat=True)
 
@@ -561,13 +557,33 @@ async def list_importable_workspaces(
         )
         course_name_by_ws: dict[UUID, str | None] = dict(rows.all())
 
-    # Reconstruct ordered result using the original workspace objects.
+        # --- Batch 3: tag names per workspace for preview/dedup ---
+        tag_name_rows = await session.exec(
+            select(Tag.workspace_id, Tag.name)
+            .where(Tag.workspace_id.in_(ws_ids_with_tags))  # type: ignore[union-attr]
+            .order_by(Tag.workspace_id, Tag.order_index)  # type: ignore[arg-type]  -- SQLModel order_by stubs
+        )
+        tags_by_ws: dict[UUID, list[str]] = {}
+        for ws_id, tag_name in tag_name_rows.all():
+            tags_by_ws.setdefault(ws_id, []).append(tag_name)
+
+    # Reconstruct ordered result.
     ws_by_id = {ws.id: ws for ws in workspaces_with_tags}
-    result: list[tuple[Workspace, str | None]] = [
-        (ws_by_id[ws_id], course_name_by_ws.get(ws_id)) for ws_id in ws_by_id
+    result: list[tuple[Workspace, str | None, list[str]]] = [
+        (ws_by_id[ws_id], course_name_by_ws.get(ws_id), tags_by_ws.get(ws_id, []))
+        for ws_id in ws_by_id
     ]
     result.sort(key=lambda r: (r[1] or "", r[0].title or ""))
-    return result
+
+    # Deduplicate: keep first workspace per unique tag set.
+    seen_tag_sets: set[tuple[str, ...]] = set()
+    deduped: list[tuple[Workspace, str | None, list[str]]] = []
+    for ws, course_name, tag_names in result:
+        key = tuple(sorted(n.lower() for n in tag_names))
+        if key not in seen_tag_sets:
+            seen_tag_sets.add(key)
+            deduped.append((ws, course_name, tag_names))
+    return deduped
 
 
 async def get_privileged_user_ids_for_workspace(

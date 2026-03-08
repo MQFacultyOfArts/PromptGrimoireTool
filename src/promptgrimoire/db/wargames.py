@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import WargameTeam
+from promptgrimoire.db.models import ACLEntry, Permission, User, WargameTeam
 from promptgrimoire.wargame import generate_codename
 
 if TYPE_CHECKING:
@@ -30,6 +31,26 @@ class DuplicateCodenameError(Exception):
         )
 
 
+class ZeroEditorError(Exception):
+    """Raised when a change would leave a team without any editable member."""
+
+    def __init__(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+        current_permission: str | None,
+        attempted_permission: str | None,
+    ) -> None:
+        self.team_id = team_id
+        self.user_id = user_id
+        self.current_permission = current_permission
+        self.attempted_permission = attempted_permission
+        super().__init__(
+            "Requested team permission change would leave the team without any "
+            "member whose permission grants can_edit = TRUE"
+        )
+
+
 def _is_duplicate_codename_error(error: IntegrityError) -> bool:
     """Return True when the integrity error is the team codename constraint."""
     constraint_name = getattr(getattr(error.orig, "diag", None), "constraint_name", "")
@@ -48,6 +69,21 @@ async def _list_existing_codenames(
         select(WargameTeam.codename).where(WargameTeam.activity_id == activity_id)
     )
     return set(result.all())
+
+
+async def _resolve_team_permission_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+    user_id: UUID,
+) -> str | None:
+    """Return the exact stored team ACL permission for one user."""
+    result = await session.exec(
+        select(ACLEntry.permission).where(
+            ACLEntry.team_id == team_id,
+            ACLEntry.user_id == user_id,
+        )
+    )
+    return result.one_or_none()
 
 
 async def _create_team(
@@ -147,6 +183,12 @@ async def get_team(team_id: UUID) -> WargameTeam | None:
         return await session.get(WargameTeam, team_id)
 
 
+async def resolve_team_permission(team_id: UUID, user_id: UUID) -> str | None:
+    """Return the exact stored team permission for one user, or None."""
+    async with get_session() as session:
+        return await _resolve_team_permission_with_session(session, team_id, user_id)
+
+
 async def list_teams(activity_id: UUID) -> list[WargameTeam]:
     """Return teams for one activity ordered by creation time."""
     async with get_session() as session:
@@ -154,6 +196,24 @@ async def list_teams(activity_id: UUID) -> list[WargameTeam]:
             select(WargameTeam)
             .where(WargameTeam.activity_id == activity_id)
             .order_by(WargameTeam.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs don't accept Column expressions
+        )
+        return list(result.all())
+
+
+async def list_team_members(team_id: UUID) -> list[tuple[User, str]]:
+    """Return team members with permission names in deterministic order."""
+    async with get_session() as session:
+        result = await session.exec(
+            select(User, ACLEntry.permission)
+            .join(ACLEntry, ACLEntry.user_id == User.id)  # type: ignore[arg-type]  -- SQLAlchemy join expression
+            .join(Permission, Permission.name == ACLEntry.permission)  # type: ignore[arg-type]  -- SQLAlchemy join expression
+            .where(ACLEntry.team_id == team_id)
+            .order_by(
+                sa.desc(sa.literal_column("permission.can_edit")),
+                sa.desc(sa.literal_column("permission.level")),
+                User.display_name,
+                User.email,
+            )
         )
         return list(result.all())
 

@@ -95,12 +95,15 @@ from promptgrimoire.db.users import (
 )
 from promptgrimoire.db.wargames import (
     DuplicateCodenameError,
+    ZeroEditorError,
     create_team,
     create_teams,
     delete_team,
     get_team,
+    list_team_members,
     list_teams,
     rename_team,
+    resolve_team_permission,
 )
 from promptgrimoire.db.workspace_documents import (
     add_document,
@@ -145,6 +148,7 @@ __all__ = [
     "Week",
     "Workspace",
     "WorkspaceDocument",
+    "ZeroEditorError",
     "add_document",
     "archive_course",
     "check_clone_eligibility",
@@ -202,6 +206,7 @@ __all__ = [
     "list_peer_workspaces_with_owners",
     "list_tag_groups_for_workspace",
     "list_tags_for_workspace",
+    "list_team_members",
     "list_teams",
     "list_user_enrollments",
     "list_users",
@@ -214,6 +219,7 @@ __all__ = [
     "reorder_tag_groups",
     "reorder_tags",
     "resolve_permission",
+    "resolve_team_permission",
     "revoke_permission",
     "run_alembic_upgrade",
     "save_workspace_crdt_state",

@@ -20,6 +20,7 @@ from promptgrimoire.db.models import (
     Course,
     CourseEnrollment,
     Permission,
+    Tag,
     User,
     Week,
     Workspace,
@@ -485,6 +486,50 @@ async def _upsert_share_entry(
     await session.flush()
     await session.refresh(acl_entry)
     return acl_entry
+
+
+async def list_importable_workspaces(
+    user_id: UUID,
+    exclude_workspace_id: UUID | None = None,
+) -> list[tuple[Workspace, str | None]]:
+    """List workspaces with tags that the user can read from.
+
+    Returns (workspace, course_name) tuples, ordered by course name
+    then workspace title. Excludes the specified workspace (typically
+    the target) and workspaces with no tags.
+
+    Args:
+        user_id: The requesting user's UUID.
+        exclude_workspace_id: Workspace to exclude (e.g. the import target).
+
+    Returns:
+        List of (Workspace, course_name) tuples.
+    """
+    accessible = await list_accessible_workspaces(user_id)
+
+    # Filter to workspaces that have tags, excluding the target
+    result: list[tuple[Workspace, str | None]] = []
+    async with get_session() as session:
+        for ws, _permission in accessible:
+            if exclude_workspace_id is not None and ws.id == exclude_workspace_id:
+                continue
+
+            tag_count = await session.exec(
+                select(sa.func.count())
+                .select_from(Tag)
+                .where(Tag.workspace_id == ws.id)
+            )
+            if tag_count.one() == 0:
+                continue
+
+            # Resolve course name from workspace hierarchy
+            course, _activity = await _resolve_workspace_course(session, ws)
+            course_name = course.name if course else None
+            result.append((ws, course_name))
+
+    # Sort by course name then workspace title
+    result.sort(key=lambda r: (r[1] or "", r[0].title or ""))
+    return result
 
 
 async def get_privileged_user_ids_for_workspace(

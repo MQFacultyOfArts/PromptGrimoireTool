@@ -1977,3 +1977,348 @@ class TestQuickCreateDefaultGroup:
         )
 
         assert tag.group_id is None
+
+
+class TestImportTagsFromWorkspace:
+    """Tests for import_tags_from_workspace.
+
+    Verifies AC3.1-AC3.5, AC3.7, and permission enforcement.
+    """
+
+    @pytest.mark.asyncio
+    async def test_import_workspace_creates_tags(self) -> None:
+        """Import from accessible workspace creates tags.
+
+        Verifies AC3.1: user can import tags from a workspace with read access.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        # Source workspace with tags (standalone, not template)
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="Legal")
+        await create_tag(
+            src_ws,
+            name="Jurisdiction",
+            color="#1f77b4",
+            group_id=src_group.id,
+            description="Court jurisdiction",
+        )
+        await create_tag(src_ws, name="Facts", color="#ff7f0e")
+
+        # Target: separate workspace
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        # User with explicit read access to source
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"importer-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        assert len(result) == 2
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        imported_names = {t.name for t in tgt_tags}
+        assert "Jurisdiction" in imported_names
+        assert "Facts" in imported_names
+
+    @pytest.mark.asyncio
+    async def test_import_preserves_existing_tags(self) -> None:
+        """Existing tags in target are preserved after import.
+
+        Verifies AC3.2: additive merge.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        # Source with one tag
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="NewTag", color="#aabbcc")
+
+        # Target with existing tag (different activity so no overlap)
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        await create_tag(tgt_ws, name="Existing", color="#112233")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        names = {t.name for t in tgt_tags}
+        assert "Existing" in names
+        assert "NewTag" in names
+
+    @pytest.mark.asyncio
+    async def test_import_skips_duplicate_names(self) -> None:
+        """Tags with duplicate names (case-insensitive) are skipped.
+
+        Verifies AC3.3.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="Overlap", color="#111111")
+        await create_tag(src_ws, name="Unique", color="#222222")
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        await create_tag(tgt_ws, name="overlap", color="#333333")  # case mismatch
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        # Only "Unique" should be imported; "Overlap" skipped
+        assert len(result) == 1
+        assert result[0].name == "Unique"
+
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        overlap_tags = [t for t in tgt_tags if t.name.lower() == "overlap"]
+        assert len(overlap_tags) == 1  # original preserved, dupe not added
+
+    @pytest.mark.asyncio
+    async def test_import_preserves_group_ordering(self) -> None:
+        """Imported groups and tags are appended after existing.
+
+        Verifies AC3.4.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tag_groups_for_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="ImportedGroup")
+        await create_tag(
+            src_ws, name="ImportedTag", color="#aaaaaa", group_id=src_group.id
+        )
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        existing_group = await create_tag_group(tgt_ws, name="ExistingGroup")
+        await create_tag(
+            tgt_ws, name="ExistingTag", color="#bbbbbb", group_id=existing_group.id
+        )
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        groups = await list_tag_groups_for_workspace(tgt_ws)
+        tags = await list_tags_for_workspace(tgt_ws)
+
+        # Existing group should have lower order_index than imported
+        existing_g = next(g for g in groups if g.name == "ExistingGroup")
+        imported_g = next(g for g in groups if g.name == "ImportedGroup")
+        assert existing_g.order_index < imported_g.order_index
+
+        # Existing tag should have lower order_index than imported
+        existing_t = next(t for t in tags if t.name == "ExistingTag")
+        imported_t = next(t for t in tags if t.name == "ImportedTag")
+        assert existing_t.order_index < imported_t.order_index
+
+    @pytest.mark.asyncio
+    async def test_import_unlocks_locked_tags(self) -> None:
+        """Imported tags default to unlocked regardless of source status.
+
+        Verifies AC3.5.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="LockedSrc", color="#ff0000", locked=True)
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        assert len(result) == 1
+        assert result[0].locked is False
+
+    @pytest.mark.asyncio
+    async def test_import_empty_workspace_no_error(self) -> None:
+        """Importing from workspace with no tags produces no error.
+
+        Verifies AC3.7.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import import_tags_from_workspace
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        # No tags created in source
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_import_no_access_raises_permission_error(self) -> None:
+        """Import from workspace user cannot access raises PermissionError."""
+        from promptgrimoire.db.tags import import_tags_from_workspace
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        # User with no enrollment or ACL at all
+        outsider = await create_user(
+            email=f"outsider-{uuid4().hex[:8]}@test.local",
+            display_name="Outsider",
+        )
+
+        with pytest.raises(PermissionError):
+            await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
+
+
+class TestListImportableWorkspaces:
+    """Tests for list_importable_workspaces."""
+
+    @pytest.mark.asyncio
+    async def test_user_with_acl_sees_workspace(self) -> None:
+        """User with ACL on a workspace that has tags sees it in list."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="SomeTag", color="#123456")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(user.id)
+        ws_ids = [ws.id for ws, _ in results]
+        assert ws_id in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_workspace_without_tags_excluded(self) -> None:
+        """Workspace with no tags is excluded from list."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        # No tags created
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(user.id)
+        ws_ids = [ws.id for ws, _ in results]
+        assert ws_id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_target_workspace_excluded(self) -> None:
+        """The exclude_workspace_id is not in the results."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="Tag1", color="#aabbcc")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(user.id, exclude_workspace_id=ws_id)
+        ws_ids = [ws.id for ws, _ in results]
+        assert ws_id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_user_without_access_excluded(self) -> None:
+        """User without ACL does not see the workspace."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="HiddenTag", color="#654321")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"noaccess-{tag}@test.local", display_name=f"NoAccess {tag}"
+        )
+
+        results = await list_importable_workspaces(user.id)
+        ws_ids = [ws.id for ws, _ in results]
+        assert ws_id not in ws_ids

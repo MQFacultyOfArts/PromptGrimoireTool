@@ -695,6 +695,86 @@ async def import_tags_from_activity(
         return new_tags
 
 
+# ── Import from workspace ─────────────────────────────────────────────
+
+
+async def import_tags_from_workspace(
+    source_workspace_id: UUID,
+    target_workspace_id: UUID,
+    user_id: UUID,
+    crdt_doc: AnnotationDocument | None = None,
+) -> list[Tag]:
+    """Import tags and groups from a source workspace.
+
+    Additive merge: existing tags in target are preserved. Tags with
+    duplicate names (case-insensitive) are skipped. Imported tags default
+    to unlocked regardless of source locked status.
+
+    Args:
+        source_workspace_id: Workspace to import from.
+        target_workspace_id: Workspace to import into.
+        user_id: User performing the import (must have read access to source).
+        crdt_doc: Optional live CRDT doc for dual-write.
+
+    Returns:
+        List of newly created Tag objects.
+
+    Raises:
+        PermissionError: If user lacks read access to source workspace.
+    """
+    await _check_import_access(source_workspace_id, user_id)
+
+    source_groups = await list_tag_groups_for_workspace(source_workspace_id)
+    source_tags = await list_tags_for_workspace(source_workspace_id)
+
+    if not source_tags and not source_groups:
+        return []
+
+    existing_tags = await list_tags_for_workspace(target_workspace_id)
+    existing_names = {t.name.lower() for t in existing_tags}
+
+    # Create groups with ID remapping
+    group_id_map: dict[UUID, UUID] = {}
+    for src_group in source_groups:
+        new_group = await create_tag_group(
+            target_workspace_id, src_group.name, crdt_doc=crdt_doc
+        )
+        group_id_map[src_group.id] = new_group.id
+
+    # Create tags, skipping duplicates
+    new_tags: list[Tag] = []
+    for src_tag in source_tags:
+        if src_tag.name.lower() in existing_names:
+            continue
+        new_group_id = group_id_map.get(src_tag.group_id) if src_tag.group_id else None
+        new_tag = await create_tag(
+            target_workspace_id,
+            src_tag.name,
+            src_tag.color,
+            group_id=new_group_id,
+            description=src_tag.description,
+            locked=False,
+            crdt_doc=crdt_doc,
+        )
+        new_tags.append(new_tag)
+
+    return new_tags
+
+
+async def _check_import_access(source_workspace_id: UUID, user_id: UUID) -> None:
+    """Verify user has read access to the source workspace.
+
+    Raises:
+        PermissionError: If user has no permission on the source workspace.
+    """
+    from promptgrimoire.db.acl import resolve_permission
+
+    permission = await resolve_permission(source_workspace_id, user_id)
+    if permission is None:
+        msg = "No read access to source workspace"
+        raise PermissionError(msg)
+
+
 # ── CRDT cleanup ─────────────────────────────────────────────────────
 
 

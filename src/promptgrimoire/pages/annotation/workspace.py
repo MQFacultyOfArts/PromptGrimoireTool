@@ -308,6 +308,9 @@ def _setup_organise_drag(state: PageState) -> None:
         )
 
     state.refresh_organise = _render_organise_now
+    # Sync lambda returning a coroutine — callers ``await`` the result.
+    # Python has no async lambda syntax, so this is the standard workaround.
+    # NiceGUI's timer callback also handles this via Awaitable detection.
     state.refresh_organise_with_scroll = lambda: _rebuild_organise_with_scroll(
         _render_organise_now
     )

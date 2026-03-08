@@ -30,6 +30,8 @@ from promptgrimoire.db.roles import get_staff_roles
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
 
 async def get_user_workspace_for_activity(
     activity_id: UUID, user_id: UUID
@@ -574,19 +576,40 @@ def _remap_uuid_str(raw: str, id_map: dict[UUID, UUID] | None) -> str:
     return str(id_map.get(original, original))
 
 
+def _remap_cloned_tag_highlights(
+    doc: AnnotationDocument,
+    highlight_id_map: dict[str, str],
+) -> None:
+    """Remap highlight IDs in cloned workspace's tags Map entries."""
+    for tag_id, tag_data in doc.list_tags().items():
+        old_highlights = tag_data.get("highlights", [])
+        remapped = [highlight_id_map.get(h, h) for h in old_highlights]
+        doc.set_tag(
+            tag_id=tag_id,
+            name=tag_data["name"],
+            colour=tag_data["colour"],
+            order_index=tag_data["order_index"],
+            group_id=tag_data.get("group_id"),
+            description=tag_data.get("description"),
+            highlights=remapped,
+        )
+
+
 def _replay_crdt_state(
     template: Workspace,
     clone: Workspace,
     doc_id_map: dict[UUID, UUID],
     tag_id_map: dict[UUID, UUID] | None = None,
+    group_id_map: dict[UUID, UUID] | None = None,
 ) -> None:
     """Replay CRDT state from template into clone with ID remapping.
 
     Loads the template's CRDT state into a temporary AnnotationDocument,
     creates a fresh AnnotationDocument for the clone, and replays all
     highlights (with remapped document_id and tag values), comments,
-    general notes, response draft markdown, and tag_order. Client
-    metadata is deliberately NOT replayed (AC4.9).
+    general notes, response draft markdown, and tags Map entries (with
+    remapped tag IDs, group IDs, and highlight IDs). Client metadata is
+    deliberately NOT replayed (AC4.9).
 
     If template has no crdt_state, the clone gets None (AC4.10).
 
@@ -596,9 +619,9 @@ def _replay_crdt_state(
         doc_id_map: Mapping of {template_doc_id: cloned_doc_id}.
         tag_id_map: Optional mapping of {template_tag_id: cloned_tag_id}.
             When provided, highlight tag fields containing valid UUIDs are
-            remapped to the cloned tag UUIDs, and tag_order keys are
-            similarly remapped. Non-UUID tag strings (legacy BriefTag
-            values) pass through unchanged.
+            remapped to the cloned tag UUIDs, and tags Map keys and
+            group_id fields are similarly remapped. Non-UUID tag strings
+            (legacy BriefTag values) pass through unchanged.
     """
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
 
@@ -659,14 +682,23 @@ def _replay_crdt_state(
         with clone_doc.doc.transaction():
             md_field += response_md
 
-    # Rebuild tag_order with remapped tag keys and highlight IDs
-    for tag_key in list(dict(template_doc.tag_order)):
-        template_order = list(template_doc.tag_order[tag_key])
-        remapped_key = _remap_uuid_str(tag_key, tag_id_map)
-        remapped_order = [
-            highlight_id_map.get(old_id, old_id) for old_id in template_order
-        ]
-        clone_doc.set_tag_order(remapped_key, remapped_order)
+    # Copy tags Map entries with remapped tag IDs and group IDs
+    for old_tag_id, tag_data in template_doc.list_tags().items():
+        remapped_tag_id = _remap_uuid_str(old_tag_id, tag_id_map)
+        raw_group = tag_data.get("group_id")
+        remapped_group = _remap_uuid_str(raw_group, group_id_map) if raw_group else None
+        clone_doc.set_tag(
+            tag_id=remapped_tag_id,
+            name=tag_data["name"],
+            colour=tag_data["colour"],
+            order_index=tag_data["order_index"],
+            group_id=remapped_group,
+            description=tag_data.get("description"),
+            highlights=tag_data.get("highlights", []),
+        )
+
+    # Remap highlight IDs within cloned tags Map entries
+    _remap_cloned_tag_highlights(clone_doc, highlight_id_map)
 
     # Serialise and assign to cloned workspace
     clone.crdt_state = clone_doc.get_full_state()
@@ -809,7 +841,7 @@ async def clone_workspace_from_activity(
         session.add(clone)
 
         # --- CRDT state cloning via API replay ---
-        _replay_crdt_state(template, clone, doc_id_map, tag_id_map)
+        _replay_crdt_state(template, clone, doc_id_map, tag_id_map, group_id_map)
 
         await session.flush()
         await session.refresh(clone)

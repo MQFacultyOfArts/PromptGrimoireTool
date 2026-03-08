@@ -4,7 +4,7 @@ These tests require a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
 Tests verify TagGroup cloning (AC4.1), Tag cloning with group remapping (AC4.2),
 locked flag preservation (AC4.5), empty template cloning (AC4.6), CRDT highlight
-tag remapping (AC4.3), tag_order key remapping (AC4.4), and legacy BriefTag
+tag remapping (AC4.3), tags Map highlight remapping (AC4.4), and legacy BriefTag
 passthrough.
 """
 
@@ -381,8 +381,8 @@ class TestCrdtTagRemapping:
             assert hl["tag"] not in template_tag_ids
 
     @pytest.mark.asyncio
-    async def test_tag_order_keys_remapped_to_cloned_tag_uuids(self) -> None:
-        """Cloned tag_order uses the clone's Tag UUIDs as keys.
+    async def test_tags_map_highlights_remapped_to_cloned_ids(self) -> None:
+        """Cloned tags Map uses the clone's Tag UUIDs and remapped highlight IDs.
 
         Verifies AC4.4.
         """
@@ -400,7 +400,7 @@ class TestCrdtTagRemapping:
         tmpl_doc = await add_document(
             workspace_id=activity.template_workspace_id,
             type="source",
-            content="<p>Content for tag order test</p>",
+            content="<p>Content for tags map test</p>",
             source_type="html",
             title="Source",
         )
@@ -414,7 +414,7 @@ class TestCrdtTagRemapping:
         )
         tag_a, tag_b = template_tags
 
-        # Build CRDT state with highlights and tag_order
+        # Build CRDT state with highlights and tags Map entries
         doc = AnnotationDocument("setup")
         hl1_id = doc.add_highlight(
             start_char=0,
@@ -441,9 +441,21 @@ class TestCrdtTagRemapping:
             document_id=str(tmpl_doc.id),
         )
 
-        # Set tag_order with template tag UUIDs as keys
-        doc.set_tag_order(str(tag_a.id), [hl1_id, hl2_id])
-        doc.set_tag_order(str(tag_b.id), [hl3_id])
+        # Write tags Map entries with template tag UUIDs and highlight lists
+        doc.set_tag(
+            tag_id=str(tag_a.id),
+            name="TagA",
+            colour="#111111",
+            order_index=0,
+            highlights=[hl1_id, hl2_id],
+        )
+        doc.set_tag(
+            tag_id=str(tag_b.id),
+            name="TagB",
+            colour="#222222",
+            order_index=1,
+            highlights=[hl3_id],
+        )
         await save_workspace_crdt_state(
             activity.template_workspace_id, doc.get_full_state()
         )
@@ -462,28 +474,28 @@ class TestCrdtTagRemapping:
         clone_tag_a_id = str(clone_by_name["TagA"].id)
         clone_tag_b_id = str(clone_by_name["TagB"].id)
 
-        # tag_order keys should be cloned tag UUIDs
-        tag_order_dict = dict(clone_doc.tag_order)
-        assert clone_tag_a_id in tag_order_dict
-        assert clone_tag_b_id in tag_order_dict
+        # tags Map keys should be cloned tag UUIDs
+        tags_dict = clone_doc.list_tags()
+        assert clone_tag_a_id in tags_dict
+        assert clone_tag_b_id in tags_dict
 
         # Template tag UUIDs should NOT appear as keys
-        assert str(tag_a.id) not in tag_order_dict
-        assert str(tag_b.id) not in tag_order_dict
+        assert str(tag_a.id) not in tags_dict
+        assert str(tag_b.id) not in tags_dict
 
-        # Highlight IDs in tag_order should be the clone's highlight IDs
+        # Highlight IDs in tags Map should be the clone's highlight IDs
         clone_highlights = clone_doc.get_all_highlights()
         clone_hl_ids = {h["id"] for h in clone_highlights}
         template_hl_ids = {hl1_id, hl2_id, hl3_id}
 
-        order_a = list(tag_order_dict[clone_tag_a_id])
-        order_b = list(tag_order_dict[clone_tag_b_id])
+        highlights_a = tags_dict[clone_tag_a_id].get("highlights", [])
+        highlights_b = tags_dict[clone_tag_b_id].get("highlights", [])
 
-        assert len(order_a) == 2
-        assert len(order_b) == 1
+        assert len(highlights_a) == 2
+        assert len(highlights_b) == 1
 
-        # All highlight IDs in tag_order are from the clone
-        for hl_id in order_a + order_b:
+        # All highlight IDs in tags Map are from the clone
+        for hl_id in list(highlights_a) + list(highlights_b):
             assert hl_id in clone_hl_ids
             assert hl_id not in template_hl_ids
 

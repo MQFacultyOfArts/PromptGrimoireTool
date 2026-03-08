@@ -63,7 +63,9 @@ async def _create_team(
         if existing_codenames is not None
         else await _list_existing_codenames(session, activity_id)
     )
-    codename_value = codename or generate_codename(collision_set)
+    codename_value = (
+        codename if codename is not None else generate_codename(collision_set)
+    )
 
     team = WargameTeam(activity_id=activity_id, codename=codename_value)
     session.add(team)

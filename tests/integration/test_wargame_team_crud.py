@@ -83,6 +83,32 @@ class TestCreateAndGetTeam:
 
         assert await get_team(uuid4()) is None
 
+    @pytest.mark.asyncio
+    async def test_create_team_uses_explicit_empty_codename_without_generating(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit empty-string codenames are treated as caller-provided."""
+        from promptgrimoire.db.wargames import create_team, get_team
+
+        activity = await _make_wargame_activity("create-empty-codename")
+
+        def fail_if_called(_existing: set[str]) -> str:
+            msg = "generate_codename should not be called for explicit codename"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(
+            "promptgrimoire.db.wargames.generate_codename",
+            fail_if_called,
+        )
+
+        created = await create_team(activity.id, codename="")
+        fetched = await get_team(created.id)
+
+        assert created.codename == ""
+        assert fetched is not None
+        assert fetched.codename == ""
+
 
 class TestCreateAndListTeams:
     """Service-level tests for batch creation and listing."""

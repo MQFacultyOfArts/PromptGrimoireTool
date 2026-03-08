@@ -78,6 +78,29 @@ class TestParseRoster:
 class TestParseRosterValidation:
     """Failure-path tests for parse_roster."""
 
+    def test_empty_csv_reports_empty_file_error(self) -> None:
+        """Empty CSV content is distinguished from a missing email header."""
+        from promptgrimoire.wargame import RosterParseError, parse_roster
+
+        with pytest.raises(RosterParseError, match="empty roster csv") as exc_info:
+            parse_roster("")
+
+        assert exc_info.value.line_numbers == ()
+
+    def test_missing_email_header_reports_structural_header_error(self) -> None:
+        """Missing email header remains a separate structural error."""
+        from promptgrimoire.wargame import RosterParseError, parse_roster
+
+        csv_content = "team,role\nRed,editor\n"
+
+        with pytest.raises(
+            RosterParseError,
+            match="missing required email header",
+        ) as exc_info:
+            parse_roster(csv_content)
+
+        assert exc_info.value.line_numbers == ()
+
     def test_duplicate_email_reports_both_physical_line_numbers(self) -> None:
         """AC2.4: Duplicate normalized emails include both line numbers."""
         from promptgrimoire.wargame import RosterParseError, parse_roster

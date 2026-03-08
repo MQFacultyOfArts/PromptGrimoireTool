@@ -74,14 +74,14 @@ def parse_roster(csv_content: str) -> list[RosterEntry]:
     Raises
     ------
     RosterParseError
-        If the CSV lacks the required ``email`` header.
+        If the CSV is empty or lacks the required ``email`` header.
     """
     reader = csv.reader(StringIO(csv_content), dialect=_sniff_dialect(csv_content))
 
     try:
         headers = next(reader)
     except StopIteration as exc:
-        msg = "missing required email header"
+        msg = "empty roster csv"
         raise RosterParseError(msg) from exc
 
     normalized_headers = [header.strip().lower() for header in headers]

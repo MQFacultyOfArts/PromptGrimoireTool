@@ -622,6 +622,9 @@ def _replay_crdt_state(
             remapped to the cloned tag UUIDs, and tags Map keys and
             group_id fields are similarly remapped. Non-UUID tag strings
             (legacy BriefTag values) pass through unchanged.
+        group_id_map: Optional mapping of {template_group_id: cloned_group_id}.
+            When provided, tag group_id fields in the tags Map are remapped
+            to the cloned group UUIDs.
     """
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument as AnnotDoc
 

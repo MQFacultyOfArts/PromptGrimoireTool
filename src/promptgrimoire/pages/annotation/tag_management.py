@@ -297,13 +297,11 @@ async def open_tag_management(
                     on_group_field_save=_save_group_field,
                 )
 
-                # Import section (AC7.7) -- instructors on template only
-                if is_instructor:
-                    await _render_import_section(
-                        ctx=ctx,
-                        state=state,
-                        render_tag_list=_render_tag_list,
-                    )
+                # Import section -- available to all users (AC3.6)
+                await _render_import_section(
+                    state=state,
+                    render_tag_list=_render_tag_list,
+                )
 
         await _render_tag_list()
 

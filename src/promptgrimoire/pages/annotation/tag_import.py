@@ -46,6 +46,14 @@ async def _render_import_section(
     )
 
     if not workspaces:
+        ui.separator().classes("my-2")
+        with ui.column().classes("w-full").props("data-testid=tag-import-section"):
+            ui.label("Import tags from another workspace").classes(
+                "text-sm font-bold mt-2"
+            )
+            ui.label("No accessible workspaces with tags").classes(
+                "text-sm text-gray-400"
+            )
         return
 
     workspace_options: dict[str, str] = {

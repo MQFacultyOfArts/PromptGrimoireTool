@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import aliased
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -498,6 +499,11 @@ async def list_importable_workspaces(
     then workspace title. Excludes the specified workspace (typically
     the target) and workspaces with no tags.
 
+    Uses two batched queries instead of a per-workspace loop:
+    1. A single EXISTS/IN query to find workspace IDs with tags.
+    2. A single LEFT JOIN query to resolve course names for all
+       qualifying workspaces in one round-trip.
+
     Args:
         user_id: The requesting user's UUID.
         exclude_workspace_id: Workspace to exclude (e.g. the import target).
@@ -507,27 +513,59 @@ async def list_importable_workspaces(
     """
     accessible = await list_accessible_workspaces(user_id)
 
-    # Filter to workspaces that have tags, excluding the target
-    result: list[tuple[Workspace, str | None]] = []
+    # Build candidate set: drop the excluded workspace up front.
+    candidates = [
+        ws
+        for ws, _permission in accessible
+        if exclude_workspace_id is None or ws.id != exclude_workspace_id
+    ]
+    if not candidates:
+        return []
+
+    candidate_ids = [ws.id for ws in candidates]
+
     async with get_session() as session:
-        for ws, _permission in accessible:
-            if exclude_workspace_id is not None and ws.id == exclude_workspace_id:
-                continue
+        # --- Batch 1: which of these workspaces have at least one tag? ---
+        tag_rows = await session.exec(
+            select(Tag.workspace_id)
+            .where(Tag.workspace_id.in_(candidate_ids))  # type: ignore[union-attr]
+            .distinct()
+        )
+        has_tags: frozenset[UUID] = frozenset(tag_rows.all())
 
-            tag_count = await session.exec(
-                select(sa.func.count())
-                .select_from(Tag)
-                .where(Tag.workspace_id == ws.id)
+        workspaces_with_tags = [ws for ws in candidates if ws.id in has_tags]
+        if not workspaces_with_tags:
+            return []
+
+        ws_ids_with_tags = [ws.id for ws in workspaces_with_tags]
+
+        # --- Batch 2: resolve course name for all qualifying workspaces ---
+        # Two LEFT JOIN paths for course resolution:
+        #   Path A (via activity): workspace.activity_id → activity.week_id
+        #                          → week.course_id → course_a.name
+        #   Path B (direct):       workspace.course_id → course_b.name
+        # COALESCE picks whichever path resolves.
+        course_a = aliased(Course, flat=True)
+        course_b = aliased(Course, flat=True)
+
+        rows = await session.exec(
+            select(
+                Workspace.id,
+                sa.func.coalesce(course_a.name, course_b.name).label("course_name"),
             )
-            if tag_count.one() == 0:
-                continue
+            .outerjoin(Activity, Activity.id == Workspace.activity_id)
+            .outerjoin(Week, Week.id == Activity.week_id)
+            .outerjoin(course_a, course_a.id == Week.course_id)
+            .outerjoin(course_b, course_b.id == Workspace.course_id)
+            .where(Workspace.id.in_(ws_ids_with_tags))  # type: ignore[union-attr]
+        )
+        course_name_by_ws: dict[UUID, str | None] = dict(rows.all())
 
-            # Resolve course name from workspace hierarchy
-            course, _activity = await _resolve_workspace_course(session, ws)
-            course_name = course.name if course else None
-            result.append((ws, course_name))
-
-    # Sort by course name then workspace title
+    # Reconstruct ordered result using the original workspace objects.
+    ws_by_id = {ws.id: ws for ws in workspaces_with_tags}
+    result: list[tuple[Workspace, str | None]] = [
+        (ws_by_id[ws_id], course_name_by_ws.get(ws_id)) for ws_id in ws_by_id
+    ]
     result.sort(key=lambda r: (r[1] or "", r[0].title or ""))
     return result
 

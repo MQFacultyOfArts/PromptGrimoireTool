@@ -13,7 +13,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from selectolax.lexbor import LexborHTMLParser
+    from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 # Platform detection: must have both chakra-card class AND chatcraft.org text
 # ChatCraft exports browser-rendered HTML which always uses double-quoted attributes
@@ -39,6 +39,105 @@ def _classify_speaker(title: str) -> str:
     if " " not in title and "-" in title:
         return "assistant"
     return "user"
+
+
+def _extract_speaker_label(card: LexborNode) -> str | None:
+    """Extract the speaker label from a ChatCraft card header.
+
+    ChatCraft cards are not fully consistent:
+    - some cards expose the speaker/model name on ``span[title]``
+    - some user cards have no avatar ``title`` at all
+    - system prompt cards can use avatar title ``ChatCraft`` while the
+      visible header heading is ``System Prompt``
+
+    Prefer the visible heading when available, then fall back to the
+    avatar title.
+    """
+    header = card.css_first(".chakra-card__header")
+    if header is not None:
+        heading = header.css_first("h2")
+        if heading is not None:
+            text = (heading.text() or "").strip()
+            if text:
+                return text
+
+        avatar = header.css_first("span[title]")
+        if avatar is not None:
+            title = (avatar.attributes.get("title") or "").strip()
+            if title:
+                return title
+
+    avatar = card.css_first("span[title]")
+    if avatar is not None:
+        title = (avatar.attributes.get("title") or "").strip()
+        if title:
+            return title
+
+    return None
+
+
+def _same_node(left: LexborNode | None, right: LexborNode | None) -> bool:
+    """Return True when two selectolax node wrappers point at the same node."""
+    if left is None or right is None:
+        return left is right
+    return left.mem_id == right.mem_id
+
+
+def _top_level_body_child(node: LexborNode, body: LexborNode) -> LexborNode | None:
+    """Return the direct ``body`` child containing ``node``."""
+    current: LexborNode | None = node
+    while (
+        current is not None
+        and current.parent is not None
+        and not _same_node(current.parent, body)
+    ):
+        current = current.parent
+    return current
+
+
+def _classify_chatcraft_cards(tree: LexborHTMLParser) -> None:
+    """Tag ChatCraft cards with speaker metadata and strip card headers."""
+    for card in tree.css(".chakra-card"):
+        label = _extract_speaker_label(card)
+        if not label:
+            continue
+        role = _classify_speaker(label)
+        card.attrs["data-speaker"] = role
+        card.attrs["data-speaker-name"] = label
+        for header in card.css(".chakra-card__header"):
+            header.decompose()
+
+
+def _remove_pre_turn_chrome(tree: LexborHTMLParser) -> None:
+    """Remove top-level page chrome that appears before the first conversation turn."""
+    body = tree.body
+    if body is None:
+        return
+
+    first_turn = next(
+        (
+            card
+            for card in tree.css(".chakra-card")
+            if card.attributes.get("data-speaker")
+        ),
+        None,
+    )
+    if first_turn is None:
+        return
+
+    first_turn_container = _top_level_body_child(first_turn, body)
+    child = body.first_child
+    while child is not None and not _same_node(child, first_turn_container):
+        next_child = child.next
+        child.decompose()
+        child = next_child
+
+
+def _remove_non_turn_cards(tree: LexborHTMLParser) -> None:
+    """Remove non-conversation ChatCraft cards after classification."""
+    for card in tree.css(".chakra-card"):
+        if not card.attributes.get("data-speaker"):
+            card.decompose()
 
 
 class ChatCraftHandler:
@@ -69,36 +168,16 @@ class ChatCraftHandler:
         Args:
             tree: Parsed HTML tree to modify in-place.
         """
-        # 1. Classify ALL cards first — system prompt lives
-        #    inside an accordion item, so we must tag it before
-        #    chrome removal destroys the accordion subtree.
-        #    Set data-speaker-name for CSS label override, then
-        #    remove entire card header (name, date, avatar, URL).
-        for card in tree.css(".chakra-card"):
-            spans = card.css("span[title]")
-            if not spans:
-                continue
-            title = spans[0].attributes.get("title")
-            if not title:
-                continue
-            role = _classify_speaker(title)
-            card.attrs["data-speaker"] = role
-            card.attrs["data-speaker-name"] = title
-            # Remove card header metadata (speaker name heading,
-            # timestamp, avatar image, conversation URL)
-            for header in card.css(".chakra-card__header"):
-                header.decompose()
+        _classify_chatcraft_cards(tree)
 
-        # 2. Remove chrome elements (accordion items, forms, menus).
-        #    Classified cards inside accordion items are NOT extracted
-        #    by selectolax (no reparenting API), so they are lost here.
-        #    This is acceptable because the client-side paste handler
-        #    (content_form.py) extracts them before chrome removal.
-        #    The server path is only hit for direct API imports, where
-        #    the system prompt accordion content is less critical.
+        # 2. Remove chrome elements (accordion items, forms, menus)
+        #    after cards have been classified.
         for selector in _CHROME_SELECTORS:
             for node in tree.css(selector):
                 node.decompose()
+
+        _remove_pre_turn_chrome(tree)
+        _remove_non_turn_cards(tree)
 
     def get_turn_markers(self) -> dict[str, str]:
         """Return regex patterns for ChatCraft turn boundaries.

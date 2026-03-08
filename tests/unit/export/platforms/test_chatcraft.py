@@ -10,6 +10,7 @@ from promptgrimoire.export.platforms.chatcraft import (
     ChatCraftHandler,
     _classify_speaker,
 )
+from tests.conftest import load_conversation_fixture
 
 # ---------------------------------------------------------------------------
 # Minimal HTML fragments for platform detection
@@ -191,6 +192,30 @@ class TestChatCraftHandlerPreprocess:
         assert "User message content" in result
         assert "Assistant response content" in result
         assert "System instructions" in result
+
+
+class TestChatCraftFixtureRegressions:
+    """Regression tests against real ChatCraft fixtures."""
+
+    def test_real_fixture_classifies_h2_system_prompt_as_system(self) -> None:
+        """System Prompt heading text must not be misclassified as ChatCraft user."""
+        handler = ChatCraftHandler()
+        tree = LexborHTMLParser(load_conversation_fixture("chatcraft_sonnet-232"))
+
+        handler.preprocess(tree)
+
+        cards = [
+            card
+            for card in tree.css(".chakra-card")
+            if card.attributes.get("data-speaker")
+        ]
+        roles = [card.attributes.get("data-speaker") for card in cards]
+        names = [card.attributes.get("data-speaker-name") for card in cards]
+
+        assert roles.count("system") == 1
+        assert roles.count("user") == 4
+        assert roles.count("assistant") == 5
+        assert "System Prompt" in names
 
 
 class TestChatCraftHandlerTurnMarkers:

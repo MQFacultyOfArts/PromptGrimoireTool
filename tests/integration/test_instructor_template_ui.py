@@ -14,7 +14,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -28,6 +27,7 @@ from tests.integration.nicegui_helpers import (
     _fire_event_listeners,
     _should_not_see_testid,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
@@ -139,7 +139,6 @@ class TestOpenTagManagementDialog:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
 
         # Dialog should be visible
         await _should_see_testid(nicegui_user, "tag-management-dialog")
@@ -147,7 +146,6 @@ class TestOpenTagManagementDialog:
 
         # Close dialog via Done button
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)
 
         # Dialog should be closed
         await _should_not_see_testid(nicegui_user, "tag-management-dialog")
@@ -179,16 +177,19 @@ class TestCreateTagGroupAndTags:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Click "+ Add group"
         _click_testid(nicegui_user, "add-tag-group-btn")
-        await asyncio.sleep(0.3)
 
         # After adding a group, the dialog should show "New group" as default name.
         # Find the group by checking the DB to get its ID.
         from promptgrimoire.db.tags import list_tag_groups_for_workspace
+
+        async def group_created() -> bool:
+            return len(await list_tag_groups_for_workspace(ws_id)) == 1
+
+        await wait_for(group_created)
 
         groups = await list_tag_groups_for_workspace(ws_id)
         assert len(groups) == 1, f"expected 1 group, got {len(groups)}"
@@ -200,10 +201,14 @@ class TestCreateTagGroupAndTags:
 
         # Click "+ Add tag" in the group
         _click_testid(nicegui_user, f"group-add-tag-btn-{group.id}")
-        await asyncio.sleep(0.3)
 
         # Verify a tag was created
         from promptgrimoire.db.tags import list_tags_for_workspace
+
+        async def tag_created() -> bool:
+            return len(await list_tags_for_workspace(ws_id)) == 1
+
+        await wait_for(tag_created)
 
         tags = await list_tags_for_workspace(ws_id)
         assert len(tags) == 1, f"expected 1 tag, got {len(tags)}"
@@ -216,7 +221,6 @@ class TestCreateTagGroupAndTags:
 
         # Close dialog
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)
 
 
 class TestChangeTagColor:
@@ -247,7 +251,6 @@ class TestChangeTagColor:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Find and change the color input
@@ -260,10 +263,15 @@ class TestChangeTagColor:
         # Change color and fire the "change" event to trigger save-on-blur
         color_el.value = "#ff0000"
         _fire_event_listeners(color_el, "change")
-        await asyncio.sleep(0.5)  # Allow async save handler to complete
 
         # Verify DB was updated
         from promptgrimoire.db.tags import get_tag
+
+        async def color_changed() -> bool:
+            updated_tag = await get_tag(tag.id)
+            return updated_tag is not None and updated_tag.color == "#ff0000"
+
+        await wait_for(color_changed)
 
         updated_tag = await get_tag(tag.id)
         assert updated_tag is not None
@@ -273,7 +281,6 @@ class TestChangeTagColor:
 
         # Close dialog
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)
 
 
 class TestLockToggle:
@@ -306,16 +313,20 @@ class TestLockToggle:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Click lock icon to lock the tag
         await _should_see_testid(nicegui_user, f"tag-lock-icon-{tag.id}")
         _click_testid(nicegui_user, f"tag-lock-icon-{tag.id}")
-        await asyncio.sleep(0.3)
 
         # Verify tag is locked in DB
         from promptgrimoire.db.tags import get_tag
+
+        async def tag_locked() -> bool:
+            locked_tag = await get_tag(tag.id)
+            return locked_tag is not None and locked_tag.locked is True
+
+        await wait_for(tag_locked)
 
         locked_tag = await get_tag(tag.id)
         assert locked_tag is not None
@@ -323,7 +334,12 @@ class TestLockToggle:
 
         # Click lock icon again to unlock
         _click_testid(nicegui_user, f"tag-lock-icon-{tag.id}")
-        await asyncio.sleep(0.3)
+
+        async def tag_unlocked() -> bool:
+            unlocked_tag = await get_tag(tag.id)
+            return unlocked_tag is not None and unlocked_tag.locked is False
+
+        await wait_for(tag_unlocked)
 
         unlocked_tag = await get_tag(tag.id)
         assert unlocked_tag is not None
@@ -331,7 +347,6 @@ class TestLockToggle:
 
         # Close dialog
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)
 
 
 class TestGroupReorder:
@@ -366,7 +381,6 @@ class TestGroupReorder:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Verify both group headers are visible
@@ -375,10 +389,15 @@ class TestGroupReorder:
 
         # Click "move up" on Group B (should swap with Group A)
         _click_testid(nicegui_user, f"group-move-up-{group_b.id}")
-        await asyncio.sleep(0.3)
 
         # Verify the order changed in DB
         from promptgrimoire.db.tags import list_tag_groups_for_workspace
+
+        async def order_changed() -> bool:
+            groups = await list_tag_groups_for_workspace(ws_id)
+            return [g.name for g in groups] == ["Group B", "Group A"]
+
+        await wait_for(order_changed)
 
         groups = await list_tag_groups_for_workspace(ws_id)
         group_names_ordered = [g.name for g in groups]
@@ -388,7 +407,6 @@ class TestGroupReorder:
 
         # Close dialog
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)
 
 
 class TestImportTagsFromActivity:
@@ -449,7 +467,6 @@ class TestImportTagsFromActivity:
 
         # Open tag management dialog
         _click_testid(nicegui_user, "tag-settings-btn")
-        await asyncio.sleep(0.3)
         await _should_see_testid(nicegui_user, "tag-management-dialog")
 
         # Verify the import section is visible
@@ -461,14 +478,12 @@ class TestImportTagsFromActivity:
         )
         assert import_select is not None, "import source select not found"
         import_select.value = str(source_activity_id)
-        await asyncio.sleep(0.1)
 
         # Click Import
         _click_testid(nicegui_user, "tag-import-btn")
-        await asyncio.sleep(0.5)
 
         # Verify success notification
-        await nicegui_user.should_see("Tags imported")
+        await nicegui_user.should_see("Tags imported", retries=20)
 
         # Verify the imported tags exist in the target workspace DB
         from promptgrimoire.db.tags import (
@@ -489,4 +504,3 @@ class TestImportTagsFromActivity:
 
         # Close dialog
         _click_testid(nicegui_user, "tag-management-done-btn")
-        await asyncio.sleep(0.2)

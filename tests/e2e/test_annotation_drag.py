@@ -22,7 +22,6 @@ from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
     create_highlight,
     create_highlight_with_tag,
-    expand_card,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -54,7 +53,7 @@ def _switch_to_organise(page: Page) -> None:
 def _switch_to_annotate(page: Page) -> None:
     """Click the Annotate tab and wait for it to be active."""
     page.get_by_test_id("tab-annotate").click()
-    expect(page.locator(".ann-card-positioned").first).to_be_visible(timeout=5000)
+    expect(page.locator("#doc-container")).to_be_visible(timeout=5000)
 
 
 def _get_card_ids_in_column(page: Page, tag_name: str) -> list[str]:
@@ -112,7 +111,6 @@ def drag_workspace_page(browser: Browser, app_server: str) -> Generator[Page]:
     context.close()
 
 
-@pytest.mark.cards
 class TestDragCards:
     """Verify that Organise tab cards have drag affordance.
 
@@ -126,15 +124,12 @@ class TestDragCards:
 
         # Create a highlight (tag index 0 = Jurisdiction)
         create_highlight(page, 0, 4)
-        page.locator('[data-testid="annotation-card"]').first.wait_for(
-            state="visible", timeout=5000
-        )
 
         _switch_to_organise(page)
 
-        # Find the card
+        # Wait for the true boundary: the card appears in the Organise tab
         card = page.locator('[data-testid="organise-card"]').first
-        expect(card).to_be_visible(timeout=3000)
+        expect(card).to_be_visible(timeout=5000)
 
         # Verify card is inside a SortableJS container (has sort- prefixed id)
         sortable_container = page.locator('[id^="sort-"]').first
@@ -146,7 +141,6 @@ class TestDragCards:
         expect(card).to_have_css("cursor", "grab")
 
 
-@pytest.mark.cards
 class TestDragReorderWithinColumn:
     """Verify reordering cards within a column via drag.
 
@@ -165,12 +159,13 @@ class TestDragReorderWithinColumn:
 
         # Create two highlights with same tag (Jurisdiction = index 0)
         create_highlight_with_tag(page, 0, 4, 0)  # "Alpha"
-        page.locator('[data-testid="annotation-card"]').nth(0).wait_for(
-            state="visible", timeout=5000
+        expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+            1, timeout=5000
         )
+
         create_highlight_with_tag(page, 6, 10, 0)  # "Bravo"
-        page.locator('[data-testid="annotation-card"]').nth(1).wait_for(
-            state="visible", timeout=5000
+        expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+            2, timeout=5000
         )
 
         _switch_to_organise(page)
@@ -190,23 +185,26 @@ class TestDragReorderWithinColumn:
         target = cards.nth(0)
 
         source.drag_to(target)
-        expect(cards.first).to_be_visible(timeout=5000)
+
+        # Wait for optimistic UI update
+        expect(cards.nth(0)).to_have_attribute(
+            "data-highlight-id", initial_ids[1], timeout=5000
+        )
 
         # Switch to Annotate and back to force re-render from CRDT
         _switch_to_annotate(page)
         _switch_to_organise(page)
 
         # Verify the order changed (second card should now be moved)
-        after_ids = _get_card_ids_in_column(page, "Jurisdiction")
-        assert len(after_ids) == 2, (
-            f"Expected 2 cards after reorder, got {len(after_ids)}"
+        # This expect polling checks the true boundary: the server re-rendered the order
+        expect(cards.nth(0)).to_have_attribute(
+            "data-highlight-id", initial_ids[1], timeout=10000
         )
-        # The dragged card (initial_ids[1]) should have moved
-        # After drop, the second card is placed at end of same-column order
-        assert initial_ids[1] in after_ids, "Dragged card should still be in the column"
+        expect(cards.nth(1)).to_have_attribute(
+            "data-highlight-id", initial_ids[0], timeout=10000
+        )
 
 
-@pytest.mark.cards
 class TestDragBetweenColumns:
     """Verify moving cards between tag columns via drag.
 
@@ -226,8 +224,8 @@ class TestDragBetweenColumns:
 
         # Create highlight with Jurisdiction tag (index 0)
         create_highlight_with_tag(page, 0, 4, 0)
-        page.locator('[data-testid="annotation-card"]').first.wait_for(
-            state="visible", timeout=5000
+        expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+            1, timeout=5000
         )
 
         _switch_to_organise(page)
@@ -247,29 +245,31 @@ class TestDragBetweenColumns:
 
         # Drag the card to the Procedural History sortable container
         source_card.drag_to(proc_history_sortable)
+
+        # Wait for optimistic UI update
+        proc_history_col = page.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+        )
         expect(
-            page.locator(
-                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
-            )
-            .locator('[data-testid="organise-card"]')
-            .first
+            proc_history_col.locator(f'[data-highlight-id="{highlight_id}"]')
         ).to_be_visible(timeout=5000)
 
-        # Switch tabs and back to verify persistence
+        # Switch tabs and back to verify persistence (CRDT boundary)
         _switch_to_annotate(page)
         _switch_to_organise(page)
 
-        # Verify card moved to Procedural History
-        proc_cards = _get_card_ids_in_column(page, "Procedural History")
-        assert highlight_id in proc_cards, (
-            f"Card {highlight_id} should be in Procedural History after drag"
+        # Wait for the true boundary: the server re-renders the card in the new column
+        proc_history_col = page.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
         )
+        expect(
+            proc_history_col.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_visible(timeout=10000)
 
         # Verify card no longer in Jurisdiction
-        jurisdiction_cards = _get_card_ids_in_column(page, "Jurisdiction")
-        assert highlight_id not in jurisdiction_cards, (
-            f"Card {highlight_id} should not be in Jurisdiction after drag"
-        )
+        expect(
+            jurisdiction_col.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_hidden(timeout=5000)
 
     @pytestmark_db
     def test_drag_between_columns_updates_tab1_sidebar(
@@ -287,8 +287,8 @@ class TestDragBetweenColumns:
 
         # Create highlight with Jurisdiction tag (index 0)
         create_highlight_with_tag(page, 0, 4, 0)
-        page.locator('[data-testid="annotation-card"]').first.wait_for(
-            state="visible", timeout=5000
+        expect(page.locator("[data-testid='annotation-card']")).to_have_count(
+            1, timeout=5000
         )
 
         _switch_to_organise(page)
@@ -300,41 +300,40 @@ class TestDragBetweenColumns:
         )
         source_card = jurisdiction_col.locator('[data-testid="organise-card"]').first
         expect(source_card).to_be_visible(timeout=3000)
+        highlight_id = source_card.get_attribute("data-highlight-id")
 
         proc_history_sortable = _get_sortable_for_tag(page, "Procedural History")
         expect(proc_history_sortable).to_be_visible(timeout=3000)
 
         source_card.drag_to(proc_history_sortable)
-        expect(
-            page.locator(
-                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
-            )
-            .locator('[data-testid="organise-card"]')
-            .first
-        ).to_be_visible(timeout=5000)
 
-        # Verify the drag actually moved the card before checking sidebar
-        proc_cards = _get_card_ids_in_column(page, "Procedural History")
-        assert len(proc_cards) >= 1, (
-            "Card should have moved to Procedural History column"
+        # Verify the drag actually moved the card via optimistic update
+        proc_history_col = page.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
         )
+        expect(
+            proc_history_col.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_visible(timeout=5000)
 
         # Switch to Annotate tab
         _switch_to_annotate(page)
 
+        from tests.e2e.annotation_helpers import expand_card
+
         # Find the annotation card in the sidebar
-        # The sidebar card should show the new tag (Procedural History)
+        # The true boundary is the sidebar card showing the new tag (Procedural History)
         sidebar_card = page.locator(".ann-card-positioned").first
         expect(sidebar_card).to_be_visible(timeout=3000)
 
-        # The tag dropdown should reflect "Procedural History" tag
+        # Expand the card first, as they are collapsed by default
         expand_card(page, 0)
+
+        # Wait for the CRDT update to reflect in the Annotate tab's dropdown
         tag_select = sidebar_card.get_by_test_id("tag-select")
         expect(tag_select).to_be_visible(timeout=5000)
-        expect(tag_select).to_contain_text("Procedural History", timeout=5000)
+        expect(tag_select).to_contain_text("Procedural History", timeout=10000)
 
 
-@pytest.mark.cards
 class TestConcurrentDrag:
     """Verify concurrent drag operations produce consistent results.
 
@@ -342,7 +341,7 @@ class TestConcurrentDrag:
     """
 
     @pytestmark_db
-    def test_concurrent_drag_produces_consistent_result(
+    def test_concurrent_drag_produces_consistent_result(  # noqa: PLR0915
         self, two_annotation_contexts: tuple[Page, Page, str]
     ) -> None:
         """Two clients drag different cards simultaneously, both persist.
@@ -356,17 +355,18 @@ class TestConcurrentDrag:
 
         # Create two highlights on page1 (both Jurisdiction = index 0)
         create_highlight_with_tag(page1, 0, 4, 0)  # "Sync "
-        page1.locator('[data-testid="annotation-card"]').nth(0).wait_for(
-            state="visible", timeout=5000
-        )
-        create_highlight_with_tag(page1, 5, 9, 0)  # "test "
-        page1.locator('[data-testid="annotation-card"]').nth(1).wait_for(
-            state="visible", timeout=5000
+        expect(page1.locator("[data-testid='annotation-card']")).to_have_count(
+            1, timeout=5000
         )
 
-        # Wait for page2 to sync (broadcast): two annotation-card entries must appear
-        page2.locator('[data-testid="annotation-card"]').nth(1).wait_for(
-            state="attached", timeout=10000
+        create_highlight_with_tag(page1, 5, 9, 0)  # "test "
+        expect(page1.locator("[data-testid='annotation-card']")).to_have_count(
+            2, timeout=5000
+        )
+
+        # Wait for page2 to sync (broadcast boundary: cards appear on second client)
+        expect(page2.locator("[data-testid='annotation-card']")).to_have_count(
+            2, timeout=10000
         )
 
         # Both switch to Organise tab
@@ -374,62 +374,95 @@ class TestConcurrentDrag:
         _switch_to_organise(page2)
 
         # Get initial cards in Jurisdiction on page1
-        initial_ids = _get_card_ids_in_column(page1, "Jurisdiction")
-        assert len(initial_ids) >= 2, (
-            f"Expected at least 2 cards in Jurisdiction, got {len(initial_ids)}"
-        )
-
-        # Page1: drag first card to Legal Issues
         jurisdiction_col_p1 = page1.locator(
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
-        card_x = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
-        legal_issues_sortable_p1 = _get_sortable_for_tag(page1, "Legal Issues")
-        card_x.drag_to(legal_issues_sortable_p1)
-        # Sortable.js drag may not register reliably with Playwright's
-        # synthetic drag events — don't assert intermediate state here.
-        # The final consistency check below is the real verification.
-        page1.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+        # Ensure they are rendered in the column
+        expect(
+            jurisdiction_col_p1.locator('[data-testid="organise-card"]')
+        ).to_have_count(2, timeout=5000)
 
-        # Page2: drag (remaining) first card to Procedural History
+        initial_ids = _get_card_ids_in_column(page1, "Jurisdiction")
+        assert len(initial_ids) == 2, (
+            f"Expected 2 cards in Jurisdiction, got {len(initial_ids)}"
+        )
+        card_x_id = initial_ids[0]
+        card_y_id = initial_ids[1]
+
+        # Page1: drag first card to Decision
+        card_x = jurisdiction_col_p1.locator(f'[data-highlight-id="{card_x_id}"]')
+        decision_sortable_p1 = _get_sortable_for_tag(page1, "Decision")
+        card_x.drag_to(decision_sortable_p1)
+
+        # Wait for optimistic update on Page 1
+        decision_col_p1 = page1.locator(
+            '[data-testid="tag-column"][data-tag-name="Decision"]'
+        )
+        expect(
+            decision_col_p1.locator(f'[data-highlight-id="{card_x_id}"]')
+        ).to_be_visible(timeout=5000)
+
+        # Wait for broadcast to Page 2
+        # The Organise tab doesn't auto-refresh for remote drags, so we must
+        # switch tabs to trigger a re-render from the CRDT state.
+        import time
+
+        start_time = time.time()
+        while True:
+            _switch_to_annotate(page2)
+            _switch_to_organise(page2)
+            col = page2.locator('[data-testid="tag-column"][data-tag-name="Decision"]')
+            if col.locator(f'[data-highlight-id="{card_x_id}"]').is_visible():
+                break
+            if time.time() - start_time > 10:
+                raise TimeoutError("Broadcast not received on Page 2")
+            page2.wait_for_timeout(500)
+
+        # Page2: drag (remaining) card to Procedural History
         jurisdiction_col_p2 = page2.locator(
             '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
         )
-        # Re-render page2 to pick up broadcast from page1's drag
-        _switch_to_annotate(page2)
-        _switch_to_organise(page2)
+        card_y = jurisdiction_col_p2.locator(f'[data-highlight-id="{card_y_id}"]')
+        proc_history_sortable_p2 = _get_sortable_for_tag(page2, "Procedural History")
+        card_y.drag_to(proc_history_sortable_p2)
 
-        remaining_cards = jurisdiction_col_p2.locator('[data-testid="organise-card"]')
-        if remaining_cards.count() > 0:
-            card_y = remaining_cards.first
-            proc_history_sortable_p2 = _get_sortable_for_tag(
-                page2, "Procedural History"
+        # Wait for optimistic update on Page 2
+        proc_history_col_p2 = page2.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+        )
+        expect(
+            proc_history_col_p2.locator(f'[data-highlight-id="{card_y_id}"]')
+        ).to_be_visible(timeout=5000)
+
+        # Wait for broadcast back to Page 1
+        start_time = time.time()
+        while True:
+            _switch_to_annotate(page1)
+            _switch_to_organise(page1)
+            col = page1.locator(
+                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
             )
-            card_y.drag_to(proc_history_sortable_p2)
-            page2.wait_for_function("new Promise(r => requestAnimationFrame(r))")
-
-        # Let both broadcasts settle, then refresh Organise tabs
-        _switch_to_annotate(page1)
-        _switch_to_organise(page1)
-        _switch_to_annotate(page2)
-        _switch_to_organise(page2)
+            if col.locator(f'[data-highlight-id="{card_y_id}"]').is_visible():
+                break
+            if time.time() - start_time > 10:
+                raise TimeoutError("Broadcast not received on Page 1")
+            page1.wait_for_timeout(500)
 
         # Verify both pages show consistent state
         p1_jurisdiction = _get_card_ids_in_column(page1, "Jurisdiction")
         p2_jurisdiction = _get_card_ids_in_column(page2, "Jurisdiction")
-        p1_legal = _get_card_ids_in_column(page1, "Legal Issues")
-        p2_legal = _get_card_ids_in_column(page2, "Legal Issues")
+        p1_decision = _get_card_ids_in_column(page1, "Decision")
+        p2_decision = _get_card_ids_in_column(page2, "Decision")
 
-        # Both pages should agree on what's in Jurisdiction and Legal Issues
+        # Both pages should agree on what's in Jurisdiction and Decision
         assert set(p1_jurisdiction) == set(p2_jurisdiction), (
             f"Jurisdiction mismatch: p1={p1_jurisdiction}, p2={p2_jurisdiction}"
         )
-        assert set(p1_legal) == set(p2_legal), (
-            f"Legal Issues mismatch: p1={p1_legal}, p2={p2_legal}"
+        assert set(p1_decision) == set(p2_decision), (
+            f"Decision mismatch: p1={p1_decision}, p2={p2_decision}"
         )
 
-        # At least one card should have moved out of Jurisdiction
-        total_moved = len(initial_ids) - len(p1_jurisdiction)
-        assert total_moved >= 1, (
-            "At least one card should have moved out of Jurisdiction"
+        # Both cards should have moved out of Jurisdiction
+        assert len(p1_jurisdiction) == 0, (
+            "All cards should have moved out of Jurisdiction"
         )

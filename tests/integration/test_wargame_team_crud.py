@@ -82,3 +82,83 @@ class TestCreateAndGetTeam:
         from promptgrimoire.db.wargames import get_team
 
         assert await get_team(uuid4()) is None
+
+
+class TestCreateAndListTeams:
+    """Service-level tests for batch creation and listing."""
+
+    @pytest.mark.asyncio
+    async def test_create_teams_persists_distinct_codenames_after_existing_team(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AC3.2: batch creation avoids collisions within one activity."""
+        from promptgrimoire.db.wargames import create_team, create_teams, list_teams
+
+        activity = await _make_wargame_activity("create-teams")
+        existing = await create_team(activity.id, codename="EXISTING")
+
+        def fake_generate(existing_codenames: set[str]) -> str:
+            for candidate in ("EXISTING", "RED-FOX", "BLUE-WHALE", "GREEN-OWL"):
+                if candidate not in existing_codenames:
+                    return candidate
+            msg = "exhausted fake codename candidates"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(
+            "promptgrimoire.db.wargames.generate_codename",
+            fake_generate,
+        )
+
+        created = await create_teams(activity.id, 3)
+        persisted = await list_teams(activity.id)
+
+        created_codenames = [team.codename for team in created]
+        persisted_codenames = [team.codename for team in persisted]
+
+        assert len(created) == 3
+        assert len({team.id for team in created}) == 3
+        assert created_codenames == ["RED-FOX", "BLUE-WHALE", "GREEN-OWL"]
+        assert existing.codename not in created_codenames
+        assert persisted_codenames == [
+            "EXISTING",
+            "RED-FOX",
+            "BLUE-WHALE",
+            "GREEN-OWL",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_teams_filters_to_one_activity_in_created_order(self) -> None:
+        """list_teams returns one activity's teams in created order."""
+        from promptgrimoire.db.wargames import create_team, list_teams
+
+        activity_one = await _make_wargame_activity("list-teams-one")
+        activity_two = await _make_wargame_activity("list-teams-two")
+
+        first = await create_team(activity_one.id, codename="ALPHA")
+        await create_team(activity_two.id, codename="OTHER")
+        second = await create_team(activity_one.id, codename="BRAVO")
+
+        listed = await list_teams(activity_one.id)
+
+        assert [team.id for team in listed] == [first.id, second.id]
+        assert [team.codename for team in listed] == ["ALPHA", "BRAVO"]
+        assert all(team.activity_id == activity_one.id for team in listed)
+
+    @pytest.mark.asyncio
+    async def test_create_teams_rejects_non_positive_count_without_new_rows(
+        self,
+    ) -> None:
+        """Non-positive team counts raise and preserve persisted state."""
+        from promptgrimoire.db.wargames import create_team, create_teams, list_teams
+
+        activity = await _make_wargame_activity("create-teams-invalid")
+        kept = await create_team(activity.id, codename="KEEP-ME")
+
+        with pytest.raises(ValueError, match="team_count must be positive"):
+            await create_teams(activity.id, 0)
+
+        persisted = await list_teams(activity.id)
+
+        assert [team.id for team in persisted] == [kept.id]
+        assert [team.codename for team in persisted] == ["KEEP-ME"]

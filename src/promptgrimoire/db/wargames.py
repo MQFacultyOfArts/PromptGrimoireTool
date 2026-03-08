@@ -103,7 +103,54 @@ async def create_team(
         return await _create_team(session, activity_id, codename=codename)
 
 
+async def create_teams(activity_id: UUID, team_count: int) -> list[WargameTeam]:
+    """Create multiple wargame teams for one activity in one transaction.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        Parent wargame activity identifier.
+    team_count : int
+        Number of teams to create.
+
+    Returns
+    -------
+    list[WargameTeam]
+        Created team rows in creation order.
+
+    Raises
+    ------
+    ValueError
+        If ``team_count`` is not positive.
+    """
+    if team_count <= 0:
+        msg = "team_count must be positive"
+        raise ValueError(msg)
+
+    async with get_session() as session:
+        collision_set = await _list_existing_codenames(session, activity_id)
+        return [
+            await _create_team(
+                session,
+                activity_id,
+                existing_codenames=collision_set,
+            )
+            for _ in range(team_count)
+        ]
+
+
 async def get_team(team_id: UUID) -> WargameTeam | None:
     """Return a wargame team by primary key, or None when missing."""
     async with get_session() as session:
         return await session.get(WargameTeam, team_id)
+
+
+async def list_teams(activity_id: UUID) -> list[WargameTeam]:
+    """Return teams for one activity ordered by creation time."""
+    async with get_session() as session:
+        result = await session.exec(
+            select(WargameTeam)
+            .where(WargameTeam.activity_id == activity_id)
+            .order_by(WargameTeam.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs don't accept Column expressions
+        )
+        return list(result.all())

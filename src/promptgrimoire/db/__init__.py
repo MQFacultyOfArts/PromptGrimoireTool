@@ -96,7 +96,9 @@ from promptgrimoire.db.users import (
 from promptgrimoire.db.wargames import (
     DuplicateCodenameError,
     create_team,
+    create_teams,
     get_team,
+    list_teams,
 )
 from promptgrimoire.db.workspace_documents import (
     add_document,
@@ -151,6 +153,7 @@ __all__ = [
     "create_tag",
     "create_tag_group",
     "create_team",
+    "create_teams",
     "create_user",
     "create_workspace",
     "delete_activity",
@@ -196,6 +199,7 @@ __all__ = [
     "list_peer_workspaces_with_owners",
     "list_tag_groups_for_workspace",
     "list_tags_for_workspace",
+    "list_teams",
     "list_user_enrollments",
     "list_users",
     "list_workspaces_for_activity",

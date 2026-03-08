@@ -515,16 +515,14 @@ async def list_importable_workspaces(
     accessible = await list_accessible_workspaces(user_id)
 
     # Build candidate set: drop the excluded workspace up front.
-    permission_by_ws: dict[UUID, str] = {}
-    candidates = []
-    for ws, permission in accessible:
-        if exclude_workspace_id is None or ws.id != exclude_workspace_id:
-            candidates.append(ws)
-            permission_by_ws[ws.id] = permission
-    if not candidates:
+    permission_by_ws: dict[UUID, str] = {
+        ws.id: perm for ws, perm in accessible if ws.id != exclude_workspace_id
+    }
+    if not permission_by_ws:
         return []
 
-    candidate_ids = [ws.id for ws in candidates]
+    candidates = [ws for ws, _ in accessible if ws.id in permission_by_ws]
+    candidate_ids = list(permission_by_ws.keys())
 
     async with get_session() as session:
         # --- Batch 1: which of these workspaces have at least one tag? ---
@@ -573,10 +571,9 @@ async def list_importable_workspaces(
     # 2. Owner workspaces before shared
     # 3. More tags preferred over fewer
     # 4. Then alphabetical by course/title
-    ws_by_id = {ws.id: ws for ws in workspaces_with_tags}
     result: list[tuple[Workspace, str | None, list[str]]] = [
-        (ws_by_id[ws_id], course_name_by_ws.get(ws_id), tags_by_ws.get(ws_id, []))
-        for ws_id in ws_by_id
+        (ws, course_name_by_ws.get(ws.id), tags_by_ws.get(ws.id, []))
+        for ws in workspaces_with_tags
     ]
     _perm_rank = {"owner": 0, "editor": 1, "viewer": 2}
     result.sort(

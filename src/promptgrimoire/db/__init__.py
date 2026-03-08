@@ -105,6 +105,7 @@ from promptgrimoire.db.wargames import (
     list_teams,
     rename_team,
     resolve_team_permission,
+    revoke_team_permission,
 )
 from promptgrimoire.db.workspace_documents import (
     add_document,
@@ -223,6 +224,7 @@ __all__ = [
     "resolve_permission",
     "resolve_team_permission",
     "revoke_permission",
+    "revoke_team_permission",
     "run_alembic_upgrade",
     "save_workspace_crdt_state",
     "set_admin",

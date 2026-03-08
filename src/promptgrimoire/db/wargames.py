@@ -276,6 +276,50 @@ async def grant_team_permission(
         )
 
 
+async def _revoke_team_permission_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+    user_id: UUID,
+) -> bool:
+    """Delete one team ACL row inside a caller-owned session."""
+    result = await session.exec(
+        select(ACLEntry).where(
+            ACLEntry.team_id == team_id,
+            ACLEntry.user_id == user_id,
+        )
+    )
+    entry = result.one_or_none()
+    if entry is None:
+        return False
+
+    permission_row = await _get_permission_row_with_session(session, entry.permission)
+    current_can_edit = permission_row.can_edit if permission_row is not None else False
+    if current_can_edit:
+        await _lock_team_acl_rows_with_session(session, team_id)
+        remaining_editable = await _count_other_editable_team_members_with_session(
+            session,
+            team_id,
+            user_id,
+        )
+        if remaining_editable == 0:
+            raise ZeroEditorError(
+                team_id,
+                user_id,
+                entry.permission,
+                None,
+            )
+
+    await session.delete(entry)
+    await session.flush()
+    return True
+
+
+async def revoke_team_permission(team_id: UUID, user_id: UUID) -> bool:
+    """Delete a user's ACL entry for a team."""
+    async with get_session() as session:
+        return await _revoke_team_permission_with_session(session, team_id, user_id)
+
+
 async def create_teams(activity_id: UUID, team_count: int) -> list[WargameTeam]:
     """Create multiple wargame teams for one activity in one transaction.
 

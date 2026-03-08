@@ -329,3 +329,73 @@ class TestGrantTeamPermission:
             await grant_team_permission(team.id, user.id, "observer")
 
         assert await resolve_team_permission(team.id, user.id) == "viewer"
+
+
+class TestRevokeTeamPermission:
+    """Service-level tests for revoke_team_permission."""
+
+    @pytest.mark.asyncio
+    async def test_revoke_team_permission_raises_zero_editor_error_for_last_editor(
+        self,
+    ) -> None:
+        """AC5.1: revoking the only editable member is rejected."""
+        from promptgrimoire.db.wargames import (
+            ZeroEditorError,
+            grant_team_permission,
+            resolve_team_permission,
+            revoke_team_permission,
+        )
+
+        _, team = await _make_team("revoke-last-editor")
+        user = await _make_user("revoke-last-editor", "Revoke Last Editor")
+        await grant_team_permission(team.id, user.id, "editor")
+
+        with pytest.raises(ZeroEditorError) as exc_info:
+            await revoke_team_permission(team.id, user.id)
+
+        assert exc_info.value.team_id == team.id
+        assert exc_info.value.user_id == user.id
+        assert exc_info.value.current_permission == "editor"
+        assert exc_info.value.attempted_permission is None
+        assert await resolve_team_permission(team.id, user.id) == "editor"
+
+    @pytest.mark.asyncio
+    async def test_revoke_team_permission_succeeds_when_owner_survives(
+        self,
+    ) -> None:
+        """Revocation succeeds when another can_edit member remains."""
+        from promptgrimoire.db.wargames import (
+            grant_team_permission,
+            resolve_team_permission,
+            revoke_team_permission,
+        )
+
+        _, team = await _make_team("revoke-owner-survivor")
+        owner = await _make_user("revoke-owner", "Owner Revoke Survivor")
+        editor = await _make_user("revoke-editor", "Editor Revoke Survivor")
+
+        await grant_team_permission(team.id, owner.id, "owner")
+        await grant_team_permission(team.id, editor.id, "editor")
+
+        assert await revoke_team_permission(team.id, editor.id) is True
+        assert await resolve_team_permission(team.id, editor.id) is None
+        assert await resolve_team_permission(team.id, owner.id) == "owner"
+
+    @pytest.mark.asyncio
+    async def test_revoke_team_permission_returns_false_for_missing_entry(
+        self,
+    ) -> None:
+        """Missing team ACL rows return False rather than raising."""
+        from promptgrimoire.db.wargames import (
+            grant_team_permission,
+            resolve_team_permission,
+            revoke_team_permission,
+        )
+
+        _, team = await _make_team("revoke-missing")
+        kept = await _make_user("revoke-kept", "Kept Member")
+        missing = await _make_user("revoke-missing", "Missing Member")
+        await grant_team_permission(team.id, kept.id, "owner")
+
+        assert await revoke_team_permission(team.id, missing.id) is False
+        assert await resolve_team_permission(team.id, kept.id) == "owner"

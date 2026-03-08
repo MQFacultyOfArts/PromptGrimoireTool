@@ -62,7 +62,6 @@ class AnnotationDocument:
         self.doc["highlights"] = Map()  # {highlight_id: HighlightData}
         self.doc["client_meta"] = Map()  # {client_id: {name, color}}
         self.doc["general_notes"] = Text()  # Collaborative text for general notes
-        self.doc["tag_order"] = Map()  # {tag_name: Array([highlight_id, ...])}
         # Tag metadata Maps (tag lifecycle refactor)
         self.doc["tags"] = Map()  # {tag_uuid: {name, colour, ...}}
         self.doc["tag_groups"] = Map()  # {group_uuid: {name, ...}}
@@ -97,8 +96,23 @@ class AnnotationDocument:
 
     @property
     def tag_order(self) -> Map:
-        """Get the tag_order Map."""
-        return self.doc["tag_order"]
+        """Get the tag_order Map (deprecated, use tags Map highlights).
+
+        Lazily initialises the Map on first access for backward
+        compatibility with code that still reads/writes tag_order
+        directly (db/tags.py cleanup, db/workspaces.py clone).
+        Will be removed once all callers are migrated.
+        """
+        try:
+            result = self.doc["tag_order"]
+        except KeyError:
+            result = None
+        if result is None:
+            # Key missing or received via apply_update without type
+            # declaration — (re-)declare as Map to materialise content.
+            self.doc["tag_order"] = Map()
+            result = self.doc["tag_order"]
+        return result
 
     @property
     def tags(self) -> Map:
@@ -382,21 +396,21 @@ class AnnotationDocument:
         ]
         return sorted(highlights, key=lambda h: h.get("start_char", 0))
 
-    # --- Tag order operations ---
-
-    def get_tag_order(self, tag: str) -> list[str]:
-        """Return the ordered list of highlight IDs for a given tag.
+    def get_tag_highlights(self, tag_id: str) -> list[str]:
+        """Get ordered highlight IDs for a tag from the tags Map.
 
         Args:
-            tag: The tag name to look up.
+            tag_id: Tag identifier.
 
         Returns:
-            Ordered list of highlight IDs, or empty list if tag has no ordering.
+            Ordered list of highlight IDs, or empty list if tag not found.
         """
-        arr = self.tag_order.get(tag)
-        if arr is None:
+        tag_data = self.get_tag(tag_id)
+        if tag_data is None:
             return []
-        return list(arr)
+        return list(tag_data.get("highlights", []))
+
+    # --- Tag order operations (deprecated, pending removal) ---
 
     def set_tag_order(
         self,
@@ -414,24 +428,27 @@ class AnnotationDocument:
         token = _origin_var.set(origin_client_id)
         try:
             self.tag_order[tag] = Array(highlight_ids)
-            # Sync tags Map highlights field (dual write for transition)
-            self._sync_tag_highlights(tag, highlight_ids)
         finally:
             _origin_var.reset(token)
 
-    def _sync_tag_highlights(self, tag_id: str, highlights: list[str]) -> None:
-        """Write highlights list to tags Map entry if it exists (dual-write helper)."""
-        entry = self.get_tag(tag_id)
-        if entry is not None:
-            self.set_tag(
-                tag_id=tag_id,
-                name=entry["name"],
-                colour=entry["colour"],
-                order_index=entry["order_index"],
-                group_id=entry.get("group_id"),
-                description=entry.get("description"),
-                highlights=highlights,
-            )
+    def _update_tag_highlights(self, tag_id: str, highlights: list[str]) -> None:
+        """Overwrite the highlights list for a tag, preserving metadata.
+
+        No-op if the tag does not exist in the tags Map.
+        Caller must manage the origin token.
+        """
+        tag_data = self.get_tag(tag_id)
+        if tag_data is None:
+            return
+        self.set_tag(
+            tag_id=tag_id,
+            name=tag_data["name"],
+            colour=tag_data["colour"],
+            order_index=tag_data["order_index"],
+            group_id=tag_data.get("group_id"),
+            description=tag_data.get("description"),
+            highlights=highlights,
+        )
 
     def move_highlight_to_tag(
         self,
@@ -441,17 +458,18 @@ class AnnotationDocument:
         position: int = -1,
         origin_client_id: str | None = None,
     ) -> bool:
-        """Move a highlight from one tag's order to another.
+        """Move a highlight from one tag to another using the tags Map.
 
-        Removes ``highlight_id`` from ``from_tag``'s order (if present and
-        ``from_tag`` is not None), then inserts it into ``to_tag``'s order at
-        ``position`` (-1 means append). Also updates the highlight's tag field.
+        Removes ``highlight_id`` from ``from_tag``'s highlights (if present
+        and ``from_tag`` is not None), then inserts it into ``to_tag``'s
+        highlights at ``position`` (-1 means append). Also updates the
+        highlight's tag field.
 
         Args:
             highlight_id: ID of the highlight to move.
             from_tag: Tag to remove from (None to skip removal).
             to_tag: Tag to add to.
-            position: Insertion index in target order (-1 to append).
+            position: Insertion index in target highlights (-1 to append).
             origin_client_id: Client making the change (for echo prevention).
 
         Returns:
@@ -462,25 +480,20 @@ class AnnotationDocument:
 
         token = _origin_var.set(origin_client_id)
         try:
-            # Remove from source tag order
+            # Remove from source tag
             if from_tag is not None:
-                source_ids = self.get_tag_order(from_tag)
+                source_ids = self.get_tag_highlights(from_tag)
                 if highlight_id in source_ids:
                     source_ids.remove(highlight_id)
-                    self.tag_order[from_tag] = Array(source_ids)
-                    # Dual-write: sync tags Map highlights (only when removal occurred)
-                    self._sync_tag_highlights(from_tag, source_ids)
+                    self._update_tag_highlights(from_tag, source_ids)
 
-            # Insert into target tag order
-            target_ids = self.get_tag_order(to_tag)
+            # Insert into target tag
+            target_ids = self.get_tag_highlights(to_tag)
             if position == -1:
                 target_ids.append(highlight_id)
             else:
                 target_ids.insert(position, highlight_id)
-            self.tag_order[to_tag] = Array(target_ids)
-
-            # Dual-write: sync tags Map highlights
-            self._sync_tag_highlights(to_tag, target_ids)
+            self._update_tag_highlights(to_tag, target_ids)
 
             # Update the highlight's tag field
             hl_data = dict(self.highlights[highlight_id])

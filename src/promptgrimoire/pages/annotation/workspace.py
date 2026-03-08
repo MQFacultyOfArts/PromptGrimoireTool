@@ -174,7 +174,7 @@ def _apply_sort_reorder_or_move(
 ) -> None:
     """Apply a sort-end reorder or cross-column move to the CRDT.
 
-    Same-column events update tag_order in place. Cross-column events
+    Same-column events update tags Map highlights in place. Cross-column events
     reassign the highlight's tag. In both cases, the Sortable element's
     internal handler syncs the Python element tree with the DOM — callers
     must NOT rebuild the organise panel mid-event.
@@ -188,13 +188,23 @@ def _apply_sort_reorder_or_move(
     """
     assert state.crdt_doc is not None
     if source_tag == target_tag:
-        current_order = state.crdt_doc.get_tag_order(target_tag)
+        current_order = state.crdt_doc.get_tag_highlights(target_tag)
         if highlight_id in current_order:
             current_order.remove(highlight_id)
         current_order.insert(new_index, highlight_id)
-        state.crdt_doc.set_tag_order(
-            target_tag, current_order, origin_client_id=state.client_id
-        )
+        # Write highlights back to tags Map
+        tag_data = state.crdt_doc.get_tag(target_tag)
+        if tag_data is not None:
+            state.crdt_doc.set_tag(
+                tag_id=target_tag,
+                name=tag_data["name"],
+                colour=tag_data["colour"],
+                order_index=tag_data["order_index"],
+                group_id=tag_data.get("group_id"),
+                description=tag_data.get("description"),
+                highlights=current_order,
+                origin_client_id=state.client_id,
+            )
         ui.notify("Reordered", type="info")
     else:
         state.crdt_doc.move_highlight_to_tag(
@@ -205,22 +215,17 @@ def _apply_sort_reorder_or_move(
             origin_client_id=state.client_id,
         )
         # Resolve display name from tag_info_list (raw key is a UUID)
-        target_name = "Untagged"
-        if target_tag and state.tag_info_list:
-            for ti in state.tag_info_list:
-                if ti.raw_key == target_tag:
-                    target_name = ti.name
-                    break
+        target_name = next(
+            (ti.name for ti in (state.tag_info_list or []) if ti.raw_key == target_tag),
+            "Untagged",
+        )
         ui.notify(
             f"Moved to {target_name}",
             type="positive",
             position="bottom",
         )
-        # Do NOT call refresh_fn() here. SortableJS already moved the DOM
-        # element cross-column, and the Sortable element's internal
-        # _handle_cross_container_add handler will sync the Python element
-        # tree with the DOM. Calling refresh_fn() destroys the Sortable
-        # elements mid-event, causing RuntimeError in NiceGUI's slot system.
+        # SortableJS already synced the DOM; calling refresh here would
+        # destroy elements mid-event (RuntimeError in NiceGUI's slot system).
 
 
 _SCROLL_SAVE_JS = (
@@ -289,12 +294,8 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.broadcast_update:
             await state.broadcast_update()
 
-        # Cross-column visual update: SortableJS moves the DOM element and
-        # _handle_cross_container_add (concurrent handler) syncs NiceGUI's
-        # element tree. We must NOT call panel.clear() here — it would
-        # destroy elements that handler still references. The card shows
-        # its old tag label/colour until the next full rebuild (tab switch
-        # or broadcast). The CRDT is already correct.
+        # Cross-column card label/colour updates on next full rebuild
+        # (tab switch or broadcast). The CRDT is already correct.
 
     async def _on_locate(start_char: int, end_char: int) -> None:
         """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
@@ -316,9 +317,7 @@ def _setup_organise_drag(state: PageState) -> None:
         )
 
     state.refresh_organise = _render_organise_now
-    # Sync lambda returning a coroutine — callers ``await`` the result.
-    # Python has no async lambda syntax, so this is the standard workaround.
-    # NiceGUI's timer callback also handles this via Awaitable detection.
+    # Sync lambda returning a coroutine (Python has no async lambda).
     state.refresh_organise_with_scroll = lambda: _rebuild_organise_with_scroll(
         _render_organise_now
     )

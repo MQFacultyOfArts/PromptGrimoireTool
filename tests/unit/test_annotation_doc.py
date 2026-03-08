@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
 
@@ -439,66 +441,79 @@ class TestDeleteCommentOwnership:
         assert result is False
 
 
-class TestTagOrder:
-    """Tests for tag_order operations."""
-
-    def test_get_tag_order_empty_tag(self) -> None:
-        """get_tag_order returns empty list for unknown tag."""
-        doc = AnnotationDocument("test-doc")
-
-        assert doc.get_tag_order("nonexistent") == []
-
-    def test_set_and_get_tag_order(self) -> None:
-        """set_tag_order stores IDs; get_tag_order retrieves them."""
-        doc = AnnotationDocument("test-doc")
-
-        doc.set_tag_order("jurisdiction", ["h1", "h2", "h3"])
-
-        assert doc.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
-
-    def test_set_tag_order_replaces_existing(self) -> None:
-        """Setting tag_order again replaces the previous order."""
-        doc = AnnotationDocument("test-doc")
-
-        doc.set_tag_order("jurisdiction", ["h1", "h2"])
-        doc.set_tag_order("jurisdiction", ["h3", "h1"])
-
-        assert doc.get_tag_order("jurisdiction") == ["h3", "h1"]
+class TestMoveHighlight:
+    """Tests for move_highlight_to_tag using tags Map."""
 
     def test_move_highlight_to_tag_appends(self) -> None:
         """move_highlight_to_tag removes from source, appends to target."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "issue", "text", "author")
         h2 = doc.add_highlight(6, 10, "issue", "more", "author")
         h3 = doc.add_highlight(11, 15, "facts", "data", "author")
-        doc.set_tag_order("issue", [h1, h2])
-        doc.set_tag_order("facts", [h3])
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+            highlights=[h3],
+        )
 
         result = doc.move_highlight_to_tag(h2, from_tag="issue", to_tag="facts")
 
         assert result is True
-        assert doc.get_tag_order("issue") == [h1]
-        assert doc.get_tag_order("facts") == [h3, h2]
+        assert doc.get_tag_highlights("issue") == [h1]
+        assert doc.get_tag_highlights("facts") == [h3, h2]
 
     def test_move_highlight_to_tag_at_position(self) -> None:
         """move_highlight_to_tag inserts at the given position."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=0)
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=1)
         h1 = doc.add_highlight(0, 5, "facts", "a", "author")
         h2 = doc.add_highlight(6, 10, "facts", "b", "author")
         h3 = doc.add_highlight(11, 15, "issue", "c", "author")
-        doc.set_tag_order("facts", [h1, h2])
-        doc.set_tag_order("issue", [h3])
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=1,
+            highlights=[h3],
+        )
 
         doc.move_highlight_to_tag(h3, from_tag="issue", to_tag="facts", position=1)
 
-        assert doc.get_tag_order("facts") == [h1, h3, h2]
-        assert doc.get_tag_order("issue") == []
+        assert doc.get_tag_highlights("facts") == [h1, h3, h2]
+        assert doc.get_tag_highlights("issue") == []
 
     def test_move_highlight_to_tag_updates_highlight_tag(self) -> None:
         """move_highlight_to_tag updates the highlight's tag field."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="old_tag", name="Old", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="new_tag", name="New", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "old_tag", "text", "author")
-        doc.set_tag_order("old_tag", [h1])
+        doc.set_tag(
+            tag_id="old_tag",
+            name="Old",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1],
+        )
 
         doc.move_highlight_to_tag(h1, from_tag="old_tag", to_tag="new_tag")
 
@@ -516,52 +531,26 @@ class TestTagOrder:
 
         assert result is False
 
-    def test_tag_order_syncs_between_docs(self) -> None:
-        """tag_order changes sync via CRDT updates."""
-        doc1 = AnnotationDocument("test-doc")
-        doc2 = AnnotationDocument("test-doc")
-
-        # Sync initial state
-        doc2.apply_update(doc1.get_full_state())
-
-        # Set tag order in doc1
-        doc1.set_tag_order("jurisdiction", ["h1", "h2", "h3"])
-        update = doc1.doc.get_update()
-
-        # Apply to doc2
-        doc2.apply_update(update)
-
-        assert doc2.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
-
-    def test_set_tag_order_syncs_tags_map_highlights(self) -> None:
-        """set_tag_order also writes highlights to tags Map entry."""
-        doc = AnnotationDocument("test-doc")
-        doc.set_tag(tag_id="tag-1", name="Issue", colour="#ff0000", order_index=0)
-
-        doc.set_tag_order("tag-1", ["h1", "h2", "h3"])
-
-        tag_entry = doc.get_tag("tag-1")
-        assert tag_entry is not None
-        assert tag_entry["highlights"] == ["h1", "h2", "h3"]
-
-    def test_set_tag_order_no_crash_when_tag_not_in_tags_map(self) -> None:
-        """set_tag_order still writes tag_order when tag not in tags Map."""
-        doc = AnnotationDocument("test-doc")
-
-        doc.set_tag_order("nonexistent-tag", ["h1", "h2"])
-
-        assert doc.get_tag_order("nonexistent-tag") == ["h1", "h2"]
-        assert doc.get_tag("nonexistent-tag") is None
-
     def test_move_highlight_updates_tags_map_highlights(self) -> None:
         """move_highlight_to_tag updates highlights field in tags Map for both tags."""
         doc = AnnotationDocument("test-doc")
         doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=0)
         doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "issue", "text", "author")
-        # Establish canonical pre-move state via set_tag_order (which syncs tags Map)
-        doc.set_tag_order("issue", [h1])
-        doc.set_tag_order("facts", [])
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+            highlights=[],
+        )
 
         doc.move_highlight_to_tag(h1, from_tag="issue", to_tag="facts")
 
@@ -577,14 +566,15 @@ class TestTagOrder:
         """move_highlight_to_tag is graceful when tags Map lacks entries."""
         doc = AnnotationDocument("test-doc")
         h1 = doc.add_highlight(0, 5, "old", "text", "author")
-        doc.set_tag_order("old", [h1])
 
         # Tags Map has no entries for "old" or "new" -- should not crash
         result = doc.move_highlight_to_tag(h1, from_tag="old", to_tag="new")
 
         assert result is True
-        assert doc.get_tag_order("old") == []
-        assert doc.get_tag_order("new") == [h1]
+        # highlight's tag field updated
+        hl = doc.get_highlight(h1)
+        assert hl is not None
+        assert hl["tag"] == "new"
 
     def test_move_highlight_reorder_same_tag_updates_tags_map(self) -> None:
         """Reordering within same tag updates tags Map highlights."""
@@ -598,14 +588,118 @@ class TestTagOrder:
             order_index=0,
             highlights=[h1, h2],
         )
-        doc.set_tag_order("tag-a", [h1, h2])
 
-        # Move h2 to position 0 within same tag (from_tag=None skips removal)
+        # Move h2 to position 0 within same tag
         doc.move_highlight_to_tag(h2, from_tag="tag-a", to_tag="tag-a", position=0)
 
         tag_entry = doc.get_tag("tag-a")
         assert tag_entry is not None
         assert tag_entry["highlights"] == [h2, h1]
+
+    def test_tag_highlights_sync_between_docs(self) -> None:
+        """Tag highlights sync via CRDT updates."""
+        doc1 = AnnotationDocument("test-doc")
+        doc2 = AnnotationDocument("test-doc")
+
+        # Sync initial state
+        doc2.apply_update(doc1.get_full_state())
+
+        # Set tag with highlights in doc1
+        doc1.set_tag(
+            tag_id="jurisdiction",
+            name="Jurisdiction",
+            colour="#ff0000",
+            order_index=0,
+            highlights=["h1", "h2", "h3"],
+        )
+        update = doc1.doc.get_update()
+
+        # Apply to doc2
+        doc2.apply_update(update)
+
+        assert doc2.get_tag_highlights("jurisdiction") == ["h1", "h2", "h3"]
+
+
+class TestGetTagHighlights:
+    """Tests for get_tag_highlights reading from tags Map."""
+
+    def test_get_tag_highlights_empty_when_no_tag(self) -> None:
+        """get_tag_highlights returns empty list for unknown tag."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_tag_highlights("nonexistent") == []
+
+    def test_get_tag_highlights_returns_highlights_from_tags_map(self) -> None:
+        """get_tag_highlights reads from the tags Map highlights field."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(
+            tag_id="tag-1",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=["h1", "h2", "h3"],
+        )
+
+        result = doc.get_tag_highlights("tag-1")
+
+        assert result == ["h1", "h2", "h3"]
+
+    def test_get_tag_highlights_empty_when_no_highlights(self) -> None:
+        """get_tag_highlights returns empty list when tag has no highlights."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="tag-1", name="Issue", colour="#ff0000", order_index=0)
+
+        result = doc.get_tag_highlights("tag-1")
+
+        assert result == []
+
+
+class TestTagOrderBackwardCompat:
+    """Backward compatibility: old CRDT state with tag_order Map."""
+
+    def test_apply_update_with_legacy_tag_order_no_exception(self) -> None:
+        """Applying state from a doc that had tag_order does not crash."""
+        from pycrdt import Array, Doc, Map
+
+        # Simulate old-style doc that includes tag_order
+        old_doc = Doc()
+        old_doc["highlights"] = Map()
+        old_doc["client_meta"] = Map()
+        old_doc["tag_order"] = Map()
+        old_doc["tags"] = Map()
+        old_doc["tag_groups"] = Map()
+
+        # Write some tag_order data
+        old_doc["tag_order"]["some-tag"] = Array(["h1", "h2"])
+        state = old_doc.get_update()
+
+        # New AnnotationDocument (no longer initialises tag_order)
+        new_doc = AnnotationDocument("test-doc")
+        new_doc.apply_update(state)
+
+        # tags Map should still be accessible
+        assert new_doc.tags is not None
+        assert new_doc.list_tags() == {}
+
+    def test_tag_order_not_initialised_on_new_doc(self) -> None:
+        """New AnnotationDocument does not eagerly create tag_order."""
+        doc = AnnotationDocument("test-doc")
+
+        # tag_order should NOT be in the doc keys initially
+        # (it's lazily created on property access)
+        with pytest.raises(KeyError):
+            doc.doc["tag_order"]
+
+    def test_tag_order_property_lazy_creates(self) -> None:
+        """Accessing tag_order property lazily creates the Map."""
+        doc = AnnotationDocument("test-doc")
+
+        # Access the deprecated property — should not raise
+        tag_order = doc.tag_order
+
+        assert tag_order is not None
+        # Now the key should exist (no KeyError)
+        assert doc.doc["tag_order"] is not None
 
 
 class TestResponseDraft:
@@ -723,7 +817,7 @@ class TestCrdtCoexistence:
         assert doc.get_general_notes() == "Replaced content"
 
     def test_broadcast_fires_for_all_field_types(self) -> None:
-        """Broadcast callback fires for highlights, tag_order, and general_notes."""
+        """Broadcast callback fires for highlights, tags, and general_notes."""
         doc = AnnotationDocument("test-doc")
         fired: list[str] = []
 
@@ -734,19 +828,25 @@ class TestCrdtCoexistence:
 
         # Modify highlights
         doc.add_highlight(0, 5, "tag", "text", "author")
-        # Modify tag_order
-        doc.set_tag_order("tag", ["fake-id"])
+        # Modify tags Map
+        doc.set_tag(tag_id="tag", name="Tag", colour="#ff0000", order_index=0)
         # Modify general_notes
         doc.set_general_notes("notes")
 
         assert len(fired) >= 3  # At least one update per mutation
 
     def test_full_state_includes_all_fields(self) -> None:
-        """Full state sync transfers highlights, tag_order, general_notes."""
+        """Full state sync transfers highlights, tags, general_notes."""
         doc1 = AnnotationDocument("test-doc")
 
         h_id = doc1.add_highlight(0, 5, "jurisdiction", "text", "author")
-        doc1.set_tag_order("jurisdiction", [h_id])
+        doc1.set_tag(
+            tag_id="jurisdiction",
+            name="Jurisdiction",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h_id],
+        )
         doc1.set_general_notes("shared notes")
 
         # Create new doc and sync full state
@@ -754,7 +854,7 @@ class TestCrdtCoexistence:
         doc2.apply_update(doc1.get_full_state())
 
         assert doc2.get_highlight(h_id) is not None
-        assert doc2.get_tag_order("jurisdiction") == [h_id]
+        assert doc2.get_tag_highlights("jurisdiction") == [h_id]
         assert doc2.get_general_notes() == "shared notes"
 
 

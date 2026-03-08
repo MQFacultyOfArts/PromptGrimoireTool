@@ -5,7 +5,7 @@ coloured header and contains cards for highlights assigned to that tag.
 Highlights with no tag appear in a final "Untagged" column.
 
 Cards are draggable within and between columns via SortableJS. Sort-end events
-update the CRDT tag_order (reorder) or move highlights between tags (reassign)
+update the CRDT tags Map highlights (reorder) or move highlights between tags (reassign)
 and broadcast changes to all connected clients.
 
 This module imports TagInfo -- the tag-agnostic abstraction ensures Tab 2
@@ -153,15 +153,15 @@ def _render_ordered_cards(
     state: PageState,
     on_locate: Callable[..., Any] | None,
 ) -> None:
-    """Render highlight cards respecting tag_order, then unordered remainder.
+    """Render highlight cards respecting tag highlights order, then unordered remainder.
 
-    Ordered highlights are rendered first (in tag_order sequence), followed
+    Ordered highlights are rendered first (in tags Map sequence), followed
     by any highlights not yet in the order list. Shows an empty-state hint
     when the column has no highlights at all.
 
     Args:
         highlights: All highlights assigned to this tag.
-        ordered_ids: Ordered highlight IDs from CRDT tag_order.
+        ordered_ids: Ordered highlight IDs from CRDT tags Map.
         tag_colour: Hex colour for card left borders.
         tag_name: Display name for card tag label.
         state: Page state for anonymisation context.
@@ -198,7 +198,7 @@ def _build_tag_column(
 ) -> ui.column:
     """Render a single tag column with header and highlight cards.
 
-    Cards are ordered by tag_order first, with any unordered highlights
+    Cards are ordered by tags Map highlights first, with any unordered highlights
     appended at the bottom. If on_sort_end is provided, cards are wrapped
     in a SortableJS container enabling drag reorder and cross-column moves.
 
@@ -207,7 +207,7 @@ def _build_tag_column(
         tag_colour: Hex colour for header background and card borders.
         raw_key: Raw tag key for CRDT operations.
         highlights: All highlights assigned to this tag.
-        ordered_ids: Ordered highlight IDs from CRDT tag_order.
+        ordered_ids: Ordered highlight IDs from CRDT tags Map.
         on_sort_end: Callback for sort-end events (None to disable drag).
         state: Page state for anonymisation context.
         on_locate: Optional async callback(start_char, end_char) to warp to
@@ -269,9 +269,6 @@ def render_organise_tab(
     When on_sort_end is provided, cards are wrapped in SortableJS
     containers enabling drag reorder and cross-column moves.
 
-    A document management section is appended below the tag columns,
-    listing all workspace documents with delete controls for owners.
-
     Args:
         panel: The ui.tab_panel element to populate.
         tags: List of TagInfo instances.
@@ -280,8 +277,6 @@ def render_organise_tab(
         on_locate: Optional async callback(start_char, end_char) to warp to
             a highlight in Tab 1.
         state: Page state for anonymisation context.
-        documents: Pre-loaded workspace documents. If None, document
-            management section is not rendered.
     """
     panel.clear()
 
@@ -314,7 +309,7 @@ def render_organise_tab(
     ):
         for tag_info in tags:
             highlights_for_tag = tagged_highlights[tag_info.name]
-            ordered_ids = crdt_doc.get_tag_order(tag_info.raw_key)
+            ordered_ids = crdt_doc.get_tag_highlights(tag_info.raw_key)
             _build_tag_column(
                 tag_info.name,
                 tag_info.colour,
@@ -328,7 +323,7 @@ def render_organise_tab(
 
         # Untagged column (AC2.6)
         if untagged_highlights:
-            ordered_ids = crdt_doc.get_tag_order(_UNTAGGED_RAW_KEY)
+            ordered_ids = crdt_doc.get_tag_highlights(_UNTAGGED_RAW_KEY)
             _build_tag_column(
                 "Untagged",
                 _UNTAGGED_COLOUR,

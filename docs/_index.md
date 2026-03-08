@@ -16,6 +16,11 @@ library references during development.
 
 - [Alembic migrations with SQLModel and async PostgreSQL](alembic/sqlmodel-setup.md)
 
+## architecture
+
+- [Context Diagram (Level 0)](architecture/dfd/0-context-diagram.md)
+- [[1] Learning Workspace — Level 1 Decomposition](architecture/dfd/1-level-1-decomposition.md)
+
 ## asyncpg
 
 - [asyncpg usage - connections, queries, pools, type conversion](asyncpg/usage.md)
@@ -58,11 +63,6 @@ library references during development.
 - [LuaLaTeX package for underlines, strikethrough, and highlighting](lualatex/lua-ul-reference.md)
 - [LaTeX package for multi-file projects with standalone compilation](lualatex/subfiles-reference.md)
 - [Why LaTeX export tests use AST parsing instead of string matching](lualatex/test-ast-validation.md)
-
-## milkdown
-
-- [Crepe high-level editor API — constructor, features, featureConfigs, getMarkdown, setReadonly, events](milkdown/crepe-api.md)
-- [Editor actions — replaceAll, insert, getMarkdown, callCommand, direct ProseMirror access](milkdown/editor-actions.md)
 
 ## nicegui
 
@@ -113,7 +113,6 @@ library references during development.
 - [Translation Annotation & Iteration Tool - Product Requirements Document](prds/2026-01-28-translation-annotation-tool-prd.md)
 - [Ancient History AI Annotation Tool - Product Requirements Document](prds/2026-01-30-ancient-history-annotation-tool-prd.md)
 - [LLM Playground Design](prds/2026-02-10-llm-playground.md)
-- [Operation Solano Dawn - Wargame Simulation Platform - Product Requirements Document](prds/2026-03-04-operation-solano-dawn-wargame-prd.md)
 
 ## pycrdt
 

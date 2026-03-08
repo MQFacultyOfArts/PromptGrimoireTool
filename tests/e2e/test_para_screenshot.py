@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
+from playwright.sync_api import expect
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -96,7 +97,7 @@ def _paste_and_render(page: Page, html: str) -> None:
     page.evaluate(
         """(html) => {
             const plain = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
+            window.__clipboardWritePromise = navigator.clipboard.write([
                 new ClipboardItem({
                     'text/html': new Blob(
                         [html], { type: 'text/html' }
@@ -109,9 +110,13 @@ def _paste_and_render(page: Page, html: str) -> None:
         }""",
         html,
     )
-    page.wait_for_timeout(100)
+    page.wait_for_function(
+        "async () => { await window.__clipboardWritePromise; return true; }"
+    )
     page.keyboard.press("Control+v")
-    page.wait_for_timeout(500)
+
+    # Wait for "Content pasted" confirmation
+    expect(editor).to_contain_text("Content pasted", timeout=5000)
 
     page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
 
@@ -119,7 +124,8 @@ def _paste_and_render(page: Page, html: str) -> None:
         "() => window._textNodes && window._textNodes.length > 0",
         timeout=15000,
     )
-    page.wait_for_timeout(500)
+    # Give the browser one animation frame to paint the newly injected DOM nodes
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
 
 # JS function that detects all novel formatting contexts in the
@@ -284,7 +290,8 @@ def _screenshot_at_landmarks(
                 }}
             }})()"""
         )
-        page.wait_for_timeout(300)
+        # Give the browser time to paint the new scroll position
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(resolve))")
 
         label = lm["type"].replace(" ", "_")
         path = str(SCREENSHOT_DIR / f"{prefix}_{i:02d}_{label}.png")

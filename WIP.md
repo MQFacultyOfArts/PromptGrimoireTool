@@ -1,3 +1,31 @@
+# WIP: Systematic Test Audit (Philosophical Testing Standard)
+
+**Branch:** `test-audit`
+
+## Completed (Philosophical Boundary Standard Applied)
+
+- `AGENTS.md`: Established the "Philosophical Testing Standard" (no YOLO sync, explicitly test epistemological boundary transitions).
+- `pyproject.toml`: Added `@pytest.mark.perf` to explicitly quarantine intentional performance timeouts.
+- **Integration Tests:**
+  - `tests/integration/test_instructor_course_admin_ui.py`
+  - `tests/integration/test_crud_management_ui.py`
+  - `tests/integration/test_instructor_template_ui.py`
+- **E2E Tests:**
+  - `tests/e2e/test_highlight_rendering.py`
+  - `tests/e2e/test_para_screenshot.py`
+  - `tests/e2e/test_organise_perf.py` (marked as `perf`)
+  - `tests/e2e/test_word_count.py`
+  - `tests/e2e/test_instructor_workflow.py` (deleted; superseded)
+  - `tests/e2e/test_html_paste_whitespace.py`
+  - `tests/e2e/test_annotation_drag.py`
+  - `tests/e2e/test_navigator.py`
+
+## Next Up (Remaining YOLO Syncs)
+
+(None! The systematic test audit is complete.)
+
+---
+
 # WIP: Issue #97 — Workspace Sharing & Visibility (Seam E)
 
 **Branch:** `97-workspace-sharing`

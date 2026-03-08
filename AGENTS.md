@@ -20,6 +20,12 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 - **E2E Isolation**: E2E tests (Playwright) contaminate xdist workers. They are excluded from `test-all`. They must run separately via `uv run grimoire e2e run`.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 
+### 3. Philosophical Testing Standard (The "Thing Itself")
+- **No YOLO Synchronization**: Do not use arbitrary sleeps or wait for vague UI epiphenomena.
+- **Test the Epistemological Boundary**: Every test must articulate the exact boundary it tests. Do not just assert that a side-effect occurred; assert that the *underlying capability or rule engine* correctly evaluated the state transition.
+- **Falsifiable Statements**: Test both sides of the boundary (before the action and after the action) in a way that makes risky, falsifiable statements. You must be able to confidently assert the test is not vacuous.
+- **Example**: Do not just check if a word count badge reads "16". Check if the system correctly transitions from a valid state to a definitive "(over limit)" violation state after the threshold is crossed.
+
 ### 3. Code Quality & Formatting
 - All functions require type hints.
 - Public APIs require docstrings.

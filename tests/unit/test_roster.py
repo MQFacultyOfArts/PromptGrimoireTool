@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 class TestParseRoster:
     """Happy-path tests for parse_roster."""
@@ -71,3 +73,46 @@ class TestParseRoster:
             RosterEntry(email="alice@example.com", team=None, role="editor"),
             RosterEntry(email="bob@example.com", team=None, role="viewer"),
         ]
+
+
+class TestParseRosterValidation:
+    """Failure-path tests for parse_roster."""
+
+    def test_duplicate_email_reports_both_physical_line_numbers(self) -> None:
+        """AC2.4: Duplicate normalized emails include both line numbers."""
+        from promptgrimoire.wargame import RosterParseError, parse_roster
+
+        csv_content = (
+            "email,team,role\n"
+            "Alice@example.com,Red,editor\n"
+            " alice@EXAMPLE.com ,Blue,viewer\n"
+        )
+
+        with pytest.raises(RosterParseError, match="duplicate email") as exc_info:
+            parse_roster(csv_content)
+
+        assert exc_info.value.line_numbers == (2, 3)
+        assert "2" in str(exc_info.value)
+        assert "3" in str(exc_info.value)
+
+    def test_malformed_email_reports_its_line_number(self) -> None:
+        """AC2.5: Malformed email raises with the offending line number."""
+        from promptgrimoire.wargame import RosterParseError, parse_roster
+
+        csv_content = "email,team,role\nnot-an-email,Red,editor\n"
+
+        with pytest.raises(RosterParseError, match="malformed email") as exc_info:
+            parse_roster(csv_content)
+
+        assert exc_info.value.line_numbers == (2,)
+
+    def test_invalid_role_reports_line_number_and_value(self) -> None:
+        """AC2.6: Unsupported role raises with line number and invalid value."""
+        from promptgrimoire.wargame import RosterParseError, parse_roster
+
+        csv_content = "email,team,role\nalice@example.com,Red,observer\n"
+
+        with pytest.raises(RosterParseError, match="observer") as exc_info:
+            parse_roster(csv_content)
+
+        assert exc_info.value.line_numbers == (2,)

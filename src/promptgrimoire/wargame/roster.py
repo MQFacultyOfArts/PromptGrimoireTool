@@ -8,6 +8,8 @@ import csv
 from dataclasses import dataclass
 from io import StringIO
 
+_VALID_ROLES = frozenset({"viewer", "editor"})
+
 
 @dataclass(frozen=True)
 class RosterEntry:
@@ -50,6 +52,12 @@ def _get_cell(row: list[str], index: int | None) -> str:
     return row[index]
 
 
+def _is_valid_email(email: str) -> bool:
+    """Return True when ``email`` has exactly one @ and non-empty parts."""
+    local, separator, domain = email.partition("@")
+    return bool(separator and local and domain and "@" not in domain)
+
+
 def parse_roster(csv_content: str) -> list[RosterEntry]:
     """Parse roster CSV content into normalized immutable roster entries.
 
@@ -90,10 +98,27 @@ def parse_roster(csv_content: str) -> list[RosterEntry]:
     )
 
     entries: list[RosterEntry] = []
-    for row in reader:
+    seen_emails: dict[str, int] = {}
+    for line_number, row in enumerate(reader, start=2):
         email = _get_cell(row, email_index).strip().lower()
         team_value = _get_cell(row, team_index).strip()
         role_value = _get_cell(row, role_index).strip().lower()
+        if not _is_valid_email(email):
+            msg = f"malformed email: {email}"
+            raise RosterParseError(msg, line_numbers=(line_number,))
+
+        if email in seen_emails:
+            msg = f"duplicate email: {email}"
+            raise RosterParseError(
+                msg,
+                line_numbers=(seen_emails[email], line_number),
+            )
+
+        if role_value and role_value not in _VALID_ROLES:
+            msg = f"invalid role: {role_value}"
+            raise RosterParseError(msg, line_numbers=(line_number,))
+
+        seen_emails[email] = line_number
         entries.append(
             RosterEntry(
                 email=email,

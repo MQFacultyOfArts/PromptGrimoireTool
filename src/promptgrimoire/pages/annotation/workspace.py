@@ -204,8 +204,15 @@ def _apply_sort_reorder_or_move(
             position=new_index,
             origin_client_id=state.client_id,
         )
+        # Resolve display name from tag_info_list (raw key is a UUID)
+        target_name = "Untagged"
+        if target_tag and state.tag_info_list:
+            for ti in state.tag_info_list:
+                if ti.raw_key == target_tag:
+                    target_name = ti.name
+                    break
         ui.notify(
-            f"Moved to {target_tag or 'Untagged'}",
+            f"Moved to {target_name}",
             type="positive",
             position="bottom",
         )
@@ -282,11 +289,12 @@ def _setup_organise_drag(state: PageState) -> None:
         if state.broadcast_update:
             await state.broadcast_update()
 
-        # For cross-column moves, defer a local organise rebuild so card
-        # labels/colours update. The delay lets SortableJS's internal
-        # _handle_cross_container_add handler finish before we clear the panel.
-        if source_tag != target_tag and state.refresh_organise_with_scroll:
-            ui.timer(0.15, state.refresh_organise_with_scroll, once=True)
+        # Cross-column visual update: SortableJS moves the DOM element and
+        # _handle_cross_container_add (concurrent handler) syncs NiceGUI's
+        # element tree. We must NOT call panel.clear() here — it would
+        # destroy elements that handler still references. The card shows
+        # its old tag label/colour until the next full rebuild (tab switch
+        # or broadcast). The CRDT is already correct.
 
     async def _on_locate(start_char: int, end_char: int) -> None:
         """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""

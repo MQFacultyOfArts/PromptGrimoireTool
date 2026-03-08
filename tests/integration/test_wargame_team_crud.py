@@ -162,3 +162,66 @@ class TestCreateAndListTeams:
 
         assert [team.id for team in persisted] == [kept.id]
         assert [team.codename for team in persisted] == ["KEEP-ME"]
+
+
+class TestRenameTeam:
+    """Service-level tests for team renaming."""
+
+    @pytest.mark.asyncio
+    async def test_rename_team_updates_persisted_codename(self) -> None:
+        """AC3.4: rename_team persists the new codename."""
+        from promptgrimoire.db.wargames import (
+            create_team,
+            get_team,
+            list_teams,
+            rename_team,
+        )
+
+        activity = await _make_wargame_activity("rename-team")
+        team = await create_team(activity.id, codename="ALPHA")
+
+        renamed = await rename_team(team.id, "BRAVO")
+        fetched = await get_team(team.id)
+        listed = await list_teams(activity.id)
+
+        assert renamed is not None
+        assert renamed.codename == "BRAVO"
+        assert fetched is not None
+        assert fetched.codename == "BRAVO"
+        assert [row.codename for row in listed] == ["BRAVO"]
+
+    @pytest.mark.asyncio
+    async def test_rename_team_raises_duplicate_codename_and_preserves_original(
+        self,
+    ) -> None:
+        """AC3.5: duplicate rename is translated and rolled back."""
+        from promptgrimoire.db.wargames import (
+            DuplicateCodenameError,
+            create_team,
+            get_team,
+            rename_team,
+        )
+
+        activity = await _make_wargame_activity("rename-duplicate")
+        first = await create_team(activity.id, codename="ALPHA")
+        second = await create_team(activity.id, codename="BRAVO")
+
+        with pytest.raises(DuplicateCodenameError, match="ALPHA") as exc_info:
+            await rename_team(second.id, "ALPHA")
+
+        unchanged = await get_team(second.id)
+        winner = await get_team(first.id)
+
+        assert exc_info.value.activity_id == activity.id
+        assert exc_info.value.codename == "ALPHA"
+        assert unchanged is not None
+        assert unchanged.codename == "BRAVO"
+        assert winner is not None
+        assert winner.codename == "ALPHA"
+
+    @pytest.mark.asyncio
+    async def test_rename_team_returns_none_for_missing_team(self) -> None:
+        """Missing teams return None rather than raising."""
+        from promptgrimoire.db.wargames import rename_team
+
+        assert await rename_team(uuid4(), "BRAVO") is None

@@ -154,3 +154,42 @@ async def list_teams(activity_id: UUID) -> list[WargameTeam]:
             .order_by(WargameTeam.created_at)  # type: ignore[arg-type]  -- SQLModel order_by stubs don't accept Column expressions
         )
         return list(result.all())
+
+
+async def rename_team(team_id: UUID, codename: str) -> WargameTeam | None:
+    """Rename a team, translating duplicate-codename failures.
+
+    Parameters
+    ----------
+    team_id : UUID
+        Team identifier to rename.
+    codename : str
+        Replacement codename.
+
+    Returns
+    -------
+    WargameTeam | None
+        Updated team row, or None when the team does not exist.
+
+    Raises
+    ------
+    DuplicateCodenameError
+        If another team in the same activity already has ``codename``.
+    """
+    async with get_session() as session:
+        team = await session.get(WargameTeam, team_id)
+        if team is None:
+            return None
+
+        activity_id = team.activity_id
+        team.codename = codename
+        session.add(team)
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            if _is_duplicate_codename_error(exc):
+                raise DuplicateCodenameError(activity_id, codename) from exc
+            raise
+
+        await session.refresh(team)
+        return team

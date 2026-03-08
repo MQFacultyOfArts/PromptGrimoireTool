@@ -99,6 +99,7 @@ from promptgrimoire.db.wargames import (
     create_teams,
     get_team,
     list_teams,
+    rename_team,
 )
 from promptgrimoire.db.workspace_documents import (
     add_document,
@@ -206,6 +207,7 @@ __all__ = [
     "make_workspace_loose",
     "place_workspace_in_activity",
     "place_workspace_in_course",
+    "rename_team",
     "reorder_documents",
     "reorder_tag_groups",
     "reorder_tags",

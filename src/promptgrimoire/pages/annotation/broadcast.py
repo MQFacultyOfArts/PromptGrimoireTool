@@ -304,8 +304,11 @@ async def _handle_remote_update(state: PageState) -> None:
     _update_user_count(state)
     if state.refresh_annotations:
         state.refresh_annotations()
-    if state.active_tab == "Organise" and state.refresh_organise:
-        state.refresh_organise()
+    if state.active_tab == "Organise":
+        if state.refresh_organise_with_scroll:
+            await state.refresh_organise_with_scroll()
+        elif state.refresh_organise:
+            state.refresh_organise()
     if state.active_tab == "Respond" and state.refresh_respond_references:
         state.refresh_respond_references()
 

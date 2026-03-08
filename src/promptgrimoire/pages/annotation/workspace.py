@@ -61,6 +61,8 @@ from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nicegui import Client
 
     from promptgrimoire.db.models import Workspace
@@ -169,12 +171,13 @@ def _apply_sort_reorder_or_move(
     source_tag: str,
     target_tag: str,
     new_index: int,
-    refresh_fn: Any,
 ) -> None:
     """Apply a sort-end reorder or cross-column move to the CRDT.
 
     Same-column events update tag_order in place. Cross-column events
-    reassign the highlight's tag and trigger a re-render.
+    reassign the highlight's tag. In both cases, the Sortable element's
+    internal handler syncs the Python element tree with the DOM — callers
+    must NOT rebuild the organise panel mid-event.
 
     Args:
         state: Page state with crdt_doc.
@@ -182,7 +185,6 @@ def _apply_sort_reorder_or_move(
         source_tag: Raw tag key of the source column.
         target_tag: Raw tag key of the target column.
         new_index: Position in the target column (0-indexed).
-        refresh_fn: Callable to re-render the Organise tab.
     """
     assert state.crdt_doc is not None
     if source_tag == target_tag:
@@ -207,7 +209,40 @@ def _apply_sort_reorder_or_move(
             type="positive",
             position="bottom",
         )
-        refresh_fn()
+        # Do NOT call refresh_fn() here. SortableJS already moved the DOM
+        # element cross-column, and the Sortable element's internal
+        # _handle_cross_container_add handler will sync the Python element
+        # tree with the DOM. Calling refresh_fn() destroys the Sortable
+        # elements mid-event, causing RuntimeError in NiceGUI's slot system.
+
+
+_SCROLL_SAVE_JS = (
+    "(function() {"
+    "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
+    "  return el ? {x: el.scrollLeft, y: el.scrollTop} : null;"
+    "})()"
+)
+
+
+async def _rebuild_organise_with_scroll(
+    render_fn: Callable[[], None],
+) -> None:
+    """Rebuild the organise tab preserving horizontal/vertical scroll.
+
+    Captures scroll position via awaited JS, re-renders, then restores
+    via requestAnimationFrame to ensure the DOM has settled.
+    """
+    scroll = await ui.run_javascript(_SCROLL_SAVE_JS)
+    render_fn()
+    if scroll:
+        x, y = scroll.get("x", 0), scroll.get("y", 0)
+        ui.run_javascript(
+            "requestAnimationFrame(function() {"
+            "  var el = document.querySelector("
+            "'[data-testid=\"organise-columns\"]');"
+            f"  if (el) {{ el.scrollLeft = {x}; el.scrollTop = {y}; }}"
+            "});"
+        )
 
 
 def _setup_organise_drag(state: PageState) -> None:
@@ -231,7 +266,7 @@ def _setup_organise_drag(state: PageState) -> None:
             return
 
         _apply_sort_reorder_or_move(
-            state, highlight_id, source_tag, target_tag, new_index, _render_organise_now
+            state, highlight_id, source_tag, target_tag, new_index
         )
 
         # Persist to database
@@ -246,6 +281,12 @@ def _setup_organise_drag(state: PageState) -> None:
         # Broadcast to other clients for CRDT sync.
         if state.broadcast_update:
             await state.broadcast_update()
+
+        # For cross-column moves, defer a local organise rebuild so card
+        # labels/colours update. The delay lets SortableJS's internal
+        # _handle_cross_container_add handler finish before we clear the panel.
+        if source_tag != target_tag and state.refresh_organise_with_scroll:
+            ui.timer(0.15, state.refresh_organise_with_scroll, once=True)
 
     async def _on_locate(start_char: int, end_char: int) -> None:
         """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
@@ -267,6 +308,9 @@ def _setup_organise_drag(state: PageState) -> None:
         )
 
     state.refresh_organise = _render_organise_now
+    state.refresh_organise_with_scroll = lambda: _rebuild_organise_with_scroll(
+        _render_organise_now
+    )
 
 
 async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:

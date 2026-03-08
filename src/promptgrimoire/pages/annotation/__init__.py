@@ -250,6 +250,8 @@ class PageState:
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast
     refresh_organise: Any | None = None  # Callable[[], None]
+    # Async version that preserves scroll position
+    refresh_organise_with_scroll: Any | None = None  # Callable[[], Awaitable[None]]
     # Track active tab for broadcast-triggered refresh
     active_tab: str = "Annotate"
     # Reference to the Respond tab panel element for deferred rendering

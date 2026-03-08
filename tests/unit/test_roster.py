@@ -116,3 +116,44 @@ class TestParseRosterValidation:
             parse_roster(csv_content)
 
         assert exc_info.value.line_numbers == (2,)
+
+
+class TestAutoAssignTeams:
+    """Tests for auto_assign_teams."""
+
+    def test_assigns_entries_in_strict_round_robin_order(self) -> None:
+        """AC2.7: Round-robin team labels cycle by position."""
+        from promptgrimoire.wargame import RosterEntry, auto_assign_teams
+
+        entries = [
+            RosterEntry(email=f"user-{index}@example.com", team=None, role="editor")
+            for index in range(1, 6)
+        ]
+
+        assigned = auto_assign_teams(entries, team_count=3)
+
+        assert assigned is not entries
+        assert entries == [
+            RosterEntry(email=f"user-{index}@example.com", team=None, role="editor")
+            for index in range(1, 6)
+        ]
+        assert [entry.team for entry in assigned] == [
+            "AUTO-1",
+            "AUTO-2",
+            "AUTO-3",
+            "AUTO-1",
+            "AUTO-2",
+        ]
+        assert [entry.email for entry in assigned] == [
+            f"user-{index}@example.com" for index in range(1, 6)
+        ]
+        assert [entry.role for entry in assigned] == ["editor"] * 5
+
+    def test_rejects_non_positive_team_count(self) -> None:
+        """Non-positive team counts fail with ValueError."""
+        from promptgrimoire.wargame import RosterEntry, auto_assign_teams
+
+        entries = [RosterEntry(email="user@example.com", team=None, role="viewer")]
+
+        with pytest.raises(ValueError):
+            auto_assign_teams(entries, team_count=0)

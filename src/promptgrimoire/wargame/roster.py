@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import StringIO
 
 _VALID_ROLES = frozenset({"viewer", "editor"})
@@ -128,3 +128,33 @@ def parse_roster(csv_content: str) -> list[RosterEntry]:
         )
 
     return entries
+
+
+def auto_assign_teams(entries: list[RosterEntry], team_count: int) -> list[RosterEntry]:
+    """Assign synthetic team labels in strict round-robin order.
+
+    Parameters
+    ----------
+    entries : list[RosterEntry]
+        Parsed roster entries to assign.
+    team_count : int
+        Number of synthetic team buckets to cycle through.
+
+    Returns
+    -------
+    list[RosterEntry]
+        New roster entries with synthetic ``team`` labels.
+
+    Raises
+    ------
+    ValueError
+        If ``team_count`` is not positive.
+    """
+    if team_count <= 0:
+        msg = "team_count must be positive"
+        raise ValueError(msg)
+
+    return [
+        replace(entry, team=f"AUTO-{(index % team_count) + 1}")
+        for index, entry in enumerate(entries)
+    ]

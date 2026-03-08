@@ -35,7 +35,7 @@ def _build_workspace_options(
         tag_preview = ", ".join(tag_names[:5])
         if len(tag_names) > 5:
             tag_preview += f" (+{len(tag_names) - 5})"
-        options[str(ws.id)] = f"{prefix}{title} — {tag_preview}"
+        options[str(ws.id)] = f"{prefix}{title} ({tag_preview})"
     return options
 
 

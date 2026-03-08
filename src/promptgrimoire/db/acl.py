@@ -515,11 +515,12 @@ async def list_importable_workspaces(
     accessible = await list_accessible_workspaces(user_id)
 
     # Build candidate set: drop the excluded workspace up front.
-    candidates = [
-        ws
-        for ws, _permission in accessible
-        if exclude_workspace_id is None or ws.id != exclude_workspace_id
-    ]
+    permission_by_ws: dict[UUID, str] = {}
+    candidates = []
+    for ws, permission in accessible:
+        if exclude_workspace_id is None or ws.id != exclude_workspace_id:
+            candidates.append(ws)
+            permission_by_ws[ws.id] = permission
     if not candidates:
         return []
 
@@ -567,13 +568,26 @@ async def list_importable_workspaces(
         for ws_id, tag_name in tag_name_rows.all():
             tags_by_ws.setdefault(ws_id, []).append(tag_name)
 
-    # Reconstruct ordered result.
+    # Reconstruct result, sorted for dedup priority:
+    # 1. Template workspaces (instructor-created) first
+    # 2. Owner workspaces before shared
+    # 3. More tags preferred over fewer
+    # 4. Then alphabetical by course/title
     ws_by_id = {ws.id: ws for ws in workspaces_with_tags}
     result: list[tuple[Workspace, str | None, list[str]]] = [
         (ws_by_id[ws_id], course_name_by_ws.get(ws_id), tags_by_ws.get(ws_id, []))
         for ws_id in ws_by_id
     ]
-    result.sort(key=lambda r: (r[1] or "", r[0].title or ""))
+    _perm_rank = {"owner": 0, "editor": 1, "viewer": 2}
+    result.sort(
+        key=lambda r: (
+            0 if r[0].activity_id else 1,  # template first
+            _perm_rank.get(permission_by_ws.get(r[0].id, "viewer"), 2),
+            -len(r[2]),  # more tags first
+            r[1] or "",
+            r[0].title or "",
+        )
+    )
 
     # Deduplicate: keep first workspace per unique tag set.
     seen_tag_sets: set[tuple[str, ...]] = set()

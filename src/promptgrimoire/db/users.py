@@ -14,6 +14,8 @@ from sqlmodel import select
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import User
 
@@ -109,20 +111,37 @@ async def find_or_create_user(
         Tuple of (User, created) where created is True if new user was made.
     """
     async with get_session() as session:
-        result = await session.exec(select(User).where(User.email == email.lower()))
-        existing = result.first()
-        if existing:
-            return existing, False
-
-        user = User(
-            email=email.lower(),
-            display_name=display_name,
+        return await _find_or_create_user_with_session(
+            session,
+            email,
+            display_name,
             stytch_member_id=stytch_member_id,
         )
-        session.add(user)
-        await session.flush()
-        await session.refresh(user)
-        return user, True
+
+
+async def _find_or_create_user_with_session(
+    session: AsyncSession,
+    email: str,
+    display_name: str,
+    *,
+    stytch_member_id: str | None = None,
+) -> tuple[User, bool]:
+    """Find or create a user inside a caller-owned session."""
+    normalized_email = email.lower()
+    result = await session.exec(select(User).where(User.email == normalized_email))
+    existing = result.first()
+    if existing:
+        return existing, False
+
+    user = User(
+        email=normalized_email,
+        display_name=display_name,
+        stytch_member_id=stytch_member_id,
+    )
+    session.add(user)
+    await session.flush()
+    await session.refresh(user)
+    return user, True
 
 
 async def link_stytch_member(user_id: UUID, stytch_member_id: str) -> User | None:

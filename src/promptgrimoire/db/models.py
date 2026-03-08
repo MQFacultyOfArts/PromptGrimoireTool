@@ -38,6 +38,10 @@ class Permission(SQLModel, table=True):
     level: int = Field(
         sa_column=Column(Integer, nullable=False),
     )
+    can_edit: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default="false"),
+    )
 
     __table_args__ = (
         UniqueConstraint("level", name="uq_permission_level"),

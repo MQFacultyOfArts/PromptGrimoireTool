@@ -79,10 +79,16 @@ class TestPermissionSeedData:
             rows = (await session.exec(select(Permission))).all()
 
         assert len(rows) == 4
+        assert {row.name: row.can_edit for row in rows} == {
+            "owner": True,
+            "editor": True,
+            "peer": False,
+            "viewer": False,
+        }
 
     @pytest.mark.asyncio
     async def test_owner_permission(self) -> None:
-        """Permission 'owner' exists with level 30."""
+        """Permission 'owner' exists with level 30 and editing capability."""
         from sqlmodel import select
 
         from promptgrimoire.db.engine import get_session
@@ -95,10 +101,11 @@ class TestPermissionSeedData:
 
         assert row is not None
         assert row.level == 30
+        assert row.can_edit is True
 
     @pytest.mark.asyncio
     async def test_editor_permission(self) -> None:
-        """Permission 'editor' exists with level 20."""
+        """Permission 'editor' exists with level 20 and editing capability."""
         from sqlmodel import select
 
         from promptgrimoire.db.engine import get_session
@@ -113,10 +120,11 @@ class TestPermissionSeedData:
 
         assert row is not None
         assert row.level == 20
+        assert row.can_edit is True
 
     @pytest.mark.asyncio
     async def test_viewer_permission(self) -> None:
-        """Permission 'viewer' exists with level 10."""
+        """Permission 'viewer' exists with level 10 and no editing capability."""
         from sqlmodel import select
 
         from promptgrimoire.db.engine import get_session
@@ -131,6 +139,7 @@ class TestPermissionSeedData:
 
         assert row is not None
         assert row.level == 10
+        assert row.can_edit is False
 
 
 class TestPeerPermission:
@@ -141,7 +150,7 @@ class TestPeerPermission:
 
     @pytest.mark.asyncio
     async def test_peer_permission_exists(self) -> None:
-        """Permission 'peer' exists with level 15."""
+        """Permission 'peer' exists with level 15 and no editing capability."""
         from sqlmodel import select
 
         from promptgrimoire.db.engine import get_session
@@ -154,6 +163,7 @@ class TestPeerPermission:
 
         assert row is not None
         assert row.level == 15
+        assert row.can_edit is False
 
     @pytest.mark.asyncio
     async def test_peer_level_uniqueness(self) -> None:

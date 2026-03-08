@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
@@ -86,6 +88,64 @@ async def _resolve_team_permission_with_session(
     return result.one_or_none()
 
 
+async def _get_permission_row_with_session(
+    session: AsyncSession,
+    permission_name: str,
+) -> Permission | None:
+    """Return one permission reference row by name."""
+    result = await session.exec(
+        select(Permission).where(Permission.name == permission_name)
+    )
+    return result.one_or_none()
+
+
+async def _get_team_member_permission_state_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+    user_id: UUID,
+) -> tuple[str, bool] | None:
+    """Return the current stored permission and can_edit state for one member."""
+    result = await session.exec(
+        select(ACLEntry.permission, Permission.can_edit)
+        .join(Permission, Permission.name == ACLEntry.permission)  # type: ignore[arg-type]  -- SQLAlchemy join expression
+        .where(
+            ACLEntry.team_id == team_id,
+            ACLEntry.user_id == user_id,
+        )
+    )
+    row = result.one_or_none()
+    return (row[0], row[1]) if row is not None else None
+
+
+async def _lock_team_acl_rows_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+) -> None:
+    """Lock all ACL rows for one team inside the current transaction."""
+    await session.exec(
+        select(ACLEntry.id).where(ACLEntry.team_id == team_id).with_for_update()
+    )
+
+
+async def _count_other_editable_team_members_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+    excluded_user_id: UUID,
+) -> int:
+    """Count editable team members excluding one user."""
+    result = await session.exec(
+        select(sa.func.count())
+        .select_from(ACLEntry)
+        .join(Permission, Permission.name == ACLEntry.permission)
+        .where(
+            ACLEntry.team_id == team_id,
+            ACLEntry.user_id != excluded_user_id,
+            sa.literal_column("permission.can_edit") == sa.true(),
+        )
+    )
+    return result.one()
+
+
 async def _create_team(
     session: AsyncSession,
     activity_id: UUID,
@@ -139,6 +199,81 @@ async def create_team(
     """
     async with get_session() as session:
         return await _create_team(session, activity_id, codename=codename)
+
+
+async def _grant_team_permission_with_session(
+    session: AsyncSession,
+    team_id: UUID,
+    user_id: UUID,
+    permission: str,
+) -> ACLEntry:
+    """Create or update a team ACL row inside a caller-owned session."""
+    requested_permission = await _get_permission_row_with_session(session, permission)
+    if requested_permission is None:
+        msg = f"unknown permission: {permission}"
+        raise ValueError(msg)
+
+    current_state = await _get_team_member_permission_state_with_session(
+        session,
+        team_id,
+        user_id,
+    )
+    if (
+        current_state is not None
+        and current_state[1]
+        and not requested_permission.can_edit
+    ):
+        await _lock_team_acl_rows_with_session(session, team_id)
+        remaining_editable = await _count_other_editable_team_members_with_session(
+            session,
+            team_id,
+            user_id,
+        )
+        if remaining_editable == 0:
+            raise ZeroEditorError(
+                team_id,
+                user_id,
+                current_state[0],
+                permission,
+            )
+
+    stmt = pg_insert(ACLEntry).values(
+        workspace_id=None,
+        team_id=team_id,
+        user_id=user_id,
+        permission=permission,
+        created_at=datetime.now(UTC),
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["team_id", "user_id"],
+        index_where=sa.text("team_id IS NOT NULL"),
+        set_={"permission": stmt.excluded.permission},
+    )
+    await session.execute(stmt)
+    await session.flush()
+
+    result = await session.exec(
+        select(ACLEntry).where(
+            ACLEntry.team_id == team_id,
+            ACLEntry.user_id == user_id,
+        )
+    )
+    return result.one()
+
+
+async def grant_team_permission(
+    team_id: UUID,
+    user_id: UUID,
+    permission: str,
+) -> ACLEntry:
+    """Create or update a user's ACL entry for a team."""
+    async with get_session() as session:
+        return await _grant_team_permission_with_session(
+            session,
+            team_id,
+            user_id,
+            permission,
+        )
 
 
 async def create_teams(activity_id: UUID, team_count: int) -> list[WargameTeam]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from sqlmodel import select
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.models import ACLEntry, Activity, Course, User, WargameTeam, Week
@@ -199,3 +200,132 @@ class TestListTeamMembers:
             "viewer",
         ]
         assert members[2][0].email < members[3][0].email
+
+
+class TestGrantTeamPermission:
+    """Service-level tests for grant_team_permission."""
+
+    @pytest.mark.asyncio
+    async def test_grant_team_permission_creates_new_team_acl_row(self) -> None:
+        """AC4.1: granting a new permission creates a team ACL row."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import grant_team_permission
+
+        _, team = await _make_team("grant-create")
+        user = await _make_user("grant-create", "Grant Create User")
+
+        entry = await grant_team_permission(team.id, user.id, "viewer")
+
+        assert entry.team_id == team.id
+        assert entry.user_id == user.id
+        assert entry.permission == "viewer"
+
+        async with get_session() as session:
+            rows = (
+                await session.exec(
+                    select(ACLEntry).where(
+                        ACLEntry.team_id == team.id,
+                        ACLEntry.user_id == user.id,
+                    )
+                )
+            ).all()
+
+        assert len(rows) == 1
+        assert rows[0].id == entry.id
+        assert rows[0].permission == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_grant_team_permission_upsert_updates_existing_row_without_duplicate(
+        self,
+    ) -> None:
+        """AC4.1: granting again updates the existing row in place."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import grant_team_permission
+
+        _, team = await _make_team("grant-upsert")
+        user = await _make_user("grant-upsert", "Grant Upsert User")
+
+        first = await grant_team_permission(team.id, user.id, "viewer")
+        second = await grant_team_permission(team.id, user.id, "editor")
+
+        async with get_session() as session:
+            rows = (
+                await session.exec(
+                    select(ACLEntry).where(
+                        ACLEntry.team_id == team.id,
+                        ACLEntry.user_id == user.id,
+                    )
+                )
+            ).all()
+
+        assert first.id == second.id
+        assert second.permission == "editor"
+        assert len(rows) == 1
+        assert rows[0].id == first.id
+        assert rows[0].permission == "editor"
+
+    @pytest.mark.asyncio
+    async def test_grant_team_permission_raises_zero_editor_error_for_last_editor(
+        self,
+    ) -> None:
+        """AC5.3: downgrading the only editable member is rejected."""
+        from promptgrimoire.db.wargames import (
+            ZeroEditorError,
+            grant_team_permission,
+            resolve_team_permission,
+        )
+
+        _, team = await _make_team("grant-last-editor")
+        user = await _make_user("grant-last-editor", "Last Editor")
+        await grant_team_permission(team.id, user.id, "editor")
+
+        with pytest.raises(ZeroEditorError) as exc_info:
+            await grant_team_permission(team.id, user.id, "viewer")
+
+        assert exc_info.value.team_id == team.id
+        assert exc_info.value.user_id == user.id
+        assert exc_info.value.current_permission == "editor"
+        assert exc_info.value.attempted_permission == "viewer"
+        assert await resolve_team_permission(team.id, user.id) == "editor"
+
+    @pytest.mark.asyncio
+    async def test_grant_team_permission_allows_downgrade_when_owner_still_can_edit(
+        self,
+    ) -> None:
+        """Classifier-based downgrade succeeds when another editable member remains."""
+        from promptgrimoire.db.wargames import (
+            grant_team_permission,
+            resolve_team_permission,
+        )
+
+        _, team = await _make_team("grant-owner-survivor")
+        owner = await _make_user("grant-owner", "Owner Survivor")
+        editor = await _make_user("grant-editor", "Editor Survivor")
+
+        await grant_team_permission(team.id, owner.id, "owner")
+        await grant_team_permission(team.id, editor.id, "editor")
+
+        updated = await grant_team_permission(team.id, editor.id, "viewer")
+
+        assert updated.permission == "viewer"
+        assert await resolve_team_permission(team.id, owner.id) == "owner"
+        assert await resolve_team_permission(team.id, editor.id) == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_grant_team_permission_rejects_unknown_permission_name(
+        self,
+    ) -> None:
+        """Unknown permissions raise and leave the stored row unchanged."""
+        from promptgrimoire.db.wargames import (
+            grant_team_permission,
+            resolve_team_permission,
+        )
+
+        _, team = await _make_team("grant-unknown")
+        user = await _make_user("grant-unknown", "Unknown Permission User")
+        await grant_team_permission(team.id, user.id, "viewer")
+
+        with pytest.raises(ValueError, match="unknown permission"):
+            await grant_team_permission(team.id, user.id, "observer")
+
+        assert await resolve_team_permission(team.id, user.id) == "viewer"

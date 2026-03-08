@@ -18,10 +18,11 @@
   - `tests/e2e/test_instructor_workflow.py` (deleted; superseded)
   - `tests/e2e/test_html_paste_whitespace.py`
   - `tests/e2e/test_annotation_drag.py`
+  - `tests/e2e/test_navigator.py`
 
 ## Next Up (Remaining YOLO Syncs)
 
-- `tests/e2e/test_navigator.py` (32 instances)
+(None! The systematic test audit is complete.)
 
 ---
 

@@ -318,10 +318,15 @@ class TestDragBetweenColumns:
         # Switch to Annotate tab
         _switch_to_annotate(page)
 
+        from tests.e2e.annotation_helpers import expand_card
+
         # Find the annotation card in the sidebar
         # The true boundary is the sidebar card showing the new tag (Procedural History)
         sidebar_card = page.locator(".ann-card-positioned").first
         expect(sidebar_card).to_be_visible(timeout=3000)
+
+        # Expand the card first, as they are collapsed by default
+        expand_card(page, 0)
 
         # Wait for the CRDT update to reflect in the Annotate tab's dropdown
         tag_select = sidebar_card.get_by_test_id("tag-select")

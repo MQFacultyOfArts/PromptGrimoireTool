@@ -464,7 +464,9 @@ async def list_tags_for_workspace(workspace_id: UUID) -> list[Tag]:
 # ── Reorder ──────────────────────────────────────────────────────────
 
 
-def _sync_tag_order_to_crdt(tag_ids: list[UUID], crdt_doc: AnnotationDocument) -> None:
+def _sync_tag_order_index_to_crdt(
+    tag_ids: list[UUID], crdt_doc: AnnotationDocument
+) -> None:
     """Update order_index for each tag in the CRDT doc."""
     for idx, tag_id in enumerate(tag_ids):
         existing = crdt_doc.get_tag(tag_id)
@@ -480,7 +482,7 @@ def _sync_tag_order_to_crdt(tag_ids: list[UUID], crdt_doc: AnnotationDocument) -
             )
 
 
-def _sync_group_order_to_crdt(
+def _sync_group_order_index_to_crdt(
     group_ids: list[UUID], crdt_doc: AnnotationDocument
 ) -> None:
     """Update order_index for each tag group in the CRDT doc."""
@@ -536,7 +538,7 @@ async def reorder_tags(
         )
 
     if crdt_doc is not None:
-        _sync_tag_order_to_crdt(tag_ids, crdt_doc)
+        _sync_tag_order_index_to_crdt(tag_ids, crdt_doc)
 
 
 async def reorder_tag_groups(
@@ -580,7 +582,7 @@ async def reorder_tag_groups(
         )
 
     if crdt_doc is not None:
-        _sync_group_order_to_crdt(group_ids, crdt_doc)
+        _sync_group_order_index_to_crdt(group_ids, crdt_doc)
 
 
 # ── Import from workspace ─────────────────────────────────────────────

@@ -93,6 +93,11 @@ from promptgrimoire.db.users import (
     update_last_login,
     upsert_user_on_login,
 )
+from promptgrimoire.db.wargames import (
+    DuplicateCodenameError,
+    create_team,
+    get_team,
+)
 from promptgrimoire.db.workspace_documents import (
     add_document,
     list_documents,
@@ -123,6 +128,7 @@ __all__ = [
     "Course",
     "CourseEnrollment",
     "CourseRoleRef",
+    "DuplicateCodenameError",
     "DuplicateEnrollmentError",
     "Permission",
     "PlacementContext",
@@ -144,6 +150,7 @@ __all__ = [
     "create_course",
     "create_tag",
     "create_tag_group",
+    "create_team",
     "create_user",
     "create_workspace",
     "delete_activity",
@@ -162,6 +169,7 @@ __all__ = [
     "get_staff_roles",
     "get_tag",
     "get_tag_group",
+    "get_team",
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_stytch_id",

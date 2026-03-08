@@ -583,118 +583,6 @@ async def reorder_tag_groups(
         _sync_group_order_to_crdt(group_ids, crdt_doc)
 
 
-# ── Import from activity ─────────────────────────────────────────────
-
-
-async def import_tags_from_activity(
-    source_activity_id: UUID,
-    target_workspace_id: UUID,
-) -> list[Tag]:
-    """Copy TagGroups and Tags from a source activity's template into a workspace.
-
-    Creates independent copies with new UUIDs, preserving name, color,
-    description, locked, order_index, and group assignment (remapped to
-    new group UUIDs).
-
-    This follows the same ID-remapping pattern as
-    ``clone_workspace_from_activity()`` in ``db/workspaces.py``.
-
-    Args:
-        source_activity_id: Activity whose template workspace to copy from.
-        target_workspace_id: Workspace to copy tags into.
-
-    Returns:
-        List of newly created Tags in the target workspace.
-
-    Raises:
-        ValueError: If source activity is not found.
-    """
-    from promptgrimoire.db.models import Activity
-
-    async with get_session() as session:
-        activity = await session.get(Activity, source_activity_id)
-        if not activity:
-            msg = f"Activity {source_activity_id} not found"
-            raise ValueError(msg)
-
-        source_workspace_id = activity.template_workspace_id
-
-        # Load source groups
-        source_groups = list(
-            (
-                await session.exec(
-                    select(TagGroup)
-                    .where(TagGroup.workspace_id == source_workspace_id)
-                    .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
-                )
-            ).all()
-        )
-
-        # Load source tags
-        source_tags = list(
-            (
-                await session.exec(
-                    select(Tag)
-                    .where(Tag.workspace_id == source_workspace_id)
-                    .order_by(Tag.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
-                )
-            ).all()
-        )
-
-        # Create new groups with ID remapping
-        group_id_map: dict[UUID, UUID] = {}
-        for src_group in source_groups:
-            new_group = TagGroup(
-                workspace_id=target_workspace_id,
-                name=src_group.name,
-                color=src_group.color,
-                order_index=src_group.order_index,
-            )
-            session.add(new_group)
-            await session.flush()
-            group_id_map[src_group.id] = new_group.id
-
-        # Create new tags with remapped group_id
-        new_tags: list[Tag] = []
-        for src_tag in source_tags:
-            new_group_id = (
-                group_id_map.get(src_tag.group_id) if src_tag.group_id else None
-            )
-            new_tag = Tag(
-                workspace_id=target_workspace_id,
-                name=src_tag.name,
-                color=src_tag.color,
-                description=src_tag.description,
-                locked=src_tag.locked,
-                order_index=src_tag.order_index,
-                group_id=new_group_id,
-            )
-            session.add(new_tag)
-            await session.flush()
-            await session.refresh(new_tag)
-            new_tags.append(new_tag)
-
-        # Sync workspace counters to account for imported tags/groups.
-        # Uses GREATEST to handle the case where tags already exist.
-        imported_tag_count = len(new_tags)
-        imported_group_count = len(group_id_map)
-        await session.execute(
-            text(
-                "UPDATE workspace SET "
-                "next_tag_order = GREATEST(next_tag_order, :tag_count), "
-                "next_group_order = GREATEST(next_group_order, :group_count) "
-                "WHERE id = :ws_id"
-            ),
-            {
-                "tag_count": imported_tag_count,
-                "group_count": imported_group_count,
-                "ws_id": str(target_workspace_id),
-            },
-        )
-
-        return new_tags
-
-
 # ── Import from workspace ─────────────────────────────────────────────
 
 
@@ -784,7 +672,7 @@ async def _cleanup_crdt_highlights_for_tag(
     *,
     crdt_doc: AnnotationDocument | None = None,
 ) -> int:
-    """Remove CRDT highlights referencing a tag and its tag_order entry.
+    """Remove CRDT highlights referencing a tag.
 
     When ``crdt_doc`` is provided, operates on the live document directly
     (no DB load/save round-trip). When ``None``, falls back to loading
@@ -810,9 +698,8 @@ def _cleanup_crdt_highlights_on_doc(
 ) -> int:
     """Remove highlights for a tag from a live AnnotationDocument.
 
-    Also removes the tag_order entry and the tag itself from the
-    ``tags`` Map.  Does NOT save back to DB -- the persistence layer
-    handles that via the observer.
+    Also removes the tag itself from the ``tags`` Map.  Does NOT save
+    back to DB -- the persistence layer handles that via the observer.
     """
     tag_str = str(tag_id)
     to_remove = [
@@ -824,10 +711,6 @@ def _cleanup_crdt_highlights_on_doc(
             doc.remove_highlight(hl_id)
         except ValueError, KeyError:  # CRDT corruption should not block cleanup
             logger.warning("Failed to remove highlight %s during tag cleanup", hl_id)
-
-    # Remove the tag_order entry (silently skip if missing)
-    if tag_str in doc.tag_order:
-        del doc.tag_order[tag_str]
 
     # Remove from the tags Map
     doc.delete_tag(tag_id)
@@ -870,10 +753,6 @@ async def _cleanup_crdt_highlights_from_db(
                 logger.warning(
                     "Failed to remove highlight %s during tag cleanup", hl_id
                 )
-
-        # Remove the tag_order entry (silently skip if missing)
-        if tag_str in doc.tag_order:
-            del doc.tag_order[tag_str]
 
         # Save updated state
         workspace.crdt_state = doc.get_full_state()

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from pycrdt import Array, Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
+from pycrdt import Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -93,26 +93,6 @@ class AnnotationDocument:
     def general_notes(self) -> Text:
         """Get the general notes Text object."""
         return self.doc["general_notes"]
-
-    @property
-    def tag_order(self) -> Map:
-        """Get the tag_order Map (deprecated, use tags Map highlights).
-
-        Lazily initialises the Map on first access for backward
-        compatibility with code that still reads/writes tag_order
-        directly (db/tags.py cleanup, db/workspaces.py clone).
-        Will be removed once all callers are migrated.
-        """
-        try:
-            result = self.doc["tag_order"]
-        except KeyError:
-            result = None
-        if result is None:
-            # Key missing or received via apply_update without type
-            # declaration — (re-)declare as Map to materialise content.
-            self.doc["tag_order"] = Map()
-            result = self.doc["tag_order"]
-        return result
 
     @property
     def tags(self) -> Map:
@@ -409,27 +389,6 @@ class AnnotationDocument:
         if tag_data is None:
             return []
         return list(tag_data.get("highlights", []))
-
-    # --- Tag order operations (deprecated, pending removal) ---
-
-    def set_tag_order(
-        self,
-        tag: str,
-        highlight_ids: list[str],
-        origin_client_id: str | None = None,
-    ) -> None:
-        """Replace the ordered list of highlight IDs for a tag.
-
-        Args:
-            tag: The tag name.
-            highlight_ids: Ordered list of highlight IDs.
-            origin_client_id: Client making the change (for echo prevention).
-        """
-        token = _origin_var.set(origin_client_id)
-        try:
-            self.tag_order[tag] = Array(highlight_ids)
-        finally:
-            _origin_var.reset(token)
 
     def _update_tag_highlights(self, tag_id: str, highlights: list[str]) -> None:
         """Overwrite the highlights list for a tag, preserving metadata.

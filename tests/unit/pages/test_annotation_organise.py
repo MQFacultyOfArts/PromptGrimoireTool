@@ -1,7 +1,7 @@
 """Unit tests for Tab 2 (Organise) rendering logic.
 
 Tests verify that render_organise_tab correctly groups highlights by tag
-into columns, respects tag_order, and handles untagged highlights.
+into columns, respects tag ordering, and handles untagged highlights.
 
 Also tests the SortableJS event arg parsing logic used by the organise
 tab's drag-and-drop reorder/reassign feature.

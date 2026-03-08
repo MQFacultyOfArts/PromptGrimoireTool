@@ -33,7 +33,6 @@ class TestCleanupCrdtHighlightsCorruption:
         hl2 = doc.add_highlight(
             start_char=10, end_char=15, tag=tag_str, text="second", author="test"
         )
-        doc.set_tag_order(tag_str, [hl1, hl2])
         doc.set_tag(
             tag_id=tag_id,
             name="Corrupt",
@@ -57,8 +56,7 @@ class TestCleanupCrdtHighlightsCorruption:
 
         # Both highlights were attempted
         assert removed == 2
-        # tag_order and tags Map cleaned up despite the error
-        assert tag_str not in doc.tag_order
+        # tags Map cleaned up despite the error
         assert doc.get_tag(tag_id) is None
 
     def test_continues_past_key_error(self) -> None:
@@ -105,7 +103,6 @@ class TestCleanupCrdtHighlightsCorruption:
         hl1 = doc.add_highlight(
             start_char=0, end_char=5, tag=tag_str, text="clean", author="test"
         )
-        doc.set_tag_order(tag_str, [hl1])
         doc.set_tag(
             tag_id=tag_id,
             name="Clean",
@@ -118,5 +115,4 @@ class TestCleanupCrdtHighlightsCorruption:
 
         assert removed == 1
         assert doc.get_all_highlights() == []
-        assert tag_str not in doc.tag_order
         assert doc.get_tag(tag_id) is None

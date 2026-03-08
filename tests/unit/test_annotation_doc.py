@@ -686,20 +686,8 @@ class TestTagOrderBackwardCompat:
         doc = AnnotationDocument("test-doc")
 
         # tag_order should NOT be in the doc keys initially
-        # (it's lazily created on property access)
         with pytest.raises(KeyError):
             doc.doc["tag_order"]
-
-    def test_tag_order_property_lazy_creates(self) -> None:
-        """Accessing tag_order property lazily creates the Map."""
-        doc = AnnotationDocument("test-doc")
-
-        # Access the deprecated property — should not raise
-        tag_order = doc.tag_order
-
-        assert tag_order is not None
-        # Now the key should exist (no KeyError)
-        assert doc.doc["tag_order"] is not None
 
 
 class TestResponseDraft:

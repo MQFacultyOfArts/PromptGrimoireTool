@@ -63,8 +63,6 @@ REQUIRED_PACKAGES = [
     "luabidi",  # Bidirectional text for LuaLaTeX (for dir="ltr" HTML elements)
     # Code blocks
     "fancyvrb",  # Verbatim/code blocks from Pandoc syntax highlighting
-    # Annotations
-    "endnotes",  # Long annotations overflow to endnotes section
     # Speaker turns
     "mdframed",  # Framed environments for speaker turns with left border
     "zref",  # Reference system (mdframed dependency)

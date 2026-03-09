@@ -7,6 +7,7 @@ and ``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -17,6 +18,8 @@ from promptgrimoire.pages.annotation.tag_management_save import (
     _create_tag_or_notify,
     _refresh_tag_state,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
@@ -137,20 +140,34 @@ async def open_quick_create(state: PageState) -> None:
     groups = await list_tag_groups_for_workspace(state.workspace_id)
     group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
+    from nicegui.context import context as _ctx  # noqa: PLC0415
+
+    logger.debug("open_quick_create: workspace=%s", state.workspace_id)
+
+    # Dialog must be created in the client layout context, not the
+    # toolbar slot.  NiceGUI Dialog.__init__ places a hidden canary
+    # element in the *current* slot; if that slot is inside the
+    # toolbar, _rebuild_toolbar().clear() destroys the canary and
+    # its weak-ref trigger deletes the dialog mid-interaction.
     with (
+        _ctx.client.layout,
         ui.dialog() as dialog,
         ui.card().classes("w-96").props("data-testid=tag-quick-create-dialog"),
     ):
-        ui.label("Quick Create Tag").classes("text-lg font-bold mb-2")
+        ui.label("Quick Create Tag").classes(
+            "text-lg font-bold mb-2",
+        )
         name_input = (
             ui.input("Tag name")
-            .props('maxlength=100 data-testid="tag-quick-create-name-input"')
+            .props(
+                'maxlength=100 data-testid="tag-quick-create-name-input"',
+            )
             .classes("w-full")
         )
 
         _build_colour_picker(selected_color)
 
-        # Default to ungrouped — tags appear at the end of the list
+        # Default to ungrouped
         group_select = (
             ui.select(
                 label="Group",
@@ -163,7 +180,10 @@ async def open_quick_create(state: PageState) -> None:
         )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button(
+                "Cancel",
+                on_click=dialog.close,
+            ).props("flat")
 
             async def _save() -> None:
                 ok = await _quick_create_save(

@@ -438,6 +438,11 @@ def _create_tag_callbacks(
     async def _rebuild_toolbar() -> None:
         """Clear and rebuild the tag toolbar after tag mutations."""
         if state.toolbar_container is not None:
+            logger.debug(
+                "_rebuild_toolbar: clearing container id=%s with %d children",
+                state.toolbar_container.id,
+                len(state.toolbar_container.default_slot.children),
+            )
             state.toolbar_container.clear()
 
             async def _tag_click(key: str) -> None:

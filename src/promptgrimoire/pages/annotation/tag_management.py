@@ -207,7 +207,11 @@ async def open_tag_management(
     # get instructor powers everywhere.
     is_instructor = ctx.is_template or is_privileged_user(auth_user)
 
+    from nicegui.context import context as _ctx  # noqa: PLC0415
+
+    # Place canary in layout root — see tag_quick_create.py comment.
     with (
+        _ctx.client.layout,
         ui.dialog() as dialog,
         ui.card()
         .style("width: 800px !important; max-width: 90vw !important;")

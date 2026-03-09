@@ -34,6 +34,23 @@ def _prepend_filter(extra_args: list[str], filter_expr: str | None) -> list[str]
     return extra_args
 
 
+def _prepend_pytest_flags(
+    extra_args: list[str],
+    *,
+    exit_first: bool = False,
+    failed_first: bool = False,
+) -> list[str]:
+    """Inject ``-x`` and/or ``--ff`` into *extra_args* when requested."""
+    prefix: list[str] = []
+    if exit_first:
+        prefix.append("-x")
+    if failed_first:
+        prefix.append("--ff")
+    if prefix:
+        return [*prefix, *extra_args]
+    return extra_args
+
+
 def _pre_test_db_cleanup() -> None:
     """Run Alembic migrations and truncate all tables before tests.
 

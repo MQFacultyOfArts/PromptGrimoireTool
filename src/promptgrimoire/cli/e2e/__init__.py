@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from promptgrimoire.cli._shared import _pre_test_db_cleanup, _prepend_filter, console
+from promptgrimoire.cli._shared import (
+    _pre_test_db_cleanup,
+    _prepend_filter,
+    _prepend_pytest_flags,
+    console,
+)
 from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
 
@@ -184,9 +189,16 @@ def run(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run Playwright E2E tests (serial fail-fast by default)."""
     args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
     sys.exit(
         run_playwright_lane(
             args,
@@ -209,9 +221,16 @@ def nicegui(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run only NiceGUI lane files with per-file DB/process isolation."""
     args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
     sys.exit(run_nicegui_lane(args))
 
 

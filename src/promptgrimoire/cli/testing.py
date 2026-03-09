@@ -29,6 +29,7 @@ from promptgrimoire.cli._shared import (
     _XDIST_ITEMS_RE,
     _build_test_header,
     _pre_test_db_cleanup,
+    _prepend_pytest_flags,
     console,
 )
 
@@ -517,9 +518,18 @@ def all_tests(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run unit and integration tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
+
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
@@ -538,7 +548,7 @@ def all_tests(
                 "3",
                 "-v",
             ],
-            extra_args=_prepend_filter(ctx.args, filter_expr),
+            extra_args=args,
             extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
         )
     )
@@ -553,15 +563,24 @@ def all_fixtures_tests(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run full test corpus including BLNS and slow tests."""
     from promptgrimoire.cli._shared import _prepend_filter
+
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
             title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
             log_path=Path("test-all-fixtures.log"),
             default_args=["-m", _NON_UI_MARKER_EXPRESSION, "-v", "--tb=short"],
-            extra_args=_prepend_filter(ctx.args, filter_expr),
+            extra_args=args,
         )
     )

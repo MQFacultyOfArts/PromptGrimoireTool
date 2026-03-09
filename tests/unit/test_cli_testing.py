@@ -61,6 +61,14 @@ def _captured_default_args(captured: dict[str, object]) -> list[str]:
     return [arg for arg in default_args if isinstance(arg, str)]
 
 
+def _captured_extra_args(captured: dict[str, object]) -> list[str]:
+    """Return captured extra args with a concrete type for test assertions."""
+    extra_args = captured["extra_args"]
+    assert isinstance(extra_args, list)
+    assert all(isinstance(arg, str) for arg in extra_args)
+    return [arg for arg in extra_args if isinstance(arg, str)]
+
+
 # ---------------------------------------------------------------------------
 # _parse_collection
 # ---------------------------------------------------------------------------
@@ -521,3 +529,54 @@ class TestTestingCommands:
         assert captured["title"] == (
             "Full Fixture Corpus (excluding browser E2E and NiceGUI UI)"
         )
+
+
+# ---------------------------------------------------------------------------
+# -x / --ff passthrough
+# ---------------------------------------------------------------------------
+class TestPytestFlagPassthrough:
+    """-x and --ff flags are forwarded to pytest via extra_args."""
+
+    def test_test_all_exit_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "-x"])
+        assert result.exit_code == 0, result.output
+        assert "-x" in _captured_extra_args(captured)
+
+    def test_test_all_failed_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "--ff"])
+        assert result.exit_code == 0, result.output
+        assert "--ff" in _captured_extra_args(captured)
+
+    def test_test_all_both_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "-x", "--ff"])
+        assert result.exit_code == 0, result.output
+        extra = _captured_extra_args(captured)
+        assert "-x" in extra
+        assert "--ff" in extra
+
+    def test_test_all_fixtures_exit_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all-fixtures", "-x"])
+        assert result.exit_code == 0, result.output
+        assert "-x" in _captured_extra_args(captured)
+
+    def test_test_all_fixtures_failed_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all-fixtures", "--ff"])
+        assert result.exit_code == 0, result.output
+        assert "--ff" in _captured_extra_args(captured)
+
+    def test_no_flags_no_injection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all"])
+        assert result.exit_code == 0, result.output
+        extra = _captured_extra_args(captured)
+        assert "-x" not in extra
+        assert "--ff" not in extra

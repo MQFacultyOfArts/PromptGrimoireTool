@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -20,6 +20,11 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
+# SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
+# the underlying SQLAlchemy table columns when we need SQL expression objects.
+_PERMISSION_TABLE = cast("Any", Permission).__table__
+_PERMISSION_CAN_EDIT_COL = _PERMISSION_TABLE.c.can_edit
+_PERMISSION_LEVEL_COL = _PERMISSION_TABLE.c.level
 
 
 class DuplicateCodenameError(Exception):
@@ -140,7 +145,7 @@ async def _count_other_editable_team_members_with_session(
         .where(
             ACLEntry.team_id == team_id,
             ACLEntry.user_id != excluded_user_id,
-            sa.literal_column("permission.can_edit") == sa.true(),
+            _PERMISSION_CAN_EDIT_COL.is_(True),
         )
     )
     return result.one()
@@ -402,8 +407,8 @@ async def list_team_members(team_id: UUID) -> list[tuple[User, str]]:
             .join(Permission, Permission.name == ACLEntry.permission)  # type: ignore[arg-type]  -- SQLAlchemy join expression
             .where(ACLEntry.team_id == team_id)
             .order_by(
-                sa.desc(sa.literal_column("permission.can_edit")),
-                sa.desc(sa.literal_column("permission.level")),
+                sa.desc(_PERMISSION_CAN_EDIT_COL),
+                sa.desc(_PERMISSION_LEVEL_COL),
                 User.display_name,
                 User.email,
             )

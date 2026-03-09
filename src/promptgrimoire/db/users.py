@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
 if TYPE_CHECKING:
@@ -126,22 +127,28 @@ async def _find_or_create_user_with_session(
     *,
     stytch_member_id: str | None = None,
 ) -> tuple[User, bool]:
-    """Find or create a user inside a caller-owned session."""
-    normalized_email = email.lower()
-    result = await session.exec(select(User).where(User.email == normalized_email))
-    existing = result.first()
-    if existing:
-        return existing, False
+    """Find or create a user inside a caller-owned session.
 
-    user = User(
+    Uses INSERT ... ON CONFLICT DO NOTHING to avoid TOCTOU races when
+    concurrent callers (e.g. parallel roster ingestion) attempt to create
+    the same user simultaneously.
+    """
+    normalized_email = email.lower()
+
+    stmt = pg_insert(User).values(
         email=normalized_email,
         display_name=display_name,
         stytch_member_id=stytch_member_id,
     )
-    session.add(user)
+    stmt = stmt.on_conflict_do_nothing(index_elements=["email"])
+    result = await session.execute(stmt)
     await session.flush()
-    await session.refresh(user)
-    return user, True
+
+    created = result.rowcount == 1  # type: ignore[union-attr]  -- CursorResult always has rowcount
+
+    user_result = await session.exec(select(User).where(User.email == normalized_email))
+    user = user_result.one()
+    return user, created
 
 
 async def link_stytch_member(user_id: UUID, stytch_member_id: str) -> User | None:

@@ -1172,6 +1172,18 @@ def _normalise_pdf_text(s: str) -> str:
     return re.sub(r"\s+", " ", s)
 
 
+def _looks_like_wrappable_long_token(s: str) -> bool:
+    """Return True for long single tokens that PDF extraction may wrap."""
+
+    return len(s) >= 16 and re.fullmatch(r"[\w-]+", s) is not None
+
+
+def _collapse_wrapped_long_token_breaks(s: str) -> str:
+    """Remove PDF-inserted whitespace inside single word-like tokens."""
+
+    return re.sub(r"(?<=[\w-])\s*[\r\n]+\s*(?=[\w-])", "", s)
+
+
 class ExportResult:
     """Result of an annotation export — adapts to .tex (fast) or .pdf (slow) mode.
 
@@ -1185,15 +1197,24 @@ class ExportResult:
         is_pdf: ``True`` when the download was a compiled PDF.
     """
 
-    def __init__(self, text: str, *, is_pdf: bool) -> None:
+    def __init__(
+        self, text: str, *, is_pdf: bool, size_bytes: int | None = None
+    ) -> None:
         self.text = text
         self.is_pdf = is_pdf
+        self.size_bytes = size_bytes
 
     def __contains__(self, item: str) -> bool:
         if self.is_pdf:
             # LuaLaTeX converts straight quotes to typographic quotes and
             # PyMuPDF inserts line breaks; normalise both sides for comparison.
-            return _normalise_pdf_text(item) in _normalise_pdf_text(self.text)
+            needle = _normalise_pdf_text(item)
+            haystack = _normalise_pdf_text(self.text)
+            if needle in haystack:
+                return True
+            if _looks_like_wrappable_long_token(needle):
+                return needle in _collapse_wrapped_long_token_breaks(self.text)
+            return False
         return item in self.text
 
 
@@ -1213,7 +1234,7 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
     Returns:
         :class:`ExportResult` with extracted text and format flag.
     """
-    with page.expect_download(timeout=60000) as dl:
+    with page.expect_download(timeout=120000) as dl:
         page.get_by_role("button", name="Export PDF").click()
 
     download = dl.value
@@ -1226,6 +1247,10 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
         doc = pymupdf.open(file_path)
         pdf_text = "".join(p.get_text() for p in doc)
         doc.close()
-        return ExportResult(re.sub(r"-\n", "", pdf_text), is_pdf=True)
+        return ExportResult(
+            re.sub(r"-\n", "", pdf_text),
+            is_pdf=True,
+            size_bytes=len(raw),
+        )
 
-    return ExportResult(raw.decode("utf-8"), is_pdf=False)
+    return ExportResult(raw.decode("utf-8"), is_pdf=False, size_bytes=len(raw))

@@ -47,6 +47,7 @@ from tests.e2e.annotation_helpers import (
     add_comment_to_highlight,
     create_highlight_with_tag,
     expand_card,
+    export_annotation_tex_text,
     scroll_to_char,
     select_chars,
     wait_for_text_walker,
@@ -385,36 +386,17 @@ class TestLawStudent:
             with subtests.test(msg="export_pdf_with_annotations"):
                 # Attempt PDF export with annotations
                 try:
-                    # Start download listener before clicking export
-                    with page.expect_download(timeout=120000) as download_info:
-                        page.get_by_role("button", name="Export PDF").click()
+                    result = export_annotation_tex_text(page)
 
-                    download = download_info.value
-                    dl_path = Path(download.path())
-                    content_bytes = dl_path.read_bytes()
-
-                    # E2E server may produce .tex (fast mode) or .pdf (slow mode)
-                    is_pdf = content_bytes[:5] == b"%PDF-"
-
-                    if is_pdf:
-                        assert len(content_bytes) > 20_000, (
-                            f"PDF too small: {len(content_bytes)} bytes"
+                    if result.is_pdf:
+                        assert result.size_bytes is not None
+                        assert result.size_bytes > 20_000, (
+                            f"PDF too small: {result.size_bytes} bytes"
                         )
-                        import pymupdf
-
-                        doc = pymupdf.open(dl_path)
-                        text = "".join(p.get_text() for p in doc)
-                        doc.close()
-
-                        import re
-
-                        text = re.sub(r"-\n", "", text)
-                    else:
-                        text = content_bytes.decode("utf-8")
 
                     # Verify comment UUIDs in exported content
-                    assert uuid1 in text, "First comment UUID not found"
-                    assert uuid2 in text, "Second comment UUID not found"
+                    assert uuid1 in result, "First comment UUID not found"
+                    assert uuid2 in result, "Second comment UUID not found"
 
                 except PlaywrightTimeoutError:
                     pytest.skip("PDF export timed out (TinyTeX not installed?)")

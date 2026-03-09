@@ -101,7 +101,15 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, _ = await proc.communicate()
+    try:
+        _, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except TimeoutError:
+        proc.kill()
+        raise LaTeXCompilationError(
+            "LaTeX compilation timed out after 120s",
+            tex_path=tex_path,
+            log_path=output_dir / (tex_path.stem + ".log"),
+        ) from None
     returncode = proc.returncode or 0
 
     # Return path to generated PDF

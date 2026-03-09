@@ -204,9 +204,15 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout_bytes, stderr_bytes = await proc.communicate(
-        input=markdown_content.encode("utf-8")
-    )
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(input=markdown_content.encode("utf-8")), timeout=30
+        )
+    except TimeoutError:
+        proc.kill()
+        raise subprocess.CalledProcessError(
+            1, ["pandoc"], "Pandoc timed out after 30s"
+        ) from None
     if proc.returncode is None or proc.returncode != 0:
         raise subprocess.CalledProcessError(
             proc.returncode or 1,

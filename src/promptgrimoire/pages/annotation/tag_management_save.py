@@ -28,6 +28,7 @@ async def _refresh_tag_state(
     state: PageState,
     *,
     reload_crdt: bool = False,
+    skip_card_rebuild: bool = False,
 ) -> None:
     """Reload tags from CRDT and rebuild highlight CSS, then broadcast.
 
@@ -36,6 +37,9 @@ async def _refresh_tag_state(
         reload_crdt: If True, also reload CRDT state from DB into the
             in-memory doc and refresh annotation cards + client highlights.
             Required after tag deletion which modifies CRDT in the DB.
+        skip_card_rebuild: If True, skip ``refresh_annotations()`` and
+            broadcast.  Used when a modal dialog is still open and a
+            DOM rebuild would detach its elements.
 
     Lazily imports sibling modules to avoid circular dependencies.
     """
@@ -76,14 +80,15 @@ async def _refresh_tag_state(
             state.crdt_doc.apply_update(ws.crdt_state)
         _push_highlights_to_client(state)
 
-    # Always refresh annotation cards when tags change — card borders
-    # use tag colours, so any colour/name change needs a card rebuild.
-    if state.refresh_annotations:
-        state.refresh_annotations()
+    if not skip_card_rebuild:
+        # Always refresh annotation cards when tags change — card borders
+        # use tag colours, so any colour/name change needs a card rebuild.
+        if state.refresh_annotations:
+            state.refresh_annotations()
 
-    # Broadcast tag state change to other connected clients
-    if state.broadcast_update:
-        await state.broadcast_update()
+        # Broadcast tag state change to other connected clients
+        if state.broadcast_update:
+            await state.broadcast_update()
 
 
 def _cancel_pending_timers(

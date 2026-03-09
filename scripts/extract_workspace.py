@@ -15,6 +15,8 @@ Output format:
     {
         "workspace": { ... row as dict, crdt_state as base64 ... },
         "documents": [ { ... row as dict ... }, ... ],
+        "tag_groups": [ { ... row as dict ... }, ... ],
+        "tags": [ { ... row as dict ... }, ... ],
         "extracted_at": "ISO timestamp",
         "source_db": "database name"
     }
@@ -54,6 +56,10 @@ class _Encoder(json.JSONEncoder):
 _DOC_QUERY = (
     "SELECT * FROM workspace_document WHERE workspace_id = %s ORDER BY order_index"
 )
+_TAG_GROUP_QUERY = (
+    "SELECT * FROM tag_group WHERE workspace_id = %s ORDER BY order_index"
+)
+_TAG_QUERY = "SELECT * FROM tag WHERE workspace_id = %s ORDER BY order_index"
 
 
 def _to_dicts(
@@ -93,10 +99,14 @@ def extract(workspace_id: str, conninfo: str) -> dict:
             sys.exit(1)
 
         documents = _to_dicts(conn.execute(_DOC_QUERY, (workspace_id,)))
+        tag_groups = _to_dicts(conn.execute(_TAG_GROUP_QUERY, (workspace_id,)))
+        tags = _to_dicts(conn.execute(_TAG_QUERY, (workspace_id,)))
 
         return {
             "workspace": workspace,
             "documents": documents,
+            "tag_groups": tag_groups,
+            "tags": tags,
             "extracted_at": datetime.now(UTC).isoformat(),
             "source_db": conn.info.dbname,
         }
@@ -136,6 +146,8 @@ def main() -> None:
     print(f"  -> {output}")
     print("  workspace: 1 row")
     print(f"  documents: {len(data['documents'])} rows")
+    print(f"  tag_groups: {len(data['tag_groups'])} rows")
+    print(f"  tags: {len(data['tags'])} rows")
 
     crdt = data["workspace"].get("crdt_state")
     if crdt:

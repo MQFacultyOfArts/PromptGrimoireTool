@@ -208,6 +208,8 @@ markers = [
     "latexmk_full: marks full compiled-PDF suites that `test all` deselects",
     "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
 ]
+log_file = "test-debug.log"
+log_file_level = "WARNING"
 filterwarnings = [
     # SQLModel session.execute() warning handled in tests/conftest.py
 ]

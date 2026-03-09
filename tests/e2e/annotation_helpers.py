@@ -13,6 +13,7 @@ Traceability:
 from __future__ import annotations
 
 import gzip
+import logging
 import os
 import re
 import uuid
@@ -25,6 +26,8 @@ from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
+
+logger = logging.getLogger(__name__)
 
 # Legal Case Brief tag seed data
 # (mirrors cli.py:_seed_tags_for_activity).
@@ -746,6 +749,86 @@ def create_highlight(page: Page, start_char: int, end_char: int) -> None:
     tag_button.click()
 
 
+def find_text_range(page: Page, needle: str) -> tuple[int, int]:
+    """Find a text substring in the document and return its char offsets.
+
+    Walks the browser's text nodes (the same nodes used by select_chars
+    and the highlight system), concatenates their content, and searches
+    for ``needle``.  Returns ``(start_char, end_char)`` suitable for
+    passing to ``select_chars`` or ``create_highlight_with_tag``.
+
+    This avoids hardcoding char offsets that break when fixture HTML
+    changes or when CSS layout shifts content to different positions.
+
+    Args:
+        page: Playwright page with text walker initialised.
+        needle: The text to search for in the document's visible content.
+
+    Returns:
+        Tuple of (start_char, end_char) for the first occurrence.
+
+    Raises:
+        ValueError: If the needle is not found in the document text.
+    """
+    wait_for_text_walker(page, timeout=10000)
+    result = page.evaluate(
+        """(needle) => {
+            const container = document.getElementById('doc-container');
+            if (!container || typeof walkTextNodes === 'undefined')
+                return { error: 'text walker not ready' };
+            const nodes = walkTextNodes(container);
+            const total = nodes.length > 0
+                ? nodes[nodes.length - 1].endChar : 0;
+
+            // Build the collapsed text and a parallel array mapping
+            // each collapsed-text index to its walker char offset.
+            // The walker entries already have startChar/endChar with
+            // whitespace collapsing applied.
+            let fullText = '';
+            const offsetMap = [];  // offsetMap[i] = walker char offset
+            for (const entry of nodes) {
+                const len = entry.endChar - entry.startChar;
+                // Extract collapsed text via findLocalOffset inverse:
+                // walk raw text with same WS-collapsing as the walker.
+                const raw = entry.node.textContent;
+                let prev = false;
+                let col = 0;
+                for (let i = 0; i < raw.length && col < len; i++) {
+                    const ch = raw[i];
+                    if (/[\\s\\n\\r\\t]/.test(ch)) {
+                        if (!prev) {
+                            offsetMap.push(entry.startChar + col);
+                            fullText += ' ';
+                            col++; prev = true;
+                        }
+                    } else {
+                        offsetMap.push(entry.startChar + col);
+                        fullText += ch;
+                        col++; prev = false;
+                    }
+                }
+            }
+            const idx = fullText.indexOf(needle);
+            if (idx === -1)
+                return { error: 'not found', textLength: total };
+            return {
+                start: offsetMap[idx],
+                end: offsetMap[idx + needle.length - 1] + 1,
+            };
+        }""",
+        needle,
+    )
+    if "error" in result:
+        snippet = result.get("snippet", "")
+        msg = (
+            f"find_text_range: {result['error']} for {needle!r}"
+            f" (textLength={result.get('textLength')},"
+            f" first 500 chars: {snippet!r})"
+        )
+        raise ValueError(msg)
+    return (result["start"], result["end"])
+
+
 def create_highlight_with_tag(
     page: Page, start_char: int, end_char: int, tag_index: int
 ) -> None:
@@ -759,6 +842,75 @@ def create_highlight_with_tag(
             (0=Jurisdiction, 1=Procedural History, etc).
     """
     select_chars(page, start_char, end_char)
+
+    # Log the coordinates that select_chars computed for the mouse drag.
+    coord_state = page.evaluate(
+        """([startChar, endChar]) => {
+            const c = document.getElementById('doc-container');
+            if (!c) return { error: 'no doc-container' };
+            const nodes = walkTextNodes(c);
+            const sr = charOffsetToRect(nodes, startChar);
+            const er = charOffsetToRect(nodes, endChar);
+            // Also grab the text at those offsets
+            let text = '';
+            try {
+                const range = charOffsetToRange(nodes, startChar, endChar);
+                if (range) {
+                    const r = document.createRange();
+                    r.setStart(range.startContainer, range.startOffset);
+                    r.setEnd(range.endContainer, range.endOffset);
+                    text = r.toString().substring(0, 80);
+                }
+            } catch(e) { text = 'error: ' + e.message; }
+            return {
+                startRect: { x: sr.left, y: sr.top, w: sr.width, h: sr.height },
+                endRect: { x: er.left, y: er.top, w: er.width, h: er.height },
+                text: text,
+                scrollY: window.scrollY,
+                viewportH: window.innerHeight,
+            };
+        }""",
+        [start_char, end_char],
+    )
+    logger.debug(
+        "create_highlight_with_tag PRE-SELECT coords=%s",
+        coord_state,
+    )
+
+    sel_state = page.evaluate(
+        """() => {
+            const s = window.getSelection();
+            return {
+                exists: !!s,
+                isCollapsed: s ? s.isCollapsed : null,
+                rangeCount: s ? s.rangeCount : 0,
+                text: s ? s.toString().substring(0, 80) : '',
+                anchorNode: s && s.anchorNode ? s.anchorNode.nodeName : null,
+            };
+        }"""
+    )
+    toolbar_state = page.evaluate(
+        """() => {
+            const tb = document.querySelector('[data-testid="tag-toolbar"]');
+            if (!tb) return { found: false };
+            const btns = tb.querySelectorAll('button');
+            return {
+                found: true,
+                buttonCount: btns.length,
+                buttonTexts: Array.from(btns).slice(0, 12)
+                    .map(b => b.textContent.trim().substring(0, 30)),
+            };
+        }"""
+    )
+    logger.debug(
+        "create_highlight_with_tag chars=%d-%d tag_index=%d selection=%s toolbar=%s",
+        start_char,
+        end_char,
+        tag_index,
+        sel_state,
+        toolbar_state,
+    )
+
     tag_button = page.locator("[data-testid='tag-toolbar'] button").nth(tag_index)
     tag_button.click()
 
@@ -972,6 +1124,12 @@ def _load_fixture_via_paste(
         _seed_tags_for_workspace(workspace_id)
         page.reload()
         wait_for_text_walker(page, timeout=30000)
+
+        # After seeding tags via SQL and reloading, wait for the tag
+        # toolbar to render with at least one button before returning.
+        toolbar = page.locator("[data-testid='tag-toolbar']")
+        expect(toolbar).to_be_visible(timeout=10000)
+        expect(toolbar.locator("button").first).to_be_visible(timeout=10000)
 
 
 # ---------------------------------------------------------------------------

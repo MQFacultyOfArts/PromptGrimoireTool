@@ -1,8 +1,8 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-08*
+*Last updated: 2026-03-10*
 
-The annotation page (`pages/annotation/`) is a 22-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 25-module package split from a monolith.
 
 ## Layout
 
@@ -24,7 +24,17 @@ Toolbar action buttons (Create, Manage) switch between expanded and compact styl
 - Both modes always have tooltips (hover text describing the action).
 - `_render_action_buttons()` in `css.py` implements the rendering via a data-driven loop.
 
-The toolbar rebuilds dynamically when tags are created or deleted (via `_refresh_tag_state()`), so the compact/expanded transition is live.
+The toolbar rebuilds dynamically when tags are created or deleted (via `_refresh_tag_state()`), so the compact/expanded transition is live. Tag state is sourced from the CRDT `tags` Map during live sessions; DB tag rows are the source of truth at page load and for operations that predate CRDT hydration.
+
+### Tag Modules
+
+Tag management is split across four modules:
+
+- `tags.py` -- Tag state helpers and exports shared by other annotation submodules
+- `tag_management.py` -- Tag management dialog (create, edit, delete, reorder, Done button with save spinner)
+- `tag_management_save.py` -- Debounced save logic for tag/group edits (dual-write to DB + CRDT)
+- `tag_import.py` -- Import tags from other accessible workspaces (available to all users)
+- `tag_quick_create.py` -- Inline tag creation from the highlight menu
 
 ## Floating Highlight Menu
 

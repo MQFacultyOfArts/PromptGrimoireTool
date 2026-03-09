@@ -55,10 +55,19 @@ async def _render_import_section(
     from promptgrimoire.db.acl import (  # noqa: PLC0415
         list_importable_workspaces,
     )
+    from promptgrimoire.db.courses import (  # noqa: PLC0415
+        list_user_enrollments,
+    )
+
+    uid = UUID(state.user_id)
+    enrollments = await list_user_enrollments(uid)
+    enrolled_course_ids = [e.course_id for e in enrollments]
 
     workspaces = await list_importable_workspaces(
-        user_id=UUID(state.user_id),
+        user_id=uid,
         exclude_workspace_id=state.workspace_id,
+        is_privileged=state.viewer_is_privileged,
+        enrolled_course_ids=enrolled_course_ids,
     )
 
     ui.separator().classes("my-2")
@@ -102,8 +111,9 @@ async def _render_import_section(
                     ui.notify(str(exc), type="negative")
                     return
 
-                await render_tag_list()
-                await _refresh_tag_state(state)
+                # Notify before render_tag_list() — that call clears
+                # content_area which destroys this handler's slot context,
+                # making subsequent ui.notify() calls fail.
                 if imported:
                     ui.notify(
                         f"Imported {len(imported)} tag(s)",
@@ -111,6 +121,8 @@ async def _render_import_section(
                     )
                 else:
                     ui.notify("No new tags to import", type="info")
+                await render_tag_list()
+                await _refresh_tag_state(state)
 
             ui.button("Import", on_click=_import_from_workspace).props(
                 'flat dense data-testid="import-tags-btn"'

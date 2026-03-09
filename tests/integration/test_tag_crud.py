@@ -2142,7 +2142,11 @@ class TestListImportableWorkspaces:
         )
         await grant_permission(ws_id, user.id, "viewer")
 
-        results = await list_importable_workspaces(user.id)
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
         ws_ids = [ws.id for ws, *_ in results]
         assert ws_id in ws_ids
         # Verify tag names are returned
@@ -2165,7 +2169,11 @@ class TestListImportableWorkspaces:
         )
         await grant_permission(ws_id, user.id, "viewer")
 
-        results = await list_importable_workspaces(user.id)
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
         ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids
 
@@ -2186,13 +2194,18 @@ class TestListImportableWorkspaces:
         )
         await grant_permission(ws_id, user.id, "viewer")
 
-        results = await list_importable_workspaces(user.id, exclude_workspace_id=ws_id)
+        results = await list_importable_workspaces(
+            user.id,
+            exclude_workspace_id=ws_id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
         ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids
 
     @pytest.mark.asyncio
     async def test_user_without_access_excluded(self) -> None:
-        """User without ACL does not see the workspace."""
+        """User without ACL or enrollment does not see the workspace."""
         from promptgrimoire.db.acl import list_importable_workspaces
         from promptgrimoire.db.tags import create_tag
         from promptgrimoire.db.users import create_user
@@ -2206,6 +2219,153 @@ class TestListImportableWorkspaces:
             email=f"noaccess-{tag}@test.local", display_name=f"NoAccess {tag}"
         )
 
-        results = await list_importable_workspaces(user.id)
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id not in ws_ids
+
+
+class TestListImportableWorkspacesEnrollment:
+    """Tests for enrollment-derived visibility in list_importable_workspaces."""
+
+    @pytest.mark.asyncio
+    async def test_staff_sees_template_workspace_via_enrollment(self) -> None:
+        """Instructor enrolled in course sees template workspaces with tags."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        course, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="StaffTag", color="#1f77b4")
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"staff-{tag}@test.local", display_name=f"Staff {tag}"
+        )
+        await enroll_user(course.id, instructor.id, role="coordinator")
+
+        results = await list_importable_workspaces(
+            instructor.id,
+            is_privileged=True,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_student_sees_peer_shared_workspace(self) -> None:
+        """Student sees peer-shared workspace with tags via enrollment."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        course, activity = await _make_course_week_activity()
+
+        # Create owner student and clone a workspace
+        tag = uuid4().hex[:8]
+        owner = await create_user(
+            email=f"owner-{tag}@test.local", display_name=f"Owner {tag}"
+        )
+        await enroll_user(course.id, owner.id, role="student")
+        clone, _doc_map = await clone_workspace_from_activity(
+            activity.id,
+            owner.id,
+        )
+
+        # Add tags and enable sharing prerequisites
+        await create_tag(clone.id, name="PeerTag", color="#ff7f0e")
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+
+        async with get_session() as session:
+            # Enable sharing at course level
+            c = await session.get(Course, course.id)
+            assert c is not None
+            c.default_allow_sharing = True
+            session.add(c)
+            # Share workspace with class
+            ws = await session.get(Workspace, clone.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+            await session.flush()
+
+        # Create viewer student enrolled in same course
+        tag2 = uuid4().hex[:8]
+        viewer = await create_user(
+            email=f"viewer-{tag2}@test.local", display_name=f"Viewer {tag2}"
+        )
+        await enroll_user(course.id, viewer.id, role="student")
+
+        results = await list_importable_workspaces(
+            viewer.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert clone.id in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_student_cannot_see_non_shared_workspace(self) -> None:
+        """Student does NOT see another student's private workspace."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        course, activity = await _make_course_week_activity()
+
+        tag = uuid4().hex[:8]
+        owner = await create_user(
+            email=f"priv-{tag}@test.local", display_name=f"Priv {tag}"
+        )
+        await enroll_user(course.id, owner.id, role="student")
+        clone, _ = await clone_workspace_from_activity(activity.id, owner.id)
+        await create_tag(clone.id, name="PrivateTag", color="#d62728")
+        # shared_with_class defaults to False
+
+        tag2 = uuid4().hex[:8]
+        other = await create_user(
+            email=f"other-{tag2}@test.local", display_name=f"Other {tag2}"
+        )
+        await enroll_user(course.id, other.id, role="student")
+
+        results = await list_importable_workspaces(
+            other.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert clone.id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_unenrolled_user_cannot_see_course_workspaces(self) -> None:
+        """User not enrolled in course does not see its workspaces."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="InvisibleTag", color="#9467bd")
+
+        tag = uuid4().hex[:8]
+        outsider = await create_user(
+            email=f"out-{tag}@test.local", display_name=f"Out {tag}"
+        )
+
+        results = await list_importable_workspaces(
+            outsider.id,
+            is_privileged=False,
+            enrolled_course_ids=[],  # Not enrolled
+        )
         ws_ids = [ws.id for ws, *_ in results]
         assert ws_id not in ws_ids

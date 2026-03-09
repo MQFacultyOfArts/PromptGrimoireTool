@@ -420,6 +420,36 @@ watchdog output, client delete timing, and cleanup endpoint logs.
 | H7 | NiceGUI `page.py` leaks `Event.wait` tasks per page request | **Root cause — workaround** | Upstream bug, cancelled in cleanup endpoint. |
 | H8 | `Outbox.stop()` doesn't wake sleeping loop | **Confirmed — workaround** | Upstream bug, monkey-patched. |
 
+## Known Skipped E2E Tests
+
+### AustLII Negative-X Viewport Rendering (`test_law_student.py`)
+
+AustLII HTML fixtures contain inline styles (blockquotes, tables) that render content at negative viewport X coordinates. Playwright's mouse-based text selection cannot reach content outside the visible viewport, so `select_chars()` mouse drags land on the wrong element or fail entirely.
+
+**Symptom:** `select_chars()` succeeds but subsequent interactions (card appearance, tag selection) time out because the highlight was created on wrong/invisible content.
+
+**Workaround:** `find_text_range()` helper correctly finds text offsets, but the underlying rendering issue makes those offsets unusable for mouse-based selection. Test is skipped.
+
+**Possible fixes:**
+- JS-based `Selection` API instead of mouse drag (bypass viewport constraint)
+- Strip AustLII inline styles from the fixture HTML
+- Use a different fixture without negative-X content
+
+### NiceGUI `color_input` Vue Reactivity (`test_tag_colour.py`)
+
+NiceGUI's `ui.color_input` wraps Quasar's `QInput` with `v-model` binding. The native `<input>` element has `input-class="hidden"`, making it invisible to Playwright's `fill()`.
+
+JS value injection (`nativeSetter.call(input, colour)` + `dispatchEvent`) modifies the DOM but does NOT trigger Vue/Quasar's reactivity chain: `v-model` → `inputValue` watcher → `update:value` socket.io event → server `set_value()`. Both tests are skipped.
+
+**Possible fixes:**
+- Interact with the Quasar colour picker popup UI directly (click colorize button → QColor component)
+- Use NiceGUI's server-side `element.set_value()` via a test API endpoint
+- Add a `data-testid` to the colorize button and drive the picker via its hex input
+
+### Navigator Pagination During Search (`test_navigator.py`)
+
+`test_pagination_disabled_during_search` fails intermittently. Needs investigation — likely a timing issue with search debounce and pagination state updates. Skipped pending investigation.
+
 ## Key Files
 
 | File | Role |

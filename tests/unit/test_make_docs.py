@@ -325,6 +325,23 @@ class TestMakeDocsPandocPdf:
         assert any("student-workflow.md" in f for f in input_files)
         assert any("your-personal-grimoire.md" in f for f in input_files)
 
+    def test_pandoc_ignores_unexpected_markdown_files(self, _mock_happy_path):
+        mocks = _mock_happy_path
+        unexpected_md = _guides_dir / "wip-generated-guide.md"
+        unexpected_md.write_text("# WIP generated guide\n")
+
+        try:
+            cli_module.build(action=None)
+        finally:
+            unexpected_md.unlink(missing_ok=True)
+
+        pandoc_calls = [
+            c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
+        ]
+        input_files = [Path(c[0][0][-1]).name for c in pandoc_calls]
+
+        assert "wip-generated-guide.md" not in input_files
+
     def test_pandoc_includes_resource_path(self, _mock_happy_path):
         """AC7.2: --resource-path is critical for image resolution."""
         mocks = _mock_happy_path

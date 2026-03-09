@@ -25,6 +25,10 @@ library references during development.
 - [Complete API reference for CSS.highlights, Highlight class, ::highlight() pseudo-element, StaticRange](browser/css-custom-highlight-api.md)
 - [Browser Selection API for text selection and annotation](browser/selection-api.md)
 
+## browserstack
+
+- [BrowserStack integration patterns for Python pytest and Playwright suites, Automate REST APIs, Local Testing, and MCP workflows](browserstack/python-integration-and-apis.md)
+
 ## claude-code
 
 - [How to create and configure Claude Code skills (markdown files that teach Claude specialized knowledge)](claude-code/skills.md)
@@ -39,7 +43,6 @@ library references during development.
 
 ## guides
 
-- [Flight Rules](guides/flight-rules.md)
 - [PromptGrimoire Guides](guides/index.md)
 
 ## lark

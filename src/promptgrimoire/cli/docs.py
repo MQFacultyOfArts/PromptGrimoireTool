@@ -19,6 +19,12 @@ console = Console()
 
 docs_app = typer.Typer(help="Documentation generation and serving.")
 
+_GENERATED_GUIDE_MARKDOWN = (
+    "instructor-setup.md",
+    "student-workflow.md",
+    "your-personal-grimoire.md",
+)
+
 
 def _make_docs_build_and_serve(action: str | None) -> None:
     """Build MkDocs site, generate PDFs, and optionally serve or deploy."""
@@ -29,9 +35,8 @@ def _make_docs_build_and_serve(action: str | None) -> None:
     subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
 
     guides_dir = project_root / "docs" / "guides"
-    for md_path in sorted(guides_dir.glob("*.md")):
-        if md_path.name == "index.md":
-            continue
+    for guide_name in _GENERATED_GUIDE_MARKDOWN:
+        md_path = guides_dir / guide_name
         pdf_path = md_path.with_suffix(".pdf")
         subprocess.run(
             [

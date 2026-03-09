@@ -63,11 +63,13 @@ def _filter_junitxml_args(user_args: list[str]) -> list[str]:
 
 def _clean_test_env() -> dict[str, str]:
     """Return a subprocess environment stripped of pytest/NiceGUI state."""
-    return {
+    env = {
         key: value
         for key, value in os.environ.items()
         if "PYTEST" not in key and "NICEGUI" not in key
     }
+    env["GRIMOIRE_TEST_HARNESS"] = "1"
+    return env
 
 
 def _apply_worker_database_env(clean_env: dict[str, str], db_url: str) -> None:

@@ -29,9 +29,18 @@ def pytest_configure(config: pytest.Config) -> None:
     The CLI runs Alembic migrations and TRUNCATE in a single process before
     pytest starts, avoiding xdist worker deadlocks. See cli.py._pre_test_db_cleanup().
 
-    When running pytest directly (not via CLI), ensure the database is
-    already migrated and clean, or use the db_schema_guard fixture.
+    Running pytest directly bypasses DB cleanup, xdist tuning, and log capture.
+    Use ``uv run grimoire test all`` or ``uv run grimoire test changed`` instead.
     """
+    if not os.environ.get("GRIMOIRE_TEST_HARNESS"):
+        pytest.exit(
+            "Do not run pytest directly. Use:\n"
+            "  uv run grimoire test all       # full suite\n"
+            "  uv run grimoire test changed   # changed tests only\n"
+            "  uv run grimoire e2e run        # E2E tests\n"
+            "To bypass this guard (e.g. debugging), set GRIMOIRE_TEST_HARNESS=1.",
+            returncode=1,
+        )
     # SQLModel 0.0.32 marks session.execute() as deprecated in favour of
     # session.exec(), but DELETE/UPDATE DML and text() queries require
     # execute().  The deprecation message is multi-line (starts with an

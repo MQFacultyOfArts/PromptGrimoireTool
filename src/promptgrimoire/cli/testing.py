@@ -304,12 +304,14 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
+        harness_env = {**os.environ, "GRIMOIRE_TEST_HARNESS": "1"}
         process = subprocess.Popen(
             all_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=harness_env,
         )
 
         if interactive:

@@ -92,7 +92,7 @@ class TestStudentTagImport:
             expect(tag_buttons).to_have_count(0, timeout=3000)
 
             # Open tag management dialog via the manage button
-            page.get_by_test_id("tag-manage-btn").click()
+            page.get_by_test_id("tag-settings-btn").click()
             dialog = page.get_by_test_id("tag-management-dialog")
             expect(dialog).to_be_visible(timeout=5000)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
@@ -12,12 +13,16 @@ from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import ACLEntry, Permission, User, WargameTeam
+from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
+from promptgrimoire.wargame.roster import parse_roster
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from promptgrimoire.wargame import RosterEntry
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
@@ -25,6 +30,17 @@ _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 _PERMISSION_TABLE = cast("Any", Permission).__table__
 _PERMISSION_CAN_EDIT_COL = _PERMISSION_TABLE.c.can_edit
 _PERMISSION_LEVEL_COL = _PERMISSION_TABLE.c.level
+
+
+@dataclass(frozen=True, slots=True)
+class RosterReport:
+    """Summary of a roster-ingestion run."""
+
+    entries_processed: int
+    teams_created: int
+    users_created: int
+    memberships_created: int
+    memberships_updated: int
 
 
 class DuplicateCodenameError(Exception):
@@ -76,6 +92,17 @@ async def _list_existing_codenames(
         select(WargameTeam.codename).where(WargameTeam.activity_id == activity_id)
     )
     return set(result.all())
+
+
+async def _list_activity_teams_by_codename_with_session(
+    session: AsyncSession,
+    activity_id: UUID,
+) -> dict[str, WargameTeam]:
+    """Return persisted activity teams keyed by codename."""
+    result = await session.exec(
+        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+    )
+    return {team.codename: team for team in result.all()}
 
 
 async def _resolve_team_permission_with_session(
@@ -204,6 +231,11 @@ async def create_team(
     """
     async with get_session() as session:
         return await _create_team(session, activity_id, codename=codename)
+
+
+def _derive_display_name(email: str) -> str:
+    """Derive a human display name from an email local part."""
+    return email.split("@", maxsplit=1)[0].replace(".", " ").title()
 
 
 async def _grant_team_permission_with_session(
@@ -337,6 +369,111 @@ async def update_team_permission(
 async def remove_team_member(team_id: UUID, user_id: UUID) -> bool:
     """Remove a team member via the shared revoke path."""
     return await revoke_team_permission(team_id, user_id)
+
+
+async def ingest_roster(
+    activity_id: UUID,
+    csv_content: str,
+    *,
+    team_count: int | None = None,
+) -> RosterReport:
+    """Ingest a roster CSV atomically for one wargame activity.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        Parent wargame activity identifier.
+    csv_content : str
+        Raw roster CSV content.
+    team_count : int | None
+        Reserved for auto-assign mode in later phases. Explicit-team rosters
+        ignore this value.
+
+    Returns
+    -------
+    RosterReport
+        Summary counters for the completed ingest.
+
+    Raises
+    ------
+    ValueError
+        If any parsed roster row omits ``team`` during the explicit-team-only
+        phase of the feature.
+    """
+    entries = parse_roster(csv_content)
+    if team_count is not None:
+        # Task 1 ignores team_count for explicit-team rosters; Task 2 consumes it.
+        pass
+    if any(entry.team is None for entry in entries):
+        msg = (
+            "team_count support for blank team cells lands via the auto-assign "
+            "path in Task 2"
+        )
+        raise ValueError(msg)
+
+    async with get_session() as session:
+        teams_by_codename = await _list_activity_teams_by_codename_with_session(
+            session,
+            activity_id,
+        )
+        existing_codenames = set(teams_by_codename)
+        teams_created = 0
+        users_created = 0
+        memberships_created = 0
+        memberships_updated = 0
+
+        for entry in entries:
+            team_name = _require_entry_team(entry)
+            team = teams_by_codename.get(team_name)
+            if team is None:
+                team = await _create_team(
+                    session,
+                    activity_id,
+                    codename=team_name,
+                    existing_codenames=existing_codenames,
+                )
+                teams_by_codename[team_name] = team
+                teams_created += 1
+
+            user, created_user = await _find_or_create_user_with_session(
+                session,
+                entry.email,
+                _derive_display_name(entry.email),
+            )
+            users_created += int(created_user)
+
+            current_permission = await _resolve_team_permission_with_session(
+                session,
+                team.id,
+                user.id,
+            )
+            if current_permission is None:
+                memberships_created += 1
+            elif current_permission != entry.role:
+                memberships_updated += 1
+
+            await _grant_team_permission_with_session(
+                session,
+                team.id,
+                user.id,
+                entry.role,
+            )
+
+    return RosterReport(
+        entries_processed=len(entries),
+        teams_created=teams_created,
+        users_created=users_created,
+        memberships_created=memberships_created,
+        memberships_updated=memberships_updated,
+    )
+
+
+def _require_entry_team(entry: RosterEntry) -> str:
+    """Return ``entry.team`` after Task 1 explicit-team validation."""
+    if entry.team is None:
+        msg = "entry.team must be present after explicit-team validation"
+        raise RuntimeError(msg)
+    return entry.team
 
 
 async def create_teams(activity_id: UUID, team_count: int) -> list[WargameTeam]:

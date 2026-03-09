@@ -139,6 +139,7 @@ async def _find_or_create_user_with_session(
         email=normalized_email,
         display_name=display_name,
         stytch_member_id=stytch_member_id,
+        created_at=datetime.now(UTC),
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=["email"])
     result = await session.execute(stmt)

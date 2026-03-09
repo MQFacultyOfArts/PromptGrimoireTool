@@ -320,6 +320,20 @@ async def revoke_team_permission(team_id: UUID, user_id: UUID) -> bool:
         return await _revoke_team_permission_with_session(session, team_id, user_id)
 
 
+async def update_team_permission(
+    team_id: UUID,
+    user_id: UUID,
+    permission: str,
+) -> ACLEntry:
+    """Update a team member's permission via the shared upsert path."""
+    return await grant_team_permission(team_id, user_id, permission)
+
+
+async def remove_team_member(team_id: UUID, user_id: UUID) -> bool:
+    """Remove a team member via the shared revoke path."""
+    return await revoke_team_permission(team_id, user_id)
+
+
 async def create_teams(activity_id: UUID, team_count: int) -> list[WargameTeam]:
     """Create multiple wargame teams for one activity in one transaction.
 

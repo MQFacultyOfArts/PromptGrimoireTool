@@ -399,3 +399,78 @@ class TestRevokeTeamPermission:
 
         assert await revoke_team_permission(team.id, missing.id) is False
         assert await resolve_team_permission(team.id, kept.id) == "owner"
+
+
+class TestTeamPermissionWrappers:
+    """Service-level tests for wrapper convenience functions."""
+
+    @pytest.mark.asyncio
+    async def test_update_team_permission_raises_zero_editor_error_for_last_editor(
+        self,
+    ) -> None:
+        """AC5.2: wrapper downgrade path enforces the zero-editor invariant."""
+        from promptgrimoire.db.wargames import (
+            ZeroEditorError,
+            grant_team_permission,
+            resolve_team_permission,
+            update_team_permission,
+        )
+
+        _, team = await _make_team("wrapper-last-editor")
+        user = await _make_user("wrapper-last-editor", "Wrapper Last Editor")
+        await grant_team_permission(team.id, user.id, "editor")
+
+        with pytest.raises(ZeroEditorError):
+            await update_team_permission(team.id, user.id, "viewer")
+
+        assert await resolve_team_permission(team.id, user.id) == "editor"
+
+    @pytest.mark.asyncio
+    async def test_wrapper_names_support_promotion_and_viewer_removal(
+        self,
+    ) -> None:
+        """Wrapper names expose promotion and non-critical removal directly."""
+        from promptgrimoire.db.wargames import (
+            grant_team_permission,
+            remove_team_member,
+            resolve_team_permission,
+            update_team_permission,
+        )
+
+        _, team = await _make_team("wrapper-success")
+        owner = await _make_user("wrapper-owner", "Wrapper Owner")
+        promoted = await _make_user("wrapper-promoted", "Wrapper Promoted")
+        removed = await _make_user("wrapper-removed", "Wrapper Removed")
+
+        await grant_team_permission(team.id, owner.id, "owner")
+        await grant_team_permission(team.id, promoted.id, "viewer")
+        await grant_team_permission(team.id, removed.id, "viewer")
+
+        updated = await update_team_permission(team.id, promoted.id, "editor")
+        removed_result = await remove_team_member(team.id, removed.id)
+
+        assert updated.permission == "editor"
+        assert removed_result is True
+        assert await resolve_team_permission(team.id, promoted.id) == "editor"
+        assert await resolve_team_permission(team.id, removed.id) is None
+        assert await resolve_team_permission(team.id, owner.id) == "owner"
+
+    def test_promptgrimoire_db_exports_full_phase_three_api(self) -> None:
+        """The public db package exports the complete Phase 3 ACL surface."""
+        from promptgrimoire.db import (
+            ZeroEditorError,
+            grant_team_permission,
+            list_team_members,
+            remove_team_member,
+            resolve_team_permission,
+            revoke_team_permission,
+            update_team_permission,
+        )
+
+        assert ZeroEditorError.__name__ == "ZeroEditorError"
+        assert callable(grant_team_permission)
+        assert callable(list_team_members)
+        assert callable(remove_team_member)
+        assert callable(resolve_team_permission)
+        assert callable(revoke_team_permission)
+        assert callable(update_team_permission)

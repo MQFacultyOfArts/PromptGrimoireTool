@@ -103,9 +103,11 @@ from promptgrimoire.db.wargames import (
     grant_team_permission,
     list_team_members,
     list_teams,
+    remove_team_member,
     rename_team,
     resolve_team_permission,
     revoke_team_permission,
+    update_team_permission,
 )
 from promptgrimoire.db.workspace_documents import (
     add_document,
@@ -217,6 +219,7 @@ __all__ = [
     "make_workspace_loose",
     "place_workspace_in_activity",
     "place_workspace_in_course",
+    "remove_team_member",
     "rename_team",
     "reorder_documents",
     "reorder_tag_groups",
@@ -235,6 +238,7 @@ __all__ = [
     "update_last_login",
     "update_tag",
     "update_tag_group",
+    "update_team_permission",
     "update_user_role",
     "update_workspace_sharing",
     "upsert_user_on_login",

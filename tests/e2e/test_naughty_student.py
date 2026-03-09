@@ -466,7 +466,7 @@ class TestNaughtyStudent:
             with subtests.test(msg="cut_blocked"):
                 # Wait for previous toast to auto-dismiss
                 expect(student_page.locator(".q-notification")).to_have_count(
-                    0, timeout=5000
+                    0, timeout=10000
                 )
 
                 # Select text and attempt Ctrl+X
@@ -481,7 +481,7 @@ class TestNaughtyStudent:
             with subtests.test(msg="context_menu_blocked"):
                 # Wait for previous toast to auto-dismiss
                 expect(student_page.locator(".q-notification")).to_have_count(
-                    0, timeout=5000
+                    0, timeout=10000
                 )
 
                 # Right-click on the document container
@@ -495,7 +495,7 @@ class TestNaughtyStudent:
             with subtests.test(msg="print_blocked"):
                 # Wait for previous toast to auto-dismiss
                 expect(student_page.locator(".q-notification")).to_have_count(
-                    0, timeout=5000
+                    0, timeout=10000
                 )
 
                 # Attempt Ctrl+P

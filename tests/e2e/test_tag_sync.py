@@ -262,16 +262,8 @@ class TestOrganiseTabSync:
         group_select_b = page_b.get_by_test_id(f"tag-group-select-{tag_id}")
         expect(group_select_b).to_be_visible(timeout=5000)
 
-        # Quasar q-select renders the selected value in .q-field__native
-        # or as inner text. Check that the select's displayed value is
-        # the Analysis group ID.
-        group_select_b.wait_for(state="visible", timeout=5000)
-        selected_text = group_select_b.locator(".q-field__native").inner_text(
-            timeout=5000
-        )
-        assert "Analysis" in selected_text, (
-            f"Expected group select to show 'Analysis', got: {selected_text}"
-        )
+        # Verify the select displays "Analysis" as the selected group.
+        expect(group_select_b).to_contain_text("Analysis", timeout=10000)
 
         # Close dialog on client B
         done_btn_b.click()

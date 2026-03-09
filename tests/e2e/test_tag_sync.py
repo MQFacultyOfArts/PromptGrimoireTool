@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
+ANNOTATION_CARD = "[data-testid='annotation-card']"
+
+
 @pytest.mark.e2e
 class TestTagSync:
     """Tag CRDT sync between two connected clients."""
@@ -117,11 +120,12 @@ class TestOrganiseTabSync:
 
         # 1. Create a highlight with Jurisdiction tag (index 0 in seeded tags)
         create_highlight_with_tag(page_a, 0, 4, tag_index=0)
-        page_a.wait_for_timeout(1000)
 
-        # 2. Switch to Organise tab
+        # Wait for the annotation card to appear (confirms highlight saved)
+        expect(page_a.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
+
+        # 2. Switch to Organise tab — wait for columns to render
         page_a.get_by_test_id("tab-organise").click()
-        page_a.wait_for_timeout(1500)
 
         # 3. Verify the highlight card appears in the Jurisdiction column
         jurisdiction_col = page_a.locator(
@@ -141,7 +145,6 @@ class TestOrganiseTabSync:
         source_card = jurisdiction_col.locator('[data-testid="organise-card"]').first
         target_sortable = proc_hist_col.locator(".nicegui-sortable").first
         source_card.drag_to(target_sortable)
-        page_a.wait_for_timeout(2000)
 
         # 5. Verify the highlight now appears in Procedural History
         proc_cards = proc_hist_col.locator('[data-testid="organise-card"]')
@@ -155,9 +158,8 @@ class TestOrganiseTabSync:
         page_a.reload()
         wait_for_text_walker(page_a, timeout=15000)
 
-        # 7. Switch to Organise tab again
+        # 7. Switch to Organise tab again — wait for columns
         page_a.get_by_test_id("tab-organise").click()
-        page_a.wait_for_timeout(1500)
 
         # 8. Verify the highlight is still in Procedural History after refresh
         proc_hist_col_after = page_a.locator(
@@ -212,32 +214,29 @@ class TestOrganiseTabSync:
         group_select = page_a.get_by_test_id(f"tag-group-select-{tag_id}")
         expect(group_select).to_be_visible(timeout=5000)
 
-        # Click the select to open the dropdown
+        # Click the select to open the dropdown — wait for menu to appear
         group_select.click()
-        page_a.wait_for_timeout(500)
+        q_menu = page_a.locator(".q-menu")
+        expect(q_menu).to_be_visible(timeout=5000)
 
         # Select "Analysis" from the dropdown options
-        page_a.locator(".q-menu .q-item").filter(has_text="Analysis").click()
-        page_a.wait_for_timeout(1000)
+        q_menu.locator(".q-item").filter(has_text="Analysis").click()
+        expect(q_menu).to_be_hidden(timeout=5000)
 
         # 3. Click Done to save all changes
         done_btn.click()
         dialog = page_a.get_by_test_id("tag-management-dialog")
         expect(dialog).to_be_hidden(timeout=10000)
 
-        # 4. Wait for broadcast to propagate
-        page_a.wait_for_timeout(3000)
-
-        # 5. Client B: verify the toolbar was rebuilt (tag still exists)
+        # 4. Client B: verify the toolbar was rebuilt (tag still exists)
         # The tag should still be visible on client B's toolbar
         # (broadcast triggers _refresh_tag_state which rebuilds tags)
         btn_b = page_b.get_by_test_id(f"tag-btn-{tag_id}")
         expect(btn_b).to_be_visible(timeout=15000)
 
-        # 6. Client B: switch to Organise tab and verify the tag column
+        # 5. Client B: switch to Organise tab and verify the tag column
         # still exists (the tag was reassigned to Analysis group, not deleted)
         page_b.get_by_test_id("tab-organise").click()
-        page_b.wait_for_timeout(1500)
 
         # Verify Jurisdiction column still renders (tag exists, just in new group)
         jurisdiction_col = page_b.locator(
@@ -245,11 +244,8 @@ class TestOrganiseTabSync:
         )
         expect(jurisdiction_col).to_be_visible(timeout=10000)
 
-        # 7. Verify the group change persisted by reopening the management
+        # 6. Verify the group change persisted by reopening the management
         # dialog on client B and checking the group selector value
-        page_b.get_by_test_id("tab-organise").click()  # ensure we're back
-        page_b.wait_for_timeout(500)
-
         settings_btn_b = page_b.get_by_test_id("tag-settings-btn")
         settings_btn_b.scroll_into_view_if_needed()
         expect(settings_btn_b).to_be_visible(timeout=5000)

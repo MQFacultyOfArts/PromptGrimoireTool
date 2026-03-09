@@ -942,7 +942,9 @@ class TestNavigator:
             )
 
             page.goto(f"{app_server}/")
-            page.wait_for_timeout(2000)
+            expect(page.locator(".navigator-section-header").first).to_be_visible(
+                timeout=10000
+            )
 
             pencil, native_input = _locate_title_elements(page, workspace_id)
 
@@ -1018,7 +1020,6 @@ class TestNavigator:
 
             with subtests.test(msg="start_activity"):
                 student_page.goto(f"{app_server}/")
-                student_page.wait_for_timeout(2000)
 
                 start_btn = student_page.locator(".navigator-start-btn").first
                 expect(start_btn).to_be_visible(timeout=5000)
@@ -1031,7 +1032,9 @@ class TestNavigator:
 
             with subtests.test(msg="title_matches_activity"):
                 student_page.goto(f"{app_server}/")
-                student_page.wait_for_timeout(2000)
+                expect(
+                    student_page.locator(".navigator-section-header").first
+                ).to_be_visible(timeout=10000)
 
                 # The workspace title input should display the
                 # activity title as the default.  The NiceGUI wrapper

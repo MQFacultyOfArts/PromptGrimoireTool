@@ -305,9 +305,6 @@ class TestNaughtyStudent:
                             # that's fine -- we just want to verify no crash.
                             pass
 
-                        # Wait briefly for the page to settle
-                        page.wait_for_timeout(2000)
-
                         # Core assertion: page didn't crash
                         # Verify known UI element is still visible
                         tab_label = page.locator('[data-testid="tab-annotate"]')
@@ -467,8 +464,10 @@ class TestNaughtyStudent:
                 )
 
             with subtests.test(msg="cut_blocked"):
-                # Wait for previous toast to clear
-                student_page.wait_for_timeout(3500)
+                # Wait for previous toast to auto-dismiss
+                expect(student_page.locator(".q-notification")).to_have_count(
+                    0, timeout=5000
+                )
 
                 # Select text and attempt Ctrl+X
                 select_chars(student_page, 0, 5)
@@ -480,8 +479,10 @@ class TestNaughtyStudent:
                 )
 
             with subtests.test(msg="context_menu_blocked"):
-                # Wait for previous toast to clear
-                student_page.wait_for_timeout(3500)
+                # Wait for previous toast to auto-dismiss
+                expect(student_page.locator(".q-notification")).to_have_count(
+                    0, timeout=5000
+                )
 
                 # Right-click on the document container
                 student_page.locator("#doc-container").click(button="right")
@@ -492,8 +493,10 @@ class TestNaughtyStudent:
                 )
 
             with subtests.test(msg="print_blocked"):
-                # Wait for previous toast to clear
-                student_page.wait_for_timeout(3500)
+                # Wait for previous toast to auto-dismiss
+                expect(student_page.locator(".q-notification")).to_have_count(
+                    0, timeout=5000
+                )
 
                 # Attempt Ctrl+P
                 student_page.keyboard.press("Control+p")

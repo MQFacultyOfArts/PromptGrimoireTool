@@ -30,6 +30,7 @@ import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
+    add_comment_to_highlight,
     create_highlight_with_tag,
     expand_card,
     select_chars,
@@ -93,23 +94,8 @@ class TestHistoryTutorial:
             # Generate unique comment text
             comment_uuid = uuid4().hex
 
-            # Expand first annotation card to ensure comment input visible
-            expand_card(page1, 0)
-
-            # Fill and post comment
-            page1.get_by_test_id("comment-input").first.fill(comment_uuid)
-            page1.locator(ANNOTATION_CARD).first.get_by_test_id(
-                "post-comment-btn"
-            ).click()
-
-            # Server re-render after post may collapse the card — re-expand
-            page1.locator(ANNOTATION_CARD).first.locator(
-                "[data-testid='comment']", has_text=comment_uuid
-            ).wait_for(state="attached", timeout=10000)
-            expand_card(page1, 0)
-
-            # Verify comment appears on page1
-            expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+            add_comment_to_highlight(page1, comment_uuid, card_index=0)
+            expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=5000)
 
         with subtests.test(msg="comment_syncs_to_student_b"):
             # Student B should see the comment

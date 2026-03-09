@@ -26,16 +26,23 @@ PREFIX="/tmp/workspace_${WORKSPACE_ID}"
 
 echo "Extracting workspace ${WORKSPACE_ID}..."
 
+# Build the psql command — skip sudo when already running as the target user.
+if [ "$(whoami)" = "${PGUSER}" ]; then
+    PSQL="psql -d ${PGDATABASE}"
+else
+    PSQL="sudo -u ${PGUSER} psql -d ${PGDATABASE}"
+fi
+
 # 1. Workspace metadata (JSON)
-sudo -u "${PGUSER}" psql -d "${PGDATABASE}" -c "\copy (SELECT row_to_json(w) FROM (SELECT * FROM workspace WHERE id = '${WORKSPACE_ID}') w) TO '${PREFIX}.json'"
+${PSQL} -c "\copy (SELECT row_to_json(w) FROM (SELECT * FROM workspace WHERE id = '${WORKSPACE_ID}') w) TO '${PREFIX}.json'"
 echo "  -> ${PREFIX}.json"
 
 # 2. CRDT state (binary)
-sudo -u "${PGUSER}" psql -d "${PGDATABASE}" -c "\copy (SELECT crdt_state FROM workspace WHERE id = '${WORKSPACE_ID}') TO '${PREFIX}_crdt.bin' WITH (FORMAT binary)"
+${PSQL} -c "\copy (SELECT crdt_state FROM workspace WHERE id = '${WORKSPACE_ID}') TO '${PREFIX}_crdt.bin' WITH (FORMAT binary)"
 echo "  -> ${PREFIX}_crdt.bin"
 
 # 3. Workspace documents (JSON lines — one per document)
-sudo -u "${PGUSER}" psql -d "${PGDATABASE}" -c "\copy (SELECT row_to_json(d) FROM (SELECT * FROM workspace_document WHERE workspace_id = '${WORKSPACE_ID}' ORDER BY order_index) d) TO '${PREFIX}_docs.json'"
+${PSQL} -c "\copy (SELECT row_to_json(d) FROM (SELECT * FROM workspace_document WHERE workspace_id = '${WORKSPACE_ID}' ORDER BY order_index) d) TO '${PREFIX}_docs.json'"
 echo "  -> ${PREFIX}_docs.json"
 
 echo "Done. scp from server:"

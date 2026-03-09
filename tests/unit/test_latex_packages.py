@@ -9,6 +9,7 @@ import pytest
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.pdf_export import ensure_sty_in_dir
 from promptgrimoire.export.preamble import build_annotation_preamble
+from tests.conftest import requires_latexmk
 
 # Required packages for unicode support (fonts come from system via fontspec)
 UNICODE_PACKAGES = ["emoji", "luatexja"]
@@ -102,6 +103,7 @@ class TestLaTeXPackages:
             )
 
     @pytest.mark.asyncio
+    @requires_latexmk
     async def test_unicode_preamble_compiles_without_tofu(self, tmp_path: Path) -> None:
         """Verify production preamble (.sty) compiles and renders CJK without tofu."""
         pdftotext = get_pdftotext_path()

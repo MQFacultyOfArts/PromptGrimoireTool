@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from tests.conftest import requires_latexmk
+from tests.conftest import requires_full_latexmk
 from tests.integration.conftest import (
     MegaDocResult,
     MegaDocSegment,
@@ -118,7 +118,7 @@ _FONT_ERROR_PATTERNS = [
 ]
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestI18nCompilation:
     """Verify all 4 i18n fixtures compile in the mega-document.
 

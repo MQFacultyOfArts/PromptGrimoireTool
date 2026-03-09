@@ -115,6 +115,54 @@ def run_all_lanes(user_args: list[str]) -> int:
     return 0 if playwright_exit == 0 and nicegui_exit == 0 else 1
 
 
+def _normalise_optional_lane_exit(exit_code: int, user_args: list[str]) -> int:
+    """Treat filtered no-test outcomes as non-fatal for umbrella commands."""
+    return 0 if user_args and exit_code == 5 else exit_code
+
+
+def _run_latexmk_full_suite(user_args: list[str]) -> int:
+    """Run the compiled-PDF validation suite in serial mode."""
+    return _run_pytest(
+        title="LuaLaTeX Compile Suite (serial)",
+        log_path=Path("test-latexmk-full.log"),
+        default_args=["-m", "latexmk_full", "-v", "--tb=short"],
+        extra_args=user_args,
+    )
+
+
+def run_slow_lanes(user_args: list[str]) -> int:
+    """Run Playwright slow lane, then compiled-PDF suites when applicable."""
+    previous_skip_latexmk = os.environ.get("E2E_SKIP_LATEXMK")
+    os.environ["E2E_SKIP_LATEXMK"] = "0"
+    try:
+        console.print("[blue]Running Playwright slow lane...[/]")
+        playwright_exit = _normalise_optional_lane_exit(
+            _run_serial_playwright_e2e(
+                user_args,
+                use_pyspy=False,
+                reruns=True,
+                clear_cache=True,
+            ),
+            user_args,
+        )
+    finally:
+        if previous_skip_latexmk is None:
+            os.environ.pop("E2E_SKIP_LATEXMK", None)
+        else:
+            os.environ["E2E_SKIP_LATEXMK"] = previous_skip_latexmk
+
+    if _has_test_path(user_args):
+        return playwright_exit
+
+    console.print("[blue]Running LuaLaTeX compile lane...[/]")
+    latexmk_exit = _normalise_optional_lane_exit(
+        _run_latexmk_full_suite(user_args),
+        user_args,
+    )
+
+    return 0 if playwright_exit == 0 and latexmk_exit == 0 else 1
+
+
 @e2e_app.command(
     "run",
     context_settings={
@@ -198,16 +246,8 @@ def slow(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
 ) -> None:
-    """Run Playwright E2E tests with full PDF compilation (latexmk)."""
-    os.environ["E2E_SKIP_LATEXMK"] = "0"
-    sys.exit(
-        _run_serial_playwright_e2e(
-            _prepend_filter(ctx.args, filter_expr),
-            use_pyspy=False,
-            reruns=True,
-            clear_cache=True,
-        )
-    )
+    """Run Playwright slow E2E plus serial compiled-PDF validation suites."""
+    sys.exit(run_slow_lanes(_prepend_filter(ctx.args, filter_expr)))
 
 
 @e2e_app.command(

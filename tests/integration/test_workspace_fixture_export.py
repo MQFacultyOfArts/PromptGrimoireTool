@@ -29,7 +29,7 @@ from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
 )
-from tests.conftest import requires_latexmk
+from tests.conftest import requires_full_latexmk
 from tests.integration.conftest import extract_pdf_text_pymupdf
 
 # Dispatch slow tests first so xdist workers aren't idle waiting for stragglers.
@@ -211,7 +211,7 @@ async def lawlis_with_draft_result(tmp_path_factory) -> WorkspaceExportResult:
     )
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestPdfBasicIntegrity:
     """Basic PDF generation checks."""
 
@@ -352,7 +352,7 @@ _HIGHLIGHT_BOUNDARY_EXPECTATIONS: list[dict[str, str | list[str]]] = [
 ]
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestHighlightBoundariesInPdf:
     """Every highlight's text boundaries must appear in the PDF.
 
@@ -522,7 +522,7 @@ _MUST_BE_HIGHLIGHTED: list[dict[str, str | list[str]]] = [
 ]
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestHighlightWrappingInTex:
     r"""Text must appear INSIDE \\highLight wrapping, not just in the doc.
 
@@ -574,7 +574,7 @@ _REQUIRED_SCRIPTS: list[tuple[str, str]] = [
 ]
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestUnicodeRendering:
     """Multilingual text in the response draft must render without tofu.
 

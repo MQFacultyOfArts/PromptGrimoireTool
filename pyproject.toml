@@ -202,6 +202,7 @@ markers = [
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
     "perf: marks performance baseline tests (skip with '-m \"not perf\"')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
+    "latexmk_full: marks full compiled-PDF suites that `test all` deselects",
     "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
 ]
 filterwarnings = [

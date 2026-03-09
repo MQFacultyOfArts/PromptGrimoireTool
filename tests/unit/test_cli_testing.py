@@ -34,11 +34,13 @@ def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         log_path,
         default_args: list[str],
         extra_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> int:
         captured["title"] = title
         captured["log_path"] = log_path
         captured["default_args"] = default_args
         captured["extra_args"] = extra_args
+        captured["extra_env"] = extra_env
         return 0
 
     monkeypatch.setattr(testing, "_run_pytest", _fake_run_pytest)
@@ -471,11 +473,23 @@ class TestTestingCommands:
 
         assert result.exit_code == 0, result.output
         assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui"
+            "not e2e and not nicegui_ui and not latexmk_full"
         )
         assert captured["title"] == (
-            "Full Test Suite (unit + integration, excludes browser E2E and NiceGUI UI)"
+            "Full Test Suite (unit + integration, excludes browser E2E, "
+            "NiceGUI UI, and latexmk compile-stage tests)"
         )
+
+    def test_test_all_sets_latexmk_skip_guard(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`test all` enables the latexmk skip guard only for that invocation."""
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "all"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["extra_env"] == {"GRIMOIRE_TEST_SKIP_LATEXMK": "1"}
 
     def test_test_changed_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch

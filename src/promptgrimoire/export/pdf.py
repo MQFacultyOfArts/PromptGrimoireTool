@@ -23,10 +23,24 @@ class LaTeXCompilationError(Exception):
         return f"{self.args[0]}\n  TeX: {self.tex_path}\n  Log: {self.log_path}"
 
 
+class LaTeXCompileStageShortCircuit(Exception):
+    """Sentinel raised by the test harness before spawning latexmk."""
+
+    def __init__(self, tex_path: Path) -> None:
+        self.tex_path = tex_path
+        super().__init__(f"latexmk stage short-circuited for {tex_path}")
+
+
 # TinyTeX installation paths
 TINYTEX_DIR = Path.home() / ".TinyTeX"
 TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
 TINYTEX_LATEXMK = TINYTEX_BIN / "latexmk"
+_TEST_FLAGS = {"short_circuit_latexmk": False}
+
+
+def set_latexmk_short_circuit(enabled: bool) -> None:
+    """Enable the test-harness short-circuit before the latexmk subprocess."""
+    _TEST_FLAGS["short_circuit_latexmk"] = enabled
 
 
 def get_latexmk_path() -> str:
@@ -84,6 +98,9 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     """
     tex_path = Path(tex_path)
     output_dir = tex_path.parent if output_dir is None else Path(output_dir)
+
+    if _TEST_FLAGS["short_circuit_latexmk"]:
+        raise LaTeXCompileStageShortCircuit(tex_path)
 
     latexmk = get_latexmk_path()
 

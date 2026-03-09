@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 
 test_app = typer.Typer(help="Unit and integration test commands.")
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
+_TEST_ALL_MARKER_EXPRESSION = f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full"
+_SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +265,7 @@ def _run_pytest(
     log_path: Path,
     default_args: list[str],
     extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> int:
     """Run pytest with Rich formatting and logging.
 
@@ -304,7 +307,11 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
-        harness_env = {**os.environ, "GRIMOIRE_TEST_HARNESS": "1"}
+        harness_env = {
+            **os.environ,
+            "GRIMOIRE_TEST_HARNESS": "1",
+            **(extra_env or {}),
+        }
         process = subprocess.Popen(
             all_args,
             stdout=subprocess.PIPE,
@@ -517,13 +524,13 @@ def all_tests(
     sys.exit(
         _run_pytest(
             title=(
-                "Full Test Suite (unit + integration, excludes browser E2E and "
-                "NiceGUI UI)"
+                "Full Test Suite (unit + integration, excludes browser E2E, "
+                "NiceGUI UI, and latexmk compile-stage tests)"
             ),
             log_path=Path("test-all.log"),
             default_args=[
                 "-m",
-                _NON_UI_MARKER_EXPRESSION,
+                _TEST_ALL_MARKER_EXPRESSION,
                 "-n",
                 _xdist_worker_count(),
                 "--dist=worksteal",
@@ -532,6 +539,7 @@ def all_tests(
                 "-v",
             ],
             extra_args=_prepend_filter(ctx.args, filter_expr),
+            extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
         )
     )
 

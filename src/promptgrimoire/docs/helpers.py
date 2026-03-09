@@ -103,16 +103,25 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
         )
         raise RuntimeError(msg)
 
-    # Scroll to the start position first so it is in viewport
+    # Scroll to the start position so it is in viewport.
+    # Uses instant scroll (no animation) so coordinates are immediately
+    # stable — avoids a fragile wait_for_timeout after smooth scroll.
     page.evaluate(
         """([startChar, endChar]) => {
             const container = document.getElementById('doc-container');
             const nodes = walkTextNodes(container);
-            scrollToCharOffset(nodes, startChar, endChar);
+            const sr = charOffsetToRange(nodes, startChar, endChar);
+            if (!sr) return;
+            const r = document.createRange();
+            r.setStart(sr.startContainer, sr.startOffset);
+            r.setEnd(sr.endContainer, sr.endOffset);
+            const rect = r.getBoundingClientRect();
+            const targetY = rect.top + window.scrollY
+                - window.innerHeight / 2 + rect.height / 2;
+            window.scrollTo({ top: Math.max(0, targetY), behavior: 'instant' });
         }""",
         [start_char, end_char],
     )
-    page.wait_for_timeout(300)
 
     # Re-query coordinates after scroll (positions change)
     coords = page.evaluate(

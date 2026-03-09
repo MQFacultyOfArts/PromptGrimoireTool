@@ -116,94 +116,125 @@ MIXED_TEXT = (
 class TestTranslationStudent:
     """Translation student persona: annotating multilingual content."""
 
-    def test_cjk_annotation_workflow(
+    def test_cjk_chinese_annotation(
         self,
         browser: Browser,
         app_server: str,
-        subtests: SubTests,
     ) -> None:
-        """CJK annotation workflow with 4 checkpoints.
-
-        Narrative: Translation student pastes Chinese, Japanese, and Korean
-        source text, highlights passages, verifies content renders correctly.
-        """
+        """Chinese annotation: paste content, highlight, verify card."""
         context = browser.new_context()
         page = context.new_page()
 
         try:
             _authenticate_page(page, app_server)
-
-            with subtests.test(msg="authenticate_and_create_workspace"):
-                setup_workspace_with_content(page, app_server, CHINESE_TEXT)
-                expect(page.locator("#doc-container")).to_contain_text(
-                    "\u4f60\u597d\u4e16\u754c", timeout=15000
-                )
-
-            with subtests.test(msg="highlight_chinese_text"):
-                create_highlight_with_tag(page, 0, 3, tag_index=0)
-                expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
-
-            with subtests.test(msg="add_japanese_content"):
-                _setup_and_highlight(
-                    page,
-                    app_server,
-                    JAPANESE_TEXT,
-                    "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c",
-                    0,
-                    5,
-                )
-
-            with subtests.test(msg="add_korean_content"):
-                _setup_and_highlight(
-                    page,
-                    app_server,
-                    KOREAN_TEXT,
-                    "\uc548\ub155\ud558\uc138\uc694",
-                    0,
-                    4,
-                )
-
+            _setup_and_highlight(
+                page,
+                app_server,
+                CHINESE_TEXT,
+                "\u4f60\u597d\u4e16\u754c",
+                0,
+                3,
+            )
         finally:
             page.close()
             context.close()
 
-    def test_rtl_annotation_workflow(
+    def test_cjk_japanese_annotation(
         self,
         browser: Browser,
         app_server: str,
-        subtests: SubTests,
     ) -> None:
-        """RTL annotation workflow with 2 checkpoints.
+        """Japanese annotation: paste content, highlight, verify card."""
+        context = browser.new_context()
+        page = context.new_page()
 
-        Narrative: Translation student pastes RTL content (Arabic, Hebrew),
-        highlights passages, verifies content renders correctly.
+        try:
+            _authenticate_page(page, app_server)
+            _setup_and_highlight(
+                page,
+                app_server,
+                JAPANESE_TEXT,
+                "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c",
+                0,
+                5,
+            )
+        finally:
+            page.close()
+            context.close()
+
+    def test_cjk_korean_annotation(
+        self,
+        browser: Browser,
+        app_server: str,
+    ) -> None:
+        """Korean annotation: paste content, highlight, verify card."""
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            _authenticate_page(page, app_server)
+            _setup_and_highlight(
+                page,
+                app_server,
+                KOREAN_TEXT,
+                "\uc548\ub155\ud558\uc138\uc694",
+                0,
+                4,
+            )
+        finally:
+            page.close()
+            context.close()
+
+    def test_rtl_arabic_annotation(
+        self,
+        browser: Browser,
+        app_server: str,
+    ) -> None:
+        """Arabic RTL annotation: paste content, highlight, verify card.
+
+        Narrative: Translation student pastes Arabic content, highlights a
+        passage, verifies the annotation card appears.
         """
         context = browser.new_context()
         page = context.new_page()
 
         try:
             _authenticate_page(page, app_server)
+            _setup_and_highlight(
+                page,
+                app_server,
+                ARABIC_TEXT,
+                "\u0645\u0631\u062d\u0628\u0627",
+                0,
+                5,
+            )
+        finally:
+            page.close()
+            context.close()
 
-            with subtests.test(msg="arabic_content"):
-                _setup_and_highlight(
-                    page,
-                    app_server,
-                    ARABIC_TEXT,
-                    "\u0645\u0631\u062d\u0628\u0627",
-                    0,
-                    5,
-                )
+    def test_rtl_hebrew_annotation(
+        self,
+        browser: Browser,
+        app_server: str,
+    ) -> None:
+        """Hebrew RTL annotation: paste content, highlight, verify card.
 
-            with subtests.test(msg="hebrew_content"):
-                _setup_and_highlight(
-                    page,
-                    app_server,
-                    HEBREW_TEXT,
-                    "\u05e9\u05dc\u05d5\u05dd",
-                    0,
-                    3,
-                )
+        Narrative: Translation student pastes Hebrew content, highlights a
+        passage, verifies the annotation card appears.
+        """
+        context = browser.new_context()
+        page = context.new_page()
 
+        try:
+            _authenticate_page(page, app_server)
+            _setup_and_highlight(
+                page,
+                app_server,
+                HEBREW_TEXT,
+                "\u05e9\u05dc\u05d5\u05dd",
+                0,
+                3,
+            )
         finally:
             page.close()
             context.close()

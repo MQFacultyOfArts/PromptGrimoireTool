@@ -35,9 +35,10 @@ def pytest_configure(config: pytest.Config) -> None:
     if not os.environ.get("GRIMOIRE_TEST_HARNESS"):
         pytest.exit(
             "Do not run pytest directly. Use:\n"
-            "  uv run grimoire test all       # full suite\n"
-            "  uv run grimoire test changed   # changed tests only\n"
-            "  uv run grimoire e2e run        # E2E tests\n"
+            "  uv run grimoire test run <path> # specific tests (auto-detects type)\n"
+            "  uv run grimoire test changed    # dependency-aware (AST diff)\n"
+            "  uv run grimoire test all        # full unit + integration suite\n"
+            "  uv run grimoire e2e run         # Playwright E2E tests\n"
             "To bypass this guard (e.g. debugging), set GRIMOIRE_TEST_HARNESS=1.",
             returncode=1,
         )

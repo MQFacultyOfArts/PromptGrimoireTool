@@ -44,6 +44,7 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
+    add_comment_to_highlight,
     create_highlight_with_tag,
     expand_card,
     scroll_to_char,
@@ -130,28 +131,8 @@ class TestLawStudent:
             with subtests.test(msg="add_comment_with_uuid"):
                 # Generate unique comment identifier
                 uuid1 = uuid4().hex
-
-                # Expand annotation card to ensure comment input is visible
-                expand_card(page, 0)
-
-                # Find comment input and add comment
-                comment_input = page.get_by_test_id("comment-input").first
-                comment_input.fill(uuid1)
-
-                # Post comment
-                page.locator("[data-testid='annotation-card']").first.get_by_test_id(
-                    "post-comment-btn"
-                ).click()
-
-                # Server re-render after post may collapse the card — re-expand
-                card = page.locator("[data-testid='annotation-card']").first
-                card.locator("[data-testid='comment']", has_text=uuid1).wait_for(
-                    state="attached", timeout=10000
-                )
-                expand_card(page, 0)
-
-                # Verify comment appears
-                expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
+                add_comment_to_highlight(page, uuid1, card_index=0)
+                expect(page.get_by_text(uuid1)).to_be_visible(timeout=5000)
 
             with subtests.test(msg="highlight_with_different_tag"):
                 # Create second highlight with Legal Issues tag (tag_index=3)
@@ -165,26 +146,8 @@ class TestLawStudent:
             with subtests.test(msg="add_second_comment_with_uuid"):
                 # Generate second unique comment identifier
                 uuid2 = uuid4().hex
-
-                # Expand second card
-                expand_card(page, 1)
-
-                # Find comment input on second card
-                comment_input = page.get_by_test_id("comment-input").nth(1)
-                comment_input.fill(uuid2)
-
-                # Post second comment
-                card2 = page.locator("[data-testid='annotation-card']").nth(1)
-                card2.get_by_test_id("post-comment-btn").click()
-
-                # Server re-render after post may collapse the card — re-expand
-                card2.locator("[data-testid='comment']", has_text=uuid2).wait_for(
-                    state="attached", timeout=10000
-                )
-                expand_card(page, 1)
-
-                # Verify second comment appears
-                expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
+                add_comment_to_highlight(page, uuid2, card_index=1)
+                expect(page.get_by_text(uuid2)).to_be_visible(timeout=5000)
 
             with subtests.test(msg="change_tag_via_dropdown"):
                 # Scroll first highlight back into view so card positioning

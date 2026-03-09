@@ -20,9 +20,7 @@
       "Bash(git -C * ls-files *)",
       "Bash(git -C * remote *)"
     ],
-    "deny": [
-      "Bash(python3 *)"
-    ]
+    "deny": []
   },
   "hooks": {
     "PostToolUse": [

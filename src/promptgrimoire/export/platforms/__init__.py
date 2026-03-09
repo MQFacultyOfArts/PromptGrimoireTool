@@ -124,6 +124,7 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
     from selectolax.lexbor import LexborHTMLParser  # noqa: PLC0415
 
     from promptgrimoire.export.platforms.base import (  # noqa: PLC0415
+        collapse_wrapper_divs,
         remove_common_chrome,
     )
 
@@ -146,6 +147,9 @@ def preprocess_for_export(html: str, platform_hint: str | None = None) -> str:
 
     # Common chrome removal (always applied)
     remove_common_chrome(tree)
+
+    # Collapse bare wrapper divs so Pandoc sees flat structure
+    collapse_wrapper_divs(tree)
 
     # Get processed HTML
     result = tree.html or html

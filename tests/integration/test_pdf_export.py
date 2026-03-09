@@ -196,7 +196,7 @@ class TestMarginnoteTexOnly:
 
         # Check the tex file was created with notes section
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
 
     @pytest.mark.asyncio
     async def test_export_with_comments(self, tmp_path: Path) -> None:
@@ -271,7 +271,7 @@ class TestResponseDraftTexOnly:
         )
 
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
         assert "My Response" in tex_content
         assert "analysis" in tex_content
 
@@ -291,7 +291,7 @@ class TestResponseDraftTexOnly:
         )
 
         tex_content = tex_path.read_text()
-        assert "General Notes" not in tex_content
+        assert "Response" not in tex_content
 
     @pytest.mark.asyncio
     async def test_notes_latex_takes_precedence_over_general_notes(
@@ -317,7 +317,7 @@ class TestResponseDraftTexOnly:
         )
 
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
         assert "Markdown response draft content" in tex_content
 
 
@@ -358,7 +358,7 @@ class TestResponseDraftCompile:
         assert pdf_path.exists()
         tex_path = tmp_path / "annotated_document.tex"
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
         assert "Key Findings" in tex_content
         assert r"\begin{itemize}" in tex_content
         assert "overall conclusion" in tex_content
@@ -463,7 +463,7 @@ class TestGenerateTexOnly:
         )
 
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
 
     @pytest.mark.asyncio
     async def test_with_notes_latex(self, tmp_path: Path) -> None:
@@ -480,7 +480,7 @@ class TestGenerateTexOnly:
         )
 
         tex_content = tex_path.read_text()
-        assert "General Notes" in tex_content
+        assert "Response" in tex_content
         assert r"pre-converted" in tex_content
 
 

@@ -480,17 +480,18 @@ class TestTestingCommands:
     def test_test_changed_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from promptgrimoire.cli import testing
+
+        monkeypatch.setattr(testing, "_depper_base_ref", lambda: "abc123def456")
         captured = _capture_run_pytest(monkeypatch)
 
         result = runner.invoke(app, ["test", "changed"])
 
         assert result.exit_code == 0, result.output
-        assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui"
-        )
-        assert captured["title"] == (
-            "Changed Tests (vs main, excludes browser E2E and NiceGUI UI)"
-        )
+        default_args = _captured_default_args(captured)
+        assert _marker_expression(default_args) == "not e2e and not nicegui_ui"
+        assert "--depper-base-branch=abc123def456" in default_args
+        assert "abc123def456" in str(captured["title"])
 
     def test_test_all_fixtures_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch

@@ -361,6 +361,102 @@ def _print_footer(exit_code: int, duration: object, log_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+_NICEGUI_UI_FILES: frozenset[str] = frozenset(
+    {
+        "test_instructor_course_admin_ui.py",
+        "test_instructor_template_ui.py",
+        "test_crud_management_ui.py",
+    }
+)
+
+
+def _detect_test_type(args: list[str]) -> str:
+    """Classify test paths as 'e2e', 'nicegui', or 'unit'.
+
+    Scans *args* for anything that looks like a test path (not a flag).
+    Returns the detected type, defaulting to 'unit' when no paths match
+    a special category.
+    """
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        normalised = arg.split("::")[0]
+        if "tests/e2e" in normalised or normalised.startswith("tests/e2e"):
+            return "e2e"
+        filename = Path(normalised).name
+        if filename in _NICEGUI_UI_FILES:
+            return "nicegui"
+    return "unit"
+
+
+@test_app.command(
+    "run",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)
+def run_tests(
+    ctx: typer.Context,
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+) -> None:
+    """Run specific tests through the appropriate harness.
+
+    Auto-detects whether the given paths are E2E (Playwright), NiceGUI UI,
+    or unit/integration tests, then delegates to the correct runner.
+
+    Examples:
+        grimoire test run tests/unit/test_foo.py
+        grimoire test run tests/e2e/test_happy_path.py -k "login"
+        grimoire test run tests/integration/test_crud_management_ui.py
+    """
+    from promptgrimoire.cli._shared import _prepend_filter
+
+    args = _prepend_filter(ctx.args, filter_expr)
+    test_type = _detect_test_type(args)
+
+    if test_type == "e2e":
+        from promptgrimoire.cli.e2e import run_playwright_noretry_lane
+
+        sys.exit(run_playwright_noretry_lane(args))
+
+    if test_type == "nicegui":
+        from promptgrimoire.cli.e2e import run_nicegui_lane
+
+        sys.exit(run_nicegui_lane(args))
+
+    # Unit / integration — serial, no retries, fail-fast for targeted runs
+    sys.exit(
+        _run_pytest(
+            title="Targeted Tests (no retries, fail-fast)",
+            log_path=Path("test-run.log"),
+            default_args=[
+                "-x",
+                "-v",
+                "--tb=short",
+            ],
+            extra_args=args,
+        )
+    )
+
+
+def _depper_base_ref() -> str:
+    """Find the best base ref for pytest-depper comparison.
+
+    Returns the merge-base of ``origin/main`` and ``HEAD`` — the commit
+    where the current branch diverged.  Falls back to ``"main"`` if the
+    merge-base cannot be computed (e.g. shallow clone).
+    """
+    result = subprocess.run(
+        ["git", "merge-base", "origin/main", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return "main"
+
+
 @test_app.command(
     "changed",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
@@ -371,15 +467,24 @@ def changed_tests(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
 ) -> None:
-    """Run pytest on tests affected by changes relative to main."""
+    """Run pytest on tests affected by changes relative to main.
+
+    Uses ``git merge-base`` to find the fork point so depper compares
+    against the commit where the branch diverged, not the current tip
+    of origin/main.
+    """
     from promptgrimoire.cli._shared import _prepend_filter
+
+    base_ref = _depper_base_ref()
 
     sys.exit(
         _run_pytest(
-            title="Changed Tests (vs main, excludes browser E2E and NiceGUI UI)",
+            title=f"Changed Tests (vs {base_ref[:12]}, "
+            "excludes browser E2E and NiceGUI UI)",
             log_path=Path("test-failures.log"),
             default_args=[
                 "--depper",
+                f"--depper-base-branch={base_ref}",
                 "-m",
                 _NON_UI_MARKER_EXPRESSION,
                 "-n",

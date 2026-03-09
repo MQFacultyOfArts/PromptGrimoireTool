@@ -41,8 +41,8 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
+    add_comment_to_highlight,
     create_highlight_with_tag,
-    expand_card,
     export_annotation_tex_text,
     setup_workspace_with_content,
 )
@@ -74,16 +74,7 @@ def _setup_and_highlight(
 
 def _post_comment_on_first_card(page: Page, comment_uuid: str) -> None:
     """Post a comment on the first annotation card."""
-    expand_card(page, 0)
-
-    card = page.locator("[data-testid='annotation-card']").first
-    card.get_by_test_id("comment-input").fill(comment_uuid)
-    card.get_by_test_id("post-comment-btn").click()
-
-    # Server re-render after post may collapse the card — re-expand
-    comment = card.locator("[data-testid='comment']", has_text=comment_uuid)
-    comment.wait_for(state="attached", timeout=10000)
-    expand_card(page, 0)
+    add_comment_to_highlight(page, comment_uuid, card_index=0)
 
 
 # --- Test content strings ---
@@ -299,17 +290,8 @@ class TestTranslationStudent:
 
                 # Post a second comment with emoji to test #274
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
-                expand_card(page, 0)
-                card = page.locator(ANNOTATION_CARD).first
-                card.get_by_test_id("comment-input").fill(emoji_comment)
-                card.get_by_test_id("post-comment-btn").click()
-
-                # Server re-render after post may collapse the card — re-expand
-                card.locator(
-                    "[data-testid='comment']", has_text=emoji_comment
-                ).wait_for(state="attached", timeout=10000)
-                expand_card(page, 0)
-                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
+                add_comment_to_highlight(page, emoji_comment, card_index=0)
+                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=5000)
 
             with subtests.test(msg="export_pdf"):
                 try:

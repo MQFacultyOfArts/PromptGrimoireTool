@@ -211,6 +211,13 @@ function Div(elem)
     -- Open new speaker turn environment
     table.insert(result, pandoc.RawBlock('latex', '\\begin{' .. role_info.env .. '}'))
 
+    -- Include the div's own content (ChatCraft-ingested HTML wraps
+    -- turn content inside the data-speaker div rather than using
+    -- empty marker divs followed by sibling content).
+    for _, block in ipairs(elem.content) do
+      table.insert(result, block)
+    end
+
     -- Update state
     current_speaker = speaker
 

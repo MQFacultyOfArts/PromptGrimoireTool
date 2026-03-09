@@ -343,6 +343,8 @@ uv run grimoire e2e all
 
 Do not raise a PR with either suite failing. If E2E tests fail on unrelated issues, document them explicitly in the PR description.
 
+YOU MUST PRESENT THE RESULTS OF e2e all and test all to the user before making the PR.
+
 ## Review Criteria
 
 Code review will check:

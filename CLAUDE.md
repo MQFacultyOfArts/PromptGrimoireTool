@@ -75,7 +75,10 @@ Git commits trigger ruff lint + format check and ty type check. Commits will be 
 # Install dependencies
 uv sync
 
-# Run tests (smart selection based on changes - fast)
+# Run specific tests (auto-detects e2e/nicegui/unit)
+uv run grimoire test run <path>::<test>
+
+# Run tests affected by changes (AST dependency analysis)
 uv run grimoire test changed
 
 # Run all tests (unit + integration, excludes E2E)

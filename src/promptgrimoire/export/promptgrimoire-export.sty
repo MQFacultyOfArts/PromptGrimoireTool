@@ -129,17 +129,59 @@
 % =============================================================================
 
 % Usage: \annot{colour-name}{margin content}
-% Uses footnotesize for compact margin notes
-% marginalia auto-stacks overlapping notes with ysep spacing
+% Short annotations go in the margin; long ones become endnotes to avoid
+% overflow.  We measure the natural height of the content at margin width
+% and switch when it exceeds \annotmaxht (default 4cm ≈ 6 lines).
 \newcounter{annotnum}
+\newlength{\annotmaxht}
+\setlength{\annotmaxht}{4cm}
+\newsavebox{\annotbox}
+% Long annotations: written to \jobname.endnotes via \write, flushed
+% by \flushannotendnotes which \input{}s the file.
+\newwrite\annotendfile
+\newif\ifannothasendnotes
+\AtBeginDocument{%
+  \immediate\openout\annotendfile=\jobname.endnotes\relax
+}
+\newcommand{\flushannotendnotes}{%
+  \immediate\closeout\annotendfile
+  \ifannothasendnotes
+    \clearpage
+    \section*{Long Annotations}
+    \input{\jobname.endnotes}%
+  \fi
+}
 \newcommand{\annot}[2]{%
   \stepcounter{annotnum}%
-  \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
-  \marginalia[ysep=3pt]{%
-    \fcolorbox{#1}{#1!20}{%
-      \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} #2}%
+  % Measure content height at margin width.
+  % Use \setbox with \vbox (not \savebox) because #2 may contain \par
+  % tokens from multi-paragraph annotations — \savebox scans in
+  % restricted horizontal mode which forbids \par.
+  \setbox\annotbox=\vbox{\hsize=4.3cm\footnotesize\textbf{\theannotnum.} #2}%
+  \ifdim\ht\annotbox>\annotmaxht
+    % Long annotation → write to endnotes file, show stub in margin
+    \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+    \marginalia[ysep=3pt]{%
+      \fcolorbox{#1}{#1!20}{%
+        \parbox{4.3cm}{\footnotesize\textbf{\theannotnum.} (see endnotes)}%
+      }%
     }%
-  }%
+    \global\annothasendnotestrue
+    \immediate\write\annotendfile{%
+      \noexpand\par\noexpand\noindent
+      \noexpand\textcolor{#1}{\noexpand\textbf{\theannotnum.}}
+      \unexpanded{#2}%
+      \noexpand\par\noexpand\medskip
+    }%
+  \else
+    % Short annotation → margin note
+    \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+    \marginalia[ysep=3pt]{%
+      \fcolorbox{#1}{#1!20}{%
+        \usebox{\annotbox}%
+      }%
+    }%
+  \fi
 }
 
 % =============================================================================

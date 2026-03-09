@@ -75,6 +75,15 @@ def _remove_chrome_images(tree: LexborHTMLParser) -> None:
             img.decompose()
 
 
+def _strip_event_attributes(tree: LexborHTMLParser) -> None:
+    """Strip ``on*`` event handler attributes from all elements (#117)."""
+    for node in tree.css("*"):
+        attrs = node.attributes
+        for attr in list(attrs):
+            if attr and attr.startswith("on"):
+                del node.attrs[attr]
+
+
 def _remove_chrome_elements(tree: LexborHTMLParser) -> None:
     """Remove SVGs, hidden elements, action buttons, and KaTeX visual rendering."""
     # Remove SVG elements
@@ -95,12 +104,7 @@ def _remove_chrome_elements(tree: LexborHTMLParser) -> None:
     for a in tree.css("a"):
         a.unwrap()
 
-    # Strip on* event attributes from all elements (#117)
-    for node in tree.css("*"):
-        attrs = node.attributes
-        for attr in list(attrs):
-            if attr and attr.startswith("on"):
-                del node.attrs[attr]
+    _strip_event_attributes(tree)
 
     # Remove KaTeX visual rendering (keep MathML for Pandoc)
     for node in tree.css(".katex-html"):
@@ -131,6 +135,29 @@ def remove_common_chrome(tree: LexborHTMLParser) -> None:
     _remove_chrome_by_patterns(tree)
     _remove_chrome_images(tree)
     _remove_chrome_elements(tree)
+
+
+def collapse_wrapper_divs(tree: LexborHTMLParser) -> None:
+    """Unwrap bare ``<div>`` elements that serve only as nesting wrappers.
+
+    Paste handlers (especially ChatCraft) preserve the original DOM
+    structure, producing deeply nested ``<div>`` chains with no semantic
+    value.  This collapses them so Pandoc sees a flat structure.
+
+    A div is unwrapped when it has **no** ``id``, ``class``, or ``data-*``
+    attributes.  Divs with ``style`` only are also unwrapped — inline
+    styles are irrelevant to the LaTeX pipeline.
+
+    Must run **before** Pandoc conversion; safe to call multiple times.
+    """
+    for node in tree.css("div"):
+        attrs = node.attributes
+        has_id = "id" in attrs
+        has_class = "class" in attrs
+        has_data = any(k.startswith("data-") for k in attrs)
+        if has_id or has_class or has_data:
+            continue
+        node.unwrap()
 
 
 def remove_empty_containers(tree: LexborHTMLParser) -> None:

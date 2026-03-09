@@ -439,6 +439,24 @@ def run_tests(
     )
 
 
+def _depper_base_ref() -> str:
+    """Find the best base ref for pytest-depper comparison.
+
+    Returns the merge-base of ``origin/main`` and ``HEAD`` — the commit
+    where the current branch diverged.  Falls back to ``"main"`` if the
+    merge-base cannot be computed (e.g. shallow clone).
+    """
+    result = subprocess.run(
+        ["git", "merge-base", "origin/main", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return "main"
+
+
 @test_app.command(
     "changed",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
@@ -449,15 +467,24 @@ def changed_tests(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
 ) -> None:
-    """Run pytest on tests affected by changes relative to main."""
+    """Run pytest on tests affected by changes relative to main.
+
+    Uses ``git merge-base`` to find the fork point so depper compares
+    against the commit where the branch diverged, not the current tip
+    of origin/main.
+    """
     from promptgrimoire.cli._shared import _prepend_filter
+
+    base_ref = _depper_base_ref()
 
     sys.exit(
         _run_pytest(
-            title="Changed Tests (vs main, excludes browser E2E and NiceGUI UI)",
+            title=f"Changed Tests (vs {base_ref[:12]}, "
+            "excludes browser E2E and NiceGUI UI)",
             log_path=Path("test-failures.log"),
             default_args=[
                 "--depper",
+                f"--depper-base-branch={base_ref}",
                 "-m",
                 _NON_UI_MARKER_EXPRESSION,
                 "-n",

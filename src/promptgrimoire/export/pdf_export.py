@@ -50,12 +50,14 @@ _DOCUMENT_TEMPLATE = r"""
 
 {general_notes_section}
 
+\flushannotendnotes
+
 \end{{document}}
 """
 
 # General notes section template
 _GENERAL_NOTES_TEMPLATE = r"""
-\section*{{General Notes}}
+\section*{{Response}}
 {content}
 """
 

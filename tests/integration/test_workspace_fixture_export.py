@@ -642,11 +642,9 @@ class TestUnicodeRendering:
     async def test_general_notes_section_exists(
         self, lawlis_with_draft_result: WorkspaceExportResult
     ) -> None:
-        """The General Notes section must appear in the PDF."""
+        """The Response section must appear in the PDF."""
         pdf_text = lawlis_with_draft_result.pdf_text_pymupdf_raw
-        assert "General Notes" in pdf_text, (
-            "General Notes section not found in PDF text"
-        )
+        assert "Response" in pdf_text, "Response section not found in PDF text"
         assert "Lorem Ipsum" in pdf_text, (
             "Lorem Ipsum content from response draft not in PDF"
         )

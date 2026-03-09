@@ -115,14 +115,14 @@ class TestBuildGeneralNotesSectionWithLatex:
         """When latex_content is provided, HTML conversion is skipped."""
         latex = r"This is \textbf{pre-converted} LaTeX."
         result = _build_general_notes_section("", latex_content=latex)
-        assert "General Notes" in result
+        assert "Response" in result
         assert r"\textbf{pre-converted}" in result
 
     def test_html_fallback_still_works(self) -> None:
         """When no latex_content, HTML path still works."""
         html = "<p>Some <strong>HTML</strong> notes.</p>"
         result = _build_general_notes_section(html)
-        assert "General Notes" in result
+        assert "Response" in result
         assert "Some" in result
 
     def test_latex_content_takes_precedence(self) -> None:

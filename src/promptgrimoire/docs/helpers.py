@@ -106,6 +106,8 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
     # Scroll to the start position so it is in viewport.
     # Uses instant scroll (no animation) so coordinates are immediately
     # stable — avoids a fragile wait_for_timeout after smooth scroll.
+    # Scrolls both vertically AND horizontally to handle content that
+    # renders outside the viewport (e.g. AustLII inline styles).
     page.evaluate(
         """([startChar, endChar]) => {
             const container = document.getElementById('doc-container');
@@ -118,7 +120,13 @@ def select_chars(page: Page, start_char: int, end_char: int) -> None:
             const rect = r.getBoundingClientRect();
             const targetY = rect.top + window.scrollY
                 - window.innerHeight / 2 + rect.height / 2;
-            window.scrollTo({ top: Math.max(0, targetY), behavior: 'instant' });
+            const targetX = rect.left + window.scrollX
+                - window.innerWidth / 2 + rect.width / 2;
+            window.scrollTo({
+                top: Math.max(0, targetY),
+                left: Math.max(0, targetX),
+                behavior: 'instant',
+            });
         }""",
         [start_char, end_char],
     )

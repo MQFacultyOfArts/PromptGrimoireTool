@@ -20,10 +20,8 @@ from promptgrimoire.pages.annotation.tag_management_rows import (
     _render_tag_list_content,
 )
 from promptgrimoire.pages.annotation.tag_management_save import (
-    _cancel_pending_timers,
     _create_tag_or_notify,
     _refresh_tag_state,
-    _save_all_modified_rows,
     _save_single_group,
     _save_single_tag,
 )
@@ -171,6 +169,56 @@ def _extract_reorder_indices(e: Any) -> tuple[int, int] | None:
     return old_idx, new_idx
 
 
+# ── Done button with spinner ─────────────────────────────────────────
+
+
+def _build_done_button(
+    *,
+    dialog: ui.dialog,
+    state: PageState,
+    tag_row_inputs: dict[UUID, TagRowInputs],
+    group_row_inputs: dict[UUID, dict[str, Any]],
+    update_tag: Callable[..., Awaitable[object]],
+    update_tag_group: Callable[..., Awaitable[object]],
+    is_instructor: bool,
+) -> None:
+    """Render a Done button that batch-saves and shows a spinner during save.
+
+    Follows the same loading-prop pattern as the PDF export button
+    (``header.py``).  The ``data-testid`` lets E2E tests gate on save
+    completion by waiting for the button to lose its ``loading`` prop.
+    """
+    from promptgrimoire.pages.annotation.tag_management_save import (  # noqa: PLC0415
+        _cancel_pending_timers,
+        _save_all_modified_rows,
+    )
+
+    done_btn = ui.button("Done", icon="check").props(
+        'color=primary data-testid="tag-management-done-btn"'
+    )
+
+    async def _save_all_and_close() -> None:
+        done_btn.disable()
+        done_btn.props("loading")
+        try:
+            _cancel_pending_timers(tag_row_inputs, group_row_inputs)
+            await _save_all_modified_rows(
+                tag_row_inputs,
+                group_row_inputs,
+                update_tag,
+                update_tag_group,
+                bypass_lock=is_instructor,
+                crdt_doc=state.crdt_doc,
+            )
+            await _refresh_tag_state(state)
+            dialog.close()
+        finally:
+            done_btn.props(remove="loading")
+            done_btn.enable()
+
+    done_btn.on_click(_save_all_and_close)
+
+
 # ── Full management dialog ───────────────────────────────────────────
 
 
@@ -309,24 +357,16 @@ async def open_tag_management(
 
         await _render_tag_list()
 
-        # "Done" button -- saves all modified rows, refreshes, and closes
-        async def _save_all_and_close() -> None:
-            _cancel_pending_timers(tag_row_inputs, group_row_inputs)
-            await _save_all_modified_rows(
-                tag_row_inputs,
-                group_row_inputs,
-                update_tag,
-                update_tag_group,
-                bypass_lock=is_instructor,
-                crdt_doc=state.crdt_doc,
-            )
-            await _refresh_tag_state(state)
-            dialog.close()
-
         ui.separator().classes("my-2")
         with ui.row().classes("w-full justify-end"):
-            ui.button("Done", on_click=_save_all_and_close).props(
-                "color=primary data-testid=tag-management-done-btn"
+            _build_done_button(
+                dialog=dialog,
+                state=state,
+                tag_row_inputs=tag_row_inputs,
+                group_row_inputs=group_row_inputs,
+                update_tag=update_tag,
+                update_tag_group=update_tag_group,
+                is_instructor=is_instructor,
             )
 
     dialog.open()

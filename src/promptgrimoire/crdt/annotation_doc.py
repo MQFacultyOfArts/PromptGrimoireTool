@@ -969,7 +969,10 @@ class AnnotationDocumentRegistry:
         doc_id = f"ws-{workspace_id}"
 
         if doc_id in self._documents:
-            return self._documents[doc_id]
+            doc = self._documents[doc_id]
+            # Re-sync with DB to pick up out-of-band updates (e.g. test seeds)
+            await _ensure_crdt_tag_consistency(doc, workspace_id)
+            return doc
 
         # Try to load from Workspace
         from promptgrimoire.crdt.persistence import get_persistence_manager

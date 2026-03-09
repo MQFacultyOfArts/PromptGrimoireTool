@@ -84,6 +84,10 @@ uv run grimoire test changed
 # Run all tests (unit + integration, excludes E2E)
 uv run grimoire test all
 
+# Stop on first failure (-x) and/or run failed tests first (--ff)
+uv run grimoire test all -x --ff
+uv run grimoire e2e run -x --ff
+
 # Run E2E tests (starts server, serial fail-fast by default)
 uv run grimoire e2e run
 
@@ -222,6 +226,7 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 - Prefer composition over inheritance
 - Keep functions small and focused
 - **Terminology: "Unit" not "Course"** — Australian universities use "unit" for what other systems call "course". All user-facing UI text must say "Unit" (e.g. "Unit Settings", "New Unit", "Inherit from unit"). Code identifiers (`course`, `course_id`), URL paths (`/courses/`), and model/table names remain unchanged.
+- **PEP 758 (Python 3.14): `except` without parentheses** — `except ValueError, KeyError:` is **valid Python 3.14 syntax** that catches both exception types. This is NOT the old Python 2 `except X, e:` pattern. Do NOT "fix" this to `except (ValueError, KeyError):` — both forms are correct, the unparenthesised form is preferred for consistency with 3.14 idioms.
 
 ## Critical, for autonomous mode
 

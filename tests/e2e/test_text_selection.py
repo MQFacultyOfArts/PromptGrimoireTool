@@ -19,7 +19,10 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from .annotation_helpers import setup_workspace_with_content_highlight_api
+from .annotation_helpers import (
+    setup_workspace_with_content_highlight_api,
+    wait_for_css_highlight,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -79,24 +82,11 @@ class TestTextSelection:
         page.mouse.down()
         page.mouse.move(coords["x2"], coords["y"])
         page.mouse.up()
-        page.wait_for_timeout(500)
 
-        # Verify a tag button is now relevant (selection made)
         # Click a tag button to confirm highlight is created
         tag_btn = page.locator("[data-testid='tag-toolbar'] button").first
         tag_btn.click()
-        page.wait_for_timeout(500)
-
-        # The highlight should be registered in CSS.highlights
-        has_hl = page.evaluate(
-            """() => {
-                for (const name of CSS.highlights.keys()) {
-                    if (name.startsWith('hl-')) return true;
-                }
-                return false;
-            }"""
-        )
-        assert has_hl, "Expected highlight after selection + tag click"
+        wait_for_css_highlight(page)
 
     def test_selection_across_block_boundary(
         self, authenticated_page: Page, app_server: str
@@ -124,24 +114,11 @@ class TestTextSelection:
                 });
             }"""
         )
-        page.wait_for_timeout(300)
 
         # Create highlight from the cross-boundary selection
         tag_btn = page.locator("[data-testid='tag-toolbar'] button").first
         tag_btn.click()
-        page.wait_for_timeout(500)
-
-        # Verify highlight exists
-        count = page.evaluate(
-            """() => {
-                let n = 0;
-                for (const k of CSS.highlights.keys()) {
-                    if (k.startsWith('hl-')) n++;
-                }
-                return n;
-            }"""
-        )
-        assert count >= 1, "Expected highlight from cross-block selection"
+        wait_for_css_highlight(page)
 
     def test_selection_outside_container_ignored(
         self, authenticated_page: Page, app_server: str
@@ -175,6 +152,7 @@ class TestTextSelection:
             toolbar_box["y"] + toolbar_box["height"] / 2,
         )
         page.mouse.up()
+        # Proving a negative — must wait to ensure no async highlight fires.
         page.wait_for_timeout(500)
 
         # No highlight should exist (no valid selection)
@@ -212,6 +190,7 @@ class TestTextSelection:
             doc_box["x"] + 50,
             doc_box["y"] + 30,
         )
+        # Proving a negative — must wait to ensure no async highlight fires.
         page.wait_for_timeout(500)
 
         # No highlight should exist

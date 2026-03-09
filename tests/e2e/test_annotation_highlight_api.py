@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from .annotation_helpers import setup_workspace_with_content_highlight_api
+from .annotation_helpers import (
+    setup_workspace_with_content_highlight_api,
+    wait_for_css_highlight,
+    wait_for_css_highlight_count,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -65,7 +69,6 @@ def _select_text_by_mouse(page: Page, text: str) -> dict[str, float] | None:
     page.mouse.down()
     page.mouse.move(coords["x2"], coords["y"])
     page.mouse.up()
-    page.wait_for_timeout(300)
     return coords
 
 
@@ -98,23 +101,11 @@ class TestAnnotationHighlightApiIntegration:
         # Step 3: Click first tag button to create highlight
         tag_btn = page.locator("[data-testid='tag-toolbar'] button").first
         tag_btn.click()
-        page.wait_for_timeout(500)
+        wait_for_css_highlight(page)
 
         # Step 4: No span.char in DOM
         char_spans = page.locator("#doc-container span.char")
         expect(char_spans).to_have_count(0)
-
-        # Step 5: Highlight registered in CSS.highlights
-        hl_names = page.evaluate(
-            """() => {
-                const names = [];
-                for (const name of CSS.highlights.keys()) {
-                    if (name.startsWith('hl-')) names.push(name);
-                }
-                return names;
-            }"""
-        )
-        assert len(hl_names) >= 1, f"Expected hl-* in CSS.highlights, got: {hl_names}"
 
     def test_two_tags_distinct_highlights(
         self, authenticated_page: Page, app_server: str
@@ -136,25 +127,13 @@ class TestAnnotationHighlightApiIntegration:
         coords = _select_text_by_mouse(page, "Queensland")
         assert coords is not None
         page.locator("[data-testid='tag-toolbar'] button").nth(0).click()
-        page.wait_for_timeout(500)
+        wait_for_css_highlight(page)
 
         # Second highlight: "negligence" with tag 1
         coords = _select_text_by_mouse(page, "negligence")
         assert coords is not None
         page.locator("[data-testid='tag-toolbar'] button").nth(1).click()
-        page.wait_for_timeout(500)
-
-        # Verify two distinct highlights
-        hl_names = page.evaluate(
-            """() => {
-                const names = [];
-                for (const name of CSS.highlights.keys()) {
-                    if (name.startsWith('hl-')) names.push(name);
-                }
-                return names;
-            }"""
-        )
-        assert len(hl_names) >= 2, f"Expected 2+ hl-* highlights, got: {hl_names}"
+        wait_for_css_highlight_count(page, 2)
 
         # Verify no char spans
         char_spans = page.locator("#doc-container span.char")

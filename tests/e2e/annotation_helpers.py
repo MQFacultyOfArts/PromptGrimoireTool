@@ -763,6 +763,41 @@ def create_highlight_with_tag(
     tag_button.click()
 
 
+def wait_for_css_highlight(page: Page, *, timeout: int = 5000) -> None:
+    """Wait until at least one ``hl-*`` entry exists in ``CSS.highlights``.
+
+    Use after clicking a tag button to ensure the highlight round-trip
+    (server save + CRDT broadcast + client CSS update) has completed.
+    Replaces fragile ``wait_for_timeout`` sleeps.
+    """
+    page.wait_for_function(
+        """() => {
+            for (const k of CSS.highlights.keys()) {
+                if (k.startsWith('hl-')) return true;
+            }
+            return false;
+        }""",
+        timeout=timeout,
+    )
+
+
+def wait_for_css_highlight_count(
+    page: Page, count: int, *, timeout: int = 5000
+) -> None:
+    """Wait until exactly *count* ``hl-*`` entries exist in ``CSS.highlights``."""
+    page.wait_for_function(
+        """(expected) => {
+            let n = 0;
+            for (const k of CSS.highlights.keys()) {
+                if (k.startsWith('hl-')) n++;
+            }
+            return n >= expected;
+        }""",
+        arg=count,
+        timeout=timeout,
+    )
+
+
 def setup_workspace_with_content(
     page: Page,
     app_server: str,

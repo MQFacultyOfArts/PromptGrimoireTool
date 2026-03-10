@@ -63,3 +63,37 @@ class TestExtractTextFromHtmlAvailable:
 
         chars = extract_text_from_html("<p>A<br>B</p>")
         assert "".join(chars) == "A\nB"
+
+
+class TestConverterExports:
+    """Verify converter functions are exported from the input_pipeline package."""
+
+    def test_convert_docx_to_html_importable(self) -> None:
+        """convert_docx_to_html is importable from the package."""
+        from promptgrimoire.input_pipeline import convert_docx_to_html
+
+        assert callable(convert_docx_to_html)
+
+    def test_convert_pdf_to_html_importable(self) -> None:
+        """convert_pdf_to_html is importable from the package."""
+        from promptgrimoire.input_pipeline import convert_pdf_to_html
+
+        assert callable(convert_pdf_to_html)
+
+    def test_build_paragraph_map_for_json_importable(self) -> None:
+        """build_paragraph_map_for_json is importable from the package."""
+        from promptgrimoire.input_pipeline import build_paragraph_map_for_json
+
+        assert callable(build_paragraph_map_for_json)
+
+    def test_convert_docx_to_html_in_all(self) -> None:
+        """convert_docx_to_html appears in __all__."""
+        assert "convert_docx_to_html" in pkg.__all__
+
+    def test_convert_pdf_to_html_in_all(self) -> None:
+        """convert_pdf_to_html appears in __all__."""
+        assert "convert_pdf_to_html" in pkg.__all__
+
+    def test_build_paragraph_map_for_json_in_all(self) -> None:
+        """build_paragraph_map_for_json appears in __all__."""
+        assert "build_paragraph_map_for_json" in pkg.__all__

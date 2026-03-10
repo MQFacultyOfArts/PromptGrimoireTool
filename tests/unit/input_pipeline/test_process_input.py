@@ -4,11 +4,15 @@ Note: process_input() returns clean HTML. Highlighting uses the CSS
 Custom Highlight API on the client side — no char spans are produced.
 """
 
+from pathlib import Path
+
 import pytest
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.html_input import process_input
 from tests.conftest import load_conversation_fixture
+
+FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
 
 class TestProcessInput:
@@ -86,3 +90,77 @@ class TestProcessInput:
         assert len(tree.css("code")) >= 1
         assert "The above summary is nested:" in result
         assert "CONTROL PARAGRAPH." in result
+
+
+class TestProcessInputDocx:
+    """Tests for DOCX through process_input() pipeline.
+
+    Verifies: file-upload-109.AC1.1, file-upload-109.AC1.2
+    """
+
+    @pytest.mark.asyncio
+    async def test_docx_produces_semantic_html(self) -> None:
+        """AC1.1: DOCX bytes through process_input produce semantic HTML tags."""
+        docx_bytes = (FIXTURES_DIR / "2025 LAWS1000 case.docx").read_bytes()
+        result = await process_input(docx_bytes, source_type="docx")
+        assert "<p>" in result
+        assert isinstance(result, str)
+        assert len(result) > 100
+
+    @pytest.mark.asyncio
+    async def test_shen_v_r_fixture_full_pipeline(self) -> None:
+        """AC1.2: Shen v R DOCX fixture produces valid HTML through full pipeline."""
+        docx_bytes = (FIXTURES_DIR / "2025 LAWS1000 case.docx").read_bytes()
+        result = await process_input(docx_bytes, source_type="docx")
+        tree = LexborHTMLParser(result)
+        # Should have paragraph structure
+        paragraphs = tree.css("p")
+        assert len(paragraphs) >= 1
+        # Should contain text content (not empty conversion)
+        text = tree.text()
+        assert len(text) > 50
+
+    @pytest.mark.asyncio
+    async def test_docx_string_input_raises_type_error(self) -> None:
+        """DOCX requires bytes input — string raises TypeError."""
+        with pytest.raises(TypeError, match="bytes"):
+            await process_input("not bytes", source_type="docx")
+
+
+class TestProcessInputPdf:
+    """Tests for PDF through process_input() pipeline.
+
+    Verifies: file-upload-109.AC2.1, file-upload-109.AC2.2
+    """
+
+    @pytest.mark.asyncio
+    async def test_pdf_produces_paragraph_html(self) -> None:
+        """AC2.1: PDF bytes produce HTML with paragraph structure."""
+        pdf_bytes = (
+            FIXTURES_DIR / "Lawlis v R [2025] NSWCCA 183 (3 November 2025).pdf"
+        ).read_bytes()
+        result = await process_input(pdf_bytes, source_type="pdf")
+        assert "<p>" in result
+        assert isinstance(result, str)
+        assert len(result) > 100
+
+    @pytest.mark.asyncio
+    async def test_lawlis_v_r_fixture_full_pipeline(self) -> None:
+        """AC2.2: Lawlis v R PDF fixture produces valid HTML through full pipeline."""
+        pdf_bytes = (
+            FIXTURES_DIR / "Lawlis v R [2025] NSWCCA 183 (3 November 2025).pdf"
+        ).read_bytes()
+        result = await process_input(pdf_bytes, source_type="pdf")
+        tree = LexborHTMLParser(result)
+        # Should have paragraph structure
+        paragraphs = tree.css("p")
+        assert len(paragraphs) >= 1
+        # Should contain text content
+        text = tree.text()
+        assert len(text) > 50
+
+    @pytest.mark.asyncio
+    async def test_pdf_string_input_raises_type_error(self) -> None:
+        """PDF requires bytes input — string raises TypeError."""
+        with pytest.raises(TypeError, match="bytes"):
+            await process_input("not bytes", source_type="pdf")

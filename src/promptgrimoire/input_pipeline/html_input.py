@@ -18,6 +18,10 @@ from typing import Any, Literal
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.export.platforms import preprocess_for_export
+from promptgrimoire.input_pipeline.converters import (
+    convert_docx_to_html,
+    convert_pdf_to_html,
+)
 from promptgrimoire.input_pipeline.marker_constants import (
     HLEND_TEMPLATE,
     HLSTART_TEMPLATE,
@@ -824,33 +828,49 @@ async def process_input(
         3. Strip heavy attributes and empty elements
 
     Note:
-        Step 1 (conversion) is implemented in Phase 7.
-        For now, only HTML and text inputs are fully supported.
+        DOCX and PDF conversion supported via converters module.
+        RTF conversion is not yet implemented.
     """
-    # Async marker for Phase 7 compatibility (file conversion will add await points).
-    # Convert bytes to string if needed
-    if isinstance(content, bytes):
-        content = _decode_bytes(content)
+    # Binary formats (DOCX, PDF) must receive bytes — intercept before
+    # the generic bytes→str decode that text/HTML paths need.
+    if source_type in ("docx", "pdf"):
+        if not isinstance(content, bytes):
+            msg = f"{source_type.upper()} content must be bytes, got str"
+            raise TypeError(msg)
 
-    input_size = len(content)
-    logger.debug(
-        "[PIPELINE] Input: type=%s, size=%d bytes (%.1f KB)",
-        source_type,
-        input_size,
-        input_size / 1024,
-    )
+        input_size = len(content)
+        logger.debug(
+            "[PIPELINE] Input: type=%s, size=%d bytes (%.1f KB)",
+            source_type,
+            input_size,
+            input_size / 1024,
+        )
 
-    # Step 1: Convert to HTML based on source type
-    if source_type == "text":
-        # Wrap plain text in paragraph tags
-        html = _text_to_html(content)
-    elif source_type == "html":
-        html = content
+        if source_type == "docx":
+            html = convert_docx_to_html(content)
+        else:
+            html = await convert_pdf_to_html(content)
     else:
-        # RTF, DOCX, PDF conversion - Phase 7
-        # For now, raise NotImplementedError
-        msg = f"Conversion from {source_type} not yet implemented (Phase 7)"
-        raise NotImplementedError(msg)
+        # Text/HTML paths: decode bytes to string if needed
+        if isinstance(content, bytes):
+            content = _decode_bytes(content)
+
+        input_size = len(content)
+        logger.debug(
+            "[PIPELINE] Input: type=%s, size=%d bytes (%.1f KB)",
+            source_type,
+            input_size,
+            input_size / 1024,
+        )
+
+        # Step 1: Convert to HTML based on source type
+        if source_type == "text":
+            html = _text_to_html(content)
+        elif source_type == "html":
+            html = content
+        else:
+            msg = f"Conversion from {source_type} not yet implemented"
+            raise NotImplementedError(msg)
 
     html_size = len(html)
     logger.debug(

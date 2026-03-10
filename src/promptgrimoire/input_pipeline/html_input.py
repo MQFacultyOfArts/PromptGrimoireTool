@@ -18,7 +18,6 @@ from typing import Any, Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.input_pipeline.converters import (
     convert_docx_to_html,
     convert_pdf_to_html,
@@ -923,6 +922,10 @@ async def process_input(
     )
 
     # Step 2: Preprocess (remove chrome, inject speaker labels)
+    # Lazy import to break circular dependency:
+    # input_pipeline → export.platforms → export → highlight_spans → input_pipeline
+    from promptgrimoire.export.platforms import preprocess_for_export
+
     preprocessed = preprocess_for_export(html, platform_hint=platform_hint)
     preproc_size = len(preprocessed)
     logger.debug(

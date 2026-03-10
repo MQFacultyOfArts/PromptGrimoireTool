@@ -110,6 +110,9 @@ ignore = [
 "src/promptgrimoire/auth/factory.py" = [
     "PLC0415",  # Intentional lazy imports for conditional client loading
 ]
+"src/promptgrimoire/input_pipeline/html_input.py" = [
+    "PLC0415",  # Late import to break circular dependency with export.platforms
+]
 "src/promptgrimoire/__init__.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies at startup
 ]

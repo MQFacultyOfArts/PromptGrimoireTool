@@ -264,6 +264,32 @@ class TestBuildPdfExportStem:
 
     # --- Fallback tests ---
 
+    def test_workspace_suppressed_when_matches_activity(self) -> None:
+        """Workspace segment omitted when it duplicates the activity title."""
+        ctx = self._ctx(
+            activity_title="Annotate Becky Bennett Interview",
+            workspace_title="Annotate Becky Bennett Interview",
+        )
+        stem = build_pdf_export_stem(ctx)
+        # Activity appears once, workspace is suppressed
+        assert "Annotate_Becky_Bennett_Interview" in stem
+        # Should NOT have the activity repeated
+        parts = stem.split("_")
+        # Count occurrences of "Annotate" — should be exactly 1
+        assert parts.count("Annotate") == 1
+        assert stem == (
+            "LAWS5000_Lovelace_Ada_Annotate_Becky_Bennett_Interview_20260309"
+        )
+
+    def test_workspace_kept_when_differs_from_activity(self) -> None:
+        """Workspace segment kept when it differs from activity."""
+        ctx = self._ctx(
+            activity_title="Torts",
+            workspace_title="My Notes",
+        )
+        stem = build_pdf_export_stem(ctx)
+        assert "_Torts_My_Notes_" in stem
+
     def test_fallback_blank_workspace(self) -> None:
         """Blank workspace title falls back to 'Workspace'."""
         ctx = self._ctx(workspace_title=None)

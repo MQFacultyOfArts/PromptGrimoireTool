@@ -144,6 +144,10 @@ def build_pdf_export_stem(ctx: PdfExportFilenameContext) -> str:
     first = _safe_segment(first_raw) or "Unknown"
     date_part = ctx.export_date.strftime("%Y%m%d")
 
+    # Suppress workspace segment when it duplicates the activity (default title)
+    if workspace == activity:
+        workspace = ""
+
     # Truncate to fit budget
     first, activity, workspace = _truncate_for_budget(
         course,

@@ -643,6 +643,181 @@ def _create_workspace_with_word_limits(
     return workspace_id
 
 
+def _create_workspace_for_filename_export(
+    user_email: str,
+    *,
+    owner_display_name: str = "Ada Lovelace",
+    course_code: str = "LAWS5000",
+    activity_title: str = "Final Essay",
+    workspace_title: str = "Week 3 Response",
+) -> str:
+    """Create a workspace with deterministic metadata for filename assertions.
+
+    Builds the full hierarchy (course -> week -> activity -> workspace)
+    via direct DB operations and sets the owner's ``display_name`` to a
+    known value. This enables E2E tests to assert the exact browser-suggested
+    filename without embedding the production filename builder.
+
+    Args:
+        user_email: Email of the authenticated user (must exist in DB).
+        owner_display_name: Display name to set on the owner user record.
+        course_code: Course code for the placement hierarchy.
+        activity_title: Activity title for the placement hierarchy.
+        workspace_title: Title to set on the workspace.
+
+    Returns:
+        workspace_id as string.
+
+    Raises:
+        RuntimeError: If DATABASE__URL is not configured or user not found.
+    """
+    from sqlalchemy import create_engine, text
+
+    db_url = os.environ.get("DATABASE__URL", "")
+    if not db_url:
+        msg = "DATABASE__URL not configured"
+        raise RuntimeError(msg)
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    engine = create_engine(sync_url)
+
+    course_id = str(uuid.uuid4())
+    week_id = str(uuid.uuid4())
+    activity_id = str(uuid.uuid4())
+    template_ws_id = str(uuid.uuid4())
+    workspace_id = str(uuid.uuid4())
+    doc_id = str(uuid.uuid4())
+
+    with engine.begin() as conn:
+        # Look up user
+        row = conn.execute(
+            text('SELECT id FROM "user" WHERE email = :email'),
+            {"email": user_email},
+        ).first()
+        if not row:
+            msg = f"User not found in DB: {user_email}"
+            raise RuntimeError(msg)
+        user_id = row[0]
+
+        # Set deterministic display name on the owner
+        conn.execute(
+            text('UPDATE "user" SET display_name = :name WHERE id = :uid'),
+            {"name": owner_display_name, "uid": user_id},
+        )
+
+        # Create course
+        conn.execute(
+            text(
+                "INSERT INTO course"
+                " (id, code, name, semester, is_archived,"
+                "  default_copy_protection, default_allow_sharing,"
+                "  default_anonymous_sharing, default_allow_tag_creation,"
+                "  default_word_limit_enforcement, created_at)"
+                " VALUES (CAST(:id AS uuid), :code, :name, :semester,"
+                "  false, false, false, false, false, false, now())"
+            ),
+            {
+                "id": course_id,
+                "code": course_code,
+                "name": "Filename Test Course",
+                "semester": "2026-T1",
+            },
+        )
+
+        # Create week
+        conn.execute(
+            text(
+                "INSERT INTO week"
+                " (id, course_id, week_number, title,"
+                "  is_published, created_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:cid AS uuid),"
+                "  1, :title, true, now())"
+            ),
+            {"id": week_id, "cid": course_id, "title": "Week 1"},
+        )
+
+        # Create template workspace (required by activity FK)
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, enable_save_as_draft, created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), false, now(), now())"
+            ),
+            {"id": template_ws_id},
+        )
+
+        # Create activity
+        conn.execute(
+            text(
+                "INSERT INTO activity"
+                " (id, week_id, template_workspace_id, title,"
+                "  created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:wid AS uuid),"
+                "  CAST(:twid AS uuid), :title,"
+                "  now(), now())"
+            ),
+            {
+                "id": activity_id,
+                "wid": week_id,
+                "twid": template_ws_id,
+                "title": activity_title,
+            },
+        )
+
+        # Create user workspace placed under the activity, with title
+        conn.execute(
+            text(
+                "INSERT INTO workspace"
+                " (id, activity_id, title, enable_save_as_draft,"
+                "  created_at, updated_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:aid AS uuid),"
+                "  :title, false, now(), now())"
+            ),
+            {"id": workspace_id, "aid": activity_id, "title": workspace_title},
+        )
+
+        # Create workspace document with minimal content
+        conn.execute(
+            text(
+                "INSERT INTO workspace_document"
+                " (id, workspace_id, type, content,"
+                "  source_type, order_index, created_at)"
+                " VALUES (CAST(:id AS uuid), CAST(:ws AS uuid),"
+                "  'source', :content, 'text', 0, now())"
+            ),
+            {
+                "id": doc_id,
+                "ws": workspace_id,
+                "content": "<p>Filename export test content.</p>",
+            },
+        )
+
+        # Grant owner permission
+        conn.execute(
+            text(
+                "INSERT INTO acl_entry"
+                " (id, workspace_id, user_id, permission, created_at)"
+                " VALUES (gen_random_uuid(),"
+                "  CAST(:ws AS uuid), :uid, 'owner', now())"
+            ),
+            {"ws": workspace_id, "uid": user_id},
+        )
+
+        # Enrol the user in the course (required for placement resolution)
+        conn.execute(
+            text(
+                "INSERT INTO course_enrollment"
+                " (id, course_id, user_id, role, created_at)"
+                " VALUES (gen_random_uuid(),"
+                "  CAST(:cid AS uuid), :uid, 'student', now())"
+                " ON CONFLICT DO NOTHING"
+            ),
+            {"cid": course_id, "uid": user_id},
+        )
+
+    engine.dispose()
+    return workspace_id
+
+
 def get_user_id_by_email(email: str) -> str:
     """Return a user's UUID (as string) from their email.
 

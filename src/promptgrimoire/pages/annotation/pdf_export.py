@@ -12,12 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.db.workspace_documents import get_document
+from promptgrimoire.db.workspaces import get_workspace_export_metadata
+from promptgrimoire.export.filename import (
+    PdfExportFilenameContext,
+    build_pdf_export_stem,
+)
 from promptgrimoire.export.pdf_export import (
     export_annotation_pdf,
     markdown_to_latex_notes,
@@ -35,6 +41,33 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
 
 logger = logging.getLogger(__name__)
+
+
+def _server_local_export_date() -> date:
+    """Return the application server's local date for export filenames."""
+    return datetime.now().date()
+
+
+async def _build_export_filename(workspace_id: UUID) -> str:
+    """Return the PDF export basename for the workspace."""
+    meta = await get_workspace_export_metadata(workspace_id)
+    if meta is not None:
+        ctx = PdfExportFilenameContext(
+            course_code=meta.course_code,
+            activity_title=meta.activity_title,
+            workspace_title=meta.workspace_title,
+            owner_display_name=meta.owner_display_name,
+            export_date=_server_local_export_date(),
+        )
+    else:
+        ctx = PdfExportFilenameContext(
+            course_code=None,
+            activity_title=None,
+            workspace_title=None,
+            owner_display_name=None,
+            export_date=_server_local_export_date(),
+        )
+    return build_pdf_export_stem(ctx)
 
 
 def _anonymise_dict_author(
@@ -308,6 +341,9 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             {int(k): v for k, v in doc_para_map.items()} if doc_para_map else None
         )
 
+        # Compute descriptive filename from placement metadata
+        filename = await _build_export_filename(workspace_id)
+
         # Generate PDF with optional word count snitch badge
         pdf_path = await export_annotation_pdf(
             html_content=html_content,
@@ -316,7 +352,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             general_notes="",
             notes_latex=notes_latex,
             word_to_legal_para=legal_para_map,
-            filename=f"workspace_{workspace_id}",
+            filename=filename,
             word_count=export_word_count,
             word_minimum=state.word_minimum,
             word_limit=state.word_limit,

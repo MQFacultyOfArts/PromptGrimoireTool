@@ -1,0 +1,65 @@
+# Custom runner image for nektos/act (local CI simulation).
+#
+# Pre-installs system packages, TinyTeX, LaTeX packages, and warms the
+# font cache so act runs don't pay the cold-start penalty.
+#
+# Build:  docker build -t grimoire-act-runner -f Dockerfile.act .
+# Use:    gh act pull_request -W .github/workflows/act-ci.yml -j test-all \
+#           -P ubuntu-latest=grimoire-act-runner
+#
+# Or add to .actrc:  -P ubuntu-latest=grimoire-act-runner
+
+FROM catthehacker/ubuntu:act-latest
+
+# System packages (matches ci.yml Install system dependencies step)
+RUN apt-get update && apt-get install -y \
+    mecab libmecab-dev \
+    pandoc \
+    poppler-utils \
+    fontconfig \
+    fonts-noto --install-recommends \
+    fonts-texgyre \
+    fonts-sil-gentiumplus fonts-sil-charis fonts-sil-doulos \
+    fonts-sil-scheherazade fonts-sil-ezra fonts-sil-annapurna \
+    fonts-sil-abyssinica fonts-sil-padauk fonts-sil-mondulkiri \
+    fonts-sil-galatia fonts-sil-sophia-nubian fonts-sil-nuosusil \
+    fonts-sil-taiheritagepro \
+    && rm -rf /var/lib/apt/lists/*
+
+# TinyTeX + LaTeX packages (mirrors scripts/setup_latex.py)
+# Install TinyTeX
+RUN curl -sL https://yihui.org/tinytex/install-bin-unix.sh | sh
+
+# Add to PATH for subsequent RUN commands
+ENV PATH="/root/.TinyTeX/bin/x86_64-linux:${PATH}"
+
+# Install required TeX packages (must match scripts/setup_latex.py REQUIRED_PACKAGES)
+RUN tlmgr install \
+    lua-ul fontspec luacolor xcolor soul \
+    geometry marginalia todonotes \
+    latexmk subfiles \
+    luabidi \
+    fancyvrb \
+    mdframed zref needspace \
+    emoji luatexja haranoaji \
+    microtype tools booktabs changepage
+
+# Tell luaotfload where system fonts live, update font DB, warm cache
+ENV OSFONTDIR="/usr/share/fonts:/usr/share/texmf/fonts"
+
+RUN luaotfload-tool --update --force
+
+# Warm the font cache with a document that loads the heavy packages.
+# This builds the ~1.7GB in-memory font structures once during image
+# build so test lualatex invocations don't have to.
+RUN printf '%s\n' \
+    '\documentclass{article}' \
+    '\usepackage{fontspec}' \
+    '\usepackage{luatexja-fontspec}' \
+    '\usepackage{emoji}' \
+    '\setmainfont{TeX Gyre Termes}' \
+    '\begin{document}' \
+    'Hello. 你好世界。' \
+    '\end{document}' > /tmp/warmup.tex \
+    && lualatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp /tmp/warmup.tex \
+    && rm -f /tmp/warmup.*

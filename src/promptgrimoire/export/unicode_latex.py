@@ -3,12 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import functools
-import re
-import subprocess
-from pathlib import Path
-
-import emoji as emoji_lib
 
 from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 
@@ -84,7 +78,8 @@ FONT_REGISTRY: tuple[FallbackFont, ...] = (
     FallbackFont("Noto Sans Deseret", "dsrt"),
     FallbackFont("Noto Sans Osage", "osge"),
     FallbackFont("Noto Sans Shavian", "shaw"),
-    # Symbols and math (last resort for missing glyphs)
+    # Emoji and Symbols
+    FallbackFont("Noto Color Emoji", "zsym", "mode=harf;"),
     FallbackFont("Noto Sans Symbols", "zsym"),
     FallbackFont("Noto Sans Symbols2", "zsym"),
     FallbackFont("Noto Sans Math", "zmth"),
@@ -144,6 +139,17 @@ _REQUIRED_SCRIPTS: frozenset[str] = frozenset(
 )
 
 
+def _codepoint_script(cp: int, found: set[str]) -> str | None:
+    """Return the script tag for a codepoint, skipping already-found scripts."""
+    for tag, ranges in SCRIPT_TAG_RANGES.items():
+        if tag in found:
+            continue
+        for start, end in ranges:
+            if start <= cp <= end:
+                return tag
+    return None
+
+
 def detect_scripts(text: str) -> frozenset[str]:
     """Scan text and return OpenType script tags for detected non-Latin scripts.
 
@@ -151,17 +157,14 @@ def detect_scripts(text: str) -> frozenset[str]:
     An empty frozenset means only Latin base fonts are needed.
     """
     found: set[str] = set()
+
     for ch in text:
         cp = ord(ch)
         if cp < 0x0370:  # ASCII + Latin Extended -- fast skip
             continue
-        for tag, ranges in SCRIPT_TAG_RANGES.items():
-            if tag in found:
-                continue  # Already detected this script
-            for start, end in ranges:
-                if start <= cp <= end:
-                    found.add(tag)
-                    break
+        tag = _codepoint_script(cp, found)
+        if tag is not None:
+            found.add(tag)
         if found >= _REQUIRED_SCRIPTS:
             break  # All registry-covered scripts detected, stop scanning
     return frozenset(found)
@@ -234,71 +237,6 @@ def build_font_preamble(scripts: frozenset[str]) -> str:
     return "\n".join(lines)
 
 
-@functools.cache
-def _load_latex_emoji_names() -> frozenset[str]:
-    """Load valid emoji names from LaTeX emoji package.
-
-    Parses emoji-table.def to extract all valid emoji names and aliases.
-    Returns empty set if the file cannot be found or parsed.
-    """
-    try:
-        result = subprocess.run(
-            ["kpsewhich", "emoji-table.def"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-        table_path = result.stdout.strip()
-        if not table_path:
-            return frozenset()
-
-        # Parse emoji definitions: \__emoji_def:nnnnn {unicode} {name} {aliases} ...
-        # Field 2 = primary name, Field 3 = comma-separated aliases
-        pattern = re.compile(
-            r"\\__emoji_def:nnnnn\s*\{[^}]*\}\s*\{([^}]*)\}\s*\{([^}]*)\}"
-        )
-
-        names: set[str] = set()
-        with Path(table_path).open(encoding="utf-8") as f:
-            for line in f:
-                match = pattern.search(line)
-                if match:
-                    primary = match.group(1).strip()
-                    aliases = match.group(2).strip()
-                    if primary:
-                        names.add(primary)
-                    for alias in aliases.split(","):
-                        stripped = alias.strip()
-                        if stripped:
-                            names.add(stripped)
-
-        return frozenset(names)
-    except (
-        subprocess.CalledProcessError,
-        FileNotFoundError,
-        subprocess.TimeoutExpired,
-    ):
-        return frozenset()
-    except OSError:
-        return frozenset()
-
-
-def _format_emoji_for_latex(emoji_name: str) -> str:
-    """Format emoji for LaTeX, with fallback for unknown names.
-
-    If the emoji name is valid in LaTeX emoji package, uses \\emoji{name}.
-    Otherwise shows placeholder with emoji name (raw emoji can't be rendered).
-    """
-    valid_names = _load_latex_emoji_names()
-
-    if emoji_name in valid_names:
-        return str(latex_cmd("emoji", emoji_name))
-
-    # Fallback: show name as placeholder (raw emoji can't render in PDF)
-    return str(latex_cmd("emojifallbackchar", emoji_name))
-
-
 def is_cjk(char: str) -> bool:
     """Check if a single character is CJK (Chinese, Japanese, Korean).
 
@@ -332,37 +270,6 @@ def is_cjk(char: str) -> bool:
         # CJK Unified Ideographs Extension A
         or (0x3400 <= cp <= 0x4DBF)
     )
-
-
-def is_emoji(text: str) -> bool:
-    """Check if text is a single emoji (including ZWJ sequences).
-
-    Uses the emoji library to correctly handle:
-    - Single codepoint emoji
-    - Emoji with skin tone modifiers
-    - ZWJ sequences (family, profession emoji)
-
-    Args:
-        text: Text to check.
-
-    Returns:
-        True if text is exactly one RGI emoji, False otherwise.
-    """
-    return emoji_lib.is_emoji(text)
-
-
-def get_emoji_spans(text: str) -> list[tuple[int, int, str]]:
-    """Get positions of all emoji in text.
-
-    Args:
-        text: Text to scan for emoji.
-
-    Returns:
-        List of (start, end, emoji) tuples for each emoji found.
-        Positions are character indices (not byte offsets).
-    """
-    matches = emoji_lib.emoji_list(text)
-    return [(m["match_start"], m["match_end"], m["emoji"]) for m in matches]
 
 
 # The same 10 LaTeX specials are defined as _LATEX_SPECIALS in
@@ -465,7 +372,6 @@ def escape_unicode_latex(text: str) -> str:
     - ASCII control characters (0x00-0x1F except whitespace) are stripped
     - ASCII special characters (& % $ # _ { } ~ ^) are escaped
     - CJK text is wrapped in \\cjktext{} command
-    - Emoji are wrapped in \\emoji{} command with name format
 
     Args:
         text: Input text potentially containing unicode.
@@ -478,9 +384,6 @@ def escape_unicode_latex(text: str) -> str:
 
     # Strip control characters that are invalid in LaTeX
     text = _strip_control_chars(text)
-
-    # First, identify emoji spans (must do before any modifications)
-    emoji_spans = get_emoji_spans(text)
 
     # Build result by processing character by character
     result: list[str] = []
@@ -495,23 +398,7 @@ def escape_unicode_latex(text: str) -> str:
             cjk_buffer.clear()
 
     while i < len(text):
-        # Check if we're at an emoji span
-        emoji_match = None
-        for start, end, emoji_char in emoji_spans:
-            if i == start:
-                emoji_match = (end, emoji_char)
-                break
-
-        if emoji_match:
-            flush_cjk()
-            end, emoji_char = emoji_match
-            # Convert emoji to name using emoji library
-            emoji_name = emoji_lib.demojize(emoji_char, delimiters=("", ""))
-            # Remove colons if present and convert to LaTeX emoji format
-            emoji_name = emoji_name.strip(":").replace("_", "-").lower()
-            result.append(_format_emoji_for_latex(emoji_name))
-            i = end
-        elif is_cjk(text[i]):
+        if is_cjk(text[i]):
             cjk_buffer.append(text[i])
             i += 1
         else:

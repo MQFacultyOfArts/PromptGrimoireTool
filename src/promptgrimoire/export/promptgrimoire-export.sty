@@ -7,9 +7,8 @@
 
 \RequirePackage{xcolor}
 
-% Unicode support for Emoji (fontspec always needed, luatexja-fontspec conditional)
+% Unicode support (fontspec always needed, luatexja-fontspec conditional)
 \RequirePackage{fontspec}
-\RequirePackage{emoji}
 
 % Static preamble content
 \RequirePackage{amsmath}           % Math extensions (\text{} in math mode)
@@ -41,11 +40,6 @@
 % Pandoc compatibility
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-
-% Fallback for emoji not in LaTeX emoji package
-% Can't use Noto Color Emoji directly (CBDT format not supported by LuaLaTeX)
-% Just show placeholder text for unknown emoji
-\newcommand{\emojifallbackchar}[1]{[#1]}
 
 % =============================================================================
 % No-op otherlanguage environment
@@ -187,9 +181,6 @@
 % =============================================================================
 % Font setup (static portion -- dynamic font chain built by build_font_preamble())
 % =============================================================================
-
-% Emoji font setup
-\setemojifont{Noto Color Emoji}
 
 % Safe pass-through default for \cjktext -- overridden by build_font_preamble()
 % when CJK text is detected (\renewcommand with \notocjk)

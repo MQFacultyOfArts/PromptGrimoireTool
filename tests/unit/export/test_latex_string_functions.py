@@ -446,13 +446,11 @@ class TestUnicodeAnnotationEscaping:
         cjks = find_macros(nodes, "cjktext")
         assert len(cjks) >= 1
 
-    def test_emoji_in_comment_escaped(self) -> None:
-        """Emoji in comment text are wrapped correctly."""
+    def test_emoji_in_comment_passed_through(self) -> None:
+        """Emoji in comment text passes through raw."""
 
         result = escape_unicode_latex("Great work! 🎉")
-        nodes = parse_latex(result)
-        emojis = find_macros(nodes, "emoji")
-        assert len(emojis) >= 1
+        assert result == "Great work! 🎉"
 
     def test_mixed_ascii_cjk_special_chars(self) -> None:
         """Mixed content with special chars handles all correctly."""
@@ -498,21 +496,6 @@ class TestUnicodeAnnotationEscaping:
         cjks = find_macros(nodes, "cjktext")
         bodies = {get_body_text(c) for c in cjks}
         assert "山田花子" in bodies
-
-    def test_format_annot_emoji_in_comment(self) -> None:
-        """Emoji in comment text is wrapped in _format_annot output."""
-        highlight = {
-            "tag": "tag",
-            "author": "Alice",
-            "text": "some text",
-            "comments": [
-                {"author": "Bob", "text": "Great work! 🎉"},
-            ],
-        }
-        result = format_annot_latex(highlight)
-        nodes = parse_latex(result)
-        emojis = find_macros(nodes, "emoji")
-        assert len(emojis) >= 1
 
     def test_format_annot_mixed_unicode_and_special_chars(
         self,

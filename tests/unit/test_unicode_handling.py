@@ -3,7 +3,6 @@
 Uses parameterized fixtures derived from BLNS corpus for comprehensive coverage.
 """
 
-import emoji as emoji_lib
 import pytest
 
 from tests.unit.conftest import (
@@ -50,87 +49,6 @@ class TestIsCJK:
         assert not is_cjk("AB")  # Two ASCII chars
 
 
-class TestIsEmoji:
-    """Test emoji detection using BLNS-derived fixtures."""
-
-    @pytest.mark.parametrize("emoji", EMOJI_TEST_STRINGS)
-    def test_detects_emoji_from_blns(self, emoji: str) -> None:
-        """Detects emoji extracted from BLNS Emoji category."""
-        from promptgrimoire.export.unicode_latex import is_emoji
-
-        assert is_emoji(emoji), f"Failed to detect emoji: {emoji!r}"
-
-    @pytest.mark.parametrize("text", ASCII_TEST_STRINGS)
-    def test_ascii_not_emoji(self, text: str) -> None:
-        """ASCII strings from BLNS are not emoji."""
-        from promptgrimoire.export.unicode_latex import is_emoji
-
-        assert not is_emoji(text), f"ASCII detected as emoji: {text!r}"
-
-    @pytest.mark.parametrize("char", CJK_TEST_CHARS[:10])
-    def test_cjk_not_emoji(self, char: str) -> None:
-        """CJK characters from BLNS are not emoji."""
-        from promptgrimoire.export.unicode_latex import is_emoji
-
-        assert not is_emoji(char), f"CJK detected as emoji: {char!r}"
-
-    def test_multiple_separate_emoji_not_single(self) -> None:
-        """Multiple separate emoji is not a single emoji."""
-        from promptgrimoire.export.unicode_latex import is_emoji
-
-        assert not is_emoji("🎉🎊")  # Two separate emoji
-        assert not is_emoji("😀😃")  # Two separate emoji
-
-
-class TestGetEmojiSpans:
-    """Test emoji span extraction for wrapping."""
-
-    def test_no_emoji(self) -> None:
-        """Returns empty list for text without emoji."""
-        from promptgrimoire.export.unicode_latex import get_emoji_spans
-
-        assert get_emoji_spans("Hello world") == []
-
-    @pytest.mark.parametrize("emoji", EMOJI_TEST_STRINGS[:10])
-    def test_single_emoji_in_text(self, emoji: str) -> None:
-        """Returns span for single emoji embedded in text."""
-        from promptgrimoire.export.unicode_latex import get_emoji_spans
-
-        text = f"Hello {emoji}!"
-        spans = get_emoji_spans(text)
-        assert len(spans) == 1
-        start, end, found_emoji = spans[0]
-        assert found_emoji == emoji
-        assert text[start:end] == emoji
-
-    def test_multiple_emoji(self) -> None:
-        """Returns spans for multiple emoji."""
-        from promptgrimoire.export.unicode_latex import get_emoji_spans
-
-        spans = get_emoji_spans("A 🎉 B 🎊 C")
-        assert len(spans) == 2
-        assert spans[0][2] == "🎉"
-        assert spans[1][2] == "🎊"
-
-    @pytest.mark.parametrize(
-        "blns_emoji_line",
-        [
-            s
-            for s in BLNS_BY_CATEGORY.get("Emoji", [])
-            if len(emoji_lib.emoji_list(s)) > 1
-        ][:3],
-    )
-    def test_blns_emoji_lines_extract_all(self, blns_emoji_line: str) -> None:
-        """BLNS emoji lines with multiple emoji extract all of them."""
-        from promptgrimoire.export.unicode_latex import get_emoji_spans
-
-        expected_count = len(emoji_lib.emoji_list(blns_emoji_line))
-        spans = get_emoji_spans(blns_emoji_line)
-        assert len(spans) == expected_count, (
-            f"Expected {expected_count} emoji in {blns_emoji_line!r}, got {len(spans)}"
-        )
-
-
 class TestEscapeUnicodeLaTeX:
     """Test unicode-aware LaTeX escaping."""
 
@@ -165,13 +83,12 @@ class TestEscapeUnicodeLaTeX:
         # All should be wrapped (language-agnostic for now)
         assert "\\cjktext{" in result
 
-    def test_emoji_wrapped_in_emoji_command(self) -> None:
-        """Emoji is wrapped in \\emoji{} command."""
+    def test_emoji_passed_through_raw(self) -> None:
+        """Emoji passes through raw without \\emoji{} command."""
         from promptgrimoire.export.unicode_latex import escape_unicode_latex
 
         result = escape_unicode_latex("Test 🎉!")
-        # Emoji library converts to name format
-        assert "\\emoji{" in result
+        assert result == "Test 🎉!"
 
     def test_pure_ascii_unchanged(self) -> None:
         """Pure ASCII without special chars passes through."""
@@ -185,7 +102,7 @@ class TestEscapeUnicodeLaTeX:
 
         result = escape_unicode_latex("Hello 世界 🎉!")
         assert "\\cjktext{世界}" in result
-        assert "\\emoji{" in result
+        assert "🎉" in result
         assert "Hello " in result
 
     def test_control_chars_stripped(self) -> None:
@@ -236,46 +153,6 @@ class TestEscapeUnicodeLaTeX:
         assert result == "BeforeAfter"
 
 
-class TestEmojiValidation:
-    """Test emoji name validation and fallback."""
-
-    def test_valid_emoji_uses_emoji_command(self) -> None:
-        """Valid LaTeX emoji names use \\emoji{} command."""
-        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
-
-        # "grinning-face" is a standard emoji name
-        result = _format_emoji_for_latex("grinning-face")
-        assert result == "\\emoji{grinning-face}"
-
-    def test_invalid_emoji_uses_fallback(self) -> None:
-        """Invalid emoji names fall back to placeholder with name."""
-        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
-
-        # "united-states" is NOT valid - LaTeX expects "flag-united-states" or "us"
-        result = _format_emoji_for_latex("united-states")
-        assert result == "\\emojifallbackchar{united-states}"
-
-    def test_flag_aliases_work(self) -> None:
-        """Country aliases like 'us', 'gb' work as valid names."""
-        from promptgrimoire.export.unicode_latex import _format_emoji_for_latex
-
-        # "us" is a valid alias for flag-united-states
-        result = _format_emoji_for_latex("us")
-        assert result == "\\emoji{us}"
-
-    def test_load_emoji_names_returns_frozenset(self) -> None:
-        """_load_latex_emoji_names returns a frozenset."""
-        from promptgrimoire.export.unicode_latex import _load_latex_emoji_names
-
-        names = _load_latex_emoji_names()
-        assert isinstance(names, frozenset)
-        # Should have many emoji names if emoji package is installed
-        if names:  # Only check if kpsewhich found the file
-            assert len(names) > 100
-            assert "grinning-face" in names
-            assert "us" in names  # alias
-
-
 class TestStyFileContent:
     """Test that promptgrimoire-export.sty contains required unicode support."""
 
@@ -294,10 +171,6 @@ class TestStyFileContent:
         """luatexja-fontspec is conditional via build_font_preamble()."""
         assert "RequirePackage{luatexja-fontspec}" not in sty_content
 
-    def test_sty_includes_emoji_package(self, sty_content: str) -> None:
-        """The .sty file includes emoji package."""
-        assert "RequirePackage{emoji}" in sty_content
-
     def test_sty_provides_cjktext_passthrough(self, sty_content: str) -> None:
         """The .sty provides \\cjktext as pass-through default.
 
@@ -309,14 +182,9 @@ class TestStyFileContent:
         """Font fallback chain is now dynamic via build_font_preamble(), not in .sty."""
         assert "\\directlua" not in sty_content
 
-    def test_sty_sets_emoji_font(self, sty_content: str) -> None:
-        """The .sty file sets emoji font (Noto Color Emoji)."""
-        assert "Noto Color Emoji" in sty_content
-
 
 def _generate_blns_test_cases() -> list[tuple[str, str]]:
     """Generate (category, line) tuples for parameterized BLNS testing."""
-    from tests.unit.conftest import BLNS_BY_CATEGORY
 
     cases = []
     for category, lines in BLNS_BY_CATEGORY.items():

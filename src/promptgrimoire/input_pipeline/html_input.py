@@ -93,9 +93,13 @@ def _detect_from_bytes(content: bytes) -> ContentType | None:
     return None
 
 
-_BLOCK_LEVEL_TAG_RE = re.compile(
-    r"<(?:p|div|h[1-6]|ul|ol|table|blockquote|pre|section|article)\b",
-    re.IGNORECASE,
+# CSS selector for block-level elements per the HTML spec.
+# Used by _is_fake_html() to distinguish real structured HTML from plain text
+# wrapped in an HTML shell (e.g. PDF viewer paste).
+_BLOCK_LEVEL_CSS = (
+    "p, div, h1, h2, h3, h4, h5, h6, ul, ol, li, table, blockquote, pre,"
+    " section, article, aside, nav, header, footer, main, figure, figcaption,"
+    " details, summary, hr, dl, dt, dd, address, fieldset, form"
 )
 
 
@@ -107,22 +111,17 @@ def _is_fake_html(content: str) -> bool:
     semantically plain text.  If the body contains no block-level
     elements the content should be treated as ``"text"`` so that
     ``_text_to_html()`` can convert newlines to ``<br/>`` tags.
+
+    Uses selectolax (lexbor) to parse the HTML and query the ``<body>``
+    for block-level elements via CSS selectors, avoiding the classic
+    "parsing HTML with regex" anti-pattern.
     """
-    # Strip <head>…</head> block (content included), then remaining wrapper tags.
-    inner = re.sub(
-        r"<head\b[^>]*>.*?</head>",
-        "",
-        content,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    inner = re.sub(
-        r"</?(?:html|body)\b[^>]*>",
-        "",
-        inner,
-        flags=re.IGNORECASE,
-    )
-    # If no block-level elements remain, it's fake HTML
-    return _BLOCK_LEVEL_TAG_RE.search(inner) is None
+    tree = LexborHTMLParser(content)
+    body = tree.body
+    if body is None:
+        # No <body> element — treat as fake HTML (plain text)
+        return True
+    return body.css_first(_BLOCK_LEVEL_CSS) is None
 
 
 def _detect_from_string(content: str) -> ContentType:

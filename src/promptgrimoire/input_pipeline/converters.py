@@ -24,7 +24,10 @@ def convert_docx_to_html(content: bytes) -> str:
         ValueError: If the content is not a valid DOCX file.
     """
     try:
-        result = mammoth.convert_to_html(io.BytesIO(content))
+        result = mammoth.convert_to_html(
+            io.BytesIO(content),
+            convert_image=lambda _image: [],
+        )
     except Exception as exc:
         msg = f"Failed to convert DOCX: {exc}"
         raise ValueError(msg) from exc

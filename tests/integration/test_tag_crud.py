@@ -644,115 +644,12 @@ class TestReorderTagGroups:
             await reorder_tag_groups([g1.id, uuid4()])
 
 
-class TestImportTagsFromActivity:
-    """Tests for import_tags_from_activity."""
-
-    @pytest.mark.asyncio
-    async def test_import_copies_groups_and_tags(self) -> None:
-        """Import copies TagGroups and Tags to target workspace.
-
-        Verifies AC3.1, AC3.2, AC3.3.
-        """
-        from promptgrimoire.db.tags import (
-            create_tag,
-            create_tag_group,
-            import_tags_from_activity,
-            list_tag_groups_for_workspace,
-            list_tags_for_workspace,
-        )
-
-        # Source activity with tags
-        _, src_activity = await _make_course_week_activity()
-        src_ws = src_activity.template_workspace_id
-
-        src_group = await create_tag_group(src_ws, name="Legal")
-        src_t1 = await create_tag(
-            src_ws,
-            name="Jurisdiction",
-            color="#1f77b4",
-            group_id=src_group.id,
-            description="Court jurisdiction",
-            locked=True,
-        )
-        src_t2 = await create_tag(
-            src_ws,
-            name="Facts",
-            color="#ff7f0e",
-            group_id=src_group.id,
-        )
-        src_t3 = await create_tag(
-            src_ws,
-            name="Ungrouped",
-            color="#2ca02c",
-        )
-
-        # Target activity
-        _, tgt_activity = await _make_course_week_activity()
-        tgt_ws = tgt_activity.template_workspace_id
-
-        # Import
-        new_tags = await import_tags_from_activity(src_activity.id, tgt_ws)
-
-        # AC3.1: target has 1 group and 3 tags
-        tgt_groups = await list_tag_groups_for_workspace(tgt_ws)
-        tgt_tags = await list_tags_for_workspace(tgt_ws)
-        assert len(tgt_groups) == 1
-        assert len(tgt_tags) == 3
-        assert len(new_tags) == 3
-
-        # AC3.2: new UUIDs
-        assert tgt_groups[0].id != src_group.id
-        for new_tag, src_tag in zip(
-            sorted(new_tags, key=lambda t: t.order_index),
-            [src_t1, src_t2, src_t3],
-            strict=True,
-        ):
-            assert new_tag.id != src_tag.id
-
-        # AC3.3: preserved attributes
-        grouped = [t for t in new_tags if t.group_id is not None]
-        ungrouped = [t for t in new_tags if t.group_id is None]
-        assert len(grouped) == 2
-        assert len(ungrouped) == 1
-
-        # Grouped tags point to new group, not source group
-        for t in grouped:
-            assert t.group_id == tgt_groups[0].id
-            assert t.group_id != src_group.id
-
-        # Check preserved fields by name
-        by_name = {t.name: t for t in new_tags}
-        assert by_name["Jurisdiction"].color == "#1f77b4"
-        assert by_name["Jurisdiction"].description == "Court jurisdiction"
-        assert by_name["Jurisdiction"].locked is True
-        assert by_name["Jurisdiction"].order_index == 0
-        assert by_name["Facts"].color == "#ff7f0e"
-        assert by_name["Facts"].order_index == 1
-        assert by_name["Ungrouped"].color == "#2ca02c"
-        assert by_name["Ungrouped"].order_index == 2
-
-    @pytest.mark.asyncio
-    async def test_import_nonexistent_activity_raises_value_error(self) -> None:
-        """import_tags_from_activity with nonexistent activity raises ValueError.
-
-        Verifies AC6.6.
-        """
-        from promptgrimoire.db.tags import import_tags_from_activity
-
-        # Create a target workspace
-        _, tgt_activity = await _make_course_week_activity()
-        tgt_ws = tgt_activity.template_workspace_id
-
-        with pytest.raises(ValueError, match="not found"):
-            await import_tags_from_activity(uuid4(), tgt_ws)
-
-
 class TestDeleteTagCrdtCleanup:
     """Tests for CRDT highlight cleanup on tag deletion."""
 
     @pytest.mark.asyncio
     async def test_delete_tag_removes_crdt_highlights(self) -> None:
-        """Deleting a tag removes its CRDT highlights and tag_order.
+        """Deleting a tag removes its CRDT highlights.
 
         Verifies AC2.3.
         """
@@ -787,7 +684,6 @@ class TestDeleteTagCrdtCleanup:
                 author="test",
             )
             hl_ids.append(hl_id)
-        doc.set_tag_order(tag_str, hl_ids)
 
         # Save CRDT state to workspace
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
@@ -804,7 +700,6 @@ class TestDeleteTagCrdtCleanup:
         doc2 = AnnotationDocument("verify")
         doc2.apply_update(ws_after.crdt_state)
         assert doc2.get_all_highlights() == []
-        assert tag_str not in doc2.tag_order
 
     @pytest.mark.asyncio
     async def test_delete_tag_preserves_other_highlights(self) -> None:
@@ -840,16 +735,13 @@ class TestDeleteTagCrdtCleanup:
             text="a1",
             author="test",
         )
-        b_hl = doc.add_highlight(
+        doc.add_highlight(
             start_char=20,
             end_char=30,
             tag=b_str,
             text="b1",
             author="test",
         )
-        doc.set_tag_order(a_str, [])
-        doc.set_tag_order(b_str, [b_hl])
-
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
         # Delete tag A only
@@ -866,15 +758,13 @@ class TestDeleteTagCrdtCleanup:
         remaining = doc2.get_all_highlights()
         assert len(remaining) == 1
         assert remaining[0]["tag"] == b_str
-        assert b_str in doc2.tag_order
-        assert a_str not in doc2.tag_order
 
     @pytest.mark.asyncio
-    async def test_delete_tag_no_tag_order_entry(self) -> None:
-        """Cleanup succeeds when tag has highlights but no tag_order.
+    async def test_delete_tag_no_crdt_tag_entry(self) -> None:
+        """Cleanup succeeds when tag has highlights but no tags Map entry.
 
-        Verifies AC2.3 edge case: missing tag_order key is
-        silently skipped.
+        Verifies AC2.3 edge case: highlights are still removed even
+        when the tag has no entry in the CRDT tags Map.
         """
         from promptgrimoire.crdt.annotation_doc import AnnotationDocument
         from promptgrimoire.db.tags import create_tag, delete_tag
@@ -891,7 +781,7 @@ class TestDeleteTagCrdtCleanup:
 
         tag = await create_tag(ws.id, name="NoOrder", color="#ff00ff")
 
-        # Build CRDT with highlights but NO tag_order entry
+        # Build CRDT with highlights but no tags Map entry
         doc = AnnotationDocument("test")
         tag_str = str(tag.id)
         doc.add_highlight(
@@ -901,7 +791,6 @@ class TestDeleteTagCrdtCleanup:
             text="hi",
             author="test",
         )
-        # Deliberately skip set_tag_order
 
         await save_workspace_crdt_state(ws.id, doc.get_full_state())
 
@@ -1029,3 +918,1454 @@ class TestConcurrentTagCreation:
 
         assert group_a.order_index != group_b.order_index
         assert {group_a.order_index, group_b.order_index} == {0, 1}
+
+
+# ── Phase 2: DB-CRDT Dual Write ──────────────────────────────────────
+
+
+class TestCreateTagCrdt:
+    """Tests for create_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_writes_to_both_db_and_crdt(self) -> None:
+        """create_tag with crdt_doc writes tag metadata to both DB and CRDT.
+
+        Verifies AC1.1: matching fields in both stores.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-create")
+        tag = await create_tag(
+            ws_id,
+            name="Jurisdiction",
+            color="#1f77b4",
+            description="Legal jurisdiction",
+            crdt_doc=doc,
+        )
+
+        # Verify DB row
+        from promptgrimoire.db.tags import get_tag
+
+        db_tag = await get_tag(tag.id)
+        assert db_tag is not None
+        assert db_tag.name == "Jurisdiction"
+        assert db_tag.color == "#1f77b4"
+
+        # Verify CRDT entry
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "Jurisdiction"
+        assert crdt_tag["colour"] == "#1f77b4"
+        assert crdt_tag["order_index"] == tag.order_index
+        assert crdt_tag["description"] == "Legal jurisdiction"
+        assert crdt_tag["highlights"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_tag_without_crdt_doc_no_crash(self) -> None:
+        """create_tag without crdt_doc creates DB row without error.
+
+        Edge case: existing callers pass no crdt_doc.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="NoCrdt", color="#000000")
+        assert tag.name == "NoCrdt"
+
+    @pytest.mark.asyncio
+    async def test_create_tag_with_group_writes_group_id_to_crdt(self) -> None:
+        """create_tag with group_id includes group_id in CRDT entry.
+
+        Verifies AC1.1: group_id field synced.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-group")
+        group = await create_tag_group(ws_id, name="Legal")
+        tag = await create_tag(
+            ws_id,
+            name="WithGroup",
+            color="#aabbcc",
+            group_id=group.id,
+            crdt_doc=doc,
+        )
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["group_id"] == str(group.id)
+
+
+class TestCreateTagGroupCrdt:
+    """Tests for create_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_group_writes_to_both_db_and_crdt(self) -> None:
+        """create_tag_group with crdt_doc writes to both DB and CRDT.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-create-group")
+        group = await create_tag_group(ws_id, name="Evidence", crdt_doc=doc)
+
+        # Verify DB row
+        from promptgrimoire.db.tags import get_tag_group
+
+        db_group = await get_tag_group(group.id)
+        assert db_group is not None
+        assert db_group.name == "Evidence"
+
+        # Verify CRDT entry
+        crdt_group = doc.get_tag_group(group.id)
+        assert crdt_group is not None
+        assert crdt_group["name"] == "Evidence"
+        assert crdt_group["order_index"] == group.order_index
+
+    @pytest.mark.asyncio
+    async def test_create_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """create_tag_group without crdt_doc creates DB row without error."""
+        from promptgrimoire.db.tags import create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        assert group.name == "NoCrdt"
+
+
+class TestUpdateTagCrdt:
+    """Tests for update_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.2.
+    """
+
+    @pytest.mark.asyncio
+    async def test_update_tag_writes_to_crdt(self) -> None:
+        """update_tag with crdt_doc updates CRDT entry with new name.
+
+        Verifies AC1.2.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-update")
+        tag = await create_tag(ws_id, name="Original", color="#000000", crdt_doc=doc)
+
+        updated = await update_tag(tag.id, name="Renamed", crdt_doc=doc)
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_preserves_highlights_in_crdt(self) -> None:
+        """update_tag preserves existing highlights list in CRDT.
+
+        Verifies AC1.2: metadata update does not clobber highlights.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-preserve")
+        tag = await create_tag(ws_id, name="HasHL", color="#111111", crdt_doc=doc)
+
+        # Manually add highlights to CRDT tag
+        doc.set_tag(
+            tag_id=tag.id,
+            name="HasHL",
+            colour="#111111",
+            order_index=tag.order_index,
+            highlights=["hl-1", "hl-2"],
+        )
+
+        updated = await update_tag(tag.id, color="#222222", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["colour"] == "#222222"
+        assert crdt_tag["highlights"] == ["hl-1", "hl-2"]
+
+    @pytest.mark.asyncio
+    async def test_update_tag_without_crdt_doc_no_crash(self) -> None:
+        """update_tag without crdt_doc updates DB without error."""
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(ws_id, name="NoCrdt", color="#000000")
+        updated = await update_tag(tag.id, name="Renamed")
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_creates_crdt_entry_if_missing(self) -> None:
+        """update_tag with crdt_doc creates CRDT entry if tag was created without it.
+
+        Edge case: tag created without crdt_doc, then updated with one.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # Create without crdt_doc
+        tag = await create_tag(ws_id, name="NoDoc", color="#aaa000")
+
+        # Update with crdt_doc
+        doc = AnnotationDocument("test-late-crdt")
+        updated = await update_tag(tag.id, name="NowHasDoc", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["name"] == "NowHasDoc"
+
+
+class TestUpdateTagGroupCrdt:
+    """Tests for update_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_update_tag_group_writes_to_crdt(self) -> None:
+        """update_tag_group with crdt_doc updates CRDT entry.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, update_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-update-group")
+        group = await create_tag_group(ws_id, name="Original", crdt_doc=doc)
+
+        updated = await update_tag_group(group.id, name="Renamed", crdt_doc=doc)
+        assert updated is not None
+
+        crdt_group = doc.get_tag_group(group.id)
+        assert crdt_group is not None
+        assert crdt_group["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """update_tag_group without crdt_doc updates DB without error."""
+        from promptgrimoire.db.tags import create_tag_group, update_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        updated = await update_tag_group(group.id, name="Renamed")
+        assert updated is not None
+        assert updated.name == "Renamed"
+
+
+class TestDeleteTagCrdt:
+    """Tests for delete_tag with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.3.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_removes_from_crdt(self) -> None:
+        """delete_tag with crdt_doc removes tag from CRDT tags Map.
+
+        Verifies AC1.3.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete")
+        tag = await create_tag(ws_id, name="ToDelete", color="#ff0000", crdt_doc=doc)
+
+        # Verify tag exists in CRDT before delete
+        assert doc.get_tag(tag.id) is not None
+
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify tag removed from CRDT
+        assert doc.get_tag(tag.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_removes_highlights_from_crdt(self) -> None:
+        """delete_tag with crdt_doc removes highlights and tag entry.
+
+        Verifies AC1.3: highlights and tags Map entry cleaned up.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-hl")
+        tag = await create_tag(ws_id, name="WithHL", color="#ff0000", crdt_doc=doc)
+
+        # Add highlights to CRDT
+        tag_str = str(tag.id)
+        doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag=tag_str,
+            text="test",
+            author="test",
+        )
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify highlights and tag entry removed
+        assert doc.get_all_highlights() == []
+        assert doc.get_tag(tag.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_without_crdt_doc_uses_db_cleanup(self) -> None:
+        """delete_tag without crdt_doc still does DB-based CRDT cleanup.
+
+        Regression test for existing TestDeleteTagCrdtCleanup behaviour.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_workspace,
+            place_workspace_in_activity,
+            save_workspace_crdt_state,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        tag = await create_tag(ws.id, name="DbCleanup", color="#ff0000")
+
+        # Build CRDT state with highlights
+        doc = AnnotationDocument("test")
+        tag_str = str(tag.id)
+        doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag=tag_str,
+            text="test",
+            author="test",
+        )
+        await save_workspace_crdt_state(ws.id, doc.get_full_state())
+
+        # Delete without crdt_doc — should use DB-based cleanup
+        deleted = await delete_tag(tag.id)
+        assert deleted is True
+
+        # Verify DB-saved CRDT state is cleaned up
+        ws_after = await get_workspace(ws.id)
+        assert ws_after is not None
+        assert ws_after.crdt_state is not None
+
+        doc2 = AnnotationDocument("verify")
+        doc2.apply_update(ws_after.crdt_state)
+        assert doc2.get_all_highlights() == []
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_no_crdt_entry_no_crash(self) -> None:
+        """delete_tag with crdt_doc when tag has no CRDT entry does not crash.
+
+        Edge case: tag created without crdt_doc, deleted with one.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # Create without crdt_doc
+        tag = await create_tag(ws_id, name="NoEntry", color="#000000")
+
+        # Delete with crdt_doc
+        doc = AnnotationDocument("test-no-entry")
+        deleted = await delete_tag(tag.id, crdt_doc=doc)
+        assert deleted is True
+
+
+class TestDeleteTagGroupCrdt:
+    """Tests for delete_tag_group with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_group_removes_from_crdt(self) -> None:
+        """delete_tag_group with crdt_doc removes group from CRDT.
+
+        Verifies AC1.4.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, delete_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-group")
+        group = await create_tag_group(ws_id, name="ToDelete", crdt_doc=doc)
+
+        # Verify exists in CRDT
+        assert doc.get_tag_group(group.id) is not None
+
+        deleted = await delete_tag_group(group.id, crdt_doc=doc)
+        assert deleted is True
+
+        # Verify removed from CRDT
+        assert doc.get_tag_group(group.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_tag_group_without_crdt_doc_no_crash(self) -> None:
+        """delete_tag_group without crdt_doc deletes DB row without error."""
+        from promptgrimoire.db.tags import create_tag_group, delete_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="NoCrdt")
+        deleted = await delete_tag_group(group.id)
+        assert deleted is True
+
+
+class TestReorderTagsCrdt:
+    """Tests for reorder_tags with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.1 (order_index sync).
+    """
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_updates_crdt_order_index(self) -> None:
+        """reorder_tags with crdt_doc updates order_index in CRDT entries.
+
+        Verifies AC1.1: order_index synced to CRDT.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-tags")
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000", crdt_doc=doc)
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000", crdt_doc=doc)
+        t3 = await create_tag(ws_id, name="Tag3", color="#cc0000", crdt_doc=doc)
+
+        # Reorder: Tag3, Tag1, Tag2
+        await reorder_tags([t3.id, t1.id, t2.id], crdt_doc=doc)
+
+        crdt_t1 = doc.get_tag(t1.id)
+        crdt_t2 = doc.get_tag(t2.id)
+        crdt_t3 = doc.get_tag(t3.id)
+
+        assert crdt_t3 is not None and crdt_t3["order_index"] == 0
+        assert crdt_t1 is not None and crdt_t1["order_index"] == 1
+        assert crdt_t2 is not None and crdt_t2["order_index"] == 2
+
+        # Verify names preserved
+        assert crdt_t1["name"] == "Tag1"
+        assert crdt_t2["name"] == "Tag2"
+        assert crdt_t3["name"] == "Tag3"
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_without_crdt_doc_no_crash(self) -> None:
+        """reorder_tags without crdt_doc updates DB only, no crash.
+
+        Edge case: existing callers pass no crdt_doc.
+        """
+        from promptgrimoire.db.tags import create_tag, get_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000")
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000")
+
+        # Should not crash
+        await reorder_tags([t2.id, t1.id])
+
+        r1 = await get_tag(t1.id)
+        r2 = await get_tag(t2.id)
+        assert r2 is not None and r2.order_index == 0
+        assert r1 is not None and r1.order_index == 1
+
+    @pytest.mark.asyncio
+    async def test_reorder_tags_preserves_crdt_highlights(self) -> None:
+        """reorder_tags preserves existing highlights in CRDT entries.
+
+        Verifies AC1.1: only order_index changes, highlights preserved.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, reorder_tags
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-highlights")
+        t1 = await create_tag(ws_id, name="Tag1", color="#aa0000", crdt_doc=doc)
+        t2 = await create_tag(ws_id, name="Tag2", color="#bb0000", crdt_doc=doc)
+
+        # Manually add a highlight to t1's CRDT entry
+        crdt_t1 = doc.get_tag(t1.id)
+        assert crdt_t1 is not None
+        doc.set_tag(
+            tag_id=t1.id,
+            name=crdt_t1["name"],
+            colour=crdt_t1["colour"],
+            order_index=crdt_t1["order_index"],
+            group_id=crdt_t1.get("group_id"),
+            description=crdt_t1.get("description"),
+            highlights=["highlight-1"],
+        )
+
+        # Reorder
+        await reorder_tags([t2.id, t1.id], crdt_doc=doc)
+
+        crdt_t1_after = doc.get_tag(t1.id)
+        assert crdt_t1_after is not None
+        assert crdt_t1_after["highlights"] == ["highlight-1"]
+
+
+class TestReorderTagGroupsCrdt:
+    """Tests for reorder_tag_groups with crdt_doc parameter.
+
+    Verifies tag-lifecycle-235-291.AC1.4 (group order sync).
+    """
+
+    @pytest.mark.asyncio
+    async def test_reorder_tag_groups_updates_crdt_order_index(self) -> None:
+        """reorder_tag_groups with crdt_doc updates order_index in CRDT.
+
+        Verifies AC1.4: group order_index synced.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag_group, reorder_tag_groups
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-reorder-groups")
+        g1 = await create_tag_group(ws_id, name="G1", crdt_doc=doc)
+        g2 = await create_tag_group(ws_id, name="G2", crdt_doc=doc)
+        g3 = await create_tag_group(ws_id, name="G3", crdt_doc=doc)
+
+        # Reverse order
+        await reorder_tag_groups([g3.id, g2.id, g1.id], crdt_doc=doc)
+
+        crdt_g1 = doc.get_tag_group(g1.id)
+        crdt_g2 = doc.get_tag_group(g2.id)
+        crdt_g3 = doc.get_tag_group(g3.id)
+
+        assert crdt_g3 is not None and crdt_g3["order_index"] == 0
+        assert crdt_g2 is not None and crdt_g2["order_index"] == 1
+        assert crdt_g1 is not None and crdt_g1["order_index"] == 2
+
+        # Verify names preserved
+        assert crdt_g1["name"] == "G1"
+        assert crdt_g2["name"] == "G2"
+        assert crdt_g3["name"] == "G3"
+
+    @pytest.mark.asyncio
+    async def test_reorder_tag_groups_without_crdt_doc_no_crash(self) -> None:
+        """reorder_tag_groups without crdt_doc updates DB only, no crash."""
+        from promptgrimoire.db.tags import (
+            create_tag_group,
+            get_tag_group,
+            reorder_tag_groups,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        g1 = await create_tag_group(ws_id, name="G1")
+        g2 = await create_tag_group(ws_id, name="G2")
+
+        await reorder_tag_groups([g2.id, g1.id])
+
+        r1 = await get_tag_group(g1.id)
+        r2 = await get_tag_group(g2.id)
+        assert r2 is not None and r2.order_index == 0
+        assert r1 is not None and r1.order_index == 1
+
+
+class TestCrdtTagConsistency:
+    """Tests for _ensure_crdt_tag_consistency on workspace load.
+
+    Verifies AC1.5 (hydration) and AC1.6 (reconciliation).
+    """
+
+    @pytest.mark.asyncio
+    async def test_consistency_hydrates_empty_crdt_from_db(self) -> None:
+        """AC1.5: CRDT maps empty + DB has tags -> CRDT hydrated from DB."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Consistency Group")
+        tag = await create_tag(
+            ws_id,
+            name="Consistency Tag",
+            color="#112233",
+            group_id=group.id,
+            description="Test",
+        )
+
+        # Create a fresh CRDT doc with NO tag data
+        doc = AnnotationDocument("test-consistency")
+        assert doc.list_tags() == {}
+        assert doc.list_tag_groups() == {}
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # CRDT should now have the tag and group from DB
+        crdt_tags = doc.list_tags()
+        crdt_groups = doc.list_tag_groups()
+        assert str(tag.id) in crdt_tags
+        assert str(group.id) in crdt_groups
+        assert crdt_tags[str(tag.id)]["name"] == "Consistency Tag"
+        assert crdt_groups[str(group.id)]["name"] == "Consistency Group"
+
+    @pytest.mark.asyncio
+    async def test_consistency_reconciles_missing_tag(self) -> None:
+        """AC1.6: CRDT has some tags but missing one from DB -> missing added."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag1 = await create_tag(ws_id, name="Present", color="#111111")
+        tag2 = await create_tag(ws_id, name="Missing", color="#222222")
+
+        # Pre-populate CRDT with only tag1
+        doc = AnnotationDocument("test-reconcile")
+        doc.set_tag(str(tag1.id), "Present", "#111111", 0)
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # tag2 should now be in CRDT
+        crdt_tags = doc.list_tags()
+        assert str(tag2.id) in crdt_tags
+        assert crdt_tags[str(tag2.id)]["name"] == "Missing"
+
+    @pytest.mark.asyncio
+    async def test_consistency_empty_db_empty_crdt_no_error(self) -> None:
+        """Edge: Empty DB + empty CRDT -> no changes, no errors."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-empty")
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        assert doc.list_tags() == {}
+        assert doc.list_tag_groups() == {}
+
+    @pytest.mark.asyncio
+    async def test_consistency_removes_crdt_tag_not_in_db(self) -> None:
+        """Edge: CRDT has tag not in DB -> tag removed from CRDT."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        # CRDT has a tag that doesn't exist in DB
+        doc = AnnotationDocument("test-orphan")
+        doc.set_tag("orphan-tag-id", "Orphan", "#ff0000", 0)
+
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # Orphan tag should be removed
+        assert doc.get_tag("orphan-tag-id") is None
+
+
+class TestCrdtPrimaryRendering:
+    """Tests for CRDT-primary tag rendering (Task 3).
+
+    Verifies that workspace_tags_from_crdt() produces the same output
+    as workspace_tags() after consistency check, validating the rendering
+    switch from DB to CRDT.
+    """
+
+    @pytest.mark.asyncio
+    async def test_crdt_primary_matches_db_query(self) -> None:
+        """After consistency check, CRDT-primary matches DB query output."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags,
+            workspace_tags_from_crdt,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            update_tag_group,
+        )
+
+        group = await create_tag_group(ws_id, name="Legal")
+        await update_tag_group(group.id, color="#aa0000")
+        await create_tag(
+            ws_id,
+            name="Jurisdiction",
+            color="#3366cc",
+            group_id=group.id,
+            description="Courts",
+        )
+        await create_tag(ws_id, name="Ungrouped", color="#ff9900")
+
+        # Build CRDT via consistency check (simulates workspace load)
+        doc = AnnotationDocument("test-crdt-primary")
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        # Compare outputs
+        db_result = await workspace_tags(ws_id)
+        crdt_result = workspace_tags_from_crdt(doc)
+
+        assert len(crdt_result) == len(db_result)
+        for crdt_tag, db_tag in zip(crdt_result, db_result, strict=True):
+            assert crdt_tag.name == db_tag.name
+            assert crdt_tag.colour == db_tag.colour
+            assert crdt_tag.raw_key == db_tag.raw_key
+            assert crdt_tag.group_name == db_tag.group_name
+            assert crdt_tag.group_colour == db_tag.group_colour
+            assert crdt_tag.description == db_tag.description
+
+    @pytest.mark.asyncio
+    async def test_crdt_primary_ordering_matches_db(self) -> None:
+        """CRDT-primary preserves group-then-tag ordering from DB."""
+        from promptgrimoire.crdt.annotation_doc import (
+            AnnotationDocument,
+            _ensure_crdt_tag_consistency,
+        )
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags,
+            workspace_tags_from_crdt,
+        )
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        g1 = await create_tag_group(ws_id, name="Group A")
+        g2 = await create_tag_group(ws_id, name="Group B")
+        await create_tag(ws_id, name="A-Tag1", color="#111111", group_id=g1.id)
+        await create_tag(ws_id, name="A-Tag2", color="#222222", group_id=g1.id)
+        await create_tag(ws_id, name="B-Tag1", color="#333333", group_id=g2.id)
+        await create_tag(ws_id, name="Ungrouped", color="#444444")
+
+        doc = AnnotationDocument("test-crdt-ordering")
+        await _ensure_crdt_tag_consistency(doc, ws_id)
+
+        db_names = [t.name for t in await workspace_tags(ws_id)]
+        crdt_names = [t.name for t in workspace_tags_from_crdt(doc)]
+
+        assert crdt_names == db_names
+
+
+class TestDualWriteColourUpdate:
+    """AC4.1: Colour changes via update_tag persist in both DB and CRDT.
+
+    Verifies tag-lifecycle-235-291.AC4.1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_colour_update_persists_in_db_and_crdt(self) -> None:
+        """update_tag colour change writes to both DB and CRDT.
+
+        Verifies AC4.1: create tag with crdt_doc, update colour with
+        crdt_doc, verify both stores reflect the new colour.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, get_tag, update_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-colour-update")
+        tag = await create_tag(ws_id, name="ColourTest", color="#1f77b4", crdt_doc=doc)
+
+        # Update colour
+        await update_tag(tag.id, color="#ff0000", crdt_doc=doc)
+
+        # Verify DB
+        db_tag = await get_tag(tag.id)
+        assert db_tag is not None
+        assert db_tag.color == "#ff0000"
+
+        # Verify CRDT
+        crdt_tag = doc.get_tag(tag.id)
+        assert crdt_tag is not None
+        assert crdt_tag["colour"] == "#ff0000"
+
+
+class TestDualWriteDeleteTag:
+    """AC2.5: Deleting a tag removes it from both DB and CRDT.
+
+    Verifies tag-lifecycle-235-291.AC2.5.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_from_db_and_crdt(self) -> None:
+        """delete_tag with crdt_doc removes tag from both stores.
+
+        Verifies AC2.5: after deletion, tag absent from DB and CRDT.
+        """
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.db.tags import create_tag, delete_tag, get_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        doc = AnnotationDocument("test-delete-dual")
+        tag = await create_tag(ws_id, name="ToDelete", color="#ff0000", crdt_doc=doc)
+
+        # Verify tag exists in both stores before delete
+        assert doc.get_tag(tag.id) is not None
+        assert await get_tag(tag.id) is not None
+
+        # Delete
+        await delete_tag(tag.id, crdt_doc=doc)
+
+        # Verify removed from DB
+        assert await get_tag(tag.id) is None
+
+        # Verify removed from CRDT
+        assert doc.get_tag(tag.id) is None
+
+
+class TestDuplicateTagNameRejection:
+    """AC2.7: Creating a tag with a duplicate name is rejected.
+
+    Verifies tag-lifecycle-235-291.AC2.7.
+    """
+
+    @pytest.mark.asyncio
+    async def test_duplicate_name_raises_integrity_error(self) -> None:
+        """create_tag twice with same name and workspace_id raises IntegrityError.
+
+        Verifies AC2.7: duplicate name within same workspace is rejected.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        await create_tag(ws_id, name="Unique", color="#111111")
+
+        with pytest.raises(IntegrityError, match="uq_tag_workspace_name"):
+            await create_tag(ws_id, name="Unique", color="#222222")
+
+
+class TestQuickCreateDefaultGroup:
+    """AC2.6: Quick-created tags get explicit group when selected, ungrouped otherwise.
+
+    Verifies tag-lifecycle-235-291.AC2.6.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_tag_with_group_has_group_id(self) -> None:
+        """create_tag with explicit group_id sets group_id on result."""
+        from promptgrimoire.db.tags import create_tag, create_tag_group
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        group = await create_tag_group(ws_id, name="Default Group")
+        tag = await create_tag(
+            ws_id, name="Grouped", color="#111111", group_id=group.id
+        )
+
+        assert tag.group_id is not None
+        assert tag.group_id == group.id
+
+    @pytest.mark.asyncio
+    async def test_create_tag_without_group_is_ungrouped(self) -> None:
+        """Quick-create with no group selected creates ungrouped tag.
+
+        The quick-create dialog defaults to no group (ungrouped).
+        Tags without a group appear at the end of the tag list.
+        """
+        from promptgrimoire.db.tags import create_tag
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+
+        tag = await create_tag(
+            ws_id,
+            name="Ungrouped",
+            color="#222222",
+            group_id=None,
+        )
+
+        assert tag.group_id is None
+
+
+class TestImportTagsFromWorkspace:
+    """Tests for import_tags_from_workspace.
+
+    Verifies AC3.1-AC3.5, AC3.7, and permission enforcement.
+    """
+
+    @pytest.mark.asyncio
+    async def test_import_workspace_creates_tags(self) -> None:
+        """Import from accessible workspace creates tags.
+
+        Verifies AC3.1: user can import tags from a workspace with read access.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        # Source workspace with tags (standalone, not template)
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="Legal")
+        await create_tag(
+            src_ws,
+            name="Jurisdiction",
+            color="#1f77b4",
+            group_id=src_group.id,
+            description="Court jurisdiction",
+        )
+        await create_tag(src_ws, name="Facts", color="#ff7f0e")
+
+        # Target: separate workspace
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        # User with explicit read access to source
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"importer-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        assert len(result) == 2
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        imported_names = {t.name for t in tgt_tags}
+        assert "Jurisdiction" in imported_names
+        assert "Facts" in imported_names
+
+    @pytest.mark.asyncio
+    async def test_import_preserves_existing_tags(self) -> None:
+        """Existing tags in target are preserved after import.
+
+        Verifies AC3.2: additive merge.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        # Source with one tag
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="NewTag", color="#aabbcc")
+
+        # Target with existing tag (different activity so no overlap)
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        await create_tag(tgt_ws, name="Existing", color="#112233")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        names = {t.name for t in tgt_tags}
+        assert "Existing" in names
+        assert "NewTag" in names
+
+    @pytest.mark.asyncio
+    async def test_import_skips_duplicate_names(self) -> None:
+        """Tags with duplicate names (case-insensitive) are skipped.
+
+        Verifies AC3.3.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="Overlap", color="#111111")
+        await create_tag(src_ws, name="Unique", color="#222222")
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        await create_tag(tgt_ws, name="overlap", color="#333333")  # case mismatch
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        # Only "Unique" should be imported; "Overlap" skipped
+        assert len(result) == 1
+        assert result[0].name == "Unique"
+
+        tgt_tags = await list_tags_for_workspace(tgt_ws)
+        overlap_tags = [t for t in tgt_tags if t.name.lower() == "overlap"]
+        assert len(overlap_tags) == 1  # original preserved, dupe not added
+
+    @pytest.mark.asyncio
+    async def test_import_preserves_group_ordering(self) -> None:
+        """Imported groups and tags are appended after existing.
+
+        Verifies AC3.4.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            create_tag_group,
+            import_tags_from_workspace,
+            list_tag_groups_for_workspace,
+            list_tags_for_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        src_group = await create_tag_group(src_ws, name="ImportedGroup")
+        await create_tag(
+            src_ws, name="ImportedTag", color="#aaaaaa", group_id=src_group.id
+        )
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+        existing_group = await create_tag_group(tgt_ws, name="ExistingGroup")
+        await create_tag(
+            tgt_ws, name="ExistingTag", color="#bbbbbb", group_id=existing_group.id
+        )
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        groups = await list_tag_groups_for_workspace(tgt_ws)
+        tags = await list_tags_for_workspace(tgt_ws)
+
+        # Existing group should have lower order_index than imported
+        existing_g = next(g for g in groups if g.name == "ExistingGroup")
+        imported_g = next(g for g in groups if g.name == "ImportedGroup")
+        assert existing_g.order_index < imported_g.order_index
+
+        # Existing tag should have lower order_index than imported
+        existing_t = next(t for t in tags if t.name == "ExistingTag")
+        imported_t = next(t for t in tags if t.name == "ImportedTag")
+        assert existing_t.order_index < imported_t.order_index
+
+    @pytest.mark.asyncio
+    async def test_import_unlocks_locked_tags(self) -> None:
+        """Imported tags default to unlocked regardless of source status.
+
+        Verifies AC3.5.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import (
+            create_tag,
+            import_tags_from_workspace,
+        )
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        await create_tag(src_ws, name="LockedSrc", color="#ff0000", locked=True)
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+
+        assert len(result) == 1
+        assert result[0].locked is False
+
+    @pytest.mark.asyncio
+    async def test_import_empty_workspace_no_error(self) -> None:
+        """Importing from workspace with no tags produces no error.
+
+        Verifies AC3.7.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.tags import import_tags_from_workspace
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+        # No tags created in source
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(src_ws, user.id, "viewer")
+
+        result = await import_tags_from_workspace(src_ws, tgt_ws, user.id)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_import_no_access_raises_permission_error(self) -> None:
+        """Import from workspace user cannot access raises PermissionError."""
+        from promptgrimoire.db.tags import import_tags_from_workspace
+        from promptgrimoire.db.users import create_user
+
+        _, src_activity = await _make_course_week_activity()
+        src_ws = src_activity.template_workspace_id
+
+        _, tgt_activity = await _make_course_week_activity()
+        tgt_ws = tgt_activity.template_workspace_id
+
+        # User with no enrollment or ACL at all
+        outsider = await create_user(
+            email=f"outsider-{uuid4().hex[:8]}@test.local",
+            display_name="Outsider",
+        )
+
+        with pytest.raises(PermissionError):
+            await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
+
+
+class TestListImportableWorkspaces:
+    """Tests for list_importable_workspaces."""
+
+    @pytest.mark.asyncio
+    async def test_user_with_acl_sees_workspace(self) -> None:
+        """User with ACL on a workspace that has tags sees it in list."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="SomeTag", color="#123456")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id in ws_ids
+        # Verify tag names are returned
+        match = next(r for r in results if r[0].id == ws_id)
+        assert match[2] == ["SomeTag"]
+
+    @pytest.mark.asyncio
+    async def test_workspace_without_tags_excluded(self) -> None:
+        """Workspace with no tags is excluded from list."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        # No tags created
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_target_workspace_excluded(self) -> None:
+        """The exclude_workspace_id is not in the results."""
+        from promptgrimoire.db.acl import grant_permission, list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="Tag1", color="#aabbcc")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"imp-{tag}@test.local", display_name=f"Imp {tag}"
+        )
+        await grant_permission(ws_id, user.id, "viewer")
+
+        results = await list_importable_workspaces(
+            user.id,
+            exclude_workspace_id=ws_id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_user_without_access_excluded(self) -> None:
+        """User without ACL or enrollment does not see the workspace."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="HiddenTag", color="#654321")
+
+        tag = uuid4().hex[:8]
+        user = await create_user(
+            email=f"noaccess-{tag}@test.local", display_name=f"NoAccess {tag}"
+        )
+
+        results = await list_importable_workspaces(
+            user.id,
+            is_privileged=False,
+            enrolled_course_ids=[],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id not in ws_ids
+
+
+class TestListImportableWorkspacesEnrollment:
+    """Tests for enrollment-derived visibility in list_importable_workspaces."""
+
+    @pytest.mark.asyncio
+    async def test_staff_sees_template_workspace_via_enrollment(self) -> None:
+        """Instructor enrolled in course sees template workspaces with tags."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        course, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="StaffTag", color="#1f77b4")
+
+        tag = uuid4().hex[:8]
+        instructor = await create_user(
+            email=f"staff-{tag}@test.local", display_name=f"Staff {tag}"
+        )
+        await enroll_user(course.id, instructor.id, role="coordinator")
+
+        results = await list_importable_workspaces(
+            instructor.id,
+            is_privileged=True,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_student_sees_peer_shared_workspace(self) -> None:
+        """Student sees peer-shared workspace with tags via enrollment."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        course, activity = await _make_course_week_activity()
+
+        # Create owner student and clone a workspace
+        tag = uuid4().hex[:8]
+        owner = await create_user(
+            email=f"owner-{tag}@test.local", display_name=f"Owner {tag}"
+        )
+        await enroll_user(course.id, owner.id, role="student")
+        clone, _doc_map = await clone_workspace_from_activity(
+            activity.id,
+            owner.id,
+        )
+
+        # Add tags and enable sharing prerequisites
+        await create_tag(clone.id, name="PeerTag", color="#ff7f0e")
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import Workspace
+
+        async with get_session() as session:
+            # Enable sharing at course level
+            c = await session.get(Course, course.id)
+            assert c is not None
+            c.default_allow_sharing = True
+            session.add(c)
+            # Share workspace with class
+            ws = await session.get(Workspace, clone.id)
+            assert ws is not None
+            ws.shared_with_class = True
+            session.add(ws)
+            await session.flush()
+
+        # Create viewer student enrolled in same course
+        tag2 = uuid4().hex[:8]
+        viewer = await create_user(
+            email=f"viewer-{tag2}@test.local", display_name=f"Viewer {tag2}"
+        )
+        await enroll_user(course.id, viewer.id, role="student")
+
+        results = await list_importable_workspaces(
+            viewer.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert clone.id in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_student_cannot_see_non_shared_workspace(self) -> None:
+        """Student does NOT see another student's private workspace."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.courses import enroll_user
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        course, activity = await _make_course_week_activity()
+
+        tag = uuid4().hex[:8]
+        owner = await create_user(
+            email=f"priv-{tag}@test.local", display_name=f"Priv {tag}"
+        )
+        await enroll_user(course.id, owner.id, role="student")
+        clone, _ = await clone_workspace_from_activity(activity.id, owner.id)
+        await create_tag(clone.id, name="PrivateTag", color="#d62728")
+        # shared_with_class defaults to False
+
+        tag2 = uuid4().hex[:8]
+        other = await create_user(
+            email=f"other-{tag2}@test.local", display_name=f"Other {tag2}"
+        )
+        await enroll_user(course.id, other.id, role="student")
+
+        results = await list_importable_workspaces(
+            other.id,
+            is_privileged=False,
+            enrolled_course_ids=[course.id],
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert clone.id not in ws_ids
+
+    @pytest.mark.asyncio
+    async def test_unenrolled_user_cannot_see_course_workspaces(self) -> None:
+        """User not enrolled in course does not see its workspaces."""
+        from promptgrimoire.db.acl import list_importable_workspaces
+        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.users import create_user
+
+        _, activity = await _make_course_week_activity()
+        ws_id = activity.template_workspace_id
+        await create_tag(ws_id, name="InvisibleTag", color="#9467bd")
+
+        tag = uuid4().hex[:8]
+        outsider = await create_user(
+            email=f"out-{tag}@test.local", display_name=f"Out {tag}"
+        )
+
+        results = await list_importable_workspaces(
+            outsider.id,
+            is_privileged=False,
+            enrolled_course_ids=[],  # Not enrolled
+        )
+        ws_ids = [ws.id for ws, *_ in results]
+        assert ws_id not in ws_ids

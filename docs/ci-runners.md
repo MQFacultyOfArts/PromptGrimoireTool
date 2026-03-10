@@ -36,6 +36,26 @@ This file patches the standard `ci.yml` in three ways:
 
 *(Note: If the primary `ci.yml` changes significantly, `act-ci.yml` will need to be re-synced and patched with these three modifications).*
 
+## Custom Runner Image
+
+`act` does not support `actions/cache`, so every run cold-starts TinyTeX and system packages. The LaTeX font cache build alone takes ~5GB RAM and 10+ minutes. To avoid this, build a custom Docker image with everything pre-installed:
+
+```bash
+docker build -t grimoire-act-runner -f Dockerfile.act .
+```
+
+This only needs rebuilding when `scripts/setup_latex.py` or system dependencies change. Use `-P` to map it:
+
+```bash
+gh act pull_request -W .github/workflows/act-ci.yml -j test-all \
+  -P ubuntu-latest=grimoire-act-runner
+```
+
+Or add to `~/.config/act/actrc` (or project `.actrc`):
+```
+-P ubuntu-latest=grimoire-act-runner
+```
+
 ## How to Run
 
 To run a specific job locally, use the following command, specifying the patched workflow file and the exact job you want to debug.

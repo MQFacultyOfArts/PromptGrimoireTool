@@ -147,6 +147,9 @@ ignore = [
 "src/promptgrimoire/cli/admin.py" = [
     "PLC0415",  # Late imports to avoid heavy DB/auth modules at CLI load time
 ]
+"src/promptgrimoire/cli/migrate.py" = [
+    "PLC0415",  # Late imports to avoid heavy DB/CRDT modules at CLI load time
+]
 "src/promptgrimoire/cli/seed.py" = [
     "PLC0415",  # Late imports to avoid heavy DB modules at CLI load time
 ]
@@ -202,8 +205,11 @@ markers = [
     "blns: marks Big List of Naughty Strings tests (opt-in with '-m blns')",
     "perf: marks performance baseline tests (skip with '-m \"not perf\"')",
     "latex: marks tests requiring TinyTeX and system fonts (skip with '-m \"not latex\"')",
+    "latexmk_full: marks full compiled-PDF suites that `test all` deselects",
     "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
 ]
+log_file = "test-debug.log"
+log_file_level = "WARNING"
 filterwarnings = [
     # SQLModel session.execute() warning handled in tests/conftest.py
 ]

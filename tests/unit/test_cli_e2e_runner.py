@@ -483,3 +483,107 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
         "promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui_failure
     )
     assert run_all_lanes([]) == 1
+
+
+def test_run_slow_lanes_runs_playwright_then_latexmk_full_suite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slow lane runs Playwright first, then the compiled-PDF suite."""
+    from promptgrimoire.cli.e2e import run_slow_lanes
+
+    captured: dict[str, object] = {}
+
+    def _fake_playwright(
+        extra_args: list[str],
+        *,
+        use_pyspy: bool,
+        reruns: bool,
+        clear_cache: bool = False,
+    ) -> int:
+        captured["playwright_args"] = extra_args
+        captured["playwright_use_pyspy"] = use_pyspy
+        captured["playwright_reruns"] = reruns
+        captured["playwright_clear_cache"] = clear_cache
+        captured["e2e_skip_latexmk"] = os.environ["E2E_SKIP_LATEXMK"]
+        return 0
+
+    def _fake_run_pytest(
+        *,
+        title: str,
+        log_path: Path,
+        default_args: list[str],
+        extra_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> int:
+        captured["latex_title"] = title
+        captured["latex_log_path"] = log_path
+        captured["latex_default_args"] = default_args
+        captured["latex_extra_args"] = extra_args
+        captured["latex_extra_env"] = extra_env
+        return 0
+
+    monkeypatch.delenv("E2E_SKIP_LATEXMK", raising=False)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_serial_playwright_e2e", _fake_playwright
+    )
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    exit_code = run_slow_lanes(["-k", "combined_filter"])
+
+    assert exit_code == 0
+    assert captured["playwright_args"] == ["-k", "combined_filter"]
+    assert captured["playwright_use_pyspy"] is False
+    assert captured["playwright_reruns"] is True
+    assert captured["playwright_clear_cache"] is True
+    assert captured["e2e_skip_latexmk"] == "0"
+    assert captured["latex_default_args"] == ["-m", "latexmk_full", "-v", "--tb=short"]
+    assert captured["latex_extra_args"] == ["-k", "combined_filter"]
+    assert captured["latex_extra_env"] is None
+    assert "E2E_SKIP_LATEXMK" not in os.environ
+
+
+def test_run_slow_lanes_skips_latexmk_suite_for_explicit_test_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit test paths target only Playwright and do not run latexmk_full."""
+    from promptgrimoire.cli.e2e import run_slow_lanes
+
+    def _fake_playwright(
+        extra_args: list[str],
+        *,
+        use_pyspy: bool,
+        reruns: bool,
+        clear_cache: bool = False,
+    ) -> int:
+        del extra_args, use_pyspy, reruns, clear_cache
+        return 0
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_serial_playwright_e2e", _fake_playwright
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_pytest",
+        lambda **_: pytest.fail("latexmk_full suite should not run for explicit paths"),
+    )
+
+    exit_code = run_slow_lanes(["tests/e2e/test_browser_gate.py"])
+
+    assert exit_code == 0
+
+
+def test_run_slow_lanes_treats_filtered_no_tests_as_non_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A filtered latexmk suite with no matches should not fail the slow command."""
+    from promptgrimoire.cli.e2e import run_slow_lanes
+
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_serial_playwright_e2e",
+        lambda *_, **__: 0,
+    )
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._run_pytest",
+        lambda **_: 5,
+    )
+
+    assert run_slow_lanes(["-k", "playwright_only_name"]) == 0

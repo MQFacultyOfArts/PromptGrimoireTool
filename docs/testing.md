@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-03-05*
+*Last updated: 2026-03-10*
 
 ## TDD is Mandatory
 
@@ -59,7 +59,7 @@ Each method uses **pytest-subtests** for checkpoint assertions within a shared b
 
 | Module | Purpose |
 |--------|---------|
-| `annotation_helpers.py` | `select_chars()`, `create_highlight()`, `setup_workspace_with_content()`, `wait_for_text_walker()` |
+| `annotation_helpers.py` | `select_chars()`, `create_highlight()`, `setup_workspace_with_content()`, `wait_for_text_walker()`, `find_text_range()` |
 | `course_helpers.py` | `create_course()`, `add_week()`, `add_activity()`, `enrol_student()`, `publish_week()`, `configure_course_copy_protection()` |
 | `conftest.py` | `app_server` fixture (NiceGUI server lifecycle), `fresh_page`, `_authenticate_page()`, cleanup endpoint |
 
@@ -88,6 +88,7 @@ When adding new UI elements, add `data-testid` in the source and use `get_by_tes
 - Elements may be off-screen in headless mode — always scroll into view before assertions
 - NiceGUI pages may need time to hydrate — use `expect().to_be_visible()` with appropriate timeouts
 - **`wait_for_text_walker()`** is the canonical readiness gate before any char-offset operations
+- **`find_text_range(needle)`** searches document text via the browser's text walker and returns `(start_char, end_char)` — use this instead of hardcoded numeric offsets, which break when fixture HTML changes
 - **Copy protection setup**: create week/activity BEFORE enabling copy protection (dialog→nav race)
 - **MockAuthClient `_pending_email` pollution**: use explicit `mock-token-{email}` format tokens instead of `MOCK_VALID_MAGIC_TOKEN` when test ordering matters (pytest-randomly)
 
@@ -216,7 +217,11 @@ Custom markers are defined in `pyproject.toml` under `[tool.pytest.ini_options]`
 
 Default addopts: `-ra -q -m 'not blns and not slow'`
 
-To run a specific marker: `uv run pytest -m e2e` or `uv run pytest -m latex`.
+To run E2E tests: `uv run grimoire e2e run`. To include BLNS and slow tests: `uv run grimoire test all-fixtures`.
+
+### Debug Log File
+
+`test-debug.log` is configured as pytest's `log_file` at WARNING level. It captures warnings and errors from all test runs. The file is gitignored. To get verbose output for debugging, temporarily change `log_file_level` to `DEBUG` in `pyproject.toml`.
 
 ## Fixture Analysis
 

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from tests.conftest import load_conversation_fixture, requires_latexmk
+from tests.conftest import load_conversation_fixture, requires_full_latexmk
 from tests.integration.conftest import (
     MegaDocResult,
     MegaDocSegment,
@@ -288,7 +288,7 @@ async def english_mega_result(tmp_path_factory) -> MegaDocResult:
 # ---------------------------------------------------------------------------
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestChatbotCompilation:
     """Verify all 13 English chatbot fixtures compile in the mega-document.
 
@@ -315,7 +315,7 @@ class TestChatbotCompilation:
         assert english_mega_result.pdf_path.stat().st_size > 0, "PDF is empty"
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestPipelineHighlights:
     """Verify pipeline highlight tests compile correctly in the mega-document.
 
@@ -411,7 +411,7 @@ class TestPipelineHighlights:
             )
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestBasicPipeline:
     """Verify basic export pipeline compiles in the mega-document.
 
@@ -438,7 +438,7 @@ class TestBasicPipeline:
         assert header == b"%PDF"
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestMarginnoteComments:
     """Verify marginnote with comments in the mega-document.
 

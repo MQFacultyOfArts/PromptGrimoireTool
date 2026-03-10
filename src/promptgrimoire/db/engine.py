@@ -71,7 +71,7 @@ def _install_pool_listeners(engine: AsyncEngine) -> None:
 
     @event.listens_for(pool, "connect")
     def _on_connect(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
-        _pool_logger.info("NEW_CONN %s", _pool_status(pool))
+        _pool_logger.debug("NEW_CONN %s", _pool_status(pool))
 
     @event.listens_for(pool, "invalidate")
     def _on_invalidate(
@@ -91,7 +91,7 @@ def _install_pool_listeners(engine: AsyncEngine) -> None:
     def _on_close(_dbapi_conn: object, _rec: _ConnectionRecord) -> None:
         _pool_logger.debug("CLOSE    %s", _pool_status(pool))
 
-    _pool_logger.info("Pool listeners installed. Initial: %s", _pool_status(pool))
+    _pool_logger.debug("Pool listeners installed. Initial: %s", _pool_status(pool))
 
 
 @dataclass

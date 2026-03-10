@@ -1,7 +1,9 @@
 """Tag import section for the tag management dialog.
 
-Renders the 'import tags from another activity' dropdown. Imports
-``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
+Renders a workspace picker that lists all accessible workspaces with
+tags.  Any user (not just instructors) can import tags from a workspace
+they can read.  Imports ``_refresh_tag_state`` from
+``tag_management_save`` (leaf module).
 """
 
 from __future__ import annotations
@@ -18,70 +20,110 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from promptgrimoire.db.workspaces import PlacementContext
+    from promptgrimoire.db.models import Workspace
     from promptgrimoire.pages.annotation import PageState
+
+
+def _build_workspace_options(
+    workspaces: list[tuple[Workspace, str | None, list[str]]],
+) -> dict[str, str]:
+    """Build select options with tag preview from importable workspaces."""
+    options: dict[str, str] = {}
+    for ws, course_name, tag_names in workspaces:
+        title = ws.title or "Untitled workspace"
+        prefix = f"{course_name} / " if course_name else ""
+        tag_preview = ", ".join(tag_names[:5])
+        if len(tag_names) > 5:
+            tag_preview += f" (+{len(tag_names) - 5})"
+        options[str(ws.id)] = f"{prefix}{title} ({tag_preview})"
+    return options
 
 
 async def _render_import_section(
     *,
-    ctx: PlacementContext,
     state: PageState,
     render_tag_list: Callable[[], Awaitable[None]],
 ) -> None:
-    """Render the 'import tags from activity' dropdown (AC7.7).
+    """Render the workspace-based tag import picker.
 
-    Only shown for instructors on template workspaces within a course.
+    Available to all users.  Lists workspaces the user can read that
+    contain tags, grouped by course name.
     """
-    if ctx.course_id is None:
+    if not state.user_id:
         return
 
-    from promptgrimoire.db.activities import (  # noqa: PLC0415
-        list_activities_for_course,
+    from promptgrimoire.db.acl import (  # noqa: PLC0415
+        list_importable_workspaces,
+    )
+    from promptgrimoire.db.courses import (  # noqa: PLC0415
+        list_user_enrollments,
     )
 
-    activities = await list_activities_for_course(ctx.course_id)
-    activity_options = {
-        str(a.id): a.title
-        for a in activities
-        if a.template_workspace_id != state.workspace_id
-    }
+    uid = UUID(state.user_id)
+    enrollments = await list_user_enrollments(uid)
+    enrolled_course_ids = [e.course_id for e in enrollments]
 
-    if not activity_options:
-        return
+    workspaces = await list_importable_workspaces(
+        user_id=uid,
+        exclude_workspace_id=state.workspace_id,
+        is_privileged=state.viewer_is_privileged,
+        enrolled_course_ids=enrolled_course_ids,
+    )
 
     ui.separator().classes("my-2")
     with ui.column().classes("w-full").props("data-testid=tag-import-section"):
-        ui.label("Import tags from another activity").classes("text-sm font-bold mt-2")
-        with ui.row().classes("items-center gap-2"):
-            activity_select = (
+        ui.label("Import tags from another workspace").classes("text-sm font-bold mt-2")
+
+        if not workspaces:
+            ui.label("No accessible workspaces with tags").classes(
+                "text-sm text-gray-400"
+            )
+            return
+
+        workspace_options = _build_workspace_options(workspaces)
+
+        with ui.row().classes("items-center gap-2 w-full"):
+            ws_select = (
                 ui.select(
-                    options=activity_options,
-                    label="Source activity",
+                    options=workspace_options,
+                    label="Source workspace",
                 )
-                .classes("w-64")
-                .props('data-testid="tag-import-source-select"')
+                .classes("flex-grow")
+                .props('data-testid="import-workspace-select"')
             )
 
-            async def _import_from_activity() -> None:
-                if not activity_select.value:
-                    ui.notify("Select an activity first", type="warning")
+            async def _import_from_workspace() -> None:
+                if not ws_select.value:
+                    ui.notify("Select a workspace first", type="warning")
                     return
                 from promptgrimoire.db.tags import (  # noqa: PLC0415
-                    import_tags_from_activity,
+                    import_tags_from_workspace,
                 )
 
                 try:
-                    await import_tags_from_activity(
-                        source_activity_id=UUID(activity_select.value),
+                    imported = await import_tags_from_workspace(
+                        source_workspace_id=UUID(ws_select.value),
                         target_workspace_id=state.workspace_id,
+                        user_id=UUID(state.user_id),
+                        crdt_doc=state.crdt_doc,
                     )
-                except ValueError as exc:
+                except PermissionError as exc:
                     ui.notify(str(exc), type="negative")
                     return
+
+                # Notify before render_tag_list() — that call clears
+                # content_area which destroys this handler's slot context,
+                # making subsequent ui.notify() calls fail.
+                if imported:
+                    ui.notify(
+                        f"Imported {len(imported)} tag(s)",
+                        type="positive",
+                    )
+                else:
+                    ui.notify("No new tags to import", type="info")
                 await render_tag_list()
                 await _refresh_tag_state(state)
-                ui.notify("Tags imported", type="positive")
 
-            ui.button("Import", on_click=_import_from_activity).props(
-                'flat dense data-testid="tag-import-btn"'
+            ui.button("Import", on_click=_import_from_workspace).props(
+                'flat dense data-testid="import-tags-btn"'
             )

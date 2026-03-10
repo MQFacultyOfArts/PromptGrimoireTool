@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
 
 async def _check_tag_creation_permission(workspace_id: UUID) -> None:
     """Resolve PlacementContext and raise if tag creation is denied.
@@ -44,6 +46,8 @@ async def _check_tag_creation_permission(workspace_id: UUID) -> None:
 async def create_tag_group(
     workspace_id: UUID,
     name: str,
+    *,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> TagGroup:
     """Create a TagGroup in a workspace.
 
@@ -92,7 +96,16 @@ async def create_tag_group(
         session.add(group)
         await session.flush()
         await session.refresh(group)
-        return group
+
+    if crdt_doc is not None:
+        crdt_doc.set_tag_group(
+            group_id=group.id,
+            name=group.name,
+            order_index=group.order_index,
+            colour=group.color,
+        )
+
+    return group
 
 
 async def get_tag_group(group_id: UUID) -> TagGroup | None:
@@ -115,6 +128,8 @@ async def update_tag_group(
     # same purpose in an internal helper -- both patterns are valid, but we keep
     # them separate here for readability.
     color: str | None | object = _UNSET,
+    *,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> TagGroup | None:
     """Update TagGroup details.
 
@@ -137,10 +152,23 @@ async def update_tag_group(
         session.add(group)
         await session.flush()
         await session.refresh(group)
-        return group
+
+    if crdt_doc is not None:
+        crdt_doc.set_tag_group(
+            group_id=group.id,
+            name=group.name,
+            order_index=group.order_index,
+            colour=group.color,
+        )
+
+    return group
 
 
-async def delete_tag_group(group_id: UUID) -> bool:
+async def delete_tag_group(
+    group_id: UUID,
+    *,
+    crdt_doc: AnnotationDocument | None = None,
+) -> bool:
     """Delete a TagGroup.
 
     Tags in the group get group_id=NULL via the SET NULL FK constraint.
@@ -153,7 +181,11 @@ async def delete_tag_group(group_id: UUID) -> bool:
             return False
 
         await session.delete(group)
-        return True
+
+    if crdt_doc is not None:
+        crdt_doc.delete_tag_group(group_id)
+
+    return True
 
 
 async def list_tag_groups_for_workspace(workspace_id: UUID) -> list[TagGroup]:
@@ -178,6 +210,7 @@ async def create_tag(
     group_id: UUID | None = None,
     description: str | None = None,
     locked: bool = False,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> Tag:
     """Create a Tag in a workspace.
 
@@ -237,13 +270,85 @@ async def create_tag(
         session.add(tag)
         await session.flush()
         await session.refresh(tag)
-        return tag
+
+    if crdt_doc is not None:
+        crdt_doc.set_tag(
+            tag_id=tag.id,
+            name=tag.name,
+            colour=tag.color,
+            order_index=tag.order_index,
+            group_id=tag.group_id,
+            description=tag.description,
+            highlights=[],
+        )
+
+    return tag
 
 
 async def get_tag(tag_id: UUID) -> Tag | None:
     """Get a Tag by ID."""
     async with get_session() as session:
         return await session.get(Tag, tag_id)
+
+
+def _enforce_tag_lock(
+    tag: Tag,
+    *,
+    bypass_lock: bool,
+    name: object,
+    color: object,
+    description: object,
+    group_id: object,
+) -> None:
+    """Raise ValueError if a locked tag has non-lock field changes.
+
+    Skipped when ``bypass_lock`` is True (instructor operations).
+    """
+    if not tag.locked or bypass_lock:
+        return
+    has_non_lock_changes = any(
+        v is not ... for v in [name, color, description, group_id]
+    )
+    if has_non_lock_changes:
+        msg = "Tag is locked"
+        raise ValueError(msg)
+
+
+def _apply_tag_field_updates(
+    tag: Tag,
+    *,
+    name: object,
+    color: object,
+    description: object,
+    group_id: object,
+    locked: bool | None,
+) -> None:
+    """Apply Ellipsis-sentinel partial updates to a Tag model."""
+    if name is not ...:
+        tag.name = name  # type: ignore[assignment]  -- Ellipsis sentinel already checked
+    if color is not ...:
+        tag.color = color  # type: ignore[assignment]  -- Ellipsis sentinel already checked
+    if description is not ...:
+        tag.description = description  # type: ignore[assignment]  -- Ellipsis sentinel already checked
+    if group_id is not ...:
+        tag.group_id = group_id  # type: ignore[assignment]  -- Ellipsis sentinel already checked
+    if locked is not None:
+        tag.locked = locked
+
+
+def _sync_tag_to_crdt(tag: Tag, crdt_doc: AnnotationDocument) -> None:
+    """Write the current tag state to CRDT, preserving existing highlights."""
+    existing = crdt_doc.get_tag(tag.id)
+    highlights = existing.get("highlights", []) if existing else []
+    crdt_doc.set_tag(
+        tag_id=tag.id,
+        name=tag.name,
+        colour=tag.color,
+        order_index=tag.order_index,
+        group_id=tag.group_id,
+        description=tag.description,
+        highlights=highlights,
+    )
 
 
 async def update_tag(
@@ -255,6 +360,7 @@ async def update_tag(
     group_id: UUID | None = ...,  # type: ignore[assignment]  -- Ellipsis sentinel
     locked: bool | None = None,
     bypass_lock: bool = False,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> Tag | None:
     """Update Tag details.
 
@@ -270,33 +376,39 @@ async def update_tag(
         if not tag:
             return None
 
-        # Lock enforcement (skipped for instructors via bypass_lock)
-        if tag.locked and not bypass_lock:
-            has_non_lock_changes = any(
-                v is not ... for v in [name, color, description, group_id]
-            )
-            if has_non_lock_changes:
-                msg = "Tag is locked"
-                raise ValueError(msg)
-
-        if name is not ...:
-            tag.name = name  # type: ignore[assignment]  -- Ellipsis sentinel already checked above
-        if color is not ...:
-            tag.color = color  # type: ignore[assignment]  -- Ellipsis sentinel already checked above
-        if description is not ...:
-            tag.description = description
-        if group_id is not ...:
-            tag.group_id = group_id
-        if locked is not None:
-            tag.locked = locked
+        _enforce_tag_lock(
+            tag,
+            bypass_lock=bypass_lock,
+            name=name,
+            color=color,
+            description=description,
+            group_id=group_id,
+        )
+        _apply_tag_field_updates(
+            tag,
+            name=name,
+            color=color,
+            description=description,
+            group_id=group_id,
+            locked=locked,
+        )
 
         session.add(tag)
         await session.flush()
         await session.refresh(tag)
-        return tag
+
+    if crdt_doc is not None:
+        _sync_tag_to_crdt(tag, crdt_doc)
+
+    return tag
 
 
-async def delete_tag(tag_id: UUID, *, bypass_lock: bool = False) -> bool:
+async def delete_tag(
+    tag_id: UUID,
+    *,
+    bypass_lock: bool = False,
+    crdt_doc: AnnotationDocument | None = None,
+) -> bool:
     """Delete a Tag.
 
     Checks tag.locked and raises ValueError if locked (unless
@@ -325,7 +437,9 @@ async def delete_tag(tag_id: UUID, *, bypass_lock: bool = False) -> bool:
         tag_id_for_cleanup = tag.id
 
     # CRDT cleanup before row deletion (separate session)
-    await _cleanup_crdt_highlights_for_tag(workspace_id, tag_id_for_cleanup)
+    await _cleanup_crdt_highlights_for_tag(
+        workspace_id, tag_id_for_cleanup, crdt_doc=crdt_doc
+    )
 
     # Delete the tag row (separate session — see docstring)
     async with get_session() as session:
@@ -350,7 +464,44 @@ async def list_tags_for_workspace(workspace_id: UUID) -> list[Tag]:
 # ── Reorder ──────────────────────────────────────────────────────────
 
 
-async def reorder_tags(tag_ids: list[UUID]) -> None:
+def _sync_tag_order_index_to_crdt(
+    tag_ids: list[UUID], crdt_doc: AnnotationDocument
+) -> None:
+    """Update order_index for each tag in the CRDT doc."""
+    for idx, tag_id in enumerate(tag_ids):
+        existing = crdt_doc.get_tag(tag_id)
+        if existing:
+            crdt_doc.set_tag(
+                tag_id=tag_id,
+                name=existing["name"],
+                colour=existing["colour"],
+                order_index=idx,
+                group_id=existing.get("group_id"),
+                description=existing.get("description"),
+                highlights=existing.get("highlights", []),
+            )
+
+
+def _sync_group_order_index_to_crdt(
+    group_ids: list[UUID], crdt_doc: AnnotationDocument
+) -> None:
+    """Update order_index for each tag group in the CRDT doc."""
+    for idx, gid in enumerate(group_ids):
+        existing = crdt_doc.get_tag_group(gid)
+        if existing:
+            crdt_doc.set_tag_group(
+                group_id=gid,
+                name=existing["name"],
+                order_index=idx,
+                colour=existing.get("colour"),
+            )
+
+
+async def reorder_tags(
+    tag_ids: list[UUID],
+    *,
+    crdt_doc: AnnotationDocument | None = None,
+) -> None:
     """Set tag order_index values to match the given list order.
 
     Takes an ordered list of tag UUIDs and sets each tag's
@@ -359,6 +510,7 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
 
     Args:
         tag_ids: Ordered list of tag UUIDs.
+        crdt_doc: Optional live AnnotationDocument for CRDT dual-write.
 
     Raises:
         ValueError: If any tag ID is not found.
@@ -385,8 +537,15 @@ async def reorder_tags(tag_ids: list[UUID]) -> None:
             {"count": len(tag_ids), "ws_id": str(workspace_id)},
         )
 
+    if crdt_doc is not None:
+        _sync_tag_order_index_to_crdt(tag_ids, crdt_doc)
 
-async def reorder_tag_groups(group_ids: list[UUID]) -> None:
+
+async def reorder_tag_groups(
+    group_ids: list[UUID],
+    *,
+    crdt_doc: AnnotationDocument | None = None,
+) -> None:
     """Set tag group order_index values to match the given list order.
 
     Takes an ordered list of TagGroup UUIDs and sets each group's
@@ -395,6 +554,7 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
 
     Args:
         group_ids: Ordered list of TagGroup UUIDs.
+        crdt_doc: Optional live AnnotationDocument for CRDT dual-write.
 
     Raises:
         ValueError: If any group ID is not found.
@@ -421,117 +581,88 @@ async def reorder_tag_groups(group_ids: list[UUID]) -> None:
             {"count": len(group_ids), "ws_id": str(workspace_id)},
         )
 
+    if crdt_doc is not None:
+        _sync_group_order_index_to_crdt(group_ids, crdt_doc)
 
-# ── Import from activity ─────────────────────────────────────────────
+
+# ── Import from workspace ─────────────────────────────────────────────
 
 
-async def import_tags_from_activity(
-    source_activity_id: UUID,
+async def import_tags_from_workspace(
+    source_workspace_id: UUID,
     target_workspace_id: UUID,
+    user_id: UUID,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> list[Tag]:
-    """Copy TagGroups and Tags from a source activity's template into a workspace.
+    """Import tags and groups from a source workspace.
 
-    Creates independent copies with new UUIDs, preserving name, color,
-    description, locked, order_index, and group assignment (remapped to
-    new group UUIDs).
-
-    This follows the same ID-remapping pattern as
-    ``clone_workspace_from_activity()`` in ``db/workspaces.py``.
+    Additive merge: existing tags in target are preserved. Tags with
+    duplicate names (case-insensitive) are skipped. Imported tags default
+    to unlocked regardless of source locked status.
 
     Args:
-        source_activity_id: Activity whose template workspace to copy from.
-        target_workspace_id: Workspace to copy tags into.
+        source_workspace_id: Workspace to import from.
+        target_workspace_id: Workspace to import into.
+        user_id: User performing the import (must have read access to source).
+        crdt_doc: Optional live CRDT doc for dual-write.
 
     Returns:
-        List of newly created Tags in the target workspace.
+        List of newly created Tag objects.
 
     Raises:
-        ValueError: If source activity is not found.
+        PermissionError: If user lacks read access to source workspace.
     """
-    from promptgrimoire.db.models import Activity
+    await _check_import_access(source_workspace_id, user_id)
 
-    async with get_session() as session:
-        activity = await session.get(Activity, source_activity_id)
-        if not activity:
-            msg = f"Activity {source_activity_id} not found"
-            raise ValueError(msg)
+    source_groups = await list_tag_groups_for_workspace(source_workspace_id)
+    source_tags = await list_tags_for_workspace(source_workspace_id)
 
-        source_workspace_id = activity.template_workspace_id
+    if not source_tags and not source_groups:
+        return []
 
-        # Load source groups
-        source_groups = list(
-            (
-                await session.exec(
-                    select(TagGroup)
-                    .where(TagGroup.workspace_id == source_workspace_id)
-                    .order_by(TagGroup.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
-                )
-            ).all()
+    existing_tags = await list_tags_for_workspace(target_workspace_id)
+    existing_names = {t.name.lower() for t in existing_tags}
+
+    # Create groups with ID remapping
+    group_id_map: dict[UUID, UUID] = {}
+    for src_group in source_groups:
+        new_group = await create_tag_group(
+            target_workspace_id, src_group.name, crdt_doc=crdt_doc
         )
+        group_id_map[src_group.id] = new_group.id
 
-        # Load source tags
-        source_tags = list(
-            (
-                await session.exec(
-                    select(Tag)
-                    .where(Tag.workspace_id == source_workspace_id)
-                    .order_by(Tag.order_index)  # type: ignore[arg-type]  -- SQLModel order_by() stubs
-                )
-            ).all()
+    # Create tags, skipping duplicates
+    new_tags: list[Tag] = []
+    for src_tag in source_tags:
+        if src_tag.name.lower() in existing_names:
+            continue
+        new_group_id = group_id_map.get(src_tag.group_id) if src_tag.group_id else None
+        new_tag = await create_tag(
+            target_workspace_id,
+            src_tag.name,
+            src_tag.color,
+            group_id=new_group_id,
+            description=src_tag.description,
+            locked=False,
+            crdt_doc=crdt_doc,
         )
+        new_tags.append(new_tag)
 
-        # Create new groups with ID remapping
-        group_id_map: dict[UUID, UUID] = {}
-        for src_group in source_groups:
-            new_group = TagGroup(
-                workspace_id=target_workspace_id,
-                name=src_group.name,
-                color=src_group.color,
-                order_index=src_group.order_index,
-            )
-            session.add(new_group)
-            await session.flush()
-            group_id_map[src_group.id] = new_group.id
+    return new_tags
 
-        # Create new tags with remapped group_id
-        new_tags: list[Tag] = []
-        for src_tag in source_tags:
-            new_group_id = (
-                group_id_map.get(src_tag.group_id) if src_tag.group_id else None
-            )
-            new_tag = Tag(
-                workspace_id=target_workspace_id,
-                name=src_tag.name,
-                color=src_tag.color,
-                description=src_tag.description,
-                locked=src_tag.locked,
-                order_index=src_tag.order_index,
-                group_id=new_group_id,
-            )
-            session.add(new_tag)
-            await session.flush()
-            await session.refresh(new_tag)
-            new_tags.append(new_tag)
 
-        # Sync workspace counters to account for imported tags/groups.
-        # Uses GREATEST to handle the case where tags already exist.
-        imported_tag_count = len(new_tags)
-        imported_group_count = len(group_id_map)
-        await session.execute(
-            text(
-                "UPDATE workspace SET "
-                "next_tag_order = GREATEST(next_tag_order, :tag_count), "
-                "next_group_order = GREATEST(next_group_order, :group_count) "
-                "WHERE id = :ws_id"
-            ),
-            {
-                "tag_count": imported_tag_count,
-                "group_count": imported_group_count,
-                "ws_id": str(target_workspace_id),
-            },
-        )
+async def _check_import_access(source_workspace_id: UUID, user_id: UUID) -> None:
+    """Verify user has read access to the source workspace.
 
-        return new_tags
+    Raises:
+        PermissionError: If user has no permission on the source workspace.
+    """
+    from promptgrimoire.db.acl import resolve_permission
+
+    permission = await resolve_permission(source_workspace_id, user_id)
+    if permission is None:
+        msg = "No read access to source workspace"
+        raise PermissionError(msg)
 
 
 # ── CRDT cleanup ─────────────────────────────────────────────────────
@@ -540,24 +671,66 @@ async def import_tags_from_activity(
 async def _cleanup_crdt_highlights_for_tag(
     workspace_id: UUID,
     tag_id: UUID,
+    *,
+    crdt_doc: AnnotationDocument | None = None,
 ) -> int:
-    """Remove CRDT highlights referencing a tag and its tag_order entry.
+    """Remove CRDT highlights referencing a tag.
 
-    Loads the workspace's CRDT state, iterates all highlights to find
-    those matching the tag UUID, removes them and the tag_order entry,
-    then saves the updated state back to the workspace.
-
-    Uses the same lazy-import pattern as ``_replay_crdt_state()`` in
-    ``db/workspaces.py`` to avoid circular imports.
+    When ``crdt_doc`` is provided, operates on the live document directly
+    (no DB load/save round-trip). When ``None``, falls back to loading
+    from the workspace's persisted CRDT state in the database.
 
     Args:
         workspace_id: The workspace whose CRDT state to update.
         tag_id: The tag UUID whose highlights should be removed.
+        crdt_doc: Optional live AnnotationDocument to operate on directly.
 
     Returns:
         The count of removed highlights.
     """
-    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+    if crdt_doc is not None:
+        return _cleanup_crdt_highlights_on_doc(crdt_doc, tag_id)
+
+    return await _cleanup_crdt_highlights_from_db(workspace_id, tag_id)
+
+
+def _cleanup_crdt_highlights_on_doc(
+    doc: AnnotationDocument,
+    tag_id: UUID,
+) -> int:
+    """Remove highlights for a tag from a live AnnotationDocument.
+
+    Also removes the tag itself from the ``tags`` Map.  Does NOT save
+    back to DB -- the persistence layer handles that via the observer.
+    """
+    tag_str = str(tag_id)
+    to_remove = [
+        hl["id"] for hl in doc.get_all_highlights() if hl.get("tag") == tag_str
+    ]
+
+    for hl_id in to_remove:
+        try:
+            doc.remove_highlight(hl_id)
+        except ValueError, KeyError:  # CRDT corruption should not block cleanup
+            logger.warning("Failed to remove highlight %s during tag cleanup", hl_id)
+
+    # Remove from the tags Map
+    doc.delete_tag(tag_id)
+
+    return len(to_remove)
+
+
+async def _cleanup_crdt_highlights_from_db(
+    workspace_id: UUID,
+    tag_id: UUID,
+) -> int:
+    """Remove highlights for a tag from persisted CRDT state in the DB.
+
+    Loads the workspace's CRDT state, modifies it, and saves back.
+    """
+    from promptgrimoire.crdt.annotation_doc import (
+        AnnotationDocument as AnnotationDocumentCls,
+    )
     from promptgrimoire.db.models import Workspace
 
     async with get_session() as session:
@@ -565,7 +738,7 @@ async def _cleanup_crdt_highlights_for_tag(
         if not workspace or not workspace.crdt_state:
             return 0
 
-        doc = AnnotationDocument("cleanup-tmp")
+        doc = AnnotationDocumentCls("cleanup-tmp")
         doc.apply_update(workspace.crdt_state)
 
         # Collect highlight IDs matching this tag
@@ -578,14 +751,10 @@ async def _cleanup_crdt_highlights_for_tag(
         for hl_id in to_remove:
             try:
                 doc.remove_highlight(hl_id)
-            except Exception:  # CRDT corruption should not block cleanup
+            except ValueError, KeyError:  # CRDT corruption should not block cleanup
                 logger.warning(
                     "Failed to remove highlight %s during tag cleanup", hl_id
                 )
-
-        # Remove the tag_order entry (silently skip if missing)
-        if tag_str in doc.tag_order:
-            del doc.tag_order[tag_str]
 
         # Save updated state
         workspace.crdt_state = doc.get_full_state()

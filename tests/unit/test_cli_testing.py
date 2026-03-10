@@ -34,11 +34,13 @@ def _capture_run_pytest(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         log_path,
         default_args: list[str],
         extra_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> int:
         captured["title"] = title
         captured["log_path"] = log_path
         captured["default_args"] = default_args
         captured["extra_args"] = extra_args
+        captured["extra_env"] = extra_env
         return 0
 
     monkeypatch.setattr(testing, "_run_pytest", _fake_run_pytest)
@@ -57,6 +59,14 @@ def _captured_default_args(captured: dict[str, object]) -> list[str]:
     assert isinstance(default_args, list)
     assert all(isinstance(arg, str) for arg in default_args)
     return [arg for arg in default_args if isinstance(arg, str)]
+
+
+def _captured_extra_args(captured: dict[str, object]) -> list[str]:
+    """Return captured extra args with a concrete type for test assertions."""
+    extra_args = captured["extra_args"]
+    assert isinstance(extra_args, list)
+    assert all(isinstance(arg, str) for arg in extra_args)
+    return [arg for arg in extra_args if isinstance(arg, str)]
 
 
 # ---------------------------------------------------------------------------
@@ -471,11 +481,23 @@ class TestTestingCommands:
 
         assert result.exit_code == 0, result.output
         assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui"
+            "not e2e and not nicegui_ui and not latexmk_full"
         )
         assert captured["title"] == (
-            "Full Test Suite (unit + integration, excludes browser E2E and NiceGUI UI)"
+            "Full Test Suite (unit + integration, excludes browser E2E, "
+            "NiceGUI UI, and latexmk compile-stage tests)"
         )
+
+    def test_test_all_sets_latexmk_skip_guard(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`test all` enables the latexmk skip guard only for that invocation."""
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "all"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["extra_env"] == {"GRIMOIRE_TEST_SKIP_LATEXMK": "1"}
 
     def test_test_changed_excludes_e2e_and_nicegui_ui(
         self, monkeypatch: pytest.MonkeyPatch
@@ -507,3 +529,54 @@ class TestTestingCommands:
         assert captured["title"] == (
             "Full Fixture Corpus (excluding browser E2E and NiceGUI UI)"
         )
+
+
+# ---------------------------------------------------------------------------
+# -x / --ff passthrough
+# ---------------------------------------------------------------------------
+class TestPytestFlagPassthrough:
+    """-x and --ff flags are forwarded to pytest via extra_args."""
+
+    def test_test_all_exit_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "-x"])
+        assert result.exit_code == 0, result.output
+        assert "-x" in _captured_extra_args(captured)
+
+    def test_test_all_failed_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "--ff"])
+        assert result.exit_code == 0, result.output
+        assert "--ff" in _captured_extra_args(captured)
+
+    def test_test_all_both_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all", "-x", "--ff"])
+        assert result.exit_code == 0, result.output
+        extra = _captured_extra_args(captured)
+        assert "-x" in extra
+        assert "--ff" in extra
+
+    def test_test_all_fixtures_exit_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all-fixtures", "-x"])
+        assert result.exit_code == 0, result.output
+        assert "-x" in _captured_extra_args(captured)
+
+    def test_test_all_fixtures_failed_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all-fixtures", "--ff"])
+        assert result.exit_code == 0, result.output
+        assert "--ff" in _captured_extra_args(captured)
+
+    def test_no_flags_no_injection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _capture_run_pytest(monkeypatch)
+        result = runner.invoke(app, ["test", "all"])
+        assert result.exit_code == 0, result.output
+        extra = _captured_extra_args(captured)
+        assert "-x" not in extra
+        assert "--ff" not in extra

@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
 
 @dataclass(frozen=True, slots=True)
 class TagInfo:
@@ -37,6 +39,46 @@ class TagInfo:
     group_name: str | None = None
     group_colour: str | None = None
     description: str | None = None
+
+
+def workspace_tags_from_crdt(crdt_doc: AnnotationDocument) -> list[TagInfo]:
+    """Build TagInfo list from CRDT maps instead of DB.
+
+    Returns TagInfo instances ordered by group order_index then tag
+    order_index, matching the same ordering as workspace_tags().
+    """
+    groups = crdt_doc.list_tag_groups()
+    tags = crdt_doc.list_tags()
+
+    if not tags:
+        return []
+
+    max_order = float("inf")
+
+    def _sort_key(item: tuple[str, dict]) -> tuple[float, int]:
+        _tag_id, tag_data = item
+        group_id = tag_data.get("group_id")
+        grp = groups.get(group_id) if group_id else None
+        group_order: float = grp["order_index"] if grp else max_order
+        return (group_order, tag_data["order_index"])
+
+    sorted_items = sorted(tags.items(), key=_sort_key)
+
+    result: list[TagInfo] = []
+    for tag_id, tag_data in sorted_items:
+        group_id = tag_data.get("group_id")
+        grp = groups.get(group_id) if group_id else None
+        result.append(
+            TagInfo(
+                name=tag_data["name"],
+                colour=tag_data["colour"],
+                raw_key=tag_id,
+                group_name=grp["name"] if grp else None,
+                group_colour=grp["colour"] if grp else None,
+                description=tag_data.get("description"),
+            )
+        )
+    return result
 
 
 async def workspace_tags(workspace_id: UUID) -> list[TagInfo]:

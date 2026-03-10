@@ -20,6 +20,7 @@ from promptgrimoire.pages.annotation.tag_management_rows import (
     _render_tag_list_content,
 )
 from promptgrimoire.pages.annotation.tag_management_save import (
+    _create_tag_or_notify,
     _refresh_tag_state,
     _save_single_group,
     _save_single_tag,
@@ -50,29 +51,33 @@ class TagReorderCallbacks(TypedDict):
     move_tag: Callable[[UUID, int], Awaitable[None]]
 
 
-class ManagementCallbacks(GroupCallbacks, TagReorderCallbacks):
-    """Typed return value of ``_build_management_callbacks``.
-
-    Merges group and reorder callbacks, adding tag-specific ones.
-    """
+class TagCrudCallbacks(TypedDict):
+    """Typed return value of ``_build_tag_crud_callbacks``."""
 
     delete_tag: Callable[[UUID, str], None]
     add_tag: Callable[[UUID | None], Awaitable[None]]
     lock_toggle: Callable[[UUID, bool], Awaitable[None]]
 
 
-class TagRowInputs(TypedDict):
-    """Input element references and original values for a single tag row.
+class ManagementCallbacks(GroupCallbacks, TagReorderCallbacks, TagCrudCallbacks):
+    """Typed return value of ``_build_management_callbacks``.
 
-    Used by ``_save_single_tag`` and ``_render_tag_row`` to track live
-    NiceGUI input widgets alongside the last-saved values so save-on-blur
-    can detect changes and skip unnecessary DB writes.
+    Merges group, reorder, and tag CRUD callbacks.
     """
 
-    name: ui.input
-    color: ui.color_input
-    desc: ui.input
-    group: ui.select
+
+class TagRowInputs(TypedDict):
+    """Model dict for a single tag row, populated by ``bind_value()``.
+
+    Values are kept in sync with NiceGUI inputs via two-way binding.
+    ``_save_single_tag`` reads current values directly from this dict
+    and compares against ``orig_*`` to detect changes.
+    """
+
+    name: str
+    color: str
+    description: str
+    group_id: str | None
     orig_name: str
     orig_color: str
     orig_desc: str
@@ -91,6 +96,47 @@ _PRESET_PALETTE: list[str] = [
     "#bcbd22",
     "#17becf",
 ]
+
+
+# ── Pure helpers ─────────────────────────────────────────────────────
+
+
+def _unique_tag_name(existing_names: set[str]) -> str:
+    """Generate a unique default tag name not in *existing_names*."""
+    name = "New tag"
+    if name not in existing_names:
+        return name
+    for i in range(2, 100):
+        candidate = f"New tag {i}"
+        if candidate not in existing_names:
+            return candidate
+    return name  # fallback, unlikely
+
+
+def _highlight_count_for_tag(
+    crdt_doc: object | None,
+    tag_id: UUID,
+) -> int:
+    """Count CRDT highlights referencing *tag_id*.
+
+    Returns 0 if *crdt_doc* is None or has no highlights.
+    """
+    if not crdt_doc:
+        return 0
+    tag_str = str(tag_id)
+    return sum(
+        1
+        for hl in crdt_doc.get_all_highlights()  # type: ignore[union-attr]
+        if hl.get("tag") == tag_str
+    )
+
+
+def _delete_confirmation_body(highlight_count: int) -> str:
+    """Build the confirmation dialog body for tag deletion."""
+    if highlight_count:
+        s = "s" if highlight_count != 1 else ""
+        return f"This will remove {highlight_count} highlight{s} using this tag."
+    return "This tag has no highlights."
 
 
 # ── Reorder helpers ──────────────────────────────────────────────────
@@ -121,6 +167,56 @@ def _extract_reorder_indices(e: Any) -> tuple[int, int] | None:
     if old_idx is None or new_idx is None or old_idx == new_idx:
         return None
     return old_idx, new_idx
+
+
+# ── Done button with spinner ─────────────────────────────────────────
+
+
+def _build_done_button(
+    *,
+    dialog: ui.dialog,
+    state: PageState,
+    tag_row_inputs: dict[UUID, TagRowInputs],
+    group_row_inputs: dict[UUID, dict[str, Any]],
+    update_tag: Callable[..., Awaitable[object]],
+    update_tag_group: Callable[..., Awaitable[object]],
+    is_instructor: bool,
+) -> None:
+    """Render a Done button that batch-saves and shows a spinner during save.
+
+    Follows the same loading-prop pattern as the PDF export button
+    (``header.py``).  The ``data-testid`` lets E2E tests gate on save
+    completion by waiting for the button to lose its ``loading`` prop.
+    """
+    from promptgrimoire.pages.annotation.tag_management_save import (  # noqa: PLC0415
+        _cancel_pending_timers,
+        _save_all_modified_rows,
+    )
+
+    done_btn = ui.button("Done", icon="check").props(
+        'color=primary data-testid="tag-management-done-btn"'
+    )
+
+    async def _save_all_and_close() -> None:
+        done_btn.disable()
+        done_btn.props("loading")
+        try:
+            _cancel_pending_timers(tag_row_inputs, group_row_inputs)
+            await _save_all_modified_rows(
+                tag_row_inputs,
+                group_row_inputs,
+                update_tag,
+                update_tag_group,
+                bypass_lock=is_instructor,
+                crdt_doc=state.crdt_doc,
+            )
+            await _refresh_tag_state(state)
+            dialog.close()
+        finally:
+            done_btn.props(remove="loading")
+            done_btn.enable()
+
+    done_btn.on_click(_save_all_and_close)
 
 
 # ── Full management dialog ───────────────────────────────────────────
@@ -159,7 +255,11 @@ async def open_tag_management(
     # get instructor powers everywhere.
     is_instructor = ctx.is_template or is_privileged_user(auth_user)
 
+    from nicegui.context import context as _ctx  # noqa: PLC0415
+
+    # Place canary in layout root — see tag_quick_create.py comment.
     with (
+        _ctx.client.layout,
         ui.dialog() as dialog,
         ui.card()
         .style("width: 800px !important; max-width: 90vw !important;")
@@ -207,14 +307,21 @@ async def open_tag_management(
 
             async def _save_tag_field(tag_id: UUID) -> None:
                 ok = await _save_single_tag(
-                    tag_id, tag_row_inputs, update_tag, bypass_lock=is_instructor
+                    tag_id,
+                    tag_row_inputs,
+                    update_tag,
+                    bypass_lock=is_instructor,
+                    crdt_doc=state.crdt_doc,
                 )
                 if ok:
                     await _refresh_tag_state(state)
 
             async def _save_group_field(group_id: UUID) -> None:
                 ok = await _save_single_group(
-                    group_id, group_row_inputs, update_tag_group
+                    group_id,
+                    group_row_inputs,
+                    update_tag_group,
+                    crdt_doc=state.crdt_doc,
                 )
                 if ok:
                     await _refresh_tag_state(state)
@@ -242,25 +349,24 @@ async def open_tag_management(
                     on_group_field_save=_save_group_field,
                 )
 
-                # Import section (AC7.7) -- instructors on template only
-                if is_instructor:
-                    await _render_import_section(
-                        ctx=ctx,
-                        state=state,
-                        render_tag_list=_render_tag_list,
-                    )
+                # Import section -- available to all users (AC3.6)
+                await _render_import_section(
+                    state=state,
+                    render_tag_list=_render_tag_list,
+                )
 
         await _render_tag_list()
 
-        # "Done" button -- refreshes toolbar state and closes
-        async def _save_all_and_close() -> None:
-            await _refresh_tag_state(state)
-            dialog.close()
-
         ui.separator().classes("my-2")
         with ui.row().classes("w-full justify-end"):
-            ui.button("Done", on_click=_save_all_and_close).props(
-                "color=primary data-testid=tag-management-done-btn"
+            _build_done_button(
+                dialog=dialog,
+                state=state,
+                tag_row_inputs=tag_row_inputs,
+                group_row_inputs=group_row_inputs,
+                update_tag=update_tag,
+                update_tag_group=update_tag_group,
+                is_instructor=is_instructor,
             )
 
     dialog.open()
@@ -289,6 +395,7 @@ def _build_group_callbacks(
             await create_tag_group(
                 workspace_id=state.workspace_id,
                 name="New group",
+                crdt_doc=state.crdt_doc,
             )
         except PermissionError:
             ui.notify("Tag creation not allowed", type="negative")
@@ -300,7 +407,7 @@ def _build_group_callbacks(
         if indices is None:
             return
         new_order = _reorder_list(group_id_list, *indices)
-        await reorder_tag_groups(new_order)
+        await reorder_tag_groups(new_order, crdt_doc=state.crdt_doc)
         await render_tag_list()
 
     async def _move_group(group_id: UUID, direction: int) -> None:
@@ -313,14 +420,14 @@ def _build_group_callbacks(
         if new_idx < 0 or new_idx >= len(group_id_list):
             return
         new_order = _reorder_list(group_id_list, old_idx, new_idx)
-        await reorder_tag_groups(new_order)
+        await reorder_tag_groups(new_order, crdt_doc=state.crdt_doc)
         await render_tag_list()
 
     def _delete_group(gid: UUID, gname: str) -> None:
         async def _do_delete() -> None:
             from promptgrimoire.db.tags import delete_tag_group  # noqa: PLC0415
 
-            await delete_tag_group(gid)
+            await delete_tag_group(gid, crdt_doc=state.crdt_doc)
 
         _open_confirm_delete(
             entity_name=f"group '{gname}'",
@@ -351,7 +458,7 @@ def _build_tag_reorder_callbacks(
         if indices is None:
             return
         new_order = _reorder_list(tag_id_lists.get(group_id, []), *indices)
-        await reorder_tags(new_order)
+        await reorder_tags(new_order, crdt_doc=state.crdt_doc)
         await _refresh_tag_state(state)
         await render_tag_list()
 
@@ -367,7 +474,7 @@ def _build_tag_reorder_callbacks(
                 if new_idx < 0 or new_idx >= len(id_list):
                     return
                 new_order = _reorder_list(id_list, old_idx, new_idx)
-                await reorder_tags(new_order)
+                await reorder_tags(new_order, crdt_doc=state.crdt_doc)
                 await _refresh_tag_state(state)
                 await render_tag_list()
                 return
@@ -375,6 +482,65 @@ def _build_tag_reorder_callbacks(
     return {
         "tag_reorder": _tag_reorder,
         "move_tag": _move_tag,
+    }
+
+
+def _build_tag_crud_callbacks(
+    *,
+    state: PageState,
+    render_tag_list: Callable[[], Awaitable[None]],
+    update_tag: Callable[..., Awaitable[object]],
+    create_tag: Callable[..., Awaitable[object]],
+    is_instructor: bool,
+) -> TagCrudCallbacks:
+    """Build tag create/delete/lock callbacks."""
+
+    async def _on_tag_deleted(tag_name: str) -> None:
+        await _refresh_tag_state(state, reload_crdt=True)
+        await render_tag_list()
+        ui.notify(f"Tag '{tag_name}' deleted", type="positive")
+
+    async def _add_tag_in_group(group_id: UUID | None) -> None:
+        existing_names = (
+            {t.name for t in state.tag_info_list} if state.tag_info_list else set()
+        )
+        name = _unique_tag_name(existing_names)
+        tag = await _create_tag_or_notify(
+            create_tag, state, name, _PRESET_PALETTE[0], group_id
+        )
+        if tag is None:
+            return
+        await render_tag_list()
+        await _refresh_tag_state(state)
+
+    async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
+        try:
+            await update_tag(tag_id, locked=locked, crdt_doc=state.crdt_doc)
+        except Exception as exc:
+            ui.notify(f"Failed to update lock: {exc}", type="negative")
+            return
+        await render_tag_list()
+
+    def _delete_tag(tid: UUID, tname: str) -> None:
+        count = _highlight_count_for_tag(state.crdt_doc, tid)
+        body = _delete_confirmation_body(count)
+
+        async def _do_delete() -> None:
+            from promptgrimoire.db.tags import delete_tag  # noqa: PLC0415
+
+            await delete_tag(tid, bypass_lock=is_instructor, crdt_doc=state.crdt_doc)
+
+        _open_confirm_delete(
+            entity_name=f"tag '{tname}'",
+            body_text=body,
+            delete_fn=_do_delete,
+            on_confirmed=_on_tag_deleted,
+        )
+
+    return {
+        "delete_tag": _delete_tag,
+        "add_tag": _add_tag_in_group,
+        "lock_toggle": _lock_toggle,
     }
 
 
@@ -391,7 +557,10 @@ def _build_management_callbacks(
     group_id_list: list[UUID],
     is_instructor: bool,
 ) -> ManagementCallbacks:
-    """Build all management dialog callbacks as a dict."""
+    """Build all management dialog callbacks as a dict.
+
+    Delegates to sub-builders for group, reorder, and tag CRUD callbacks.
+    """
     group_cbs = _build_group_callbacks(
         state=state,
         render_tag_list=render_tag_list,
@@ -405,92 +574,18 @@ def _build_management_callbacks(
         reorder_tags=reorder_tags,
         tag_id_lists=tag_id_lists,
     )
-
-    async def _on_tag_deleted(tag_name: str) -> None:
-        await _refresh_tag_state(state, reload_crdt=True)
-        await render_tag_list()
-        ui.notify(f"Tag '{tag_name}' deleted", type="positive")
-
-    async def _add_tag_in_group(group_id: UUID | None) -> None:
-        # Find a unique default name from DB state
-        existing_names = (
-            {t.name for t in state.tag_info_list} if state.tag_info_list else set()
-        )
-        name = "New tag"
-        if name in existing_names:
-            for i in range(2, 100):
-                candidate = f"New tag {i}"
-                if candidate not in existing_names:
-                    name = candidate
-                    break
-
-        try:
-            await create_tag(
-                workspace_id=state.workspace_id,
-                name=name,
-                color=_PRESET_PALETTE[0],
-                group_id=group_id,
-            )
-        except PermissionError:
-            ui.notify("Tag creation not allowed", type="negative")
-            return
-        except Exception as exc:
-            from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
-
-            if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
-                ui.notify(
-                    f"A tag named '{name}' already exists",
-                    type="warning",
-                )
-            else:
-                ui.notify(f"Failed to create tag: {exc}", type="negative")
-            return
-        await render_tag_list()
-        await _refresh_tag_state(state)
-
-    async def _lock_toggle(tag_id: UUID, locked: bool) -> None:
-        try:
-            await update_tag(tag_id, locked=locked)
-        except Exception as exc:
-            ui.notify(f"Failed to update lock: {exc}", type="negative")
-            return
-        await render_tag_list()
-
-    def _count_highlights_for_tag(tag_id: UUID) -> int:
-        """Count CRDT highlights referencing a tag."""
-        if not state.crdt_doc:
-            return 0
-        tag_str = str(tag_id)
-        return sum(
-            1 for hl in state.crdt_doc.get_all_highlights() if hl.get("tag") == tag_str
-        )
-
-    def _delete_tag(tid: UUID, tname: str) -> None:
-        highlight_count = _count_highlights_for_tag(tid)
-        if highlight_count:
-            body = (
-                f"This will remove {highlight_count} "
-                f"highlight{'s' if highlight_count != 1 else ''} using this tag."
-            )
-        else:
-            body = "This tag has no highlights."
-
-        async def _do_delete() -> None:
-            from promptgrimoire.db.tags import delete_tag  # noqa: PLC0415
-
-            await delete_tag(tid, bypass_lock=is_instructor)
-
-        _open_confirm_delete(
-            entity_name=f"tag '{tname}'",
-            body_text=body,
-            delete_fn=_do_delete,
-            on_confirmed=_on_tag_deleted,
-        )
+    tag_crud_cbs = _build_tag_crud_callbacks(
+        state=state,
+        render_tag_list=render_tag_list,
+        update_tag=update_tag,
+        create_tag=create_tag,
+        is_instructor=is_instructor,
+    )
 
     return {
-        "delete_tag": _delete_tag,
-        "add_tag": _add_tag_in_group,
-        "lock_toggle": _lock_toggle,
+        "delete_tag": tag_crud_cbs["delete_tag"],
+        "add_tag": tag_crud_cbs["add_tag"],
+        "lock_toggle": tag_crud_cbs["lock_toggle"],
         "tag_reorder": tag_reorder_cbs["tag_reorder"],
         "move_tag": tag_reorder_cbs["move_tag"],
         "delete_group": group_cbs["delete_group"],

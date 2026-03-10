@@ -37,6 +37,7 @@ test_all_full.log
 test-all-fixtures.log
 test-e2e.log
 test-e2e-server.log
+test-debug.log
 test-nicegui-ui.log
 
 # Planning scratch files

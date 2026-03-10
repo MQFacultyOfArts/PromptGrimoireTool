@@ -7,6 +7,7 @@ and ``_refresh_tag_state`` from ``tag_management_save`` (leaf module).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -14,8 +15,11 @@ from nicegui import ui
 
 from promptgrimoire.pages.annotation.tag_management import _PRESET_PALETTE
 from promptgrimoire.pages.annotation.tag_management_save import (
+    _create_tag_or_notify,
     _refresh_tag_state,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
@@ -76,20 +80,54 @@ def _build_colour_picker(
     return swatch_buttons, color_el
 
 
+async def _quick_create_save(
+    state: PageState,
+    name_input: ui.input,
+    selected_color: list[str],
+    group_select: ui.select,
+    saved_start: int | None,
+    saved_end: int | None,
+) -> bool:
+    """Validate, create tag, optionally add highlight. Return True on success."""
+    tag_name = name_input.value
+    if not tag_name or not tag_name.strip():
+        ui.notify("Name is required", type="warning")
+        return False
+
+    from promptgrimoire.db.tags import create_tag  # noqa: PLC0415
+
+    group_id = UUID(group_select.value) if group_select.value else None
+    new_tag = await _create_tag_or_notify(
+        create_tag,
+        state,
+        tag_name.strip(),
+        selected_color[0],
+        group_id,
+    )
+    if new_tag is None:
+        return False
+
+    await _refresh_tag_state(state)
+
+    tag_id = getattr(new_tag, "id", None)
+    if saved_start is not None and saved_end is not None and tag_id is not None:
+        from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
+            _add_highlight,
+        )
+
+        state.selection_start = saved_start
+        state.selection_end = saved_end
+        await _add_highlight(state, str(tag_id))
+
+    return True
+
+
 async def open_quick_create(state: PageState) -> None:
     """Open a dialog for creating a new tag and optionally highlight.
-
-    The dialog provides a name field, preset colour swatches with a
-    custom colour picker, and an optional group dropdown. On save,
-    the tag is created via ``db.tags.create_tag()`` and optionally
-    applied as a highlight if text is currently selected.
 
     Must be awaited -- blocks until the dialog closes so the caller
     can rebuild the toolbar afterwards.
     """
-    # Snapshot selection coordinates before dialog interaction clears them.
-    # Clicking inside the dialog fires the document-level click handler
-    # which detects collapsed browser selection and wipes state.
     saved_start = state.selection_start
     saved_end = state.selection_end
 
@@ -102,7 +140,17 @@ async def open_quick_create(state: PageState) -> None:
     groups = await list_tag_groups_for_workspace(state.workspace_id)
     group_options: dict[str, str] = {str(g.id): g.name for g in groups}
 
+    from nicegui.context import context as _ctx  # noqa: PLC0415
+
+    logger.debug("open_quick_create: workspace=%s", state.workspace_id)
+
+    # Dialog must be created in the client layout context, not the
+    # toolbar slot.  NiceGUI Dialog.__init__ places a hidden canary
+    # element in the *current* slot; if that slot is inside the
+    # toolbar, _rebuild_toolbar().clear() destroys the canary and
+    # its weak-ref trigger deletes the dialog mid-interaction.
     with (
+        _ctx.client.layout,
         ui.dialog() as dialog,
         ui.card().classes("w-96").props("data-testid=tag-quick-create-dialog"),
     ):
@@ -111,15 +159,18 @@ async def open_quick_create(state: PageState) -> None:
         )
         name_input = (
             ui.input("Tag name")
-            .props('maxlength=100 data-testid="tag-quick-create-name-input"')
+            .props(
+                'maxlength=100 data-testid="tag-quick-create-name-input"',
+            )
             .classes("w-full")
         )
 
         _build_colour_picker(selected_color)
 
+        # Default to ungrouped
         group_select = (
             ui.select(
-                label="Group (optional)",
+                label="Group",
                 options=group_options,
                 value=None,
                 clearable=True,
@@ -129,62 +180,26 @@ async def open_quick_create(state: PageState) -> None:
         )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button(
+                "Cancel",
+                on_click=dialog.close,
+            ).props("flat")
 
             async def _save() -> None:
-                tag_name = name_input.value
-                if not tag_name or not tag_name.strip():
-                    ui.notify("Name is required", type="warning")
-                    return
-
-                from promptgrimoire.db.tags import (  # noqa: PLC0415
-                    create_tag,
+                ok = await _quick_create_save(
+                    state,
+                    name_input,
+                    selected_color,
+                    group_select,
+                    saved_start,
+                    saved_end,
                 )
-
-                try:
-                    new_tag = await create_tag(
-                        workspace_id=state.workspace_id,
-                        name=tag_name.strip(),
-                        color=selected_color[0],
-                        group_id=(
-                            UUID(group_select.value) if group_select.value else None
-                        ),
-                    )
-                except PermissionError:
-                    ui.notify(
-                        "Tag creation not allowed",
-                        type="negative",
-                    )
+                if not ok:
                     return
-                except Exception as exc:
-                    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
-
-                    if isinstance(
-                        exc, IntegrityError
-                    ) and "uq_tag_workspace_name" in str(exc):
-                        ui.notify(
-                            f"A tag named '{tag_name.strip()}' already exists",
-                            type="warning",
-                        )
-                    else:
-                        ui.notify(f"Failed to create tag: {exc}", type="negative")
-                    return
-
-                await _refresh_tag_state(state)
-
-                if saved_start is not None and saved_end is not None:
-                    from promptgrimoire.pages.annotation.highlights import (  # noqa: PLC0415
-                        _add_highlight,
-                    )
-
-                    # Restore snapshot -- dialog interaction cleared state
-                    state.selection_start = saved_start
-                    state.selection_end = saved_end
-                    await _add_highlight(state, str(new_tag.id))
 
                 dialog.close()
                 ui.notify(
-                    f"Tag '{tag_name.strip()}' created",
+                    f"Tag '{name_input.value}' created",
                     type="positive",
                 )
 

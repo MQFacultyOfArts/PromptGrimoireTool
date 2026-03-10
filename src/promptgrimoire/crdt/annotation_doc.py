@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from pycrdt import Array, Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
+from pycrdt import Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -62,7 +62,9 @@ class AnnotationDocument:
         self.doc["highlights"] = Map()  # {highlight_id: HighlightData}
         self.doc["client_meta"] = Map()  # {client_id: {name, color}}
         self.doc["general_notes"] = Text()  # Collaborative text for general notes
-        self.doc["tag_order"] = Map()  # {tag_name: Array([highlight_id, ...])}
+        # Tag metadata Maps (tag lifecycle refactor)
+        self.doc["tags"] = Map()  # {tag_uuid: {name, colour, ...}}
+        self.doc["tag_groups"] = Map()  # {group_uuid: {name, ...}}
         self.doc["response_draft"] = XmlFragment()  # Milkdown/ProseMirror document
         self.doc["response_draft_markdown"] = Text()  # Plain markdown mirror
 
@@ -93,9 +95,14 @@ class AnnotationDocument:
         return self.doc["general_notes"]
 
     @property
-    def tag_order(self) -> Map:
-        """Get the tag_order Map."""
-        return self.doc["tag_order"]
+    def tags(self) -> Map:
+        """Get the tags Map."""
+        return self.doc["tags"]
+
+    @property
+    def tag_groups(self) -> Map:
+        """Get the tag_groups Map."""
+        return self.doc["tag_groups"]
 
     @property
     def response_draft(self) -> XmlFragment:
@@ -369,40 +376,38 @@ class AnnotationDocument:
         ]
         return sorted(highlights, key=lambda h: h.get("start_char", 0))
 
-    # --- Tag order operations ---
-
-    def get_tag_order(self, tag: str) -> list[str]:
-        """Return the ordered list of highlight IDs for a given tag.
+    def get_tag_highlights(self, tag_id: str) -> list[str]:
+        """Get ordered highlight IDs for a tag from the tags Map.
 
         Args:
-            tag: The tag name to look up.
+            tag_id: Tag identifier.
 
         Returns:
-            Ordered list of highlight IDs, or empty list if tag has no ordering.
+            Ordered list of highlight IDs, or empty list if tag not found.
         """
-        arr = self.tag_order.get(tag)
-        if arr is None:
+        tag_data = self.get_tag(tag_id)
+        if tag_data is None:
             return []
-        return list(arr)
+        return list(tag_data.get("highlights", []))
 
-    def set_tag_order(
-        self,
-        tag: str,
-        highlight_ids: list[str],
-        origin_client_id: str | None = None,
-    ) -> None:
-        """Replace the ordered list of highlight IDs for a tag.
+    def _update_tag_highlights(self, tag_id: str, highlights: list[str]) -> None:
+        """Overwrite the highlights list for a tag, preserving metadata.
 
-        Args:
-            tag: The tag name.
-            highlight_ids: Ordered list of highlight IDs.
-            origin_client_id: Client making the change (for echo prevention).
+        No-op if the tag does not exist in the tags Map.
+        Caller must manage the origin token.
         """
-        token = _origin_var.set(origin_client_id)
-        try:
-            self.tag_order[tag] = Array(highlight_ids)
-        finally:
-            _origin_var.reset(token)
+        tag_data = self.get_tag(tag_id)
+        if tag_data is None:
+            return
+        self.set_tag(
+            tag_id=tag_id,
+            name=tag_data["name"],
+            colour=tag_data["colour"],
+            order_index=tag_data["order_index"],
+            group_id=tag_data.get("group_id"),
+            description=tag_data.get("description"),
+            highlights=highlights,
+        )
 
     def move_highlight_to_tag(
         self,
@@ -412,17 +417,18 @@ class AnnotationDocument:
         position: int = -1,
         origin_client_id: str | None = None,
     ) -> bool:
-        """Move a highlight from one tag's order to another.
+        """Move a highlight from one tag to another using the tags Map.
 
-        Removes ``highlight_id`` from ``from_tag``'s order (if present and
-        ``from_tag`` is not None), then inserts it into ``to_tag``'s order at
-        ``position`` (-1 means append). Also updates the highlight's tag field.
+        Removes ``highlight_id`` from ``from_tag``'s highlights (if present
+        and ``from_tag`` is not None), then inserts it into ``to_tag``'s
+        highlights at ``position`` (-1 means append). Also updates the
+        highlight's tag field.
 
         Args:
             highlight_id: ID of the highlight to move.
             from_tag: Tag to remove from (None to skip removal).
             to_tag: Tag to add to.
-            position: Insertion index in target order (-1 to append).
+            position: Insertion index in target highlights (-1 to append).
             origin_client_id: Client making the change (for echo prevention).
 
         Returns:
@@ -433,20 +439,20 @@ class AnnotationDocument:
 
         token = _origin_var.set(origin_client_id)
         try:
-            # Remove from source tag order
+            # Remove from source tag
             if from_tag is not None:
-                source_ids = self.get_tag_order(from_tag)
+                source_ids = self.get_tag_highlights(from_tag)
                 if highlight_id in source_ids:
                     source_ids.remove(highlight_id)
-                    self.tag_order[from_tag] = Array(source_ids)
+                    self._update_tag_highlights(from_tag, source_ids)
 
-            # Insert into target tag order
-            target_ids = self.get_tag_order(to_tag)
+            # Insert into target tag
+            target_ids = self.get_tag_highlights(to_tag)
             if position == -1:
                 target_ids.append(highlight_id)
             else:
                 target_ids.insert(position, highlight_id)
-            self.tag_order[to_tag] = Array(target_ids)
+            self._update_tag_highlights(to_tag, target_ids)
 
             # Update the highlight's tag field
             hl_data = dict(self.highlights[highlight_id])
@@ -456,6 +462,199 @@ class AnnotationDocument:
             _origin_var.reset(token)
 
         return True
+
+    # --- Tag CRUD operations ---
+
+    def set_tag(
+        self,
+        tag_id: str | UUID,
+        name: str,
+        colour: str,
+        order_index: int,
+        *,
+        group_id: str | UUID | None = None,
+        description: str | None = None,
+        highlights: list[str] | None = None,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Write a complete tag dict to the tags Map.
+
+        Args:
+            tag_id: Unique tag identifier.
+            name: Display name for the tag.
+            colour: Hex colour string.
+            order_index: Sort order within its group.
+            group_id: Optional parent tag group ID.
+            description: Optional tag description.
+            highlights: Ordered list of highlight IDs.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tags[str(tag_id)] = {
+                "name": name,
+                "colour": colour,
+                "group_id": (str(group_id) if group_id is not None else None),
+                "description": description,
+                "order_index": order_index,
+                "highlights": highlights or [],
+            }
+        finally:
+            _origin_var.reset(token)
+
+    def get_tag(self, tag_id: str | UUID) -> dict[str, Any] | None:
+        """Get a tag by ID.
+
+        Args:
+            tag_id: Tag identifier.
+
+        Returns:
+            Tag data dict or None if not found.
+        """
+        return self.tags.get(str(tag_id))
+
+    def delete_tag(
+        self,
+        tag_id: str | UUID,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Remove a tag from the tags Map.
+
+        Args:
+            tag_id: Tag identifier.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tags.pop(str(tag_id), None)
+        finally:
+            _origin_var.reset(token)
+
+    def list_tags(self) -> dict[str, dict[str, Any]]:
+        """Return all tags as {tag_id: tag_data}.
+
+        Returns:
+            Dict of all tags, empty if none.
+        """
+        return dict(self.tags.items())
+
+    # --- Tag group CRUD operations ---
+
+    def set_tag_group(
+        self,
+        group_id: str | UUID,
+        name: str,
+        order_index: int,
+        *,
+        colour: str | None = None,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Write a complete tag group dict to the tag_groups Map.
+
+        Args:
+            group_id: Unique group identifier.
+            name: Display name for the group.
+            order_index: Sort order among groups.
+            colour: Optional hex colour string.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tag_groups[str(group_id)] = {
+                "name": name,
+                "colour": colour,
+                "order_index": order_index,
+            }
+        finally:
+            _origin_var.reset(token)
+
+    def get_tag_group(self, group_id: str | UUID) -> dict[str, Any] | None:
+        """Get a tag group by ID.
+
+        Args:
+            group_id: Group identifier.
+
+        Returns:
+            Group data dict or None if not found.
+        """
+        return self.tag_groups.get(str(group_id))
+
+    def delete_tag_group(
+        self,
+        group_id: str | UUID,
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Remove a tag group from the tag_groups Map.
+
+        Args:
+            group_id: Group identifier.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            self.tag_groups.pop(str(group_id), None)
+        finally:
+            _origin_var.reset(token)
+
+    def list_tag_groups(self) -> dict[str, dict[str, Any]]:
+        """Return all tag groups as {group_id: group_data}.
+
+        Returns:
+            Dict of all tag groups, empty if none.
+        """
+        return dict(self.tag_groups.items())
+
+    # --- Hydration ---
+
+    def hydrate_tags_from_db(
+        self,
+        tags: list[dict[str, Any]],
+        groups: list[dict[str, Any]],
+        origin_client_id: str | None = None,
+    ) -> None:
+        """Upsert CRDT Maps from DB query results.
+
+        For every tag/group in the input lists, writes (or overwrites)
+        the corresponding CRDT entry with DB values. DB is authoritative:
+        if a CRDT entry already exists with the same ID, it is replaced.
+        Entries already in the CRDT whose IDs are *not* in the input
+        lists are left untouched -- this method never deletes.
+
+        Args:
+            tags: List of tag dicts with keys: id, name, colour,
+                order_index, and optional group_id, description,
+                highlights.
+            groups: List of group dicts with keys: id, name,
+                order_index, and optional colour.
+            origin_client_id: Client making the change.
+        """
+        token = _origin_var.set(origin_client_id)
+        try:
+            for group in groups:
+                # NOTE: schema must stay in sync with set_tag_group manually —
+                # shared origin token prevents delegation
+                self.tag_groups[str(group["id"])] = {
+                    "name": group["name"],
+                    "colour": group.get("colour"),
+                    "order_index": group["order_index"],
+                }
+            for tag in tags:
+                # NOTE: schema must stay in sync with set_tag manually —
+                # shared origin token prevents delegation
+                self.tags[str(tag["id"])] = {
+                    "name": tag["name"],
+                    "colour": tag["colour"],
+                    "group_id": (
+                        str(tag["group_id"])
+                        if tag.get("group_id") is not None
+                        else None
+                    ),
+                    "description": tag.get("description"),
+                    "order_index": tag["order_index"],
+                    "highlights": tag.get("highlights", []),
+                }
+        finally:
+            _origin_var.reset(token)
 
     # --- Comment operations ---
 
@@ -578,6 +777,160 @@ class AnnotationDocument:
             _origin_var.reset(token)
 
 
+def _hydrate_crdt_from_db(
+    doc: AnnotationDocument,
+    db_tags: list[Any],
+    db_groups: list[Any],
+    workspace_id: UUID,
+) -> None:
+    """Populate empty CRDT maps from DB rows (AC1.5)."""
+    group_dicts = [
+        {
+            "id": str(g.id),
+            "name": g.name,
+            "colour": g.color,
+            "order_index": g.order_index,
+        }
+        for g in db_groups
+    ]
+    tag_dicts = [
+        {
+            "id": str(t.id),
+            "name": t.name,
+            "colour": t.color,
+            "order_index": t.order_index,
+            "group_id": str(t.group_id) if t.group_id else None,
+            "description": t.description,
+        }
+        for t in db_tags
+    ]
+    doc.hydrate_tags_from_db(tag_dicts, group_dicts)
+    logger.info(
+        "Hydrated CRDT from DB for workspace %s: %d tags, %d groups",
+        workspace_id,
+        len(db_tags),
+        len(db_groups),
+    )
+
+
+def _reconcile_crdt_with_db(
+    doc: AnnotationDocument,
+    db_tags: list[Any],
+    db_groups: list[Any],
+    crdt_tags: dict[str, Any],
+    crdt_groups: dict[str, Any],
+    workspace_id: UUID,
+) -> bool:
+    """Add missing DB entries to CRDT and remove orphans (AC1.6).
+
+    Returns True if any changes were made.
+    """
+    db_tag_ids = {str(t.id) for t in db_tags}
+    db_group_ids = {str(g.id) for g in db_groups}
+    changed = False
+
+    for tag in db_tags:
+        tag_id_str = str(tag.id)
+        if tag_id_str not in crdt_tags:
+            logger.warning(
+                "Workspace %s: DB tag %s (%s) missing from CRDT, adding",
+                workspace_id,
+                tag_id_str,
+                tag.name,
+            )
+            doc.set_tag(
+                tag_id_str,
+                tag.name,
+                tag.color,
+                tag.order_index,
+                group_id=str(tag.group_id) if tag.group_id else None,
+                description=tag.description,
+            )
+            changed = True
+
+    for group in db_groups:
+        group_id_str = str(group.id)
+        if group_id_str not in crdt_groups:
+            logger.warning(
+                "Workspace %s: DB group %s (%s) missing from CRDT, adding",
+                workspace_id,
+                group_id_str,
+                group.name,
+            )
+            doc.set_tag_group(
+                group_id_str,
+                group.name,
+                group.order_index,
+                colour=group.color,
+            )
+            changed = True
+
+    for crdt_tag_id in list(crdt_tags):
+        if crdt_tag_id not in db_tag_ids:
+            logger.warning(
+                "Workspace %s: CRDT tag %s not in DB, removing",
+                workspace_id,
+                crdt_tag_id,
+            )
+            doc.delete_tag(crdt_tag_id)
+            changed = True
+
+    for crdt_group_id in list(crdt_groups):
+        if crdt_group_id not in db_group_ids:
+            logger.warning(
+                "Workspace %s: CRDT group %s not in DB, removing",
+                workspace_id,
+                crdt_group_id,
+            )
+            doc.delete_tag_group(crdt_group_id)
+            changed = True
+
+    return changed
+
+
+async def _ensure_crdt_tag_consistency(
+    doc: AnnotationDocument,
+    workspace_id: UUID,
+) -> None:
+    """Hydrate or reconcile CRDT tag maps against DB state.
+
+    Called on every workspace load. If CRDT tags/tag_groups maps are
+    empty but DB has rows, hydrate from DB. If both have data, add any
+    DB entries missing from CRDT (DB is authoritative). Log discrepancies
+    at WARNING level.
+    """
+    from promptgrimoire.db.tags import (
+        list_tag_groups_for_workspace,
+        list_tags_for_workspace,
+    )
+
+    db_tags = await list_tags_for_workspace(workspace_id)
+    db_groups = await list_tag_groups_for_workspace(workspace_id)
+    crdt_tags = doc.list_tags()
+    crdt_groups = doc.list_tag_groups()
+
+    if not crdt_tags and not crdt_groups and (db_tags or db_groups):
+        _hydrate_crdt_from_db(doc, db_tags, db_groups, workspace_id)
+        changed = True
+    else:
+        changed = _reconcile_crdt_with_db(
+            doc, db_tags, db_groups, crdt_tags, crdt_groups, workspace_id
+        )
+
+    if changed:
+        try:
+            from promptgrimoire.db.workspaces import (
+                save_workspace_crdt_state,
+            )
+
+            await save_workspace_crdt_state(workspace_id, doc.get_full_state())
+        except Exception:
+            logger.exception(
+                "Failed to persist CRDT state after consistency check for workspace %s",
+                workspace_id,
+            )
+
+
 # Registry for managing multiple annotation documents
 class AnnotationDocumentRegistry:
     """Registry for managing multiple annotation documents by ID."""
@@ -616,7 +969,10 @@ class AnnotationDocumentRegistry:
         doc_id = f"ws-{workspace_id}"
 
         if doc_id in self._documents:
-            return self._documents[doc_id]
+            doc = self._documents[doc_id]
+            # Re-sync with DB to pick up out-of-band updates (e.g. test seeds)
+            await _ensure_crdt_tag_consistency(doc, workspace_id)
+            return doc
 
         # Try to load from Workspace
         from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -631,6 +987,9 @@ class AnnotationDocumentRegistry:
                 logger.debug("Loaded workspace %s from database", workspace_id)
         except Exception:
             logger.exception("Failed to load workspace %s from database", workspace_id)
+
+        # Ensure CRDT tag maps are consistent with DB
+        await _ensure_crdt_tag_consistency(doc, workspace_id)
 
         self._documents[doc_id] = doc
 

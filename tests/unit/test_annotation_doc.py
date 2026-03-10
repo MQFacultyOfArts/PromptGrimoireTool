@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
 
@@ -439,66 +441,79 @@ class TestDeleteCommentOwnership:
         assert result is False
 
 
-class TestTagOrder:
-    """Tests for tag_order operations."""
-
-    def test_get_tag_order_empty_tag(self) -> None:
-        """get_tag_order returns empty list for unknown tag."""
-        doc = AnnotationDocument("test-doc")
-
-        assert doc.get_tag_order("nonexistent") == []
-
-    def test_set_and_get_tag_order(self) -> None:
-        """set_tag_order stores IDs; get_tag_order retrieves them."""
-        doc = AnnotationDocument("test-doc")
-
-        doc.set_tag_order("jurisdiction", ["h1", "h2", "h3"])
-
-        assert doc.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
-
-    def test_set_tag_order_replaces_existing(self) -> None:
-        """Setting tag_order again replaces the previous order."""
-        doc = AnnotationDocument("test-doc")
-
-        doc.set_tag_order("jurisdiction", ["h1", "h2"])
-        doc.set_tag_order("jurisdiction", ["h3", "h1"])
-
-        assert doc.get_tag_order("jurisdiction") == ["h3", "h1"]
+class TestMoveHighlight:
+    """Tests for move_highlight_to_tag using tags Map."""
 
     def test_move_highlight_to_tag_appends(self) -> None:
         """move_highlight_to_tag removes from source, appends to target."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "issue", "text", "author")
         h2 = doc.add_highlight(6, 10, "issue", "more", "author")
         h3 = doc.add_highlight(11, 15, "facts", "data", "author")
-        doc.set_tag_order("issue", [h1, h2])
-        doc.set_tag_order("facts", [h3])
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+            highlights=[h3],
+        )
 
         result = doc.move_highlight_to_tag(h2, from_tag="issue", to_tag="facts")
 
         assert result is True
-        assert doc.get_tag_order("issue") == [h1]
-        assert doc.get_tag_order("facts") == [h3, h2]
+        assert doc.get_tag_highlights("issue") == [h1]
+        assert doc.get_tag_highlights("facts") == [h3, h2]
 
     def test_move_highlight_to_tag_at_position(self) -> None:
         """move_highlight_to_tag inserts at the given position."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=0)
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=1)
         h1 = doc.add_highlight(0, 5, "facts", "a", "author")
         h2 = doc.add_highlight(6, 10, "facts", "b", "author")
         h3 = doc.add_highlight(11, 15, "issue", "c", "author")
-        doc.set_tag_order("facts", [h1, h2])
-        doc.set_tag_order("issue", [h3])
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=1,
+            highlights=[h3],
+        )
 
         doc.move_highlight_to_tag(h3, from_tag="issue", to_tag="facts", position=1)
 
-        assert doc.get_tag_order("facts") == [h1, h3, h2]
-        assert doc.get_tag_order("issue") == []
+        assert doc.get_tag_highlights("facts") == [h1, h3, h2]
+        assert doc.get_tag_highlights("issue") == []
 
     def test_move_highlight_to_tag_updates_highlight_tag(self) -> None:
         """move_highlight_to_tag updates the highlight's tag field."""
         doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="old_tag", name="Old", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="new_tag", name="New", colour="#00ff00", order_index=1)
         h1 = doc.add_highlight(0, 5, "old_tag", "text", "author")
-        doc.set_tag_order("old_tag", [h1])
+        doc.set_tag(
+            tag_id="old_tag",
+            name="Old",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1],
+        )
 
         doc.move_highlight_to_tag(h1, from_tag="old_tag", to_tag="new_tag")
 
@@ -516,22 +531,163 @@ class TestTagOrder:
 
         assert result is False
 
-    def test_tag_order_syncs_between_docs(self) -> None:
-        """tag_order changes sync via CRDT updates."""
+    def test_move_highlight_updates_tags_map_highlights(self) -> None:
+        """move_highlight_to_tag updates highlights field in tags Map for both tags."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="issue", name="Issue", colour="#ff0000", order_index=0)
+        doc.set_tag(tag_id="facts", name="Facts", colour="#00ff00", order_index=1)
+        h1 = doc.add_highlight(0, 5, "issue", "text", "author")
+        doc.set_tag(
+            tag_id="issue",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1],
+        )
+        doc.set_tag(
+            tag_id="facts",
+            name="Facts",
+            colour="#00ff00",
+            order_index=1,
+            highlights=[],
+        )
+
+        doc.move_highlight_to_tag(h1, from_tag="issue", to_tag="facts")
+
+        from_entry = doc.get_tag("issue")
+        assert from_entry is not None
+        assert h1 not in from_entry["highlights"]
+
+        to_entry = doc.get_tag("facts")
+        assert to_entry is not None
+        assert h1 in to_entry["highlights"]
+
+    def test_move_highlight_tags_map_no_entry_graceful(self) -> None:
+        """move_highlight_to_tag is graceful when tags Map lacks entries."""
+        doc = AnnotationDocument("test-doc")
+        h1 = doc.add_highlight(0, 5, "old", "text", "author")
+
+        # Tags Map has no entries for "old" or "new" -- should not crash
+        result = doc.move_highlight_to_tag(h1, from_tag="old", to_tag="new")
+
+        assert result is True
+        # highlight's tag field updated
+        hl = doc.get_highlight(h1)
+        assert hl is not None
+        assert hl["tag"] == "new"
+
+    def test_move_highlight_reorder_same_tag_updates_tags_map(self) -> None:
+        """Reordering within same tag updates tags Map highlights."""
+        doc = AnnotationDocument("test-doc")
+        h1 = doc.add_highlight(0, 5, "tag-a", "a", "author")
+        h2 = doc.add_highlight(6, 10, "tag-a", "b", "author")
+        doc.set_tag(
+            tag_id="tag-a",
+            name="Tag A",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h1, h2],
+        )
+
+        # Move h2 to position 0 within same tag
+        doc.move_highlight_to_tag(h2, from_tag="tag-a", to_tag="tag-a", position=0)
+
+        tag_entry = doc.get_tag("tag-a")
+        assert tag_entry is not None
+        assert tag_entry["highlights"] == [h2, h1]
+
+    def test_tag_highlights_sync_between_docs(self) -> None:
+        """Tag highlights sync via CRDT updates."""
         doc1 = AnnotationDocument("test-doc")
         doc2 = AnnotationDocument("test-doc")
 
         # Sync initial state
         doc2.apply_update(doc1.get_full_state())
 
-        # Set tag order in doc1
-        doc1.set_tag_order("jurisdiction", ["h1", "h2", "h3"])
+        # Set tag with highlights in doc1
+        doc1.set_tag(
+            tag_id="jurisdiction",
+            name="Jurisdiction",
+            colour="#ff0000",
+            order_index=0,
+            highlights=["h1", "h2", "h3"],
+        )
         update = doc1.doc.get_update()
 
         # Apply to doc2
         doc2.apply_update(update)
 
-        assert doc2.get_tag_order("jurisdiction") == ["h1", "h2", "h3"]
+        assert doc2.get_tag_highlights("jurisdiction") == ["h1", "h2", "h3"]
+
+
+class TestGetTagHighlights:
+    """Tests for get_tag_highlights reading from tags Map."""
+
+    def test_get_tag_highlights_empty_when_no_tag(self) -> None:
+        """get_tag_highlights returns empty list for unknown tag."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_tag_highlights("nonexistent") == []
+
+    def test_get_tag_highlights_returns_highlights_from_tags_map(self) -> None:
+        """get_tag_highlights reads from the tags Map highlights field."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(
+            tag_id="tag-1",
+            name="Issue",
+            colour="#ff0000",
+            order_index=0,
+            highlights=["h1", "h2", "h3"],
+        )
+
+        result = doc.get_tag_highlights("tag-1")
+
+        assert result == ["h1", "h2", "h3"]
+
+    def test_get_tag_highlights_empty_when_no_highlights(self) -> None:
+        """get_tag_highlights returns empty list when tag has no highlights."""
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag(tag_id="tag-1", name="Issue", colour="#ff0000", order_index=0)
+
+        result = doc.get_tag_highlights("tag-1")
+
+        assert result == []
+
+
+class TestTagOrderBackwardCompat:
+    """Backward compatibility: old CRDT state with tag_order Map."""
+
+    def test_apply_update_with_legacy_tag_order_no_exception(self) -> None:
+        """Applying state from a doc that had tag_order does not crash."""
+        from pycrdt import Array, Doc, Map
+
+        # Simulate old-style doc that includes tag_order
+        old_doc = Doc()
+        old_doc["highlights"] = Map()
+        old_doc["client_meta"] = Map()
+        old_doc["tag_order"] = Map()
+        old_doc["tags"] = Map()
+        old_doc["tag_groups"] = Map()
+
+        # Write some tag_order data
+        old_doc["tag_order"]["some-tag"] = Array(["h1", "h2"])
+        state = old_doc.get_update()
+
+        # New AnnotationDocument (no longer initialises tag_order)
+        new_doc = AnnotationDocument("test-doc")
+        new_doc.apply_update(state)
+
+        # tags Map should still be accessible
+        assert new_doc.tags is not None
+        assert new_doc.list_tags() == {}
+
+    def test_tag_order_not_initialised_on_new_doc(self) -> None:
+        """New AnnotationDocument does not eagerly create tag_order."""
+        doc = AnnotationDocument("test-doc")
+
+        # tag_order should NOT be in the doc keys initially
+        with pytest.raises(KeyError):
+            doc.doc["tag_order"]
 
 
 class TestResponseDraft:
@@ -649,7 +805,7 @@ class TestCrdtCoexistence:
         assert doc.get_general_notes() == "Replaced content"
 
     def test_broadcast_fires_for_all_field_types(self) -> None:
-        """Broadcast callback fires for highlights, tag_order, and general_notes."""
+        """Broadcast callback fires for highlights, tags, and general_notes."""
         doc = AnnotationDocument("test-doc")
         fired: list[str] = []
 
@@ -660,19 +816,25 @@ class TestCrdtCoexistence:
 
         # Modify highlights
         doc.add_highlight(0, 5, "tag", "text", "author")
-        # Modify tag_order
-        doc.set_tag_order("tag", ["fake-id"])
+        # Modify tags Map
+        doc.set_tag(tag_id="tag", name="Tag", colour="#ff0000", order_index=0)
         # Modify general_notes
         doc.set_general_notes("notes")
 
         assert len(fired) >= 3  # At least one update per mutation
 
     def test_full_state_includes_all_fields(self) -> None:
-        """Full state sync transfers highlights, tag_order, general_notes."""
+        """Full state sync transfers highlights, tags, general_notes."""
         doc1 = AnnotationDocument("test-doc")
 
         h_id = doc1.add_highlight(0, 5, "jurisdiction", "text", "author")
-        doc1.set_tag_order("jurisdiction", [h_id])
+        doc1.set_tag(
+            tag_id="jurisdiction",
+            name="Jurisdiction",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[h_id],
+        )
         doc1.set_general_notes("shared notes")
 
         # Create new doc and sync full state
@@ -680,5 +842,607 @@ class TestCrdtCoexistence:
         doc2.apply_update(doc1.get_full_state())
 
         assert doc2.get_highlight(h_id) is not None
-        assert doc2.get_tag_order("jurisdiction") == [h_id]
+        assert doc2.get_tag_highlights("jurisdiction") == [h_id]
         assert doc2.get_general_notes() == "shared notes"
+
+
+class TestTagsMap:
+    """Tests for tags Map on AnnotationDocument (AC1.1 CRDT structure)."""
+
+    def test_tags_map_exists_on_new_doc(self) -> None:
+        """AC1.1: A freshly created AnnotationDocument has an empty tags Map."""
+        doc = AnnotationDocument("test-doc")
+
+        tags = doc.tags
+        assert len(tags) == 0
+
+    def test_tags_property_returns_pycrdt_map(self) -> None:
+        """AC1.4: The tags property returns a pycrdt Map instance."""
+        from pycrdt import Map
+
+        doc = AnnotationDocument("test-doc")
+
+        assert isinstance(doc.tags, Map)
+
+
+class TestTagGroupsMap:
+    """Tests for tag_groups Map on AnnotationDocument (AC1.4 CRDT structure)."""
+
+    def test_tag_groups_map_exists_on_new_doc(self) -> None:
+        """AC1.4: A freshly created AnnotationDocument has an empty tag_groups Map."""
+        doc = AnnotationDocument("test-doc")
+
+        tag_groups = doc.tag_groups
+        assert len(tag_groups) == 0
+
+    def test_tag_groups_property_returns_pycrdt_map(self) -> None:
+        """AC1.4: The tag_groups property returns a pycrdt Map instance."""
+        from pycrdt import Map
+
+        doc = AnnotationDocument("test-doc")
+
+        assert isinstance(doc.tag_groups, Map)
+
+
+class TestTagCrud:
+    """Tests for tag CRUD methods on AnnotationDocument."""
+
+    def test_set_tag_stores_all_fields(self) -> None:
+        """AC1.1: set_tag stores all fields correctly."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag(
+            "tag-1",
+            "Jurisdiction",
+            "#3366cc",
+            0,
+            group_id="group-1",
+            description="Legal jurisdiction",
+        )
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["name"] == "Jurisdiction"
+        assert tag["colour"] == "#3366cc"
+        assert tag["order_index"] == 0
+        assert tag["group_id"] == "group-1"
+        assert tag["description"] == "Legal jurisdiction"
+        assert list(tag["highlights"]) == []
+
+    def test_set_tag_defaults(self) -> None:
+        """set_tag optional fields default correctly."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag("tag-1", "Facts", "#ff0000", 1)
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["group_id"] is None
+        assert tag["description"] is None
+        assert list(tag["highlights"]) == []
+
+    def test_set_tag_overwrites_existing(self) -> None:
+        """AC1.2: Calling set_tag again overwrites name/colour/description."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag("tag-1", "Old Name", "#000000", 0)
+        doc.set_tag(
+            "tag-1",
+            "New Name",
+            "#ffffff",
+            1,
+            description="Updated",
+        )
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["name"] == "New Name"
+        assert tag["colour"] == "#ffffff"
+        assert tag["order_index"] == 1
+        assert tag["description"] == "Updated"
+
+    def test_delete_tag_removes_tag(self) -> None:
+        """AC1.3: delete_tag removes the tag."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag("tag-1", "Facts", "#ff0000", 0)
+        doc.delete_tag("tag-1")
+
+        assert doc.get_tag("tag-1") is None
+
+    def test_get_tag_nonexistent_returns_none(self) -> None:
+        """Edge: get_tag on non-existent ID returns None."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_tag("nonexistent") is None
+
+    def test_delete_tag_nonexistent_does_not_raise(self) -> None:
+        """Edge: delete_tag on non-existent ID does not raise."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.delete_tag("nonexistent")  # Should not raise
+
+    def test_list_tags_empty(self) -> None:
+        """Edge: list_tags on empty doc returns empty dict."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.list_tags() == {}
+
+    def test_list_tags_returns_all(self) -> None:
+        """list_tags returns all stored tags."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag("tag-1", "Facts", "#ff0000", 0)
+        doc.set_tag("tag-2", "Issues", "#00ff00", 1)
+
+        tags = doc.list_tags()
+        assert len(tags) == 2
+        assert "tag-1" in tags
+        assert "tag-2" in tags
+        assert tags["tag-1"]["name"] == "Facts"
+        assert tags["tag-2"]["name"] == "Issues"
+
+    def test_set_tag_with_highlights_preserves_ordering(self) -> None:
+        """Edge: set_tag with highlights list preserves ordering."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag(
+            "tag-1",
+            "Facts",
+            "#ff0000",
+            0,
+            highlights=["h3", "h1", "h2"],
+        )
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert list(tag["highlights"]) == ["h3", "h1", "h2"]
+
+    def test_tag_syncs_between_docs(self) -> None:
+        """CRDT sync: tag data syncs between two docs."""
+        doc1 = AnnotationDocument("test-doc")
+        doc2 = AnnotationDocument("test-doc")
+
+        # Sync initial state
+        doc2.apply_update(doc1.get_full_state())
+
+        # Write tag to doc1
+        doc1.set_tag("tag-1", "Facts", "#ff0000", 0)
+        update = doc1.doc.get_update()
+
+        # Apply to doc2
+        doc2.apply_update(update)
+
+        tag = doc2.get_tag("tag-1")
+        assert tag is not None
+        assert tag["name"] == "Facts"
+        assert tag["colour"] == "#ff0000"
+
+
+class TestTagGroupCrud:
+    """Tests for tag group CRUD methods on AnnotationDocument (AC1.4)."""
+
+    def test_set_tag_group_stores_all_fields(self) -> None:
+        """AC1.4: set_tag_group stores name, colour, order_index."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+        assert group["order_index"] == 0
+
+    def test_set_tag_group_colour_defaults_to_none(self) -> None:
+        """set_tag_group without colour stores None."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Facts", 0)
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["colour"] is None
+
+    def test_set_tag_group_overwrites_existing(self) -> None:
+        """AC1.4: Calling set_tag_group again with same ID overwrites."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Old Name", 0, colour="#000000")
+        doc.set_tag_group("group-1", "New Name", 1, colour="#ffffff")
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "New Name"
+        assert group["colour"] == "#ffffff"
+        assert group["order_index"] == 1
+
+    def test_delete_tag_group_removes_group(self) -> None:
+        """AC1.4: delete_tag_group removes the group."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Facts", 0)
+        doc.delete_tag_group("group-1")
+
+        assert doc.get_tag_group("group-1") is None
+
+    def test_get_tag_group_nonexistent_returns_none(self) -> None:
+        """Edge: get_tag_group on non-existent ID returns None."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.get_tag_group("nonexistent") is None
+
+    def test_delete_tag_group_nonexistent_does_not_raise(self) -> None:
+        """Edge: delete_tag_group on non-existent ID does not raise."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.delete_tag_group("nonexistent")  # Should not raise
+
+    def test_list_tag_groups_empty(self) -> None:
+        """Edge: list_tag_groups on empty doc returns empty dict."""
+        doc = AnnotationDocument("test-doc")
+
+        assert doc.list_tag_groups() == {}
+
+    def test_list_tag_groups_returns_all(self) -> None:
+        """list_tag_groups returns all stored groups."""
+        doc = AnnotationDocument("test-doc")
+
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        doc.set_tag_group("group-2", "Facts", 1, colour="#ff0000")
+
+        groups = doc.list_tag_groups()
+        assert len(groups) == 2
+        assert "group-1" in groups
+        assert "group-2" in groups
+        assert groups["group-1"]["name"] == "Legal Issues"
+        assert groups["group-2"]["name"] == "Facts"
+
+    def test_tag_group_syncs_between_docs(self) -> None:
+        """CRDT sync: group data syncs between two docs."""
+        doc1 = AnnotationDocument("test-doc")
+        doc2 = AnnotationDocument("test-doc")
+
+        # Sync initial state
+        doc2.apply_update(doc1.get_full_state())
+
+        # Write group to doc1
+        doc1.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        update = doc1.doc.get_update()
+
+        # Apply to doc2
+        doc2.apply_update(update)
+
+        group = doc2.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+
+
+class TestHydrateTagsFromDb:
+    """Tests for hydrate_tags_from_db method (AC1.5, AC1.6)."""
+
+    def test_hydrate_populates_empty_doc(self) -> None:
+        """AC1.5: hydrate_tags_from_db on empty doc populates tags and groups."""
+        doc = AnnotationDocument("test-doc")
+
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Legal Issues",
+                "colour": "#3366cc",
+                "order_index": 0,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Jurisdiction",
+                "colour": "#ff0000",
+                "order_index": 0,
+                "group_id": "group-1",
+                "description": "Legal jurisdiction",
+                "highlights": ["h1", "h2"],
+            },
+            {
+                "id": "tag-2",
+                "name": "Facts",
+                "colour": "#00ff00",
+                "order_index": 1,
+                "group_id": None,
+                "description": None,
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        # Verify group
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Legal Issues"
+        assert group["colour"] == "#3366cc"
+        assert group["order_index"] == 0
+
+        # Verify tag with all fields
+        tag1 = doc.get_tag("tag-1")
+        assert tag1 is not None
+        assert tag1["name"] == "Jurisdiction"
+        assert tag1["colour"] == "#ff0000"
+        assert tag1["order_index"] == 0
+        assert tag1["group_id"] == "group-1"
+        assert tag1["description"] == "Legal jurisdiction"
+        assert list(tag1["highlights"]) == ["h1", "h2"]
+
+        # Verify tag with defaults
+        tag2 = doc.get_tag("tag-2")
+        assert tag2 is not None
+        assert tag2["name"] == "Facts"
+        assert tag2["group_id"] is None
+        assert tag2["description"] is None
+        assert list(tag2["highlights"]) == []
+
+    def test_hydrate_overwrites_stale_data(self) -> None:
+        """AC1.6: hydrate_tags_from_db overwrites existing CRDT entries (DB wins)."""
+        doc = AnnotationDocument("test-doc")
+
+        # Pre-populate with stale data
+        doc.set_tag("tag-1", "Stale Name", "#000000", 0)
+        doc.set_tag_group("group-1", "Stale Group", 0, colour="#000000")
+
+        # Hydrate with DB data
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Fresh Group",
+                "colour": "#ffffff",
+                "order_index": 1,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Fresh Name",
+                "colour": "#ffffff",
+                "order_index": 1,
+                "group_id": "group-1",
+                "description": "Updated",
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["name"] == "Fresh Name"
+        assert tag["colour"] == "#ffffff"
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+        assert group["name"] == "Fresh Group"
+        assert group["colour"] == "#ffffff"
+
+    def test_hydrate_empty_lists_no_error(self) -> None:
+        """Edge: Empty lists produce no errors and do not remove existing entries."""
+        doc = AnnotationDocument("test-doc")
+
+        # Pre-populate
+        doc.set_tag("tag-1", "Facts", "#ff0000", 0)
+        doc.set_tag_group("group-1", "Legal", 0)
+
+        doc.hydrate_tags_from_db([], [])
+
+        # Existing entries should remain
+        assert doc.get_tag("tag-1") is not None
+        assert doc.get_tag_group("group-1") is not None
+
+    def test_hydrate_tag_with_group_reference(self) -> None:
+        """Edge: Tags with group_id referencing a group resolve."""
+        doc = AnnotationDocument("test-doc")
+
+        groups = [
+            {
+                "id": "group-1",
+                "name": "Analysis",
+                "colour": "#3366cc",
+                "order_index": 0,
+            },
+        ]
+        tags = [
+            {
+                "id": "tag-1",
+                "name": "Key Facts",
+                "colour": "#ff0000",
+                "order_index": 0,
+                "group_id": "group-1",
+            },
+        ]
+
+        doc.hydrate_tags_from_db(tags, groups)
+
+        tag = doc.get_tag("tag-1")
+        assert tag is not None
+        assert tag["group_id"] == "group-1"
+
+        group = doc.get_tag_group("group-1")
+        assert group is not None
+
+
+class TestWorkspaceTagsFromCrdt:
+    """Tests for workspace_tags_from_crdt() pure function."""
+
+    def test_empty_crdt_returns_empty_list(self) -> None:
+        """Empty CRDT doc returns empty list."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert result == []
+
+    def test_tags_with_all_fields_populated(self) -> None:
+        """Tags with all fields produce correct TagInfo instances."""
+        from promptgrimoire.pages.annotation.tags import (
+            TagInfo,
+            workspace_tags_from_crdt,
+        )
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Legal Issues", 0, colour="#3366cc")
+        doc.set_tag(
+            "tag-1",
+            "Jurisdiction",
+            "#ff0000",
+            0,
+            group_id="group-1",
+            description="Legal jurisdiction",
+        )
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 1
+        assert result[0] == TagInfo(
+            name="Jurisdiction",
+            colour="#ff0000",
+            raw_key="tag-1",
+            group_name="Legal Issues",
+            group_colour="#3366cc",
+            description="Legal jurisdiction",
+        )
+
+    def test_group_metadata_resolved_from_tag_groups_map(self) -> None:
+        """Group name and colour are resolved from tag_groups Map."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Analysis", 0, colour="#aabbcc")
+        doc.set_tag("tag-1", "Facts", "#112233", 0, group_id="group-1")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert result[0].group_name == "Analysis"
+        assert result[0].group_colour == "#aabbcc"
+
+    def test_ungrouped_tags_appear_after_grouped_tags(self) -> None:
+        """Tags without groups appear after grouped tags."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-1", "Group A", 0)
+        doc.set_tag("tag-grouped", "Grouped Tag", "#ff0000", 0, group_id="group-1")
+        doc.set_tag("tag-ungrouped", "Ungrouped Tag", "#00ff00", 0)
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 2
+        assert result[0].name == "Grouped Tag"
+        assert result[1].name == "Ungrouped Tag"
+        assert result[1].group_name is None
+
+    def test_ordered_by_group_order_index_then_tag_order_index(self) -> None:
+        """Tags ordered by group order_index then tag order_index."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag_group("group-b", "Group B", 1)
+        doc.set_tag_group("group-a", "Group A", 0)
+        doc.set_tag("tag-b1", "B First", "#ff0000", 0, group_id="group-b")
+        doc.set_tag("tag-b2", "B Second", "#ff0000", 1, group_id="group-b")
+        doc.set_tag("tag-a1", "A First", "#00ff00", 0, group_id="group-a")
+        doc.set_tag("tag-a2", "A Second", "#00ff00", 1, group_id="group-a")
+
+        result = workspace_tags_from_crdt(doc)
+
+        names = [t.name for t in result]
+        assert names == ["A First", "A Second", "B First", "B Second"]
+
+    def test_tag_without_matching_group_has_none_group_fields(self) -> None:
+        """Tag referencing non-existent group has None group fields."""
+        from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
+
+        doc = AnnotationDocument("test-doc")
+        doc.set_tag("tag-1", "Orphan", "#ff0000", 0, group_id="nonexistent-group")
+
+        result = workspace_tags_from_crdt(doc)
+
+        assert len(result) == 1
+        assert result[0].group_name is None
+        assert result[0].group_colour is None
+
+
+class TestTagSyncViaCrdt:
+    """Tests for CRDT sync pathway used by broadcast (Task 4).
+
+    Verifies that tags set on one AnnotationDocument propagate to
+    another via get_full_state/apply_update, which is the mechanism
+    the broadcast callback relies on.
+    """
+
+    def test_sync_tag_from_doc_a_to_doc_b(self) -> None:
+        """Tag set on doc A appears on doc B after sync."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync initial state so both docs share the same baseline
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        # Set a tag on doc A
+        doc_a.set_tag("tag-1", "Synced Tag", "#cc3366", 0)
+
+        # Sync doc A's state to doc B
+        doc_b.apply_update(doc_a.get_full_state())
+
+        result = workspace_tags_from_crdt(doc_b)
+        assert len(result) == 1
+        assert result[0].name == "Synced Tag"
+        assert result[0].colour == "#cc3366"
+        assert result[0].raw_key == "tag-1"
+
+    def test_sync_tag_update_propagates(self) -> None:
+        """Tag colour update on doc A propagates to doc B."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync baselines
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        # Create then update tag
+        doc_a.set_tag("tag-1", "Colour Test", "#000000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.set_tag("tag-1", "Colour Test", "#ff0000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+
+        result = workspace_tags_from_crdt(doc_b)
+        assert result[0].colour == "#ff0000"
+
+    def test_sync_tag_deletion_propagates(self) -> None:
+        """Tag deleted on doc A disappears from doc B."""
+        from promptgrimoire.pages.annotation.tags import (
+            workspace_tags_from_crdt,
+        )
+
+        doc_a = AnnotationDocument("doc-a")
+        doc_b = AnnotationDocument("doc-b")
+
+        # Sync baselines
+        doc_b.apply_update(doc_a.get_full_state())
+        doc_a.apply_update(doc_b.get_full_state())
+
+        doc_a.set_tag("tag-1", "Doomed", "#ff0000", 0)
+        doc_b.apply_update(doc_a.get_full_state())
+        assert len(workspace_tags_from_crdt(doc_b)) == 1
+
+        doc_a.delete_tag("tag-1")
+        doc_b.apply_update(doc_a.get_full_state())
+
+        assert len(workspace_tags_from_crdt(doc_b)) == 0

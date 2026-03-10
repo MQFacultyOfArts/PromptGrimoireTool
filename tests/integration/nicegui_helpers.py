@@ -195,6 +195,10 @@ def _fire_event_listeners(el: Element, event_name: str) -> None:
 
     Useful for simulating ``change`` or ``blur`` events on input elements
     that save on user interaction rather than on explicit button press.
+
+    NOTE: For async handlers, use ``_fire_event_listeners_async`` instead
+    — this function schedules them as background tasks which may not
+    complete before subsequent assertions.
     """
     from nicegui import events
 
@@ -208,3 +212,45 @@ def _fire_event_listeners(el: Element, event_name: str) -> None:
             sender=el, client=el.client, args=None
         )
         events.handle_event(listener.handler, event_arguments)
+
+
+async def _fire_event_listeners_async(el: Element, event_name: str) -> None:
+    """Fire and await all event listeners matching *event_name*.
+
+    Unlike ``_fire_event_listeners``, this directly awaits async
+    handlers so their side-effects (DB writes, CRDT updates) are
+    guaranteed complete before the caller continues.
+    """
+    import inspect
+    import logging
+
+    from nicegui import events, helpers
+
+    log = logging.getLogger(__name__)
+    fired = 0
+    for listener in el._event_listeners.values():
+        if listener.element_id != el.id:
+            continue
+        if listener.type != event_name:
+            continue
+        event_arguments = events.GenericEventArguments(
+            sender=el, client=el.client, args=None
+        )
+        handler = listener.handler
+        if handler is None:
+            continue
+        fired += 1
+        if helpers.expects_arguments(handler):
+            result = handler(event_arguments)
+        else:
+            result = handler()
+        if inspect.isawaitable(result):
+            log.debug("awaiting async handler %s", handler)
+            await result
+            log.debug("async handler completed")
+    log.debug(
+        "fired %d listener(s) for %s on %s",
+        fired,
+        event_name,
+        type(el).__name__,
+    )

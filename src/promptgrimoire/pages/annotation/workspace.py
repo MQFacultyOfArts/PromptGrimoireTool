@@ -57,10 +57,12 @@ from promptgrimoire.pages.annotation.organise import render_organise_tab
 from promptgrimoire.pages.annotation.respond import render_respond_tab, word_count
 from promptgrimoire.pages.annotation.tag_management import open_tag_management
 from promptgrimoire.pages.annotation.tag_quick_create import open_quick_create
-from promptgrimoire.pages.annotation.tags import workspace_tags
+from promptgrimoire.pages.annotation.tags import workspace_tags_from_crdt
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nicegui import Client
 
     from promptgrimoire.db.models import Workspace
@@ -169,12 +171,13 @@ def _apply_sort_reorder_or_move(
     source_tag: str,
     target_tag: str,
     new_index: int,
-    refresh_fn: Any,
 ) -> None:
     """Apply a sort-end reorder or cross-column move to the CRDT.
 
-    Same-column events update tag_order in place. Cross-column events
-    reassign the highlight's tag and trigger a re-render.
+    Same-column events update tags Map highlights in place. Cross-column events
+    reassign the highlight's tag. In both cases, the Sortable element's
+    internal handler syncs the Python element tree with the DOM — callers
+    must NOT rebuild the organise panel mid-event.
 
     Args:
         state: Page state with crdt_doc.
@@ -182,17 +185,26 @@ def _apply_sort_reorder_or_move(
         source_tag: Raw tag key of the source column.
         target_tag: Raw tag key of the target column.
         new_index: Position in the target column (0-indexed).
-        refresh_fn: Callable to re-render the Organise tab.
     """
     assert state.crdt_doc is not None
     if source_tag == target_tag:
-        current_order = state.crdt_doc.get_tag_order(target_tag)
+        current_order = state.crdt_doc.get_tag_highlights(target_tag)
         if highlight_id in current_order:
             current_order.remove(highlight_id)
         current_order.insert(new_index, highlight_id)
-        state.crdt_doc.set_tag_order(
-            target_tag, current_order, origin_client_id=state.client_id
-        )
+        # Write highlights back to tags Map
+        tag_data = state.crdt_doc.get_tag(target_tag)
+        if tag_data is not None:
+            state.crdt_doc.set_tag(
+                tag_id=target_tag,
+                name=tag_data["name"],
+                colour=tag_data["colour"],
+                order_index=tag_data["order_index"],
+                group_id=tag_data.get("group_id"),
+                description=tag_data.get("description"),
+                highlights=current_order,
+                origin_client_id=state.client_id,
+            )
         ui.notify("Reordered", type="info")
     else:
         state.crdt_doc.move_highlight_to_tag(
@@ -202,12 +214,47 @@ def _apply_sort_reorder_or_move(
             position=new_index,
             origin_client_id=state.client_id,
         )
+        # Resolve display name from tag_info_list (raw key is a UUID)
+        target_name = next(
+            (ti.name for ti in (state.tag_info_list or []) if ti.raw_key == target_tag),
+            "Untagged",
+        )
         ui.notify(
-            f"Moved to {target_tag or 'Untagged'}",
+            f"Moved to {target_name}",
             type="positive",
             position="bottom",
         )
-        refresh_fn()
+        # SortableJS already synced the DOM; calling refresh here would
+        # destroy elements mid-event (RuntimeError in NiceGUI's slot system).
+
+
+_SCROLL_SAVE_JS = (
+    "(function() {"
+    "  var el = document.querySelector('[data-testid=\"organise-columns\"]');"
+    "  return el ? {x: el.scrollLeft, y: el.scrollTop} : null;"
+    "})()"
+)
+
+
+async def _rebuild_organise_with_scroll(
+    render_fn: Callable[[], None],
+) -> None:
+    """Rebuild the organise tab preserving horizontal/vertical scroll.
+
+    Captures scroll position via awaited JS, re-renders, then restores
+    via requestAnimationFrame to ensure the DOM has settled.
+    """
+    scroll = await ui.run_javascript(_SCROLL_SAVE_JS)
+    render_fn()
+    if scroll:
+        x, y = scroll.get("x", 0), scroll.get("y", 0)
+        ui.run_javascript(
+            "requestAnimationFrame(function() {"
+            "  var el = document.querySelector("
+            "'[data-testid=\"organise-columns\"]');"
+            f"  if (el) {{ el.scrollLeft = {x}; el.scrollTop = {y}; }}"
+            "});"
+        )
 
 
 def _setup_organise_drag(state: PageState) -> None:
@@ -231,7 +278,7 @@ def _setup_organise_drag(state: PageState) -> None:
             return
 
         _apply_sort_reorder_or_move(
-            state, highlight_id, source_tag, target_tag, new_index, _render_organise_now
+            state, highlight_id, source_tag, target_tag, new_index
         )
 
         # Persist to database
@@ -246,6 +293,9 @@ def _setup_organise_drag(state: PageState) -> None:
         # Broadcast to other clients for CRDT sync.
         if state.broadcast_update:
             await state.broadcast_update()
+
+        # Cross-column card label/colour updates on next full rebuild
+        # (tab switch or broadcast). The CRDT is already correct.
 
     async def _on_locate(start_char: int, end_char: int) -> None:
         """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
@@ -267,6 +317,10 @@ def _setup_organise_drag(state: PageState) -> None:
         )
 
     state.refresh_organise = _render_organise_now
+    # Sync lambda returning a coroutine (Python has no async lambda).
+    state.refresh_organise_with_scroll = lambda: _rebuild_organise_with_scroll(
+        _render_organise_now
+    )
 
 
 async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
@@ -363,7 +417,8 @@ async def _resolve_workspace_context(
         word_limit=ctx.word_limit,
         word_limit_enforcement=ctx.word_limit_enforcement,
     )
-    state.tag_info_list = await workspace_tags(workspace_id)
+    # NOTE: tag_info_list is populated later in _build_tab_panels after
+    # crdt_doc is loaded (state.crdt_doc is None at this point).
 
     return state, ctx, protect, can_create_tags, workspace.shared_with_class
 
@@ -383,6 +438,11 @@ def _create_tag_callbacks(
     async def _rebuild_toolbar() -> None:
         """Clear and rebuild the tag toolbar after tag mutations."""
         if state.toolbar_container is not None:
+            logger.debug(
+                "_rebuild_toolbar: clearing container id=%s with %d children",
+                state.toolbar_container.id,
+                len(state.toolbar_container.default_slot.children),
+            )
             state.toolbar_container.clear()
 
             async def _tag_click(key: str) -> None:
@@ -395,6 +455,8 @@ def _create_tag_callbacks(
                 on_manage_click=on_manage_tags,
                 footer=state.toolbar_container,
             )
+
+    state.refresh_toolbar = _rebuild_toolbar
 
     async def on_add_tag() -> None:
         await open_quick_create(state)
@@ -514,7 +576,9 @@ async def _build_tab_panels(
             crdt_doc = await _workspace_registry.get_or_create_for_workspace(
                 workspace_id
             )
-            logger.debug("[RENDER] CRDT doc loaded")
+            state.crdt_doc = crdt_doc
+            state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
+            logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
 
             documents = await list_documents(workspace_id)
             logger.debug("[RENDER] documents loaded: count=%d", len(documents))

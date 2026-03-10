@@ -1,6 +1,6 @@
 # Database Schema
 
-**Last updated:** 2026-03-03
+**Last updated:** 2026-03-10
 
 PostgreSQL with SQLModel ORM. Schema managed via Alembic migrations.
 
@@ -386,7 +386,7 @@ Workspaces are isolated silos identified by UUID.
 3. Copies all WorkspaceDocuments (content, type, source_type, title, order_index, auto_number_paragraphs, paragraph_map) with new UUIDs; sets `source_document_id` on each clone to the template document's UUID (provenance stamping)
 4. Returns `(Workspace, doc_id_map)` -- the mapping of template doc UUIDs to cloned doc UUIDs
 5. Copies all TagGroups and Tags with new UUIDs, builds `group_id_map` and `tag_id_map`
-6. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped and `tag` field remapped via `tag_id_map`, `tag_order` keys remapped, comments are preserved, general notes are copied, client metadata is NOT cloned
+6. CRDT state is replayed via `_replay_crdt_state()`: highlights get `document_id` remapped and `tag` field remapped via `tag_id_map`, `tags` Map entries get tag IDs and group IDs remapped via `tag_id_map`/`group_id_map` and highlight IDs remapped, comments are preserved, general notes and response draft are copied, client metadata is NOT cloned
 7. Entire operation is atomic (single session)
 
 **Delete order for Activity** (circular FK): delete Activity first (SET NULL on student workspaces), then delete orphaned template Workspace (safe because RESTRICT FK no longer points to it).

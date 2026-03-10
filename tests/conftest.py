@@ -20,7 +20,11 @@ from sqlalchemy.pool import NullPool
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db import run_alembic_upgrade
-from promptgrimoire.export.pdf import get_latexmk_path
+from promptgrimoire.export.pdf import (
+    LaTeXCompileStageShortCircuit,
+    get_latexmk_path,
+    set_latexmk_short_circuit,
+)
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -78,10 +82,31 @@ def _has_latexmk() -> bool:
 
 # Decorator that FAILS (not skips) when latexmk is missing
 # Use pytest -m "not latex" to exclude these tests
+_SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"
+
+
+def _skip_latexmk_reason() -> str | None:
+    """Return a skip reason when the harness disables compile-stage tests."""
+    if _SKIP_LATEXMK_ENV_VAR in os.environ and os.environ[_SKIP_LATEXMK_ENV_VAR] == "1":
+        return (
+            "latexmk stage disabled by "
+            f"{_SKIP_LATEXMK_ENV_VAR}=1; run an explicit compile lane for "
+            "LuaLaTeX/PDF checks"
+        )
+    return None
+
+
+def requires_full_latexmk(func_or_class):
+    """Mark full PDF-assertion suites for deselection from `test all`."""
+    return pytest.mark.latexmk_full(requires_latexmk(func_or_class))
+
+
 def requires_latexmk(func_or_class):
     """Decorator that fails tests if latexmk is not installed.
 
     Unlike skipif, this makes missing dependencies visible as failures.
+    When ``GRIMOIRE_TEST_SKIP_LATEXMK=1`` is set by the CLI harness,
+    compile-stage tests run until ``compile_latex()`` and then short-circuit.
     To exclude LaTeX tests entirely: pytest -m "not latex"
     """
     import functools
@@ -97,24 +122,46 @@ def requires_latexmk(func_or_class):
         # Async function decorator
         @functools.wraps(func_or_class)
         async def async_wrapper(*args, **kwargs):
-            if not _has_latexmk():
+            short_circuit = _skip_latexmk_reason() is not None
+            if not short_circuit and not _has_latexmk():
                 pytest.fail(
                     "latexmk not installed. Run: uv run python scripts/setup_latex.py\n"
                     "To skip LaTeX tests: pytest -m 'not latex'"
                 )
-            return await func_or_class(*args, **kwargs)
+            if short_circuit:
+                set_latexmk_short_circuit(True)
+            try:
+                return await func_or_class(*args, **kwargs)
+            except LaTeXCompileStageShortCircuit:
+                if short_circuit:
+                    return None
+                raise
+            finally:
+                if short_circuit:
+                    set_latexmk_short_circuit(False)
 
         return pytest.mark.latex(async_wrapper)
     else:
         # Sync function decorator
         @functools.wraps(func_or_class)
         def wrapper(*args, **kwargs):
-            if not _has_latexmk():
+            short_circuit = _skip_latexmk_reason() is not None
+            if not short_circuit and not _has_latexmk():
                 pytest.fail(
                     "latexmk not installed. Run: uv run python scripts/setup_latex.py\n"
                     "To skip LaTeX tests: pytest -m 'not latex'"
                 )
-            return func_or_class(*args, **kwargs)
+            if short_circuit:
+                set_latexmk_short_circuit(True)
+            try:
+                return func_or_class(*args, **kwargs)
+            except LaTeXCompileStageShortCircuit:
+                if short_circuit:
+                    return None
+                raise
+            finally:
+                if short_circuit:
+                    set_latexmk_short_circuit(False)
 
         return pytest.mark.latex(wrapper)
 

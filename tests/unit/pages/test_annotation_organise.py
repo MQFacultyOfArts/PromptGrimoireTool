@@ -1,7 +1,7 @@
 """Unit tests for Tab 2 (Organise) rendering logic.
 
 Tests verify that render_organise_tab correctly groups highlights by tag
-into columns, respects tag_order, and handles untagged highlights.
+into columns, respects tag ordering, and handles untagged highlights.
 
 Also tests the SortableJS event arg parsing logic used by the organise
 tab's drag-and-drop reorder/reassign feature.
@@ -96,16 +96,22 @@ class TestHighlightGrouping:
         assert len(untagged) == 2  # empty string + nonexistent_tag
 
     def test_tag_order_respected(self) -> None:
-        """Highlights are returned in tag_order when available."""
+        """Highlights are returned in tags Map order when available."""
         doc = AnnotationDocument("test-order")
         id1 = doc.add_highlight(0, 10, "jurisdiction", "first", "Author A")
         id2 = doc.add_highlight(10, 20, "jurisdiction", "second", "Author B")
         id3 = doc.add_highlight(20, 30, "jurisdiction", "third", "Author C")
 
-        # Set custom order: 3, 1, 2
-        doc.set_tag_order("jurisdiction", [id3, id1, id2])
+        # Set custom order via tags Map: 3, 1, 2
+        doc.set_tag(
+            tag_id="jurisdiction",
+            name="Jurisdiction",
+            colour="#ff0000",
+            order_index=0,
+            highlights=[id3, id1, id2],
+        )
 
-        ordered_ids = doc.get_tag_order("jurisdiction")
+        ordered_ids = doc.get_tag_highlights("jurisdiction")
         assert ordered_ids == [id3, id1, id2]
 
         # Verify we can reconstruct the ordered list

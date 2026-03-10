@@ -23,8 +23,10 @@ from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _click_testid,
+    _find_by_testid,
     _find_value_element_by_testid,
     _fire_event_listeners,
+    _fire_event_listeners_async,
     _should_not_see_testid,
     _should_see_testid,
     wait_for,
@@ -432,7 +434,7 @@ class TestImportTagsFromActivity:
         week_id = await _create_week(course_id, title="Import Week")
 
         # Source activity with tags
-        source_activity_id, source_ws_id = await _create_activity(
+        _source_activity_id, source_ws_id = await _create_activity(
             week_id, title="Source Activity"
         )
 
@@ -474,16 +476,18 @@ class TestImportTagsFromActivity:
 
         # Select the source activity in the import dropdown
         import_select = _find_value_element_by_testid(
-            nicegui_user, "tag-import-source-select"
+            nicegui_user, "import-workspace-select"
         )
         assert import_select is not None, "import source select not found"
-        import_select.value = str(source_activity_id)
+        import_select.value = str(source_ws_id)
 
-        # Click Import
-        _click_testid(nicegui_user, "tag-import-btn")
+        # Click Import using async handler
+        btn = _find_by_testid(nicegui_user, "import-tags-btn")
+        assert btn is not None, "Import button not found"
+        await _fire_event_listeners_async(btn, "click")
 
         # Verify success notification
-        await nicegui_user.should_see("Tags imported", retries=20)
+        await nicegui_user.should_see("Imported 2 tag(s)", retries=20)
 
         # Verify the imported tags exist in the target workspace DB
         from promptgrimoire.db.tags import (

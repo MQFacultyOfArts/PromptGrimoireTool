@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 
 from promptgrimoire.export.pdf import compile_latex
-from tests.conftest import requires_latexmk
+from tests.conftest import requires_full_latexmk
 from tests.integration.conftest import MegaDocSegment, compile_mega_document
 
 
@@ -46,7 +46,7 @@ async def mega_result(tmp_path_factory):
     return await compile_mega_document(segments, output_dir)
 
 
-@requires_latexmk
+@requires_full_latexmk
 class TestMegaDocInfrastructure:
     """Verify mega-document compilation infrastructure."""
 

@@ -29,6 +29,7 @@ from promptgrimoire.cli._shared import (
     _XDIST_ITEMS_RE,
     _build_test_header,
     _pre_test_db_cleanup,
+    _prepend_pytest_flags,
     console,
 )
 
@@ -39,6 +40,8 @@ if TYPE_CHECKING:
 
 test_app = typer.Typer(help="Unit and integration test commands.")
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
+_TEST_ALL_MARKER_EXPRESSION = f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full"
+_SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +266,7 @@ def _run_pytest(
     log_path: Path,
     default_args: list[str],
     extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> int:
     """Run pytest with Rich formatting and logging.
 
@@ -304,7 +308,11 @@ def _run_pytest(
         log_file.write(log_header)
         log_file.flush()
 
-        harness_env = {**os.environ, "GRIMOIRE_TEST_HARNESS": "1"}
+        harness_env = {
+            **os.environ,
+            "GRIMOIRE_TEST_HARNESS": "1",
+            **(extra_env or {}),
+        }
         process = subprocess.Popen(
             all_args,
             stdout=subprocess.PIPE,
@@ -510,20 +518,29 @@ def all_tests(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run unit and integration tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+
     sys.exit(
         _run_pytest(
             title=(
-                "Full Test Suite (unit + integration, excludes browser E2E and "
-                "NiceGUI UI)"
+                "Full Test Suite (unit + integration, excludes browser E2E, "
+                "NiceGUI UI, and latexmk compile-stage tests)"
             ),
             log_path=Path("test-all.log"),
             default_args=[
                 "-m",
-                _NON_UI_MARKER_EXPRESSION,
+                _TEST_ALL_MARKER_EXPRESSION,
                 "-n",
                 _xdist_worker_count(),
                 "--dist=worksteal",
@@ -531,7 +548,8 @@ def all_tests(
                 "3",
                 "-v",
             ],
-            extra_args=_prepend_filter(ctx.args, filter_expr),
+            extra_args=args,
+            extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
         )
     )
 
@@ -545,15 +563,24 @@ def all_fixtures_tests(
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
 ) -> None:
     """Run full test corpus including BLNS and slow tests."""
     from promptgrimoire.cli._shared import _prepend_filter
+
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
             title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
             log_path=Path("test-all-fixtures.log"),
             default_args=["-m", _NON_UI_MARKER_EXPRESSION, "-v", "--tb=short"],
-            extra_args=_prepend_filter(ctx.args, filter_expr),
+            extra_args=args,
         )
     )

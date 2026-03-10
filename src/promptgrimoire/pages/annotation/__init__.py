@@ -238,6 +238,8 @@ class PageState:
     tag_info_list: list[TagInfo] | None = None
     # Reference to the tag toolbar element for dynamic rebuilds
     toolbar_container: Any = None
+    # Callable to rebuild toolbar from broadcast (set by _setup_tag_callbacks)
+    refresh_toolbar: Any | None = None  # Callable[[], Awaitable[None]]
     # Callback stored so _refresh_tag_state can rebuild the highlight menu
     # without re-wiring the on_tag_click closure.  Set by _build_highlight_menu.
     _highlight_menu_tag_click: Any = None
@@ -248,6 +250,8 @@ class PageState:
     organise_panel: ui.element | None = None
     # Callable to refresh the Organise tab from broadcast
     refresh_organise: Any | None = None  # Callable[[], None]
+    # Async version that preserves scroll position
+    refresh_organise_with_scroll: Any | None = None  # Callable[[], Awaitable[None]]
     # Track active tab for broadcast-triggered refresh
     active_tab: str = "Annotate"
     # Reference to the Respond tab panel element for deferred rendering

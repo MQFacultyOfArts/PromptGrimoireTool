@@ -28,7 +28,7 @@ from promptgrimoire.db.roles import get_staff_roles
 from promptgrimoire.db.workspaces import resolve_tristate
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Sequence
     from uuid import UUID
 
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -485,6 +485,180 @@ async def _upsert_share_entry(
     await session.flush()
     await session.refresh(acl_entry)
     return acl_entry
+
+
+async def list_importable_workspaces(
+    user_id: UUID,
+    exclude_workspace_id: UUID | None = None,
+    *,
+    is_privileged: bool = False,
+    enrolled_course_ids: Sequence[UUID] | None = None,
+) -> list[tuple[Workspace, str | None, list[str]]]:
+    """List workspaces with tags that the user can read from.
+
+    Visibility mirrors the navigator query: workspaces accessible via
+    explicit ACL entries, enrollment-derived staff access, and
+    peer-shared workspaces (shared_with_class + allow_sharing).
+
+    Returns (workspace, course_name, tag_names) tuples.  Excludes the
+    specified workspace (typically the target) and workspaces with no
+    tags.  Deduplicates workspaces whose tag sets are identical.
+
+    Args:
+        user_id: The requesting user's UUID.
+        exclude_workspace_id: Workspace to exclude (e.g. the import target).
+        is_privileged: Whether the user has instructor/admin privileges
+            (bypasses shared_with_class check for peer workspaces).
+        enrolled_course_ids: Course UUIDs the user is enrolled in.
+            Required for enrollment-derived visibility.
+
+    Returns:
+        List of (Workspace, course_name, tag_names) tuples.
+    """
+    course_ids = list(enrolled_course_ids) if enrolled_course_ids else []
+
+    # Single raw SQL query combining three visibility paths:
+    #   1. ACL-granted workspaces (explicit share or ownership)
+    #   2. Template workspaces in enrolled courses (staff only)
+    #   3. Peer-shared workspaces in enrolled courses
+    #
+    # Mirrors the navigator CTE visibility logic but returns only
+    # workspaces that have at least one tag, with tag names aggregated.
+    sql = sa.text("""
+        WITH visible AS (
+            -- Path 1: ACL-granted workspaces
+            SELECT DISTINCT w.id AS workspace_id,
+                   acl.permission AS permission
+            FROM workspace w
+            JOIN acl_entry acl ON acl.workspace_id = w.id
+                AND acl.user_id = :user_id
+
+            UNION ALL
+
+            -- Path 2: Template workspaces in enrolled courses (staff)
+            SELECT DISTINCT a.template_workspace_id AS workspace_id,
+                   'viewer'::text AS permission
+            FROM activity a
+            JOIN week wk ON wk.id = a.week_id
+            WHERE a.template_workspace_id IS NOT NULL
+                AND wk.course_id = ANY(:enrolled_course_ids)
+                AND :is_privileged = true
+
+            UNION ALL
+
+            -- Path 3a: Peer-shared activity-placed workspaces
+            SELECT DISTINCT w.id AS workspace_id,
+                   'peer'::text AS permission
+            FROM workspace w
+            JOIN acl_entry owner_acl ON owner_acl.workspace_id = w.id
+                AND owner_acl.permission = 'owner'
+            LEFT JOIN activity tmpl_check
+                ON tmpl_check.template_workspace_id = w.id
+            JOIN activity a ON a.id = w.activity_id
+            JOIN week wk ON wk.id = a.week_id
+            JOIN course c ON c.id = wk.course_id
+            WHERE tmpl_check.id IS NULL
+                AND c.id = ANY(:enrolled_course_ids)
+                AND owner_acl.user_id != :user_id
+                AND (
+                    :is_privileged = true
+                    OR (
+                        w.shared_with_class = true
+                        AND COALESCE(a.allow_sharing, c.default_allow_sharing)
+                            = true
+                    )
+                )
+
+            UNION ALL
+
+            -- Path 3b: Peer-shared loose workspaces (no activity)
+            SELECT DISTINCT w.id AS workspace_id,
+                   'peer'::text AS permission
+            FROM workspace w
+            JOIN acl_entry owner_acl ON owner_acl.workspace_id = w.id
+                AND owner_acl.permission = 'owner'
+            JOIN course c ON c.id = w.course_id
+            WHERE w.activity_id IS NULL
+                AND c.id = ANY(:enrolled_course_ids)
+                AND owner_acl.user_id != :user_id
+                AND (
+                    :is_privileged = true
+                    OR (
+                        w.shared_with_class = true
+                        AND c.default_allow_sharing = true
+                    )
+                )
+        ),
+        -- Deduplicate by workspace_id, keeping highest permission
+        deduped AS (
+            SELECT workspace_id,
+                   MIN(CASE permission
+                       WHEN 'owner' THEN 0
+                       WHEN 'editor' THEN 1
+                       WHEN 'viewer' THEN 2
+                       ELSE 3
+                   END) AS perm_rank
+            FROM visible
+            WHERE (CAST(:exclude_id AS uuid) IS NULL
+                   OR workspace_id != :exclude_id)
+            GROUP BY workspace_id
+        )
+        -- Final: join with tags and course info
+        SELECT w.id,
+               COALESCE(c1.name, c2.name) AS course_name,
+               array_agg(t.name ORDER BY t.order_index) AS tag_names,
+               w.activity_id IS NOT NULL AS is_template,
+               d.perm_rank
+        FROM deduped d
+        JOIN workspace w ON w.id = d.workspace_id
+        JOIN tag t ON t.workspace_id = w.id
+        LEFT JOIN activity a ON a.id = w.activity_id
+        LEFT JOIN week wk ON wk.id = a.week_id
+        LEFT JOIN course c1 ON c1.id = wk.course_id
+        LEFT JOIN course c2 ON c2.id = w.course_id
+        GROUP BY w.id, c1.name, c2.name, w.activity_id, d.perm_rank
+        ORDER BY
+            (w.activity_id IS NOT NULL) DESC,  -- templates first
+            d.perm_rank,                        -- owner > editor > viewer > peer
+            array_length(array_agg(t.name), 1) DESC,  -- more tags first
+            COALESCE(c1.name, c2.name, ''),
+            COALESCE(w.title, '')
+    """)
+
+    async with get_session() as session:
+        raw = await session.execute(
+            sql,
+            {
+                "user_id": user_id,
+                "enrolled_course_ids": course_ids,
+                "is_privileged": is_privileged,
+                "exclude_id": exclude_workspace_id,
+            },
+        )
+        rows = raw.fetchall()
+
+    if not rows:
+        return []
+
+    # Hydrate Workspace objects and build result tuples
+    ws_ids = [row[0] for row in rows]
+    async with get_session() as session:
+        ws_result = await session.exec(
+            select(Workspace).where(Workspace.id.in_(ws_ids))  # type: ignore[union-attr]
+        )
+        ws_by_id: dict[UUID, Workspace] = {ws.id: ws for ws in ws_result.all()}
+
+    result: list[tuple[Workspace, str | None, list[str]]] = []
+    seen_tag_sets: set[tuple[str, ...]] = set()
+    for ws_id, course_name, tag_names, _is_template, _perm_rank in rows:
+        ws = ws_by_id.get(ws_id)
+        if ws is None:
+            continue
+        key = tuple(sorted(n.lower() for n in tag_names))
+        if key not in seen_tag_sets:
+            seen_tag_sets.add(key)
+            result.append((ws, course_name, tag_names))
+    return result
 
 
 async def get_privileged_user_ids_for_workspace(

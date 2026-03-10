@@ -70,7 +70,7 @@ Do **not** change the production app for this task. This is test-helper work onl
 
 Run:
 ```bash
-uv run pytest tests/e2e/test_law_student.py -k export_pdf_with_annotations -v
+uv run grimoire test all -- tests/e2e/test_law_student.py -k export_pdf_with_annotations -v
 ```
 
 Expected: Existing export content checks still pass after the helper shape changes.

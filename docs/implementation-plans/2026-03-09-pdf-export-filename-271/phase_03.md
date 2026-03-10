@@ -182,7 +182,7 @@ Expected assertion style:
 
 Run:
 ```bash
-uv run pytest tests/integration/test_annotation_pdf_export_filename_ui.py -m nicegui_ui -v
+uv run grimoire test all -- tests/integration/test_annotation_pdf_export_filename_ui.py -m nicegui_ui -v
 ```
 
 Expected: The NiceGUI page-wiring integration tests pass.
@@ -199,7 +199,7 @@ Expected: No type errors.
 Optional confidence check:
 
 ```bash
-uv run pytest \
+uv run grimoire test all -- \
   tests/integration/test_workspace_export_metadata.py \
   tests/integration/test_annotation_pdf_export_filename_ui.py -m nicegui_ui -v
 ```
@@ -207,7 +207,7 @@ uv run pytest \
 Expected: Metadata and page wiring still agree on the same contract.
 
 ## UAT Steps
-1. [ ] Run `uv run pytest tests/integration/test_annotation_pdf_export_filename_ui.py -m nicegui_ui -v`.
+1. [ ] Run `uv run grimoire test all -- tests/integration/test_annotation_pdf_export_filename_ui.py -m nicegui_ui -v`.
 2. [ ] Inspect the captured `filename` assertion in the Annotate-tab test.
 3. [ ] Inspect the Respond-tab test and verify it expects the same filename for the same workspace/date.
 4. [ ] Inspect the loose-workspace test and verify it proves the old `workspace_{workspace_id}` pattern is gone.

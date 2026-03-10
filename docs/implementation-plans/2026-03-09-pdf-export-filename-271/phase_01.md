@@ -152,14 +152,14 @@ Include targeted test classes such as:
 
 **Verification:**
 
-Run: `uv run pytest tests/unit/export/test_filename_policy.py -v`
+Run: `uv run grimoire test all -- tests/unit/export/test_filename_policy.py -v`
 Expected: All parsing and sanitisation tests pass.
 
 Run: `uvx ty check src/promptgrimoire/export/filename.py tests/unit/export/test_filename_policy.py`
 Expected: No type errors.
 
 ## UAT Steps
-1. [ ] Run `uv run pytest tests/unit/export/test_filename_policy.py -v`.
+1. [ ] Run `uv run grimoire test all -- tests/unit/export/test_filename_policy.py -v`.
 2. [ ] Run:
    ```bash
    uv run python - <<'PY'
@@ -259,7 +259,7 @@ Also add explicit pathological-overflow tests for:
 
 **Verification:**
 
-Run: `uv run pytest tests/unit/export/test_filename_policy.py -v`
+Run: `uv run grimoire test all -- tests/unit/export/test_filename_policy.py -v`
 Expected: All filename-policy tests pass, including the new budgeting cases.
 
 Run:
@@ -285,7 +285,7 @@ Expected:
 - Printed length is `<= 100` for this non-pathological case
 
 ## UAT Steps
-1. [ ] Run `uv run pytest tests/unit/export/test_filename_policy.py -v`.
+1. [ ] Run `uv run grimoire test all -- tests/unit/export/test_filename_policy.py -v`.
 2. [ ] Run the Python snippet above.
 3. [ ] Verify the stem keeps the unit code, surname, given name, and date while shortening workspace title before activity title.
 4. [ ] Verify a pathological overlong-surname test preserves the surname rather than truncating it, even if the final filename exceeds 100 characters.

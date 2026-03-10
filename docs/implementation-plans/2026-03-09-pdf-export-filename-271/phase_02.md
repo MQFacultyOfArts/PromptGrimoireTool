@@ -186,7 +186,7 @@ Testing constraints:
 
 Run:
 ```bash
-uv run pytest tests/integration/test_workspace_export_metadata.py -v
+uv run grimoire test all -- tests/integration/test_workspace_export_metadata.py -v
 ```
 
 Expected: All metadata-resolution integration tests pass.
@@ -203,7 +203,7 @@ Expected: No type errors.
 Optional confidence check:
 
 ```bash
-uv run pytest \
+uv run grimoire test all -- \
   tests/integration/test_peer_discovery_with_owners.py \
   tests/integration/test_workspace_placement.py \
   tests/integration/test_workspace_export_metadata.py -v
@@ -212,7 +212,7 @@ uv run pytest \
 Expected: Existing adjacent integration seams still pass.
 
 ## UAT Steps
-1. [ ] Run `uv run pytest tests/integration/test_workspace_export_metadata.py -v`.
+1. [ ] Run `uv run grimoire test all -- tests/integration/test_workspace_export_metadata.py -v`.
 2. [ ] Inspect one passing activity-placement test and confirm the stem uses the owner's name rather than the separate viewer test user.
 3. [ ] Inspect one passing course-placement test and confirm `Loose_Work` came from the builder fallback, not from hardcoded metadata.
 4. [ ] Inspect one passing loose-workspace test and confirm `Unplaced` and `Loose_Work` both appear in the rendered stem.

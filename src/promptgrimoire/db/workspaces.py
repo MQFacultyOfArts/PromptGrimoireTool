@@ -21,6 +21,7 @@ from promptgrimoire.db.models import (
     CourseEnrollment,
     Tag,
     TagGroup,
+    User,
     Week,
     Workspace,
     WorkspaceDocument,
@@ -203,6 +204,59 @@ class PlacementContext:
         if self.placement_type == "course":
             return f"Loose work for {self.course_code}"
         return "Unplaced"
+
+
+@dataclass(frozen=True)
+class WorkspaceExportMetadata:
+    """Export-focused metadata from workspace, owner ACL, and placement."""
+
+    course_code: str | None
+    activity_title: str | None
+    workspace_title: str | None
+    owner_display_name: str | None
+
+
+async def get_workspace_export_metadata(
+    workspace_id: UUID,
+) -> WorkspaceExportMetadata | None:
+    """Return export metadata for a workspace, or None if the workspace is missing.
+
+    Resolves owner identity via an ACL join and placement via the existing
+    private placement helpers, all within a single async session. This helper
+    is viewer-agnostic: it never reads NiceGUI or session state.
+    """
+    async with get_session() as session:
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace is None:
+            return None
+
+        # Resolve owner display name via ACL -> User join
+        owner_result = await session.exec(
+            select(User.display_name)
+            .join(ACLEntry, ACLEntry.user_id == User.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
+            .where(
+                ACLEntry.workspace_id == workspace_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        owner_display_name: str | None = owner_result.first()
+
+        # Resolve placement using private helpers (same session)
+        if workspace.activity_id is not None:
+            placement = await _resolve_activity_placement(
+                session, workspace.activity_id
+            )
+        elif workspace.course_id is not None:
+            placement = await _resolve_course_placement(session, workspace.course_id)
+        else:
+            placement = PlacementContext(placement_type="loose")
+
+        return WorkspaceExportMetadata(
+            course_code=placement.course_code,
+            activity_title=placement.activity_title,
+            workspace_title=workspace.title,
+            owner_display_name=owner_display_name,
+        )
 
 
 async def get_placement_context(workspace_id: UUID) -> PlacementContext:

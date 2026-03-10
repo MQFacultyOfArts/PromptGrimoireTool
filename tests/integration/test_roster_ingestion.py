@@ -395,6 +395,29 @@ class TestAdditiveReimport:
         assert membership_map[bob] == "editor"
 
     @pytest.mark.asyncio
+    async def test_reimport_demoting_sole_editor_raises_zero_editor_error(
+        self,
+    ) -> None:
+        """Demoting sole editor with no replacement raises ZeroEditorError."""
+        from promptgrimoire.db.wargames import ZeroEditorError, ingest_roster
+
+        alice = _unique_email("alice")
+        activity = await _make_wargame_activity("sole-editor-demote")
+
+        csv_1 = f"email,team,role\n{alice},ALPHA,editor\n"
+        await ingest_roster(activity.id, csv_1)
+
+        # Demote sole editor with no one becoming editor
+        csv_2 = f"email,team,role\n{alice},ALPHA,viewer\n"
+        with pytest.raises(ZeroEditorError):
+            await ingest_roster(activity.id, csv_2)
+
+        # DB state unchanged: alice still editor
+        memberships = await _list_team_memberships(activity.id)
+        assert len(memberships) == 1
+        assert memberships[0] == ("ALPHA", alice, "editor")
+
+    @pytest.mark.asyncio
     async def test_auto_assign_reimport_preserves_existing_acl_rows(self) -> None:
         """Auto-assign re-import reuses teams AND retains first-import ACL rows."""
         from promptgrimoire.db.wargames import ingest_roster

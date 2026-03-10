@@ -45,9 +45,13 @@ async def convert_pdf_to_html(content: bytes) -> str:
         msg = "Failed to convert PDF: empty content"
         raise ValueError(msg)
 
-    try:
+    def _extract_markdown() -> str:
         doc = fitz.open(stream=content, filetype="pdf")
-        markdown = pymupdf4llm.to_markdown(doc)
+        return pymupdf4llm.to_markdown(doc)
+
+    try:
+        loop = asyncio.get_running_loop()
+        markdown = await loop.run_in_executor(None, _extract_markdown)
     except RuntimeError as exc:
         msg = f"Failed to convert PDF: {exc}"
         raise ValueError(msg) from exc

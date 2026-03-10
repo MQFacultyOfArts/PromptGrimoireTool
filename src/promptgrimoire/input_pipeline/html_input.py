@@ -9,6 +9,7 @@ HTML-based pipeline for character-level annotation support.
 
 from __future__ import annotations
 
+import asyncio
 import html as html_module
 import logging
 import re
@@ -847,7 +848,8 @@ async def process_input(
         )
 
         if source_type == "docx":
-            html = convert_docx_to_html(content)
+            loop = asyncio.get_running_loop()
+            html = await loop.run_in_executor(None, convert_docx_to_html, content)
         else:
             html = await convert_pdf_to_html(content)
     else:

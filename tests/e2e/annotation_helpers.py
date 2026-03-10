@@ -1404,14 +1404,22 @@ class ExportResult:
         text: Extracted text — raw LaTeX source (.tex) or PyMuPDF-extracted
               plaintext (.pdf).
         is_pdf: ``True`` when the download was a compiled PDF.
+        suggested_filename: The browser-suggested download filename from
+            ``download.suggested_filename``.
     """
 
     def __init__(
-        self, text: str, *, is_pdf: bool, size_bytes: int | None = None
+        self,
+        text: str,
+        *,
+        is_pdf: bool,
+        size_bytes: int | None = None,
+        suggested_filename: str = "",
     ) -> None:
         self.text = text
         self.is_pdf = is_pdf
         self.size_bytes = size_bytes
+        self.suggested_filename = suggested_filename
 
     def __contains__(self, item: str) -> bool:
         if self.is_pdf:
@@ -1441,12 +1449,14 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
         page: Playwright page with an annotation workspace loaded.
 
     Returns:
-        :class:`ExportResult` with extracted text and format flag.
+        :class:`ExportResult` with extracted text, format flag, and
+        the browser-suggested download filename.
     """
     with page.expect_download(timeout=120000) as dl:
         page.get_by_role("button", name="Export PDF").click()
 
     download = dl.value
+    suggested = download.suggested_filename
     file_path = download.path()
     raw = Path(file_path).read_bytes()
 
@@ -1460,6 +1470,12 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
             re.sub(r"-\n", "", pdf_text),
             is_pdf=True,
             size_bytes=len(raw),
+            suggested_filename=suggested,
         )
 
-    return ExportResult(raw.decode("utf-8"), is_pdf=False, size_bytes=len(raw))
+    return ExportResult(
+        raw.decode("utf-8"),
+        is_pdf=False,
+        size_bytes=len(raw),
+        suggested_filename=suggested,
+    )

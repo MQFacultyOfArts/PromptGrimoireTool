@@ -264,6 +264,13 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Evidence:** `pyproject.toml` `[tool.ruff.*]` configuration. Claude Code hooks run ruff on every file write.
 
+### pyright >= 1.1.408
+
+**Added:** 2026-03-10
+**Claim:** LSP server for Claude Code. Provides code intelligence (go-to-definition, hover, find-references) during AI-assisted development sessions. Not used for type checking — the project uses `ty` for that.
+**Evidence:** `pyproject.toml` dev dependency. No CLI invocation or CI integration.
+**Classification:** Protective belt. Developer tooling only, no code depends on it.
+
 ### ast-grep-cli >= 0.40.5
 
 **Claim:** Structural code search via AST pattern matching. Available as an MCP tool for Claude Code.

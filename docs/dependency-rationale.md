@@ -355,6 +355,30 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** CI quality job runs `uv run pip-audit` to scan the locked environment.
 **Serves:** Developers and CI (supply-chain security gate).
 
+### mammoth
+
+**Added:** 2026-03-10
+**Design plan:** docs/design-plans/2026-03-10-file-upload-109.md
+**Claim:** Converts DOCX (Word XML) to semantic HTML preserving headings, lists, bold/italic, and paragraph structure. Used in the input pipeline for file upload.
+**Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `convert_docx_to_html()` calls `mammoth.convert_to_html()`.
+**Serves:** Runtime users (students/instructors uploading DOCX files).
+
+### pymupdf4llm
+
+**Added:** 2026-03-10
+**Design plan:** docs/design-plans/2026-03-10-file-upload-109.md
+**Claim:** Extracts structured Markdown from PDF files using AI-based layout analysis (via pymupdf.layout). Produces paragraph-aware output that pymupdf's raw text extraction does not.
+**Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `convert_pdf_to_html()` calls `pymupdf4llm.to_markdown()`.
+**Serves:** Runtime users (students/instructors uploading PDF files).
+
+### pymupdf-layout
+
+**Added:** 2026-03-10
+**Design plan:** docs/design-plans/2026-03-10-file-upload-109.md
+**Claim:** Graph Neural Network layout analysis engine for pymupdf. Imported before pymupdf4llm to activate enhanced paragraph, table, and heading detection in PDFs. Runs on CPU without GPU.
+**Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `import pymupdf.layout` must precede pymupdf4llm usage.
+**Serves:** Runtime users (improved PDF structure detection).
+
 ### ~~bandit~~ (REMOVED)
 
 **Removed:** 2026-03-03

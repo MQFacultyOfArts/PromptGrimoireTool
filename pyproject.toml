@@ -38,6 +38,9 @@ dependencies = [
     "typer>=0.15.0",
     "cryptography>=46.0.5",
     "python-slugify>=8.0.4",
+    "pymupdf4llm>=0.3.4",
+    "pymupdf-layout>=1.27.1",
+    "mammoth>=1.11.0",
 ]
 
 [project.scripts]

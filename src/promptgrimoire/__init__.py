@@ -107,7 +107,7 @@ def main() -> None:
 
         if created:
             print("Created database — seeding development data...")
-            subprocess.run(["uv", "run", "seed-data"], check=False)
+            subprocess.run(["uv", "run", "grimoire", "seed", "run"], check=False)
 
         # Print branch + DB info for feature branches
         branch = get_current_branch()

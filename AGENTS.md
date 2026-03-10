@@ -27,6 +27,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 - **Example**: Do not just check if a word count badge reads "16". Check if the system correctly transitions from a valid state to a definitive "(over limit)" violation state after the threshold is crossed.
 
 ### 3. Code Quality & Formatting
+- **No Ad-Hoc Python Scripts**: NEVER write ad-hoc Python scripts to modify code or test files. ALWAYS use AST-aware tools (`uv run rtk sg`) for structural refactoring, or the native agent `replace` tool for literal edits. Do not litter the workspace with temporary python scripts.
 - All functions require type hints.
 - Public APIs require docstrings.
 - Do not use `# type: ignore` without explicit explanation.

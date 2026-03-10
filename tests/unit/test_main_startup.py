@@ -111,7 +111,7 @@ class TestSeedOnCreation:
             seed_calls = [
                 c
                 for c in mock_subprocess.call_args_list
-                if c.args and c.args[0] == ["uv", "run", "seed-data"]
+                if c.args and c.args[0] == ["uv", "run", "grimoire", "seed", "run"]
             ]
             assert len(seed_calls) == 1, (
                 f"Expected one seed-data call, got {mock_subprocess.call_args_list}"
@@ -147,7 +147,7 @@ class TestNoSeedOnExistingDb:
             seed_calls = [
                 c
                 for c in mock_subprocess.call_args_list
-                if c.args and c.args[0] == ["uv", "run", "seed-data"]
+                if c.args and c.args[0] == ["uv", "run", "grimoire", "seed", "run"]
             ]
             assert len(seed_calls) == 0, (
                 f"Expected no seed-data calls, got {mock_subprocess.call_args_list}"

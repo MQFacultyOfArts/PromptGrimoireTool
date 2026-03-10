@@ -1,6 +1,6 @@
 # PDF Export / LaTeX
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*
 
 PDF export uses TinyTeX for portable, consistent LaTeX compilation.
 
@@ -106,6 +106,28 @@ When a handler can determine the specific speaker identity (e.g. "claude-sonnet-
 ### Paste Debug Mode
 
 Append `?debug_paste=1` to the annotation page URL to capture raw paste HTML to `window.__rawPasteHTML` and log paste size to the browser console. Used for diagnosing platform detection issues with real user pastes.
+
+## Export Filename Policy
+
+Deterministic filenames for PDF exports: `{UnitCode}_{Last}_{First}_{Activity}_{Workspace}_{YYYYMMDD}.pdf`
+
+- `src/promptgrimoire/export/filename.py` — pure functions, no DB or UI dependencies
+  - `PdfExportFilenameContext` dataclass (course_code, activity_title, workspace_title, owner_display_name, export_date)
+  - `build_pdf_export_stem()` — assembles the filename stem with fallbacks and truncation
+  - `_split_owner_display_name()` — first-token/last-token heuristic
+  - `_safe_segment()` — ASCII transliteration via python-slugify
+- `WorkspaceExportMetadata` in `db/workspaces.py` — viewer-agnostic owner resolution via ACL join in a single session
+- `_server_local_export_date()` seam in `pages/annotation/pdf_export.py` — testable date injection point
+
+**Truncation order** (100-char budget including `.pdf`):
+1. Workspace title (right-truncated)
+2. Activity title (right-truncated)
+3. First name (reduced to 1-char initial)
+4. Course code, last name, and date are never truncated
+
+**Deduplication:** When the raw workspace title equals the raw activity title (the default for freshly cloned workspaces), the workspace segment is suppressed.
+
+**Fallbacks:** `Unplaced` (no course), `Loose_Work` (no activity), `Workspace` (blank title), `Unknown_Unknown` (blank owner).
 
 ## Highlight Pipeline (Pandoc + Lua Filter)
 

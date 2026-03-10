@@ -37,6 +37,7 @@ dependencies = [
     "unidic-lite>=1.0.8",
     "typer>=0.15.0",
     "cryptography>=46.0.5",
+    "python-slugify>=8.0.4",
 ]
 
 [project.scripts]
@@ -261,4 +262,5 @@ dev = [
     "complexipy>=5.2.0",
     "mkdocs-glightbox>=0.5.2",
     "pip-audit>=2.10.0",
+    "pyright>=1.1.408",
 ]

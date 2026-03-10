@@ -13,13 +13,15 @@ The design also closes three ambiguity gaps in the current stub. First, filename
 ## Definition of Done
 
 1. The PDF export filename follows the format `UnitCode_LastName_FirstName_ActivityName_WorkspaceTitle_YYYYMMDD.pdf`.
-2. The full filename, including the `.pdf` extension, is limited to 100 characters.
+2. The full filename, including the `.pdf` extension, is limited to 100 characters except in pathological cases where the non-negotiable core segments already exceed that budget.
 3. Filenames are derived from the workspace owner, not the current exporting viewer.
 4. Special characters are transliterated to ASCII-safe equivalents where possible, and spaces / punctuation are normalised to underscores for Turnitin and Windows compatibility.
 5. Normal overflow handling truncates `WorkspaceTitle` first and `ActivityName` second.
-6. Course-placed and loose workspaces still export successfully by using deterministic fallback labels for missing placement metadata.
+6. If more reduction is required after `WorkspaceTitle` and `ActivityName` are exhausted, `FirstName` is reduced to a one-character initial as a last resort.
+7. `UnitCode`, `LastName`, and `YYYYMMDD` are never truncated. If that non-negotiable core still exceeds the budget, the export keeps those segments and may exceed 100 characters rather than truncating them.
+8. Course-placed and loose workspaces still export successfully by using deterministic fallback labels for missing placement metadata.
 
-**Out of scope:** schema changes for separate first-name / last-name fields, changes to PDF content/layout, download-route rewrites, or Turnitin-specific API integration.
+**Out of scope:** schema changes for separate first-name / last-name fields, AAF / Stytch profile enrichment for authoritative surname data, changes to PDF content/layout, download-route rewrites, or Turnitin-specific API integration.
 
 ## Acceptance Criteria
 
@@ -44,7 +46,9 @@ The design also closes three ambiguity gaps in the current stub. First, filename
 - **pdf-export-filename-271.AC3.2 Success:** When the filename exceeds 100 characters, truncation is applied to `WorkspaceTitle` before any truncation is applied to `ActivityName`.
 - **pdf-export-filename-271.AC3.3 Success:** `UnitCode`, `LastName`, `FirstName`, and `YYYYMMDD` are preserved during normal overflow handling.
 - **pdf-export-filename-271.AC3.4 Success:** If trimming `WorkspaceTitle` to empty is still insufficient, `ActivityName` is trimmed next until the 100-character limit is met.
-- **pdf-export-filename-271.AC3.5 Success:** The final returned filename always ends with `.pdf` and never exceeds 100 characters.
+- **pdf-export-filename-271.AC3.5 Edge:** If trimming `WorkspaceTitle` and `ActivityName` to empty is still insufficient, `FirstName` is trimmed next until only a one-character initial remains.
+- **pdf-export-filename-271.AC3.6 Edge:** `UnitCode`, `LastName`, and `YYYYMMDD` are never truncated. If the filename still exceeds 100 characters with empty `WorkspaceTitle` / `ActivityName` and a one-character `FirstName` initial, the export keeps that overlong filename rather than truncating those non-negotiable segments.
+- **pdf-export-filename-271.AC3.7 Success:** The final returned filename always ends with `.pdf` and is at or under 100 characters except for the pathological overflow case in AC3.6.
 
 ### pdf-export-filename-271.AC4: Annotation-page export uses the new policy without changing the lower export seam
 - **pdf-export-filename-271.AC4.1 Success:** `src/promptgrimoire/pages/annotation/pdf_export.py` computes the filename before calling `export_annotation_pdf(...)`.
@@ -145,7 +149,8 @@ The pure builder applies these rules in order:
    - measure length as `f"{stem}.pdf"`
    - trim `WorkspaceTitle` first
    - if still too long, trim `ActivityName`
-   - preserve the remaining segments during normal overflow handling
+   - if still too long, trim `FirstName` down to a one-character initial
+   - preserve `UnitCode`, `LastName`, and `YYYYMMDD` even in pathological overflow cases
 
 ### Data flow
 
@@ -247,7 +252,9 @@ No schema changes are required. The design deliberately works with existing `Use
 
 ## Additional Considerations
 
-**Name parsing is heuristic by design.** The current schema stores a single `display_name`, not separate first-name / last-name fields. This design intentionally avoids a schema migration and uses a deterministic first-token / last-token split. That is sufficient for filename generation but should not be mistaken for a culturally universal person-name model.
+**Name parsing is heuristic by design.** The current schema stores a single `display_name`, not separate first-name / last-name fields. This design intentionally avoids a schema migration and uses a deterministic first-token / last-token split because `271` needs surname-first filenames now. That is sufficient for filename generation but should not be mistaken for a culturally universal person-name model.
+
+**Authoritative name sources are a follow-up, not part of `271`.** The longer-term fix is to source structured person-name fields from institutional identity data such as AAF attributes exposed through Stytch and persist them in a way the export pipeline can trust. That would improve surname-first accuracy without changing the rest of the filename pipeline, but it is deliberately out of scope for this feature slice.
 
 **Server-local date is the least surprising export boundary.** The deployment docs already standardise the production host on `Australia/Sydney`. Using the server-local date avoids UTC rollover producing "tomorrow's" filename during evening teaching sessions in Australia.
 

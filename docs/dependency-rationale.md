@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-02-27
+Last reviewed: 2026-03-10
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -163,6 +163,15 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Why not alternatives:** click is typer's underlying library but requires more boilerplate. argparse (stdlib) lacks auto-generated Rich help, shell completion, and the composable sub-app model. The project already uses Rich and Pydantic, which typer integrates with natively.
 **Classification:** Hard core for CLI. All command-line entry points depend on it.
 
+### python-slugify >= 8.0.4
+
+**Added:** 2026-03-10
+**Design plan:** docs/design-plans/2026-03-08-pdf-export-filename-271.md
+**Claim:** Deterministic ASCII transliteration and underscore-safe separator normalisation for PDF export filename segments.
+**Evidence:** Phase 1 of `pdf-export-filename-271` selects a transliteration dependency for the new filename policy in `src/promptgrimoire/export/filename.py`. The builder must convert names such as `José Núñez` to `Jose_Nunez` and remove emoji/symbol-only input before the export basename is passed into `export_annotation_pdf(...)`.
+**Why not alternatives:** The design explicitly rejects relying on a vague "Unidecode or similar" layer. The tests need the concrete `text-unidecode` behaviour that `python-slugify` provides in this environment, including deterministic transliteration plus punctuation-to-underscore normalisation for Turnitin- and Windows-safe filenames. Recreating that behaviour with stdlib-only code would mean maintaining our own transliteration table and separator cleanup rules.
+**Classification:** Protective belt. Narrow runtime dependency used only by the export filename policy.
+
 ## Dev Dependencies
 
 ### pytest >= 8.0
@@ -254,6 +263,13 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Linter and formatter. Replaces flake8, isort, black, and pyupgrade.
 
 **Evidence:** `pyproject.toml` `[tool.ruff.*]` configuration. Claude Code hooks run ruff on every file write.
+
+### pyright >= 1.1.408
+
+**Added:** 2026-03-10
+**Claim:** LSP server for Claude Code. Provides code intelligence (go-to-definition, hover, find-references) during AI-assisted development sessions. Not used for type checking — the project uses `ty` for that.
+**Evidence:** `pyproject.toml` dev dependency. No CLI invocation or CI integration.
+**Classification:** Protective belt. Developer tooling only, no code depends on it.
 
 ### ast-grep-cli >= 0.40.5
 

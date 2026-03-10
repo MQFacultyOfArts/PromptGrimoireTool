@@ -12,7 +12,8 @@ they reveal where the test suite is redundant or incomplete.
 > 95-annotation-tags, workspace-navigator-196,
 > user-docs-rodney-showboat-207,
 > platform-handlers-openrouter-chatcraft-209, docs-platform-208,
-> tags-214, word-count-limits-47, wargame-schema-294, and card-layout-236 branches.
+> tags-214, word-count-limits-47, wargame-schema-294, card-layout-236,
+> and pdf-export-filename-271 branches.
 > Existing tests from before these branches are not yet documented here.
 
 ## Highlight Span Insertion (Pre-Pandoc)
@@ -5155,3 +5156,82 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Assert callable and expected attributes present
 
 **Verifies:** Public API surface is importable from the db package
+
+## PDF Export Filename Policy
+
+### Name splitting: two-token, multi-token, single-token, blank
+**File:** tests/unit/export/test_filename_policy.py::TestSplitOwnerDisplayName
+1. Two-token name → (last, first): "Ada Lovelace" → ("Lovelace", "Ada")
+2. Multi-token → first and last tokens only: "Mary Jane Smith" → ("Smith", "Mary")
+3. Single-token → duplicated: "Plato" → ("Plato", "Plato")
+4. None, empty, whitespace → ("Unknown", "Unknown")
+
+**Verifies:** AC2.1–AC2.4 -- deterministic name parsing heuristic
+
+### Safe segment: transliteration, punctuation, emoji
+**File:** tests/unit/export/test_filename_policy.py::TestSafeSegment
+1. Diacritics transliterated: "José" → "Jose", "Núñez" → "Nunez"
+2. Punctuation/path separators → underscore: "draft: final!" → "draft_final"
+3. Repeated underscores collapsed, leading/trailing stripped
+4. Emoji-only input → empty string; mixed emoji+ASCII → ASCII preserved
+
+**Verifies:** AC2.4–AC2.6 -- ASCII-safe filename sanitisation
+
+### Stem assembly: short, truncation cascade, budget
+**File:** tests/unit/export/test_filename_policy.py::TestBuildPdfExportStem
+1. Short stem returned without truncation
+2. Overlong workspace trimmed before activity
+3. Non-negotiable segments (course, last, date) never truncated
+4. Activity trimmed after workspace exhausted
+5. First name reduced to 1-char initial when workspace+activity both exhausted
+6. Pathological overflow (90-char last name) preserved — budget exceeded intentionally
+7. Non-pathological cases fit within 100 chars
+
+**Verifies:** AC3.1–AC3.7 -- truncation priority and filename budget
+
+### Workspace deduplication and fallbacks
+**File:** tests/unit/export/test_filename_policy.py::TestBuildPdfExportStem
+1. Workspace suppressed when raw title equals activity title (default clone title)
+2. Workspace kept when raw titles differ even if slugs normalise identically ("José"/"Jose")
+3. Workspace fallback "Workspace" not suppressed by activity normalising to same slug
+4. Blank workspace → "Workspace", blank owner → "Unknown_Unknown", blank course → "Unplaced", blank activity → "Loose_Work"
+
+**Verifies:** Deduplication uses raw comparison; fallbacks applied by builder
+
+### Workspace export metadata resolution
+**File:** tests/integration/test_workspace_export_metadata.py::TestGetWorkspaceExportMetadata
+1. Activity-placed workspace returns owner display name, course code, activity title, workspace title from DB
+2. Course-placed workspace returns course code, activity_title=None
+3. Fully loose workspace returns course_code=None, activity_title=None
+4. Blank workspace title returned as-is (fallback applied by builder)
+5. Blank owner display name returned as-is (fallback applied by builder)
+6. Missing workspace returns None
+
+**Verifies:** AC1.1–AC1.6 -- viewer-agnostic metadata resolution via ACL join
+
+### Workspace export metadata filename contract
+**File:** tests/integration/test_workspace_export_metadata.py::TestWorkspaceExportMetadataFilenameContract
+1. Activity-placed: stem uses owner's surname, not viewer's name
+2. Course-placed: stem contains course code + "Loose_Work" fallback
+3. Loose: stem starts with "Unplaced_" and contains "Loose_Work"
+4. Blank title: stem contains "Workspace" segment
+5. Blank owner: stem contains "Unknown_Unknown"
+6. Missing workspace: metadata is None (no stem built)
+
+**Verifies:** Integration of metadata resolver with filename builder
+
+### Annotation page export filename wiring
+**File:** tests/integration/test_annotation_pdf_export_filename_ui.py
+1. Annotate tab export uses policy-based filename (not workspace_{id})
+2. Respond tab export uses same filename for same workspace
+3. Loose workspace export uses "Unplaced" and "Loose_Work" fallbacks
+
+**Verifies:** AC4.3 -- NiceGUI annotation page passes correct context to builder
+
+### E2E browser suggested filename
+**File:** tests/e2e/test_pdf_export_filename.py
+1. Fast-lane (.tex): browser suggested filename matches policy stem
+2. Slow-lane (.pdf): when E2E_SKIP_LATEXMK unset, suggested filename ends in .pdf
+3. Cross-tab consistency: annotate and respond tabs produce identical filenames
+
+**Verifies:** AC5.3, AC5.4, AC4.3 -- browser download filename matches policy end-to-end

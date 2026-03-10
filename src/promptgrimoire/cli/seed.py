@@ -29,8 +29,14 @@ async def _seed_user_and_course() -> tuple[User, Course]:
 
     user, user_created = await find_or_create_user(
         email="instructor@uni.edu",
-        display_name="Test Instructor",
+        display_name="María García-López",
     )
+    if not user_created and user.display_name != "María García-López":
+        async with get_session() as session:
+            session.add(user)
+            user.display_name = "María García-López"
+            await session.commit()
+            await session.refresh(user)
     status = "[green]Created" if user_created else "[yellow]Exists"
     console.print(f"{status}:[/] instructor@uni.edu (id={user.id})")
 
@@ -67,21 +73,27 @@ async def _seed_enrolment_and_weeks(course: Course) -> None:
 
     # Seed all mock users and enrol them
     mock_users = [
-        ("instructor@uni.edu", "Test Instructor", "coordinator"),
+        ("instructor@uni.edu", "María García-López", "coordinator"),
         ("admin@example.com", "Admin User", "coordinator"),
-        ("student@uni.edu", "Test Student", "student"),
-        ("test@example.com", "Test User", "student"),
+        ("student@uni.edu", "José Núñez", "student"),
+        ("test@example.com", "Wei Zhang", "student"),
     ]
 
     for email, name, role in mock_users:
         u, created = await find_or_create_user(email=email, display_name=name)
+        if not created and u.display_name != name:
+            async with get_session() as session:
+                session.add(u)
+                u.display_name = name
+                await session.commit()
+                await session.refresh(u)
         if email == "admin@example.com" and not u.is_admin:
             u.is_admin = True
             async with get_session() as session:
                 session.add(u)
                 await session.commit()
         status = "[green]Created" if created else "[yellow]Exists"
-        console.print(f"{status}:[/] {email}")
+        console.print(f"{status}:[/] {email} ({u.display_name})")
 
         try:
             await enroll_user(course_id=course.id, user_id=u.id, role=role)

@@ -25,6 +25,7 @@ from promptgrimoire.input_pipeline.paragraph_map import (
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from uuid import UUID
 
     from nicegui.elements.editor import Editor
@@ -105,6 +106,7 @@ def _annotation_url(workspace_id: UUID) -> str:
 async def _handle_file_upload(
     workspace_id: UUID,
     upload_event: events.UploadEventArguments,
+    on_document_added: Callable[[], object],
 ) -> None:
     """Handle file upload through HTML pipeline.
 
@@ -155,7 +157,7 @@ async def _handle_file_upload(
             paragraph_map=para_map,
         )
         ui.notify(f"Uploaded: {filename}", type="positive")
-        ui.navigate.to(_annotation_url(workspace_id))
+        on_document_added()
     except NotImplementedError as not_impl_err:
         ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
     except Exception as exc:
@@ -168,6 +170,7 @@ async def _handle_add_document_submission(
     content_input: Editor,
     paste_var: str,
     platform_var: str,
+    on_document_added: Callable[[], object],
 ) -> None:
     """Process the editor contents and persist a new source document."""
     stored = await ui.run_javascript(f"window.{paste_var}")
@@ -220,16 +223,25 @@ async def _handle_add_document_submission(
         )
         content_input.value = ""
         ui.notify("Document added successfully", type="positive")
-        ui.navigate.to(_annotation_url(workspace_id))
+        on_document_added()
     except Exception as exc:
         logger.exception("Failed to add document")
         ui.notify(f"Failed to add document: {exc}", type="negative")
 
 
-def _render_add_content_form(workspace_id: UUID) -> None:
+def _render_add_content_form(
+    workspace_id: UUID,
+    on_document_added: Callable[[], object],
+) -> None:
     """Render the add content form with editor and file upload.
 
     Extracted from _render_workspace_view to reduce function complexity.
+
+    Args:
+        workspace_id: The workspace to add documents to.
+        on_document_added: Callback invoked after a document is successfully
+            added (upload or paste).  Typically ``document_container.refresh``
+            so the document area re-renders in-place without a page reload.
     """
     ui.label("Add content to annotate:").classes("mt-4 font-semibold")
 
@@ -1024,6 +1036,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
             content_input=content_input,
             paste_var=paste_var,
             platform_var=platform_var,
+            on_document_added=on_document_added,
         )
 
     ui.button("Add Document", on_click=handle_add_document).props(
@@ -1034,7 +1047,7 @@ def _render_add_content_form(workspace_id: UUID) -> None:
     if get_settings().features.enable_file_upload:
         ui.upload(
             label="Or upload a file",
-            on_upload=lambda e: _handle_file_upload(workspace_id, e),
+            on_upload=lambda e: _handle_file_upload(workspace_id, e, on_document_added),
             auto_upload=True,
             max_file_size=10 * 1024 * 1024,  # 10 MB limit
         ).props('accept=".html,.htm,.rtf,.docx,.pdf,.txt,.md,.markdown"').classes(

@@ -553,6 +553,7 @@ def _render_content_form_outside_refreshable(
     workspace_id: UUID,
     *,
     has_documents: list[bool],
+    on_document_added: Callable[[], object],
 ) -> None:
     """Render the content form outside the refreshable boundary.
 
@@ -569,9 +570,9 @@ def _render_content_form_outside_refreshable(
                 "Add Document",
                 icon="note_add",
             ).classes("w-full mt-4"):
-                _render_add_content_form(workspace_id)
+                _render_add_content_form(workspace_id, on_document_added)
     else:
-        _render_add_content_form(workspace_id)
+        _render_add_content_form(workspace_id, on_document_added)
 
 
 async def _render_document_container(
@@ -726,6 +727,7 @@ async def _build_tab_panels(
                 state,
                 workspace_id,
                 has_documents=has_documents,
+                on_document_added=document_container.refresh,
             )
 
         with ui.tab_panel("Organise") as organise_panel:

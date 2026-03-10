@@ -1199,6 +1199,11 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
     Automatically expands the card if collapsed, since the comment
     input is inside the detail section.
 
+    Handles the NiceGUI card rebuild cycle: after posting, the server
+    clears the container and recreates all cards from CRDT state.
+    Uses comment count as a synchronisation point to confirm the server
+    processed the comment before searching for it in the rebuilt DOM.
+
     Args:
         page: Playwright page with an annotation workspace loaded.
         text: Comment text to post.
@@ -1207,16 +1212,27 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
     expand_card(page, card_index)
 
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
+    comments_locator = card.locator("[data-testid='comment']")
+    before_count = comments_locator.count()
 
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
+
+    # Ensure Vue reactivity has settled (NiceGUI input.js uses a $nextTick
+    # guard on its emitting flag — filling during that window silently
+    # drops the value update to the server).
+    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+
     card.get_by_test_id("post-comment-btn").click()
 
-    # Server re-render after post may collapse the card (detail section resets
-    # to hidden). Wait for the comment to exist in the DOM, then re-expand.
-    comment = card.locator("[data-testid='comment']", has_text=text)
-    comment.wait_for(state="attached", timeout=10000)
+    # Wait for comment count to increase — this confirms the server
+    # processed the comment and rebuilt the card.  The count goes
+    # 0 briefly during container.clear(), then N+1 after rebuild.
+    expect(comments_locator).to_have_count(before_count + 1, timeout=10000)
+
+    # Card rebuild collapses the detail section; re-expand.
     expand_card(page, card_index)
+    comment = card.locator("[data-testid='comment']", has_text=text)
     comment.wait_for(state="visible", timeout=5000)
 
 

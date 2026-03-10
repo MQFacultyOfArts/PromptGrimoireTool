@@ -60,6 +60,10 @@ ALLOWED_JS_FILES = {
     # interact with it. JS native setter injection is the only reliable way
     # to programmatically set the colour value and trigger Vue reactivity.
     "test_tag_colour.py",
+    # Clipboard API (navigator.clipboard.write) has no Playwright equivalent.
+    # HTML paste simulation requires JavaScript to write text/html MIME type
+    # so the browser delivers a ClipboardEvent with the correct MIME payload.
+    "test_document_upload.py",
 }
 
 

@@ -678,9 +678,10 @@ async def _build_tab_panels(
             # broken — look here first.  Fallback: remove @ui.refreshable,
             # hold a reference to a container div, call container.clear()
             # then _render_document_with_highlights() into it.
-            # Track whether documents exist so the content form (which
-            # lives outside the refreshable) can adapt its layout without
-            # a second list_documents query.
+            # Side-channel from document_container() to
+            # _render_content_form_outside_refreshable(): populated once
+            # after the first await document_container() call so the content
+            # form can branch on has_documents[0] without a second DB query.
             has_documents: list[bool] = []
 
             @ui.refreshable

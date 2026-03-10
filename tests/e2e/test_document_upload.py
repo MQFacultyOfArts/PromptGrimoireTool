@@ -66,7 +66,7 @@ def _paste_html_and_add(page: Page, html_content: str) -> None:
     For pasted HTML, the content type dialog is skipped (auto-detected
     as HTML by content_form.py).
     """
-    editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
+    editor = page.get_by_test_id("content-editor")
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
@@ -120,7 +120,7 @@ class TestDocumentUploadNoReload:
             wait_for_text_walker(page, timeout=15000)
 
         with subtests.test(msg="document_text_visible"):
-            doc = page.locator("#doc-container")
+            doc = page.get_by_test_id("doc-container")
             expect(doc).to_contain_text(
                 "The quick brown fox jumps over the lazy dog",
                 timeout=10000,
@@ -168,7 +168,7 @@ class TestDocumentUploadNoReload:
             wait_for_text_walker(page, timeout=30000)
 
         with subtests.test(msg="docx_text_visible"):
-            doc = page.locator("#doc-container")
+            doc = page.get_by_test_id("doc-container")
             # The DOCX contains a court case summary — check for text
             # that should survive mammoth conversion
             expect(doc).to_contain_text("2025", timeout=10000)
@@ -212,7 +212,7 @@ class TestDocumentUploadNoReload:
             wait_for_text_walker(page, timeout=30000)
 
         with subtests.test(msg="pdf_text_visible"):
-            doc = page.locator("#doc-container")
+            doc = page.get_by_test_id("doc-container")
             # The PDF is a court case — check for text that should
             # survive PDF extraction
             expect(doc).to_contain_text("Lawlis", timeout=10000)

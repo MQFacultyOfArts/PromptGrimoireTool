@@ -284,7 +284,7 @@ async def _render_document_with_highlights(
             ui.element("div")
             .classes(container_classes)
             .style("flex: 2; min-width: 600px; max-width: 900px;")
-            .props('id="doc-container"')
+            .props('id="doc-container" data-testid="doc-container"')
         )
         state.doc_container = doc_container
         with doc_container:

@@ -115,7 +115,7 @@ class _RemotePresence:
         dead), the ``with`` block raises and the caller's
         ``contextlib.suppress(Exception)`` handles it.
         """
-        if self.callback and self.nicegui_client:
+        if self.callback and self.nicegui_client and not self.nicegui_client._deleted:
             with self.nicegui_client:
                 await self.callback()
 

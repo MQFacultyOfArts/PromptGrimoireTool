@@ -265,7 +265,10 @@ async def _handle_client_delete(
         )
         remaining = list(_workspace_presence.get(workspace_key, {}).items())
         for _cid, presence in remaining:
-            if presence.nicegui_client is not None:
+            if (
+                presence.nicegui_client is not None
+                and not presence.nicegui_client._deleted
+            ):
                 with contextlib.suppress(Exception):
                     await presence.nicegui_client.run_javascript(
                         removal_js,

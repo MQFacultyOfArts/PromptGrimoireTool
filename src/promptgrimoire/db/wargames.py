@@ -489,7 +489,7 @@ async def ingest_roster(
         )
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class _PendingGrant:
     """One resolved grant awaiting application, sortable by can_edit."""
 
@@ -526,6 +526,16 @@ async def _ingest_entries(
             existing_codenames,
         )
 
+    # Pre-fetch distinct permission rows to avoid one SELECT per entry
+    distinct_roles = {e.role for e in entries}
+    perm_cache: dict[str, Permission] = {}
+    for role in distinct_roles:
+        perm_row = await _get_permission_row_with_session(session, role)
+        if perm_row is None:
+            msg = f"unknown permission: {role}"
+            raise ValueError(msg)
+        perm_cache[role] = perm_row
+
     # Phase 1: resolve teams and users, build pending grants
     pending: list[_PendingGrant] = []
     for entry in entries:
@@ -556,13 +566,7 @@ async def _ingest_entries(
             team.id,
             user.id,
         )
-        desired_perm_row = await _get_permission_row_with_session(
-            session,
-            entry.role,
-        )
-        if desired_perm_row is None:
-            msg = f"unknown permission: {entry.role}"
-            raise ValueError(msg)
+        desired_perm_row = perm_cache[entry.role]
 
         pending.append(
             _PendingGrant(

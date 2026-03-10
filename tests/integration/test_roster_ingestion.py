@@ -395,8 +395,8 @@ class TestAdditiveReimport:
         assert membership_map[bob] == "editor"
 
     @pytest.mark.asyncio
-    async def test_auto_assign_reimport_reuses_generated_teams(self) -> None:
-        """Repeating auto-assign re-import reuses existing generated teams."""
+    async def test_auto_assign_reimport_preserves_existing_acl_rows(self) -> None:
+        """Auto-assign re-import reuses teams AND retains first-import ACL rows."""
         from promptgrimoire.db.wargames import ingest_roster
 
         alice = _unique_email("alice")
@@ -408,13 +408,19 @@ class TestAdditiveReimport:
         csv_1 = f"email,role\n{alice},editor\n{bob},editor\n"
         await ingest_roster(activity.id, csv_1, team_count=2)
         teams_first = await _list_activity_teams(activity.id)
+        memberships_first = await _list_team_memberships(activity.id)
 
         csv_2 = f"email,role\n{carol},editor\n{dave},editor\n"
         report = await ingest_roster(activity.id, csv_2, team_count=2)
         teams_second = await _list_activity_teams(activity.id)
+        memberships_after = await _list_team_memberships(activity.id)
 
         assert report.teams_created == 0
         assert [t.id for t in teams_second] == [t.id for t in teams_first]
+        # First-import ACL rows must survive the second import (additive)
+        first_import_emails = {email for _, email, _ in memberships_first}
+        surviving_emails = {email for _, email, _ in memberships_after}
+        assert first_import_emails <= surviving_emails
 
 
 class TestAtomicRollback:

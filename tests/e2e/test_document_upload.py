@@ -50,6 +50,7 @@ def upload_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
 
     # Navigate to annotation and create workspace
     page.goto(f"{app_server}/annotation")
+    # TODO: add data-testid="create-workspace-btn" to the button (#109)
     page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
@@ -156,6 +157,7 @@ class TestDocumentUploadNoReload:
         with subtests.test(msg="upload_docx"):
             # NiceGUI ui.upload renders as a Quasar QUploader.
             # Use Playwright's set_input_files on the hidden <input type="file">.
+            # Quasar QUploader hides the native input — no data-testid possible here
             file_input = page.locator('input[type="file"]')
             file_input.set_input_files(str(docx_path))
 
@@ -200,6 +202,7 @@ class TestDocumentUploadNoReload:
             pytest.skip(f"PDF fixture not found: {pdf_path}")
 
         with subtests.test(msg="upload_pdf"):
+            # Quasar QUploader hides the native input — no data-testid possible here
             file_input = page.locator('input[type="file"]')
             file_input.set_input_files(str(pdf_path))
 

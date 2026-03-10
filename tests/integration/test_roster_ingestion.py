@@ -16,6 +16,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _unique_email(name: str) -> str:
+    """Generate a globally unique test email to avoid xdist collisions."""
+    return f"{name}-{uuid4().hex[:8]}@test.local"
+
+
 async def _make_course_and_week(suffix: str) -> tuple[Course, Week]:
     """Create a unique course/week pair for roster-ingestion tests."""
     from promptgrimoire.db.courses import create_course
@@ -100,19 +105,15 @@ class TestNamedTeamRosterIngestion:
         """AC6.1: explicit-team ingest persists users, teams, and ACL rows."""
         from promptgrimoire.db.wargames import ingest_roster
 
+        alice = _unique_email("alice.smith")
+        bob = _unique_email("bob.jones")
         activity = await _make_wargame_activity("explicit-team")
-        csv_content = (
-            "email,team,role\n"
-            "alice.smith@test.local,ALPHA,editor\n"
-            "bob.jones@test.local,BRAVO,viewer\n"
-        )
+        csv_content = f"email,team,role\n{alice},ALPHA,editor\n{bob},BRAVO,viewer\n"
 
         report = await ingest_roster(activity.id, csv_content)
 
         teams = await _list_activity_teams(activity.id)
-        users = await _list_users_by_email(
-            ["alice.smith@test.local", "bob.jones@test.local"]
-        )
+        users = await _list_users_by_email([alice, bob])
         memberships = await _list_team_memberships(activity.id)
 
         assert report.entries_processed == 2
@@ -121,32 +122,28 @@ class TestNamedTeamRosterIngestion:
         assert report.memberships_created == 2
         assert report.memberships_updated == 0
         assert [team.codename for team in teams] == ["ALPHA", "BRAVO"]
-        assert [(user.email, user.display_name) for user in users] == [
-            ("alice.smith@test.local", "Alice Smith"),
-            ("bob.jones@test.local", "Bob Jones"),
-        ]
-        assert memberships == [
-            ("ALPHA", "alice.smith@test.local", "editor"),
-            ("BRAVO", "bob.jones@test.local", "viewer"),
-        ]
+        assert len(users) == 2
+        assert {u.email for u in users} == {alice, bob}
+        assert len(memberships) == 2
+        assert {(codename, perm) for codename, _, perm in memberships} == {
+            ("ALPHA", "editor"),
+            ("BRAVO", "viewer"),
+        }
 
     @pytest.mark.asyncio
     async def test_named_team_ingest_reuses_existing_team_codename(self) -> None:
         """Existing team codenames are reused rather than duplicated."""
         from promptgrimoire.db.wargames import create_team, ingest_roster
 
+        alice = _unique_email("alice.smith")
+        carol = _unique_email("carol.ng")
         activity = await _make_wargame_activity("named-team-reuse")
         existing = await create_team(activity.id, codename="ALPHA")
-        csv_content = (
-            "email,team,role\n"
-            "alice.smith@test.local,ALPHA,editor\n"
-            "carol.ng@test.local,BRAVO,viewer\n"
-        )
+        csv_content = f"email,team,role\n{alice},ALPHA,editor\n{carol},BRAVO,viewer\n"
 
         report = await ingest_roster(activity.id, csv_content)
 
         teams = await _list_activity_teams(activity.id)
-        memberships = await _list_team_memberships(activity.id)
         alpha_teams = [team for team in teams if team.codename == "ALPHA"]
 
         assert report.entries_processed == 2
@@ -154,7 +151,148 @@ class TestNamedTeamRosterIngestion:
         assert len(alpha_teams) == 1
         assert alpha_teams[0].id == existing.id
         assert [team.codename for team in teams] == ["ALPHA", "BRAVO"]
-        assert memberships == [
-            ("ALPHA", "alice.smith@test.local", "editor"),
-            ("BRAVO", "carol.ng@test.local", "viewer"),
-        ]
+
+
+class TestAutoAssignRosterIngestion:
+    """Integration tests for auto-assign roster ingestion mode."""
+
+    @pytest.mark.asyncio
+    async def test_auto_assign_distributes_members_round_robin_across_generated_teams(
+        self,
+    ) -> None:
+        """AC6.2: teamless CSV + team_count distributes across generated teams."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        carol = _unique_email("carol")
+        dave = _unique_email("dave")
+        activity = await _make_wargame_activity("auto-assign")
+        csv_content = (
+            f"email,role\n{alice},editor\n{bob},editor\n{carol},editor\n{dave},editor\n"
+        )
+
+        report = await ingest_roster(activity.id, csv_content, team_count=2)
+
+        teams = await _list_activity_teams(activity.id)
+        memberships = await _list_team_memberships(activity.id)
+
+        assert report.entries_processed == 4
+        assert report.teams_created == 2
+        assert report.users_created == 4
+        assert report.memberships_created == 4
+
+        # Exactly 2 teams with real generated codenames (not synthetic AUTO-*)
+        assert len(teams) == 2
+        for team in teams:
+            assert not team.codename.startswith("AUTO-"), (
+                f"codename {team.codename!r} is synthetic"
+            )
+
+        # Round-robin: team1 gets alice+carol, team2 gets bob+dave
+        team1_codename = teams[0].codename
+        team2_codename = teams[1].codename
+        team1_emails = sorted(
+            email for codename, email, _ in memberships if codename == team1_codename
+        )
+        team2_emails = sorted(
+            email for codename, email, _ in memberships if codename == team2_codename
+        )
+        assert team1_emails == sorted([alice, carol])
+        assert team2_emails == sorted([bob, dave])
+
+    @pytest.mark.asyncio
+    async def test_auto_assign_without_team_count_raises_and_leaves_no_rows(
+        self,
+    ) -> None:
+        """AC6.3: teamless CSV without team_count raises ValueError, no DB writes."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        activity = await _make_wargame_activity("auto-assign-no-count")
+        csv_content = f"email,role\n{alice},editor\n{bob},editor\n"
+
+        with pytest.raises(ValueError, match="team_count"):
+            await ingest_roster(activity.id, csv_content)
+
+        teams = await _list_activity_teams(activity.id)
+        users = await _list_users_by_email([alice, bob])
+        memberships = await _list_team_memberships(activity.id)
+
+        assert teams == []
+        assert users == []
+        assert memberships == []
+
+    @pytest.mark.asyncio
+    async def test_mixed_mode_raises_and_leaves_no_rows(self) -> None:
+        """Mixed named+blank teams raises ValueError with zero DB writes."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        activity = await _make_wargame_activity("mixed-mode")
+        csv_content = f"email,team,role\n{alice},ALPHA,editor\n{bob},,editor\n"
+
+        with pytest.raises(ValueError, match="mixed"):
+            await ingest_roster(activity.id, csv_content)
+
+        teams = await _list_activity_teams(activity.id)
+        users = await _list_users_by_email([alice, bob])
+        memberships = await _list_team_memberships(activity.id)
+
+        assert teams == []
+        assert users == []
+        assert memberships == []
+
+    @pytest.mark.asyncio
+    async def test_auto_assign_reuses_existing_teams_by_created_at_order(
+        self,
+    ) -> None:
+        """Repeating auto-assign with same team_count reuses existing teams."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        carol = _unique_email("carol")
+        dave = _unique_email("dave")
+        activity = await _make_wargame_activity("auto-assign-reuse")
+        csv_content_1 = f"email,role\n{alice},editor\n{bob},editor\n"
+        await ingest_roster(activity.id, csv_content_1, team_count=2)
+        teams_after_first = await _list_activity_teams(activity.id)
+        assert len(teams_after_first) == 2
+
+        csv_content_2 = f"email,role\n{carol},editor\n{dave},editor\n"
+        report = await ingest_roster(activity.id, csv_content_2, team_count=2)
+
+        teams_after_second = await _list_activity_teams(activity.id)
+        assert len(teams_after_second) == 2
+        assert report.teams_created == 0
+        assert [t.id for t in teams_after_second] == [t.id for t in teams_after_first]
+
+    @pytest.mark.asyncio
+    async def test_auto_assign_team_count_mismatch_raises_and_leaves_rows_unchanged(
+        self,
+    ) -> None:
+        """Auto-assign with wrong team_count raises ValueError, existing rows intact."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        carol = _unique_email("carol")
+        dave = _unique_email("dave")
+        eve = _unique_email("eve")
+        activity = await _make_wargame_activity("auto-assign-mismatch")
+        csv_content_1 = f"email,role\n{alice},editor\n{bob},editor\n"
+        await ingest_roster(activity.id, csv_content_1, team_count=2)
+        teams_before = await _list_activity_teams(activity.id)
+        memberships_before = await _list_team_memberships(activity.id)
+
+        csv_content_2 = f"email,role\n{carol},editor\n{dave},editor\n{eve},editor\n"
+        with pytest.raises(ValueError, match="team_count"):
+            await ingest_roster(activity.id, csv_content_2, team_count=3)
+
+        teams_after = await _list_activity_teams(activity.id)
+        memberships_after = await _list_team_memberships(activity.id)
+        assert [t.id for t in teams_after] == [t.id for t in teams_before]
+        assert memberships_after == memberships_before

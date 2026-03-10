@@ -15,7 +15,7 @@ from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import ACLEntry, Permission, User, WargameTeam
 from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
-from promptgrimoire.wargame.roster import parse_roster
+from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -371,6 +371,79 @@ async def remove_team_member(team_id: UUID, user_id: UUID) -> bool:
     return await revoke_team_permission(team_id, user_id)
 
 
+def _classify_roster_mode(
+    entries: list[RosterEntry],
+    team_count: int | None,
+) -> tuple[list[RosterEntry], list[str] | None]:
+    """Validate mode and return (possibly-reassigned entries, bucket_ids).
+
+    Returns ``bucket_ids=None`` for explicit-team mode. All validation
+    happens before any DB session opens.
+    """
+    has_named = any(entry.team is not None for entry in entries)
+    has_blank = any(entry.team is None for entry in entries)
+
+    if has_named and has_blank:
+        msg = "mixed team-assignment modes are unsupported"
+        raise ValueError(msg)
+
+    if not has_blank:
+        return entries, None
+
+    if team_count is None:
+        msg = "team_count is required for teamless rosters"
+        raise ValueError(msg)
+
+    entries = auto_assign_teams(entries, team_count)
+
+    # Derive distinct bucket IDs in first-seen order
+    seen: dict[str, None] = {}
+    for entry in entries:
+        if entry.team is not None and entry.team not in seen:
+            seen[entry.team] = None
+    return entries, list(seen)
+
+
+async def _resolve_bucket_teams(
+    session: AsyncSession,
+    activity_id: UUID,
+    bucket_ids: list[str],
+    teams_by_codename: dict[str, WargameTeam],
+    existing_codenames: set[str],
+) -> tuple[dict[str, WargameTeam], int]:
+    """Map auto-assign bucket IDs to real teams, creating if needed.
+
+    Returns ``(bucket_to_team, teams_created)``.
+    """
+    existing_teams = list(teams_by_codename.values())
+    existing_count = len(existing_teams)
+    bucket_to_team: dict[str, WargameTeam] = {}
+    teams_created = 0
+
+    if existing_count == 0:
+        for bucket_id in bucket_ids:
+            team = await _create_team(
+                session,
+                activity_id,
+                existing_codenames=existing_codenames,
+            )
+            teams_by_codename[team.codename] = team
+            teams_created += 1
+            bucket_to_team[bucket_id] = team
+    elif existing_count == len(bucket_ids):
+        sorted_teams = sorted(existing_teams, key=lambda t: t.created_at)
+        for bucket_id, team in zip(bucket_ids, sorted_teams, strict=True):
+            bucket_to_team[bucket_id] = team
+    else:
+        msg = (
+            f"auto-assign team_count={len(bucket_ids)} does not match "
+            f"existing team count {existing_count}"
+        )
+        raise ValueError(msg)
+
+    return bucket_to_team, teams_created
+
+
 async def ingest_roster(
     activity_id: UUID,
     csv_content: str,
@@ -386,8 +459,8 @@ async def ingest_roster(
     csv_content : str
         Raw roster CSV content.
     team_count : int | None
-        Reserved for auto-assign mode in later phases. Explicit-team rosters
-        ignore this value.
+        Number of teams for auto-assign mode (teamless rosters). Ignored
+        when all roster entries have explicit team names.
 
     Returns
     -------
@@ -397,33 +470,54 @@ async def ingest_roster(
     Raises
     ------
     ValueError
-        If any parsed roster row omits ``team`` during the explicit-team-only
-        phase of the feature.
+        If the roster mixes named and blank teams, if a teamless roster
+        is provided without ``team_count``, or if ``team_count`` does not
+        match the existing team count for the activity.
     """
     entries = parse_roster(csv_content)
-    if team_count is not None:
-        # Task 1 ignores team_count for explicit-team rosters; Task 2 consumes it.
-        pass
-    if any(entry.team is None for entry in entries):
-        msg = (
-            "team_count support for blank team cells lands via the auto-assign "
-            "path in Task 2"
-        )
-        raise ValueError(msg)
+    entries, bucket_ids = _classify_roster_mode(entries, team_count)
 
     async with get_session() as session:
-        teams_by_codename = await _list_activity_teams_by_codename_with_session(
+        return await _ingest_entries(
             session,
             activity_id,
+            entries,
+            bucket_ids,
         )
-        existing_codenames = set(teams_by_codename)
-        teams_created = 0
-        users_created = 0
-        memberships_created = 0
-        memberships_updated = 0
 
-        for entry in entries:
-            team_name = _require_entry_team(entry)
+
+async def _ingest_entries(
+    session: AsyncSession,
+    activity_id: UUID,
+    entries: list[RosterEntry],
+    bucket_ids: list[str] | None,
+) -> RosterReport:
+    """Apply parsed roster entries inside a caller-owned session."""
+    teams_by_codename = await _list_activity_teams_by_codename_with_session(
+        session,
+        activity_id,
+    )
+    existing_codenames = set(teams_by_codename)
+    teams_created = 0
+    users_created = 0
+    memberships_created = 0
+    memberships_updated = 0
+
+    bucket_to_team: dict[str, WargameTeam] = {}
+    if bucket_ids is not None:
+        bucket_to_team, teams_created = await _resolve_bucket_teams(
+            session,
+            activity_id,
+            bucket_ids,
+            teams_by_codename,
+            existing_codenames,
+        )
+
+    for entry in entries:
+        team_name = _require_entry_team(entry)
+        if bucket_ids is not None:
+            team = bucket_to_team[team_name]
+        else:
             team = teams_by_codename.get(team_name)
             if team is None:
                 team = await _create_team(
@@ -435,29 +529,29 @@ async def ingest_roster(
                 teams_by_codename[team_name] = team
                 teams_created += 1
 
-            user, created_user = await _find_or_create_user_with_session(
-                session,
-                entry.email,
-                _derive_display_name(entry.email),
-            )
-            users_created += int(created_user)
+        user, created_user = await _find_or_create_user_with_session(
+            session,
+            entry.email,
+            _derive_display_name(entry.email),
+        )
+        users_created += int(created_user)
 
-            current_permission = await _resolve_team_permission_with_session(
-                session,
-                team.id,
-                user.id,
-            )
-            if current_permission is None:
-                memberships_created += 1
-            elif current_permission != entry.role:
-                memberships_updated += 1
+        current_permission = await _resolve_team_permission_with_session(
+            session,
+            team.id,
+            user.id,
+        )
+        if current_permission is None:
+            memberships_created += 1
+        elif current_permission != entry.role:
+            memberships_updated += 1
 
-            await _grant_team_permission_with_session(
-                session,
-                team.id,
-                user.id,
-                entry.role,
-            )
+        await _grant_team_permission_with_session(
+            session,
+            team.id,
+            user.id,
+            entry.role,
+        )
 
     return RosterReport(
         entries_processed=len(entries),

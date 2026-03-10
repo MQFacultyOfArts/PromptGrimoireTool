@@ -986,10 +986,14 @@ def find_text_range(page: Page, needle: str) -> tuple[int, int]:
             const idx = fullText.indexOf(needle);
             if (idx === -1)
                 return { error: 'not found', textLength: total };
-            return {
-                start: offsetMap[idx],
-                end: offsetMap[idx + needle.length - 1] + 1,
-            };
+            const endIdx = idx + needle.length;
+            // Use the next char's offset if available; otherwise use
+            // the last matched char's offset (max valid walker index)
+            // so we never exceed the walker's valid range.
+            const end = endIdx < offsetMap.length
+                ? offsetMap[endIdx]
+                : offsetMap[endIdx - 1];
+            return { start: offsetMap[idx], end };
         }""",
         needle,
     )

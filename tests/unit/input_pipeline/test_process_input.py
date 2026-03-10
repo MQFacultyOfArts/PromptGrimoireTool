@@ -164,3 +164,55 @@ class TestProcessInputPdf:
         """PDF requires bytes input — string raises TypeError."""
         with pytest.raises(TypeError, match="bytes"):
             await process_input("not bytes", source_type="pdf")
+
+
+class TestProcessInputPdfPaste:
+    """End-to-end tests for PDF paste scenario through process_input().
+
+    Verifies: file-upload-109.AC6.2
+    PDF viewers paste plain text wrapped in <html><body>...</body></html>.
+    After fake-HTML detection reclassifies this as "text", process_input()
+    should produce HTML with line breaks preserved.
+    """
+
+    @pytest.mark.asyncio
+    async def test_fake_html_paste_produces_line_breaks(self) -> None:
+        """AC6.2: HTML-wrapped plain text produces <br> tags between lines."""
+        pasted = "<html><body>line1\nline2\nline3</body></html>"
+        result = await process_input(pasted, source_type="text")
+        # _text_to_html strips the HTML wrapper, then converts \n to <br>
+        assert "line1" in result
+        assert "line2" in result
+        assert "line3" in result
+        # Lines should be separated by <br> tags (single newlines)
+        assert "<br>" in result
+
+    @pytest.mark.asyncio
+    async def test_evince_fixture_produces_multiple_blocks(self) -> None:
+        """AC6.2: Evince PDF paste fixture produces distinct blocks."""
+        import gzip
+
+        fixture_path = FIXTURES_DIR / "conversations" / "evince_cooking.html.gz"
+        raw_text = gzip.decompress(fixture_path.read_bytes()).decode("utf-8")
+
+        # Wrap in HTML body tags as PDF viewers do
+        wrapped = f"<html><body>{raw_text}</body></html>"
+
+        # Auto-detect the content type — should classify as "text" (fake HTML)
+        from promptgrimoire.input_pipeline.html_input import detect_content_type
+
+        detected = detect_content_type(wrapped)
+        assert detected == "text", f"Expected 'text' but got '{detected}'"
+
+        result = await process_input(wrapped, source_type=detected)
+        tree = LexborHTMLParser(result)
+
+        # Should produce multiple paragraphs or line breaks — not one giant block
+        paragraphs = tree.css("p")
+        br_tags = tree.css("br")
+        # The fixture has many lines; we expect substantial structure
+        total_blocks = len(paragraphs) + len(br_tags)
+        assert total_blocks > 5, (
+            f"Expected multiple text blocks, got "
+            f"{len(paragraphs)} <p> and {len(br_tags)} <br>"
+        )

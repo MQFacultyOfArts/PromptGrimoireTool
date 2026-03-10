@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import subprocess
 
 import fitz
 import mammoth
@@ -67,11 +66,9 @@ async def convert_pdf_to_html(content: bytes) -> str:
         input=markdown.encode(),
     )
     # returncode is guaranteed set after communicate() returns
-    if proc.returncode and proc.returncode != 0:
-        raise subprocess.CalledProcessError(
-            proc.returncode,
-            ["pandoc"],
-            stderr_bytes.decode(),
-        )
+    if proc.returncode != 0:
+        raise ValueError(
+            f"pandoc failed (rc={proc.returncode}): {stderr_bytes.decode()}"
+        ) from None
 
     return stdout_bytes.decode()

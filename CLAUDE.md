@@ -143,7 +143,11 @@ src/promptgrimoire/
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
+│   ├── wargames.py      # Wargame team CRUD, ACL (grant/revoke/update), roster ingestion
 │   └── workspaces.py    # Workspace CRUD (create, get)
+├── wargame/             # Pure-domain helpers for wargame team management
+│   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
+│   └── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
@@ -195,6 +199,20 @@ Three new tables extend the Activity model for wargame scenarios:
 - **WargameConfig** -- PK-as-FK one-to-one on Activity. Holds `system_prompt`, `scenario_bootstrap`, and exactly one timer mode (`timer_delta` XOR `timer_wall_clock`).
 - **WargameTeam** -- Teams within a wargame activity. Codename unique per activity. Tracks `current_round`, `round_state`, `current_deadline`, `game_state_text`, `student_summary_text`.
 - **WargameMessage** -- Per-team message log. Ordered by `sequence_no` (not timestamps). Supports in-place edits (`edited_at`, `thinking`, `metadata_json`).
+
+### Permission `can_edit` Classifier
+
+`Permission.can_edit` (boolean, default FALSE) marks which permission levels grant editorial capability. The wargame team ACL zero-editor invariant queries this flag directly instead of hardcoding permission-name lists. Seed data: `owner` and `editor` have `can_edit=TRUE`; `peer` and `viewer` have `can_edit=FALSE`.
+
+### Wargame Team Management API
+
+`db/wargames.py` provides the full team lifecycle: `create_team`, `create_teams`, `get_team`, `list_teams`, `rename_team`, `delete_team`. Team ACL: `grant_team_permission` (upsert), `revoke_team_permission`, `update_team_permission`, `remove_team_member`, `resolve_team_permission`, `list_team_members`. Roster ingestion: `ingest_roster` (atomic CSV import with two modes -- named-team and auto-assign).
+
+**Zero-editor invariant:** `ZeroEditorError` is raised when a grant downgrade or revoke would leave a team with no `can_edit=TRUE` member. Enforced via `SELECT FOR UPDATE` row locking.
+
+**Roster ingestion modes:** Named-team mode uses explicit team names from CSV. Auto-assign mode distributes members round-robin across `team_count` buckets, mapping to real teams by `created_at` order. Re-imports are additive (existing ACL rows preserved, changed roles updated). Editor-first grant ordering prevents false zero-editor violations during handoff swaps.
+
+Pure-domain helpers live in `wargame/` (codename generation, roster CSV parsing, auto-assign). DB orchestration lives in `db/wargames.py`.
 
 ### ACL Target Polymorphism
 

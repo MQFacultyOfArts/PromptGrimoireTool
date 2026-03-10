@@ -80,3 +80,7 @@ Before modifying core systems, reference the detailed documentation in the `docs
 ### Database Model Summary
 
 15 SQLModel table classes. Activity uses a `type` discriminator (`"annotation"` | `"wargame"`) with composite FK enforcement. ACLEntry targets either a workspace or a wargame team (exactly one, CHECK-enforced). Wargame extension tables: WargameConfig (1:1 on Activity), WargameTeam (per-activity teams), WargameMessage (per-team message log ordered by `sequence_no`).
+
+**Permission `can_edit` classifier**: `Permission.can_edit` (boolean) marks editorial capability. The zero-editor invariant queries this flag instead of hardcoding permission names.
+
+**Wargame team management API** (`db/wargames.py`): Full team CRUD, ACL (grant/revoke/update with upsert), and atomic CSV roster ingestion (named-team and auto-assign modes). `ZeroEditorError` prevents leaving a team with no editable member. Pure-domain helpers (codename generation, roster parsing) live in `wargame/`.

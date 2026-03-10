@@ -39,8 +39,10 @@ from tests.e2e.conftest import _authenticate_page
 # Date assumption: the E2E server and the Playwright runner share the
 # same host, so server-local date == test-runner-local date. If this
 # harness ever becomes distributed (server on a different machine or
-# timezone), the test should freeze or inject the date explicitly
-# instead of relying on host-local coincidence.
+# timezone), freeze or inject the date explicitly instead of relying on
+# host-local coincidence. The right injection point on the server side
+# is `_server_local_export_date` in
+# `src/promptgrimoire/pages/annotation/pdf_export.py`.
 def _expected_stem() -> str:
     today = datetime.now().strftime("%Y%m%d")
     return f"LAWS5000_Lovelace_Ada_Final_Essay_Week_3_Response_{today}"

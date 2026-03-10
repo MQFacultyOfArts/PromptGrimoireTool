@@ -51,22 +51,13 @@ def _server_local_export_date() -> date:
 async def _build_export_filename(workspace_id: UUID) -> str:
     """Return the PDF export basename for the workspace."""
     meta = await get_workspace_export_metadata(workspace_id)
-    if meta is not None:
-        ctx = PdfExportFilenameContext(
-            course_code=meta.course_code,
-            activity_title=meta.activity_title,
-            workspace_title=meta.workspace_title,
-            owner_display_name=meta.owner_display_name,
-            export_date=_server_local_export_date(),
-        )
-    else:
-        ctx = PdfExportFilenameContext(
-            course_code=None,
-            activity_title=None,
-            workspace_title=None,
-            owner_display_name=None,
-            export_date=_server_local_export_date(),
-        )
+    ctx = PdfExportFilenameContext(
+        course_code=meta.course_code if meta else None,
+        activity_title=meta.activity_title if meta else None,
+        workspace_title=meta.workspace_title if meta else None,
+        owner_display_name=meta.owner_display_name if meta else None,
+        export_date=_server_local_export_date(),
+    )
     return build_pdf_export_stem(ctx)
 
 

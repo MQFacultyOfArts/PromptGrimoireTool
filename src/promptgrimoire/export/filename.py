@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING
 from slugify import slugify
 
 if TYPE_CHECKING:
+    # `date` is used only as an annotation on PdfExportFilenameContext.
+    # Callers construct the dataclass and pass it in, so no runtime import
+    # is needed here — the actual `date` instance arrives from the caller.
     from datetime import date
 
 _MAX_FILENAME_LENGTH = 100

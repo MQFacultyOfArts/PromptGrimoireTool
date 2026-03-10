@@ -202,23 +202,32 @@ class TestBuildPdfExportStem:
     # --- AC3.5: first name reduced to initial ---
 
     def test_first_name_reduced_to_initial(self) -> None:
-        """AC3.5: First name reduced to 1-char initial."""
-        # Make activity very long so workspace + activity exhausted
+        """AC3.5: First name reduced to 1-char initial.
+
+        The first name must be long enough that even after workspace and
+        activity are both fully exhausted, the stem still exceeds budget
+        and the initial-reduction path fires.
+
+        With LAWS5000 (8) + _ + Henderson (9) + _ + <first> + _ + <date> (8)
+        the fixed overhead is 28 chars plus separators.  A 70-char first name
+        pushes the minimal stem (no activity, no workspace) to ~100+ chars,
+        guaranteeing the initial-reduction path is exercised.
+        """
+        long_first = "A" * 70  # 70-char first name
         ctx = self._ctx(
             course_code="LAWS5000",
-            owner_display_name="Bartholomew Henderson",
+            owner_display_name=f"{long_first} Henderson",
             activity_title="X" * 80,
             workspace_title="Y" * 80,
         )
         stem = build_pdf_export_stem(ctx)
-        # If workspace and activity are both exhausted, first name
-        # should be reduced to initial "B"
-        if len(f"{stem}.pdf") <= 100:
-            # Check that first name was trimmed
-            parts = stem.split("_")
-            # course_last_first_..._date
-            assert parts[0] == "LAWS5000"
-            assert parts[1] == "Henderson"
+        assert len(f"{stem}.pdf") <= 100
+        parts = stem.split("_")
+        # course_last_first_..._date  (activity and workspace fully trimmed)
+        assert parts[0] == "LAWS5000"
+        assert parts[1] == "Henderson"
+        # First name must have been reduced to single initial
+        assert parts[2] == long_first[0], f"got '{parts[2]}', want initial"
 
     # --- AC3.6: pathological overflow preserved ---
 

@@ -108,11 +108,17 @@ def _is_fake_html(content: str) -> bool:
     elements the content should be treated as ``"text"`` so that
     ``_text_to_html()`` can convert newlines to ``<br/>`` tags.
     """
-    # Strip wrapper tags: <html>, </html>, <head>…</head>, <body>, </body>
+    # Strip <head>…</head> block (content included), then remaining wrapper tags.
     inner = re.sub(
-        r"</?(?:html|head|body)\b[^>]*>",
+        r"<head\b[^>]*>.*?</head>",
         "",
         content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    inner = re.sub(
+        r"</?(?:html|body)\b[^>]*>",
+        "",
+        inner,
         flags=re.IGNORECASE,
     )
     # If no block-level elements remain, it's fake HTML
@@ -130,6 +136,8 @@ def _detect_from_string(content: str) -> ContentType:
     # HTML detection
     lower = stripped.lower()
     if lower.startswith("<!doctype"):
+        # NOTE: DOCTYPE path skips fake-HTML guard — observed PDF pastes
+        # never include DOCTYPE.
         return "html"
     if lower.startswith("<html"):
         # Guard: HTML-wrapped plain text (e.g. PDF paste) → reclassify.

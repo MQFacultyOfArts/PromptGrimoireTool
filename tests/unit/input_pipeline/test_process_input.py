@@ -178,8 +178,15 @@ class TestProcessInputPdfPaste:
     @pytest.mark.asyncio
     async def test_fake_html_paste_produces_line_breaks(self) -> None:
         """AC6.2: HTML-wrapped plain text produces <br> tags between lines."""
+        from promptgrimoire.input_pipeline.html_input import detect_content_type
+
         pasted = "<html><body>line1\nline2\nline3</body></html>"
-        result = await process_input(pasted, source_type="text")
+
+        # Verify detect_content_type reclassifies HTML-wrapped plain text as "text"
+        detected = detect_content_type(pasted)
+        assert detected == "text", f"Expected 'text' but got '{detected}'"
+
+        result = await process_input(pasted, source_type=detected)
         # _text_to_html strips the HTML wrapper, then converts \n to <br>
         assert "line1" in result
         assert "line2" in result

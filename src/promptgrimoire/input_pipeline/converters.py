@@ -47,7 +47,7 @@ async def convert_pdf_to_html(content: bytes) -> str:
 
     def _extract_markdown() -> str:
         doc = fitz.open(stream=content, filetype="pdf")
-        return pymupdf4llm.to_markdown(doc)
+        return pymupdf4llm.to_markdown(doc, ignore_images=True)
 
     try:
         loop = asyncio.get_running_loop()

@@ -290,6 +290,30 @@ class TestBuildPdfExportStem:
         stem = build_pdf_export_stem(ctx)
         assert "_Torts_My_Notes_" in stem
 
+    def test_workspace_kept_when_raw_differs_but_slug_matches(self) -> None:
+        """Workspace kept when raw titles differ even if slugs normalise alike.
+
+        "José" and "Jose" normalise to the same slug, but the raw titles
+        are distinct — the user intentionally renamed the workspace.
+        """
+        ctx = self._ctx(
+            activity_title="José",
+            workspace_title="Jose",
+        )
+        stem = build_pdf_export_stem(ctx)
+        assert "_Jose_Jose_" in stem
+
+    def test_workspace_fallback_not_suppressed_by_activity(self) -> None:
+        """Workspace fallback 'Workspace' is not suppressed even if activity
+        normalises to the same slug (e.g. activity='Workspace!!!').
+        """
+        ctx = self._ctx(
+            activity_title="Workspace!!!",
+            workspace_title=None,
+        )
+        stem = build_pdf_export_stem(ctx)
+        assert "_Workspace_Workspace_" in stem
+
     def test_fallback_blank_workspace(self) -> None:
         """Blank workspace title falls back to 'Workspace'."""
         ctx = self._ctx(workspace_title=None)

@@ -144,8 +144,10 @@ def build_pdf_export_stem(ctx: PdfExportFilenameContext) -> str:
     first = _safe_segment(first_raw) or "Unknown"
     date_part = ctx.export_date.strftime("%Y%m%d")
 
-    # Suppress workspace segment when it duplicates the activity (default title)
-    if workspace == activity:
+    # Suppress workspace segment when its raw title is literally the same as
+    # the activity title (the default when workspaces are cloned). Compare raw
+    # values, not sanitised segments, so that "José" vs "Jose" stays distinct.
+    if ctx.workspace_title and ctx.workspace_title == ctx.activity_title:
         workspace = ""
 
     # Truncate to fit budget

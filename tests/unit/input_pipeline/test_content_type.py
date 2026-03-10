@@ -20,7 +20,7 @@ class TestDetectContentType:
 
     def test_html_tag_only(self) -> None:
         """Detect HTML from html tag without DOCTYPE."""
-        content = "<html><body>Hello</body></html>"
+        content = "<html><body><p>Hello</p></body></html>"
         assert detect_content_type(content) == "html"
 
     def test_html_with_div(self) -> None:
@@ -35,7 +35,7 @@ class TestDetectContentType:
 
     def test_html_case_insensitive(self) -> None:
         """Detect HTML regardless of tag case."""
-        content = "<HTML><BODY>Hello</BODY></HTML>"
+        content = "<HTML><BODY><P>Hello</P></BODY></HTML>"
         assert detect_content_type(content) == "html"
 
     def test_html_with_whitespace(self) -> None:
@@ -80,7 +80,7 @@ class TestDetectContentType:
 
     def test_bytes_utf8(self) -> None:
         """Bytes content decoded as UTF-8."""
-        content = b"<html><body>Hello</body></html>"
+        content = b"<html><body><p>Hello</p></body></html>"
         assert detect_content_type(content) == "html"
 
 
@@ -160,3 +160,102 @@ class TestDetectContentTypeFixtures:
         """BLNS JSON also contains HTML XSS strings."""
         content = (FIXTURES_DIR / "blns.json").read_bytes()
         assert detect_content_type(content) == "html"
+
+
+class TestFakeHtmlDetection:
+    """Tests for fake-HTML reclassification (AC6.2).
+
+    PDF viewers paste plain text wrapped in <html><body>...</body></html>.
+    This should be detected as "text", not "html", so that _text_to_html()
+    converts newlines to <br/> tags.
+    """
+
+    def test_html_wrapped_plain_text_is_text(self) -> None:
+        """AC6.2: HTML wrapper around plain text is reclassified as text."""
+        content = "<html><head></head><body>line1\nline2\nline3</body></html>"
+        assert detect_content_type(content) == "text"
+
+    def test_real_html_with_p_tags_stays_html(self) -> None:
+        """Real HTML with <p> tags is still detected as HTML."""
+        content = "<html><body><p>paragraph one</p><p>paragraph two</p></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_div_stays_html(self) -> None:
+        """HTML with <div> elements stays HTML."""
+        content = "<html><body><div>content</div></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_heading_stays_html(self) -> None:
+        """HTML with heading elements stays HTML."""
+        content = "<html><body><h1>Title</h1>Some text</body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_table_stays_html(self) -> None:
+        """HTML with <table> stays HTML."""
+        content = "<html><body><table><tr><td>cell</td></tr></table></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_ul_stays_html(self) -> None:
+        """HTML with <ul> stays HTML."""
+        content = "<html><body><ul><li>item</li></ul></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_ol_stays_html(self) -> None:
+        """HTML with <ol> stays HTML."""
+        content = "<html><body><ol><li>item</li></ol></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_blockquote_stays_html(self) -> None:
+        """HTML with <blockquote> stays HTML."""
+        content = "<html><body><blockquote>quote</blockquote></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_pre_stays_html(self) -> None:
+        """HTML with <pre> stays HTML."""
+        content = "<html><body><pre>code block</pre></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_section_stays_html(self) -> None:
+        """HTML with <section> stays HTML."""
+        content = "<html><body><section>content</section></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_real_html_with_article_stays_html(self) -> None:
+        """HTML with <article> stays HTML."""
+        content = "<html><body><article>content</article></body></html>"
+        assert detect_content_type(content) == "html"
+
+    def test_plain_text_without_wrapper_still_text(self) -> None:
+        """Plain text without HTML wrapper is still detected as text."""
+        content = "Just plain text\nwith newlines\nand nothing else."
+        assert detect_content_type(content) == "text"
+
+    def test_evince_fixture_wrapped_in_html_is_text(self) -> None:
+        """Real-world evince PDF paste fixture wrapped in HTML body is text.
+
+        The evince_cooking fixture contains plain text output from a PDF
+        viewer. When wrapped in <html><body>, it should be reclassified as
+        text since there are no block-level elements.
+        """
+        compressed = (
+            FIXTURES_DIR / "conversations" / "evince_cooking.html.gz"
+        ).read_bytes()
+        raw_text = gzip.decompress(compressed).decode("utf-8")
+        wrapped = f"<html><body>{raw_text}</body></html>"
+        assert detect_content_type(wrapped) == "text"
+
+    def test_html_with_only_span_is_text(self) -> None:
+        """HTML with only inline elements (span) is reclassified as text.
+
+        Span is inline, not block-level — no structural HTML present.
+        """
+        content = "<html><body><span>just inline</span> text</body></html>"
+        assert detect_content_type(content) == "text"
+
+    def test_html_with_only_br_is_text(self) -> None:
+        """HTML with only <br> tags (no block elements) is text.
+
+        <br> is inline/void, not a block-level structural element.
+        """
+        content = "<html><body>line1<br>line2<br>line3</body></html>"
+        assert detect_content_type(content) == "text"

@@ -93,6 +93,32 @@ def _detect_from_bytes(content: bytes) -> ContentType | None:
     return None
 
 
+_BLOCK_LEVEL_TAG_RE = re.compile(
+    r"<(?:p|div|h[1-6]|ul|ol|table|blockquote|pre|section|article)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_fake_html(content: str) -> bool:
+    """Check whether *content* is plain text wrapped in an HTML shell.
+
+    PDF viewers (Chrome, Evince) paste plain text as
+    ``<html><body>text\\n…</body></html>`` — structurally HTML but
+    semantically plain text.  If the body contains no block-level
+    elements the content should be treated as ``"text"`` so that
+    ``_text_to_html()`` can convert newlines to ``<br/>`` tags.
+    """
+    # Strip wrapper tags: <html>, </html>, <head>…</head>, <body>, </body>
+    inner = re.sub(
+        r"</?(?:html|head|body)\b[^>]*>",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    )
+    # If no block-level elements remain, it's fake HTML
+    return _BLOCK_LEVEL_TAG_RE.search(inner) is None
+
+
 def _detect_from_string(content: str) -> ContentType:
     """Detect content type from string content."""
     stripped = content.lstrip()
@@ -103,7 +129,14 @@ def _detect_from_string(content: str) -> ContentType:
 
     # HTML detection
     lower = stripped.lower()
-    if lower.startswith("<!doctype") or lower.startswith("<html"):
+    if lower.startswith("<!doctype"):
+        return "html"
+    if lower.startswith("<html"):
+        # Guard: HTML-wrapped plain text (e.g. PDF paste) → reclassify.
+        # PDF viewers paste <html><body>text\n…</body></html> without
+        # DOCTYPE — no block-level elements means it's plain text.
+        if _is_fake_html(stripped):
+            return "text"
         return "html"
 
     # Check for HTML-like structure (tags)

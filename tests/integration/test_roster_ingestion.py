@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
 import pytest
 from sqlmodel import select
 
 from promptgrimoire.config import get_settings
+
+if TYPE_CHECKING:
+    from sqlmodel.ext.asyncio.session import AsyncSession
 from promptgrimoire.db.models import ACLEntry, Activity, Course, User, WargameTeam, Week
 
 pytestmark = pytest.mark.skipif(
@@ -411,3 +415,72 @@ class TestAdditiveReimport:
 
         assert report.teams_created == 0
         assert [t.id for t in teams_second] == [t.id for t in teams_first]
+
+
+class TestAtomicRollback:
+    """Integration tests for atomicity guarantees."""
+
+    @pytest.mark.asyncio
+    async def test_failure_after_partial_writes_rolls_back_all_rows(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Failure mid-ingest rolls back users, teams, and ACL rows."""
+        import promptgrimoire.db.wargames as wargames_mod
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        activity = await _make_wargame_activity("rollback")
+        csv_content = f"email,team,role\n{alice},ALPHA,editor\n{bob},BRAVO,editor\n"
+
+        # Let the first grant succeed (stages a user, team, ACL row),
+        # then blow up on the second grant.
+        original_grant = wargames_mod._grant_team_permission_with_session
+        call_count = 0
+
+        async def _exploding_grant(
+            session: AsyncSession,
+            team_id: UUID,
+            user_id: UUID,
+            permission: str,
+        ) -> ACLEntry:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                msg = "injected failure for atomicity test"
+                raise RuntimeError(msg)
+            return await original_grant(session, team_id, user_id, permission)
+
+        monkeypatch.setattr(
+            wargames_mod,
+            "_grant_team_permission_with_session",
+            _exploding_grant,
+        )
+
+        with pytest.raises(RuntimeError, match="injected failure"):
+            await ingest_roster(activity.id, csv_content)
+
+        # Nothing should have survived the rollback
+        teams = await _list_activity_teams(activity.id)
+        users = await _list_users_by_email([alice, bob])
+        memberships = await _list_team_memberships(activity.id)
+
+        assert teams == []
+        assert users == []
+        assert memberships == []
+
+
+class TestPublicAPIExport:
+    """Smoke tests for the public API surface."""
+
+    def test_roster_report_and_ingest_importable_from_db_package(self) -> None:
+        """RosterReport and ingest_roster are importable from promptgrimoire.db."""
+        from promptgrimoire.db import RosterReport, ingest_roster
+
+        assert callable(ingest_roster)
+        assert hasattr(RosterReport, "entries_processed")
+        assert hasattr(RosterReport, "teams_created")
+        assert hasattr(RosterReport, "users_created")
+        assert hasattr(RosterReport, "memberships_created")
+        assert hasattr(RosterReport, "memberships_updated")

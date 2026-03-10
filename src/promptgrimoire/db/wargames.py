@@ -473,6 +473,9 @@ async def ingest_roster(
         If the roster mixes named and blank teams, if a teamless roster
         is provided without ``team_count``, or if ``team_count`` does not
         match the existing team count for the activity.
+
+    All writes happen inside a single database session. Any failure
+    rolls back the entire import — no partial state is persisted.
     """
     entries = parse_roster(csv_content)
     entries, bucket_ids = _classify_roster_mode(entries, team_count)

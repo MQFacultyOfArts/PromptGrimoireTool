@@ -456,7 +456,6 @@ class TestAtomicRollback:
     ) -> None:
         """Failure mid-ingest rolls back users, teams, and ACL rows."""
         import promptgrimoire.db.wargames as wargames_mod
-        from promptgrimoire.db.wargames import ingest_roster
 
         alice = _unique_email("alice")
         bob = _unique_email("bob")
@@ -488,7 +487,7 @@ class TestAtomicRollback:
         )
 
         with pytest.raises(RuntimeError, match="injected failure"):
-            await ingest_roster(activity.id, csv_content)
+            await wargames_mod.ingest_roster(activity.id, csv_content)
 
         # Nothing should have survived the rollback
         teams = await _list_activity_teams(activity.id)

@@ -296,3 +296,118 @@ class TestAutoAssignRosterIngestion:
         memberships_after = await _list_team_memberships(activity.id)
         assert [t.id for t in teams_after] == [t.id for t in teams_before]
         assert memberships_after == memberships_before
+
+
+class TestAdditiveReimport:
+    """Integration tests for additive re-import semantics and editor handoff."""
+
+    @pytest.mark.asyncio
+    async def test_reimport_updates_role_and_retains_omitted_member(self) -> None:
+        """AC7.1: re-import updates changed roles, omitted members keep ACL."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        carol = _unique_email("carol")
+        activity = await _make_wargame_activity("reimport-additive")
+
+        # Initial import: alice=editor, bob=viewer, carol=viewer on ALPHA
+        csv_1 = (
+            f"email,team,role\n"
+            f"{alice},ALPHA,editor\n"
+            f"{bob},ALPHA,viewer\n"
+            f"{carol},ALPHA,viewer\n"
+        )
+        await ingest_roster(activity.id, csv_1)
+
+        # Re-import: change bob to editor, omit carol entirely
+        csv_2 = f"email,team,role\n{alice},ALPHA,editor\n{bob},ALPHA,editor\n"
+        report = await ingest_roster(activity.id, csv_2)
+
+        memberships = await _list_team_memberships(activity.id)
+
+        assert report.memberships_updated == 1  # bob: viewer→editor
+        assert report.memberships_created == 0
+        assert report.teams_created == 0
+
+        membership_map = {email: perm for _, email, perm in memberships}
+        assert membership_map[alice] == "editor"
+        assert membership_map[bob] == "editor"
+        # Carol was omitted but must still be present
+        assert membership_map[carol] == "viewer"
+
+    @pytest.mark.asyncio
+    async def test_reimport_preserves_existing_user_display_name(self) -> None:
+        """Existing users keep their custom display_name after re-import."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        activity = await _make_wargame_activity("reimport-display-name")
+
+        csv_1 = f"email,team,role\n{alice},ALPHA,editor\n"
+        await ingest_roster(activity.id, csv_1)
+
+        # Manually update display_name to a custom value
+        async with get_session() as session:
+            from sqlmodel import select as sel
+
+            result = await session.exec(sel(User).where(User.email == alice))
+            user = result.one()
+            user.display_name = "Dr Alice Custom"
+            session.add(user)
+            await session.flush()
+
+        # Re-import same user
+        csv_2 = f"email,team,role\n{alice},ALPHA,editor\n"
+        await ingest_roster(activity.id, csv_2)
+
+        users = await _list_users_by_email([alice])
+        assert users[0].display_name == "Dr Alice Custom"
+
+    @pytest.mark.asyncio
+    async def test_editor_handoff_swap_succeeds_with_can_edit_ordering(self) -> None:
+        """Editor handoff: Alice editor→viewer, Bob viewer→editor succeeds."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        activity = await _make_wargame_activity("editor-handoff")
+
+        # Initial: Alice=editor, Bob=viewer
+        csv_1 = f"email,team,role\n{alice},ALPHA,editor\n{bob},ALPHA,viewer\n"
+        await ingest_roster(activity.id, csv_1)
+
+        # Swap: Alice→viewer, Bob→editor
+        # Without can_edit ordering, Alice's downgrade would fail zero-editor check
+        csv_2 = f"email,team,role\n{alice},ALPHA,viewer\n{bob},ALPHA,editor\n"
+        report = await ingest_roster(activity.id, csv_2)
+
+        memberships = await _list_team_memberships(activity.id)
+        membership_map = {email: perm for _, email, perm in memberships}
+
+        assert report.memberships_updated == 2
+        assert membership_map[alice] == "viewer"
+        assert membership_map[bob] == "editor"
+
+    @pytest.mark.asyncio
+    async def test_auto_assign_reimport_reuses_generated_teams(self) -> None:
+        """Repeating auto-assign re-import reuses existing generated teams."""
+        from promptgrimoire.db.wargames import ingest_roster
+
+        alice = _unique_email("alice")
+        bob = _unique_email("bob")
+        carol = _unique_email("carol")
+        dave = _unique_email("dave")
+        activity = await _make_wargame_activity("auto-assign-reimport")
+
+        csv_1 = f"email,role\n{alice},editor\n{bob},editor\n"
+        await ingest_roster(activity.id, csv_1, team_count=2)
+        teams_first = await _list_activity_teams(activity.id)
+
+        csv_2 = f"email,role\n{carol},editor\n{dave},editor\n"
+        report = await ingest_roster(activity.id, csv_2, team_count=2)
+        teams_second = await _list_activity_teams(activity.id)
+
+        assert report.teams_created == 0
+        assert [t.id for t in teams_second] == [t.id for t in teams_first]

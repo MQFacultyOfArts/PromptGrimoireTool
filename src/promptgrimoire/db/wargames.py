@@ -486,6 +486,18 @@ async def ingest_roster(
         )
 
 
+@dataclass(slots=True)
+class _PendingGrant:
+    """One resolved grant awaiting application, sortable by can_edit."""
+
+    team_id: UUID
+    user_id: UUID
+    permission: str
+    can_edit: bool
+    is_new: bool
+    is_changed: bool
+
+
 async def _ingest_entries(
     session: AsyncSession,
     activity_id: UUID,
@@ -500,8 +512,6 @@ async def _ingest_entries(
     existing_codenames = set(teams_by_codename)
     teams_created = 0
     users_created = 0
-    memberships_created = 0
-    memberships_updated = 0
 
     bucket_to_team: dict[str, WargameTeam] = {}
     if bucket_ids is not None:
@@ -513,6 +523,8 @@ async def _ingest_entries(
             existing_codenames,
         )
 
+    # Phase 1: resolve teams and users, build pending grants
+    pending: list[_PendingGrant] = []
     for entry in entries:
         team_name = _require_entry_team(entry)
         if bucket_ids is not None:
@@ -541,16 +553,41 @@ async def _ingest_entries(
             team.id,
             user.id,
         )
-        if current_permission is None:
+        desired_perm_row = await _get_permission_row_with_session(
+            session,
+            entry.role,
+        )
+        if desired_perm_row is None:
+            msg = f"unknown permission: {entry.role}"
+            raise ValueError(msg)
+
+        pending.append(
+            _PendingGrant(
+                team_id=team.id,
+                user_id=user.id,
+                permission=entry.role,
+                can_edit=desired_perm_row.can_edit,
+                is_new=current_permission is None,
+                is_changed=current_permission is not None
+                and current_permission != entry.role,
+            )
+        )
+
+    # Phase 2: apply grants with can_edit=TRUE first for safe editor handoffs
+    pending.sort(key=lambda g: (not g.can_edit, g.permission))
+    memberships_created = 0
+    memberships_updated = 0
+    for grant in pending:
+        if grant.is_new:
             memberships_created += 1
-        elif current_permission != entry.role:
+        elif grant.is_changed:
             memberships_updated += 1
 
         await _grant_team_permission_with_session(
             session,
-            team.id,
-            user.id,
-            entry.role,
+            grant.team_id,
+            grant.user_id,
+            grant.permission,
         )
 
     return RosterReport(

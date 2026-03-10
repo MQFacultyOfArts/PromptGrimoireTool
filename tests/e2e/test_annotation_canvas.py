@@ -28,6 +28,7 @@ from tests.e2e.annotation_helpers import (
     add_comment_to_highlight,
     create_highlight_with_tag,
     expand_card,
+    find_text_range,
     seed_tag_id,
     select_chars,
     wait_for_text_walker,
@@ -133,7 +134,7 @@ class TestAnnotationCanvas:
         key3_tag_name = _tag_name_from_toolbar_button(toolbar, position=3)
 
         # Press "2" with text selected -- highlight created with tag at position 2
-        select_chars(page, 0, 5)
+        select_chars(page, *find_text_range(page, "plaintiff"))
         page.keyboard.press("2")
 
         first_card = page.locator("[data-testid='annotation-card']").first
@@ -144,7 +145,7 @@ class TestAnnotationCanvas:
         expect(first_card_select).to_contain_text(key2_tag_name, timeout=3000)
 
         # Press "3" with text selected -- highlight created with tag at position 3
-        select_chars(page, 10, 20)
+        select_chars(page, *find_text_range(page, "defendant"))
         page.keyboard.press("3")
 
         cards = page.locator("[data-testid='annotation-card']")
@@ -199,7 +200,8 @@ class TestAnnotationCanvas:
         expect(toolbar).to_be_visible(timeout=5000)
 
         # Step 3: Create a highlight with tag index 0 (Jurisdiction)
-        create_highlight_with_tag(page, 0, 15, tag_index=0)
+        hl = find_text_range(page, "The court held")
+        create_highlight_with_tag(page, *hl, tag_index=0)
 
         first_card = page.locator("[data-testid='annotation-card']").first
         expect(first_card).to_be_visible(timeout=10000)

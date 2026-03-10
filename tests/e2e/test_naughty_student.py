@@ -33,6 +33,7 @@ import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
+    find_text_range,
     select_chars,
     setup_workspace_with_content,
     wait_for_text_walker,
@@ -453,7 +454,7 @@ class TestNaughtyStudent:
 
             with subtests.test(msg="copy_blocked"):
                 # Select text in the document
-                select_chars(student_page, 0, 5)
+                select_chars(student_page, *find_text_range(student_page, "protected"))
 
                 # Attempt Ctrl+C
                 student_page.keyboard.press("Control+c")
@@ -470,7 +471,7 @@ class TestNaughtyStudent:
                 )
 
                 # Select text and attempt Ctrl+X
-                select_chars(student_page, 0, 5)
+                select_chars(student_page, *find_text_range(student_page, "protected"))
                 student_page.keyboard.press("Control+x")
 
                 # Verify toast notification

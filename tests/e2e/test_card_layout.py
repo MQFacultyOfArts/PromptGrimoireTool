@@ -22,6 +22,7 @@ from tests.e2e.annotation_helpers import (
     collapse_card,
     create_highlight_with_tag,
     expand_card,
+    find_text_range,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page, _grant_workspace_access
@@ -97,17 +98,20 @@ class TestCardPositioning:
         expect(toolbar).to_be_visible(timeout=5000)
 
         # Create 3 highlights at different positions
-        create_highlight_with_tag(page, 0, 20, tag_index=0)
+        hl1 = find_text_range(page, "plaintiff alleged")
+        create_highlight_with_tag(page, *hl1, tag_index=0)
         expect(page.locator("[data-testid='annotation-card']").first).to_be_visible(
             timeout=10000
         )
 
-        create_highlight_with_tag(page, 40, 60, tag_index=1)
+        hl2 = find_text_range(page, "duty of care")
+        create_highlight_with_tag(page, *hl2, tag_index=1)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             2, timeout=10000
         )
 
-        create_highlight_with_tag(page, 80, 100, tag_index=2)
+        hl3 = find_text_range(page, "court considered")
+        create_highlight_with_tag(page, *hl3, tag_index=2)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             3, timeout=10000
         )
@@ -159,12 +163,14 @@ class TestCardPositioning:
         expect(toolbar).to_be_visible(timeout=5000)
 
         # Create 2 highlights near the top
-        create_highlight_with_tag(page, 0, 15, tag_index=0)
+        hl1 = find_text_range(page, "First paragraph")
+        create_highlight_with_tag(page, *hl1, tag_index=0)
         expect(page.locator("[data-testid='annotation-card']").first).to_be_visible(
             timeout=10000
         )
 
-        create_highlight_with_tag(page, 20, 40, tag_index=1)
+        hl2 = find_text_range(page, "important content")
+        create_highlight_with_tag(page, *hl2, tag_index=1)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             2, timeout=10000
         )
@@ -245,7 +251,8 @@ class TestCardPositioning:
         toolbar = page.locator("[data-testid='tag-toolbar']")
         expect(toolbar).to_be_visible(timeout=5000)
 
-        create_highlight_with_tag(page, 0, 20, tag_index=0)
+        hl = find_text_range(page, "court found that")
+        create_highlight_with_tag(page, *hl, tag_index=0)
         expect(page.locator("[data-testid='annotation-card']").first).to_be_visible(
             timeout=10000
         )
@@ -304,7 +311,8 @@ class TestCollapsedCards:
         toolbar = page.locator("[data-testid='tag-toolbar']")
         expect(toolbar).to_be_visible(timeout=5000)
 
-        create_highlight_with_tag(page, 0, 20, tag_index=0)
+        hl = find_text_range(page, "plaintiff alleged")
+        create_highlight_with_tag(page, *hl, tag_index=0)
 
         card = page.locator("[data-testid='annotation-card']").first
         expect(card).to_be_visible(timeout=10000)
@@ -342,7 +350,8 @@ class TestCollapsedCards:
         toolbar = page.locator("[data-testid='tag-toolbar']")
         expect(toolbar).to_be_visible(timeout=5000)
 
-        create_highlight_with_tag(page, 0, 20, tag_index=0)
+        hl = find_text_range(page, "expand-collapse")
+        create_highlight_with_tag(page, *hl, tag_index=0)
 
         card = page.locator("[data-testid='annotation-card']").first
         expect(card).to_be_visible(timeout=10000)
@@ -388,7 +397,8 @@ class TestCollapsedCards:
         toolbar = page.locator("[data-testid='tag-toolbar']")
         expect(toolbar).to_be_visible(timeout=5000)
 
-        create_highlight_with_tag(page, 0, 15, tag_index=0)
+        hl = find_text_range(page, "Author initials")
+        create_highlight_with_tag(page, *hl, tag_index=0)
 
         card = page.locator("[data-testid='annotation-card']").first
         expect(card).to_be_visible(timeout=10000)
@@ -432,12 +442,14 @@ class TestCollapsedCards:
         expect(toolbar).to_be_visible(timeout=5000)
 
         # Create 2 highlights
-        create_highlight_with_tag(page, 0, 15, tag_index=0)
+        hl1 = find_text_range(page, "court considered")
+        create_highlight_with_tag(page, *hl1, tag_index=0)
         expect(page.locator("[data-testid='annotation-card']").first).to_be_visible(
             timeout=10000
         )
 
-        create_highlight_with_tag(page, 30, 50, tag_index=1)
+        hl2 = find_text_range(page, "reaching its conclusion")
+        create_highlight_with_tag(page, *hl2, tag_index=1)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             2, timeout=10000
         )
@@ -489,7 +501,11 @@ class TestCollapsedCards:
             toolbar = page_owner.locator("[data-testid='tag-toolbar']")
             expect(toolbar).to_be_visible(timeout=5000)
 
-            create_highlight_with_tag(page_owner, 0, 15, tag_index=0)
+            create_highlight_with_tag(
+                page_owner,
+                *find_text_range(page_owner, "Viewer restriction"),
+                tag_index=0,
+            )
             expect(
                 page_owner.locator("[data-testid='annotation-card']").first
             ).to_be_visible(timeout=10000)

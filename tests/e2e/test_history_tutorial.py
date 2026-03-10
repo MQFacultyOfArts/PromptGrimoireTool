@@ -33,6 +33,7 @@ from tests.e2e.annotation_helpers import (
     add_comment_to_highlight,
     create_highlight_with_tag,
     expand_card,
+    find_text_range,
     select_chars,
 )
 
@@ -69,8 +70,10 @@ class TestHistoryTutorial:
         comment_uuid = ""
 
         with subtests.test(msg="student_a_highlights_text"):
-            # Student A highlights "Coll" (chars 0-4) with Jurisdiction tag
-            create_highlight_with_tag(page1, 0, 4, tag_index=0)
+            # Student A highlights "Collaboration" with Jurisdiction tag
+            create_highlight_with_tag(
+                page1, *find_text_range(page1, "Collaboration"), tag_index=0
+            )
 
             # Verify annotation card appears on page1
             expect(page1.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
@@ -80,8 +83,10 @@ class TestHistoryTutorial:
             expect(page2.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
         with subtests.test(msg="student_b_highlights_different_text"):
-            # Student B highlights "word1" (chars 18-23) with Procedural History tag
-            create_highlight_with_tag(page2, 18, 23, tag_index=1)
+            # Student B highlights "word1" with Procedural History tag
+            create_highlight_with_tag(
+                page2, *find_text_range(page2, "word1"), tag_index=1
+            )
 
             # Verify Student B now sees 2 annotation cards
             expect(page2.locator(ANNOTATION_CARD)).to_have_count(2, timeout=10000)
@@ -92,7 +97,7 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="student_a_adds_comment"):
             # Generate unique comment text
-            comment_uuid = uuid4().hex
+            comment_uuid = uuid4().hex[:8]
 
             add_comment_to_highlight(page1, comment_uuid, card_index=0)
             expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=5000)
@@ -135,12 +140,10 @@ class TestHistoryTutorial:
 
         with subtests.test(msg="concurrent_highlights"):
             # Both students highlight different ranges simultaneously
-            # Student A: chars 24-29 (" word2")
-            select_chars(page1, 24, 29)
+            select_chars(page1, *find_text_range(page1, "word2"))
             page1.locator("[data-testid='tag-toolbar'] button").first.click()
 
-            # Student B: chars 30-35 (" word3")
-            select_chars(page2, 30, 35)
+            select_chars(page2, *find_text_range(page2, "word3"))
             page2.locator("[data-testid='tag-toolbar'] button").first.click()
 
             # Wait for sync; both pages should have 4 cards total
@@ -157,7 +160,9 @@ class TestHistoryTutorial:
             initial_org_count = page2.locator('[data-testid="organise-card"]').count()
 
             # Student A creates another highlight on Tab 1
-            create_highlight_with_tag(page1, 37, 41, tag_index=0)
+            create_highlight_with_tag(
+                page1, *find_text_range(page1, "word4"), tag_index=0
+            )
 
             # Student B should see new organise-card appear
             expect(page2.locator('[data-testid="organise-card"]')).to_have_count(
@@ -178,7 +183,9 @@ class TestHistoryTutorial:
             ).count()
 
             # Student A creates yet another highlight on Tab 1
-            create_highlight_with_tag(page1, 43, 47, tag_index=1)
+            create_highlight_with_tag(
+                page1, *find_text_range(page1, "word5"), tag_index=1
+            )
 
             # Student B should see new reference card appear
             expect(

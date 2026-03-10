@@ -22,6 +22,7 @@ from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
     create_highlight,
     create_highlight_with_tag,
+    find_text_range,
     wait_for_text_walker,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -123,7 +124,7 @@ class TestDragCards:
         page = drag_workspace_page
 
         # Create a highlight (tag index 0 = Jurisdiction)
-        create_highlight(page, 0, 4)
+        create_highlight(page, *find_text_range(page, "Alpha"))
 
         _switch_to_organise(page)
 
@@ -158,12 +159,12 @@ class TestDragReorderWithinColumn:
         page = drag_workspace_page
 
         # Create two highlights with same tag (Jurisdiction = index 0)
-        create_highlight_with_tag(page, 0, 4, 0)  # "Alpha"
+        create_highlight_with_tag(page, *find_text_range(page, "Alpha"), tag_index=0)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             1, timeout=5000
         )
 
-        create_highlight_with_tag(page, 6, 10, 0)  # "Bravo"
+        create_highlight_with_tag(page, *find_text_range(page, "Bravo"), tag_index=0)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             2, timeout=5000
         )
@@ -223,7 +224,7 @@ class TestDragBetweenColumns:
         page = drag_workspace_page
 
         # Create highlight with Jurisdiction tag (index 0)
-        create_highlight_with_tag(page, 0, 4, 0)
+        create_highlight_with_tag(page, *find_text_range(page, "Alpha"), tag_index=0)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             1, timeout=5000
         )
@@ -286,7 +287,7 @@ class TestDragBetweenColumns:
         page = drag_workspace_page
 
         # Create highlight with Jurisdiction tag (index 0)
-        create_highlight_with_tag(page, 0, 4, 0)
+        create_highlight_with_tag(page, *find_text_range(page, "Alpha"), tag_index=0)
         expect(page.locator("[data-testid='annotation-card']")).to_have_count(
             1, timeout=5000
         )
@@ -354,12 +355,12 @@ class TestConcurrentDrag:
         page1, page2, _workspace_id = two_annotation_contexts
 
         # Create two highlights on page1 (both Jurisdiction = index 0)
-        create_highlight_with_tag(page1, 0, 4, 0)  # "Sync "
+        create_highlight_with_tag(page1, *find_text_range(page1, "Sync"), tag_index=0)
         expect(page1.locator("[data-testid='annotation-card']")).to_have_count(
             1, timeout=5000
         )
 
-        create_highlight_with_tag(page1, 5, 9, 0)  # "test "
+        create_highlight_with_tag(page1, *find_text_range(page1, "test"), tag_index=0)
         expect(page1.locator("[data-testid='annotation-card']")).to_have_count(
             2, timeout=5000
         )

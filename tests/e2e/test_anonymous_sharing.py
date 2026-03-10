@@ -41,6 +41,7 @@ from tests.e2e.annotation_helpers import (
     count_comment_delete_buttons,
     create_highlight,
     export_annotation_tex_text,
+    find_text_range,
     get_comment_authors,
     get_user_id_by_email,
     toggle_share_with_class,
@@ -214,7 +215,7 @@ def _owner_creates_content(
             toggle_share_with_class(page)
 
         with subtests.test(msg="owner_creates_highlight_and_comment"):
-            create_highlight(page, 0, 13)
+            create_highlight(page, *find_text_range(page, "The plaintiff"))
             page.locator("[data-testid='annotation-card']").first.wait_for(
                 state="visible", timeout=5000
             )

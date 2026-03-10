@@ -147,7 +147,7 @@ class TestLawStudent:
 
             with subtests.test(msg="add_comment_with_uuid"):
                 # Generate unique comment identifier
-                uuid1 = uuid4().hex
+                uuid1 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid1, card_index=0)
                 expect(page.get_by_text(uuid1)).to_be_visible(timeout=5000)
 
@@ -162,7 +162,7 @@ class TestLawStudent:
 
             with subtests.test(msg="add_second_comment_with_uuid"):
                 # Generate second unique comment identifier
-                uuid2 = uuid4().hex
+                uuid2 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid2, card_index=1)
                 expect(page.get_by_text(uuid2)).to_be_visible(timeout=5000)
 

@@ -113,13 +113,14 @@ class TestOrganiseTabSync:
         """
         from tests.e2e.annotation_helpers import (
             create_highlight_with_tag,
+            find_text_range,
             wait_for_text_walker,
         )
 
         page_a, _page_b, _workspace_id = two_annotation_contexts
 
         # 1. Create a highlight with Jurisdiction tag (index 0 in seeded tags)
-        create_highlight_with_tag(page_a, 0, 4, tag_index=0)
+        create_highlight_with_tag(page_a, *find_text_range(page_a, "Sync"), tag_index=0)
 
         # Wait for the annotation card to appear (confirms highlight saved)
         expect(page_a.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)

@@ -37,6 +37,7 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _create_workspace_no_tag_permission,
     _create_workspace_via_db,
+    find_text_range,
     select_chars,
     wait_for_text_walker,
 )
@@ -94,7 +95,7 @@ class TestEmptyTagFloatingMenu:
 
             with subtests.test(msg="ac1_1_new_button_in_zero_tag_workspace"):
                 # AC1.1: Select text and verify "+ New" button appears
-                select_chars(page, 5, 20)
+                select_chars(page, *find_text_range(page, "tag test content"))
 
                 new_btn = page.get_by_test_id("highlight-menu-new-tag")
                 expect(new_btn).to_be_visible(timeout=5000)
@@ -114,7 +115,7 @@ class TestEmptyTagFloatingMenu:
 
             with subtests.test(msg="ac1_5_cancel_dialog_no_highlight"):
                 # AC1.5: Click "+ New", cancel dialog, no highlight created
-                select_chars(page, 5, 20)
+                select_chars(page, *find_text_range(page, "tag test content"))
 
                 new_btn = page.get_by_test_id("highlight-menu-new-tag")
                 expect(new_btn).to_be_visible(timeout=5000)
@@ -132,7 +133,7 @@ class TestEmptyTagFloatingMenu:
             with subtests.test(msg="ac1_5_reselect_after_cancel"):
                 # AC1.5 (selection state): After cancelling, the user can
                 # re-select different text and the floating menu reappears.
-                select_chars(page, 30, 50)
+                select_chars(page, *find_text_range(page, "floating menu"))
 
                 menu = page.get_by_test_id("highlight-menu")
                 expect(menu).to_be_visible(timeout=5000)
@@ -163,7 +164,7 @@ class TestEmptyTagFloatingMenu:
 
             with subtests.test(msg="ac1_2_new_button_creates_highlight"):
                 # AC1.2: Click "+ New", create tag, verify highlight
-                select_chars(page, 5, 20)
+                select_chars(page, *find_text_range(page, "tag test content"))
 
                 new_btn = page.get_by_test_id("highlight-menu-new-tag")
                 expect(new_btn).to_be_visible(timeout=5000)
@@ -182,7 +183,7 @@ class TestEmptyTagFloatingMenu:
                 # AC1.3: With tags now existing, "+ New" alongside tag buttons
                 page.locator("#doc-container").click(position={"x": 5, "y": 5})
 
-                select_chars(page, 30, 50)
+                select_chars(page, *find_text_range(page, "floating menu"))
 
                 menu = page.get_by_test_id("highlight-menu")
                 expect(menu).to_be_visible(timeout=5000)
@@ -223,7 +224,7 @@ class TestEmptyTagNoPermission:
             menu = page.get_by_test_id("highlight-menu")
 
             with subtests.test(msg="ac1_4_no_permission_dead_end"):
-                select_chars(page, 2, 15)
+                select_chars(page, *find_text_range(page, "No-permission"))
 
                 expect(menu).to_be_visible(timeout=5000)
 

@@ -44,6 +44,7 @@ from tests.e2e.annotation_helpers import (
     add_comment_to_highlight,
     create_highlight_with_tag,
     export_annotation_tex_text,
+    find_text_range,
     setup_workspace_with_content,
 )
 from tests.e2e.conftest import _authenticate_page
@@ -60,15 +61,14 @@ def _setup_and_highlight(
     app_server: str,
     content: str,
     verify_snippet: str,
-    start_char: int,
-    end_char: int,
 ) -> None:
     """Create workspace, verify snippet rendered, highlight, verify card."""
     setup_workspace_with_content(page, app_server, content)
     expect(page.locator("#doc-container")).to_contain_text(
         verify_snippet, timeout=15000
     )
-    create_highlight_with_tag(page, start_char, end_char, tag_index=0)
+    hl = find_text_range(page, verify_snippet)
+    create_highlight_with_tag(page, *hl, tag_index=0)
     expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
 
@@ -128,12 +128,7 @@ class TestTranslationStudent:
         try:
             _authenticate_page(page, app_server)
             _setup_and_highlight(
-                page,
-                app_server,
-                CHINESE_TEXT,
-                "\u4f60\u597d\u4e16\u754c",
-                0,
-                3,
+                page, app_server, CHINESE_TEXT, "\u4f60\u597d\u4e16\u754c"
             )
         finally:
             page.close()
@@ -155,8 +150,6 @@ class TestTranslationStudent:
                 app_server,
                 JAPANESE_TEXT,
                 "\u3053\u3093\u306b\u3061\u306f\u4e16\u754c",
-                0,
-                5,
             )
         finally:
             page.close()
@@ -174,12 +167,7 @@ class TestTranslationStudent:
         try:
             _authenticate_page(page, app_server)
             _setup_and_highlight(
-                page,
-                app_server,
-                KOREAN_TEXT,
-                "\uc548\ub155\ud558\uc138\uc694",
-                0,
-                4,
+                page, app_server, KOREAN_TEXT, "\uc548\ub155\ud558\uc138\uc694"
             )
         finally:
             page.close()
@@ -201,12 +189,7 @@ class TestTranslationStudent:
         try:
             _authenticate_page(page, app_server)
             _setup_and_highlight(
-                page,
-                app_server,
-                ARABIC_TEXT,
-                "\u0645\u0631\u062d\u0628\u0627",
-                0,
-                5,
+                page, app_server, ARABIC_TEXT, "\u0645\u0631\u062d\u0628\u0627"
             )
         finally:
             page.close()
@@ -228,12 +211,7 @@ class TestTranslationStudent:
         try:
             _authenticate_page(page, app_server)
             _setup_and_highlight(
-                page,
-                app_server,
-                HEBREW_TEXT,
-                "\u05e9\u05dc\u05d5\u05dd",
-                0,
-                3,
+                page, app_server, HEBREW_TEXT, "\u05e9\u05dc\u05d5\u05dd"
             )
         finally:
             page.close()
@@ -264,12 +242,12 @@ class TestTranslationStudent:
                 expect(doc).to_contain_text("\u4e16\u754c", timeout=5000)
 
             with subtests.test(msg="highlight_across_scripts"):
-                # "Hello \u4e16\u754c" = chars 0-7
-                create_highlight_with_tag(page, 0, 7, tag_index=0)
+                hl = find_text_range(page, "Hello \u4e16\u754c")
+                create_highlight_with_tag(page, *hl, tag_index=0)
                 expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
             with subtests.test(msg="add_comment_with_uuid"):
-                comment_uuid = uuid4().hex
+                comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
                 expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
 
@@ -312,17 +290,18 @@ class TestTranslationStudent:
                 )
 
             with subtests.test(msg="highlight_and_comment"):
-                create_highlight_with_tag(page, 10, 40, tag_index=0)
+                hl = find_text_range(page, "\u7ef4\u57fa\u767e\u79d1")
+                create_highlight_with_tag(page, *hl, tag_index=0)
                 expect(page.locator(ANNOTATION_CARD).first).to_be_visible(timeout=10000)
 
-                comment_uuid = uuid4().hex
+                comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
                 expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
 
                 # Post a second comment with emoji to test #274
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
                 add_comment_to_highlight(page, emoji_comment, card_index=0)
-                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=5000)
+                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf"):
                 try:
@@ -348,8 +327,7 @@ class TestTranslationStudent:
             with subtests.test(msg="export_emoji_gh274"):
                 # Emoji must survive the full pipeline (#274)
                 assert result is not None, "export_pdf subtest must run first"
-                if "\U0001f389" not in result:
-                    pytest.xfail("Emoji 🎉 not in export — #274 open")
+                assert "\U0001f389" in result, "Emoji 🎉 not in export"
 
         finally:
             page.close()

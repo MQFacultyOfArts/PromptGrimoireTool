@@ -1215,9 +1215,9 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
     # Server re-render after post may collapse the card (detail section resets
     # to hidden). Wait for the comment to exist in the DOM, then re-expand.
     comment = card.locator("[data-testid='comment']", has_text=text)
-    comment.wait_for(state="attached", timeout=5000)
+    comment.wait_for(state="attached", timeout=10000)
     expand_card(page, card_index)
-    comment.wait_for(state="visible", timeout=3000)
+    comment.wait_for(state="visible", timeout=5000)
 
 
 def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:

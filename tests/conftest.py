@@ -43,7 +43,7 @@ def pytest_configure(config: pytest.Config) -> None:
             "  uv run grimoire test changed    # dependency-aware (AST diff)\n"
             "  uv run grimoire test all        # full unit + integration suite\n"
             "  uv run grimoire e2e run         # Playwright E2E tests\n"
-            "To bypass this guard (e.g. debugging), set GRIMOIRE_TEST_HARNESS=1.",
+            "See 'uv run grimoire test --help' for options.",
             returncode=1,
         )
     # SQLModel 0.0.32 marks session.execute() as deprecated in favour of

@@ -4692,3 +4692,466 @@ It catches any divergence that would cause highlights to render at wrong positio
 6. Assert comment-input count is 0
 
 **Verifies:** AC2.6 + AC2.7 -- viewer cannot see tag dropdown or comment input in expanded cards
+
+## Wargame Codename Generation (Unit)
+
+### Returns uppercase slug from patched generator
+**File:** tests/unit/test_codenames.py::TestGenerateCodename::test_returns_uppercase_slug_from_patched_generator
+1. Patch coolname generate_slug to return "bold-griffin"
+2. Call generate_codename with empty existing set
+3. Assert result is "BOLD-GRIFFIN"
+
+**Verifies:** Codenames are normalized to uppercase
+
+### Retries until it finds a unique slug
+**File:** tests/unit/test_codenames.py::TestGenerateCodename::test_retries_until_it_finds_a_unique_slug
+1. Patch generate_slug to yield "bold-griffin" then "calm-otter"
+2. Call generate_codename with {"BOLD-GRIFFIN"} as existing set
+3. Assert result is "CALM-OTTER" and generator was called twice
+
+**Verifies:** Collision retry loop works correctly
+
+### Raises after max attempts when all candidates collide
+**File:** tests/unit/test_codenames.py::TestGenerateCodename::test_raises_after_max_attempts_when_all_candidates_collide
+1. Patch generate_slug to always return "bold-griffin"
+2. Call generate_codename with {"BOLD-GRIFFIN"} existing, max_attempts=3
+3. Assert RuntimeError raised
+
+**Verifies:** Exhausting the retry cap raises rather than looping forever
+
+## Wargame Roster Parsing (Unit)
+
+### Parses full email/team/role rows
+**File:** tests/unit/test_roster.py::TestParseRoster::test_parses_full_email_team_role_rows
+1. Parse CSV with email, team, role columns (mixed whitespace/case)
+2. Assert two RosterEntry objects with normalized email (lowercase), trimmed team, lowercase role
+
+**Verifies:** Full roster rows become concrete RosterEntry values with normalization
+
+### Defaults role when header is missing
+**File:** tests/unit/test_roster.py::TestParseRoster::test_defaults_role_when_header_is_missing
+1. Parse CSV with only email and team columns
+2. Assert every entry has role="editor"
+
+**Verifies:** Missing role header defaults every row to editor
+
+### Defaults role when cell is blank
+**File:** tests/unit/test_roster.py::TestParseRoster::test_defaults_role_when_cell_is_blank
+1. Parse CSV where one row has blank role cell
+2. Assert blank-role row gets "editor", non-blank row keeps its value
+
+**Verifies:** Blank role cells default to editor per-row
+
+### Returns None for every team when team header is missing
+**File:** tests/unit/test_roster.py::TestParseRoster::test_returns_none_for_every_team_when_team_header_is_missing
+1. Parse CSV with only email and role columns
+2. Assert every entry has team=None
+
+**Verifies:** Missing team header produces explicit None team values
+
+### Empty CSV reports empty file error
+**File:** tests/unit/test_roster.py::TestParseRosterValidation::test_empty_csv_reports_empty_file_error
+1. Parse empty string
+2. Assert RosterParseError with "empty roster csv" and empty line_numbers
+
+**Verifies:** Empty CSV is distinguished from a missing email header
+
+### Missing email header reports structural header error
+**File:** tests/unit/test_roster.py::TestParseRosterValidation::test_missing_email_header_reports_structural_header_error
+1. Parse CSV with team/role headers but no email header
+2. Assert RosterParseError with "missing required email header"
+
+**Verifies:** Missing required header is a structural error
+
+### Duplicate email reports both physical line numbers
+**File:** tests/unit/test_roster.py::TestParseRosterValidation::test_duplicate_email_reports_both_physical_line_numbers
+1. Parse CSV with same email in mixed case on lines 2 and 3
+2. Assert RosterParseError with "duplicate email" and line_numbers=(2, 3)
+
+**Verifies:** Duplicate normalized emails include both line numbers for diagnostics
+
+### Malformed email reports its line number
+**File:** tests/unit/test_roster.py::TestParseRosterValidation::test_malformed_email_reports_its_line_number
+1. Parse CSV with "not-an-email" on line 2
+2. Assert RosterParseError with "malformed email" and line_numbers=(2,)
+
+**Verifies:** Malformed email raises with the offending line number
+
+### Invalid role reports line number and value
+**File:** tests/unit/test_roster.py::TestParseRosterValidation::test_invalid_role_reports_line_number_and_value
+1. Parse CSV with role="observer" on line 2
+2. Assert RosterParseError matching "observer" with line_numbers=(2,)
+
+**Verifies:** Unsupported roles are rejected with context
+
+### Auto-assign assigns entries in strict round-robin order
+**File:** tests/unit/test_roster.py::TestAutoAssignTeams::test_assigns_entries_in_strict_round_robin_order
+1. Create 5 entries with team=None
+2. Call auto_assign_teams with team_count=3
+3. Assert returned entries have teams AUTO-1, AUTO-2, AUTO-3, AUTO-1, AUTO-2
+4. Assert original entries are unmodified (immutability)
+
+**Verifies:** Round-robin team labels cycle by position
+
+### Auto-assign rejects non-positive team count
+**File:** tests/unit/test_roster.py::TestAutoAssignTeams::test_rejects_non_positive_team_count
+1. Call auto_assign_teams with team_count=0
+2. Assert ValueError raised
+
+**Verifies:** Non-positive team counts are rejected
+
+## Wargame Team CRUD Error Types (Unit)
+
+### DuplicateCodenameError stores activity_id, codename, and message
+**File:** tests/unit/test_wargame_team_crud.py::TestDuplicateCodenameError::test_stores_activity_id_codename_and_message
+1. Create DuplicateCodenameError with activity_id and "RED-FOX"
+2. Assert activity_id, codename attributes correct
+3. Assert "RED-FOX" in str(error)
+
+**Verifies:** Exception exposes duplicate context for callers
+
+## User Find-or-Create (Integration)
+
+### First call creates user
+**File:** tests/integration/test_user_find_or_create.py::TestFindOrCreateUser::test_first_call_creates_user
+1. Call find_or_create_user with unique email
+2. Assert created=True and user fields match
+
+**Verifies:** First call creates a user row
+
+### Second call reuses existing user
+**File:** tests/integration/test_user_find_or_create.py::TestFindOrCreateUser::test_second_call_reuses_existing_user
+1. Call find_or_create_user twice with same email
+2. Assert first created=True, second created=False, same user.id
+
+**Verifies:** Idempotent find-or-create returns existing row
+
+### Mixed case email reuses lowercased user
+**File:** tests/integration/test_user_find_or_create.py::TestFindOrCreateUser::test_mixed_case_email_reuses_lowercased_user
+1. Create user with mixed-case email
+2. Find with lowercased email
+3. Assert same user.id returned
+
+**Verifies:** Email normalization prevents case-sensitive duplicates
+
+### Second call preserves original display name
+**File:** tests/integration/test_user_find_or_create.py::TestFindOrCreateUser::test_second_call_preserves_original_display_name
+1. Create user with display_name="Original Name"
+2. Find again with display_name="Updated Name"
+3. Assert display_name is still "Original Name"
+
+**Verifies:** Upsert ON CONFLICT DO NOTHING preserves existing display_name
+
+### Session helper reuses user within one session
+**File:** tests/integration/test_user_find_or_create.py::TestFindOrCreateUserWithSession::test_helper_reuses_user_within_one_session
+1. Open one async session
+2. Call _find_or_create_user_with_session twice with same email
+3. Assert one DB row, same user.id, first display_name preserved
+
+**Verifies:** Helper composes inside one session without creating duplicates
+
+## Wargame Team CRUD (Integration)
+
+### Create team persists generated codename and get_team round-trips
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndGetTeam::test_create_team_persists_generated_codename_and_get_team_round_trips
+1. Create wargame activity, patch codename generator to return "RED-FOX"
+2. Call create_team, then get_team
+3. Assert both return matching id, activity_id, codename
+
+**Verifies:** create_team persists through the public service boundary
+
+### Get team returns None for missing team
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndGetTeam::test_get_team_returns_none_for_missing_team
+1. Call get_team with random UUID
+2. Assert None returned
+
+**Verifies:** Missing teams return None rather than raising
+
+### Create team uses explicit empty codename without generating
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndGetTeam::test_create_team_uses_explicit_empty_codename_without_generating
+1. Create team with codename=""
+2. Assert generator was never called and codename is ""
+
+**Verifies:** Explicit codenames (even empty string) bypass generation
+
+### Batch create teams avoids codename collisions
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndListTeams::test_create_teams_persists_distinct_codenames_after_existing_team
+1. Create one existing team "EXISTING", patch generator with candidate list
+2. Call create_teams(3) -- generator skips "EXISTING"
+3. Assert 3 new teams with distinct codenames, all 4 visible via list_teams
+
+**Verifies:** Batch creation avoids collisions within one activity
+
+### List teams filters to one activity in creation order
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndListTeams::test_list_teams_filters_to_one_activity_in_created_order
+1. Create teams in two activities
+2. list_teams for activity_one
+3. Assert only activity_one teams returned, in creation order
+
+**Verifies:** list_teams scopes to one activity and preserves order
+
+### Create teams rejects non-positive count
+**File:** tests/integration/test_wargame_team_crud.py::TestCreateAndListTeams::test_create_teams_rejects_non_positive_count_without_new_rows
+1. Create one existing team, then create_teams(0)
+2. Assert ValueError raised, existing team preserved
+
+**Verifies:** Non-positive team counts rejected without side effects
+
+### Rename team updates persisted codename
+**File:** tests/integration/test_wargame_team_crud.py::TestRenameTeam::test_rename_team_updates_persisted_codename
+1. Create team "ALPHA", rename to "BRAVO"
+2. Assert get_team and list_teams both show "BRAVO"
+
+**Verifies:** Rename persists through service boundary
+
+### Rename team raises DuplicateCodenameError and preserves original
+**File:** tests/integration/test_wargame_team_crud.py::TestRenameTeam::test_rename_team_raises_duplicate_codename_and_preserves_original
+1. Create "ALPHA" and "BRAVO" teams
+2. Attempt rename BRAVO to "ALPHA"
+3. Assert DuplicateCodenameError, both teams unchanged
+
+**Verifies:** Duplicate rename is translated and rolled back
+
+### Rename team returns None for missing team
+**File:** tests/integration/test_wargame_team_crud.py::TestRenameTeam::test_rename_team_returns_none_for_missing_team
+1. Call rename_team with random UUID
+2. Assert None returned
+
+**Verifies:** Missing teams return None rather than raising
+
+### Delete team cascades through ACL and messages
+**File:** tests/integration/test_wargame_team_crud.py::TestDeleteTeam::test_delete_team_removes_team_acl_entries_and_messages
+1. Create team, add ACL entry and message
+2. Delete team
+3. Assert team, ACL entry, and message all gone
+
+**Verifies:** CASCADE deletion removes dependent rows
+
+### Delete team returns False for missing team
+**File:** tests/integration/test_wargame_team_crud.py::TestDeleteTeam::test_delete_team_returns_false_for_missing_team
+1. Create one team, delete random UUID
+2. Assert False returned, existing team preserved
+
+**Verifies:** Missing teams return False without side effects
+
+## Wargame Team ACL (Integration)
+
+### Resolve returns None when no team ACL entry exists
+**File:** tests/integration/test_wargame_team_acl.py::TestResolveTeamPermission::test_resolve_team_permission_returns_none_when_no_team_acl_entry_exists
+1. Create team and user with no ACL entry
+2. Assert resolve_team_permission returns None
+
+**Verifies:** Missing team ACL entries resolve to None
+
+### Resolve returns exact stored permission
+**File:** tests/integration/test_wargame_team_acl.py::TestResolveTeamPermission::test_resolve_team_permission_returns_exact_stored_permission
+1. Create team, user, insert ACL entry with "editor" directly
+2. Assert resolve_team_permission returns "editor"
+
+**Verifies:** Exact stored permission round-trips unchanged
+
+### Resolve returns owner permission unchanged
+**File:** tests/integration/test_wargame_team_acl.py::TestResolveTeamPermission::test_resolve_team_permission_owner_permission_round_trips_unchanged
+1. Create team, user, insert ACL entry with "owner" directly
+2. Assert resolve_team_permission returns "owner"
+
+**Verifies:** Service uses real permission names, not hardcoded mappings
+
+### List team members returns deterministic order
+**File:** tests/integration/test_wargame_team_acl.py::TestListTeamMembers::test_list_team_members_returns_deterministic_member_order
+1. Create team with owner, editor, two viewers (inserted in random order)
+2. Call list_team_members
+3. Assert order: owner first, then editor, then viewers by name then email
+
+**Verifies:** Members ordered by can_edit DESC, level DESC, display_name, email
+
+### Grant creates new team ACL row
+**File:** tests/integration/test_wargame_team_acl.py::TestGrantTeamPermission::test_grant_team_permission_creates_new_team_acl_row
+1. Create team and user, grant "viewer"
+2. Assert ACL entry created with correct team_id, user_id, permission
+3. Verify exactly one DB row exists
+
+**Verifies:** Granting a new permission creates a team ACL row
+
+### Grant upsert updates existing row without duplicate
+**File:** tests/integration/test_wargame_team_acl.py::TestGrantTeamPermission::test_grant_team_permission_upsert_updates_existing_row_without_duplicate
+1. Grant "viewer" then grant "editor" to same user/team
+2. Assert same row id, permission updated, exactly one DB row
+
+**Verifies:** Upsert semantics -- ON CONFLICT DO UPDATE
+
+### Grant raises ZeroEditorError for last editor downgrade
+**File:** tests/integration/test_wargame_team_acl.py::TestGrantTeamPermission::test_grant_team_permission_raises_zero_editor_error_for_last_editor
+1. Grant "editor" to sole team member
+2. Attempt to downgrade to "viewer"
+3. Assert ZeroEditorError with correct team_id, user_id, current/attempted permissions
+4. Assert permission unchanged at "editor"
+
+**Verifies:** Zero-editor invariant prevents leaving team without editable member
+
+### Grant allows downgrade when owner still can_edit
+**File:** tests/integration/test_wargame_team_acl.py::TestGrantTeamPermission::test_grant_team_permission_allows_downgrade_when_owner_still_can_edit
+1. Grant "owner" and "editor" to two users
+2. Downgrade editor to "viewer"
+3. Assert success -- owner preserves the can_edit invariant
+
+**Verifies:** Classifier-based downgrade succeeds when another editable member remains
+
+### Grant rejects unknown permission name
+**File:** tests/integration/test_wargame_team_acl.py::TestGrantTeamPermission::test_grant_team_permission_rejects_unknown_permission_name
+1. Grant "viewer" to user, then attempt "observer"
+2. Assert ValueError("unknown permission"), original permission unchanged
+
+**Verifies:** Unknown permissions rejected without side effects
+
+### Revoke raises ZeroEditorError for last editor
+**File:** tests/integration/test_wargame_team_acl.py::TestRevokeTeamPermission::test_revoke_team_permission_raises_zero_editor_error_for_last_editor
+1. Grant "editor" to sole team member
+2. Attempt revoke
+3. Assert ZeroEditorError, permission unchanged
+
+**Verifies:** Zero-editor invariant applies to revocations too
+
+### Revoke succeeds when owner survives
+**File:** tests/integration/test_wargame_team_acl.py::TestRevokeTeamPermission::test_revoke_team_permission_succeeds_when_owner_survives
+1. Grant "owner" and "editor" to two users
+2. Revoke the editor
+3. Assert True returned, editor's permission is None, owner unchanged
+
+**Verifies:** Revocation succeeds when another can_edit member remains
+
+### Revoke returns False for missing entry
+**File:** tests/integration/test_wargame_team_acl.py::TestRevokeTeamPermission::test_revoke_team_permission_returns_false_for_missing_entry
+1. Grant "owner" to one user, revoke a different user
+2. Assert False returned, owner ACL unchanged
+
+**Verifies:** Missing entries return False rather than raising
+
+### Wrapper update_team_permission enforces zero-editor invariant
+**File:** tests/integration/test_wargame_team_acl.py::TestTeamPermissionWrappers::test_update_team_permission_raises_zero_editor_error_for_last_editor
+1. Grant "editor" to sole member
+2. Call update_team_permission to "viewer"
+3. Assert ZeroEditorError, permission unchanged
+
+**Verifies:** Wrapper delegates to grant path with invariant enforcement
+
+### Wrapper names support promotion and viewer removal
+**File:** tests/integration/test_wargame_team_acl.py::TestTeamPermissionWrappers::test_wrapper_names_support_promotion_and_viewer_removal
+1. Create owner, viewer-to-promote, viewer-to-remove
+2. Call update_team_permission (promote to editor) and remove_team_member
+3. Assert promotion succeeded, removal succeeded, owner unchanged
+
+**Verifies:** Convenience wrappers correctly compose grant/revoke paths
+
+### Public db package exports full Phase 3 ACL surface
+**File:** tests/integration/test_wargame_team_acl.py::TestTeamPermissionWrappers::test_promptgrimoire_db_exports_full_phase_three_api
+1. Import ZeroEditorError and all ACL functions from promptgrimoire.db
+2. Assert all are importable and callable
+
+**Verifies:** Public API surface is complete and importable
+
+## Wargame Roster Ingestion (Integration)
+
+### Explicit-team ingest creates users, teams, ACL, and report
+**File:** tests/integration/test_roster_ingestion.py::TestNamedTeamRosterIngestion::test_explicit_team_ingest_creates_users_teams_acl_and_report
+1. Create wargame activity
+2. Ingest CSV with alice=ALPHA/editor, bob=BRAVO/viewer
+3. Assert report: 2 entries, 2 teams, 2 users, 2 memberships, 0 updates
+4. Verify persisted teams, users, and memberships match
+
+**Verifies:** Named-team ingest persists users, teams, and ACL rows atomically
+
+### Named-team ingest reuses existing team codename
+**File:** tests/integration/test_roster_ingestion.py::TestNamedTeamRosterIngestion::test_named_team_ingest_reuses_existing_team_codename
+1. Pre-create team "ALPHA"
+2. Ingest CSV referencing "ALPHA" and new "BRAVO"
+3. Assert teams_created=1 (only BRAVO), ALPHA team.id preserved
+
+**Verifies:** Existing codenames are reused rather than duplicated
+
+### Auto-assign distributes members round-robin across generated teams
+**File:** tests/integration/test_roster_ingestion.py::TestAutoAssignRosterIngestion::test_auto_assign_distributes_members_round_robin_across_generated_teams
+1. Ingest 4-member teamless CSV with team_count=2
+2. Assert 2 teams created with real codenames (not AUTO-*)
+3. Assert round-robin distribution: team1 gets members 1,3; team2 gets members 2,4
+
+**Verifies:** Auto-assign mode creates teams and distributes via round-robin
+
+### Auto-assign without team_count raises and leaves no rows
+**File:** tests/integration/test_roster_ingestion.py::TestAutoAssignRosterIngestion::test_auto_assign_without_team_count_raises_and_leaves_no_rows
+1. Ingest teamless CSV without team_count
+2. Assert ValueError("team_count")
+3. Verify zero teams, users, and memberships in DB
+
+**Verifies:** Atomicity -- validation failure rolls back everything
+
+### Mixed mode raises and leaves no rows
+**File:** tests/integration/test_roster_ingestion.py::TestAutoAssignRosterIngestion::test_mixed_mode_raises_and_leaves_no_rows
+1. Ingest CSV where some entries have team names and others are blank
+2. Assert ValueError("mixed")
+3. Verify zero teams, users, and memberships in DB
+
+**Verifies:** Mixed named+blank teams rejected with zero side effects
+
+### Auto-assign reuses existing teams by created_at order
+**File:** tests/integration/test_roster_ingestion.py::TestAutoAssignRosterIngestion::test_auto_assign_reuses_existing_teams_by_created_at_order
+1. First ingest creates 2 teams via team_count=2
+2. Second ingest with same team_count reuses existing teams
+3. Assert teams_created=0 and team IDs unchanged
+
+**Verifies:** Repeat auto-assign re-imports reuse teams by creation order
+
+### Auto-assign team_count mismatch raises with rows unchanged
+**File:** tests/integration/test_roster_ingestion.py::TestAutoAssignRosterIngestion::test_auto_assign_team_count_mismatch_raises_and_leaves_rows_unchanged
+1. First ingest with team_count=2 creates 2 teams
+2. Second ingest with team_count=3
+3. Assert ValueError("team_count"), existing teams and memberships unchanged
+
+**Verifies:** Team count mismatch rejected, existing state preserved
+
+### Re-import updates role and retains omitted member
+**File:** tests/integration/test_roster_ingestion.py::TestAdditiveReimport::test_reimport_updates_role_and_retains_omitted_member
+1. Import alice=editor, bob=viewer, carol=viewer on ALPHA
+2. Re-import alice=editor, bob=editor (carol omitted)
+3. Assert bob updated to editor, carol still viewer (additive)
+
+**Verifies:** Re-imports are additive -- omitted members keep their ACL
+
+### Re-import preserves existing user display name
+**File:** tests/integration/test_roster_ingestion.py::TestAdditiveReimport::test_reimport_preserves_existing_user_display_name
+1. Import alice, manually set display_name to "Dr Alice Custom"
+2. Re-import same alice
+3. Assert display_name still "Dr Alice Custom"
+
+**Verifies:** Upsert ON CONFLICT DO NOTHING preserves existing user data
+
+### Editor handoff swap succeeds with can_edit ordering
+**File:** tests/integration/test_roster_ingestion.py::TestAdditiveReimport::test_editor_handoff_swap_succeeds_with_can_edit_ordering
+1. Import Alice=editor, Bob=viewer on ALPHA
+2. Re-import Alice=viewer, Bob=editor (simultaneous swap)
+3. Assert both permissions updated without ZeroEditorError
+
+**Verifies:** Editor-first grant ordering prevents false zero-editor violations
+
+### Auto-assign re-import preserves existing ACL rows
+**File:** tests/integration/test_roster_ingestion.py::TestAdditiveReimport::test_auto_assign_reimport_preserves_existing_acl_rows
+1. First auto-assign import creates teams and ACL rows
+2. Second auto-assign import adds new members
+3. Assert first-import ACL rows survive (additive)
+
+**Verifies:** Auto-assign re-imports are additive like named-team re-imports
+
+### Failure after partial writes rolls back all rows
+**File:** tests/integration/test_roster_ingestion.py::TestAtomicRollback::test_failure_after_partial_writes_rolls_back_all_rows
+1. Monkeypatch grant to succeed once then raise RuntimeError
+2. Ingest CSV with 2 entries
+3. Assert RuntimeError raised, zero teams/users/memberships in DB
+
+**Verifies:** Any mid-ingest failure rolls back the entire transaction
+
+### Public API export smoke test
+**File:** tests/integration/test_roster_ingestion.py::TestPublicAPIExport::test_roster_report_and_ingest_importable_from_db_package
+1. Import RosterReport and ingest_roster from promptgrimoire.db
+2. Assert callable and expected attributes present
+
+**Verifies:** Public API surface is importable from the db package

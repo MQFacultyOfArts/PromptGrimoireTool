@@ -259,7 +259,7 @@ Per-workspace annotation tag definition. Each workspace has its own independent 
 
 ## ACL Tables
 
-Access control for workspace permissions.
+Access control for workspace and wargame team permissions.
 
 ### Permission
 
@@ -269,8 +269,13 @@ Reference table for access permission levels. String PK.
 |--------|------|------------|
 | `name` | VARCHAR(50) | PK |
 | `level` | INTEGER | NOT NULL, UNIQUE, CHECK (BETWEEN 1 AND 100) |
+| `can_edit` | BOOLEAN | NOT NULL, default FALSE |
 
 Seed data: `owner` (30), `editor` (20), `peer` (15), `viewer` (10). Higher level wins in resolution.
+
+**`level`**: Used for "highest wins" resolution when a user has both explicit ACL and enrollment-derived access. Higher level takes precedence.
+
+**`can_edit`**: Binary capability classifier marking which permissions preserve editorial capability. The team ACL zero-editor invariant queries this flag directly instead of hardcoding permission-name lists.
 
 ### CourseRole (reference table)
 
@@ -284,43 +289,52 @@ Reference table replacing the `CourseRole` StrEnum. String PK.
 
 Seed data: `coordinator` (40, staff), `instructor` (30, staff), `tutor` (20, staff), `student` (10).
 
-**`is_staff`**: Marks roles that derive instructor-level access (week visibility, ACL permission resolution). Queried once at startup and cached via `get_staff_roles()` in `db/roles.py`.
+**`is_staff`**: Binary capability classifier marking roles that derive instructor-level access (week visibility, ACL permission resolution). Queried once at startup and cached via `get_staff_roles()` in `db/roles.py`.
 
 **Note:** The SQLModel class is named `CourseRoleRef` to avoid collision with the existing `CourseRole` StrEnum. Table name is `course_role`. After Phase 2 deletes the StrEnum, the class can be renamed.
 
 ### ACLEntry
 
-Per-user, per-workspace permission grant.
+Per-user permission grant for either a workspace or a wargame team. Exactly one target FK (`workspace_id` or `team_id`) must be set.
 
 | Column | Type | Constraint |
 |--------|------|------------|
 | `id` | UUID | PK |
-| `workspace_id` | UUID | FK → Workspace (CASCADE), NOT NULL |
+| `workspace_id` | UUID | FK → Workspace (CASCADE), nullable |
+| `team_id` | UUID | FK → WargameTeam (CASCADE), nullable |
 | `user_id` | UUID | FK → User (CASCADE), NOT NULL |
 | `permission` | VARCHAR(50) | FK → Permission.name (RESTRICT), NOT NULL |
 | `created_at` | TIMESTAMPTZ | NOT NULL |
-| | | UNIQUE (workspace_id, user_id) |
+| | | CHECK: `num_nonnulls(workspace_id, team_id) = 1` |
+| | | Partial UNIQUE (workspace_id, user_id) WHERE workspace_id IS NOT NULL |
+| | | Partial UNIQUE (team_id, user_id) WHERE team_id IS NOT NULL |
 | | | INDEX on user_id |
 
-**CASCADE on workspace/user**: ACL entries are meaningless without the workspace they protect or the user they grant access to.
+**Target polymorphism**: One table serves both workspace and team ACL. The CHECK constraint `ck_acl_entry_exactly_one_target` enforces that exactly one target FK is set. Partial unique indexes enforce `(workspace_id, user_id)` and `(team_id, user_id)` uniqueness independently, preventing NULL poisoning from the other target column.
+
+**CASCADE on workspace/team/user**: ACL entries are meaningless without the resource they protect or the user they grant access to.
 
 **RESTRICT on permission**: Permission reference rows must never be deleted while ACLEntries reference them.
 
-**Future extensibility**: When roleplay sessions or other resource types need ACL, add a nullable FK column (e.g., `roleplay_session_id`) with a CHECK constraint ensuring exactly one FK is set — same mutual exclusivity pattern as `Workspace.activity_id`/`course_id`.
+**Workspace ACL queries** filter on `workspace_id IS NOT NULL` to avoid team-target rows polluting workspace permission resolution. Team ACL queries filter on `team_id IS NOT NULL` symmetrically.
 
 ## Hierarchy
 
 ```
 Course
   └── Week (CASCADE)
-        └── Activity (CASCADE)
-              └── template Workspace (RESTRICT, 1:1)
-              └── student Workspaces (SET NULL, 1:many via activity_id)
-                    └── WorkspaceDocuments (CASCADE)
-                          └── source_document_id → template WorkspaceDocument (SET NULL, self-referential)
-                    └── ACLEntries (CASCADE)
-                    └── TagGroups (CASCADE)
-                    └── Tags (CASCADE, group_id SET NULL on TagGroup delete)
+        └── Activity (CASCADE, type = "annotation" | "wargame")
+              ├── [annotation] template Workspace (RESTRICT, 1:1)
+              ├── [annotation] student Workspaces (SET NULL, 1:many via activity_id)
+              │     └── WorkspaceDocuments (CASCADE)
+              │           └── source_document_id → template WorkspaceDocument (SET NULL, self-referential)
+              │     └── ACLEntries (CASCADE, workspace_id target)
+              │     └── TagGroups (CASCADE)
+              │     └── Tags (CASCADE, group_id SET NULL on TagGroup delete)
+              ├── [wargame] WargameConfig (CASCADE, 1:1 PK-as-FK)
+              └── [wargame] WargameTeams (CASCADE, 1:many)
+                    └── ACLEntries (CASCADE, team_id target)
+                    └── WargameMessages (CASCADE)
 ```
 
 ## Design Decisions
@@ -329,9 +343,9 @@ Course
 
 Reference data's identity IS the name. `permission = "owner"` is self-documenting in queries and code. No UUID indirection, no constants module. Foreign key values are readable in database queries.
 
-### No Resource indirection table
+### ACL target polymorphism (no Resource indirection table)
 
-ACLEntry links directly to Workspace via FK. When new resource types need ACL (e.g., roleplay sessions), a new FK column is added with mutual exclusivity CHECK — the same pattern already used for Workspace placement. This avoids an unnecessary intermediate table and join for a hypothetical future use case (YAGNI).
+ACLEntry links directly to targets via nullable FK columns (`workspace_id`, `team_id`) with a mutual exclusivity CHECK constraint (`num_nonnulls = 1`). This pattern was predicted in the original schema design and realised when wargame teams needed their own ACL. Partial unique indexes enforce per-target uniqueness independently. If further resource types need ACL (e.g., roleplay sessions), another nullable FK column is added — same pattern, no intermediate table.
 
 ### Hybrid permission resolution
 

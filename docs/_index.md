@@ -25,10 +25,6 @@ library references during development.
 - [Complete API reference for CSS.highlights, Highlight class, ::highlight() pseudo-element, StaticRange](browser/css-custom-highlight-api.md)
 - [Browser Selection API for text selection and annotation](browser/selection-api.md)
 
-## browserstack
-
-- [BrowserStack integration patterns for Python pytest and Playwright suites, Automate REST APIs, Local Testing, and MCP workflows](browserstack/python-integration-and-apis.md)
-
 ## claude-code
 
 - [How to create and configure Claude Code skills (markdown files that teach Claude specialized knowledge)](claude-code/skills.md)
@@ -54,11 +50,6 @@ library references during development.
 - [LuaLaTeX package for underlines, strikethrough, and highlighting](lualatex/lua-ul-reference.md)
 - [LaTeX package for multi-file projects with standalone compilation](lualatex/subfiles-reference.md)
 - [Why LaTeX export tests use AST parsing instead of string matching](lualatex/test-ast-validation.md)
-
-## milkdown
-
-- [Crepe high-level editor API — constructor, features, featureConfigs, getMarkdown, setReadonly, events](milkdown/crepe-api.md)
-- [Editor actions — replaceAll, insert, getMarkdown, callCommand, direct ProseMirror access](milkdown/editor-actions.md)
 
 ## nicegui
 

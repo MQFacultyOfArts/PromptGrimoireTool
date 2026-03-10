@@ -9,10 +9,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import User
@@ -109,20 +112,44 @@ async def find_or_create_user(
         Tuple of (User, created) where created is True if new user was made.
     """
     async with get_session() as session:
-        result = await session.exec(select(User).where(User.email == email.lower()))
-        existing = result.first()
-        if existing:
-            return existing, False
-
-        user = User(
-            email=email.lower(),
-            display_name=display_name,
+        return await _find_or_create_user_with_session(
+            session,
+            email,
+            display_name,
             stytch_member_id=stytch_member_id,
         )
-        session.add(user)
-        await session.flush()
-        await session.refresh(user)
-        return user, True
+
+
+async def _find_or_create_user_with_session(
+    session: AsyncSession,
+    email: str,
+    display_name: str,
+    *,
+    stytch_member_id: str | None = None,
+) -> tuple[User, bool]:
+    """Find or create a user inside a caller-owned session.
+
+    Uses INSERT ... ON CONFLICT DO NOTHING to avoid TOCTOU races when
+    concurrent callers (e.g. parallel roster ingestion) attempt to create
+    the same user simultaneously.
+    """
+    normalized_email = email.lower()
+
+    stmt = pg_insert(User).values(
+        email=normalized_email,
+        display_name=display_name,
+        stytch_member_id=stytch_member_id,
+        created_at=datetime.now(UTC),
+    )
+    stmt = stmt.on_conflict_do_nothing(index_elements=["email"])
+    result = await session.execute(stmt)
+    await session.flush()
+
+    created = result.rowcount == 1  # type: ignore[union-attr]  -- CursorResult always has rowcount
+
+    user_result = await session.exec(select(User).where(User.email == normalized_email))
+    user = user_result.one()
+    return user, created
 
 
 async def link_stytch_member(user_id: UUID, stytch_member_id: str) -> User | None:

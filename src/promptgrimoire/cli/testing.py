@@ -38,7 +38,13 @@ if TYPE_CHECKING:
 
     from rich.progress import TaskID
 
-test_app = typer.Typer(help="Unit and integration test commands.")
+test_app = typer.Typer(
+    help=(
+        "Unit and integration test commands.\n\n"
+        "To bypass the conftest guard for debugging this harness, "
+        "set GRIMOIRE_TEST_HARNESS=1."
+    )
+)
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
 _TEST_ALL_MARKER_EXPRESSION = f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full"
 _SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"

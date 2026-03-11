@@ -62,7 +62,13 @@ async def check_expired_deadlines() -> int:
 
 
 async def _next_deadline_seconds() -> float | None:
-    """Return seconds until the nearest future deadline, or None."""
+    """Return seconds until the nearest future deadline, or None.
+
+    Returns ``None`` when no deadlines are pending. Returns ``0.0`` when
+    the nearest deadline has already passed but ``check_expired_deadlines()``
+    has not yet processed it (i.e., an overdue activity is still sitting in
+    the queue).
+    """
     async with get_session() as session:
         result = await session.execute(
             text(

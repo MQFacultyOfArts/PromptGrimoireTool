@@ -45,6 +45,9 @@ async def test_check_expired_deadlines_fires_for_expired() -> None:
             "promptgrimoire.deadline_worker.get_session",
             _mock_get_session(mock_session),
         ),
+        # Patch the source module: the import is deferred inside
+        # check_expired_deadlines(), so patching the local name is not
+        # possible.
         patch(
             "promptgrimoire.db.wargames.on_deadline_fired",
             mock_on_deadline,
@@ -93,6 +96,9 @@ async def test_check_expired_deadlines_exception_doesnt_prevent_others() -> None
             "promptgrimoire.deadline_worker.get_session",
             _mock_get_session(mock_session),
         ),
+        # Patch the source module: the import is deferred inside
+        # check_expired_deadlines(), so patching the local name is not
+        # possible.
         patch(
             "promptgrimoire.db.wargames.on_deadline_fired",
             mock_on_deadline,

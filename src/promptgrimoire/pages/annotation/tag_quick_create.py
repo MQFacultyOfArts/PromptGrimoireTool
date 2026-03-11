@@ -18,6 +18,7 @@ from promptgrimoire.pages.annotation.tag_management_save import (
     _create_tag_or_notify,
     _refresh_tag_state,
 )
+from promptgrimoire.ui_helpers import on_submit_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -82,14 +83,13 @@ def _build_colour_picker(
 
 async def _quick_create_save(
     state: PageState,
-    name_input: ui.input,
+    tag_name: str,
     selected_color: list[str],
     group_select: ui.select,
     saved_start: int | None,
     saved_end: int | None,
 ) -> bool:
     """Validate, create tag, optionally add highlight. Return True on success."""
-    tag_name = name_input.value
     if not tag_name or not tag_name.strip():
         ui.notify("Name is required", type="warning")
         return False
@@ -185,10 +185,10 @@ async def open_quick_create(state: PageState) -> None:
                 on_click=dialog.close,
             ).props("flat")
 
-            async def _save() -> None:
+            async def _save(text: str) -> None:
                 ok = await _quick_create_save(
                     state,
-                    name_input,
+                    text,
                     selected_color,
                     group_select,
                     saved_start,
@@ -199,13 +199,14 @@ async def open_quick_create(state: PageState) -> None:
 
                 dialog.close()
                 ui.notify(
-                    f"Tag '{name_input.value}' created",
+                    f"Tag '{text}' created",
                     type="positive",
                 )
 
-            ui.button("Create", on_click=_save).props(
+            create_btn = ui.button("Create").props(
                 'color=primary data-testid="quick-create-save-btn"',
             )
+            on_submit_with_value(create_btn, name_input, _save)
 
     dialog.open()
     await dialog

@@ -29,6 +29,7 @@ from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.roleplay_access import require_roleplay_page_access
 from promptgrimoire.pages.roleplay_export import session_to_html
 from promptgrimoire.parsers.sillytavern import parse_character_card
+from promptgrimoire.ui_helpers import on_submit_with_value
 
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
@@ -88,6 +89,7 @@ def _render_messages(session: Session, chat_container, scroll_area: ScrollArea) 
 
 
 async def _handle_send(
+    user_message: str,
     session: Session,
     client: ClaudeClient,
     input_field: Input,
@@ -96,8 +98,12 @@ async def _handle_send(
     scroll_area: ScrollArea,
     send_button,
 ) -> None:
-    """Handle sending a message and streaming the response."""
-    user_message = input_field.value
+    """Handle sending a message and streaming the response.
+
+    ``user_message`` is captured client-side by ``on_submit_with_value``
+    to avoid the server-side value race.  See value-capture-hardening
+    design doc.
+    """
     if not user_message or not user_message.strip():
         return
 
@@ -504,9 +510,10 @@ async def roleplay_page() -> None:
                         .style("color: rgb(220, 220, 210) !important;")
                     )
 
-                    async def on_send() -> None:
+                    async def on_send(text: str) -> None:
                         if state["session"]:
                             await _handle_send(
+                                text,
                                 state["session"],
                                 state["client"],
                                 message_input,
@@ -517,11 +524,21 @@ async def roleplay_page() -> None:
                             )
 
                     send_button = (
-                        ui.button("Send", on_click=on_send)
+                        ui.button("Send")
                         .classes("ml-2")
                         .props('data-testid="roleplay-send-btn"')
                     )
-                    message_input.on("keydown.enter", on_send)
+                    on_submit_with_value(
+                        send_button,
+                        message_input,
+                        on_send,
+                    )
+                    on_submit_with_value(
+                        message_input,
+                        message_input,
+                        on_send,
+                        event="keydown.enter",
+                    )
 
             # Auto-load bundled Becky Bennett character card
             _auto_load_character(state, widgets)

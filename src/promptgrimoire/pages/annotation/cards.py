@@ -12,13 +12,17 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import PageState, _render_js
+from promptgrimoire.ui_helpers import on_submit_with_value
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 from promptgrimoire.pages.annotation.highlights import (
     _delete_highlight,
     _update_highlight_css,
@@ -153,18 +157,25 @@ def _make_add_comment_handler(
     state: PageState,
     highlight_id: str,
     comment_input: ui.input,
-) -> Any:
-    """Create an async handler for posting a new comment."""
+) -> Callable[[str], Any]:
+    """Create an async handler for posting a new comment.
+
+    Returns a callable that accepts the comment text (captured
+    client-side by ``on_submit_with_value``) rather than reading
+    ``comment_input.value``, which may be stale due to concurrent
+    event dispatch.  See value-capture-hardening design doc.
+    """
 
     async def add_comment(
+        text: str,
         hid: str = highlight_id,
         inp: ui.input = comment_input,
     ) -> None:
-        if inp.value and inp.value.strip() and state.crdt_doc:
+        if text and text.strip() and state.crdt_doc:
             state.crdt_doc.add_comment(
                 hid,
                 state.user_name,
-                inp.value.strip(),
+                text.strip(),
                 user_id=state.user_id,
             )
             inp.value = ""
@@ -206,9 +217,12 @@ def _build_comments_section(
             .classes("w-full mt-2")
         )
         add_comment = _make_add_comment_handler(state, highlight_id, comment_input)
-        ui.button("Post", on_click=add_comment).props(
-            'dense size=sm data-testid="post-comment-btn"'
-        ).classes("mt-1")
+        post_btn = (
+            ui.button("Post")
+            .props('dense size=sm data-testid="post-comment-btn"')
+            .classes("mt-1")
+        )
+        on_submit_with_value(post_btn, comment_input, add_comment)
 
 
 def _build_para_ref_editor(

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
+from promptgrimoire.ui_helpers import on_submit_with_value
+
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -165,8 +167,8 @@ async def open_sharing_dialog(
 
         await shares_list()
 
-        async def _on_share() -> None:
-            email = (email_input.value or "").strip()
+        async def _on_share(text: str) -> None:
+            email = (text or "").strip()
             if not email:
                 ui.notify("Please enter an email address", type="warning")
                 return
@@ -195,10 +197,10 @@ async def open_sharing_dialog(
                 ui.notify(str(exc), type="negative")
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):
-            ui.button(
-                "Share",
-                on_click=_on_share,
-            ).props('color=primary data-testid="share-confirm-button"')
+            share_btn = ui.button("Share").props(
+                'color=primary data-testid="share-confirm-button"'
+            )
+            on_submit_with_value(share_btn, email_input, _on_share)
             ui.button("Close", on_click=dialog.close).props("flat")
 
     dialog.open()

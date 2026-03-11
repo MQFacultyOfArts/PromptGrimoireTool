@@ -87,6 +87,13 @@ When adding new UI elements, add `data-testid` in the source and use `get_by_tes
 
 - Elements may be off-screen in headless mode — always scroll into view before assertions
 - NiceGUI pages may need time to hydrate — use `expect().to_be_visible()` with appropriate timeouts
+- **Value-Capture Race**: When Playwright calls `fill()` and then immediately `click()`s a button, the server's `click` task can race the `input` task. To fix this, use the `ui_helpers.py:on_submit_with_value` pattern to extract the exact DOM string on the client during the click.
+- **Rebuild Epoch Race**: When the server calls `container.clear()` and rebuilds a UI, the DOM is destroyed and recreated. Playwright `expect` assertions might pass against a dying DOM node. To fix this, use the **Epoch Pattern**:
+  1.  Server: `state.cards_epoch += 1` and `ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")` unconditionally at the end of the rebuild.
+  2.  Test: Capture `old_epoch = page.evaluate("() => window.__annotationCardsEpoch || 0")`.
+  3.  Test: Click button.
+  4.  Test: `page.wait_for_function("(old) => (window.__annotationCardsEpoch || 0) > old", arg=old_epoch)`.
+  5.  Test: Reacquire locators from the strictly new DOM.
 - **`wait_for_text_walker()`** is the canonical readiness gate before any char-offset operations
 - **`find_text_range(needle)`** searches document text via the browser's text walker and returns `(start_char, end_char)` — use this instead of hardcoded numeric offsets, which break when fixture HTML changes
 - **Copy protection setup**: create week/activity BEFORE enabling copy protection (dialog→nav race)

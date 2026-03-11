@@ -1378,41 +1378,38 @@ def add_comment_to_highlight(page: Page, text: str, *, card_index: int = 0) -> N
     Automatically expands the card if collapsed, since the comment
     input is inside the detail section.
 
-    Handles the NiceGUI card rebuild cycle: after posting, the server
-    clears the container and recreates all cards from CRDT state.
-    Uses comment count as a synchronisation point to confirm the server
-    processed the comment before searching for it in the rebuilt DOM.
-
-    Args:
-        page: Playwright page with an annotation workspace loaded.
-        text: Comment text to post.
-        card_index: 0-based index of the annotation card.
+    Handles the NiceGUI card rebuild cycle by waiting for the monotonic
+    window.__annotationCardsEpoch signal, guaranteeing the DOM is
+    fully settled before reacquiring the new card locators.
     """
     expand_card(page, card_index)
 
     card = page.locator("[data-testid='annotation-card']").nth(card_index)
-    comments_locator = card.locator("[data-testid='comment']")
-    before_count = comments_locator.count()
 
     comment_input = card.get_by_test_id("comment-input")
     comment_input.fill(text)
 
-    # Ensure Vue reactivity has settled (NiceGUI input.js uses a $nextTick
-    # guard on its emitting flag — filling during that window silently
-    # drops the value update to the server).
-    page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
+    # Capture the epoch BEFORE clicking
+    old_epoch = page.evaluate("() => window.__annotationCardsEpoch || 0")
 
     card.get_by_test_id("post-comment-btn").click()
 
-    # Wait for comment count to increase — this confirms the server
-    # processed the comment and rebuilt the card.  The count goes
-    # 0 briefly during container.clear(), then N+1 after rebuild.
-    expect(comments_locator).to_have_count(before_count + 1, timeout=10000)
+    # Wait for the server to process the comment, rebuild the DOM,
+    # and signal completion via the epoch increment. This guarantees
+    # the old DOM is dead and the new DOM is fully settled.
+    page.wait_for_function(
+        "(oldEpoch) => (window.__annotationCardsEpoch || 0) > oldEpoch",
+        arg=old_epoch,
+        timeout=10000,
+    )
 
-    # Card rebuild collapses the detail section; re-expand.
-    expand_card(page, card_index)
-    comment = card.locator("[data-testid='comment']", has_text=text)
-    comment.wait_for(state="visible", timeout=5000)
+    # Reacquire locators from the *new* DOM.
+    # Do NOT reuse `card` or `comment_input` from above.
+    new_card = page.locator("[data-testid='annotation-card']").nth(card_index)
+
+    # Wait for the specific comment text to be visible in the new card
+    new_comment = new_card.get_by_text(text)
+    new_comment.wait_for(state="visible", timeout=5000)
 
 
 def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:

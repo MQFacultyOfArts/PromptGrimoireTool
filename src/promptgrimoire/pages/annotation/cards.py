@@ -579,3 +579,6 @@ def _refresh_annotation_cards(state: PageState) -> None:
             logger.debug("[CARDS] Creating card for highlight %s", hl_id[:8])
             card = _build_annotation_card(state, hl)
             state.annotation_cards[hl_id] = card
+
+    state.cards_epoch += 1
+    ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")

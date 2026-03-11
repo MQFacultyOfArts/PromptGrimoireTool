@@ -1,8 +1,12 @@
-"""HTML input pipeline: detection, conversion, and text extraction.
+"""HTML input pipeline: detection, conversion, and orchestration.
 
 This module provides the unified input pipeline for the annotation page.
 All input types (HTML, RTF, DOCX, PDF, plain text) go through the same
 HTML-based pipeline for character-level annotation support.
+
+Text extraction and marker insertion live in ``text_extraction``.
+HTML sanitisation lives in ``sanitisation``.  This module re-exports
+their public API for backward compatibility.
 """
 
 # Pattern: Functional Core (pure functions for content detection and transformation)
@@ -13,8 +17,7 @@ import asyncio
 import html as html_module
 import logging
 import re
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from selectolax.lexbor import LexborHTMLParser
 
@@ -22,10 +25,19 @@ from promptgrimoire.input_pipeline.converters import (
     convert_docx_to_html,
     convert_pdf_to_html,
 )
-from promptgrimoire.input_pipeline.marker_constants import (
-    HLEND_TEMPLATE,
-    HLSTART_TEMPLATE,
-    MARKER_TEMPLATE,
+from promptgrimoire.input_pipeline.marker_insertion import (
+    collapsed_to_html_offset,
+    find_text_node_offsets,
+    insert_markers_into_dom,
+)
+from promptgrimoire.input_pipeline.sanitisation import (
+    remove_empty_elements,
+    strip_heavy_attributes,
+)
+from promptgrimoire.input_pipeline.text_extraction import (
+    TextNodeInfo,
+    extract_text_from_html,
+    walk_and_map,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,46 +46,28 @@ logger = logging.getLogger(__name__)
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")
 ContentType = Literal["html", "rtf", "docx", "pdf", "text"]
 
-# Tags to strip entirely (security: NiceGUI rejects script tags)
-_STRIP_TAGS = frozenset(("script", "style", "noscript", "template"))
+
+# ---------------------------------------------------------------------------
+# Re-exports for backward compatibility
+# ---------------------------------------------------------------------------
+# External code imports these from html_input; keep them importable here.
+__all__ = [
+    "CONTENT_TYPES",
+    "ContentType",
+    "TextNodeInfo",
+    "collapsed_to_html_offset",
+    "detect_content_type",
+    "extract_text_from_html",
+    "find_text_node_offsets",
+    "insert_markers_into_dom",
+    "process_input",
+    "walk_and_map",
+]
 
 
-# Block-level elements where whitespace-only text nodes are formatting artefacts
-# (indentation between tags) and should be skipped.  Must match the JS blockTags
-# set in walkTextNodes (annotation-highlight.js) for char-index parity.
-_BLOCK_TAGS = frozenset(
-    (
-        "html",
-        "body",
-        "table",
-        "tbody",
-        "thead",
-        "tfoot",
-        "tr",
-        "td",
-        "th",
-        "ul",
-        "ol",
-        "li",
-        "dl",
-        "dt",
-        "dd",
-        "div",
-        "section",
-        "article",
-        "aside",
-        "header",
-        "footer",
-        "nav",
-        "main",
-        "figure",
-        "figcaption",
-        "blockquote",
-    )
-)
-
-# Whitespace pattern matching JS /[\s]+/g — includes \u00a0 (nbsp)
-_WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
+# ---------------------------------------------------------------------------
+# Content type detection
+# ---------------------------------------------------------------------------
 
 
 def _detect_from_bytes(content: bytes) -> ContentType | None:
@@ -106,7 +100,7 @@ def _is_fake_html(content: str) -> bool:
     """Check whether *content* is plain text wrapped in an HTML shell.
 
     PDF viewers (Chrome, Evince) paste plain text as
-    ``<html><body>text\\n…</body></html>`` — structurally HTML but
+    ``<html><body>text\\n...``</body></html>`` -- structurally HTML but
     semantically plain text.  If the body contains no block-level
     elements the content should be treated as ``"text"`` so that
     ``_text_to_html()`` can convert newlines to ``<br/>`` tags.
@@ -118,7 +112,7 @@ def _is_fake_html(content: str) -> bool:
     tree = LexborHTMLParser(content)
     body = tree.body
     if body is None:
-        # No <body> element — treat as fake HTML (plain text)
+        # No <body> element -- treat as fake HTML (plain text)
         return True
     return body.css_first(_BLOCK_LEVEL_CSS) is None
 
@@ -134,13 +128,13 @@ def _detect_from_string(content: str) -> ContentType:
     # HTML detection
     lower = stripped.lower()
     if lower.startswith("<!doctype"):
-        # NOTE: DOCTYPE path skips fake-HTML guard — observed PDF pastes
+        # NOTE: DOCTYPE path skips fake-HTML guard -- observed PDF pastes
         # never include DOCTYPE.
         return "html"
     if lower.startswith("<html"):
-        # Guard: HTML-wrapped plain text (e.g. PDF paste) → reclassify.
-        # PDF viewers paste <html><body>text\n…</body></html> without
-        # DOCTYPE — no block-level elements means it's plain text.
+        # Guard: HTML-wrapped plain text (e.g. PDF paste) -> reclassify.
+        # PDF viewers paste <html><body>text\n...</body></html> without
+        # DOCTYPE -- no block-level elements means it's plain text.
         if _is_fake_html(stripped):
             return "text"
         return "html"
@@ -192,505 +186,9 @@ def detect_content_type(content: str | bytes) -> ContentType:
     return _detect_from_string(content)
 
 
-def _collapse_text_node(node: Any) -> str | None:
-    """Return collapsed text for a text node, or ``None`` if it should be skipped.
-
-    Skips whitespace-only text nodes inside block containers (formatting
-    artefacts).  Collapses whitespace runs (including nbsp) to single space.
-    """
-    text = node.text_content
-    if not text:
-        return None
-    parent = node.parent
-    if (
-        parent is not None
-        and parent.tag in _BLOCK_TAGS
-        and _WHITESPACE_RUN.fullmatch(text)
-    ):
-        return None
-    return _WHITESPACE_RUN.sub(" ", text)
-
-
-def _get_dom_root(html: str) -> Any | None:
-    """Parse *html* and return the root element for text walking."""
-    tree = LexborHTMLParser(html)
-    body = tree.body
-    root = body if body else tree.root
-    return root
-
-
-def _walk_dom(
-    node: Any,
-    chars: list[str],
-    text_nodes: list[TextNodeInfo] | None = None,
-) -> None:
-    """Recursively walk DOM collecting characters and optionally text-node info.
-
-    Shared walker for ``extract_text_from_html`` and ``walk_and_map``.
-    When *text_nodes* is not ``None``, appends ``TextNodeInfo`` entries
-    for marker-insertion pass 2.
-    """
-    tag = node.tag
-
-    if tag == "-text":
-        collapsed = _collapse_text_node(node)
-        if collapsed is None:
-            return
-        start = len(chars)
-        chars.extend(collapsed)
-        if text_nodes is not None:
-            text_nodes.append(
-                TextNodeInfo(
-                    html_text=node.html,
-                    decoded_text=node.text_content,
-                    collapsed_text=collapsed,
-                    char_start=start,
-                    char_end=len(chars),
-                )
-            )
-        return
-
-    if tag in _STRIP_TAGS:
-        return
-
-    if tag == "br":
-        chars.append("\n")
-        return
-
-    child = node.child
-    while child is not None:
-        _walk_dom(child, chars, text_nodes)
-        child = child.next
-
-
-def extract_text_from_html(html: str) -> list[str]:
-    """Extract text characters from clean HTML, matching JS walkTextNodes.
-
-    Walks the DOM via selectolax child/next iteration (which exposes text
-    nodes) so that the resulting character list has the same indices as
-    the client-side text walker.  The two must agree for highlight
-    coordinates to be correct (Issue #129).
-
-    Matching rules (mirroring the JS):
-    - ``<br>`` → ``\\n``
-    - script / style / noscript / template → skipped entirely
-    - Whitespace-only text nodes inside block containers → skipped
-    - Whitespace runs (including ``\\u00a0``) → collapsed to single space
-
-    Args:
-        html: Clean HTML without char span wrappers.
-
-    Returns:
-        List of characters in document order.
-    """
-    if not html:
-        return []
-
-    root = _get_dom_root(html)
-    if root is None:
-        return []
-
-    chars: list[str] = []
-    child = root.child
-    while child is not None:
-        _walk_dom(child, chars)
-        child = child.next
-
-    return chars
-
-
 # ---------------------------------------------------------------------------
-# Marker insertion (two-pass DOM walk + string insertion)
+# Text / HTML conversion helpers
 # ---------------------------------------------------------------------------
-
-# Common HTML entities and their decoded forms
-_ENTITY_MAP: dict[str, str] = {
-    "&amp;": "&",
-    "&lt;": "<",
-    "&gt;": ">",
-    "&quot;": '"',
-    "&apos;": "'",
-    "&nbsp;": "\u00a0",
-}
-
-
-@dataclass
-class TextNodeInfo:
-    """Info about a text node's contribution to the character stream."""
-
-    html_text: str  # HTML-encoded text (for finding in serialised HTML)
-    decoded_text: str  # Decoded text (from text_content)
-    collapsed_text: str  # After whitespace collapsing
-    char_start: int  # Starting char index in the stream
-    char_end: int  # Ending char index (exclusive)
-
-
-def walk_and_map(html: str) -> tuple[list[str], list[TextNodeInfo]]:
-    """Walk DOM exactly like extract_text_from_html, returning chars + node map.
-
-    Pass 1 of the two-pass marker insertion approach. Builds a position map
-    that records where each text node's characters fall in the collapsed
-    character stream, along with the HTML-encoded text for byte-offset
-    matching in pass 2.
-    """
-    if not html:
-        return [], []
-
-    root = _get_dom_root(html)
-    if root is None:
-        return [], []
-
-    chars: list[str] = []
-    text_nodes: list[TextNodeInfo] = []
-
-    child = root.child
-    while child is not None:
-        _walk_dom(child, chars, text_nodes)
-        child = child.next
-
-    return chars, text_nodes
-
-
-def _try_entity_match(
-    html: str, html_pos: int, decoded_text: str, decoded_pos: int
-) -> tuple[int, int] | None:
-    """Try to match an HTML entity at *html_pos* against decoded text.
-
-    Returns ``(new_html_pos, new_decoded_pos)`` on success, or ``None``
-    if the entity does not match.
-    """
-    semicolon = html.find(";", html_pos + 1)
-    if semicolon == -1 or semicolon - html_pos >= 12:
-        return None
-    entity_text = html[html_pos : semicolon + 1]
-    decoded_entity = html_module.unescape(entity_text)
-    if decoded_text[decoded_pos : decoded_pos + len(decoded_entity)] == decoded_entity:
-        return (semicolon + 1, decoded_pos + len(decoded_entity))
-    return None
-
-
-def _match_at_candidate(
-    html: str, html_len: int, candidate_start: int, decoded_text: str
-) -> int | None:
-    """Try to match *decoded_text* starting at *candidate_start* in *html*.
-
-    Returns the end position in *html* on full match, or ``None``.
-    """
-    html_pos = candidate_start
-    decoded_pos = 0
-
-    while decoded_pos < len(decoded_text) and html_pos < html_len:
-        ch = html[html_pos]
-        if ch == "<":
-            return None  # Tag boundary — text node can't span tags
-
-        if ch == "&":
-            entity_result = _try_entity_match(html, html_pos, decoded_text, decoded_pos)
-            if entity_result is not None:
-                html_pos, decoded_pos = entity_result
-                continue
-            # Not a matching entity — try literal '&' match
-            if decoded_text[decoded_pos] != "&":
-                return None
-            decoded_pos += 1
-            html_pos += 1
-            continue
-
-        if ch != decoded_text[decoded_pos]:
-            return None
-        html_pos += 1
-        decoded_pos += 1
-
-    if decoded_pos == len(decoded_text):
-        return html_pos
-    return None
-
-
-def _entity_aware_find(
-    html: str, decoded_text: str, start: int
-) -> tuple[int, int] | None:
-    """Find *decoded_text* in *html* matching through HTML entities.
-
-    Walks the source HTML character by character starting from *start*.
-    Each decoded character can match either its literal form or any HTML
-    entity that decodes to it (named like ``&quot;``, decimal like ``&#34;``,
-    or hex like ``&#x22;``).
-
-    Returns ``(match_start, match_end)`` byte offsets in *html*, or
-    ``None`` if no match is found.
-    """
-    if not decoded_text:
-        return (start, start)
-
-    html_len = len(html)
-
-    for candidate_start in range(start, html_len):
-        if html[candidate_start] == "<":
-            continue
-
-        end = _match_at_candidate(html, html_len, candidate_start, decoded_text)
-        if end is not None:
-            return (candidate_start, end)
-
-    return None
-
-
-def find_text_node_offsets(html: str, text_nodes: list[TextNodeInfo]) -> list[int]:
-    """Find the byte offset of each text node's html_text in the serialised HTML.
-
-    Searches sequentially, advancing the search position so matches follow
-    document order.
-
-    Three fallback strategies for matching text nodes to source HTML:
-
-    1. ``html_text`` (selectolax serialization) — handles entities that
-       selectolax preserves (``&amp;``, ``&lt;``, ``&gt;``, ``&nbsp;``).
-    2. ``decoded_text`` — handles cases where selectolax re-encodes
-       (e.g. literal ``\\xa0`` becomes ``&nbsp;`` in ``node.html``).
-    3. Entity-aware matching — handles entities that selectolax decodes
-       but the source retains (``&quot;``, ``&#x27;``, numeric refs).
-       See #143.
-    """
-    offsets: list[int] = []
-    search_from = 0
-
-    for info in text_nodes:
-        idx = html.find(info.html_text, search_from)
-        if idx == -1:
-            # selectolax may re-encode chars (e.g. \xa0 -> &nbsp;).
-            # Fall back to decoded_text which matches the source.
-            idx = html.find(info.decoded_text, search_from)
-            if idx != -1:
-                info.html_text = info.decoded_text
-            else:
-                # #143: selectolax decoded entities (e.g. &quot; -> ") that
-                # the source HTML retains.  Match character-by-character,
-                # allowing entity forms in source to match decoded chars.
-                result = _entity_aware_find(html, info.decoded_text, search_from)
-                if result is not None:
-                    idx, end = result
-                    info.html_text = html[idx:end]
-                else:
-                    msg = (
-                        f"Could not find text node "
-                        f"{info.html_text!r} "
-                        f"in HTML starting from offset "
-                        f"{search_from}"
-                    )
-                    raise ValueError(msg)
-        offsets.append(idx)
-        search_from = idx + len(info.html_text)
-
-    return offsets
-
-
-def _html_char_length(html_text: str, html_pos: int, decoded_char: str) -> int:
-    """Determine how many bytes in *html_text* correspond to one decoded char.
-
-    If ``html_text[html_pos]`` starts an entity (e.g. ``&amp;``), return the
-    entity length.  Otherwise return 1.
-    """
-    if html_pos >= len(html_text):
-        return 1
-
-    if html_text[html_pos] == "&":
-        # Try to match a known entity
-        for entity, decoded in _ENTITY_MAP.items():
-            if html_text[html_pos:].startswith(entity) and decoded == decoded_char:
-                return len(entity)
-        # Try numeric entity &#NNN; or &#xHHH;
-        semicolon = html_text.find(";", html_pos + 1)
-        if semicolon != -1 and semicolon - html_pos < 12:
-            return semicolon - html_pos + 1
-    return 1
-
-
-def collapsed_to_html_offset(
-    html_text: str, decoded_text: str, collapsed_offset: int
-) -> int:
-    """Map an offset in collapsed-decoded text to an offset in HTML-encoded text.
-
-    Walks the decoded text (which has entities resolved, e.g. ``&`` not
-    ``&amp;``) applying whitespace collapsing.  Simultaneously advances
-    through the HTML text to track the corresponding byte position.
-    """
-    if collapsed_offset == 0:
-        return 0
-
-    collapsed_pos = 0
-    decoded_pos = 0
-    html_pos = 0
-    in_whitespace = False
-
-    while decoded_pos < len(decoded_text) and collapsed_pos < collapsed_offset:
-        ch = decoded_text[decoded_pos]
-        is_ws = ch in (" ", "\t", "\n", "\r", "\u00a0") or ch.isspace()
-
-        html_char_len = _html_char_length(html_text, html_pos, ch)
-
-        if is_ws:
-            if not in_whitespace:
-                collapsed_pos += 1
-                in_whitespace = True
-            html_pos += html_char_len
-            decoded_pos += 1
-        else:
-            collapsed_pos += 1
-            html_pos += html_char_len
-            decoded_pos += 1
-            in_whitespace = False
-
-    return html_pos
-
-
-def _add_marker_insertions(
-    text_nodes: list[TextNodeInfo],
-    byte_offsets: list[int],
-    start_char: int,
-    end_char: int,
-    marker_idx: int,
-    insertions: list[tuple[int, str]],
-) -> None:
-    """Add HLSTART and HLEND markers for a single highlight to insertions list.
-
-    Handles boundary cases where markers fall outside all text nodes.
-    """
-    # Find start position
-    start_node_found = False
-    for i, node_info in enumerate(text_nodes):
-        if node_info.char_start <= start_char < node_info.char_end:
-            offset_in_collapsed = start_char - node_info.char_start
-            raw_offset = collapsed_to_html_offset(
-                node_info.html_text, node_info.decoded_text, offset_in_collapsed
-            )
-            byte_pos = byte_offsets[i] + raw_offset
-            insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
-            start_node_found = True
-            break
-
-    # Fallback: if start_char=0 but first text node has char_start>0
-    if not start_node_found and text_nodes and start_char == 0:
-        byte_pos = byte_offsets[0]
-        insertions.append((byte_pos, HLSTART_TEMPLATE.format(marker_idx)))
-
-    # Find end position
-    end_node_found = False
-    for i, node_info in enumerate(text_nodes):
-        if node_info.char_start < end_char <= node_info.char_end:
-            offset_in_collapsed = end_char - node_info.char_start
-            raw_offset = collapsed_to_html_offset(
-                node_info.html_text, node_info.decoded_text, offset_in_collapsed
-            )
-            byte_pos = byte_offsets[i] + raw_offset
-            insertions.append(
-                (
-                    byte_pos,
-                    HLEND_TEMPLATE.format(marker_idx)
-                    + MARKER_TEMPLATE.format(marker_idx),
-                )
-            )
-            end_node_found = True
-            break
-
-    # Fallback: if end_char equals document length or exceeds all nodes
-    if not end_node_found and text_nodes:
-        node_info = text_nodes[-1]
-        offset_in_collapsed = len(node_info.collapsed_text)
-        raw_offset = collapsed_to_html_offset(
-            node_info.html_text, node_info.decoded_text, offset_in_collapsed
-        )
-        byte_pos = byte_offsets[-1] + raw_offset
-        insertions.append(
-            (
-                byte_pos,
-                HLEND_TEMPLATE.format(marker_idx) + MARKER_TEMPLATE.format(marker_idx),
-            )
-        )
-
-
-def insert_markers_into_dom(
-    html: str,
-    highlights: list[dict[str, Any]],
-) -> tuple[str, list[dict[str, Any]]]:
-    """Insert annotation markers into HTML at correct character positions.
-
-    Walks the DOM using the same logic as ``extract_text_from_html``
-    (same whitespace rules, same block/strip tags, same collapse).
-    Inserts ``HLSTART``/``HLEND``/``ANNMARKER`` text into the serialised
-    HTML at positions matching the char indices from
-    ``extract_text_from_html``.
-
-    Args:
-        html: Clean HTML (from doc.content, no char spans).
-        highlights: List of highlight dicts with ``start_char``, ``end_char``,
-            ``tag``, etc.  Supports both ``start_char``/``end_char`` and
-            legacy ``start_word``/``end_word`` fields.
-
-    Returns:
-        ``(marked_html, ordered_highlights)`` -- marked HTML with markers
-        inserted, and highlights in marker order (same contract as
-        ``_insert_markers_into_html``).
-
-    Raises:
-        ValueError: If *html* is empty/None and *highlights* are non-empty.
-    """
-    if not highlights:
-        return html, []
-
-    if not html:
-        msg = "Cannot insert markers into empty HTML when highlights are non-empty"
-        raise ValueError(msg)
-
-    # Sort by start_char, then by tag (matching _insert_markers_into_html)
-    sorted_highlights = sorted(
-        highlights,
-        key=lambda h: (
-            h.get("start_char", h.get("start_word", 0)),
-            h.get("tag", ""),
-        ),
-    )
-
-    # Pass 1 — DOM walk to build position map
-    _chars, text_nodes = walk_and_map(html)
-
-    # Pass 2a — find byte offsets of each text node in serialised HTML
-    byte_offsets = find_text_node_offsets(html, text_nodes)
-
-    # Pass 2b — build insertion list
-    insertions: list[tuple[int, str]] = []
-    marker_to_highlight: list[dict[str, Any]] = []
-
-    for hl in sorted_highlights:
-        start_char = int(hl.get("start_char", hl.get("start_word", 0)))
-        end_char = int(hl.get("end_char", hl.get("end_word", start_char + 1)))
-
-        marker_idx = len(marker_to_highlight)
-        marker_to_highlight.append(hl)
-
-        _add_marker_insertions(
-            text_nodes, byte_offsets, start_char, end_char, marker_idx, insertions
-        )
-
-    # Sort insertions by byte offset descending — insert back-to-front
-    insertions.sort(key=lambda x: x[0], reverse=True)
-
-    # Reverse items at the same byte position so they insert in correct order.
-    # When multiple markers are at the same position, the insertion loop processes
-    # them in order, each pushing earlier markers forward. By reversing items at
-    # each position level, we ensure later-appended markers are processed first.
-    i = 0
-    while i < len(insertions):
-        j = i + 1
-        while j < len(insertions) and insertions[j][0] == insertions[i][0]:
-            j += 1
-        insertions[i:j] = list(reversed(insertions[i:j]))
-        i = j
-
-    result = html
-    for byte_pos, marker in insertions:
-        result = result[:byte_pos] + marker + result[byte_pos:]
-
-    return result, marker_to_highlight
 
 
 def _strip_html_to_text(html_content: str) -> str:
@@ -745,130 +243,9 @@ def _text_to_html(text: str) -> str:
     return "\n".join(html_parts) if html_parts else "<p></p>"
 
 
-_KEEP_STYLE_PROPS = frozenset(
-    {
-        "margin-left",
-        "margin-right",
-        "text-indent",
-        "padding-left",
-        "padding-right",
-    }
-)
-
-
-def _filter_style(style_val: str) -> str | None:
-    """Return filtered style string keeping only structural properties.
-
-    Returns ``None`` if no structural properties survive.
-    """
-    kept: list[str] = []
-    for prop in _KEEP_STYLE_PROPS:
-        pattern = rf"{re.escape(prop)}\s*:\s*([^;]+)"
-        match = re.search(pattern, style_val, re.IGNORECASE)
-        if match:
-            kept.append(f"{prop}:{match.group(1).strip()}")
-    return ";".join(kept) if kept else None
-
-
-def _should_remove_attr(attr_name: str) -> bool:
-    """Return whether an attribute should be stripped."""
-    if attr_name == "class":
-        return True
-    return attr_name.startswith("data-") and attr_name != "data-speaker"
-
-
-def _strip_heavy_attributes(html: str) -> str:
-    """Strip heavy attributes to reduce HTML size for websocket transmission.
-
-    Removes:
-    - Most style properties (inline styles can be huge)
-    - data-* attributes (except data-speaker which we use)
-    - class attributes (keep semantic structure, lose styling)
-
-    Preserves:
-    - margin-left, margin-right, text-indent (structural indentation)
-    - padding-left, padding-right (structural spacing)
-
-    This is aggressive but necessary for large pasted content where the
-    HTML can be 10-50x larger than the text content.
-    """
-    if not html:
-        return html
-
-    tree = LexborHTMLParser(html)
-
-    for node in tree.css("*"):
-        _strip_node_attrs(node)
-
-    return tree.html or html
-
-
-def _strip_node_attrs(node: Any) -> None:
-    """Strip heavy attributes from a single DOM node."""
-    attrs = node.attributes
-    attrs_to_remove: list[str] = []
-
-    for attr_name in attrs:
-        if attr_name == "style":
-            filtered = _filter_style(attrs.get("style") or "")
-            if filtered:
-                node.attrs["style"] = filtered
-            else:
-                attrs_to_remove.append("style")
-        elif _should_remove_attr(attr_name):
-            attrs_to_remove.append(attr_name)
-
-    for attr_name in attrs_to_remove:
-        del node.attrs[attr_name]
-
-
-def _is_empty_element(node: Any) -> bool:
-    """Return whether *node* is empty (whitespace-only, <br>-only, or no children).
-
-    Speaker marker divs (``data-speaker``) are never considered empty.
-    """
-    if node.attributes.get("data-speaker"):
-        return False
-    text = (node.text() or "").strip()
-    if text:
-        return False
-    children = list(node.iter())
-    return all(child.tag == "br" for child in children) if children else True
-
-
-def _is_sole_content_element(node: Any, tree: LexborHTMLParser) -> bool:
-    """Return whether *node* is the only content element inside ``<body>``."""
-    body = tree.css_first("body")
-    if not body:
-        return False
-    return all(n == node for n in body.css("p, div, span"))
-
-
-def _remove_empty_elements(html: str) -> str:
-    """Remove empty paragraphs and divs that only contain whitespace or <br> tags.
-
-    These create excessive vertical whitespace in pasted content, especially
-    from office applications that use empty paragraphs for spacing.
-
-    Note: Preserves at least one content element to avoid returning empty body.
-    """
-    if not html:
-        return html
-
-    tree = LexborHTMLParser(html)
-
-    changed = True
-    while changed:
-        changed = False
-        for node in tree.css("p, div, span"):
-            if not _is_empty_element(node):
-                continue
-            if _is_sole_content_element(node, tree):
-                continue
-            node.decompose()
-            changed = True
-
-    return tree.html or html
+# ---------------------------------------------------------------------------
+# Main pipeline orchestration
+# ---------------------------------------------------------------------------
 
 
 async def process_input(
@@ -897,8 +274,8 @@ async def process_input(
         DOCX and PDF conversion supported via converters module.
         RTF conversion is not yet implemented.
     """
-    # Binary formats (DOCX, PDF) must receive bytes — intercept before
-    # the generic bytes→str decode that text/HTML paths need.
+    # Binary formats (DOCX, PDF) must receive bytes -- intercept before
+    # the generic bytes->str decode that text/HTML paths need.
     if source_type in ("docx", "pdf"):
         if not isinstance(content, bytes):
             msg = f"{source_type.upper()} content must be bytes, got str"
@@ -949,7 +326,7 @@ async def process_input(
 
     # Step 2: Preprocess (remove chrome, inject speaker labels)
     # Lazy import to break circular dependency:
-    # input_pipeline → export.platforms → export → highlight_spans → input_pipeline
+    # input_pipeline -> export.platforms -> export -> highlight_spans -> input_pipeline
     from promptgrimoire.export.platforms import preprocess_for_export
 
     preprocessed = preprocess_for_export(html, platform_hint=platform_hint)
@@ -963,11 +340,11 @@ async def process_input(
 
     # Step 3: Strip unnecessary attributes to reduce size
     # (pasted HTML often has huge inline styles, data attributes, etc.)
-    stripped = _strip_heavy_attributes(preprocessed)
+    stripped = strip_heavy_attributes(preprocessed)
 
     # Step 4: Remove empty paragraphs/divs that only contain <br> tags
     # (Office apps use these for spacing, creates excessive whitespace)
-    cleaned = _remove_empty_elements(stripped)
+    cleaned = remove_empty_elements(stripped)
     final_size = len(cleaned)
     logger.debug(
         "[PIPELINE] Final output: size=%d bytes (%.1f KB), ratio=%.1fx from input",

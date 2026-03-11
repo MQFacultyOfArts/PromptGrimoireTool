@@ -1,15 +1,19 @@
 """Integration tests for database clone/drop round-trip.
 
 Verifies that clone_database() and drop_database() work against a real
-PostgreSQL instance.  Uses the branch test database (DEV__TEST_DATABASE_URL)
-as the template source.
+PostgreSQL instance.  Uses a **private clone-source database** (created
+by the CLI harness in ``_pre_test_db_cleanup()``) as the template source,
+NOT the shared test database.  This avoids ``pg_terminate_backend()``
+killing other xdist workers' connections mid-query.
 
 Requires a running PostgreSQL instance with DEV__TEST_DATABASE_URL set.
+The ``_CLONE_TEST_SOURCE_URL`` env var is set by the CLI harness.
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 import uuid
 
 import psycopg
@@ -17,11 +21,17 @@ import pytest
 
 from promptgrimoire.config import get_settings
 
-# Skip all tests if no test database URL is configured
-pytestmark = pytest.mark.skipif(
-    not get_settings().dev.test_database_url,
-    reason="DEV__TEST_DATABASE_URL not configured",
-)
+# Skip if no test database or no private clone source provisioned
+pytestmark = [
+    pytest.mark.skipif(
+        not get_settings().dev.test_database_url,
+        reason="DEV__TEST_DATABASE_URL not configured",
+    ),
+    pytest.mark.skipif(
+        not os.environ.get("_CLONE_TEST_SOURCE_URL"),
+        reason="_CLONE_TEST_SOURCE_URL not set — use grimoire test",
+    ),
+]
 
 
 def _sync_url(url: str) -> str:
@@ -58,8 +68,7 @@ def test_clone_and_drop_round_trip() -> None:
     """Clone a database from template, verify schema, then drop it."""
     from promptgrimoire.db.bootstrap import clone_database, drop_database
 
-    source_url = get_settings().dev.test_database_url
-    assert source_url, "DEV__TEST_DATABASE_URL must be set"
+    source_url = os.environ["_CLONE_TEST_SOURCE_URL"]
 
     target_name = f"pg_test_clone_{uuid.uuid4().hex[:8]}"
     clone_url: str | None = None
@@ -105,8 +114,7 @@ def test_drop_is_idempotent() -> None:
     """Dropping a database twice does not raise an error."""
     from promptgrimoire.db.bootstrap import clone_database, drop_database
 
-    source_url = get_settings().dev.test_database_url
-    assert source_url, "DEV__TEST_DATABASE_URL must be set"
+    source_url = os.environ["_CLONE_TEST_SOURCE_URL"]
 
     target_name = f"pg_test_clone_{uuid.uuid4().hex[:8]}"
     clone_url: str | None = None

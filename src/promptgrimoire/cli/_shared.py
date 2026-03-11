@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -49,6 +50,28 @@ def _prepend_pytest_flags(
     if prefix:
         return [*prefix, *extra_args]
     return extra_args
+
+
+def _clone_source_db_name(test_database_url: str) -> str:
+    """Derive the private clone-source database name from the test DB URL.
+
+    Appends ``_clone_source`` to the test database name so that
+    ``test_db_cloning.py`` can use it as a template without killing
+    other xdist workers' connections via ``pg_terminate_backend()``.
+    """
+    base = test_database_url.split("?", maxsplit=1)[0]
+    db_name = base.rsplit("/", 1)[1]
+    return f"{db_name}_clone_source"
+
+
+def _build_clone_source_url(test_database_url: str, clone_source_name: str) -> str:
+    """Replace the database name in *test_database_url* with *clone_source_name*."""
+    base = test_database_url.split("?", maxsplit=1)[0]
+    prefix = base.rsplit("/", 1)[0]
+    query = ""
+    if "?" in test_database_url:
+        query = "?" + test_database_url.split("?", 1)[1]
+    return f"{prefix}/{clone_source_name}{query}"
 
 
 def _pre_test_db_cleanup() -> None:
@@ -118,6 +141,23 @@ def _pre_test_db_cleanup() -> None:
             conn.execute(text(f"TRUNCATE {quoted_tables} RESTART IDENTITY CASCADE"))
 
     engine.dispose()
+
+    # Create a private clone-source database for test_db_cloning.py.
+    # clone_database() calls pg_terminate_backend() on the source DB,
+    # which would kill every other xdist worker's connection if the
+    # shared test DB were used directly.  Creating the clone source here
+    # (before xdist workers connect) avoids the race.
+    from promptgrimoire.db.bootstrap import clone_database, drop_database
+
+    clone_source_name = _clone_source_db_name(test_database_url)
+    clone_source_url = _build_clone_source_url(test_database_url, clone_source_name)
+
+    # Drop stale leftover from a previous crashed run
+    with contextlib.suppress(Exception):
+        drop_database(clone_source_url)
+
+    clone_database(test_database_url, clone_source_name)
+    os.environ["_CLONE_TEST_SOURCE_URL"] = clone_source_url
 
 
 def _build_test_header(

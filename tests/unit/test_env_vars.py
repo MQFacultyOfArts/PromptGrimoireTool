@@ -259,6 +259,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     _TESTS_DIR / "e2e" / "test_pdf_export_filename.py",
     # make_docs test captures DEV__AUTH_MOCK env state at mock call time
     _TESTS_DIR / "unit" / "test_make_docs.py",
+    # clone test reads _CLONE_TEST_SOURCE_URL (set by CLI harness)
+    _TESTS_DIR / "integration" / "test_db_cloning.py",
 }
 
 

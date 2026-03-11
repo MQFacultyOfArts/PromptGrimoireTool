@@ -1126,6 +1126,107 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** New text extraction function is part of the public API
 
+### Converter functions exported from package
+**File:** tests/unit/input_pipeline/test_public_api.py::TestConverterExports
+1. Assert convert_docx_to_html importable from input_pipeline and callable
+2. Assert convert_pdf_to_html importable from input_pipeline and callable
+3. Assert build_paragraph_map_for_json importable from input_pipeline and callable
+4. Assert all three appear in __all__
+
+**Verifies:** File upload converter functions are part of the public API
+
+## Content Type Detection (Unit)
+
+### Basic type detection from content signatures
+**File:** tests/unit/input_pipeline/test_content_type.py::TestDetectContentType
+1. HTML detected from DOCTYPE, html tag, div, p tags (case-insensitive, with whitespace)
+2. RTF detected from magic header (string and bytes)
+3. PDF detected from %PDF magic bytes
+4. DOCX detected from PK signature + word/document.xml marker
+5. Plain text as fallback (including angle brackets that aren't HTML tags)
+6. Empty string returns "text"
+7. Bytes content decoded as UTF-8
+
+**Verifies:** Content type detection correctly classifies all supported input formats
+
+### Fixture file detection
+**File:** tests/unit/input_pipeline/test_content_type.py::TestDetectContentTypeFixtures
+1. Parametrize over 12 HTML fixtures and 12 gzipped HTML fixtures
+2. Assert all detected as "html" (gzipped decompressed first)
+3. RTF fixture detected as "rtf"
+4. JSON fixture (SillyTavern card) detected as "text"
+5. BLNS (naughty strings) detected as "html" (contains XSS div tags)
+
+**Verifies:** Detection works on real-world fixture files, not just synthetic inputs
+
+### Fake-HTML reclassification (PDF viewer paste)
+**File:** tests/unit/input_pipeline/test_content_type.py::TestFakeHtmlDetection
+1. Plain text wrapped in html/body tags reclassified as "text"
+2. Real HTML with block-level elements (p, div, h1, table, ul, ol, blockquote, pre, section, article) stays "html"
+3. HTML with only inline elements (span, br) reclassified as "text"
+4. Real evince PDF paste fixture wrapped in HTML body detected as "text"
+
+**Verifies:** PDF viewer paste (plain text in HTML wrapper) correctly reclassified so newlines become br tags
+
+## File Converters (Unit)
+
+### DOCX to HTML conversion
+**File:** tests/unit/input_pipeline/test_converters.py::TestConvertDocxToHtml
+1. Convert real DOCX fixture, assert output contains p tags
+2. Convert formatted DOCX, assert output contains strong or em tags
+3. Assert output is string (not bytes)
+4. Corrupt DOCX bytes raise ValueError
+5. Empty bytes raise ValueError
+
+**Verifies:** mammoth produces semantic HTML from DOCX with correct error handling
+
+### PDF to HTML conversion
+**File:** tests/unit/input_pipeline/test_converters.py::TestConvertPdfToHtml
+1. Convert real PDF fixture (async), assert output contains p and heading tags
+2. Assert output is string with substantial content (>100 chars)
+3. Corrupt PDF bytes raise ValueError
+4. Empty bytes raise ValueError
+5. Mock pandoc failure raises ValueError (not CalledProcessError)
+
+**Verifies:** pymupdf4llm + pandoc pipeline produces structured HTML from PDF with correct error handling
+
+## Process Input Orchestration (Unit)
+
+### Basic pipeline orchestration
+**File:** tests/unit/input_pipeline/test_process_input.py::TestProcessInput
+1. Empty text input produces empty paragraph
+2. Plain text converted to HTML paragraphs (no char spans)
+3. HTML content passes through preprocessing
+4. Double newlines create separate paragraphs
+5. Bytes input decoded and processed
+6. Unsupported format (rtf) raises NotImplementedError
+7. ChatCraft fixture preserves blockquotes and code blocks
+
+**Verifies:** process_input() routes content types correctly through the pipeline
+
+### DOCX through process_input
+**File:** tests/unit/input_pipeline/test_process_input.py::TestProcessInputDocx
+1. DOCX bytes produce semantic HTML with p tags (>100 chars)
+2. Real fixture (Shen v R) produces valid HTML with paragraph structure and text
+3. String input (instead of bytes) raises TypeError
+
+**Verifies:** DOCX conversion integrates correctly with the full pipeline
+
+### PDF through process_input
+**File:** tests/unit/input_pipeline/test_process_input.py::TestProcessInputPdf
+1. PDF bytes produce HTML with paragraph structure (>100 chars)
+2. Real fixture (Lawlis v R) produces valid HTML with paragraphs and text
+3. String input (instead of bytes) raises TypeError
+
+**Verifies:** PDF conversion integrates correctly with the full pipeline
+
+### PDF paste through process_input
+**File:** tests/unit/input_pipeline/test_process_input.py::TestProcessInputPdfPaste
+1. Fake-HTML paste (html/body wrapper around plain text) auto-detected as "text", produces br tags
+2. Real evince fixture wrapped in HTML body produces multiple text blocks (>5 paragraphs + br tags)
+
+**Verifies:** PDF viewer paste scenario produces properly structured output end-to-end
+
 ## Text Extraction (Unit)
 
 ### Basic HTML text extraction
@@ -5235,3 +5336,83 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Cross-tab consistency: annotate and respond tabs produce identical filenames
 
 **Verifies:** AC5.3, AC5.4, AC4.3 -- browser download filename matches policy end-to-end
+
+## Document Management (Unit)
+
+### Document edit eligibility
+**File:** tests/unit/test_document_management.py::TestCanEditDocument
+1. Document with zero annotations and no source_document_id is editable
+2. Document with annotations (count > 0) is not editable
+3. Template clone (has source_document_id) with zero annotations is not editable
+4. Template clone with annotations is not editable
+
+**Verifies:** can_edit_document() enforces the edit guard: only user-uploaded documents with no annotations may be edited
+
+## Workspace Document CRUD (Integration)
+
+### Update document content
+**File:** tests/integration/test_workspace_documents.py::TestUpdateDocumentContent
+1. Create workspace and document, update content with new HTML, verify content persisted
+2. Update content, verify paragraph_map rebuilt to match new HTML (3 paragraphs = 3 entries)
+3. Clear search_dirty, update content, verify workspace.search_dirty set to True
+4. Attempt update with non-existent document_id, expect ValueError("not found")
+5. Create doc in workspace A, attempt update with workspace B id, expect ValueError("belongs to workspace")
+
+**Verifies:** update_document_content() persists HTML, rebuilds paragraph map, marks FTS dirty, and validates ownership
+
+## Document Upload & Paste E2E
+
+### Paste renders without page reload
+**File:** tests/e2e/test_document_upload.py::TestDocumentUploadNoReload::test_paste_renders_without_url_change
+1. Capture URL before paste
+2. Paste HTML via clipboard and click Add Document
+3. Wait for text walker initialisation
+4. Assert document text visible in doc-container
+5. Assert URL unchanged
+6. Assert content form hidden (multi-document disabled)
+
+**Verifies:** AC4.1 -- pasted document renders in-place without navigation or reload
+
+### DOCX upload renders without page reload
+**File:** tests/e2e/test_document_upload.py::TestDocumentUploadNoReload::test_docx_upload_renders_without_url_change
+1. Set file input to DOCX fixture path
+2. Confirm content type dialog
+3. Wait for text walker (30s timeout for conversion)
+4. Assert text from DOCX visible in doc-container
+5. Assert URL unchanged
+6. Assert content form hidden
+
+**Verifies:** AC1.2, AC4.1 -- DOCX upload-to-annotate pipeline works end-to-end
+
+### PDF upload renders without page reload
+**File:** tests/e2e/test_document_upload.py::TestDocumentUploadNoReload::test_pdf_upload_renders_without_url_change
+1. Set file input to PDF fixture path
+2. Confirm content type dialog
+3. Wait for text walker (30s timeout for extraction)
+4. Assert text from PDF ("Lawlis") visible in doc-container
+5. Assert URL unchanged
+6. Assert content form hidden
+
+**Verifies:** AC2.2, AC4.1 -- PDF upload-to-annotate pipeline works end-to-end
+
+## Document Edit Mode E2E
+
+### Edit button shown for editable documents
+**File:** tests/e2e/test_edit_mode.py::TestEditModeButton
+1. Paste document into workspace, open Manage Documents dialog
+2. Assert edit button visible for document with zero annotations
+3. Add highlight annotation, reopen dialog
+4. Assert edit button NOT visible for annotated document
+
+**Verifies:** AC3.1, AC3.2 -- edit button visibility tracks annotation count
+
+### Edit mode save persists content
+**File:** tests/e2e/test_edit_mode.py::TestEditModeSave
+1. Paste document, open Manage Documents, click edit
+2. Verify editor pre-populated with document content
+3. Clear editor and type new content
+4. Click save, wait for dialog to close
+5. Verify new content visible in document container
+6. Query DB directly to verify content persisted and paragraph_map rebuilt
+
+**Verifies:** AC3.1, AC3.3 -- edit mode WYSIWYG save persists HTML and rebuilds paragraph map

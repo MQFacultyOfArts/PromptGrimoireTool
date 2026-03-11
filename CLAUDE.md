@@ -35,6 +35,8 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **pycrdt** - CRDT for real-time collaboration
 - **Stytch** - auth (magic links, passkeys, RBAC)
 - **selectolax** - fast HTML parser (lexbor backend) for input pipeline
+- **mammoth** - DOCX to semantic HTML conversion (file upload)
+- **pymupdf4llm** - PDF to Markdown extraction with layout analysis (file upload)
 - **lxml** - HTML normalisation in export pipeline
 - **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
 - **APScheduler** - deadline scheduling with SQLAlchemyJobStore (wargame turn cycle)
@@ -155,6 +157,7 @@ src/promptgrimoire/
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL (grant/revoke/update), roster ingestion
+│   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
 │   └── workspaces.py    # Workspace CRUD (create, get)
 ├── wargame/             # Pure-domain helpers for wargame scenarios
 │   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)

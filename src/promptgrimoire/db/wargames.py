@@ -23,7 +23,7 @@ from promptgrimoire.db.models import (
 )
 from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
-from promptgrimoire.wargame.agents import turn_agent
+from promptgrimoire.wargame.agents import TurnResult, turn_agent
 from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
 from promptgrimoire.wargame.turn_cycle import build_turn_prompt, expand_bootstrap
 
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.wargame import RosterEntry
-    from promptgrimoire.wargame.agents import TurnResult
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
@@ -824,6 +823,9 @@ async def start_game(activity_id: UUID) -> None:
 
             # Call the turn agent
             ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
+            # ty cannot track PydanticAI Agent generics; cast narrows to the
+            # concrete output type. TurnResult is a real runtime import (not
+            # TYPE_CHECKING-only) so the non-string form is used here.
             turn_output = cast("TurnResult", ai_result.output)
 
             # Store assistant response with PydanticAI history

@@ -15,7 +15,7 @@ Verifies:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import ModelMessagesTypeAdapter
@@ -27,7 +27,6 @@ from promptgrimoire.db.models import (
     Activity,
     WargameConfig,
     WargameMessage,
-    WargameTeam,
 )
 from promptgrimoire.wargame.agents import turn_agent
 
@@ -35,6 +34,26 @@ pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
     reason="DEV__TEST_DATABASE_URL not configured",
 )
+
+
+async def _set_teams_to_drafting(activity_id: UUID) -> None:
+    """Directly set all teams for an activity to drafting state with a deadline.
+
+    Used as test setup for lock_round tests, bypassing start_game to avoid
+    coupling tests to start_game's correctness.
+    """
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import WargameTeam
+
+    async with get_session() as session:
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+        for team in teams:
+            team.round_state = "drafting"
+            team.current_deadline = datetime.now(UTC) + timedelta(hours=1)
+            session.add(team)
 
 
 async def _make_wargame_activity_with_config(
@@ -206,23 +225,10 @@ class TestLockRound:
     @pytest.mark.asyncio
     async def test_ac3_1_all_teams_locked(self) -> None:
         """AC3.1: After lock_round, all teams have round_state=locked."""
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.wargames import list_teams, lock_round, start_game
+        from promptgrimoire.db.wargames import list_teams, lock_round
 
         activity, _config = await _make_wargame_activity_with_config("lock-all")
-
-        with turn_agent.override(model=TestModel()):
-            await start_game(activity.id)
-
-        # Transition teams to drafting first (simulating a publish)
-        async with get_session() as session:
-            teams = await list_teams(activity.id)
-            for team in teams:
-                db_team = await session.get(WargameTeam, team.id)
-                assert db_team is not None
-                db_team.round_state = "drafting"
-                db_team.current_deadline = datetime.now(UTC) + timedelta(hours=1)
-                session.add(db_team)
+        await _set_teams_to_drafting(activity.id)
 
         await lock_round(activity.id)
         teams = await list_teams(activity.id)
@@ -232,23 +238,10 @@ class TestLockRound:
     @pytest.mark.asyncio
     async def test_ac3_2_deadline_cleared(self) -> None:
         """AC3.2: After lock_round, current_deadline is None for all teams."""
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.wargames import list_teams, lock_round, start_game
+        from promptgrimoire.db.wargames import list_teams, lock_round
 
         activity, _config = await _make_wargame_activity_with_config("lock-deadline")
-
-        with turn_agent.override(model=TestModel()):
-            await start_game(activity.id)
-
-        # Set teams to drafting with deadlines
-        async with get_session() as session:
-            teams = await list_teams(activity.id)
-            for team in teams:
-                db_team = await session.get(WargameTeam, team.id)
-                assert db_team is not None
-                db_team.round_state = "drafting"
-                db_team.current_deadline = datetime.now(UTC) + timedelta(hours=1)
-                session.add(db_team)
+        await _set_teams_to_drafting(activity.id)
 
         await lock_round(activity.id)
         teams = await list_teams(activity.id)
@@ -258,13 +251,14 @@ class TestLockRound:
     @pytest.mark.asyncio
     async def test_ac3_3_rejects_non_drafting(self) -> None:
         """AC3.3: lock_round raises ValueError if any team not in drafting state."""
-        from promptgrimoire.db.wargames import lock_round, start_game
+        from promptgrimoire.db.wargames import lock_round
 
         activity, _config = await _make_wargame_activity_with_config("lock-reject")
+        # Teams start in default "drafting" state but with no other setup.
+        # Lock them first so they are in "locked" state, then verify lock_round rejects.
+        await _set_teams_to_drafting(activity.id)
+        await lock_round(activity.id)
 
-        with turn_agent.override(model=TestModel()):
-            await start_game(activity.id)
-
-        # Teams are in "locked" state after start_game, so lock_round should fail
+        # Now teams are locked, so lock_round should fail
         with pytest.raises(ValueError, match="not all teams in drafting state"):
             await lock_round(activity.id)

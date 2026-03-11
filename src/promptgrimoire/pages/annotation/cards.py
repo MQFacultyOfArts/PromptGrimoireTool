@@ -573,26 +573,33 @@ def _refresh_annotation_cards(state: PageState) -> None:
     if state.annotation_cards is None:
         state.annotation_cards = {}
 
-    # Clear existing cards
-    state.annotations_container.clear()
-
-    # Get highlights for this document
-    if state.document_id is not None:
-        highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
-    else:
-        highlights = state.crdt_doc.get_all_highlights()
-
-    logger.debug(
-        "[CARDS] Found %d highlights for doc_id=%s", len(highlights), state.document_id
-    )
-
-    # Create cards for each highlight
+    # Wrap the entire rebuild in ``with container`` so that every
+    # ``ui.run_javascript`` call resolves the NiceGUI client through the
+    # container's slot — not the caller's slot, whose parent element may
+    # have been destroyed by a prior ``container.clear()``.
     with state.annotations_container:
+        state.annotations_container.clear()
+
+        # Get highlights for this document
+        if state.document_id is not None:
+            highlights = state.crdt_doc.get_highlights_for_document(
+                str(state.document_id),
+            )
+        else:
+            highlights = state.crdt_doc.get_all_highlights()
+
+        logger.debug(
+            "[CARDS] Found %d highlights for doc_id=%s",
+            len(highlights),
+            state.document_id,
+        )
+
+        # Create cards for each highlight
         for hl in highlights:
             hl_id = hl.get("id", "")
             logger.debug("[CARDS] Creating card for highlight %s", hl_id[:8])
             card = _build_annotation_card(state, hl)
             state.annotation_cards[hl_id] = card
 
-    state.cards_epoch += 1
-    ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+        state.cards_epoch += 1
+        ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")

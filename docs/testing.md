@@ -102,6 +102,7 @@ When adding new UI elements, add `data-testid` in the source and use `get_by_tes
   3.  Test: Click button.
   4.  Test: `page.wait_for_function("(old) => (window.__annotationCardsEpoch || 0) > old", arg=old_epoch)`.
   5.  Test: Reacquire locators from the strictly new DOM.
+- **Slot Context After `container.clear()`**: `ui.run_javascript()` resolves the NiceGUI client via the current slot stack. When an event handler (e.g. post-comment click) triggers `container.clear()`, the handler's slot — bound to a child element inside that container — is destroyed. Any `ui.run_javascript()` call after `clear()` but outside a `with container:` block will raise `RuntimeError: The parent element this slot belongs to has been deleted.` **Rule:** Any function that calls `container.clear()` must wrap its entire body in `with container:` so that all subsequent `ui.run_javascript()` calls (including epoch broadcasts) resolve through the container's slot, not the caller's dead slot. See `_refresh_annotation_cards` in `cards.py` for the canonical pattern.
 - **`wait_for_text_walker()`** is the canonical readiness gate before any char-offset operations
 - **`find_text_range(needle)`** searches document text via the browser's text walker and returns `(start_char, end_char)` — use this instead of hardcoded numeric offsets, which break when fixture HTML changes
 - **Copy protection setup**: create week/activity BEFORE enabling copy protection (dialog→nav race)

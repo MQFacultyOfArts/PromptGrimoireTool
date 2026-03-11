@@ -89,7 +89,7 @@ def _detect_source_numbering_from_bytes(
         return False
     try:
         text = content_bytes.decode("utf-8")
-    except UnicodeDecodeError, ValueError:
+    except UnicodeDecodeError:
         return False
     return detect_source_numbering(text)
 

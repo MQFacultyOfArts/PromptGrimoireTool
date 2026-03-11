@@ -99,8 +99,7 @@ def _is_empty_element(node: Any) -> bool:
     text = (node.text() or "").strip()
     if text:
         return False
-    children = list(node.iter())
-    return all(child.tag == "br" for child in children) if children else True
+    return all(child.tag == "br" for child in node.iter())
 
 
 def _is_sole_content_element(node: Any, tree: LexborHTMLParser) -> bool:

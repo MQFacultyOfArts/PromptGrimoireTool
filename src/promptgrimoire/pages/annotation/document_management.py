@@ -13,6 +13,7 @@ Traceability:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from uuid import UUID
@@ -31,6 +32,8 @@ from promptgrimoire.db.workspace_documents import (
 if TYPE_CHECKING:
     from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
+
+logger = logging.getLogger(__name__)
 
 
 _PREVIEW_MAX_CHARS = 50
@@ -190,8 +193,10 @@ def _open_edit_dialog(
 
         # QEditor scrolls internally via content-style; fills flex space
         editor = ui.editor(value=doc.content or "").classes("w-full flex-1 min-h-0")
-        content_style = "max-height: 60vh; overflow-y: auto"
-        editor.props(f'data-testid="document-editor" content-style="{content_style}"')
+        editor.props(
+            'data-testid="document-editor"'
+            ' content-style="max-height: 60vh; overflow-y: auto"'
+        )
 
         with ui.row().classes("w-full justify-end gap-2 mt-4 flex-shrink-0"):
             ui.button("Cancel", on_click=edit_dialog.close).props(
@@ -199,7 +204,14 @@ def _open_edit_dialog(
             )
 
             async def _save() -> None:
-                await update_document_content(doc.id, editor.value, state.workspace_id)
+                try:
+                    await update_document_content(
+                        doc.id, editor.value, state.workspace_id
+                    )
+                except Exception:
+                    logger.exception("Failed to save document")
+                    ui.notify("Failed to save document", type="negative")
+                    return
                 edit_dialog.close()
                 ui.notify("Document saved", type="positive")
                 if state.refresh_documents is not None:

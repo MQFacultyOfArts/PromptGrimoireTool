@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import wait_for_text_walker
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
 
 if TYPE_CHECKING:
@@ -82,13 +82,13 @@ def _fetch_document_db_state(workspace_id: str) -> dict[str, object]:
         raise RuntimeError(msg)
 
     raw_map = row[2]
-    paragraph_map: dict[str, int] = (
-        json.loads(raw_map) if isinstance(raw_map, str) else (raw_map or {})
-    )
+    # psycopg returns jsonb as a dict; guard for str in case of driver variance
+    if isinstance(raw_map, str):
+        raw_map = json.loads(raw_map)
     return {
         "doc_id": str(row[0]),
         "content": row[1] or "",
-        "paragraph_map": paragraph_map,
+        "paragraph_map": raw_map or {},
     }
 
 
@@ -267,7 +267,7 @@ class TestEditMode:
         2. Open Manage Documents dialog
         3. Verify no edit button is visible
         """
-        from tests.e2e.annotation_helpers import select_chars
+        from promptgrimoire.docs.helpers import select_chars
 
         page = edit_ready_page
 

@@ -251,7 +251,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     # E2E conftest reads E2E_BASE_URL (set by test runner, not .env config)
     _TESTS_DIR / "e2e" / "conftest.py",
     # E2E helpers read DATABASE__URL for sync DB seeding (same pattern as conftest)
-    _TESTS_DIR / "e2e" / "annotation_helpers.py",
+    _TESTS_DIR / "e2e" / "db_fixtures.py",
+    _TESTS_DIR / "e2e" / "tag_helpers.py",
     # This file itself references os.environ in test assertions/comments
     _TESTS_DIR / "unit" / "test_env_vars.py",
     # Filename E2E test reads E2E_SKIP_LATEXMK (test-runner flag, not app config)

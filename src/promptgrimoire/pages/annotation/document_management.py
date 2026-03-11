@@ -179,14 +179,23 @@ def _open_edit_dialog(
     """
     manage_dialog.close()
 
-    with ui.dialog() as edit_dialog, ui.card().classes("w-[80vw] max-w-none"):
-        ui.label(f"Edit: {_document_display_name(doc)}").classes("text-lg font-bold")
-        ui.separator()
+    with (
+        ui.dialog() as edit_dialog,
+        ui.card().classes("w-[80vw] max-w-none flex flex-col max-h-[90vh]"),
+    ):
+        ui.label(f"Edit: {_document_display_name(doc)}").classes(
+            "text-lg font-bold flex-shrink-0"
+        )
+        ui.separator().classes("flex-shrink-0")
 
-        editor = ui.editor(value=doc.content or "").classes("w-full h-[60vh]")
+        # Editor fills available space; QEditor handles its own scrolling
+        editor = ui.editor(value=doc.content or "").classes(
+            "w-full flex-1 min-h-0 overflow-auto"
+        )
         editor.props('data-testid="document-editor"')
 
-        with ui.row().classes("w-full justify-end gap-2 mt-4"):
+        # Footer stays pinned at bottom of the flex column
+        with ui.row().classes("w-full justify-end gap-2 mt-4 flex-shrink-0"):
             ui.button("Cancel", on_click=edit_dialog.close).props(
                 'flat data-testid="edit-cancel-btn"'
             )

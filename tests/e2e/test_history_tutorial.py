@@ -29,12 +29,9 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    create_highlight_with_tag,
-    find_text_range,
-    select_chars,
-)
+from promptgrimoire.docs.helpers import select_chars
 from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
+from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

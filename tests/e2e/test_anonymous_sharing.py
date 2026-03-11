@@ -34,16 +34,7 @@ from uuid import uuid4
 import pytest
 
 from promptgrimoire.auth.anonymise import anonymise_display_name
-from tests.e2e.annotation_helpers import (
-    _seed_tags_for_workspace,
-    clone_activity_workspace,
-    create_highlight,
-    export_annotation_tex_text,
-    find_text_range,
-    get_user_id_by_email,
-    toggle_share_with_class,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.card_helpers import (
     add_comment_to_highlight,
     count_comment_delete_buttons,
@@ -61,6 +52,14 @@ from tests.e2e.course_helpers import (
     enrol_student,
     publish_week,
 )
+from tests.e2e.db_fixtures import get_user_id_by_email
+from tests.e2e.export_tools import export_annotation_tex_text
+from tests.e2e.highlight_tools import create_highlight, find_text_range
+from tests.e2e.page_interactions import (
+    clone_activity_workspace,
+    toggle_share_with_class,
+)
+from tests.e2e.tag_helpers import _seed_tags_for_workspace
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page

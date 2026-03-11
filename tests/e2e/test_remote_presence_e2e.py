@@ -21,12 +21,10 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    _create_workspace_via_db,
-    select_text_range,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page, _grant_workspace_access
+from tests.e2e.db_fixtures import _create_workspace_via_db
+from tests.e2e.highlight_tools import select_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page

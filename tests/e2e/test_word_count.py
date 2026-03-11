@@ -129,11 +129,9 @@ class TestWordCountExport:
 
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()
@@ -230,11 +228,9 @@ class TestWordCountExport:
         """Verify dialog shows under-minimum violation."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()
@@ -299,11 +295,9 @@ class TestWordCountExport:
         """Verify hard enforcement blocks export entirely."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()
@@ -380,11 +374,9 @@ class TestWordCountBadge:
         """AC4.1, AC4.7: Badge visible with limits and updates live."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()
@@ -437,11 +429,9 @@ class TestWordCountBadge:
         """AC4.2: Badge hidden when no limits configured."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_via_db,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_via_db
 
         context = browser.new_context()
         page = context.new_page()
@@ -468,11 +458,9 @@ class TestWordCountBadge:
         """AC4.1: Badge visible when only word_minimum is set (no word_limit)."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()
@@ -501,11 +489,9 @@ class TestWordCountBadge:
         """AC4.1: Badge visible when only word_limit is set (no word_minimum)."""
         from playwright.sync_api import expect
 
-        from tests.e2e.annotation_helpers import (
-            _create_workspace_with_word_limits,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
         from tests.e2e.conftest import _authenticate_page
+        from tests.e2e.db_fixtures import _create_workspace_with_word_limits
 
         context = browser.new_context()
         page = context.new_page()

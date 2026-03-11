@@ -34,14 +34,13 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from tests.e2e.conftest import _authenticate_page
+from tests.e2e.db_fixtures import (
     _create_workspace_no_tag_permission,
     _create_workspace_via_db,
-    find_text_range,
-    select_chars,
-    wait_for_text_walker,
 )
-from tests.e2e.conftest import _authenticate_page
+from tests.e2e.highlight_tools import find_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page

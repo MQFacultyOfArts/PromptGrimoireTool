@@ -111,11 +111,8 @@ class TestOrganiseTabSync:
 
         AC5.3: Dragging a highlight between tag columns updates the CRDT.
         """
-        from tests.e2e.annotation_helpers import (
-            create_highlight_with_tag,
-            find_text_range,
-            wait_for_text_walker,
-        )
+        from promptgrimoire.docs.helpers import wait_for_text_walker
+        from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
 
         page_a, _page_b, _workspace_id = two_annotation_contexts
 
@@ -193,7 +190,7 @@ class TestOrganiseTabSync:
 
         AC5.2: Reassigning a tag to a different group propagates to all clients.
         """
-        from tests.e2e.annotation_helpers import seed_tag_id
+        from tests.e2e.tag_helpers import seed_tag_id
 
         page_a, page_b, workspace_id = two_annotation_contexts
 

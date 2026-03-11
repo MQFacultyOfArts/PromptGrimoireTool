@@ -32,12 +32,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    find_text_range,
-    select_chars,
-    setup_workspace_with_content,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
     add_activity,
@@ -47,6 +42,8 @@ from tests.e2e.course_helpers import (
     enrol_student,
     publish_week,
 )
+from tests.e2e.fixture_loaders import setup_workspace_with_content
+from tests.e2e.highlight_tools import find_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page

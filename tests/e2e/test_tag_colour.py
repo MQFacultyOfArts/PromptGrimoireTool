@@ -136,7 +136,8 @@ class TestTagColour:
         """
         page_a, _page_b, workspace_id = two_annotation_contexts
 
-        from tests.e2e.annotation_helpers import seed_tag_id, wait_for_text_walker
+        from promptgrimoire.docs.helpers import wait_for_text_walker
+        from tests.e2e.tag_helpers import seed_tag_id
 
         tag_id = seed_tag_id(workspace_id, "Jurisdiction")
         new_colour = "#FF5733"
@@ -201,7 +202,7 @@ class TestTagColour:
         """
         page_a, page_b, workspace_id = two_annotation_contexts
 
-        from tests.e2e.annotation_helpers import seed_tag_id
+        from tests.e2e.tag_helpers import seed_tag_id
 
         tag_id = seed_tag_id(workspace_id, "Jurisdiction")
         new_colour = "#33FF57"

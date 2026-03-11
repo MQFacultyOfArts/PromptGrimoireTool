@@ -25,12 +25,10 @@ import pytest
 if TYPE_CHECKING:
     from playwright.sync_api import Browser
 
-from tests.e2e.annotation_helpers import (
-    _create_workspace_for_filename_export,
-    export_annotation_tex_text,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.db_fixtures import _create_workspace_for_filename_export
+from tests.e2e.export_tools import export_annotation_tex_text
 
 
 # The expected filename stem is built literally from the deterministic

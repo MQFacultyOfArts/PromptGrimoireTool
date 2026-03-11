@@ -18,14 +18,14 @@ import pytest
 from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
-from tests.e2e.annotation_helpers import (
-    _create_workspace_via_db,
+from promptgrimoire.docs.helpers import wait_for_text_walker
+from tests.e2e.conftest import _authenticate_page
+from tests.e2e.db_fixtures import _create_workspace_via_db
+from tests.e2e.highlight_tools import (
     create_highlight,
     create_highlight_with_tag,
     find_text_range,
-    wait_for_text_walker,
 )
-from tests.e2e.conftest import _authenticate_page
 
 if TYPE_CHECKING:
     from collections.abc import Generator

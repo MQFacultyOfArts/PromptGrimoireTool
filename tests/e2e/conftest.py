@@ -261,10 +261,8 @@ def two_annotation_contexts(
     Yields:
         tuple: (page1, page2, workspace_id)
     """
-    from tests.e2e.annotation_helpers import (
-        _create_workspace_via_db,
-        wait_for_text_walker,
-    )
+    from promptgrimoire.docs.helpers import wait_for_text_walker
+    from tests.e2e.db_fixtures import _create_workspace_via_db
 
     # TWO contexts = two independent "browsers"
     context1 = browser.new_context()
@@ -322,10 +320,8 @@ def two_authenticated_contexts(
     Yields:
         tuple: (page1, page2, workspace_id, user1_email, user2_email)
     """
-    from tests.e2e.annotation_helpers import (
-        _create_workspace_via_db,
-        wait_for_text_walker,
-    )
+    from promptgrimoire.docs.helpers import wait_for_text_walker
+    from tests.e2e.db_fixtures import _create_workspace_via_db
 
     # TWO contexts = two independent "browsers"
     context1 = browser.new_context()

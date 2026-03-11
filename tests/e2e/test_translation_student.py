@@ -39,15 +39,14 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    _load_fixture_via_paste,
-    create_highlight_with_tag,
-    export_annotation_tex_text,
-    find_text_range,
-    setup_workspace_with_content,
-)
 from tests.e2e.card_helpers import add_comment_to_highlight
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.export_tools import export_annotation_tex_text
+from tests.e2e.fixture_loaders import (
+    _load_fixture_via_paste,
+    setup_workspace_with_content,
+)
+from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
 
 # ---------------------------------------------------------------------------
 # Local helpers -- reduce repeated setup/verify/highlight/comment sequences

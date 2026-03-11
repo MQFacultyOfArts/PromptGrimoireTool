@@ -16,10 +16,8 @@ import pytest
 from playwright.sync_api import expect
 
 from promptgrimoire.config import get_settings
-from tests.e2e.annotation_helpers import (
-    create_highlight_with_tag,
-    setup_workspace_with_content,
-)
+from tests.e2e.fixture_loaders import setup_workspace_with_content
+from tests.e2e.highlight_tools import create_highlight_with_tag
 
 if TYPE_CHECKING:
     from collections.abc import Generator

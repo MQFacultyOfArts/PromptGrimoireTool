@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.e2e.annotation_helpers import ExportResult
+from tests.e2e.export_tools import ExportResult
 
 
 def test_export_result_matches_wrapped_uuid_in_pdf_text() -> None:

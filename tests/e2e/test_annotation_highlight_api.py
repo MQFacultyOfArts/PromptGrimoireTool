@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from .annotation_helpers import (
-    setup_workspace_with_content_highlight_api,
+from tests.e2e.fixture_loaders import setup_workspace_with_content_highlight_api
+from tests.e2e.highlight_tools import (
     wait_for_css_highlight,
     wait_for_css_highlight_count,
 )

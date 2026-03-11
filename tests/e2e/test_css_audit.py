@@ -14,11 +14,9 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    _create_workspace_via_db,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.db_fixtures import _create_workspace_via_db
 
 if TYPE_CHECKING:
     from collections.abc import Generator

@@ -22,17 +22,12 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    _create_workspace_via_db,
-    _lock_tag_in_db,
-    create_highlight_with_tag,
-    find_text_range,
-    seed_tag_id,
-    select_chars,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.db_fixtures import _create_workspace_via_db
+from tests.e2e.highlight_tools import create_highlight_with_tag, find_text_range
+from tests.e2e.tag_helpers import _lock_tag_in_db, seed_tag_id
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page

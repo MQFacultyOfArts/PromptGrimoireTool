@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import _load_fixture_via_paste
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.fixture_loaders import _load_fixture_via_paste
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser

@@ -50,11 +50,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import (
-    _create_workspace_via_db,
-    navigate_home_via_drawer,
-    wait_for_text_walker,
-)
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
     add_activity,
@@ -64,6 +60,8 @@ from tests.e2e.course_helpers import (
     enrol_student,
     publish_week,
 )
+from tests.e2e.db_fixtures import _create_workspace_via_db
+from tests.e2e.page_interactions import navigate_home_via_drawer
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Locator, Page
@@ -1351,7 +1349,7 @@ class TestNavigationChrome:
 
             page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
 
-            from tests.e2e.annotation_helpers import wait_for_text_walker
+            from promptgrimoire.docs.helpers import wait_for_text_walker
 
             wait_for_text_walker(page, timeout=15000)
 

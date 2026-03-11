@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tests.e2e.annotation_helpers import setup_workspace_with_content_highlight_api
+from tests.e2e.fixture_loaders import setup_workspace_with_content_highlight_api
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

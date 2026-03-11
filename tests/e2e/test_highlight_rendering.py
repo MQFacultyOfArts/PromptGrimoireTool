@@ -20,10 +20,8 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
-from .annotation_helpers import (
-    select_text_range,
-    setup_workspace_with_content_highlight_api,
-)
+from tests.e2e.fixture_loaders import setup_workspace_with_content_highlight_api
+from tests.e2e.highlight_tools import select_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

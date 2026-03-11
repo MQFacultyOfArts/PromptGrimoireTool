@@ -558,25 +558,32 @@ def _render_content_form_outside_refreshable(
     *,
     has_documents: list[bool],
     on_document_added: Callable[[], object],
-) -> None:
+) -> ui.element | None:
     """Render the content form outside the refreshable boundary.
 
     Placement depends on whether documents already exist:
     - With documents: collapsible "Add Document" (gated by multi-document flag)
     - Without documents: bare content form for first upload
+
+    Returns the wrapper element so the caller can hide it after the first
+    document is added (when multi-document is disabled).
     """
     if not state.can_upload:
-        return
+        return None
 
     if has_documents and has_documents[0]:
         if get_settings().features.enable_multi_document:
             with ui.expansion(
                 "Add Document",
                 icon="note_add",
-            ).classes("w-full mt-4"):
+            ).classes("w-full mt-4") as wrapper:
                 _render_add_content_form(workspace_id, on_document_added)
+            return wrapper
+        return None
     else:
-        _render_add_content_form(workspace_id, on_document_added)
+        with ui.column().classes("w-full") as wrapper:
+            _render_add_content_form(workspace_id, on_document_added)
+        return wrapper
 
 
 async def _render_document_container(
@@ -733,14 +740,38 @@ async def _build_tab_panels(
 
             await document_container()
 
+            # Late-bound callback: content_form.py captures this closure,
+            # and we swap in a smarter implementation after the wrapper
+            # element is created (so we can hide it on first add).
+            _document_added_impl: list[Callable[[], object]] = [
+                document_container.refresh
+            ]
+
+            def _on_document_added() -> object:
+                return _document_added_impl[0]()
+
             # Content form lives OUTSIDE the refreshable boundary so it
             # is not destroyed when document_container.refresh() is called.
-            _render_content_form_outside_refreshable(
+            content_form_wrapper = _render_content_form_outside_refreshable(
                 state,
                 workspace_id,
                 has_documents=has_documents,
-                on_document_added=document_container.refresh,
+                on_document_added=_on_document_added,
             )
+
+            # When multi-document is disabled, hide the content form after
+            # the first document is added.  The wrapper persists because
+            # it's outside the refreshable; we hide it via the callback.
+            if (
+                content_form_wrapper is not None
+                and not get_settings().features.enable_multi_document
+            ):
+
+                def _hide_and_refresh() -> object:
+                    content_form_wrapper.set_visibility(False)
+                    return document_container.refresh()
+
+                _document_added_impl[0] = _hide_and_refresh
 
         with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel

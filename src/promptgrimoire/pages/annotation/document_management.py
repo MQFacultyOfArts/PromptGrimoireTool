@@ -181,16 +181,19 @@ def _open_edit_dialog(
 
     with (
         ui.dialog() as edit_dialog,
-        ui.card().classes("w-[80vw] max-w-none max-h-[90vh] overflow-y-auto"),
+        ui.card().classes("w-[80vw] max-w-none max-h-[85vh] flex flex-col"),
     ):
-        ui.label(f"Edit: {_document_display_name(doc)}").classes("text-lg font-bold")
-        ui.separator()
+        ui.label(f"Edit: {_document_display_name(doc)}").classes(
+            "text-lg font-bold flex-shrink-0"
+        )
+        ui.separator().classes("flex-shrink-0")
 
-        # QEditor needs a definite height; the card scrolls if viewport is small
-        editor = ui.editor(value=doc.content or "").classes("w-full h-[60vh]")
-        editor.props('data-testid="document-editor"')
+        # QEditor scrolls internally via content-style; fills flex space
+        editor = ui.editor(value=doc.content or "").classes("w-full flex-1 min-h-0")
+        content_style = "max-height: 60vh; overflow-y: auto"
+        editor.props(f'data-testid="document-editor" content-style="{content_style}"')
 
-        with ui.row().classes("w-full justify-end gap-2 mt-4"):
+        with ui.row().classes("w-full justify-end gap-2 mt-4 flex-shrink-0"):
             ui.button("Cancel", on_click=edit_dialog.close).props(
                 'flat data-testid="edit-cancel-btn"'
             )

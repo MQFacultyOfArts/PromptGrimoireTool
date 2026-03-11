@@ -57,7 +57,7 @@ _WHITESPACE_RUN = re.compile(r"[\s\u00a0]+")
 
 # Common HTML entities and their decoded forms.
 # Shared with marker_insertion for entity-aware offset mapping.
-_ENTITY_MAP: dict[str, str] = {
+ENTITY_MAP: dict[str, str] = {
     "&amp;": "&",
     "&lt;": "<",
     "&gt;": ">",

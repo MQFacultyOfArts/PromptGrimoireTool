@@ -62,7 +62,7 @@ def _get_file_preview(
         return f"[Binary file: {filename}]"
 
 
-def _detect_paragraph_numbering(
+def detect_paragraph_numbering(
     processed_html: str,
 ) -> tuple[bool, dict[str, int]]:
     """Detect paragraph numbering mode and build the paragraph map.

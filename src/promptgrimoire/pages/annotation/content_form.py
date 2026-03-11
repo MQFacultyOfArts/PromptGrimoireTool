@@ -16,7 +16,7 @@ from nicegui import ui
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.pages.annotation.paste_handler import (
-    _handle_add_document_submission,
+    handle_add_document_submission,
 )
 from promptgrimoire.pages.annotation.paste_script import _build_paste_intercept_script
 from promptgrimoire.pages.annotation.upload_handler import _handle_file_upload
@@ -61,7 +61,7 @@ def _render_add_content_form(
 
     async def handle_add_document() -> None:
         """Process input and add document to workspace."""
-        await _handle_add_document_submission(
+        await handle_add_document_submission(
             workspace_id=workspace_id,
             content_input=content_input,
             paste_var=paste_var,

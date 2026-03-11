@@ -20,7 +20,7 @@ from promptgrimoire.input_pipeline.paragraph_map import (
     build_paragraph_map_for_json,
     detect_source_numbering,
 )
-from promptgrimoire.pages.annotation.upload_handler import _detect_paragraph_numbering
+from promptgrimoire.pages.annotation.upload_handler import detect_paragraph_numbering
 from promptgrimoire.pages.dialogs import show_content_type_dialog
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _handle_add_document_submission(
+async def handle_add_document_submission(
     workspace_id: UUID,
     content_input: Editor,
     paste_var: str,
@@ -80,7 +80,7 @@ async def _handle_add_document_submission(
             )
         else:
             # Paste path — auto-detect
-            auto_number, para_map = _detect_paragraph_numbering(processed_html)
+            auto_number, para_map = detect_paragraph_numbering(processed_html)
         await add_document(
             workspace_id=workspace_id,
             type="source",

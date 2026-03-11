@@ -582,21 +582,21 @@ class TestUploadDialogAutoDetect:
         """AC3.3: Direct paste uses auto-detect, not the dialog.
 
         When content is pasted (not typed), the handler skips the dialog
-        and uses ``_detect_paragraph_numbering()`` directly. Verify the
+        and uses ``detect_paragraph_numbering()`` directly. Verify the
         detection helper returns the expected (auto_number, para_map) tuple.
         """
         from promptgrimoire.pages.annotation.upload_handler import (
-            _detect_paragraph_numbering,
+            detect_paragraph_numbering,
         )
 
         # Plain HTML — should auto-number
         plain_html = "<p>First paragraph.</p><p>Second paragraph.</p>"
-        auto_number, para_map = _detect_paragraph_numbering(plain_html)
+        auto_number, para_map = detect_paragraph_numbering(plain_html)
         assert auto_number is True
         assert len(para_map) == 2
 
         # AustLII HTML — should use source numbering
         austlii_html = '<ol><li value="5">First</li><li value="6">Second</li></ol>'
-        auto_number_src, para_map_src = _detect_paragraph_numbering(austlii_html)
+        auto_number_src, para_map_src = detect_paragraph_numbering(austlii_html)
         assert auto_number_src is False
         assert len(para_map_src) > 0

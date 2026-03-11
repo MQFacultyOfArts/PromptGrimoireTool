@@ -20,7 +20,7 @@ from promptgrimoire.input_pipeline.marker_constants import (
     MARKER_TEMPLATE,
 )
 from promptgrimoire.input_pipeline.text_extraction import (
-    _ENTITY_MAP,
+    ENTITY_MAP,
     TextNodeInfo,
     walk_and_map,
 )
@@ -170,7 +170,7 @@ def _html_char_length(html_text: str, html_pos: int, decoded_char: str) -> int:
 
     if html_text[html_pos] == "&":
         # Try to match a known entity
-        for entity, decoded in _ENTITY_MAP.items():
+        for entity, decoded in ENTITY_MAP.items():
             if html_text[html_pos:].startswith(entity) and decoded == decoded_char:
                 return len(entity)
         # Try numeric entity &#NNN; or &#xHHH;

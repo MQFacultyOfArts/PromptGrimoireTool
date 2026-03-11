@@ -8,6 +8,7 @@ Requires a running PostgreSQL instance. Set DEV__TEST_DATABASE_URL.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -710,3 +711,66 @@ class TestMetadataSearchRegressionCRDTSearchText:
 
         assert len(results) >= 1
         assert any(h.row.workspace_id == ws_id for h in results)
+
+
+# ── Performance at scale ─────────────────────────────────────────────
+
+
+class TestMetadataSearchPerformance:
+    """Metadata search latency at 1k-workspace scale."""
+
+    @pytest.mark.asyncio
+    async def test_metadata_search_latency_at_scale(self) -> None:
+        """Metadata search across 1k+ visible workspaces completes in <2s."""
+        # Count workspaces to guard against missing load data
+        async with get_session() as session:
+            result = await session.execute(text("SELECT COUNT(*) FROM workspace"))
+            ws_count = result.scalar_one()
+
+        if ws_count < 1000:
+            pytest.skip(
+                f"Only {ws_count} workspaces — run `uv run grimoire loadtest` first"
+            )
+
+        # Find a privileged user from load data (instructor)
+        async with get_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT u.id FROM "user" u
+                    JOIN course_enrollment ce ON ce.user_id = u.id
+                    JOIN course_role cr ON cr.name = ce.role
+                    WHERE cr.is_staff = true
+                    LIMIT 1
+                """)
+            )
+            row = result.one_or_none()
+            if row is None:
+                pytest.skip("No staff user found in load data")
+            instructor_id = row[0]
+
+        # Get enrolled course IDs for this instructor
+        async with get_session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT ce.course_id FROM course_enrollment ce
+                    WHERE ce.user_id = :uid
+                """),
+                {"uid": instructor_id},
+            )
+            enrolled_ids = [r[0] for r in result.all()]
+
+        # Measure metadata search latency
+        start = time.monotonic()
+        results = await _search(
+            "LAWS",  # Common prefix in seeded course codes
+            instructor_id,
+            is_privileged=True,
+            enrolled_course_ids=enrolled_ids,
+        )
+        elapsed = time.monotonic() - start
+
+        assert len(results) > 0, "Expected metadata search to return results"
+        assert elapsed < 2.0, (
+            f"Metadata search took {elapsed:.2f}s (threshold: 2.0s) "
+            f"across {ws_count} workspaces"
+        )

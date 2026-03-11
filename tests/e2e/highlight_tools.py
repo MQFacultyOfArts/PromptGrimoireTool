@@ -62,40 +62,49 @@ def find_text_range(page: Page, needle: str) -> tuple[int, int]:
                 ? nodes[nodes.length - 1].endChar : 0;
 
             // Build the collapsed text and a parallel array mapping
-            // each collapsed-text index to its walker char offset.
-            // The walker entries already have startChar/endChar with
-            // whitespace collapsing applied.
-            let fullText = '';
-            const offsetMap = [];  // offsetMap[i] = walker char offset
+            // each code-point index to its walker char offset.
+            // IMPORTANT: iterate with for-of (code points), matching
+            // the production walkTextNodes which uses for-of.  A plain
+            // for(i) loop iterates UTF-16 code units and miscounts
+            // surrogate pairs (emoji), causing early termination.
+            const codePoints = [];   // codePoints[i] = one code point
+            const offsetMap = [];    // offsetMap[i] = walker char offset
             for (const entry of nodes) {
                 const len = entry.endChar - entry.startChar;
-                // Extract collapsed text via findLocalOffset inverse:
-                // walk raw text with same WS-collapsing as the walker.
                 const raw = entry.node.textContent;
                 let prev = false;
                 let col = 0;
-                for (let i = 0; i < raw.length && col < len; i++) {
-                    const ch = raw[i];
-                    if (/[\\s\\n\\r\\t]/.test(ch)) {
+                for (const ch of raw) {
+                    if (col >= len) break;
+                    if (/[\\s\\u00a0]/.test(ch)) {
                         if (!prev) {
                             offsetMap.push(entry.startChar + col);
-                            fullText += ' ';
+                            codePoints.push(' ');
                             col++; prev = true;
                         }
                     } else {
                         offsetMap.push(entry.startChar + col);
-                        fullText += ch;
+                        codePoints.push(ch);
                         col++; prev = false;
                     }
                 }
             }
-            const idx = fullText.indexOf(needle);
+            // Search using code-point array (not string indexOf which
+            // counts UTF-16 code units for .length and index).
+            const needleCPs = [...needle];
+            let idx = -1;
+            outer: for (let i = 0; i <= codePoints.length - needleCPs.length; i++) {
+                for (let j = 0; j < needleCPs.length; j++) {
+                    if (codePoints[i + j] !== needleCPs[j]) continue outer;
+                }
+                idx = i;
+                break;
+            }
             if (idx === -1)
                 return { error: 'not found', textLength: total };
-            const endIdx = idx + needle.length;
-            // Use the next char's offset if available; otherwise use
-            // the last matched char's offset (max valid walker index)
-            // so we never exceed the walker's valid range.
+            const endIdx = idx + needleCPs.length;
+            // Use the next code point's offset if available; otherwise
+            // use the last matched code point's offset.
             const end = endIdx < offsetMap.length
                 ? offsetMap[endIdx]
                 : offsetMap[endIdx - 1];

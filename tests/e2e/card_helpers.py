@@ -96,9 +96,45 @@ def add_comment_to_highlight(
     # Do NOT reuse `card` or `comment_input` from above.
     new_card = page.locator(ANNOTATION_CARD).nth(card_index)
 
+    # The card detail section must be visible before we can find the
+    # comment text inside it.  After container.clear() + rebuild, the
+    # detail visibility is restored from state.expanded_cards on the
+    # server and pushed to the client — wait for that push to land.
+    new_detail = new_card.get_by_test_id("card-detail")
+    new_detail.wait_for(state="visible", timeout=5000)
+
     # Wait for the specific comment text to be visible in the new card
     new_comment = new_card.get_by_text(text)
-    new_comment.wait_for(state="visible", timeout=5000)
+    try:
+        new_comment.wait_for(state="visible", timeout=5000)
+    except Exception:
+        # Diagnostic: capture what comments are actually in the DOM
+        diag = page.evaluate(
+            """(cardIdx) => {
+                const cards = document.querySelectorAll(
+                    '[data-testid="annotation-card"]'
+                );
+                const card = cards[cardIdx];
+                if (!card) return { error: 'card not found', cardCount: cards.length };
+                const detail = card.querySelector('[data-testid="card-detail"]');
+                const comments = card.querySelectorAll('[data-testid="comment"]');
+                return {
+                    cardCount: cards.length,
+                    detailVisible: detail ? detail.offsetHeight > 0 : null,
+                    commentCount: comments.length,
+                    commentTexts: Array.from(comments).map(
+                        c => c.textContent.substring(0, 80)
+                    ),
+                };
+            }""",
+            card_index,
+        )
+        logger.debug(
+            "add_comment VISIBILITY FAILED: text=%r diag=%s",
+            text,
+            diag,
+        )
+        raise
 
 
 def get_comment_authors(page: Page, *, card_index: int = 0) -> list[str]:

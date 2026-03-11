@@ -274,9 +274,9 @@ async def _handle_client_delete(
                         removal_js,
                         timeout=2.0,
                     )
-            if presence.callback:
+            if presence.on_peer_left:
                 with contextlib.suppress(Exception):
-                    await presence.invoke_callback()
+                    await presence.invoke_peer_left()
 
     pm = get_persistence_manager()
     await pm.force_persist_workspace(workspace_id)
@@ -371,11 +371,15 @@ def _setup_client_sync(
     auth_user = app.storage.user.get("auth_user")
     client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
 
+    async def handle_peer_left() -> None:
+        _update_user_count(state)
+
     _workspace_presence[workspace_key][client_id] = _RemotePresence(
         name=state.user_name,
         color=state.user_color,
         nicegui_client=client,
         callback=handle_update_from_other,
+        on_peer_left=handle_peer_left,
         user_id=client_user_id,
         viewer_is_privileged=state.viewer_is_privileged,
         is_owner=state.is_owner,

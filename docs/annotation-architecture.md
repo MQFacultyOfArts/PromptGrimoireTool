@@ -57,6 +57,15 @@ Definition-before-import ordering is **critical** in `__init__.py`. The sequence
 
 Do not reorder. Types must be defined before submodule imports to resolve circular dependencies (e.g. `workspace.py` imports `PageState` from `__init__`). No `PLC0415` lint suppression is used; the ordering makes late imports unnecessary.
 
+## Broadcast & Presence (`broadcast.py`)
+
+`_RemotePresence` (defined in `__init__.py`) carries two separate callbacks for broadcast events:
+
+- **`callback`** -- Full annotation refresh. Called when a remote peer changes CRDT state (highlights, comments, tags). Triggers `refresh_annotations()` which calls `container.clear()` and rebuilds all annotation cards, incrementing the epoch counter.
+- **`on_peer_left`** -- Lightweight user-count update. Called on CLIENT_DELETE (peer disconnection). Does NOT rebuild the DOM. CLIENT_DELETE changes zero CRDT state; a full rebuild would race with in-flight user interactions (fill + click), destroying input values and button handlers mid-action.
+
+**Invariant:** `_handle_client_delete` in `broadcast.py` must call `invoke_peer_left()`, never `invoke_callback()`. Only CRDT-mutating events may trigger full rebuilds.
+
 ## Word Count Integration
 
 Two new modules support word count limits in the annotation page:

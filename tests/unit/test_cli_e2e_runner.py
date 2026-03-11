@@ -424,7 +424,7 @@ def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
         fail_fast: bool,
         py_spy: bool,
     ) -> int:
-        assert parallel is False
+        assert parallel is True
         assert fail_fast is False
         assert py_spy is False
         calls.append(("playwright", user_args))
@@ -436,6 +436,7 @@ def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
 
     monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
     monkeypatch.setattr("promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui)
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
 
     exit_code = run_all_lanes(["-k", "combined_filter"])
 
@@ -459,7 +460,7 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
         fail_fast: bool,
         py_spy: bool,
     ) -> int:
-        assert parallel is False
+        assert parallel is True
         assert fail_fast is False
         assert py_spy is False
         return 0
@@ -477,6 +478,7 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
     monkeypatch.setattr(
         "promptgrimoire.cli.e2e.run_nicegui_lane", _fake_nicegui_success
     )
+    monkeypatch.setattr("promptgrimoire.cli.testing._run_pytest", lambda **_kw: 0)
     assert run_all_lanes([]) == 0
 
     monkeypatch.setattr(

@@ -243,7 +243,7 @@ async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
         _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
     )
 
-    all_passed = await _parallel._finalise_parallel_results(
+    all_passed, had_flaky = await _parallel._finalise_parallel_results(
         PLAYWRIGHT_LANE,
         _unused_worker,
         [failed_result],
@@ -255,6 +255,7 @@ async def test_finalise_parallel_results_treats_flaky_retries_as_pass(
     )
 
     assert all_passed is True
+    assert had_flaky is True
 
 
 @pytest.mark.asyncio
@@ -296,7 +297,7 @@ async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
         _parallel, "_merge_junit_xml", lambda _run_dir: _run_dir / "combined.xml"
     )
 
-    all_passed = await _parallel._finalise_parallel_results(
+    all_passed, had_flaky = await _parallel._finalise_parallel_results(
         PLAYWRIGHT_LANE,
         _unused_worker,
         [failed_result, cancelled_result],
@@ -308,3 +309,4 @@ async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
     )
 
     assert all_passed is False
+    assert had_flaky is True

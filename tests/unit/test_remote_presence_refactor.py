@@ -112,6 +112,7 @@ class TestRemotePresenceDataclass:
             "user_id",
             "viewer_is_privileged",
             "is_owner",
+            "on_peer_left",
         }
         assert expected == field_names
 

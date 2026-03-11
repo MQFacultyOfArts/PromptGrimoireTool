@@ -8,11 +8,14 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (20 authored modules):
+Package structure (23 authored modules):
     __init__             Core types, globals, route definition
     broadcast            Multi-client sync and remote presence
     cards                Annotation card UI components
-    content_form         Document upload/paste form
+    content_form         Document upload/paste form (orchestration)
+    paste_handler        Paste submission processing
+    paste_script         Client-side paste interception JavaScript
+    upload_handler       File upload detection and processing
     css                  CSS styles and tag toolbar
     document             Document rendering and selection wiring
     header               Workspace header, placement chip, sharing, copy protection

@@ -585,7 +585,7 @@ class TestUploadDialogAutoDetect:
         and uses ``_detect_paragraph_numbering()`` directly. Verify the
         detection helper returns the expected (auto_number, para_map) tuple.
         """
-        from promptgrimoire.pages.annotation.content_form import (
+        from promptgrimoire.pages.annotation.upload_handler import (
             _detect_paragraph_numbering,
         )
 

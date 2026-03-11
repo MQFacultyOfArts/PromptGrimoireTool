@@ -527,6 +527,10 @@ def _make_tab_change_handler(
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
+        # Tag toolbar footer is only relevant on the Annotate tab
+        if state.footer is not None:
+            state.footer.set_visibility(tab_name == "Annotate")
+
         if prev_tab == "Respond":
             await _sync_respond_on_leave(state)
 
@@ -800,6 +804,9 @@ async def _render_workspace_view(
         ui.tab("Annotate").props('data-testid="tab-annotate"')
         ui.tab("Organise").props('data-testid="tab-organise"')
         ui.tab("Respond").props('data-testid="tab-respond"')
+
+    # Store footer on state so the tab change handler can toggle visibility
+    state.footer = footer
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

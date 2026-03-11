@@ -263,6 +263,8 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+    # Page-level Quasar footer for tag toolbar — hidden on non-Annotate tabs
+    footer: Any | None = None
 
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""

@@ -64,6 +64,9 @@ ALLOWED_JS_FILES = {
     # HTML paste simulation requires JavaScript to write text/html MIME type
     # so the browser delivers a ClipboardEvent with the correct MIME payload.
     "test_document_upload.py",
+    # Same clipboard paste simulation as test_document_upload.py —
+    # edit mode tests need a pasted document to exercise edit/cancel/save.
+    "test_edit_mode.py",
 }
 
 

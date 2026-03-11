@@ -740,6 +740,10 @@ async def _build_tab_panels(
 
             await document_container()
 
+            # Expose document refresh on PageState so the Manage Documents
+            # dialog can re-render documents after edit-mode save.
+            state.refresh_documents = document_container.refresh
+
             # Late-bound callback: content_form.py captures this closure,
             # and we swap in a smarter implementation after the wrapper
             # element is created (so we can hide it on first add).

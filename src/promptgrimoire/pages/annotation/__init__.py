@@ -263,6 +263,8 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+    # Callable to refresh the document container after edit-mode save
+    refresh_documents: Any | None = None  # Callable[[], object]
     # Page-level Quasar footer for tag toolbar — hidden on non-Annotate tabs
     footer: Any | None = None
 

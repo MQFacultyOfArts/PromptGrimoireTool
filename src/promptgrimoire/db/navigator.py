@@ -349,6 +349,34 @@ fts AS (
   WHERE w.id IN (SELECT workspace_id FROM visible_ws)
     AND to_tsvector('english', COALESCE(w.search_text, ''))
       @@ websearch_to_tsquery('english', :query)
+  UNION ALL
+  SELECT w.id AS ws_id,
+    ts_headline('english',
+      COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
+        || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
+        || COALESCE(c.code, '') || ' ' || COALESCE(c.name, ''),
+      websearch_to_tsquery('english', :query),
+      '{_HEADLINE_OPTIONS}'
+    ) AS snippet,
+    ts_rank(
+      to_tsvector('english',
+        COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
+          || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
+          || COALESCE(c.code, '') || ' ' || COALESCE(c.name, '')),
+      websearch_to_tsquery('english', :query)
+    ) AS rank
+  FROM workspace w
+  JOIN acl_entry acl ON acl.workspace_id = w.id AND acl.permission = 'owner'
+  JOIN "user" u ON u.id = acl.user_id
+  LEFT JOIN activity a ON a.id = w.activity_id
+  LEFT JOIN week wk ON wk.id = a.week_id
+  LEFT JOIN course c ON c.id = COALESCE(wk.course_id, w.course_id)
+  WHERE w.id IN (SELECT workspace_id FROM visible_ws)
+    AND to_tsvector('english',
+      COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
+        || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
+        || COALESCE(c.code, '') || ' ' || COALESCE(c.name, ''))
+      @@ websearch_to_tsquery('english', :query)
 ),
 best_fts AS (
   SELECT DISTINCT ON (ws_id) ws_id, snippet, rank

@@ -51,7 +51,7 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### E2E Test Isolation
 
-E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run grimoire e2e run`, which runs in serial fail-fast mode by default (`--parallel` for xdist). See [docs/testing.md](docs/testing.md).
+E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run grimoire e2e run`, which runs in parallel by default (per-file isolation with cloned databases, `--serial` for single server). See [docs/testing.md](docs/testing.md).
 
 ### E2E Locator Convention
 
@@ -100,11 +100,14 @@ uv run grimoire test all
 uv run grimoire test all -x --ff
 uv run grimoire e2e run -x --ff
 
-# Run E2E tests (starts server, serial fail-fast by default)
+# Run E2E tests (parallel by default, per-file isolation)
 uv run grimoire e2e run
 
-# Run E2E tests in parallel (xdist)
-uv run grimoire e2e run --parallel
+# Run E2E tests in serial mode (single server)
+uv run grimoire e2e run --serial
+
+# Run all lanes: unit tests + Playwright E2E + NiceGUI
+uv run grimoire e2e all
 
 # Run E2E tests (smart selection based on changes)
 uv run grimoire e2e changed

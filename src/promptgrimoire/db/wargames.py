@@ -1,4 +1,4 @@
-"""CRUD operations for wargame teams."""
+"""CRUD and turn-cycle operations for wargame teams."""
 
 from __future__ import annotations
 
@@ -7,15 +7,25 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
+from pydantic_core import to_jsonable_python
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import ACLEntry, Permission, User, WargameTeam
+from promptgrimoire.db.models import (
+    ACLEntry,
+    Permission,
+    User,
+    WargameConfig,
+    WargameMessage,
+    WargameTeam,
+)
 from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
+from promptgrimoire.wargame.agents import turn_agent
 from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
+from promptgrimoire.wargame.turn_cycle import build_turn_prompt, expand_bootstrap
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -23,6 +33,7 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.wargame import RosterEntry
+    from promptgrimoire.wargame.agents import TurnResult
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
@@ -751,6 +762,116 @@ async def delete_team(team_id: UUID) -> bool:
         await session.delete(team)
         await session.flush()
         return True
+
+
+async def start_game(activity_id: UUID) -> None:
+    """Bootstrap all teams for a wargame activity with initial AI responses.
+
+    For each team: expands the scenario bootstrap template with the team's
+    codename, calls the turn agent for an initial response, and stores both
+    messages. Sets all teams to round 1, state "locked".
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to start.
+
+    Raises
+    ------
+    ValueError
+        If the game has already been started (messages exist for any team).
+    """
+    async with get_session() as session:
+        config = await session.get(WargameConfig, activity_id)
+        if config is None:
+            msg = f"no wargame config for activity {activity_id}"
+            raise ValueError(msg)
+
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+
+        if not teams:
+            msg = f"no teams for activity {activity_id}"
+            raise ValueError(msg)
+
+        # Precondition: no messages exist for any of these teams
+        team_ids = [team.id for team in teams]
+        msg_count_result = await session.exec(
+            select(sa.func.count())
+            .select_from(WargameMessage)
+            .where(
+                WargameMessage.team_id.in_(team_ids)  # type: ignore[union-attr]  -- SQLAlchemy column expression
+            )
+        )
+        if msg_count_result.one() > 0:
+            msg = "game already started"
+            raise ValueError(msg)
+
+        for team in teams:
+            bootstrap_text = expand_bootstrap(config.scenario_bootstrap, team.codename)
+            prompt = build_turn_prompt(bootstrap_text, "")
+
+            # Store the human-readable bootstrap as the user message
+            user_msg = WargameMessage(
+                team_id=team.id,
+                sequence_no=1,
+                role="user",
+                content=bootstrap_text,
+            )
+            session.add(user_msg)
+
+            # Call the turn agent
+            ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
+            turn_output = cast("TurnResult", ai_result.output)
+
+            # Store assistant response with PydanticAI history
+            assistant_msg = WargameMessage(
+                team_id=team.id,
+                sequence_no=2,
+                role="assistant",
+                content=turn_output.response_text,
+                metadata_json=to_jsonable_python(ai_result.all_messages()),
+            )
+            session.add(assistant_msg)
+
+            team.game_state_text = turn_output.game_state
+            team.current_round = 1
+            team.round_state = "locked"
+            session.add(team)
+
+
+async def lock_round(activity_id: UUID) -> None:
+    """Lock all teams in a wargame activity, transitioning from drafting to locked.
+
+    Clears deadlines on all teams.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity whose round to lock.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in "drafting" state.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+
+        not_drafting = [t for t in teams if t.round_state != "drafting"]
+        if not_drafting:
+            msg = "not all teams in drafting state"
+            raise ValueError(msg)
+
+        for team in teams:
+            team.round_state = "locked"
+            team.current_deadline = None
+            session.add(team)
 
 
 async def on_deadline_fired(activity_id: UUID) -> None:

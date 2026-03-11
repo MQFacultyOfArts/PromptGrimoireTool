@@ -134,3 +134,29 @@ class TestUpdateDocumentContent:
                 content="<p>Nope</p>",
                 workspace_id=workspace.id,
             )
+
+    @pytest.mark.asyncio
+    async def test_raises_on_workspace_mismatch(self) -> None:
+        """ValueError raised when workspace_id doesn't match the document's
+        workspace."""
+        from promptgrimoire.db.workspace_documents import (
+            add_document,
+            update_document_content,
+        )
+        from promptgrimoire.db.workspaces import create_workspace
+
+        workspace_a = await create_workspace()
+        workspace_b = await create_workspace()
+        doc = await add_document(
+            workspace_id=workspace_a.id,
+            type="source",
+            content="<p>Original</p>",
+            source_type="html",
+        )
+
+        with pytest.raises(ValueError, match="belongs to workspace"):
+            await update_document_content(
+                document_id=doc.id,
+                content="<p>Changed</p>",
+                workspace_id=workspace_b.id,
+            )

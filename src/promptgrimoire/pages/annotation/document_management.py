@@ -84,7 +84,13 @@ def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
 def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
     """Get the number of annotations (highlights) for a document.
 
-    Returns 0 if the CRDT doc is not loaded yet.
+    Returns 0 if the CRDT doc is not loaded yet.  Returning 0 makes the
+    document appear editable, which is the safer UX default: the edit button
+    becomes visible and the user can click Save.  This is safe because
+    CRDT annotations are stored independently of ``WorkspaceDocument.content``
+    — updating the content field does not touch CRDT state.  Once the CRDT
+    loads, the real count is used and the edit button is hidden if annotations
+    exist.
     """
     if state.crdt_doc is None:
         return 0

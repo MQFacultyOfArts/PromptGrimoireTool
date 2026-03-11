@@ -178,6 +178,13 @@ async def update_document_content(
             msg = f"WorkspaceDocument {document_id} not found"
             raise ValueError(msg)
 
+        if doc.workspace_id != workspace_id:
+            msg = (
+                f"WorkspaceDocument {document_id} belongs to workspace "
+                f"{doc.workspace_id}, not {workspace_id}"
+            )
+            raise ValueError(msg)
+
         doc.content = content
         doc.paragraph_map = build_paragraph_map_for_json(
             content, auto_number=doc.auto_number_paragraphs

@@ -692,6 +692,13 @@ async def _build_tab_panels(
                 upload or paste can re-render in-place without a full page
                 reload (file-upload-109.AC4.1).
                 """
+                # The footer lives outside the refreshable boundary (it's a
+                # page-level Quasar element), so @ui.refreshable won't clear
+                # it automatically.  Clear it here to prevent duplicate tag
+                # toolbars on refresh.
+                if footer is not None:
+                    footer.clear()
+
                 documents = await list_documents(workspace_id)
                 has_documents.clear()
                 has_documents.append(bool(documents))

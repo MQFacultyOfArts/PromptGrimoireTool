@@ -36,6 +36,8 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **Stytch** - auth (magic links, passkeys, RBAC)
 - **selectolax** - fast HTML parser (lexbor backend) for input pipeline
 - **lxml** - HTML normalisation in export pipeline
+- **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
+- **APScheduler** - deadline scheduling with SQLAlchemyJobStore (wargame turn cycle)
 
 ## Development Workflow
 
@@ -145,12 +147,15 @@ src/promptgrimoire/
 │   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL (grant/revoke/update), roster ingestion
 │   └── workspaces.py    # Workspace CRUD (create, get)
-├── wargame/             # Pure-domain helpers for wargame team management
+├── wargame/             # Pure-domain helpers for wargame scenarios
+│   ├── agents.py        # PydanticAI agent definitions (turn_agent, summary_agent)
 │   ├── codenames.py     # Unique codename generation (coolname slugs, collision avoidance)
-│   └── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
+│   ├── roster.py        # CSV roster parsing, auto-assign round-robin (functional core)
+│   └── turn_cycle.py    # Turn cycle state machine, deadline calc, prompt assembly
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
+├── scheduler.py         # APScheduler lifecycle and deadline job management
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 └── static/              # JS/CSS assets
 
@@ -213,6 +218,14 @@ Three new tables extend the Activity model for wargame scenarios:
 **Roster ingestion modes:** Named-team mode uses explicit team names from CSV. Auto-assign mode distributes members round-robin across `team_count` buckets, mapping to real teams by `created_at` order. Re-imports are additive (existing ACL rows preserved, changed roles updated). Editor-first grant ordering prevents false zero-editor violations during handoff swaps.
 
 Pure-domain helpers live in `wargame/` (codename generation, roster CSV parsing, auto-assign). DB orchestration lives in `db/wargames.py`.
+
+### Wargame Turn Cycle Engine (Seam 3 — Designed, Not Yet Implemented)
+
+`db/wargames.py` will be extended with turn cycle orchestration: `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. These follow the existing functional core / imperative shell pattern — pure domain logic in `wargame/turn_cycle.py` and `wargame/agents.py`, DB orchestration in `db/wargames.py`.
+
+**LLM pattern divergence:** Wargame uses PydanticAI agents (structured output validation) instead of the direct `ClaudeClient` used for roleplay. Two agents: `turn_agent` (draft response + game state artifact) and `summary_agent` (student-facing summaries). Both use `anthropic:claude-sonnet-4-5`.
+
+**Schema additions (planned):** `WargameTeam.move_buffer_crdt` and `WargameTeam.notes_crdt` (bytea), `WargameConfig.summary_system_prompt` (Text). See design plan: `docs/design-plans/2026-03-10-turn-cycle-296.md`.
 
 ### ACL Target Polymorphism
 

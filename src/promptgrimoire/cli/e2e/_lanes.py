@@ -27,6 +27,20 @@ class WorkerResult:
     artifact_dir: Path
 
 
+@dataclass
+class LaneResult:
+    """Aggregated outcome for one lane in an umbrella run."""
+
+    name: str
+    exit_code: int
+    passed: int = 0
+    flaky: int = 0
+    failed: int = 0
+    wall_clock_s: float = 0.0
+    log_path: Path | None = None
+    artifact_dir: Path | None = None
+
+
 PLAYWRIGHT_LANE = LaneSpec(
     name="playwright",
     test_paths=(Path("tests/e2e"),),

@@ -16,7 +16,7 @@ from promptgrimoire.cli._shared import (
     _prepend_pytest_flags,
     console,
 )
-from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE
+from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, LaneResult
 from promptgrimoire.cli.e2e._retry import _retry_e2e_tests_in_isolation
 
 if TYPE_CHECKING:
@@ -101,23 +101,81 @@ def run_nicegui_lane(user_args: list[str]) -> int:
         return 130
 
 
+def _print_all_lanes_summary(
+    cwd: Path,
+    branch: str,
+    results: list[LaneResult],
+) -> None:
+    """Print a structured summary of all lane results."""
+    console.print()
+    console.print("[bold]── Summary ──────────────────────────────────────────[/]")
+    console.print(f"  Dir:    {cwd}")
+    console.print(f"  Branch: {branch}")
+    console.print()
+    console.print(f"  {'Lane':<14} {'Exit':<6} {'Log / Artifacts'}")
+    console.print(f"  {'─' * 14} {'─' * 6} {'─' * 40}")
+    for lr in results:
+        status = "[green]PASS[/]" if lr.exit_code == 0 else "[red]FAIL[/]"
+        path_info = str(lr.log_path or lr.artifact_dir or "—")
+        console.print(f"  {lr.name:<14} {status}  {path_info}")
+    console.print()
+
+    any_failed = any(lr.exit_code != 0 for lr in results)
+    if any_failed:
+        console.print("[red]Some lanes failed.[/]")
+    else:
+        console.print("[green]All lanes passed.[/]")
+
+
 def run_all_lanes(user_args: list[str]) -> int:
-    """Run Playwright then NiceGUI lanes sequentially (always run both)."""
+    """Run unit tests, then Playwright, then NiceGUI — always runs all three."""
+    from promptgrimoire.cli.testing import _run_pytest, _xdist_worker_count
+    from promptgrimoire.config import get_current_branch
+
     _clear_lastfailed_cache()
-    # Keep umbrella orchestration serial for deterministic diagnostics and simpler
-    # lane sequencing; users can run `e2e run --parallel` separately when needed.
-    console.print("[blue]Running Playwright lane...[/]")
+
+    branch = get_current_branch() or "unknown"
+    cwd = Path.cwd()
+    lane_results: list[LaneResult] = []
+
+    # --- Unit / integration lane ---
+    unit_log = Path("test-all.log")
+    console.print(f"[blue]Running unit/integration lane...[/]  log: {unit_log}")
+    unit_exit = _run_pytest(
+        title="Unit + Integration (xdist)",
+        log_path=unit_log,
+        default_args=[
+            "-m",
+            "not e2e and not nicegui_ui and not latexmk_full",
+            "-n",
+            _xdist_worker_count(),
+            "--dist=worksteal",
+            "-v",
+        ],
+        extra_args=user_args,
+        extra_env={"GRIMOIRE_TEST_SKIP_LATEXMK": "1"},
+    )
+    lane_results.append(LaneResult("unit", unit_exit, log_path=unit_log))
+
+    # --- Playwright lane (parallel) ---
+    console.print("[blue]Running Playwright lane (parallel)...[/]")
     playwright_exit = run_playwright_lane(
         user_args,
-        parallel=False,
+        parallel=True,
         fail_fast=False,
         py_spy=False,
     )
+    lane_results.append(LaneResult("playwright", playwright_exit))
 
+    # --- NiceGUI lane ---
     console.print("[blue]Running NiceGUI lane...[/]")
     nicegui_exit = run_nicegui_lane(user_args)
+    lane_results.append(LaneResult("nicegui", nicegui_exit))
 
-    return 0 if playwright_exit == 0 and nicegui_exit == 0 else 1
+    # --- Summary ---
+    _print_all_lanes_summary(cwd, branch, lane_results)
+
+    return 0 if all(lr.exit_code == 0 for lr in lane_results) else 1
 
 
 def _normalise_optional_lane_exit(exit_code: int, user_args: list[str]) -> int:
@@ -177,8 +235,8 @@ def run_slow_lanes(user_args: list[str]) -> int:
 )
 def run(
     ctx: typer.Context,
-    parallel: bool = typer.Option(
-        False, "--parallel", help="Run with xdist parallelism"
+    serial: bool = typer.Option(
+        False, "--serial", help="Run in serial mode (single server)"
     ),
     fail_fast: bool = typer.Option(
         False,
@@ -196,13 +254,13 @@ def run(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
 ) -> None:
-    """Run Playwright E2E tests (serial fail-fast by default)."""
+    """Run Playwright E2E tests (parallel by default, --serial for single server)."""
     args = _prepend_filter(ctx.args, filter_expr)
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
     sys.exit(
         run_playwright_lane(
             args,
-            parallel=parallel,
+            parallel=not serial,
             fail_fast=fail_fast,
             py_spy=py_spy,
         )
@@ -247,7 +305,7 @@ def all_lanes(
         None, "-k", "--filter", help="Pytest keyword filter expression"
     ),
 ) -> None:
-    """Run Playwright then NiceGUI lanes; always runs both for full diagnostics."""
+    """Run unit tests, Playwright E2E, and NiceGUI lanes — always runs all three."""
     args = _prepend_filter(ctx.args, filter_expr)
     sys.exit(run_all_lanes(args))
 

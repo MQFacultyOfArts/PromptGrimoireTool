@@ -247,27 +247,67 @@ async def _run_fail_fast_workers(
     return results
 
 
+def _drop_all_worker_dbs(worker_dbs: list[tuple[str, str]], *, context: str) -> None:
+    """Drop every worker database."""
+    for db_url, _db_name in worker_dbs:
+        _drop_database_with_debug(db_url, context=context)
+
+
+def _advertise_failed_workers(
+    results: list[WorkerResult],
+    file_db_map: dict[Path, tuple[str, str]],
+) -> None:
+    """Print log/DB details for each failed worker."""
+    for result in results:
+        if result.exit_code in (0, 5, -1):
+            continue
+        _db_url, db_name = file_db_map.get(result.file, ("unknown", "unknown"))
+        console.print(f"  [red]{result.file.name}[/]:")
+        console.print(f"    Log:    {result.artifact_dir / 'pytest.log'}")
+        server_log = result.artifact_dir / "server.log"
+        if server_log.exists():
+            console.print(f"    Server: {server_log}")
+        console.print(f"    DB:     {db_name}")
+
+
 def _cleanup_parallel_results(
     all_passed: bool,
+    had_flaky: bool,
     worker_dbs: list[tuple[str, str]],
+    files: list[Path],
     run_dir: Path,
     results: list[WorkerResult],
 ) -> None:
-    """Clean up or preserve worker databases and result directory."""
-    if all_passed:
-        for db_url, _db_name in worker_dbs:
-            _drop_database_with_debug(db_url, context="parallel result cleanup")
+    """Clean up or preserve worker databases and result directory.
+
+    On failure, only preserves databases for failed workers and drops
+    the rest.  On flaky-pass, preserves the artifact directory but
+    drops all databases.
+    """
+    file_db_map = dict(zip(files, worker_dbs, strict=False))
+
+    if all_passed and not had_flaky:
+        _drop_all_worker_dbs(worker_dbs, context="parallel result cleanup")
         shutil.rmtree(run_dir, ignore_errors=True)
         console.print("[green]All passed — cleaned up worker databases and results[/]")
-    else:
-        console.print("[yellow]Some tests failed — preserving artifacts:[/]")
+        return
+
+    if all_passed:
+        _drop_all_worker_dbs(worker_dbs, context="parallel result cleanup")
+        console.print(
+            "[yellow]All passed (with flaky retries) — preserving artifacts:[/]"
+        )
         console.print(f"  Results: {run_dir}")
-        for db_url, db_name in worker_dbs:
-            console.print(f"  DB: {db_name} ({db_url})")
-        for result in results:
-            if result.exit_code not in (0, 5, -1):
-                log_path = result.artifact_dir / "pytest.log"
-                console.print(f"  Log: {log_path}")
+        return
+
+    console.print("[yellow]Some tests failed — preserving artifacts:[/]")
+    console.print(f"  Results: {run_dir}")
+    _advertise_failed_workers(results, file_db_map)
+    # Drop databases for passing workers, keep failed ones.
+    failed_files = {r.file for r in results if r.exit_code not in (0, 5, -1)}
+    for f, (db_url, _db_name) in file_db_map.items():
+        if f not in failed_files:
+            _drop_database_with_debug(db_url, context="passing worker cleanup")
 
 
 def _print_retry_summary(
@@ -380,8 +420,11 @@ async def _finalise_parallel_results(
     source_db_name: str,
     run_dir: Path,
     user_args: list[str],
-) -> bool:
-    """Summarise, retry failures, merge JUnit XML. Returns all_passed."""
+) -> tuple[bool, bool]:
+    """Summarise, retry failures, merge JUnit XML.
+
+    Returns ``(all_passed, had_flaky)``.
+    """
     wall_clock = time.monotonic() - wall_start
     _print_parallel_summary(results, wall_clock)
     all_passed = _all_results_passed(results)
@@ -402,9 +445,6 @@ async def _finalise_parallel_results(
                 run_dir,
                 user_args,
             )
-            # Retries re-run every failed file.
-            # If none fail on retry, treat them as flaky.
-            # Cancelled workers (`-1`) were never executed and still fail the lane.
             all_passed = not genuine_failures and not any(
                 result.exit_code == -1 for result in results
             )
@@ -422,7 +462,7 @@ async def _finalise_parallel_results(
         genuine_failures=genuine_failures,
     )
 
-    return all_passed
+    return all_passed, bool(flaky_files)
 
 
 def _default_worker_count(file_count: int) -> int:
@@ -460,9 +500,14 @@ async def run_lane_files(
         worker_count or _default_worker_count(len(files)), len(files)
     )
 
+    # Advertise artifact paths upfront so a second instance can tail them.
+    console.print(f"  artifacts: {run_dir}")
+    console.print(f"  workers:   {bounded_worker_count}  files: {len(files)}")
+
     wall_start = time.monotonic()
     results: list[WorkerResult] = []
     all_passed = False
+    had_flaky = False
 
     try:
         if fail_fast:
@@ -488,7 +533,7 @@ async def run_lane_files(
                 worker_count=bounded_worker_count,
             )
 
-        all_passed = await _finalise_parallel_results(
+        all_passed, had_flaky = await _finalise_parallel_results(
             lane,
             worker,
             results,
@@ -501,7 +546,9 @@ async def run_lane_files(
         return 0 if all_passed else 1
 
     finally:
-        _cleanup_parallel_results(all_passed, worker_dbs, run_dir, results)
+        _cleanup_parallel_results(
+            all_passed, had_flaky, worker_dbs, files, run_dir, results
+        )
 
 
 async def _run_parallel_e2e(

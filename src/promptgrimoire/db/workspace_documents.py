@@ -168,6 +168,7 @@ async def update_document_content(
 
     Raises:
         ValueError: If the document is not found.
+        ValueError: If workspace_id does not match the document's workspace.
     """
     async with get_session() as session:
         result = await session.exec(

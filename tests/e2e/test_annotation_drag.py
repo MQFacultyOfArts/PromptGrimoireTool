@@ -319,7 +319,7 @@ class TestDragBetweenColumns:
         # Switch to Annotate tab
         _switch_to_annotate(page)
 
-        from tests.e2e.annotation_helpers import expand_card
+        from tests.e2e.card_helpers import expand_card
 
         # Find the annotation card in the sidebar
         # The true boundary is the sidebar card showing the new tag (Procedural History)

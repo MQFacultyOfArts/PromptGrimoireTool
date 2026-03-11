@@ -19,12 +19,11 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
-    collapse_card,
     create_highlight_with_tag,
-    expand_card,
     find_text_range,
     wait_for_text_walker,
 )
+from tests.e2e.card_helpers import collapse_card, expand_card
 from tests.e2e.conftest import _authenticate_page, _grant_workspace_access
 
 if TYPE_CHECKING:

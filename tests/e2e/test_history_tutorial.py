@@ -30,12 +30,11 @@ import pytest
 from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
-    add_comment_to_highlight,
     create_highlight_with_tag,
-    expand_card,
     find_text_range,
     select_chars,
 )
+from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

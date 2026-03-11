@@ -36,16 +36,18 @@ import pytest
 from promptgrimoire.auth.anonymise import anonymise_display_name
 from tests.e2e.annotation_helpers import (
     _seed_tags_for_workspace,
-    add_comment_to_highlight,
     clone_activity_workspace,
-    count_comment_delete_buttons,
     create_highlight,
     export_annotation_tex_text,
     find_text_range,
-    get_comment_authors,
     get_user_id_by_email,
     toggle_share_with_class,
     wait_for_text_walker,
+)
+from tests.e2e.card_helpers import (
+    add_comment_to_highlight,
+    count_comment_delete_buttons,
+    get_comment_authors,
 )
 from tests.e2e.conftest import (
     _authenticate_page,

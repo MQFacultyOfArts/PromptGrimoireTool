@@ -44,15 +44,14 @@ from playwright.sync_api import expect
 
 from tests.e2e.annotation_helpers import (
     _load_fixture_via_paste,
-    add_comment_to_highlight,
     create_highlight_with_tag,
-    expand_card,
     export_annotation_tex_text,
     find_text_range,
     scroll_to_char,
     select_chars,
     wait_for_text_walker,
 )
+from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
 from tests.e2e.conftest import _authenticate_page
 
 

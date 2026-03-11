@@ -19,7 +19,8 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from tests.e2e.annotation_helpers import expand_card, select_chars, wait_for_text_walker
+from tests.e2e.annotation_helpers import select_chars, wait_for_text_walker
+from tests.e2e.card_helpers import expand_card
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
     add_activity,

@@ -25,14 +25,13 @@ from playwright.sync_api import expect
 from tests.e2e.annotation_helpers import (
     _create_workspace_via_db,
     _lock_tag_in_db,
-    add_comment_to_highlight,
     create_highlight_with_tag,
-    expand_card,
     find_text_range,
     seed_tag_id,
     select_chars,
     wait_for_text_walker,
 )
+from tests.e2e.card_helpers import add_comment_to_highlight, expand_card
 from tests.e2e.conftest import _authenticate_page
 
 if TYPE_CHECKING:

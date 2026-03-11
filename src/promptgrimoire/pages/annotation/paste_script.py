@@ -7,6 +7,14 @@ variables for server-side retrieval.
 
 Platform detection covers: Claude, OpenAI, Gemini, AI Studio,
 ScienceOS, OpenRouter, ChatCraft, and Wikimedia.
+
+Note: This file exceeds the 400-line target because its body is a single
+indivisible JavaScript string literal (~780 lines of JS). Python complexity
+is 0. The line target applies to Python logic, not embedded JS templates.
+
+Future cleanup: The JS only interpolates 3 Python variables (paste_var,
+platform_var, editor_id). It could be moved to a static .js file with
+runtime injection, eliminating the f-string and the line-count exception.
 """
 
 from __future__ import annotations

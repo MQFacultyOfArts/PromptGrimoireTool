@@ -192,6 +192,77 @@ def detect_content_type(content: str | bytes) -> ContentType:
     return _detect_from_string(content)
 
 
+def _collapse_text_node(node: Any) -> str | None:
+    """Return collapsed text for a text node, or ``None`` if it should be skipped.
+
+    Skips whitespace-only text nodes inside block containers (formatting
+    artefacts).  Collapses whitespace runs (including nbsp) to single space.
+    """
+    text = node.text_content
+    if not text:
+        return None
+    parent = node.parent
+    if (
+        parent is not None
+        and parent.tag in _BLOCK_TAGS
+        and _WHITESPACE_RUN.fullmatch(text)
+    ):
+        return None
+    return _WHITESPACE_RUN.sub(" ", text)
+
+
+def _get_dom_root(html: str) -> Any | None:
+    """Parse *html* and return the root element for text walking."""
+    tree = LexborHTMLParser(html)
+    body = tree.body
+    root = body if body else tree.root
+    return root
+
+
+def _walk_dom(
+    node: Any,
+    chars: list[str],
+    text_nodes: list[TextNodeInfo] | None = None,
+) -> None:
+    """Recursively walk DOM collecting characters and optionally text-node info.
+
+    Shared walker for ``extract_text_from_html`` and ``walk_and_map``.
+    When *text_nodes* is not ``None``, appends ``TextNodeInfo`` entries
+    for marker-insertion pass 2.
+    """
+    tag = node.tag
+
+    if tag == "-text":
+        collapsed = _collapse_text_node(node)
+        if collapsed is None:
+            return
+        start = len(chars)
+        chars.extend(collapsed)
+        if text_nodes is not None:
+            text_nodes.append(
+                TextNodeInfo(
+                    html_text=node.html,
+                    decoded_text=node.text_content,
+                    collapsed_text=collapsed,
+                    char_start=start,
+                    char_end=len(chars),
+                )
+            )
+        return
+
+    if tag in _STRIP_TAGS:
+        return
+
+    if tag == "br":
+        chars.append("\n")
+        return
+
+    child = node.child
+    while child is not None:
+        _walk_dom(child, chars, text_nodes)
+        child = child.next
+
+
 def extract_text_from_html(html: str) -> list[str]:
     """Extract text characters from clean HTML, matching JS walkTextNodes.
 
@@ -215,57 +286,14 @@ def extract_text_from_html(html: str) -> list[str]:
     if not html:
         return []
 
-    tree = LexborHTMLParser(html)
-
-    body = tree.body
-    root = body if body else tree.root
-
+    root = _get_dom_root(html)
     if root is None:
         return []
 
     chars: list[str] = []
-
-    def _walk(node: Any) -> None:
-        tag = node.tag
-
-        # Text node — selectolax uses "-text" as the tag
-        if tag == "-text":
-            text = node.text_content
-            if not text:
-                return
-            # Skip whitespace-only text nodes inside block containers
-            # (these are formatting indentation between tags, not content)
-            parent = node.parent
-            if (
-                parent is not None
-                and parent.tag in _BLOCK_TAGS
-                and _WHITESPACE_RUN.fullmatch(text)
-            ):
-                return
-            # Collapse whitespace runs (including nbsp) to single space
-            text = _WHITESPACE_RUN.sub(" ", text)
-            chars.extend(text)
-            return
-
-        # Skip stripped tags entirely
-        if tag in _STRIP_TAGS:
-            return
-
-        # <br> → newline
-        if tag == "br":
-            chars.append("\n")
-            return
-
-        # Recurse into children
-        child = node.child
-        while child is not None:
-            _walk(child)
-            child = child.next
-
-    # Start from root's children (skip the root element itself)
     child = root.child
     while child is not None:
-        _walk(child)
+        _walk_dom(child, chars)
         child = child.next
 
     return chars
@@ -308,61 +336,74 @@ def walk_and_map(html: str) -> tuple[list[str], list[TextNodeInfo]]:
     if not html:
         return [], []
 
-    tree = LexborHTMLParser(html)
-    body = tree.body
-    root = body if body else tree.root
+    root = _get_dom_root(html)
     if root is None:
         return [], []
 
     chars: list[str] = []
     text_nodes: list[TextNodeInfo] = []
 
-    def _walk(node: Any) -> None:
-        tag = node.tag
-
-        if tag == "-text":
-            text = node.text_content
-            if not text:
-                return
-            parent = node.parent
-            if (
-                parent is not None
-                and parent.tag in _BLOCK_TAGS
-                and _WHITESPACE_RUN.fullmatch(text)
-            ):
-                return
-            collapsed = _WHITESPACE_RUN.sub(" ", text)
-            start = len(chars)
-            chars.extend(collapsed)
-            text_nodes.append(
-                TextNodeInfo(
-                    html_text=node.html,  # HTML-encoded (e.g. "&amp;")
-                    decoded_text=text,  # Decoded (e.g. "&")
-                    collapsed_text=collapsed,
-                    char_start=start,
-                    char_end=len(chars),
-                )
-            )
-            return
-
-        if tag in _STRIP_TAGS:
-            return
-
-        if tag == "br":
-            chars.append("\n")
-            return
-
-        child = node.child
-        while child is not None:
-            _walk(child)
-            child = child.next
-
     child = root.child
     while child is not None:
-        _walk(child)
+        _walk_dom(child, chars, text_nodes)
         child = child.next
 
     return chars, text_nodes
+
+
+def _try_entity_match(
+    html: str, html_pos: int, decoded_text: str, decoded_pos: int
+) -> tuple[int, int] | None:
+    """Try to match an HTML entity at *html_pos* against decoded text.
+
+    Returns ``(new_html_pos, new_decoded_pos)`` on success, or ``None``
+    if the entity does not match.
+    """
+    semicolon = html.find(";", html_pos + 1)
+    if semicolon == -1 or semicolon - html_pos >= 12:
+        return None
+    entity_text = html[html_pos : semicolon + 1]
+    decoded_entity = html_module.unescape(entity_text)
+    if decoded_text[decoded_pos : decoded_pos + len(decoded_entity)] == decoded_entity:
+        return (semicolon + 1, decoded_pos + len(decoded_entity))
+    return None
+
+
+def _match_at_candidate(
+    html: str, html_len: int, candidate_start: int, decoded_text: str
+) -> int | None:
+    """Try to match *decoded_text* starting at *candidate_start* in *html*.
+
+    Returns the end position in *html* on full match, or ``None``.
+    """
+    html_pos = candidate_start
+    decoded_pos = 0
+
+    while decoded_pos < len(decoded_text) and html_pos < html_len:
+        ch = html[html_pos]
+        if ch == "<":
+            return None  # Tag boundary — text node can't span tags
+
+        if ch == "&":
+            entity_result = _try_entity_match(html, html_pos, decoded_text, decoded_pos)
+            if entity_result is not None:
+                html_pos, decoded_pos = entity_result
+                continue
+            # Not a matching entity — try literal '&' match
+            if decoded_text[decoded_pos] != "&":
+                return None
+            decoded_pos += 1
+            html_pos += 1
+            continue
+
+        if ch != decoded_text[decoded_pos]:
+            return None
+        html_pos += 1
+        decoded_pos += 1
+
+    if decoded_pos == len(decoded_text):
+        return html_pos
+    return None
 
 
 def _entity_aware_find(
@@ -384,47 +425,12 @@ def _entity_aware_find(
     html_len = len(html)
 
     for candidate_start in range(start, html_len):
-        # Skip positions inside tags — text nodes can't start there
         if html[candidate_start] == "<":
-            # Advance past the tag
             continue
 
-        html_pos = candidate_start
-        decoded_pos = 0
-
-        while decoded_pos < len(decoded_text) and html_pos < html_len:
-            if html[html_pos] == "<":
-                # Hit a tag boundary — text node can't span tags
-                break
-
-            if html[html_pos] == "&":
-                # Try to parse an entity
-                semicolon = html.find(";", html_pos + 1)
-                if semicolon != -1 and semicolon - html_pos < 12:
-                    entity_text = html[html_pos : semicolon + 1]
-                    decoded_entity = html_module.unescape(entity_text)
-                    # Check if the decoded entity matches the next character(s)
-                    if (
-                        decoded_text[decoded_pos : decoded_pos + len(decoded_entity)]
-                        == decoded_entity
-                    ):
-                        decoded_pos += len(decoded_entity)
-                        html_pos = semicolon + 1
-                        continue
-                # Not a matching entity — try literal '&' match
-                if decoded_text[decoded_pos] == "&":
-                    decoded_pos += 1
-                    html_pos += 1
-                    continue
-                break
-            elif html[html_pos] == decoded_text[decoded_pos]:
-                html_pos += 1
-                decoded_pos += 1
-            else:
-                break
-
-        if decoded_pos == len(decoded_text):
-            return (candidate_start, html_pos)
+        end = _match_at_candidate(html, html_len, candidate_start, decoded_text)
+        if end is not None:
+            return (candidate_start, end)
 
     return None
 
@@ -739,6 +745,38 @@ def _text_to_html(text: str) -> str:
     return "\n".join(html_parts) if html_parts else "<p></p>"
 
 
+_KEEP_STYLE_PROPS = frozenset(
+    {
+        "margin-left",
+        "margin-right",
+        "text-indent",
+        "padding-left",
+        "padding-right",
+    }
+)
+
+
+def _filter_style(style_val: str) -> str | None:
+    """Return filtered style string keeping only structural properties.
+
+    Returns ``None`` if no structural properties survive.
+    """
+    kept: list[str] = []
+    for prop in _KEEP_STYLE_PROPS:
+        pattern = rf"{re.escape(prop)}\s*:\s*([^;]+)"
+        match = re.search(pattern, style_val, re.IGNORECASE)
+        if match:
+            kept.append(f"{prop}:{match.group(1).strip()}")
+    return ";".join(kept) if kept else None
+
+
+def _should_remove_attr(attr_name: str) -> bool:
+    """Return whether an attribute should be stripped."""
+    if attr_name == "class":
+        return True
+    return attr_name.startswith("data-") and attr_name != "data-speaker"
+
+
 def _strip_heavy_attributes(html: str) -> str:
     """Strip heavy attributes to reduce HTML size for websocket transmission.
 
@@ -757,46 +795,53 @@ def _strip_heavy_attributes(html: str) -> str:
     if not html:
         return html
 
-    # Properties to preserve from inline styles
-    keep_props = {
-        "margin-left",
-        "margin-right",
-        "text-indent",
-        "padding-left",
-        "padding-right",
-    }
-
     tree = LexborHTMLParser(html)
 
-    # Process all elements
     for node in tree.css("*"):
-        attrs = node.attributes
-        attrs_to_remove = []
-
-        for attr_name in attrs:
-            if attr_name == "style":
-                # Parse and filter style, keeping only structural properties
-                style_val = attrs.get("style") or ""
-                kept_styles: list[str] = []
-                for prop in keep_props:
-                    # Match property: value; pattern
-                    pattern = rf"{re.escape(prop)}\s*:\s*([^;]+)"
-                    match = re.search(pattern, style_val, re.IGNORECASE)
-                    if match:
-                        kept_styles.append(f"{prop}:{match.group(1).strip()}")
-                if kept_styles:
-                    node.attrs["style"] = ";".join(kept_styles)
-                else:
-                    attrs_to_remove.append("style")
-            elif attr_name == "class":
-                attrs_to_remove.append("class")
-            elif attr_name.startswith("data-") and attr_name != "data-speaker":
-                attrs_to_remove.append(attr_name)
-
-        for attr_name in attrs_to_remove:
-            del node.attrs[attr_name]
+        _strip_node_attrs(node)
 
     return tree.html or html
+
+
+def _strip_node_attrs(node: Any) -> None:
+    """Strip heavy attributes from a single DOM node."""
+    attrs = node.attributes
+    attrs_to_remove: list[str] = []
+
+    for attr_name in attrs:
+        if attr_name == "style":
+            filtered = _filter_style(attrs.get("style") or "")
+            if filtered:
+                node.attrs["style"] = filtered
+            else:
+                attrs_to_remove.append("style")
+        elif _should_remove_attr(attr_name):
+            attrs_to_remove.append(attr_name)
+
+    for attr_name in attrs_to_remove:
+        del node.attrs[attr_name]
+
+
+def _is_empty_element(node: Any) -> bool:
+    """Return whether *node* is empty (whitespace-only, <br>-only, or no children).
+
+    Speaker marker divs (``data-speaker``) are never considered empty.
+    """
+    if node.attributes.get("data-speaker"):
+        return False
+    text = (node.text() or "").strip()
+    if text:
+        return False
+    children = list(node.iter())
+    return all(child.tag == "br" for child in children) if children else True
+
+
+def _is_sole_content_element(node: Any, tree: LexborHTMLParser) -> bool:
+    """Return whether *node* is the only content element inside ``<body>``."""
+    body = tree.css_first("body")
+    if not body:
+        return False
+    return all(n == node for n in body.css("p, div, span"))
 
 
 def _remove_empty_elements(html: str) -> str:
@@ -812,35 +857,16 @@ def _remove_empty_elements(html: str) -> str:
 
     tree = LexborHTMLParser(html)
 
-    # Keep removing until no more empty elements found
     changed = True
     while changed:
         changed = False
         for node in tree.css("p, div, span"):
-            # Preserve speaker marker divs (intentionally empty, styled via ::before)
-            if node.attributes.get("data-speaker"):
+            if not _is_empty_element(node):
                 continue
-
-            # Get text content (strips HTML)
-            text = (node.text() or "").strip()
-            if text:
-                continue  # Has real text, keep it
-
-            # Check if all children are just <br> tags
-            children = list(node.iter())
-            all_br = all(child.tag == "br" for child in children) if children else True
-
-            if all_br:
-                # Don't remove if it's the only content element in body
-                body = tree.css_first("body")
-                if body:
-                    content_els = [n for n in body.css("p, div, span") if n != node]
-                    if not content_els:
-                        continue  # Keep this one - it's the only content
-
-                # Only <br> tags or empty - remove this element
-                node.decompose()
-                changed = True
+            if _is_sole_content_element(node, tree):
+                continue
+            node.decompose()
+            changed = True
 
     return tree.html or html
 

@@ -89,6 +89,85 @@ async def _create_owned_workspace_with_document(
     return user.id, ws.id
 
 
+async def _create_workspace_with_metadata(
+    *,
+    owner_display_name: str | None = None,
+    activity_title: str = "Test Activity",
+    week_title: str = "Week 1",
+    course_code: str | None = None,
+    course_name: str = "Test Course",
+    workspace_title: str | None = None,
+    document_content: str = "<p>placeholder content</p>",
+) -> tuple[UUID, UUID]:
+    """Create a full hierarchy (user/course/week/activity/workspace) for metadata FTS.
+
+    Returns (user_id, workspace_id).
+    """
+    from promptgrimoire.db.acl import grant_permission
+    from promptgrimoire.db.activities import create_activity
+    from promptgrimoire.db.courses import create_course
+    from promptgrimoire.db.models import WorkspaceDocument
+    from promptgrimoire.db.users import create_user
+    from promptgrimoire.db.weeks import create_week
+    from promptgrimoire.db.workspaces import create_workspace
+
+    tag = uuid4().hex[:8]
+    user = await create_user(
+        email=f"meta-{tag}@test.local",
+        display_name=owner_display_name or f"Meta User {tag}",
+    )
+
+    course = await create_course(
+        code=course_code or f"M{tag[:6].upper()}",
+        name=course_name,
+        semester="2026-S1",
+    )
+    week = await create_week(
+        course_id=course.id,
+        week_number=1,
+        title=week_title,
+    )
+    activity = await create_activity(
+        week_id=week.id,
+        title=activity_title,
+    )
+
+    # Create the target workspace and place it under the activity/course
+    ws = await create_workspace()
+    await grant_permission(ws.id, user.id, "owner")
+
+    async with get_session() as session:
+        await session.execute(
+            text(
+                "UPDATE workspace "
+                "SET activity_id = :aid, course_id = NULL "
+                "WHERE id = :ws_id"
+            ),
+            {"aid": str(activity.id), "ws_id": str(ws.id)},
+        )
+
+    # Set workspace title if provided
+    if workspace_title is not None:
+        async with get_session() as session:
+            await session.execute(
+                text("UPDATE workspace SET title = :title WHERE id = :ws_id"),
+                {"title": workspace_title, "ws_id": str(ws.id)},
+            )
+
+    # Create document
+    async with get_session() as session:
+        doc = WorkspaceDocument(
+            workspace_id=ws.id,
+            type="source",
+            content=document_content,
+            source_type="html",
+        )
+        session.add(doc)
+        await session.flush()
+
+    return user.id, ws.id
+
+
 async def _search(
     query: str,
     user_id: UUID,
@@ -461,3 +540,173 @@ class TestFTSNullSearchText:
 
         results = await _search("nonexistent term", user_id)
         assert not any(h.row.workspace_id == ws_id for h in results)
+
+
+# ── Metadata search ──────────────────────────────────────────────────
+
+
+class TestMetadataSearchOwnerName:
+    """AC1.1: Search matches owner display name."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_owner_display_name(self) -> None:
+        """Searching owner name surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            owner_display_name="Bartholomew Greenfield",
+        )
+
+        results = await _search("Bartholomew", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchActivityTitle:
+    """AC2.1: Search matches activity title."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_activity_title(self) -> None:
+        """Searching activity title surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            activity_title="Contractual Obligations Analysis",
+        )
+
+        results = await _search("Contractual Obligations", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchWeekTitle:
+    """AC3.1: Search matches week title."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_week_title(self) -> None:
+        """Searching week title surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            week_title="Foundations of Tort",
+        )
+
+        results = await _search("Foundations Tort", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchCourseCode:
+    """AC4.1: Search matches course code."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_course_code(self) -> None:
+        """Searching course code surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_code="LAWS3100",
+        )
+
+        results = await _search("LAWS3100", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchCourseName:
+    """AC5.1: Search matches course name."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_course_name(self) -> None:
+        """Searching course name surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_name="Environmental Regulation",
+        )
+
+        results = await _search("Environmental Regulation", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchWorkspaceTitle:
+    """Search matches workspace title via metadata leg."""
+
+    @pytest.mark.asyncio
+    async def test_search_by_workspace_title(self) -> None:
+        """Searching workspace title surfaces the workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            workspace_title="Jurisprudential Analysis Portfolio",
+        )
+
+        results = await _search("Jurisprudential Analysis", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchSnippetHighlight:
+    """AC6.1: Metadata match snippet contains <mark> tags."""
+
+    @pytest.mark.asyncio
+    async def test_metadata_snippet_has_mark_tags(self) -> None:
+        """Metadata hit snippet wraps matched terms in <mark> tags."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_code="LAWS3100",
+            course_name="Environmental Regulation",
+        )
+
+        results = await _search("LAWS3100", user_id)
+
+        assert len(results) >= 1
+        hit = next(h for h in results if h.row.workspace_id == ws_id)
+        assert "<mark>" in hit.snippet
+        assert "</mark>" in hit.snippet
+
+
+class TestMetadataSearchOrphanWorkspace:
+    """AC9.1: Orphan workspace (no activity/week/course) still searchable."""
+
+    @pytest.mark.asyncio
+    async def test_orphan_workspace_found_by_title(self) -> None:
+        """Workspace with no activity still appears in search by title."""
+        tag = uuid4().hex[:8]
+        title = f"Orphan Jurisprudence {tag}"
+        user_id, ws_id = await _create_owned_workspace_with_document(
+            "<p>placeholder</p>",
+            title=title,
+        )
+
+        results = await _search(f"Orphan Jurisprudence {tag}", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchRegressionDocumentContent:
+    """AC7.1: Document content search still works alongside metadata."""
+
+    @pytest.mark.asyncio
+    async def test_document_content_still_searchable(self) -> None:
+        """Document content match still surfaces workspace."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            document_content="<p>promissory estoppel in contract law</p>",
+        )
+
+        results = await _search("promissory estoppel", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
+class TestMetadataSearchRegressionCRDTSearchText:
+    """AC7.2: CRDT search_text search still works alongside metadata."""
+
+    @pytest.mark.asyncio
+    async def test_crdt_search_text_still_searchable(self) -> None:
+        """CRDT search_text match still surfaces workspace."""
+        user_id, ws_id = await _create_owned_workspace_with_document(
+            "<p>Unrelated content here</p>",
+            search_text="quantum meruit restitution",
+        )
+
+        results = await _search("quantum meruit", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)

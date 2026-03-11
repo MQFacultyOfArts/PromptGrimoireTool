@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -81,12 +82,14 @@ def _retry_command(node_id: str) -> list[str]:
 
 def _run_retry_node(node_id: str) -> subprocess.CompletedProcess[str]:
     """Execute one isolated retry invocation."""
+    env = {**os.environ, "GRIMOIRE_TEST_HARNESS": "1"}
     return subprocess.run(
         _retry_command(node_id),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
+        env=env,
     )
 
 

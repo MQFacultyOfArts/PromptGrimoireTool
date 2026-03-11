@@ -50,8 +50,7 @@ def upload_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
 
     # Navigate to annotation and create workspace
     page.goto(f"{app_server}/annotation")
-    # TODO: add data-testid="create-workspace-btn" to the button (#109)
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     yield page
@@ -132,10 +131,11 @@ class TestDocumentUploadNoReload:
                 f"URL changed after paste: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_still_present"):
-            # The content form should survive the refreshable re-render
+        with subtests.test(msg="content_form_hidden_after_add"):
+            # With multi-document disabled (default), the content form
+            # hides after the first document is added.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).to_be_visible(timeout=5000)
+            expect(add_btn).not_to_be_visible(timeout=5000)
 
     def test_docx_upload_renders_without_url_change(
         self,
@@ -180,9 +180,11 @@ class TestDocumentUploadNoReload:
                 f"URL changed after upload: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_present_after_upload"):
+        with subtests.test(msg="content_form_hidden_after_upload"):
+            # With multi-document disabled (default), the content form
+            # hides after the first document is added.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).to_be_visible(timeout=5000)
+            expect(add_btn).not_to_be_visible(timeout=5000)
 
     def test_pdf_upload_renders_without_url_change(
         self,
@@ -225,6 +227,8 @@ class TestDocumentUploadNoReload:
                 f"URL changed after PDF upload: {url_before!r} -> {page.url!r}"
             )
 
-        with subtests.test(msg="content_form_present_after_pdf"):
+        with subtests.test(msg="content_form_hidden_after_pdf"):
+            # With multi-document disabled (default), the content form
+            # hides after the first document is added.
             add_btn = page.get_by_test_id("add-document-btn")
-            expect(add_btn).to_be_visible(timeout=5000)
+            expect(add_btn).not_to_be_visible(timeout=5000)

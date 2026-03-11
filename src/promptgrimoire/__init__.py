@@ -121,25 +121,31 @@ def main() -> None:
 
         from promptgrimoire.crdt.persistence import get_persistence_manager
         from promptgrimoire.db import close_db, get_engine, init_db, verify_schema
+        from promptgrimoire.deadline_worker import start_deadline_worker
         from promptgrimoire.search_worker import start_search_worker
 
         _search_worker_task: asyncio.Task[None] | None = None
+        _deadline_worker_task: asyncio.Task[None] | None = None
 
         @app.on_startup
         async def startup() -> None:
-            nonlocal _search_worker_task
+            nonlocal _search_worker_task, _deadline_worker_task
             await init_db()
             await verify_schema(get_engine())
             _search_worker_task = asyncio.create_task(start_search_worker())
+            _deadline_worker_task = asyncio.create_task(start_deadline_worker())
             print("Database connected")
 
         @app.on_shutdown
         async def shutdown() -> None:
-            nonlocal _search_worker_task
-            # Cancel search worker before shutdown
+            nonlocal _search_worker_task, _deadline_worker_task
+            # Cancel background workers before shutdown
             if _search_worker_task is not None:
                 _search_worker_task.cancel()
                 _search_worker_task = None
+            if _deadline_worker_task is not None:
+                _deadline_worker_task.cancel()
+                _deadline_worker_task = None
             # Persist all dirty CRDT documents before closing DB
             await get_persistence_manager().persist_all_dirty_workspaces()
             await close_db()

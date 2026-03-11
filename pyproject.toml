@@ -120,6 +120,9 @@ ignore = [
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
 ]
+"src/promptgrimoire/deadline_worker.py" = [
+    "PLC0415",  # Deferred import to avoid circular dependency with db/wargames
+]
 "src/promptgrimoire/pages/annotation/workspace.py" = [
     "S101",     # Type-narrowing asserts for permission validation and state guards
 ]

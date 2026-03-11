@@ -751,3 +751,17 @@ async def delete_team(team_id: UUID) -> bool:
         await session.delete(team)
         await session.flush()
         return True
+
+
+async def on_deadline_fired(activity_id: UUID) -> None:
+    """Handle an expired wargame deadline.
+
+    Locks all drafting teams for the activity and triggers preprocessing.
+    This is a stub — full implementation arrives in Phase 6.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity whose deadline has expired.
+    """
+    raise NotImplementedError("on_deadline_fired: Phase 6 stub")

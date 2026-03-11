@@ -42,9 +42,10 @@ Use these commands for verification and execution:
 uv run grimoire test changed           # Fast unit/integration tests based on git diff
 uv run grimoire test all                # All tests EXCEPT E2E
 uv run grimoire test all -k "pattern"   # Filter tests by keyword expression
-uv run grimoire e2e run                 # E2E tests (serial, starts server)
+uv run grimoire e2e run                 # E2E tests (parallel by default, per-file isolation)
 uv run grimoire e2e run -k "pattern"    # E2E tests filtered by keyword
-uv run grimoire e2e run --parallel      # E2E tests in parallel (xdist)
+uv run grimoire e2e run --serial        # E2E tests in serial mode (single server)
+uv run grimoire e2e all                 # Run unit tests + Playwright E2E + NiceGUI lanes
 uv run grimoire e2e changed             # Smart selection E2E tests
 uv run grimoire e2e cards               # Card-specific E2E tests (@pytest.mark.cards)
 

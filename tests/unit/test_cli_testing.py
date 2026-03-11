@@ -10,7 +10,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from typer.testing import CliRunner
@@ -256,34 +255,12 @@ class TestHandleRunningPhase:
 # _xdist_worker_count
 # ---------------------------------------------------------------------------
 class TestXdistWorkerCount:
-    """Calculate xdist worker count."""
+    """Xdist worker count returns 'auto'."""
 
-    def test_returns_string(self) -> None:
+    def test_returns_auto(self) -> None:
         from promptgrimoire.cli.testing import _xdist_worker_count
 
-        result = _xdist_worker_count()
-        assert isinstance(result, str)
-        assert int(result) > 0
-
-    def test_caps_at_16(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from promptgrimoire.cli.testing import _xdist_worker_count
-
-        monkeypatch.setattr(os, "cpu_count", lambda: 64)
-        assert int(_xdist_worker_count()) <= 16
-
-    def test_halves_cpu_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from promptgrimoire.cli.testing import _xdist_worker_count
-
-        monkeypatch.setattr(os, "cpu_count", lambda: 8)
-        assert _xdist_worker_count() == "4"
-
-    def test_fallback_when_cpu_count_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from promptgrimoire.cli.testing import _xdist_worker_count
-
-        monkeypatch.setattr(os, "cpu_count", lambda: None)
-        assert _xdist_worker_count() == "2"  # 4 // 2
+        assert _xdist_worker_count() == "auto"
 
 
 # ---------------------------------------------------------------------------

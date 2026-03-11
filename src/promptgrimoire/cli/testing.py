@@ -258,13 +258,15 @@ def _stream_with_progress(
 
 
 def _xdist_worker_count() -> str:
-    """Calculate reliable xdist worker count.
+    """Return xdist worker count string.
 
-    Caps at half CPU count (max 16).  Higher counts cause intermittent
-    asyncpg ``ConnectionResetError`` under NullPool connection churn.
+    Returns ``"auto"`` to let pytest-xdist use all available CPUs.
+    The previous cap at ``cpu_count // 2`` (max 16) was a workaround
+    for ``test_db_cloning.py`` calling ``pg_terminate_backend()`` on the
+    shared test database.  That root cause is now fixed (private
+    clone-source DB provisioned by ``_pre_test_db_cleanup()``).
     """
-    cpus = os.cpu_count() or 4
-    return str(min(cpus // 2, 16))
+    return "auto"
 
 
 def _run_pytest(

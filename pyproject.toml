@@ -22,6 +22,7 @@ dependencies = [
     "pycrdt>=0.10",
     "stytch>=11.0",
     "pydantic>=2.10",
+    "pydantic-ai>=1.67.0",
     "pydantic-settings>=2.7",
     "python-dotenv>=1.0",  # Required by pydantic-settings for .env file reading
     "asyncpg>=0.30",

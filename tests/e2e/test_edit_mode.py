@@ -167,6 +167,7 @@ class TestEditMode:
         6. Verify save notification and document refresh
         """
         page = edit_ready_page
+        url_before = page.url
 
         with subtests.test(msg="open_manage_dialog"):
             manage_btn = page.get_by_test_id("manage-documents-btn")
@@ -215,6 +216,12 @@ class TestEditMode:
             wait_for_text_walker(page, timeout=15000)
             doc = page.get_by_test_id("doc-container")
             expect(doc).to_contain_text("Modified content via edit mode", timeout=10000)
+
+        with subtests.test(msg="url_unchanged_after_edit_save"):
+            # AC4.2: edit-save must not change the URL
+            assert page.url == url_before, (
+                f"URL changed after edit-save: {url_before!r} -> {page.url!r}"
+            )
 
     def test_edit_cancel_preserves_content(
         self,

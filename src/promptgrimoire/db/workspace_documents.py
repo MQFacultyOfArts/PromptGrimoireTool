@@ -5,6 +5,7 @@ Provides async database functions for document management within workspaces.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func
@@ -12,7 +13,8 @@ from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import ProtectedDocumentError
-from promptgrimoire.db.models import ACLEntry, WorkspaceDocument
+from promptgrimoire.db.models import ACLEntry, Workspace, WorkspaceDocument
+from promptgrimoire.input_pipeline import build_paragraph_map_for_json
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -144,6 +146,61 @@ async def update_document_paragraph_settings(
         doc.auto_number_paragraphs = auto_number_paragraphs
         doc.paragraph_map = paragraph_map
         session.add(doc)
+
+
+async def update_document_content(
+    document_id: UUID,
+    content: str,
+    workspace_id: UUID,
+) -> WorkspaceDocument:
+    """Replace a document's HTML content and rebuild its paragraph map.
+
+    Sets ``search_dirty=True`` on the parent workspace so the FTS
+    background worker re-indexes the updated text.
+
+    Args:
+        document_id: The document UUID.
+        content: New HTML content.
+        workspace_id: The parent workspace UUID (for search_dirty flag).
+
+    Returns:
+        The updated WorkspaceDocument.
+
+    Raises:
+        ValueError: If the document is not found.
+        ValueError: If workspace_id does not match the document's workspace.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(WorkspaceDocument).where(WorkspaceDocument.id == document_id)
+        )
+        doc = result.first()
+        if doc is None:
+            msg = f"WorkspaceDocument {document_id} not found"
+            raise ValueError(msg)
+
+        if doc.workspace_id != workspace_id:
+            msg = (
+                f"WorkspaceDocument {document_id} belongs to workspace "
+                f"{doc.workspace_id}, not {workspace_id}"
+            )
+            raise ValueError(msg)
+
+        doc.content = content
+        doc.paragraph_map = build_paragraph_map_for_json(
+            content, auto_number=doc.auto_number_paragraphs
+        )
+        session.add(doc)
+
+        workspace = await session.get(Workspace, workspace_id)
+        if workspace:
+            workspace.search_dirty = True
+            workspace.updated_at = datetime.now(UTC)
+            session.add(workspace)
+
+        await session.flush()
+        await session.refresh(doc)
+        return doc
 
 
 async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:

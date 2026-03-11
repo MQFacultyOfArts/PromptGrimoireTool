@@ -21,7 +21,7 @@ from typing import Any
 
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.input_pipeline.html_input import (
+from promptgrimoire.input_pipeline.text_extraction import (
     _BLOCK_TAGS,
     _STRIP_TAGS,
     _WHITESPACE_RUN,

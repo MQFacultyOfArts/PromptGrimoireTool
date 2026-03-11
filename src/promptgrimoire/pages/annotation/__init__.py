@@ -8,27 +8,33 @@ This page provides the new workspace-based annotation flow:
 
 Route: /annotation
 
-Package structure (20 authored modules):
-    __init__             Core types, globals, route definition
-    broadcast            Multi-client sync and remote presence
-    cards                Annotation card UI components
-    content_form         Document upload/paste form
-    css                  CSS styles and tag toolbar
-    document             Document rendering and selection wiring
-    header               Workspace header, placement chip, sharing, copy protection
-    highlights           Highlight CRUD and rendering
-    organise             Organise tab (tag columns, drag-and-drop)
-    pdf_export           PDF export orchestration
-    placement            Placement dialog (course/activity assignment)
-    respond              Respond tab (reference panel, editor)
-    sharing              Sharing controls and per-user sharing dialog
-    tag_import           Tag import from other activities
-    tag_management       Tag/group management dialog orchestrator
-    tag_management_rows  Tag/group row rendering and deletion
-    tag_management_save  Tag/group save-on-blur handlers
-    tag_quick_create     Quick tag creation dialog and colour picker
-    tags                 Tag definitions and colour mapping
-    workspace            Workspace tabs, view orchestration, organise drag
+Package structure (26 authored modules):
+    __init__                Core types, globals, route definition
+    broadcast               Multi-client sync and remote presence
+    cards                   Annotation card UI components
+    content_form            Document upload/paste form (orchestration)
+    paste_handler           Paste submission processing
+    paste_script            Client-side paste interception JavaScript
+    upload_handler          File upload detection and processing
+    css                     CSS styles and tag toolbar
+    document                Document rendering and selection wiring
+    document_management     Manage Documents dialog (list, edit, delete)
+    header                  Workspace header, placement chip, sharing, copy protection
+    highlights              Highlight CRUD and rendering
+    organise                Organise tab (tag columns, drag-and-drop)
+    pdf_export              PDF export orchestration
+    placement               Placement dialog (course/activity assignment)
+    respond                 Respond tab (reference panel, editor)
+    sharing                 Sharing controls and per-user sharing dialog
+    tag_import              Tag import from other activities
+    tag_management          Tag/group management dialog orchestrator
+    tag_management_rows     Tag/group row rendering and deletion
+    tag_management_save     Tag/group save-on-blur handlers
+    tag_quick_create        Quick tag creation dialog and colour picker
+    tags                    Tag definitions and colour mapping
+    word_count_badge        Word count badge UI component
+    word_count_enforcement  Export-time word count violation check
+    workspace               Workspace tabs, view orchestration, organise drag
 """
 
 from __future__ import annotations
@@ -263,6 +269,10 @@ class PageState:
     refresh_respond_references: Any | None = None  # Callable[[], None]
     # Async callable to sync Milkdown markdown to CRDT Text field (Phase 7)
     sync_respond_markdown: Any | None = None  # Callable[[], Awaitable[None]]
+    # Callable to refresh the document container after edit-mode save
+    refresh_documents: Any | None = None  # Callable[[], object]
+    # Page-level Quasar footer for tag toolbar — hidden on non-Annotate tabs
+    footer: Any | None = None
 
     def __post_init__(self) -> None:
         """Derive capability booleans from effective_permission."""

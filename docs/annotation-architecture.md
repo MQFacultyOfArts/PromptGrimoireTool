@@ -1,8 +1,8 @@
 # Annotation Page Architecture
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-11*
 
-The annotation page (`pages/annotation/`) is a 25-module package split from a monolith.
+The annotation page (`pages/annotation/`) is a 26-module package split from a monolith.
 
 ## Layout
 
@@ -76,6 +76,19 @@ Annotation cards (`cards.py`) use a two-tier layout:
 `PageState.expanded_cards: set[str]` tracks which highlight IDs are currently expanded. This set survives annotation refreshes (card rebuilds) so expansion state is preserved across CRDT updates and broadcast refreshes.
 
 `annotation-card-sync.js` positions cards absolutely based on their highlight's character offset in the document. It caches each card's `offsetHeight` into `data-cached-height` so that collapsed cards (which have `offsetHeight=0` when hidden) use their last-known height for layout calculations. Fallback height is 80px when no cache exists.
+
+## Content Form Architecture (File Upload / Paste)
+
+The content form is split across four modules:
+
+- `content_form.py` -- Orchestration: renders the upload/paste form, delegates to handlers
+- `paste_handler.py` -- Paste submission processing: runs content through the input pipeline, persists as WorkspaceDocument
+- `paste_script.py` -- Client-side JavaScript for paste interception (clipboard event handling, QEditor integration)
+- `upload_handler.py` -- File upload detection and processing: content type inference from extension, DOCX/PDF conversion, paragraph numbering detection
+
+`PageState` carries two fields added for this feature:
+- `refresh_documents: Callable | None` -- callback to refresh the document container after edit-mode save
+- `footer: Any | None` -- page-level Quasar footer for tag toolbar (hidden on non-Annotate tabs)
 
 ## Guard Tests
 

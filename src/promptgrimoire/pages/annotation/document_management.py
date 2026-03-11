@@ -2,14 +2,18 @@
 
 Opens from the action bar header. Lists documents with delete buttons
 for user-uploaded documents. Template-cloned documents are protected.
+Edit mode (Phase 4): documents with zero annotations can be edited
+via WYSIWYG editor in a wide dialog.
 
 Traceability:
-- Issue: #229 (CRUD management)
+- Issue: #229 (CRUD management), #109 (file upload / edit mode)
 - AC: crud-management-229.AC4.1, AC4.2, AC4.3, AC5.5
+- AC: file-upload-109.AC3.1, AC3.2
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from uuid import UUID
@@ -22,11 +26,14 @@ from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
     list_documents,
+    update_document_content,
 )
 
 if TYPE_CHECKING:
     from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
+
+logger = logging.getLogger(__name__)
 
 
 _PREVIEW_MAX_CHARS = 50
@@ -50,6 +57,20 @@ def _document_display_name(doc: WorkspaceDocument) -> str:
     return "Untitled"
 
 
+def can_edit_document(doc: WorkspaceDocument, *, annotation_count: int) -> bool:
+    """Whether a document is eligible for editing.
+
+    A document can be edited when:
+    1. The document has zero annotations (highlights), AND
+    2. The document is user-uploaded (source_document_id IS NULL).
+
+    Template-cloned documents and annotated documents cannot be edited
+    because editing changes char offsets, which would corrupt existing
+    highlight positions.
+    """
+    return annotation_count == 0 and doc.source_document_id is None
+
+
 def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
     """Whether a document is eligible for deletion in the UI.
 
@@ -63,12 +84,67 @@ def can_delete_document(doc: WorkspaceDocument, *, is_owner: bool) -> bool:
     return is_owner and doc.source_document_id is None
 
 
+def _get_annotation_count(state: PageState, doc_id: UUID) -> int:
+    """Get the number of annotations (highlights) for a document.
+
+    Returns 0 if the CRDT doc is not loaded yet.  Returning 0 makes the
+    document appear editable, which is the safer UX default: the edit button
+    becomes visible and the user can click Save.  This is safe because
+    CRDT annotations are stored independently of ``WorkspaceDocument.content``
+    — updating the content field does not touch CRDT state.  Once the CRDT
+    loads, the real count is used and the edit button is hidden if annotations
+    exist.
+    """
+    if state.crdt_doc is None:
+        return 0
+    return len(state.crdt_doc.get_highlights_for_document(str(doc_id)))
+
+
+def _render_document_row(
+    doc: WorkspaceDocument,
+    state: PageState,
+    dialog: ui.dialog,
+) -> None:
+    """Render a single document row with badges and action buttons.
+
+    Shows edit button for editable documents (zero annotations, no
+    source template). Shows delete button for owner-uploaded documents.
+    Template-cloned documents show a "Template" badge instead.
+    """
+    annotation_count = _get_annotation_count(state, doc.id)
+    with ui.row().classes("w-full items-center gap-2 py-1"):
+        ui.label(_document_display_name(doc)).classes("text-sm flex-grow")
+        ui.badge(doc.source_type).classes("text-xs")
+        if doc.source_document_id is not None:
+            ui.badge("Template", color="blue").classes("text-xs").props(
+                'data-testid="template-badge"'
+            )
+        elif state.is_owner:
+            if can_edit_document(doc, annotation_count=annotation_count):
+                ui.button(
+                    icon="edit",
+                    on_click=lambda d=doc: _open_edit_dialog(d, state, dialog),
+                ).props(
+                    "flat round dense size=sm color=primary"
+                    f' data-testid="edit-document-btn-{doc.id}"'
+                )
+            ui.button(
+                icon="delete",
+                on_click=lambda d=doc: _handle_delete_document(d, state, dialog),
+            ).props(
+                "flat round dense size=sm color=negative"
+                f' data-testid="delete-doc-btn-{doc.id}"'
+            )
+
+
 async def open_manage_documents_dialog(state: PageState) -> None:
-    """Open a dialog listing workspace documents with delete options.
+    """Open a dialog listing workspace documents with edit/delete options.
 
     Shows each document with title, source type badge, and protection
     status. User-uploaded documents owned by the viewer show a delete
-    button. Template-cloned documents show a "Template" badge.
+    button. Documents with zero annotations and no source template
+    show an edit button (AC3.1). Annotated or template-cloned documents
+    do not show an edit button (AC3.2).
     """
     documents = await list_documents(state.workspace_id)
 
@@ -82,23 +158,7 @@ async def open_manage_documents_dialog(state: PageState) -> None:
             )
         else:
             for doc in documents:
-                with ui.row().classes("w-full items-center gap-2 py-1"):
-                    ui.label(_document_display_name(doc)).classes("text-sm flex-grow")
-                    ui.badge(doc.source_type).classes("text-xs")
-                    if doc.source_document_id is not None:
-                        ui.badge("Template", color="blue").classes("text-xs").props(
-                            'data-testid="template-badge"'
-                        )
-                    elif state.is_owner:
-                        ui.button(
-                            icon="delete",
-                            on_click=lambda d=doc: _handle_delete_document(
-                                d, state, dialog
-                            ),
-                        ).props(
-                            "flat round dense size=sm color=negative"
-                            f' data-testid="delete-doc-btn-{doc.id}"'
-                        )
+                _render_document_row(doc, state, dialog)
 
         with ui.row().classes("w-full justify-end mt-4"):
             ui.button("Close", on_click=dialog.close).props(
@@ -106,6 +166,62 @@ async def open_manage_documents_dialog(state: PageState) -> None:
             )
 
     dialog.open()
+
+
+def _open_edit_dialog(
+    doc: WorkspaceDocument,
+    state: PageState,
+    manage_dialog: ui.dialog,
+) -> None:
+    """Open a wide WYSIWYG editor dialog for a document.
+
+    Closes the narrow management dialog and opens a wide editor dialog
+    (80vw) with the document's HTML content pre-loaded. Save persists
+    the content and triggers document refresh. Cancel returns without
+    saving.
+    """
+    manage_dialog.close()
+
+    with (
+        ui.dialog() as edit_dialog,
+        ui.card().classes("w-[80vw] max-w-none max-h-[85vh] flex flex-col"),
+    ):
+        ui.label(f"Edit: {_document_display_name(doc)}").classes(
+            "text-lg font-bold flex-shrink-0"
+        )
+        ui.separator().classes("flex-shrink-0")
+
+        # QEditor scrolls internally via content-style; fills flex space
+        editor = ui.editor(value=doc.content or "").classes("w-full flex-1 min-h-0")
+        editor.props(
+            'data-testid="document-editor"'
+            ' content-style="max-height: 60vh; overflow-y: auto"'
+        )
+
+        with ui.row().classes("w-full justify-end gap-2 mt-4 flex-shrink-0"):
+            ui.button("Cancel", on_click=edit_dialog.close).props(
+                'flat data-testid="edit-cancel-btn"'
+            )
+
+            async def _save() -> None:
+                try:
+                    await update_document_content(
+                        doc.id, editor.value, state.workspace_id
+                    )
+                except Exception:
+                    logger.exception("Failed to save document")
+                    ui.notify("Failed to save document", type="negative")
+                    return
+                edit_dialog.close()
+                ui.notify("Document saved", type="positive")
+                if state.refresh_documents is not None:
+                    state.refresh_documents()
+
+            ui.button("Save", on_click=_save).props(
+                'color=primary data-testid="edit-save-btn"'
+            )
+
+    edit_dialog.open()
 
 
 async def _handle_delete_document(

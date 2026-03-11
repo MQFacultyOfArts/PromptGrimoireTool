@@ -39,7 +39,8 @@ repos:
         # tests/: test code is not subject to complexity gates.
         # cli_loadtest.py, roleplay.py: pre-existing complexity, tracked in #253.
         # tag_management.py, tag_management_rows.py: pre-existing complexity.
-        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$|tag_management\.py$|tag_management_rows\.py$)'
+        # html_input.py: pre-existing complexity, addressed in Phase 5 (#109).
+        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$|tag_management\.py$|tag_management_rows\.py$|html_input\.py$)'
 
   # Prune orphaned .pyc files (source deleted, stale bytecode remains)
   - repo: local

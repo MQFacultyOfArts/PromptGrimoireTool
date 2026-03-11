@@ -527,6 +527,10 @@ def _make_tab_change_handler(
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
+        # Tag toolbar footer is only relevant on the Annotate tab
+        if state.footer is not None:
+            state.footer.set_visibility(tab_name == "Annotate")
+
         if prev_tab == "Respond":
             await _sync_respond_on_leave(state)
 
@@ -546,6 +550,99 @@ def _make_tab_change_handler(
             state.initialised_tabs.add(tab_name)
 
     return _on_tab_change
+
+
+def _render_content_form_outside_refreshable(
+    state: PageState,
+    workspace_id: UUID,
+    *,
+    has_documents: list[bool],
+    on_document_added: Callable[[], object],
+) -> ui.element | None:
+    """Render the content form outside the refreshable boundary.
+
+    Placement depends on whether documents already exist:
+    - With documents: collapsible "Add Document" (gated by multi-document flag)
+    - Without documents: bare content form for first upload
+
+    Returns the wrapper element so the caller can hide it after the first
+    document is added (when multi-document is disabled).
+    """
+    if not state.can_upload:
+        return None
+
+    if has_documents and has_documents[0]:
+        if get_settings().features.enable_multi_document:
+            with ui.expansion(
+                "Add Document",
+                icon="note_add",
+            ).classes("w-full mt-4") as wrapper:
+                _render_add_content_form(workspace_id, on_document_added)
+            return wrapper
+        return None
+    else:
+        with ui.column().classes("w-full") as wrapper:
+            _render_add_content_form(workspace_id, on_document_added)
+        return wrapper
+
+
+async def _render_document_container(
+    state: PageState,
+    doc: Any,
+    crdt_doc: Any,
+    *,
+    on_add_tag: Any | None,
+    on_manage_tags: Any,
+    footer: Any | None,
+) -> None:
+    """Render a document with highlights and initialise the word count badge."""
+    logger.debug("[RENDER] rendering document with highlights")
+    await _render_document_with_highlights(
+        state,
+        doc,
+        crdt_doc,
+        on_add_click=on_add_tag,
+        on_manage_click=on_manage_tags,
+        footer=footer,
+    )
+    logger.debug("[RENDER] document rendered")
+
+    # Initialise word count badge from existing CRDT content
+    if state.word_count_badge is not None:
+        initial_md = str(crdt_doc.response_draft_markdown)
+        initial_count = word_count(initial_md)
+        badge_state = format_word_count_badge(
+            initial_count, state.word_minimum, state.word_limit
+        )
+        state.word_count_badge.set_text(badge_state.text)
+        state.word_count_badge.classes(replace=badge_state.css_classes)
+
+
+def _render_empty_template_toolbar(
+    state: PageState,
+    *,
+    on_add_tag: Any | None,
+    on_manage_tags: Any,
+    can_create_tags: bool,
+    footer: Any | None,
+) -> None:
+    """Render tag toolbar for empty template workspaces.
+
+    Allows tag management before any content is uploaded.  Tag buttons
+    are inert (``_add_highlight`` guards on ``document_id is None``).
+    """
+    logger.debug("[RENDER] no documents, showing toolbar + add content form")
+
+    async def handle_tag_click(tag_key: str) -> None:
+        await _add_highlight(state, tag_key)
+
+    state.toolbar_container = _build_tag_toolbar(
+        state.tag_info_list or [],
+        handle_tag_click,
+        on_add_click=(on_add_tag if can_create_tags else None),
+        on_manage_click=on_manage_tags,
+        footer=footer,
+    )
 
 
 async def _build_tab_panels(
@@ -580,65 +677,105 @@ async def _build_tab_panels(
             state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
             logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
 
-            documents = await list_documents(workspace_id)
-            logger.debug("[RENDER] documents loaded: count=%d", len(documents))
+            # WARNING — @ui.refreshable destroys the entire subtree and
+            # recreates it on .refresh().  The document renderer is complex:
+            # JavaScript init (selection handlers, scroll sync, highlight CSS
+            # injection), CRDT state connections, and char span rendering.
+            # The NiceGUI 3.7.x regression was caused by a destroy+recreate
+            # cycle that wiped char spans — @ui.refreshable does exactly this.
+            #
+            # If after refresh you see char spans disappearing, JS init
+            # failing, CRDT connections dropping, or selection handlers
+            # broken — look here first.  Fallback: remove @ui.refreshable,
+            # hold a reference to a container div, call container.clear()
+            # then _render_document_with_highlights() into it.
+            # Side-channel from document_container() to
+            # _render_content_form_outside_refreshable(): populated once
+            # after the first await document_container() call so the content
+            # form can branch on has_documents[0] without a second DB query.
+            has_documents: list[bool] = []
 
-            if documents:
-                # Render first document with highlight support
-                doc = documents[0]
-                logger.debug("[RENDER] rendering document with highlights")
-                await _render_document_with_highlights(
-                    state,
-                    doc,
-                    crdt_doc,
-                    on_add_click=(on_add_tag if can_create_tags else None),
-                    on_manage_click=on_manage_tags,
-                    footer=footer,
-                )
-                logger.debug("[RENDER] document rendered")
+            @ui.refreshable
+            async def document_container() -> None:
+                """Load documents and render the first one, or show empty state.
 
-                # Initialise word count badge from existing CRDT content
-                if state.word_count_badge is not None:
-                    initial_md = str(crdt_doc.response_draft_markdown)
-                    initial_count = word_count(initial_md)
-                    badge_state = format_word_count_badge(
-                        initial_count, state.word_minimum, state.word_limit
+                Wrapped in ``@ui.refreshable`` so that adding a document via
+                upload or paste can re-render in-place without a full page
+                reload (file-upload-109.AC4.1).
+                """
+                # The footer lives outside the refreshable boundary (it's a
+                # page-level Quasar element), so @ui.refreshable won't clear
+                # it automatically.  Clear it here to prevent duplicate tag
+                # toolbars on refresh.
+                if footer is not None:
+                    footer.clear()
+
+                documents = await list_documents(workspace_id)
+                has_documents.clear()
+                has_documents.append(bool(documents))
+                logger.debug("[RENDER] documents loaded: count=%d", len(documents))
+
+                if documents:
+                    await _render_document_container(
+                        state,
+                        documents[0],
+                        crdt_doc,
+                        on_add_tag=on_add_tag if can_create_tags else None,
+                        on_manage_tags=on_manage_tags,
+                        footer=footer,
                     )
-                    state.word_count_badge.set_text(badge_state.text)
-                    state.word_count_badge.classes(replace=badge_state.css_classes)
+                elif state.can_upload:
+                    _render_empty_template_toolbar(
+                        state,
+                        on_add_tag=on_add_tag if can_create_tags else None,
+                        on_manage_tags=on_manage_tags,
+                        can_create_tags=can_create_tags,
+                        footer=footer,
+                    )
+                else:
+                    # Read-only empty state for viewers/peers
+                    ui.label("This workspace has no documents yet.").classes(
+                        "text-gray-500 italic mt-4"
+                    )
 
-                # "Add Document" button for editors/owners with
-                # existing documents (gated by multi-document flag)
-                if state.can_upload and get_settings().features.enable_multi_document:
-                    with ui.expansion(
-                        "Add Document",
-                        icon="note_add",
-                    ).classes("w-full mt-4"):
-                        _render_add_content_form(workspace_id)
-            elif state.can_upload:
-                # Tag toolbar for empty template — allows tag management
-                # before any content is uploaded.  Tag buttons are inert
-                # (_add_highlight guards on document_id is None).
-                logger.debug(
-                    "[RENDER] no documents, showing toolbar + add content form"
-                )
+            await document_container()
 
-                async def handle_tag_click(tag_key: str) -> None:
-                    await _add_highlight(state, tag_key)
+            # Expose document refresh on PageState so the Manage Documents
+            # dialog can re-render documents after edit-mode save.
+            state.refresh_documents = document_container.refresh
 
-                state.toolbar_container = _build_tag_toolbar(
-                    state.tag_info_list or [],
-                    handle_tag_click,
-                    on_add_click=(on_add_tag if can_create_tags else None),
-                    on_manage_click=on_manage_tags,
-                    footer=footer,
-                )
-                _render_add_content_form(workspace_id)
-            else:
-                # Read-only empty state for viewers/peers
-                ui.label("This workspace has no documents yet.").classes(
-                    "text-gray-500 italic mt-4"
-                )
+            # Late-bound callback: content_form.py captures this closure,
+            # and we swap in a smarter implementation after the wrapper
+            # element is created (so we can hide it on first add).
+            _document_added_impl: list[Callable[[], object]] = [
+                document_container.refresh
+            ]
+
+            def _on_document_added() -> object:
+                return _document_added_impl[0]()
+
+            # Content form lives OUTSIDE the refreshable boundary so it
+            # is not destroyed when document_container.refresh() is called.
+            content_form_wrapper = _render_content_form_outside_refreshable(
+                state,
+                workspace_id,
+                has_documents=has_documents,
+                on_document_added=_on_document_added,
+            )
+
+            # When multi-document is disabled, hide the content form after
+            # the first document is added.  The wrapper persists because
+            # it's outside the refreshable; we hide it via the callback.
+            if (
+                content_form_wrapper is not None
+                and not get_settings().features.enable_multi_document
+            ):
+
+                def _hide_and_refresh() -> object:
+                    content_form_wrapper.set_visibility(False)
+                    return document_container.refresh()
+
+                _document_added_impl[0] = _hide_and_refresh
 
         with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel
@@ -702,6 +839,9 @@ async def _render_workspace_view(
         ui.tab("Annotate").props('data-testid="tab-annotate"')
         ui.tab("Organise").props('data-testid="tab-organise"')
         ui.tab("Respond").props('data-testid="tab-respond"')
+
+    # Store footer on state so the tab change handler can toggle visibility
+    state.footer = footer
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)

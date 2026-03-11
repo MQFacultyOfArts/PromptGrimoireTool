@@ -38,6 +38,9 @@ dependencies = [
     "typer>=0.15.0",
     "cryptography>=46.0.5",
     "python-slugify>=8.0.4",
+    "pymupdf4llm>=0.3.4",
+    "pymupdf-layout>=1.27.1",
+    "mammoth>=1.11.0",
 ]
 
 [project.scripts]
@@ -107,6 +110,9 @@ ignore = [
 "src/promptgrimoire/auth/factory.py" = [
     "PLC0415",  # Intentional lazy imports for conditional client loading
 ]
+"src/promptgrimoire/input_pipeline/html_input.py" = [
+    "PLC0415",  # Late import to break circular dependency with export.platforms
+]
 "src/promptgrimoire/__init__.py" = [
     "PLC0415",  # Late imports to avoid circular dependencies at startup
 ]
@@ -116,7 +122,7 @@ ignore = [
 "src/promptgrimoire/pages/annotation/workspace.py" = [
     "S101",     # Type-narrowing asserts for permission validation and state guards
 ]
-"src/promptgrimoire/pages/annotation/content_form.py" = [
+"src/promptgrimoire/pages/annotation/paste_script.py" = [
     "S608",     # False positive: f-string constructs HTML/JS, not SQL
 ]
 "src/promptgrimoire/pages/roleplay.py" = [

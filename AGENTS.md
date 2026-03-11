@@ -5,7 +5,7 @@
 ## Project Context
 PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, annotation, and sharing in educational contexts.
 
-- **Tech Stack**: Python 3.14, NiceGUI, SQLModel (Pydantic + SQLAlchemy), PostgreSQL, pycrdt (real-time collaboration), Stytch (auth).
+- **Tech Stack**: Python 3.14, NiceGUI, SQLModel (Pydantic + SQLAlchemy), PostgreSQL, pycrdt (real-time collaboration), Stytch (auth), mammoth (DOCX conversion), pymupdf4llm (PDF extraction).
 - **Terminology**: Use "Unit" instead of "Course" in all user-facing UI text (Australian university standard). Code identifiers remain `course_id`, `/courses/`, etc.
 
 ## Core Rules & Guardrails
@@ -75,6 +75,7 @@ Before modifying core systems, reference the detailed documentation in the `docs
 - Wargame Schema Design: `docs/design-plans/2026-03-06-wargame-schema-294.md`
 - Collaboration (CRDT): `docs/ARCHITECTURE.md`
 - Web UI & Routing: `docs/annotation-architecture.md`
+- Input Pipeline (HTML/DOCX/PDF): `docs/input-pipeline.md`
 - Export Pipeline: `docs/export.md`
 - Testing: `docs/testing.md`
 

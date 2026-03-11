@@ -242,7 +242,11 @@ class TestOrganiseTabSync:
         )
         expect(jurisdiction_col).to_be_visible(timeout=10000)
 
-        # 6. Verify the group change persisted by reopening the management
+        # 6. Switch back to Annotate tab (tag-settings-btn is in the tag
+        # toolbar which only renders on the Annotate tab)
+        page_b.get_by_test_id("tab-annotate").click()
+
+        # Verify the group change persisted by reopening the management
         # dialog on client B and checking the group selector value
         settings_btn_b = page_b.get_by_test_id("tag-settings-btn")
         settings_btn_b.scroll_into_view_if_needed()

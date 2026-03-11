@@ -25,6 +25,74 @@ from promptgrimoire.pages.annotation.highlights import (
 )
 
 
+async def _handle_selection(state: PageState, e: Any) -> None:
+    """Handle selection event from JavaScript."""
+    state.selection_start = e.args.get("start_char")
+    state.selection_end = e.args.get("end_char")
+    if state.highlight_menu:
+        state.highlight_menu.set_visibility(True)
+    if state.broadcast_selection:
+        await state.broadcast_selection(state.selection_start, state.selection_end)
+
+
+async def _handle_selection_cleared(state: PageState, _e: Any) -> None:
+    """Handle selection cleared event."""
+    state.selection_start = None
+    state.selection_end = None
+    if state.highlight_menu:
+        state.highlight_menu.set_visibility(False)
+    if state.broadcast_selection:
+        await state.broadcast_selection(None, None)
+
+
+async def _handle_cursor_move(state: PageState, e: Any) -> None:
+    """Handle cursor position change from JavaScript."""
+    char_index = e.args.get("char")
+    if state.broadcast_cursor:
+        await state.broadcast_cursor(char_index)
+
+
+async def _handle_keydown(state: PageState, e: Any) -> None:
+    """Handle keyboard shortcut for tag selection (1-0 keys map to tags)."""
+    key = e.args.get("key")
+    if not key or not state.tag_info_list:
+        return
+    key_to_index = {
+        str((i + 1) % 10): i for i in range(min(10, len(state.tag_info_list)))
+    }
+    if key in key_to_index:
+        ti = state.tag_info_list[key_to_index[key]]
+        await _add_highlight(state, ti.raw_key)
+
+
+# fmt: off
+_SELECTION_CLICK_AND_KEYBOARD_JS = (
+    "setTimeout(function() {"
+    "  document.addEventListener('click', function(e) {"
+    "    if (e.target.closest('[data-testid=\"tag-toolbar\"]')) return;"
+    "    setTimeout(function() {"
+    "      var s = window.getSelection();"
+    "      if (!s || s.isCollapsed) emitEvent('selection_cleared', {});"
+    "    }, 50);"
+    "  });"
+    "  var lastKeyTime = 0;"
+    "  document.addEventListener('keydown', function(e) {"
+    "    if (e.repeat) return;"
+    "    var tag = e.target.tagName;"
+    "    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
+    "        || e.target.isContentEditable) return;"
+    "    var now = Date.now();"
+    "    if (now - lastKeyTime < 300) return;"
+    "    lastKeyTime = now;"
+    "    if ('1234567890'.indexOf(e.key) >= 0) {"
+    "      emitEvent('keydown', {key: e.key});"
+    "    }"
+    "  });"
+    "}, 100);"
+)
+# fmt: on
+
+
 def _setup_selection_handlers(state: PageState) -> None:
     """Set up JavaScript-based selection detection and event handlers.
 
@@ -33,82 +101,11 @@ def _setup_selection_handlers(state: PageState) -> None:
     ui.run_javascript() for this unavoidable browser API access. E2E tests
     correctly use Playwright's native mouse events to simulate user selection.
     """
-
-    async def on_selection(e: Any) -> None:
-        """Handle selection event from JavaScript."""
-        state.selection_start = e.args.get("start_char")
-        state.selection_end = e.args.get("end_char")
-        if state.highlight_menu:
-            state.highlight_menu.set_visibility(True)
-        # Broadcast selection to other clients
-        if state.broadcast_selection:
-            await state.broadcast_selection(state.selection_start, state.selection_end)
-
-    async def on_selection_cleared(_e: Any) -> None:
-        """Handle selection cleared event."""
-        state.selection_start = None
-        state.selection_end = None
-        if state.highlight_menu:
-            state.highlight_menu.set_visibility(False)
-        # Clear selection broadcast
-        if state.broadcast_selection:
-            await state.broadcast_selection(None, None)
-
-    async def on_cursor_move(e: Any) -> None:
-        """Handle cursor position change from JavaScript."""
-        char_index = e.args.get("char")
-        if state.broadcast_cursor:
-            await state.broadcast_cursor(char_index)
-
-    ui.on("selection_made", on_selection)
-    ui.on("selection_cleared", on_selection_cleared)
-    ui.on("cursor_move", on_cursor_move)
-
-    # Keyboard shortcut handler (1-0 keys map to tags)
-    async def on_keydown(e: Any) -> None:
-        """Handle keyboard shortcut for tag selection."""
-        key = e.args.get("key")
-        if key and state.tag_info_list:
-            key_to_index = {
-                str((i + 1) % 10): i for i in range(min(10, len(state.tag_info_list)))
-            }
-            if key in key_to_index:
-                ti = state.tag_info_list[key_to_index[key]]
-                await _add_highlight(state, ti.raw_key)
-
-    ui.on("keydown", on_keydown)
-
-    # Selection detection is handled by setupAnnotationSelection() in the
-    # init JS (loaded in _render_document_with_highlights). This remaining
-    # JS handles: selection clearing on click and keyboard shortcuts.
-    # Remote cursor tracking (Phase 5) will use the text walker.
-    # fmt: off
-    js_code = (
-        "setTimeout(function() {"
-        "  document.addEventListener('click', function(e) {"
-        "    if (e.target.closest('[data-testid=\"tag-toolbar\"]')) return;"
-        "    setTimeout(function() {"
-        "      var s = window.getSelection();"
-        "      if (!s || s.isCollapsed) emitEvent('selection_cleared', {});"
-        "    }, 50);"
-        "  });"
-        "  var lastKeyTime = 0;"
-        "  document.addEventListener('keydown', function(e) {"
-        "    if (e.repeat) return;"
-        "    var tag = e.target.tagName;"
-        "    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'"
-        "        || e.target.isContentEditable) return;"
-        "    var now = Date.now();"
-        "    if (now - lastKeyTime < 300) return;"
-        "    lastKeyTime = now;"
-        "    if ('1234567890'.indexOf(e.key) >= 0) {"
-        "      emitEvent('keydown', {key: e.key});"
-        "    }"
-        "  });"
-        "}, 100);"
-    )
-    # fmt: on
-    ui.run_javascript(js_code)
+    ui.on("selection_made", lambda e: _handle_selection(state, e))
+    ui.on("selection_cleared", lambda e: _handle_selection_cleared(state, e))
+    ui.on("cursor_move", lambda e: _handle_cursor_move(state, e))
+    ui.on("keydown", lambda e: _handle_keydown(state, e))
+    ui.run_javascript(_SELECTION_CLICK_AND_KEYBOARD_JS)
 
 
 def _render_new_tag_button(on_add_click: Any) -> None:
@@ -146,6 +143,34 @@ def _render_highlight_menu_tag_button(ti: Any, on_tag_click: Any) -> None:
         btn.tooltip(ti.name)
 
 
+def _render_tag_groups(
+    tag_info_list: list[Any], on_tag_click: Any, on_add_click: Any | None
+) -> None:
+    """Render tag buttons grouped by tag group, with optional '+ New' button."""
+    groups: dict[str | None, list[Any]] = {}
+    for ti in tag_info_list:
+        groups.setdefault(ti.group_name, []).append(ti)
+
+    with ui.column().classes("gap-1"):
+        for members in groups.values():
+            with ui.row().classes("gap-1 items-center"):
+                for ti in members:
+                    _render_highlight_menu_tag_button(ti, on_tag_click)
+
+        if on_add_click is not None:
+            _render_new_tag_button(on_add_click)
+
+
+def _render_empty_tag_state(on_add_click: Any | None) -> None:
+    """Render the empty-tag fallback: '+ New' button or 'No tags available' label."""
+    if on_add_click is not None:
+        _render_new_tag_button(on_add_click)
+    else:
+        ui.label("No tags available").classes("text-sm text-gray-600").tooltip(
+            "Ask your instructor to add tags to this activity"
+        )
+
+
 def _populate_highlight_menu(
     state: PageState, on_tag_click: Any, *, on_add_click: Any | None = None
 ) -> None:
@@ -165,28 +190,9 @@ def _populate_highlight_menu(
     menu.clear()
     with menu:
         if state.tag_info_list:
-            # Partition tags by group, preserving order
-            groups: dict[str | None, list[Any]] = {}
-            for ti in state.tag_info_list:
-                groups.setdefault(ti.group_name, []).append(ti)
-
-            with ui.column().classes("gap-1"):
-                for members in groups.values():
-                    with ui.row().classes("gap-1 items-center"):
-                        for ti in members:
-                            _render_highlight_menu_tag_button(ti, on_tag_click)
-
-                # Append "+ New" after all tag groups when permitted
-                if on_add_click is not None:
-                    _render_new_tag_button(on_add_click)
-        elif on_add_click is not None:
-            # Zero tags but user can create — show only the "+ New" button
-            _render_new_tag_button(on_add_click)
+            _render_tag_groups(state.tag_info_list, on_tag_click, on_add_click)
         else:
-            # Zero tags and no creation permission
-            ui.label("No tags available").classes("text-sm text-gray-600").tooltip(
-                "Ask your instructor to add tags to this activity"
-            )
+            _render_empty_tag_state(on_add_click)
 
 
 def _build_highlight_menu(

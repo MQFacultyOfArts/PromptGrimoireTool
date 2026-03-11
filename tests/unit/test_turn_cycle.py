@@ -80,6 +80,15 @@ class TestCalculateDeadline:
         )
         assert result == datetime(2026, 3, 12, 9, 0, tzinfo=UTC)
 
+    def test_wall_clock_exactly_at_publish_time_rolls_to_next_day(self) -> None:
+        """Wall-clock mode: wall time equal to publish time rolls to next day."""
+        publish = datetime(2026, 3, 11, 17, 0, tzinfo=UTC)
+        wall = time(17, 0)
+        result = calculate_deadline(
+            publish_time=publish, timer_delta=None, timer_wall_clock=wall
+        )
+        assert result == datetime(2026, 3, 12, 17, 0, tzinfo=UTC)
+
     def test_both_fields_set_raises_value_error(self) -> None:
         """Both timer fields set raises ValueError."""
         publish = datetime(2026, 3, 11, 10, 0, tzinfo=UTC)
@@ -152,6 +161,12 @@ class TestRenderPrompt:
         value = 42
         result = render_prompt(t"Value: {value!s}")
         assert result == "Value: 42"
+
+    def test_handles_ascii_conversion(self) -> None:
+        """!a conversion applies ascii(), escaping non-ASCII characters."""
+        value = "caf\u00e9"
+        result = render_prompt(t"Value: {value!a}")
+        assert result == "Value: 'caf\\xe9'"
 
 
 class TestBuildTurnPrompt:

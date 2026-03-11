@@ -1,6 +1,6 @@
 # Testing Guidelines
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-11*
 
 ## TDD is Mandatory
 
@@ -59,9 +59,17 @@ Each method uses **pytest-subtests** for checkpoint assertions within a shared b
 
 | Module | Purpose |
 |--------|---------|
-| `annotation_helpers.py` | `select_chars()`, `create_highlight()`, `setup_workspace_with_content()`, `wait_for_text_walker()`, `find_text_range()` |
+| `card_helpers.py` | `expand_card()`, `collapse_card()`, `add_comment_to_highlight()` (with epoch wait), `get_comment_authors()` |
+| `highlight_tools.py` | `create_highlight()`, `create_highlight_with_tag()`, `find_text_range()`, `select_text_range()`, `scroll_to_char()` |
+| `db_fixtures.py` | `_create_workspace_via_db()`, `_create_workspace_no_tag_permission()`, `_create_workspace_with_word_limits()`, `get_user_id_by_email()` |
+| `export_tools.py` | `ExportResult`, `export_pdf_text()`, `export_annotation_tex_text()` |
+| `fixture_loaders.py` | `_load_fixture_via_paste()`, `setup_workspace_with_content()` |
+| `page_interactions.py` | `navigate_home_via_drawer()`, `drag_sortable_item()`, `toggle_share_with_class()`, `clone_activity_workspace()` |
+| `tag_helpers.py` | `seed_tag_id()`, `seed_group_id()`, `_seed_tags_for_workspace()`, `_lock_tag_in_db()` |
 | `course_helpers.py` | `create_course()`, `add_week()`, `add_activity()`, `enrol_student()`, `publish_week()`, `configure_course_copy_protection()` |
 | `conftest.py` | `app_server` fixture (NiceGUI server lifecycle), `fresh_page`, `_authenticate_page()`, cleanup endpoint |
+
+`annotation_helpers.py` is deprecated — it was decomposed into the modules above. Do not add new helpers there.
 
 ### Locator Strategy
 

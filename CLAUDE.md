@@ -57,6 +57,15 @@ E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Pla
 
 All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()` -- never locate by visible text, placeholder, or Quasar CSS classes. NiceGUI places `data-testid` directly on native elements (e.g. `<input>`), so `get_by_test_id("foo").fill(value)` works without chaining `.locator("input")`. See [docs/testing.md](docs/testing.md) for full details.
 
+### E2E Race-Condition Patterns
+
+Two patterns prevent NiceGUI-specific race conditions in E2E tests:
+
+- **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All submit buttons bound to text inputs must use this helper.
+- **Rebuild epoch** (`cards_epoch` on `PageState`): After `container.clear()` rebuilds, the server increments a monotonic counter broadcast to `window.__annotationCardsEpoch`. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
+
+Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
+
 ### Code Quality Hooks
 
 Claude Code hooks automatically run on every `.py` file write:

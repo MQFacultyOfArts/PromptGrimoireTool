@@ -59,10 +59,11 @@ All interactable UI elements must have `data-testid` attributes. E2E tests must 
 
 ### E2E Race-Condition Patterns
 
-Two patterns prevent NiceGUI-specific race conditions in E2E tests:
+Three patterns prevent NiceGUI-specific race conditions:
 
 - **Value-capture** (`ui_helpers.on_submit_with_value`): Reads the input DOM value client-side at click time, preventing `python-socketio` async task reordering from delivering stale values. All submit buttons bound to text inputs must use this helper.
 - **Rebuild epoch** (`cards_epoch` on `PageState`): After `container.clear()` rebuilds, the server increments a monotonic counter broadcast to `window.__annotationCardsEpoch`. Tests capture the old epoch, trigger the action, then `wait_for_function` until the epoch advances before reacquiring locators.
+- **Lightweight peer-left callback** (`_RemotePresence.on_peer_left`): CLIENT_DELETE events (peer disconnection) must NOT trigger a full `refresh_annotations()` rebuild. They change zero CRDT state, but a full rebuild races with in-flight user interactions (fill + click), destroying input values and button handlers mid-action. `_RemotePresence` carries a separate `on_peer_left` callback that only updates the user count display.
 
 Details and examples in [docs/testing.md](docs/testing.md) § Common E2E Pitfalls.
 

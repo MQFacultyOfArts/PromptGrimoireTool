@@ -104,6 +104,9 @@ class _RemotePresence:
     user_id: str | None = None
     viewer_is_privileged: bool = False
     is_owner: bool = False
+    on_peer_left: Any = (
+        None  # Callable[[], Awaitable[None]] -- lightweight user-count-only callback
+    )
 
     async def invoke_callback(self) -> None:
         """Run the callback inside this client's NiceGUI slot context.
@@ -118,6 +121,23 @@ class _RemotePresence:
         if self.callback and self.nicegui_client and not self.nicegui_client._deleted:
             with self.nicegui_client:
                 await self.callback()
+
+    async def invoke_peer_left(self) -> None:
+        """Lightweight callback when a peer disconnects.
+
+        Only updates user count — does NOT trigger a full DOM rebuild.
+        CLIENT_DELETE events change zero CRDT state, so a full
+        ``refresh_annotations()`` rebuild is unnecessary and can race
+        with in-flight user interactions (fill + click), destroying
+        input values and button handlers mid-action.
+        """
+        if (
+            self.on_peer_left
+            and self.nicegui_client
+            and not self.nicegui_client._deleted
+        ):
+            with self.nicegui_client:
+                await self.on_peer_left()
 
 
 # Track connected clients per workspace for broadcasting

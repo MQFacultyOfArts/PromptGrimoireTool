@@ -759,6 +759,9 @@ class TestMetadataSearchPerformance:
             )
             enrolled_ids = [r[0] for r in result.all()]
 
+        if not enrolled_ids:
+            pytest.skip("Staff user has no enrollments")
+
         # Measure metadata search latency
         start = time.monotonic()
         results = await _search(

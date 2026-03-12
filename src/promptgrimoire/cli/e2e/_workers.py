@@ -174,6 +174,8 @@ async def run_playwright_file(
     db_url: str,
     worker_dir: Path,
     user_args: list[str],
+    *,
+    browser: str | None = None,
 ) -> WorkerResult:
     """Run one Playwright-backed E2E file with a dedicated server and DB."""
     worker_dir.mkdir(parents=True, exist_ok=True)
@@ -204,6 +206,7 @@ async def run_playwright_file(
                 server_log_path=server_log_path,
             )
 
+            browser_args = ["--browser", browser] if browser is not None else []
             cmd = [
                 sys.executable,
                 "-m",
@@ -211,6 +214,7 @@ async def run_playwright_file(
                 str(test_file),
                 "-m",
                 "e2e",
+                *browser_args,
                 "--tb=short",
                 f"--junitxml={junit_path}",
                 *_filter_junitxml_args(user_args),

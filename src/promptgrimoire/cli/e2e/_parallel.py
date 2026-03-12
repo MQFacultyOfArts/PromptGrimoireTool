@@ -8,7 +8,7 @@ import logging
 import os
 import shutil
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
 from promptgrimoire.cli.e2e._artifacts import (
@@ -81,21 +81,16 @@ async def _run_worker_for_lane(
     worker_dir: Path,
     user_args: list[str],
     port: int | None = None,
+    browser: str | None = None,
 ) -> WorkerResult:
     """Dispatch a lane-specific worker with the correct runtime contract."""
     if lane.needs_server:
         assert port is not None  # noqa: S101 - lane contract guarantees a port
-        playwright_worker = cast(
-            "Callable[[Path, int, str, Path, list[str]], Awaitable[WorkerResult]]",
-            worker,
+        return await worker(
+            test_file, port, db_url, worker_dir, user_args, browser=browser
         )
-        return await playwright_worker(test_file, port, db_url, worker_dir, user_args)
 
-    nicegui_worker = cast(
-        "Callable[[Path, str, Path, list[str]], Awaitable[WorkerResult]]",
-        worker,
-    )
-    return await nicegui_worker(test_file, db_url, worker_dir, user_args)
+    return await worker(test_file, db_url, worker_dir, user_args)
 
 
 async def _run_all_workers(
@@ -108,6 +103,7 @@ async def _run_all_workers(
     user_args: list[str],
     *,
     worker_count: int,
+    browser: str | None = None,
 ) -> list[WorkerResult]:
     """Run all lane workers with bounded concurrency and per-file progress."""
     total = len(files)
@@ -124,6 +120,7 @@ async def _run_all_workers(
                 worker_dir=worker_dirs[files[i]],
                 user_args=user_args,
                 port=ports[i] if lane.needs_server else None,
+                browser=browser,
             )
 
     tasks: list[asyncio.Task[WorkerResult]] = [
@@ -191,6 +188,7 @@ async def _run_fail_fast_workers(
     user_args: list[str],
     *,
     worker_count: int,
+    browser: str | None = None,
 ) -> list[WorkerResult]:
     """Run E2E workers with fail-fast: cancel remaining on first failure."""
     semaphore = asyncio.Semaphore(worker_count)
@@ -205,6 +203,7 @@ async def _run_fail_fast_workers(
                 worker_dir=worker_dirs[files[i]],
                 user_args=user_args,
                 port=ports[i] if lane.needs_server else None,
+                browser=browser,
             )
 
     tasks: list[asyncio.Task[WorkerResult]] = [
@@ -477,6 +476,7 @@ async def run_lane_files(
     user_args: list[str],
     worker_count: int | None = None,
     fail_fast: bool = False,
+    browser: str | None = None,
 ) -> int:
     """Run all files in *lane* using isolated per-file workers."""
     files = discover_lane_files(lane)
@@ -520,6 +520,7 @@ async def run_lane_files(
                 worker_dirs,
                 user_args,
                 worker_count=bounded_worker_count,
+                browser=browser,
             )
         else:
             results = await _run_all_workers(
@@ -531,6 +532,7 @@ async def run_lane_files(
                 worker_dirs,
                 user_args,
                 worker_count=bounded_worker_count,
+                browser=browser,
             )
 
         all_passed, had_flaky = await _finalise_parallel_results(
@@ -554,6 +556,7 @@ async def run_lane_files(
 async def _run_parallel_e2e(
     user_args: list[str],
     fail_fast: bool = False,
+    browser: str | None = None,
 ) -> int:
     """Orchestrate parallel Playwright E2E execution with per-file isolation."""
     return await run_lane_files(
@@ -561,4 +564,5 @@ async def _run_parallel_e2e(
         run_playwright_file,
         user_args=user_args,
         fail_fast=fail_fast,
+        browser=browser,
     )

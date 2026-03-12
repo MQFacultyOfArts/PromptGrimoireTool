@@ -8,8 +8,13 @@ Verifies:
 - turn-cycle-296.AC3.1: All teams transition from drafting to locked
 - turn-cycle-296.AC3.2: current_deadline cleared on lock
 - turn-cycle-296.AC3.3: lock_round rejects if any team not in drafting state
+- turn-cycle-296.AC4.1: Markdown extracted from populated CRDT move buffer
+- turn-cycle-296.AC4.2: None CRDT state → "No move submitted"
+- turn-cycle-296.AC4.3: Whitespace-only CRDT content → "No move submitted"
+- turn-cycle-296.AC5.1: turn_agent returns structured TurnResult
 - turn-cycle-296.AC5.2: PydanticAI history restored from metadata_json
 - turn-cycle-296.AC5.3: Updated PydanticAI history stored on new assistant message
+- turn-cycle-296.AC8.1: One-response invariant (duplicate preprocessing rejected)
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ from promptgrimoire.db.models import (
     Activity,
     WargameConfig,
     WargameMessage,
+    WargameTeam,
 )
 from promptgrimoire.wargame.agents import turn_agent
 
@@ -262,3 +268,312 @@ class TestLockRound:
         # Now teams are locked, so lock_round should fail
         with pytest.raises(ValueError, match="not all teams in drafting state"):
             await lock_round(activity.id)
+
+
+async def _start_game_and_publish_to_round2(activity_id: UUID) -> None:
+    """Bootstrap a game and transition teams to round 2 / drafting.
+
+    Used by preprocessing tests: starts the game (round 1 locked),
+    then manually transitions teams to round 2 / drafting to simulate
+    what ``publish_all()`` will do.
+    """
+    from promptgrimoire.db.engine import get_session
+    from promptgrimoire.db.models import WargameTeam
+    from promptgrimoire.db.wargames import start_game
+
+    with turn_agent.override(model=TestModel()):
+        await start_game(activity_id)
+
+    async with get_session() as session:
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+        for team in teams:
+            team.current_round = 2
+            team.round_state = "locked"
+            session.add(team)
+
+
+class TestRunPreprocessing:
+    """Integration tests for run_preprocessing()."""
+
+    @pytest.mark.asyncio
+    async def test_ac4_1_markdown_extracted_from_crdt(self) -> None:
+        """AC4.1: User message contains markdown text from CRDT move buffer."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+        from tests.integration.conftest import make_crdt_bytes
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-crdt")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        # Set CRDT move buffer on all teams
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                db_team = await session.get(WargameTeam, team.id)
+                assert db_team is not None
+                db_team.move_buffer_crdt = make_crdt_bytes("Deploy forces to sector 7")
+                session.add(db_team)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+        async with get_session() as session:
+            for team in teams:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 3,  # round 2 user seq
+                    )
+                )
+                msg = result.one()
+                assert msg.role == "user"
+                assert "Deploy forces to sector 7" in msg.content
+
+    @pytest.mark.asyncio
+    async def test_ac4_2_none_crdt_gives_sentinel(self) -> None:
+        """AC4.2: None move buffer produces 'No move submitted'."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-none")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        # move_buffer_crdt is None by default — no action needed
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 3,
+                    )
+                )
+                msg = result.one()
+                assert msg.content == "No move submitted"
+
+    @pytest.mark.asyncio
+    async def test_ac4_3_whitespace_crdt_gives_sentinel(self) -> None:
+        """AC4.3: Whitespace-only CRDT content produces 'No move submitted'."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+        from tests.integration.conftest import make_crdt_bytes
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-ws")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                db_team = await session.get(WargameTeam, team.id)
+                assert db_team is not None
+                db_team.move_buffer_crdt = make_crdt_bytes("   \n  \t  ")
+                session.add(db_team)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+        async with get_session() as session:
+            for team in teams:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 3,
+                    )
+                )
+                msg = result.one()
+                assert msg.content == "No move submitted"
+
+    @pytest.mark.asyncio
+    async def test_ac5_1_assistant_message_with_content(self) -> None:
+        """AC5.1: Assistant message (seq=4) has non-empty content."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-asst")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 4,  # round 2 assistant seq
+                    )
+                )
+                msg = result.one()
+                assert msg.role == "assistant"
+                assert msg.content  # non-empty
+
+    @pytest.mark.asyncio
+    async def test_ac5_2_metadata_includes_bootstrap_history(self) -> None:
+        """AC5.2: Metadata contains history from both bootstrap and new round."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-hist")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            result = await session.exec(
+                select(WargameMessage).where(
+                    WargameMessage.team_id == teams[0].id,
+                    WargameMessage.sequence_no == 4,
+                )
+            )
+            msg = result.one()
+            assert msg.metadata_json is not None
+            restored = ModelMessagesTypeAdapter.validate_python(msg.metadata_json)
+            # Should contain messages from both bootstrap round AND new round
+            assert len(restored) > 2
+
+    @pytest.mark.asyncio
+    async def test_ac5_3_metadata_usable_as_message_history(self) -> None:
+        """AC5.3: New metadata_json can be used as message_history for follow-up."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-reuse")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+
+            teams = await list_teams(activity.id)
+            async with get_session() as session:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == teams[0].id,
+                        WargameMessage.sequence_no == 4,
+                    )
+                )
+                msg = result.one()
+
+            restored = ModelMessagesTypeAdapter.validate_python(msg.metadata_json)
+            # Should be usable as message_history without error
+            result2 = await turn_agent.run("follow-up orders", message_history=restored)
+            assert result2.output is not None
+
+    @pytest.mark.asyncio
+    async def test_ac8_1_one_response_invariant(self) -> None:
+        """AC8.1: Calling run_preprocessing twice raises ValueError."""
+        from promptgrimoire.db.wargames import run_preprocessing
+
+        activity, _config = await _make_wargame_activity_with_config("preproc-dup")
+        await _start_game_and_publish_to_round2(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await run_preprocessing(activity.id)
+            with pytest.raises(
+                ValueError, match="assistant message already exists for current round"
+            ):
+                await run_preprocessing(activity.id)
+
+
+class TestOnDeadlineFired:
+    """Integration tests for on_deadline_fired()."""
+
+    @pytest.mark.asyncio
+    async def test_ac3_1_deadline_locks_all_teams(self) -> None:
+        """AC3.1 (deadline path): All teams locked after on_deadline_fired."""
+        from promptgrimoire.db.wargames import list_teams, on_deadline_fired
+
+        activity, _config = await _make_wargame_activity_with_config("deadline-lock")
+        # Start game, then transition to round 2 drafting
+        with turn_agent.override(model=TestModel()):
+            await _start_game_and_publish_to_round2(activity.id)
+
+        # Set teams to drafting for on_deadline_fired
+        await _set_teams_to_drafting(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await on_deadline_fired(activity.id)
+
+        teams = await list_teams(activity.id)
+        for team in teams:
+            assert team.round_state == "locked"
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_lock_and_preprocess(self) -> None:
+        """Full pipeline: on_deadline_fired locks AND creates messages."""
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, on_deadline_fired
+
+        activity, _config = await _make_wargame_activity_with_config("deadline-full")
+        with turn_agent.override(model=TestModel()):
+            await _start_game_and_publish_to_round2(activity.id)
+
+        # Set to drafting
+        await _set_teams_to_drafting(activity.id)
+
+        with turn_agent.override(model=TestModel()):
+            await on_deadline_fired(activity.id)
+
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                # Check user message (seq=3)
+                user_result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 3,
+                    )
+                )
+                user_msg = user_result.one()
+                assert user_msg.role == "user"
+
+                # Check assistant message (seq=4)
+                asst_result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 4,
+                    )
+                )
+                asst_msg = asst_result.one()
+                assert asst_msg.role == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_atomicity_rollback_on_preprocessing_failure(self) -> None:
+        """Atomicity: if preprocessing fails, lock is also rolled back."""
+        from unittest.mock import AsyncMock, patch
+
+        from promptgrimoire.db.wargames import list_teams, on_deadline_fired
+
+        activity, _config = await _make_wargame_activity_with_config("deadline-atom")
+        with turn_agent.override(model=TestModel()):
+            await _start_game_and_publish_to_round2(activity.id)
+
+        # Set to drafting
+        await _set_teams_to_drafting(activity.id)
+
+        # Mock turn_agent.run to raise during preprocessing
+        with (
+            turn_agent.override(model=TestModel()),
+            patch.object(
+                turn_agent,
+                "run",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("AI service unavailable"),
+            ),
+            pytest.raises(RuntimeError, match="AI service unavailable"),
+        ):
+            await on_deadline_fired(activity.id)
+
+        # Teams should still be in drafting state (lock was rolled back)
+        teams = await list_teams(activity.id)
+        for team in teams:
+            assert team.round_state == "drafting"

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_core import to_jsonable_python
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -25,7 +27,11 @@ from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
 from promptgrimoire.wargame.agents import TurnResult, turn_agent
 from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
-from promptgrimoire.wargame.turn_cycle import build_turn_prompt, expand_bootstrap
+from promptgrimoire.wargame.turn_cycle import (
+    build_turn_prompt,
+    expand_bootstrap,
+    extract_move_text,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -33,6 +39,8 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.wargame import RosterEntry
+
+_logger = logging.getLogger(__name__)
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
@@ -844,6 +852,50 @@ async def start_game(activity_id: UUID) -> None:
             session.add(team)
 
 
+async def _lock_round_with_session(
+    session: AsyncSession,
+    activity_id: UUID,
+    *,
+    strict: bool = True,
+) -> None:
+    """Lock all drafting teams inside a caller-owned session.
+
+    Parameters
+    ----------
+    session:
+        Active async database session.
+    activity_id:
+        The wargame activity whose round to lock.
+    strict:
+        When ``True`` (default, used by the public ``lock_round``), raise
+        ``ValueError`` if any team is not in ``"drafting"`` state.  When
+        ``False`` (used by ``on_deadline_fired``), log a warning for
+        already-locked teams and proceed.
+    """
+    result = await session.exec(
+        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+    )
+    teams = list(result.all())
+
+    not_drafting = [t for t in teams if t.round_state != "drafting"]
+    if not_drafting:
+        if strict:
+            msg = "not all teams in drafting state"
+            raise ValueError(msg)
+        _logger.warning(
+            "on_deadline_fired: %d team(s) already in non-drafting state for "
+            "activity %s — proceeding",
+            len(not_drafting),
+            activity_id,
+        )
+
+    for team in teams:
+        if team.round_state == "drafting":
+            team.round_state = "locked"
+            team.current_deadline = None
+            session.add(team)
+
+
 async def lock_round(activity_id: UUID) -> None:
     """Lock all teams in a wargame activity, transitioning from drafting to locked.
 
@@ -860,31 +912,154 @@ async def lock_round(activity_id: UUID) -> None:
         If any team is not in "drafting" state.
     """
     async with get_session() as session:
-        result = await session.exec(
-            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
-        )
-        teams = list(result.all())
+        await _lock_round_with_session(session, activity_id, strict=True)
 
-        not_drafting = [t for t in teams if t.round_state != "drafting"]
-        if not_drafting:
-            msg = "not all teams in drafting state"
+
+async def _run_preprocessing_with_session(
+    session: AsyncSession,
+    activity_id: UUID,
+) -> None:
+    """Run AI preprocessing for all teams inside a caller-owned session.
+
+    For each team: extracts move text from the CRDT buffer, restores
+    PydanticAI history from the previous assistant message, calls the
+    turn agent, and stores both user and assistant messages.
+
+    Parameters
+    ----------
+    session:
+        Active async database session.
+    activity_id:
+        The wargame activity to preprocess.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in ``"locked"`` state, or if an assistant
+        message already exists for the current round (one-response
+        invariant).
+    """
+    config = await session.get(WargameConfig, activity_id)
+    if config is None:
+        msg = f"no wargame config for activity {activity_id}"
+        raise ValueError(msg)
+
+    result = await session.exec(
+        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+    )
+    teams = list(result.all())
+
+    not_locked = [t for t in teams if t.round_state != "locked"]
+    if not_locked:
+        msg = "not all teams in locked state"
+        raise ValueError(msg)
+
+    for team in teams:
+        expected_assistant_seq = team.current_round * 2
+        expected_user_seq = team.current_round * 2 - 1
+
+        # One-response invariant: no assistant message for this round yet
+        existing_result = await session.exec(
+            select(WargameMessage).where(
+                WargameMessage.team_id == team.id,
+                WargameMessage.sequence_no == expected_assistant_seq,
+            )
+        )
+        if existing_result.one_or_none() is not None:
+            msg = "assistant message already exists for current round"
             raise ValueError(msg)
 
-        for team in teams:
-            team.round_state = "locked"
-            team.current_deadline = None
-            session.add(team)
+        # Snapshot: extract move text from CRDT buffer
+        move_text = extract_move_text(team.move_buffer_crdt)
+
+        # Restore PydanticAI history from most recent assistant message
+        history_result = await session.exec(
+            select(WargameMessage)
+            .where(
+                WargameMessage.team_id == team.id,
+                WargameMessage.role == "assistant",
+            )
+            .order_by(
+                WargameMessage.sequence_no.desc()  # type: ignore[union-attr]  -- SQLAlchemy column expression
+            )
+            .limit(1)
+        )
+        prev_assistant = history_result.one_or_none()
+        message_history = (
+            ModelMessagesTypeAdapter.validate_python(prev_assistant.metadata_json)
+            if prev_assistant is not None and prev_assistant.metadata_json is not None
+            else None
+        )
+
+        # Build prompt and store user message
+        prompt = build_turn_prompt(move_text, team.game_state_text or "")
+
+        user_msg = WargameMessage(
+            team_id=team.id,
+            sequence_no=expected_user_seq,
+            role="user",
+            content=move_text,
+        )
+        session.add(user_msg)
+
+        # AI call
+        ai_result = await turn_agent.run(
+            prompt,
+            message_history=message_history,
+            instructions=config.system_prompt,
+        )
+        turn_output = cast("TurnResult", ai_result.output)
+
+        # Store assistant message with PydanticAI history
+        assistant_msg = WargameMessage(
+            team_id=team.id,
+            sequence_no=expected_assistant_seq,
+            role="assistant",
+            content=turn_output.response_text,
+            metadata_json=to_jsonable_python(ai_result.all_messages()),
+        )
+        session.add(assistant_msg)
+
+        # Update game state
+        team.game_state_text = turn_output.game_state
+        session.add(team)
+
+
+async def run_preprocessing(activity_id: UUID) -> None:
+    """Run AI preprocessing for all locked teams in a wargame activity.
+
+    For each team: extracts the move text from the CRDT buffer, restores
+    PydanticAI message history, calls the turn agent, and stores the
+    user move and assistant response messages.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to preprocess.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in ``"locked"`` state, or if an assistant
+        message already exists for the current round.
+    """
+    async with get_session() as session:
+        await _run_preprocessing_with_session(session, activity_id)
 
 
 async def on_deadline_fired(activity_id: UUID) -> None:
     """Handle an expired wargame deadline.
 
-    Locks all drafting teams for the activity and triggers preprocessing.
-    This is a stub — full implementation arrives in Phase 6.
+    Locks all drafting teams for the activity and then runs the
+    preprocessing pipeline. Both operations share a single database
+    session for atomicity: if preprocessing crashes after locking,
+    the lock is also rolled back.
 
     Parameters
     ----------
     activity_id : UUID
         The wargame activity whose deadline has expired.
     """
-    raise NotImplementedError("on_deadline_fired: Phase 6 stub")
+    async with get_session() as session:
+        await _lock_round_with_session(session, activity_id, strict=False)
+        await _run_preprocessing_with_session(session, activity_id)

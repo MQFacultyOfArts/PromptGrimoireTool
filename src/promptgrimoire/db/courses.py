@@ -293,30 +293,44 @@ async def enroll_user(
         DuplicateEnrollmentError: If user is already enrolled in this course.
     """
     async with get_session() as session:
-        # Check for existing enrollment within same transaction
-        existing = await session.exec(
-            select(CourseEnrollment)
-            .where(CourseEnrollment.course_id == course_id)
-            .where(CourseEnrollment.user_id == user_id)
-        )
-        if existing.first():
-            raise DuplicateEnrollmentError(course_id, user_id)
+        return await _enroll_user_with_session(session, course_id, user_id, role)
 
-        enrollment = CourseEnrollment(
-            course_id=course_id,
-            user_id=user_id,
-            role=role,
-        )
-        session.add(enrollment)
-        try:
-            await session.flush()
-        except IntegrityError as e:
-            # Handle race condition: another transaction won the insert
-            if "uq_course_enrollment_course_user" in str(e):
-                raise DuplicateEnrollmentError(course_id, user_id) from e
-            raise
-        await session.refresh(enrollment)
-        return enrollment
+
+async def _enroll_user_with_session(
+    session: AsyncSession,
+    course_id: UUID,
+    user_id: UUID,
+    role: str = "student",
+) -> CourseEnrollment:
+    """Enrol a user within a caller-owned session.
+
+    Raises:
+        DuplicateEnrollmentError: If already enrolled.
+    """
+    # Check for existing enrollment within same transaction
+    existing = await session.exec(
+        select(CourseEnrollment)
+        .where(CourseEnrollment.course_id == course_id)
+        .where(CourseEnrollment.user_id == user_id)
+    )
+    if existing.first():
+        raise DuplicateEnrollmentError(course_id, user_id)
+
+    enrollment = CourseEnrollment(
+        course_id=course_id,
+        user_id=user_id,
+        role=role,
+    )
+    session.add(enrollment)
+    try:
+        await session.flush()
+    except IntegrityError as e:
+        # Handle race condition: another transaction won the insert
+        if "uq_course_enrollment_course_user" in str(e):
+            raise DuplicateEnrollmentError(course_id, user_id) from e
+        raise
+    await session.refresh(enrollment)
+    return enrollment
 
 
 async def get_enrollment(

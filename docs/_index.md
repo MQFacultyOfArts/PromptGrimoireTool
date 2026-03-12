@@ -152,6 +152,7 @@ library references during development.
 - [Mega UAT: CSS Highlight API + Copy Protection + Pydantic-Settings](test-plans/2026-02-14-mega-uat.md)
 - [Human Test Plan: Annotation Tags (Issue #95)](test-plans/2026-02-18-95-annotation-tags.md)
 - [Human Test Plan: Empty-Tag Annotation UX (#210)](test-plans/2026-03-01-empty-tag-ux-210.md)
+- [Wargame Turn Cycle Engine — Human Test Plan](test-plans/2026-03-10-turn-cycle-296.md)
 
 ---
 

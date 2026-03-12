@@ -22,6 +22,7 @@ dependencies = [
     "pycrdt>=0.10",
     "stytch>=11.0",
     "pydantic>=2.10",
+    "pydantic-ai>=1.67.0",
     "pydantic-settings>=2.7",
     "python-dotenv>=1.0",  # Required by pydantic-settings for .env file reading
     "asyncpg>=0.30",
@@ -118,6 +119,9 @@ ignore = [
 ]
 "src/promptgrimoire/llm/lorebook.py" = [
     "PLC0415",  # Import inside function to avoid circular imports with models
+]
+"src/promptgrimoire/deadline_worker.py" = [
+    "PLC0415",  # Deferred import to avoid circular dependency with db/wargames
 ]
 "src/promptgrimoire/pages/annotation/workspace.py" = [
     "S101",     # Type-narrowing asserts for permission validation and state guards

@@ -1,21 +1,39 @@
-"""CRUD operations for wargame teams."""
+"""CRUD and turn-cycle operations for wargame teams."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
+from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_core import to_jsonable_python
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import ACLEntry, Permission, User, WargameTeam
+from promptgrimoire.db.models import (
+    ACLEntry,
+    Permission,
+    User,
+    WargameConfig,
+    WargameMessage,
+    WargameTeam,
+)
 from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
+from promptgrimoire.wargame.agents import summary_agent, turn_agent
 from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
+from promptgrimoire.wargame.turn_cycle import (
+    build_summary_prompt,
+    build_turn_prompt,
+    calculate_deadline,
+    expand_bootstrap,
+    extract_move_text,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -23,6 +41,9 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.wargame import RosterEntry
+    from promptgrimoire.wargame.agents import StudentSummary, TurnResult
+
+_logger = logging.getLogger(__name__)
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab
@@ -751,3 +772,603 @@ async def delete_team(team_id: UUID) -> bool:
         await session.delete(team)
         await session.flush()
         return True
+
+
+async def _validate_start_game_preconditions(
+    activity_id: UUID,
+) -> list[UUID]:
+    """Load config and teams, verify no messages exist yet.
+
+    Returns team IDs for per-team bootstrapping.
+
+    Raises
+    ------
+    ValueError
+        If no config exists, no teams exist, or the game has already been
+        started (any messages exist for the activity's teams).
+    """
+    async with get_session() as session:
+        config = await session.get(WargameConfig, activity_id)
+        if config is None:
+            msg = f"no wargame config for activity {activity_id}"
+            raise ValueError(msg)
+
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+
+        if not teams:
+            msg = f"no teams for activity {activity_id}"
+            raise ValueError(msg)
+
+        team_ids = [team.id for team in teams]
+        msg_count_result = await session.exec(
+            select(sa.func.count())
+            .select_from(WargameMessage)
+            .where(
+                WargameMessage.team_id.in_(team_ids)  # type: ignore[union-attr]  -- SQLAlchemy column expression
+            )
+        )
+        if msg_count_result.one() > 0:
+            msg = "game already started"
+            raise ValueError(msg)
+
+        return team_ids
+
+
+async def _bootstrap_one_team(
+    session: AsyncSession,
+    config: WargameConfig,
+    team: WargameTeam,
+) -> None:
+    """Bootstrap a single team inside a caller-owned session.
+
+    Expands the scenario bootstrap template with the team's codename, calls
+    the turn agent for an initial response, and stores both messages. Sets
+    the team to round 1, state "locked".
+
+    Idempotent via the one-response invariant: if the assistant message at
+    sequence 2 already exists (successful prior run), this function returns
+    without making changes. This guards against double-bootstrap on retry
+    after partial failure.
+
+    Parameters
+    ----------
+    session:
+        Active async database session (one per team call).
+    config:
+        The wargame configuration for the activity.
+    team:
+        The team to bootstrap (must be freshly loaded in this session).
+    """
+    # One-response invariant: skip if assistant message already exists.
+    # Sequence 2 is always the bootstrap assistant message (round 1 * 2).
+    existing_result = await session.exec(
+        select(WargameMessage).where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.sequence_no == 2,
+        )
+    )
+    if existing_result.one_or_none() is not None:
+        _logger.info(
+            "Skipping team %s: bootstrap assistant message already exists",
+            team.id,
+        )
+        return
+
+    bootstrap_text = expand_bootstrap(config.scenario_bootstrap, team.codename)
+    prompt = build_turn_prompt(bootstrap_text, "")
+
+    # Store the human-readable bootstrap as the user message
+    user_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=1,
+        role="user",
+        content=bootstrap_text,
+    )
+    session.add(user_msg)
+
+    # Call the turn agent
+    ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
+    # ty cannot track PydanticAI Agent generics; cast narrows to the
+    # concrete output type.
+    turn_output = cast("TurnResult", ai_result.output)
+
+    # Store assistant response with PydanticAI history
+    assistant_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=2,
+        role="assistant",
+        content=turn_output.response_text,
+        metadata_json=to_jsonable_python(ai_result.all_messages()),
+    )
+    session.add(assistant_msg)
+
+    team.game_state_text = turn_output.game_state
+    team.current_round = 1
+    team.round_state = "locked"
+    session.add(team)
+
+
+async def _mark_bootstrap_team_errored(team_id: UUID) -> None:
+    """Mark a team as errored in a fresh session after bootstrap failure."""
+    try:
+        async with get_session() as err_session:
+            err_team = await err_session.get(WargameTeam, team_id)
+            if err_team is not None:
+                err_team.round_state = "error"
+                err_session.add(err_team)
+    except Exception:
+        _logger.exception("Failed to mark bootstrap team %s as errored", team_id)
+
+
+async def start_game(activity_id: UUID) -> None:
+    """Bootstrap all teams for a wargame activity with initial AI responses.
+
+    For each team: expands the scenario bootstrap template with the team's
+    codename, calls the turn agent for an initial response, and stores both
+    messages. Sets all teams to round 1, state "locked".
+
+    Each team is processed in its own database session. If one team's AI
+    call fails, that team is marked with ``round_state="error"`` and
+    bootstrapping continues for remaining teams.
+
+    The one-response invariant prevents double-bootstrapping of
+    already-succeeded teams on retry: if the bootstrap assistant message
+    (seq=2) already exists for a team, that team is skipped.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to start.
+
+    Raises
+    ------
+    ValueError
+        If the game has already been started (messages exist for any team),
+        no wargame config exists, or no teams exist.
+    """
+    team_ids = await _validate_start_game_preconditions(activity_id)
+
+    # Per-team loop: each team gets its own session.
+    # Config and team are re-fetched inside each session to avoid
+    # detached-instance issues across session boundaries.
+    for team_id in team_ids:
+        try:
+            async with get_session() as session:
+                team_config = await session.get(WargameConfig, activity_id)
+                if team_config is None:  # pragma: no cover — validated above
+                    msg = f"no wargame config for activity {activity_id}"
+                    raise ValueError(msg)
+                team = await session.get(WargameTeam, team_id)
+                if team is None:  # pragma: no cover — loaded above
+                    msg = f"team {team_id} vanished during bootstrap"
+                    raise ValueError(msg)
+
+                await _bootstrap_one_team(session, team_config, team)
+        except Exception:
+            _logger.exception(
+                "Bootstrap failed for team %s in activity %s",
+                team_id,
+                activity_id,
+            )
+            await _mark_bootstrap_team_errored(team_id)
+
+
+async def _lock_round_with_session(
+    session: AsyncSession,
+    activity_id: UUID,
+    *,
+    strict: bool = True,
+) -> None:
+    """Lock all drafting teams inside a caller-owned session.
+
+    Parameters
+    ----------
+    session:
+        Active async database session.
+    activity_id:
+        The wargame activity whose round to lock.
+    strict:
+        When ``True`` (default, used by the public ``lock_round``), raise
+        ``ValueError`` if any team is not in ``"drafting"`` state.  When
+        ``False`` (used by ``on_deadline_fired``), log a warning for
+        already-locked teams and proceed.
+    """
+    result = await session.exec(
+        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+    )
+    teams = list(result.all())
+
+    not_drafting = [t for t in teams if t.round_state != "drafting"]
+    if not_drafting:
+        if strict:
+            msg = "not all teams in drafting state"
+            raise ValueError(msg)
+        _logger.warning(
+            "on_deadline_fired: %d team(s) already in non-drafting state for "
+            "activity %s — proceeding",
+            len(not_drafting),
+            activity_id,
+        )
+
+    for team in teams:
+        if team.round_state == "drafting":
+            team.round_state = "locked"
+            team.current_deadline = None
+            session.add(team)
+
+
+async def lock_round(activity_id: UUID) -> None:
+    """Lock all teams in a wargame activity, transitioning from drafting to locked.
+
+    Clears deadlines on all teams.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity whose round to lock.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in "drafting" state.
+    """
+    async with get_session() as session:
+        await _lock_round_with_session(session, activity_id, strict=True)
+
+
+async def _preprocess_one_team(
+    session: AsyncSession,
+    config: WargameConfig,
+    team: WargameTeam,
+) -> None:
+    """Run AI preprocessing for a single team inside a caller-owned session.
+
+    Extracts move text from the CRDT buffer, restores PydanticAI history
+    from the previous assistant message, calls the turn agent, and stores
+    both user and assistant messages.
+
+    Parameters
+    ----------
+    session:
+        Active async database session (one per team call).
+    config:
+        The wargame configuration for the activity.
+    team:
+        The team to preprocess (must be freshly loaded in this session).
+
+    Raises
+    ------
+    ValueError
+        If an assistant message already exists for the current round
+        (one-response invariant).
+    """
+    expected_assistant_seq = team.current_round * 2
+    expected_user_seq = team.current_round * 2 - 1
+
+    # One-response invariant: skip if assistant message already exists.
+    # This prevents double-processing of already-succeeded teams on retry
+    # after partial failure (errored teams won't have an assistant message,
+    # so they'll be processed; successful teams will have one and are skipped).
+    existing_result = await session.exec(
+        select(WargameMessage).where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.sequence_no == expected_assistant_seq,
+        )
+    )
+    if existing_result.one_or_none() is not None:
+        _logger.info(
+            "Skipping team %s: assistant message already exists for round %d",
+            team.id,
+            team.current_round,
+        )
+        return
+
+    # Snapshot: extract move text from CRDT buffer
+    move_text = extract_move_text(team.move_buffer_crdt)
+
+    # Restore PydanticAI history from most recent assistant message
+    history_result = await session.exec(
+        select(WargameMessage)
+        .where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.role == "assistant",
+        )
+        .order_by(
+            WargameMessage.sequence_no.desc()  # type: ignore[union-attr]  -- SQLAlchemy column expression
+        )
+        .limit(1)
+    )
+    prev_assistant = history_result.one_or_none()
+    message_history = (
+        ModelMessagesTypeAdapter.validate_python(prev_assistant.metadata_json)
+        if prev_assistant is not None and prev_assistant.metadata_json is not None
+        else None
+    )
+
+    # Build prompt and store user message
+    prompt = build_turn_prompt(move_text, team.game_state_text or "")
+
+    user_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=expected_user_seq,
+        role="user",
+        content=move_text,
+    )
+    session.add(user_msg)
+
+    # AI call
+    ai_result = await turn_agent.run(
+        prompt,
+        message_history=message_history,
+        instructions=config.system_prompt,
+    )
+    turn_output = cast("TurnResult", ai_result.output)
+
+    # Store assistant message with PydanticAI history
+    assistant_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=expected_assistant_seq,
+        role="assistant",
+        content=turn_output.response_text,
+        metadata_json=to_jsonable_python(ai_result.all_messages()),
+    )
+    session.add(assistant_msg)
+
+    # Update game state
+    team.game_state_text = turn_output.game_state
+    session.add(team)
+
+
+async def _validate_preprocessing_preconditions(
+    activity_id: UUID,
+) -> list[UUID]:
+    """Load teams and validate they are in a processable state.
+
+    Returns team IDs for per-team processing.
+
+    Raises
+    ------
+    ValueError
+        If no config exists, or if any team is not in ``"locked"`` or
+        ``"error"`` state.
+    """
+    async with get_session() as session:
+        config = await session.get(WargameConfig, activity_id)
+        if config is None:
+            msg = f"no wargame config for activity {activity_id}"
+            raise ValueError(msg)
+
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+
+        # Accept "locked" and "error" states (error allows retry)
+        not_processable = [t for t in teams if t.round_state not in ("locked", "error")]
+        if not_processable:
+            msg = "not all teams in locked or error state"
+            raise ValueError(msg)
+
+        # Empty team list is a valid no-op: on_deadline_fired may legitimately
+        # fire for an activity that has no teams yet (e.g. config exists but no
+        # roster has been ingested).  The caller's loop simply does nothing.
+        return [team.id for team in teams]
+
+
+async def _mark_team_errored(team_id: UUID) -> None:
+    """Mark a team as errored in a fresh session after preprocessing failure."""
+    try:
+        async with get_session() as err_session:
+            err_team = await err_session.get(WargameTeam, team_id)
+            if err_team is not None:
+                err_team.round_state = "error"
+                err_session.add(err_team)
+    except Exception:
+        _logger.exception("Failed to mark team %s as errored", team_id)
+
+
+async def run_preprocessing(activity_id: UUID) -> None:
+    """Run AI preprocessing for all locked or errored teams in a wargame activity.
+
+    Each team is processed in its own database session. If one team's
+    AI call fails, that team is marked with ``round_state="error"`` and
+    processing continues for remaining teams.
+
+    The one-response invariant prevents double-processing of
+    already-succeeded teams on retry.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to preprocess.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in ``"locked"`` or ``"error"`` state, or if
+        no wargame config exists.
+    """
+    team_ids = await _validate_preprocessing_preconditions(activity_id)
+
+    # Per-team loop: each team gets its own session.
+    # Config and team are re-fetched inside each session to avoid
+    # detached-instance issues across session boundaries.
+    for team_id in team_ids:
+        try:
+            async with get_session() as session:
+                team_config = await session.get(WargameConfig, activity_id)
+                if team_config is None:  # pragma: no cover — validated above
+                    msg = f"no wargame config for activity {activity_id}"
+                    raise ValueError(msg)
+                team = await session.get(WargameTeam, team_id)
+                if team is None:  # pragma: no cover — loaded above
+                    msg = f"team {team_id} vanished during preprocessing"
+                    raise ValueError(msg)
+
+                await _preprocess_one_team(session, team_config, team)
+        except Exception:
+            _logger.exception(
+                "Preprocessing failed for team %s in activity %s",
+                team_id,
+                activity_id,
+            )
+            await _mark_team_errored(team_id)
+
+
+async def _validate_publish_preconditions(
+    session: AsyncSession,
+    activity_id: UUID,
+) -> tuple[WargameConfig, list[WargameTeam]]:
+    """Load config and locked teams, validating publish preconditions.
+
+    Returns the config and the subset of teams in ``"locked"`` state.
+    Error-state teams are silently skipped.
+
+    Raises
+    ------
+    ValueError
+        If no config exists, any team is in an invalid state, any locked
+        team is missing a draft response, or a team has duplicate
+        assistant messages.
+    """
+    config = await session.get(WargameConfig, activity_id)
+    if config is None:
+        msg = f"no wargame config for activity {activity_id}"
+        raise ValueError(msg)
+
+    result = await session.exec(
+        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+    )
+    teams = list(result.all())
+
+    # Accept "locked" and "error" states; reject anything else
+    not_publishable = [t for t in teams if t.round_state not in ("locked", "error")]
+    if not_publishable:
+        msg = "not all teams in locked or error state"
+        raise ValueError(msg)
+
+    locked_teams = [t for t in teams if t.round_state == "locked"]
+
+    if not locked_teams:
+        return config, locked_teams
+
+    # Completion gate + one-response invariant (single batch query)
+    seq_by_team = {t.id: t.current_round * 2 for t in locked_teams}
+    count_result = await session.exec(
+        select(WargameMessage.team_id, sa.func.count())
+        .where(
+            WargameMessage.team_id.in_(list(seq_by_team)),  # type: ignore[union-attr]  -- Column has .in_()
+            WargameMessage.role == "assistant",
+            sa.tuple_(WargameMessage.team_id, WargameMessage.sequence_no).in_(  # type: ignore[arg-type]  -- SQLAlchemy column expressions
+                list(seq_by_team.items())
+            ),
+        )
+        .group_by(WargameMessage.team_id)
+    )
+    counts = dict(count_result.all())
+
+    for team in locked_teams:
+        count = counts.get(team.id, 0)
+        if count == 0:
+            msg = "not all teams have draft responses"
+            raise ValueError(msg)
+        if count > 1:
+            msg = "multiple assistant messages for same round"
+            raise ValueError(msg)
+
+    return config, locked_teams
+
+
+async def _generate_team_summary(
+    session: AsyncSession,
+    config: WargameConfig,
+    team: WargameTeam,
+) -> None:
+    """Generate and store a student summary for one team."""
+    expected_seq = team.current_round * 2
+    msg_result = await session.exec(
+        select(WargameMessage).where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.sequence_no == expected_seq,
+        )
+    )
+    assistant_msg = msg_result.one()
+
+    summary_prompt = build_summary_prompt(assistant_msg.content)
+    ai_result = await summary_agent.run(
+        summary_prompt,
+        instructions=config.summary_system_prompt or None,
+    )
+    # ty cannot track PydanticAI Agent generics;
+    # cast narrows to the concrete output type.
+    summary_output = cast("StudentSummary", ai_result.output)
+    team.student_summary_text = summary_output.summary
+
+
+async def publish_all(activity_id: UUID) -> None:
+    """Publish all locked teams: generate summaries, advance round, set deadline.
+
+    Error-state teams (from failed preprocessing) are silently skipped.
+    Only teams in ``"locked"`` state are processed. The precondition
+    accepts both ``"locked"`` and ``"error"`` states, following the same
+    pattern as ``run_preprocessing()``.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to publish.
+
+    Raises
+    ------
+    ValueError
+        If any team is not in ``"locked"`` or ``"error"`` state, if any
+        locked team is missing a draft assistant response, or if any team
+        has multiple assistant messages for the current round.
+    """
+    async with get_session() as session:
+        config, locked_teams = await _validate_publish_preconditions(
+            session, activity_id
+        )
+
+        # Generate summaries for each locked team (serial)
+        for team in locked_teams:
+            await _generate_team_summary(session, config, team)
+
+        # Advance round, reset state, clear buffers, set deadline
+        now = datetime.now(UTC)
+        deadline = calculate_deadline(
+            publish_time=now,
+            timer_delta=config.timer_delta,
+            timer_wall_clock=config.timer_wall_clock,
+        )
+
+        for team in locked_teams:
+            team.current_round += 1
+            team.round_state = "drafting"
+            team.move_buffer_crdt = None
+            team.current_deadline = deadline
+            session.add(team)
+
+
+async def on_deadline_fired(activity_id: UUID) -> None:
+    """Handle an expired wargame deadline.
+
+    Locks all drafting teams for the activity in one session, then runs
+    the preprocessing pipeline with per-team isolation. The lock phase
+    commits independently so that teams are locked even if preprocessing
+    partially fails.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity whose deadline has expired.
+    """
+    # Lock phase: one atomic session
+    async with get_session() as session:
+        await _lock_round_with_session(session, activity_id, strict=False)
+
+    # Preprocessing phase: per-team sessions
+    await run_preprocessing(activity_id)

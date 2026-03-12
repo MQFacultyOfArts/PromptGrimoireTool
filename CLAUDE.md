@@ -39,7 +39,6 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **pymupdf4llm** - PDF to Markdown extraction with layout analysis (file upload)
 - **lxml** - HTML normalisation in export pipeline
 - **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
-- **APScheduler** - deadline scheduling with SQLAlchemyJobStore (wargame turn cycle)
 
 ## Development Workflow
 
@@ -160,7 +159,7 @@ src/promptgrimoire/
 │   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit, metadata FTS
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
-│   ├── wargames.py      # Wargame team CRUD, ACL (grant/revoke/update), roster ingestion
+│   ├── wargames.py      # Wargame team CRUD, ACL, roster ingestion, turn cycle orchestration
 │   ├── workspace_documents.py  # Document CRUD (add, list, reorder, update content)
 │   └── workspaces.py    # Workspace CRUD (create, get)
 ├── wargame/             # Pure-domain helpers for wargame scenarios
@@ -171,7 +170,7 @@ src/promptgrimoire/
 ├── crdt/                # pycrdt collaboration logic
 ├── word_count.py        # Multilingual word count (Latin/CJK via uniseg/jieba/MeCab)
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
-├── scheduler.py         # APScheduler lifecycle and deadline job management
+├── deadline_worker.py   # Background polling worker for expired wargame deadlines
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 └── static/              # JS/CSS assets
 
@@ -235,13 +234,19 @@ Three new tables extend the Activity model for wargame scenarios:
 
 Pure-domain helpers live in `wargame/` (codename generation, roster CSV parsing, auto-assign). DB orchestration lives in `db/wargames.py`.
 
-### Wargame Turn Cycle Engine (Seam 3 — Designed, Not Yet Implemented)
+### Wargame Turn Cycle Engine (Seam 3)
 
-`db/wargames.py` will be extended with turn cycle orchestration: `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. These follow the existing functional core / imperative shell pattern — pure domain logic in `wargame/turn_cycle.py` and `wargame/agents.py`, DB orchestration in `db/wargames.py`.
+`db/wargames.py` provides turn cycle orchestration: `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. These follow the functional core / imperative shell pattern -- pure domain logic in `wargame/turn_cycle.py` and `wargame/agents.py`, DB orchestration in `db/wargames.py`.
 
-**LLM pattern divergence:** Wargame uses PydanticAI agents (structured output validation) instead of the direct `ClaudeClient` used for roleplay. Two agents: `turn_agent` (draft response + game state artifact) and `summary_agent` (student-facing summaries). Both use `anthropic:claude-sonnet-4-5`.
+**State machine:** Teams cycle through `drafting` (students submit moves) -> `locked` (hard-deadline fired or GM locks) -> AI preprocessing -> `published` (GM publishes results) -> back to `drafting` with incremented round. `start_game()` bootstraps round 1 with scenario expansion and initial AI response.
 
-**Schema additions (planned):** `WargameTeam.move_buffer_crdt` and `WargameTeam.notes_crdt` (bytea), `WargameConfig.summary_system_prompt` (Text). See design plan: `docs/design-plans/2026-03-10-turn-cycle-296.md`.
+**One-response invariant:** Each round produces exactly one assistant message per team (AC8). Enforced by sequence number checks -- preprocessing rejects if the expected sequence already exists.
+
+**LLM pattern divergence:** Wargame uses PydanticAI agents (structured output validation) instead of the direct `ClaudeClient` used for roleplay. Two agents: `turn_agent` (draft response + game state artifact) and `summary_agent` (student-facing summaries). Both use `anthropic:claude-sonnet-4-6`. Tests override via `agent.override(model=TestModel())`.
+
+**Schema additions:** `WargameTeam.move_buffer_crdt` and `WargameTeam.notes_crdt` (bytea), `WargameConfig.summary_system_prompt` (Text). Migration `0405a9085ccf`.
+
+**Deadline enforcement:** Background polling worker (`deadline_worker.py`, same pattern as `search_worker.py`). Queries for teams with `current_deadline <= now()` and `round_state = 'drafting'`, fires `on_deadline_fired()`. Adaptive sleep shortens poll interval when a deadline is imminent. Misfire recovery: stale deadlines fire on next poll cycle after restart.
 
 ### ACL Target Polymorphism
 

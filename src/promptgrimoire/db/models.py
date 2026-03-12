@@ -418,6 +418,10 @@ class WargameConfig(SQLModel, table=True):
     timer_wall_clock: time | None = Field(
         default=None, sa_column=Column(sa.Time(), nullable=True)
     )
+    summary_system_prompt: str = Field(
+        default="",
+        sa_column=Column(sa.Text(), nullable=False, server_default=""),
+    )
 
     @model_validator(mode="after")
     def _check_activity_type(self) -> Self:
@@ -483,6 +487,12 @@ class WargameTeam(SQLModel, table=True):
     )
     student_summary_text: str | None = Field(
         default=None, sa_column=Column(sa.Text(), nullable=True)
+    )
+    move_buffer_crdt: bytes | None = Field(
+        default=None, sa_column=Column(sa.LargeBinary(), nullable=True)
+    )
+    notes_crdt: bytes | None = Field(
+        default=None, sa_column=Column(sa.LargeBinary(), nullable=True)
     )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()

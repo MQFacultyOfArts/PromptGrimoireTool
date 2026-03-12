@@ -233,6 +233,28 @@ async def reset_db_engine_per_test() -> AsyncGenerator[None]:
 
 
 # =============================================================================
+# CRDT Test Helpers
+# =============================================================================
+
+
+def make_crdt_bytes(markdown: str) -> bytes:
+    """Build serialised pycrdt bytes containing the given markdown text.
+
+    Creates a pycrdt Doc with ``Text("content_markdown")`` set to the
+    provided string. This mirrors the CRDT structure expected by
+    ``wargame/turn_cycle.py:extract_move_text()``.
+
+    Reusable by any test that needs to simulate a CRDT move buffer.
+    """
+    import pycrdt
+
+    doc = pycrdt.Doc()
+    text = doc.get("content_markdown", type=pycrdt.Text)
+    text += markdown
+    return doc.get_update()
+
+
+# =============================================================================
 # Workspace Test Helpers
 # =============================================================================
 

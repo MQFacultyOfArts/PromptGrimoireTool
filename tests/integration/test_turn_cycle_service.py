@@ -270,12 +270,12 @@ class TestLockRound:
             await lock_round(activity.id)
 
 
-async def _start_game_and_publish_to_round2(activity_id: UUID) -> None:
-    """Bootstrap a game and transition teams to round 2 / drafting.
+async def _start_game_and_advance_to_round2_locked(activity_id: UUID) -> None:
+    """Bootstrap a game and leave teams in round 2 / locked state.
 
     Used by preprocessing tests: starts the game (round 1 locked),
-    then manually transitions teams to round 2 / drafting to simulate
-    what ``publish_all()`` will do.
+    then manually advances teams to round 2 with ``round_state='locked'``
+    to simulate the state after ``publish_all()`` increments the round.
     """
     from promptgrimoire.db.engine import get_session
     from promptgrimoire.db.models import WargameTeam
@@ -306,7 +306,7 @@ class TestRunPreprocessing:
         from tests.integration.conftest import make_crdt_bytes
 
         activity, _config = await _make_wargame_activity_with_config("preproc-crdt")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         # Set CRDT move buffer on all teams
         teams = await list_teams(activity.id)
@@ -339,7 +339,7 @@ class TestRunPreprocessing:
         from promptgrimoire.db.wargames import list_teams, run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-none")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         # move_buffer_crdt is None by default — no action needed
 
@@ -366,7 +366,7 @@ class TestRunPreprocessing:
         from tests.integration.conftest import make_crdt_bytes
 
         activity, _config = await _make_wargame_activity_with_config("preproc-ws")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         teams = await list_teams(activity.id)
         async with get_session() as session:
@@ -397,7 +397,7 @@ class TestRunPreprocessing:
         from promptgrimoire.db.wargames import list_teams, run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-asst")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         with turn_agent.override(model=TestModel()):
             await run_preprocessing(activity.id)
@@ -422,7 +422,7 @@ class TestRunPreprocessing:
         from promptgrimoire.db.wargames import list_teams, run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-hist")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         with turn_agent.override(model=TestModel()):
             await run_preprocessing(activity.id)
@@ -448,7 +448,7 @@ class TestRunPreprocessing:
         from promptgrimoire.db.wargames import list_teams, run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-reuse")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         with turn_agent.override(model=TestModel()):
             await run_preprocessing(activity.id)
@@ -474,7 +474,7 @@ class TestRunPreprocessing:
         from promptgrimoire.db.wargames import run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-dup")
-        await _start_game_and_publish_to_round2(activity.id)
+        await _start_game_and_advance_to_round2_locked(activity.id)
 
         with turn_agent.override(model=TestModel()):
             await run_preprocessing(activity.id)
@@ -495,7 +495,7 @@ class TestOnDeadlineFired:
         activity, _config = await _make_wargame_activity_with_config("deadline-lock")
         # Start game, then transition to round 2 drafting
         with turn_agent.override(model=TestModel()):
-            await _start_game_and_publish_to_round2(activity.id)
+            await _start_game_and_advance_to_round2_locked(activity.id)
 
         # Set teams to drafting for on_deadline_fired
         await _set_teams_to_drafting(activity.id)
@@ -515,7 +515,7 @@ class TestOnDeadlineFired:
 
         activity, _config = await _make_wargame_activity_with_config("deadline-full")
         with turn_agent.override(model=TestModel()):
-            await _start_game_and_publish_to_round2(activity.id)
+            await _start_game_and_advance_to_round2_locked(activity.id)
 
         # Set to drafting
         await _set_teams_to_drafting(activity.id)
@@ -555,17 +555,17 @@ class TestOnDeadlineFired:
 
         activity, _config = await _make_wargame_activity_with_config("deadline-atom")
         with turn_agent.override(model=TestModel()):
-            await _start_game_and_publish_to_round2(activity.id)
+            await _start_game_and_advance_to_round2_locked(activity.id)
 
         # Set to drafting
         await _set_teams_to_drafting(activity.id)
 
-        # Mock turn_agent.run to raise during preprocessing
+        # Patch _run_preprocessing_with_session directly to raise during preprocessing.
+        # More robust than overriding turn_agent internals: tests the same atomicity
+        # property without relying on two competing PydanticAI override mechanisms.
         with (
-            turn_agent.override(model=TestModel()),
-            patch.object(
-                turn_agent,
-                "run",
+            patch(
+                "promptgrimoire.db.wargames._run_preprocessing_with_session",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("AI service unavailable"),
             ),

@@ -639,6 +639,9 @@ class TestOnDeadlineFired:
         ):
             await on_deadline_fired(activity.id)
 
+        # Every team (including the failing one) should have been attempted
+        assert call_count == len(teams)
+
         # Reload teams
         teams = await list_teams(activity.id)
         for team in teams:
@@ -653,7 +656,17 @@ class TestOnDeadlineFired:
         async with get_session() as session:
             for team in teams:
                 if team.id == failing_team_id:
-                    # Errored team should NOT have round 2 assistant message
+                    # Errored team should NOT have round 2 user message (seq=3):
+                    # per-team session rollback must roll back the user message
+                    # written before the AI call, not just the assistant message.
+                    user_absent = await session.exec(
+                        select(WargameMessage).where(
+                            WargameMessage.team_id == team.id,
+                            WargameMessage.sequence_no == 3,
+                        )
+                    )
+                    assert user_absent.one_or_none() is None
+                    # Errored team should also NOT have round 2 assistant message
                     result = await session.exec(
                         select(WargameMessage).where(
                             WargameMessage.team_id == team.id,

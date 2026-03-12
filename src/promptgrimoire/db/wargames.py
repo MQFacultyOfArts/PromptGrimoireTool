@@ -1048,6 +1048,9 @@ async def _validate_preprocessing_preconditions(
             msg = "not all teams in locked or error state"
             raise ValueError(msg)
 
+        # Empty team list is a valid no-op: on_deadline_fired may legitimately
+        # fire for an activity that has no teams yet (e.g. config exists but no
+        # roster has been ingested).  The caller's loop simply does nothing.
         return [team.id for team in teams]
 
 
@@ -1113,7 +1116,7 @@ async def _run_preprocessing_loop(activity_id: UUID) -> None:
 
 
 async def run_preprocessing(activity_id: UUID) -> None:
-    """Run AI preprocessing for all locked teams in a wargame activity.
+    """Run AI preprocessing for all locked or errored teams in a wargame activity.
 
     Each team is processed in its own database session. If one team's
     AI call fails, that team is marked with ``round_state="error"`` and

@@ -390,6 +390,68 @@ class TestAC5Groups:
         assert await _count_memberships(course.id) == 0
 
 
+class TestAtomicRollback:
+    """Integration tests for atomicity guarantees."""
+
+    @pytest.mark.asyncio
+    async def test_failure_mid_enrolment_rolls_back_all_rows(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Failure mid-enrol rolls back users, enrolments, and groups."""
+        import promptgrimoire.db.enrolment as enrolment_mod
+
+        alice_email = _unique_email("alice")
+        bob_email = _unique_email("bob")
+        course = await _make_course("rollback")
+        entries = _make_entries(
+            (alice_email, "Alice Smith", _unique_sid(), ("Tut 1",)),
+            (bob_email, "Bob Jones", _unique_sid(), ("Tut 2",)),
+        )
+
+        # Let the first enrolment succeed, then blow up
+        original = enrolment_mod._create_enrolments
+        call_count = 0
+
+        async def _exploding_enrolments(
+            session,
+            resolved,
+            course_id,
+            role,
+        ):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 1:
+                msg = "injected failure for atomicity test"
+                raise RuntimeError(msg)
+            return await original(
+                session,
+                resolved,
+                course_id,
+                role,
+            )
+
+        monkeypatch.setattr(
+            enrolment_mod,
+            "_create_enrolments",
+            _exploding_enrolments,
+        )
+
+        with pytest.raises(RuntimeError, match="injected failure"):
+            await enrolment_mod.bulk_enrol(entries, course.id)
+
+        # Nothing should have survived the rollback
+        assert (
+            await _count_users_by_email(
+                [alice_email, bob_email],
+            )
+            == 0
+        )
+        assert await _count_enrolments(course.id) == 0
+        assert await _count_groups(course.id) == 0
+        assert await _count_memberships(course.id) == 0
+
+
 class TestPublicAPIExport:
     """Smoke tests for public API surface."""
 

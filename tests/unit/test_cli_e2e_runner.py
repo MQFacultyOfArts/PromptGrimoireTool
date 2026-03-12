@@ -423,10 +423,12 @@ def test_run_all_lanes_runs_playwright_then_nicegui_even_on_failure(
         parallel: bool,
         fail_fast: bool,
         py_spy: bool,
+        browser: str | None = None,
     ) -> int:
         assert parallel is True
         assert fail_fast is False
         assert py_spy is False
+        assert browser is None
         calls.append(("playwright", user_args))
         return 1
 
@@ -459,10 +461,12 @@ def test_run_all_lanes_returns_zero_only_when_both_lanes_pass(
         parallel: bool,
         fail_fast: bool,
         py_spy: bool,
+        browser: str | None = None,
     ) -> int:
         assert parallel is True
         assert fail_fast is False
         assert py_spy is False
+        assert browser is None
         return 0
 
     def _fake_nicegui_success(_args: list[str]) -> int:
@@ -589,3 +593,256 @@ def test_run_slow_lanes_treats_filtered_no_tests_as_non_fatal(
     )
 
     assert run_slow_lanes(["-k", "playwright_only_name"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_run_playwright_file_includes_browser_flag_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Passing browser='firefox' inserts --browser firefox into the pytest cmd."""
+    from promptgrimoire.cli.e2e._workers import run_playwright_file
+
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_subprocess_exec(
+        *cmd: str,
+        stdout=None,
+        stderr=None,
+        env=None,
+        start_new_session: bool = False,
+    ) -> _FakeAsyncProcess:
+        calls.append(
+            {
+                "cmd": cmd,
+                "stdout": stdout,
+                "stderr": stderr,
+                "env": env,
+                "start_new_session": start_new_session,
+            }
+        )
+        if len(calls) == 1:
+            return _FakeAsyncProcess(pid=101, returncode=None)
+        return _FakeAsyncProcess(pid=202, returncode=0)
+
+    async def _fake_open_connection(_host: str, _port: int):
+        return object(), _DummyWriter()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_subprocess_exec)
+    monkeypatch.setattr(asyncio, "open_connection", _fake_open_connection)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._workers.os.getpgid", lambda pid: pid)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._workers.os.killpg", lambda _pgid, _sig: None
+    )
+
+    worker_dir = tmp_path / "worker"
+    result = await run_playwright_file(
+        Path("tests/e2e/test_browser_gate.py"),
+        4321,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        worker_dir,
+        [],
+        browser="firefox",
+    )
+
+    assert result.exit_code == 0
+    pytest_cmd = calls[1]["cmd"]
+    assert "--browser" in pytest_cmd
+    browser_idx = pytest_cmd.index("--browser")
+    assert pytest_cmd[browser_idx + 1] == "firefox"
+
+
+@pytest.mark.asyncio
+async def test_run_playwright_file_omits_browser_flag_when_none(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Default browser=None produces no --browser flag (Chromium default)."""
+    from promptgrimoire.cli.e2e._workers import run_playwright_file
+
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_subprocess_exec(
+        *cmd: str,
+        stdout=None,
+        stderr=None,
+        env=None,
+        start_new_session: bool = False,
+    ) -> _FakeAsyncProcess:
+        calls.append(
+            {
+                "cmd": cmd,
+                "stdout": stdout,
+                "stderr": stderr,
+                "env": env,
+                "start_new_session": start_new_session,
+            }
+        )
+        if len(calls) == 1:
+            return _FakeAsyncProcess(pid=101, returncode=None)
+        return _FakeAsyncProcess(pid=202, returncode=0)
+
+    async def _fake_open_connection(_host: str, _port: int):
+        return object(), _DummyWriter()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_subprocess_exec)
+    monkeypatch.setattr(asyncio, "open_connection", _fake_open_connection)
+    monkeypatch.setattr("promptgrimoire.cli.e2e._workers.os.getpgid", lambda pid: pid)
+    monkeypatch.setattr(
+        "promptgrimoire.cli.e2e._workers.os.killpg", lambda _pgid, _sig: None
+    )
+
+    worker_dir = tmp_path / "worker"
+    await run_playwright_file(
+        Path("tests/e2e/test_browser_gate.py"),
+        4321,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        worker_dir,
+        [],
+    )
+
+    pytest_cmd = calls[1]["cmd"]
+    assert "--browser" not in pytest_cmd
+
+
+def test_serial_playwright_includes_browser_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
+) -> None:
+    """Serial mode inserts --browser into default_args when specified."""
+    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+
+    captured: dict[str, Any] = {}
+
+    def _fake_run_pytest(
+        *,
+        _title: str = "",
+        _log_path: Path = Path(),
+        default_args: list[str],
+        _extra_args: list[str] | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        captured["default_args"] = default_args
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    try:
+        _run_serial_playwright_e2e([], use_pyspy=False, reruns=False, browser="firefox")
+    finally:
+        os.environ.pop("E2E_BASE_URL", None)
+
+    assert "--browser" in captured["default_args"]
+    idx = captured["default_args"].index("--browser")
+    assert captured["default_args"][idx + 1] == "firefox"
+
+
+def test_serial_playwright_omits_browser_flag_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_serial_playwright_infra: None,  # noqa: ARG001 - fixture side effects
+) -> None:
+    """Serial mode without browser param produces no --browser flag."""
+    from promptgrimoire.cli.e2e import _run_serial_playwright_e2e
+
+    captured: dict[str, Any] = {}
+
+    def _fake_run_pytest(
+        *,
+        _title: str = "",
+        _log_path: Path = Path(),
+        default_args: list[str],
+        _extra_args: list[str] | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        captured["default_args"] = default_args
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e._run_pytest", _fake_run_pytest)
+
+    try:
+        _run_serial_playwright_e2e([], use_pyspy=False, reruns=False)
+    finally:
+        os.environ.pop("E2E_BASE_URL", None)
+
+    assert "--browser" not in captured["default_args"]
+
+
+def test_run_all_browsers_runs_chromium_then_firefox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """all-browsers runs Chromium then Firefox in order."""
+    from promptgrimoire.cli.e2e import run_all_browsers
+
+    calls: list[str | None] = []
+
+    def _fake_playwright(
+        _args: list[str],
+        *,
+        _parallel: bool = True,
+        _fail_fast: bool = False,
+        _py_spy: bool = False,
+        browser: str | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(browser)
+        return 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
+
+    exit_code = run_all_browsers([])
+    assert exit_code == 0
+    assert calls == ["chromium", "firefox"]
+
+
+def test_run_all_browsers_fail_fast_stops_on_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--fail-fast stops iteration after the first browser failure."""
+    from promptgrimoire.cli.e2e import run_all_browsers
+
+    calls: list[str | None] = []
+
+    def _fake_playwright(
+        _args: list[str],
+        *,
+        _parallel: bool = True,
+        _fail_fast: bool = False,
+        _py_spy: bool = False,
+        browser: str | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(browser)
+        return 1  # Chromium fails
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
+
+    exit_code = run_all_browsers([], fail_fast=True)
+    assert exit_code == 1
+    assert calls == ["chromium"]  # Firefox never ran
+
+
+def test_run_all_browsers_continues_past_failure_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default mode continues to Firefox even if Chromium fails."""
+    from promptgrimoire.cli.e2e import run_all_browsers
+
+    calls: list[str | None] = []
+
+    def _fake_playwright(
+        _args: list[str],
+        *,
+        _parallel: bool = True,
+        _fail_fast: bool = False,
+        _py_spy: bool = False,
+        browser: str | None = None,
+        **_kwargs: Any,
+    ) -> int:
+        calls.append(browser)
+        return 1 if browser == "chromium" else 0
+
+    monkeypatch.setattr("promptgrimoire.cli.e2e.run_playwright_lane", _fake_playwright)
+
+    exit_code = run_all_browsers([])
+    assert exit_code == 1  # Overall failure because Chromium failed
+    assert calls == ["chromium", "firefox"]  # Both ran

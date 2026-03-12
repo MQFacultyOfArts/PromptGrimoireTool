@@ -66,6 +66,7 @@ def run_playwright_lane(
     parallel: bool,
     fail_fast: bool,
     py_spy: bool,
+    browser: str | None = None,
 ) -> int:
     """Run the Playwright lane and return its exit code."""
     from promptgrimoire.cli.e2e._parallel import _run_parallel_e2e
@@ -80,13 +81,17 @@ def run_playwright_lane(
             )
         try:
             return asyncio.run(
-                _run_parallel_e2e(user_args=user_args, fail_fast=fail_fast)
+                _run_parallel_e2e(
+                    user_args=user_args, fail_fast=fail_fast, browser=browser
+                )
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted — cleaning up...[/]")
             return 130
 
-    return _run_serial_playwright_e2e(user_args, use_pyspy=py_spy, reruns=True)
+    return _run_serial_playwright_e2e(
+        user_args, use_pyspy=py_spy, reruns=True, browser=browser
+    )
 
 
 def run_nicegui_lane(user_args: list[str]) -> int:
@@ -253,6 +258,9 @@ def run(
     failed_first: bool = typer.Option(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
+    browser: str | None = typer.Option(
+        None, help="Browser engine: chromium, firefox (default: chromium)"
+    ),
 ) -> None:
     """Run Playwright E2E tests (parallel by default, --serial for single server)."""
     args = _prepend_filter(ctx.args, filter_expr)
@@ -263,8 +271,123 @@ def run(
             parallel=not serial,
             fail_fast=fail_fast,
             py_spy=py_spy,
+            browser=browser,
         )
     )
+
+
+def _check_firefox_installed(exit_code: int) -> None:
+    """Print a hint if Firefox failed and Playwright's Firefox bundle is missing."""
+    if exit_code == 0:
+        return
+    firefox_dirs = list((Path.home() / ".cache/ms-playwright").glob("firefox-*"))
+    if not firefox_dirs:
+        print(
+            "Firefox not installed. Run: uv run playwright install firefox",
+            file=sys.stderr,
+        )
+
+
+@e2e_app.command(
+    "firefox",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def firefox(
+    ctx: typer.Context,
+    serial: bool = typer.Option(
+        False, "--serial", help="Run in serial mode (single server)"
+    ),
+    fail_fast: bool = typer.Option(
+        False,
+        "--fail-fast",
+        help="Stop on first failure (parallel only)",
+    ),
+    py_spy: bool = typer.Option(False, "--py-spy", help="Profile with py-spy"),
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
+) -> None:
+    """Run Playwright E2E tests against Firefox."""
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+    exit_code = run_playwright_lane(
+        args,
+        parallel=not serial,
+        fail_fast=fail_fast,
+        py_spy=py_spy,
+        browser="firefox",
+    )
+    _check_firefox_installed(exit_code)
+    sys.exit(exit_code)
+
+
+def run_all_browsers(
+    user_args: list[str],
+    *,
+    fail_fast: bool = False,
+) -> int:
+    """Run Chromium then Firefox sequentially, reporting per-browser results."""
+    from promptgrimoire.config import get_current_branch
+
+    cwd = Path.cwd()
+    branch = get_current_branch() or "unknown"
+    browsers = ["chromium", "firefox"]
+    lane_results: list[LaneResult] = []
+
+    for browser_name in browsers:
+        console.print(f"\n[blue]Running Playwright lane ({browser_name})...[/]")
+        exit_code = run_playwright_lane(
+            user_args,
+            parallel=True,
+            fail_fast=False,
+            py_spy=False,
+            browser=browser_name,
+        )
+        lane_results.append(LaneResult(f"playwright-{browser_name}", exit_code))
+        if fail_fast and exit_code != 0:
+            break
+
+    _print_all_lanes_summary(cwd, branch, lane_results)
+    return 0 if all(lr.exit_code == 0 for lr in lane_results) else 1
+
+
+@e2e_app.command(
+    "all-browsers",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def all_browsers(
+    ctx: typer.Context,
+    fail_fast: bool = typer.Option(
+        False,
+        "--fail-fast",
+        help="Stop after the first browser that fails",
+    ),
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
+) -> None:
+    """Run E2E tests against all browsers (Chromium then Firefox)."""
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+    sys.exit(run_all_browsers(args, fail_fast=fail_fast))
 
 
 @e2e_app.command(
@@ -523,6 +646,7 @@ def _run_serial_playwright_e2e(
     use_pyspy: bool,
     reruns: bool,
     clear_cache: bool = False,
+    browser: str | None = None,
 ) -> int:
     """Run Playwright tests in single-server serial mode."""
     from promptgrimoire.config import get_settings
@@ -557,6 +681,8 @@ def _run_serial_playwright_e2e(
         "--tb=short",
         "--log-cli-level=WARNING",
     ]
+    if browser is not None:
+        default_args += ["--browser", browser]
     if not _has_test_path(extra_args):
         default_args.insert(0, _PLAYWRIGHT_TEST_PATH)
 

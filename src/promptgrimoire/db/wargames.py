@@ -1150,19 +1150,26 @@ async def _validate_publish_preconditions(
 
     locked_teams = [t for t in teams if t.round_state == "locked"]
 
-    # Completion gate + one-response invariant
-    for team in locked_teams:
-        expected_seq = team.current_round * 2
-        count_result = await session.exec(
-            select(sa.func.count())
-            .select_from(WargameMessage)
-            .where(
-                WargameMessage.team_id == team.id,
-                WargameMessage.sequence_no == expected_seq,
-                WargameMessage.role == "assistant",
-            )
+    if not locked_teams:
+        return config, locked_teams
+
+    # Completion gate + one-response invariant (single batch query)
+    seq_by_team = {t.id: t.current_round * 2 for t in locked_teams}
+    count_result = await session.exec(
+        select(WargameMessage.team_id, sa.func.count())
+        .where(
+            WargameMessage.team_id.in_(list(seq_by_team)),  # type: ignore[union-attr]  -- Column has .in_()
+            WargameMessage.role == "assistant",
+            sa.tuple_(WargameMessage.team_id, WargameMessage.sequence_no).in_(  # type: ignore[arg-type]  -- SQLAlchemy column expressions
+                list(seq_by_team.items())
+            ),
         )
-        count = count_result.one()
+        .group_by(WargameMessage.team_id)
+    )
+    counts = dict(count_result.all())
+
+    for team in locked_teams:
+        count = counts.get(team.id, 0)
         if count == 0:
             msg = "not all teams have draft responses"
             raise ValueError(msg)

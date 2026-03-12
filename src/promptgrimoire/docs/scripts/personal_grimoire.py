@@ -420,7 +420,7 @@ def _section_organise(page: Page, guide: Guide) -> None:
             "of evidence before writing your response."
         )
 
-        g._append("### Moving Between Columns\n")
+        g.subheading("Moving Between Columns")
         g.note(
             "Drag a highlight from one column to another to reclassify "
             "it under a different tag. As your analysis develops, you "

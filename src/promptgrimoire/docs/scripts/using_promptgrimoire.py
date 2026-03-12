@@ -25,16 +25,6 @@ from promptgrimoire.docs.helpers import wait_for_text_walker
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
-_SAMPLE_HTML = (
-    '<div class="conversation">'
-    '<div class="user"><p><strong>Human:</strong> What is source text analysis'
-    " in translation?</p></div>"
-    '<div class="assistant"><p><strong>Assistant:</strong> Source text analysis'
-    " examines the original document to identify key features, register, and"
-    " cultural context before translation begins.</p></div></div>"
-)
-
-
 # ---------------------------------------------------------------------------
 # Authentication helpers
 # ---------------------------------------------------------------------------
@@ -462,13 +452,13 @@ def _entry_create_unit(page: Page, base_url: str, guide: Guide) -> None:
         page.wait_for_timeout(2000)
         g.screenshot("Units page")
         g.note(
-            "See [Instructor Setup](instructor-setup.md) for the full "
-            "step-by-step guide to creating a unit, adding weeks and "
+            "See [Instructor Setup](instructor-setup.md#step-1-login-and-navigator) "
+            "for the full step-by-step guide to creating a unit, adding weeks and "
             "activities, configuring tags, and enrolling students."
         )
 
 
-def _entry_chip_colours(page: Page, course_url: str, guide: Guide) -> None:
+def _entry_chip_colours(guide: Guide) -> None:
     """How do I know if I'm in a template or instance?"""
     with guide.step("How do I know if I'm in a template or instance?", level=3) as g:
         g.note("Look at the coloured chip near the top of the annotation page:")
@@ -483,11 +473,10 @@ def _entry_chip_colours(page: Page, course_url: str, guide: Guide) -> None:
             "you are in a student workspace. Changes here "
             "are private to this workspace."
         )
-        page.goto(course_url)
-        page.wait_for_timeout(2000)
-        g.screenshot(
-            "Purple chip = template, blue chip = instance",
-            highlight=["template-btn"],
+        g.note(
+            "The chip is visible at the top of every annotation page. "
+            "If you are unsure which workspace you are in, check the chip "
+            "colour before making any tag or content changes."
         )
 
 
@@ -663,7 +652,7 @@ def run_using_promptgrimoire_guide(page: Page, base_url: str) -> None:
 
         guide.section("Unit Settings")
         _entry_create_unit(page, base_url, guide)
-        _entry_chip_colours(page, course_url, guide)
+        _entry_chip_colours(guide)
 
         guide.section("Enrolment")
         _entry_enrol_students(page, course_url, guide)

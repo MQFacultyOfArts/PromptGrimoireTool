@@ -66,7 +66,7 @@ def paste_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
 
     # Navigate to annotation and create workspace
     page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     yield page
@@ -137,7 +137,7 @@ class TestHTMLPasteWhitespace:
         page.screenshot(path=str(SCREENSHOT_DIR / "02_after_paste_editor.png"))
 
         # Click Add Document to process
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
 
         # Wait for document to render - first chars may be hidden newlines
         page.wait_for_function(
@@ -245,7 +245,7 @@ class TestHTMLPasteWhitespace:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -335,7 +335,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -435,7 +435,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -496,7 +496,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,

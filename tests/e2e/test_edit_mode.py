@@ -274,25 +274,26 @@ class TestEditMode:
         2. Open Manage Documents dialog
         3. Verify no edit button is visible
         """
-        from promptgrimoire.docs.helpers import select_chars
+        from tests.e2e.highlight_tools import select_text_range, wait_for_css_highlight
 
         page = edit_ready_page
 
         with subtests.test(msg="create_highlight"):
             # Select some text to create a highlight
-            select_chars(page, 0, 10)
+            select_text_range(page, "Editable document")
 
             # The highlight menu should appear — click the first tag
             highlight_menu = page.get_by_test_id("highlight-menu")
             expect(highlight_menu).to_be_visible(timeout=5000)
             # Click the first tag button in the highlight menu
-            tag_btn = highlight_menu.locator("button").first
+            tag_btn = highlight_menu.get_by_test_id("highlight-menu-tag-btn").first
+            expect(tag_btn).to_be_visible(timeout=5000)
             tag_btn.click()
-            # Wait for highlight to be created and dismiss any overlays
-            page.wait_for_timeout(1000)
+            # Wait for highlight to be created
+            wait_for_css_highlight(page)
             # Click elsewhere to dismiss any lingering menus/dialogs
             page.keyboard.press("Escape")
-            page.wait_for_timeout(500)
+            expect(highlight_menu).not_to_be_visible(timeout=5000)
 
         with subtests.test(msg="no_edit_button"):
             manage_btn = page.get_by_test_id("manage-documents-btn")
@@ -367,8 +368,12 @@ class TestEditMode:
             expect(save_btn).not_to_be_visible(timeout=5000)
 
         with subtests.test(msg="paragraph_map_matches_saved_content"):
-            # Give the server a moment to flush the DB write
-            page.wait_for_timeout(500)
+            from promptgrimoire.input_pipeline import build_paragraph_map_for_json
+
+            # Wait for document view to refresh — proves the DB write is flushed
+            wait_for_text_walker(page, timeout=15000)
+            doc = page.get_by_test_id("doc-container")
+            expect(doc).to_contain_text("Second paragraph text", timeout=10000)
 
             db_state = _fetch_document_db_state(workspace_id)
             saved_content: str = db_state["content"]  # type: ignore[assignment]

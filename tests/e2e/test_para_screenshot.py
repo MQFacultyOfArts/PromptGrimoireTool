@@ -80,7 +80,7 @@ def page_with_paste(browser: Browser, app_server: str) -> Generator[Page]:
     )
 
     page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     yield page
@@ -118,7 +118,7 @@ def _paste_and_render(page: Page, html: str) -> None:
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)
 
-    page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+    page.get_by_test_id("add-document-btn").click()
 
     page.wait_for_function(
         "() => window._textNodes && window._textNodes.length > 0",

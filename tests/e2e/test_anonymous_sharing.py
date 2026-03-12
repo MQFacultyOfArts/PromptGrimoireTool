@@ -95,10 +95,7 @@ def _expected_author_labels(
 
 def _fill_template_workspace(page: Page) -> None:
     """Click Create Template, add content, seed tags."""
-    page.get_by_role(
-        "button",
-        name=re.compile(r"Create Template|Edit Template"),
-    ).click()
+    page.locator('[data-testid^="template-btn-"]').first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
 
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")

@@ -105,7 +105,7 @@ class TestStudentTagImport:
             # The dropdown is a Quasar q-select; click to open, then pick
             import_select.click()
             # Wait for dropdown options to appear, then click the source option
-            source_option = page.get_by_role("option").first
+            source_option = page.get_by_role("option").first  # noqa: PG002 — Quasar dropdown options
             source_option.wait_for(state="visible", timeout=5000)
             source_option.click()
 

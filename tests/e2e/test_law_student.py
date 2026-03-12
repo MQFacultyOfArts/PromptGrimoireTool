@@ -147,7 +147,9 @@ class TestLawStudent:
                 # Generate unique comment identifier
                 uuid1 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid1, card_index=0)
-                expect(page.get_by_text(uuid1)).to_be_visible(timeout=5000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=uuid1)
+                ).to_be_visible(timeout=5000)
 
             with subtests.test(msg="highlight_with_different_tag"):
                 # Create second highlight with Legal Issues tag (tag_index=3)
@@ -162,7 +164,9 @@ class TestLawStudent:
                 # Generate second unique comment identifier
                 uuid2 = uuid4().hex[:8]
                 add_comment_to_highlight(page, uuid2, card_index=1)
-                expect(page.get_by_text(uuid2)).to_be_visible(timeout=5000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=uuid2)
+                ).to_be_visible(timeout=5000)
 
             with subtests.test(msg="change_tag_via_dropdown"):
                 # Scroll first highlight back into view so card positioning
@@ -278,15 +282,17 @@ class TestLawStudent:
                 ).to_be_visible(timeout=10000)
 
                 # Verify a column heading matches a tag we used
-                expect(page.get_by_text("Procedural History").first).to_be_visible()
+                expect(
+                    page.locator(
+                        '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+                    )
+                ).to_be_visible()
 
             with subtests.test(msg="no_untagged_column_in_organise"):
                 # AC4.4: All highlights have tags, so "Untagged" column absent
                 # Organise tab is already visible from subtest above
                 expect(
-                    page.locator("[data-testid='organise-columns']").get_by_text(
-                        "Untagged"
-                    )
+                    page.locator('[data-testid="tag-column"][data-tag-name="Untagged"]')
                 ).not_to_be_visible()
 
             with subtests.test(msg="organise_highlight_in_correct_column"):
@@ -393,9 +399,13 @@ class TestLawStudent:
 
                 # Cards default to collapsed after reload — expand to check comments
                 expand_card(page, 0)
-                expect(page.get_by_text(uuid1)).to_be_visible(timeout=10000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=uuid1)
+                ).to_be_visible(timeout=10000)
                 expand_card(page, 1)
-                expect(page.get_by_text(uuid2)).to_be_visible(timeout=10000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=uuid2)
+                ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf_with_annotations"):
                 # Attempt PDF export with annotations

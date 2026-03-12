@@ -51,7 +51,7 @@ def setup_workspace_with_content(
         Extracted from repetitive setup code across 15+ test classes.
     """
     page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
@@ -109,7 +109,7 @@ def _load_fixture_via_paste(
     """
     # Navigate and create workspace
     page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     # Read fixture HTML (handle both .html.gz and plain .html)
@@ -147,7 +147,7 @@ def _load_fixture_via_paste(
     # Click "Add Document" button. For pasted HTML, the content type dialog
     # is skipped (content_form.py auto-detects paste as HTML). The app
     # processes the input and navigates back to the annotation page.
-    page.get_by_role("button", name=re.compile("add document", re.IGNORECASE)).click()
+    page.get_by_test_id("add-document-btn").click()
 
     # Wait for text walker readiness (large fixtures like AustLII need time).
     wait_for_text_walker(page, timeout=30000)

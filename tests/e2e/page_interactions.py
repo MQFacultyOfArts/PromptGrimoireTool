@@ -80,10 +80,11 @@ def clone_activity_workspace(
     """
     page.goto(f"{app_server}/courses/{course_id}")
 
-    label = page.get_by_text(activity_title)
-    label.wait_for(state="visible", timeout=10000)
-    card = label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
-    card.locator("[data-testid^='start-activity-btn-']").first.click()
+    activity_row = page.locator('[data-testid^="activity-row-"]').filter(
+        has_text=activity_title
+    )
+    activity_row.wait_for(state="visible", timeout=10000)
+    activity_row.locator("[data-testid^='start-activity-btn-']").first.click()
 
     page.wait_for_url(
         re.compile(r"/annotation\?workspace_id="),

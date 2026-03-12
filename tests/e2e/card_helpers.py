@@ -104,7 +104,7 @@ def add_comment_to_highlight(
     new_detail.wait_for(state="visible", timeout=5000)
 
     # Wait for the specific comment text to be visible in the new card
-    new_comment = new_card.get_by_text(text)
+    new_comment = new_card.get_by_test_id("comment").filter(has_text=text)
     try:
         new_comment.wait_for(state="visible", timeout=5000)
     except Exception:

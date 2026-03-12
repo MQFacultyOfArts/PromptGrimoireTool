@@ -100,7 +100,7 @@ def export_pdf_text(page: Page) -> str:
 
     try:
         with page.expect_download(timeout=120000) as dl:
-            page.get_by_role("button", name="Export PDF").click()
+            page.get_by_test_id("export-pdf-btn").click()
 
         download = dl.value
         pdf_path = download.path()
@@ -136,7 +136,7 @@ def export_annotation_tex_text(page: Page) -> ExportResult:
         the browser-suggested download filename.
     """
     with page.expect_download(timeout=120000) as dl:
-        page.get_by_role("button", name="Export PDF").click()
+        page.get_by_test_id("export-pdf-btn").click()
 
     download = dl.value
     suggested = download.suggested_filename

@@ -402,7 +402,7 @@ def _section_organise(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
-        g._append("### Viewing Your Tags\n")
+        g.subheading("Viewing Your Tags")
         g.screenshot(
             "Organise tab showing highlights grouped by your tags",
             highlight=["organise-columns"],
@@ -413,7 +413,7 @@ def _section_organise(page: Page, guide: Guide) -> None:
             "lens for seeing patterns across the conversation."
         )
 
-        g._append("### Reordering Within a Column\n")
+        g.subheading("Reordering Within a Column")
         g.note(
             "Drag highlights up and down within a column to group "
             "related passages together. This lets you build clusters "
@@ -453,7 +453,7 @@ def _section_respond(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
-        g._append("### Writing Your Response\n")
+        g.subheading("Writing Your Response")
         g.screenshot(
             "Respond tab with reference panel and markdown editor",
             highlight=["respond-reference-panel", "milkdown-editor-container"],
@@ -491,7 +491,7 @@ def _section_respond(page: Page, guide: Guide) -> None:
             "[Markdown Guide](https://www.markdownguide.org/basic-syntax/)."
         )
 
-        g._append("### Locating Source Text\n")
+        g.subheading("Locating Source Text")
 
         # Use the locate button to jump back to the highlight
         locate_btn = page.get_by_test_id("respond-locate-btn").first

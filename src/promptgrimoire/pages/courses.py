@@ -72,6 +72,8 @@ from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -668,12 +670,19 @@ async def _handle_enrol_upload(
     """
     # NiceGUI UploadEventArguments.file.read() returns coroutine at runtime;
     # ty sees IO[bytes].read() (sync), hence the suppression.
-    data: bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+    try:
+        data: bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+    except Exception:
+        logger.exception("Failed to read upload")
+        ui.notify("Failed to read uploaded file", type="negative", position="top")
+        return
 
     try:
         entries = parse_xlsx(data)
     except EnrolmentParseError as exc:
-        ui.notify("; ".join(exc.errors), type="warning")
+        ui.notify(
+            "; ".join(exc.errors), type="warning", position="top", close_button="OK"
+        )
         return
 
     try:
@@ -683,7 +692,18 @@ async def _handle_enrol_upload(
             f"{email}: existing={old!r}, new={new!r}"
             for email, old, new in exc.conflicts
         )
-        ui.notify(f"Student ID conflicts: {details}", type="negative")
+        ui.notify(
+            f"Student ID conflicts: {details}",
+            type="negative",
+            position="top",
+            close_button="OK",
+        )
+        return
+    except Exception:
+        logger.exception("Bulk enrolment failed")
+        ui.notify(
+            "Enrolment failed — check server logs", type="negative", position="top"
+        )
         return
 
     msg = (
@@ -691,9 +711,9 @@ async def _handle_enrol_upload(
         f" ({report.enrolments_skipped} already enrolled)"
     )
     if report.enrolments_created == 0:
-        ui.notify(msg, type="info")
+        ui.notify(msg, type="info", position="top", close_button="OK")
     else:
-        ui.notify(msg, type="positive")
+        ui.notify(msg, type="positive", position="top", close_button="OK")
 
 
 async def open_course_settings(course: Course) -> None:
@@ -1662,17 +1682,28 @@ async def manage_enrollments_page(course_id: str) -> None:
     )
     force_checkbox.props('data-testid="enrol-force-checkbox"')
 
+    upload_widget: ui.upload | None = None
+
     async def on_upload(e: Any) -> None:
         await _handle_enrol_upload(e, ctx.course, force_checkbox.value)
+        if upload_widget is not None:
+            # Delay reset so it runs after QUploader finishes its
+            # post-upload state transition on the client side.
+            # Without this, re-uploading the same file won't fire
+            # because the browser's <input type="file"> retains
+            # the filename and suppresses the change event.
+            ui.run_javascript(
+                f"setTimeout(() => getElement({upload_widget.id}).reset(), 200)"
+            )
         await enrollments_list.refresh()
 
-    upload = ui.upload(
+    upload_widget = ui.upload(
         label="Upload Moodle Grades XLSX",
         on_upload=on_upload,
         auto_upload=True,
         max_file_size=10 * 1024 * 1024,
     )
-    upload.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
+    upload_widget.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
 
     ui.separator()
     await enrollments_list()

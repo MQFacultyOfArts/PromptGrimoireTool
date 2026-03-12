@@ -58,6 +58,7 @@ NICEGUI_LANE = LaneSpec(
 )
 
 _NICEGUI_ALLOWLIST: tuple[str, ...] = (
+    "test_bulk_enrol_upload_ui.py",
     "test_instructor_course_admin_ui.py",
     "test_instructor_template_ui.py",
     "test_crud_management_ui.py",

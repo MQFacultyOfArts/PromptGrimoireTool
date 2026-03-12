@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -50,6 +51,9 @@ def run_browserstack_suite(
 
     Starts a NiceGUI server, runs a single blocking subprocess with the
     BrowserStack SDK, and guarantees server cleanup in a finally block.
+
+    The SDK subprocess runs in its own process group so that Ctrl+C kills the
+    entire tree (SDK + multiprocessing children + Playwright drivers).
     """
     _pre_test_db_cleanup()
 
@@ -58,6 +62,7 @@ def run_browserstack_suite(
     server_process = _start_e2e_server(port)
     console.print(f"[green]Server ready at {url}[/]")
 
+    proc = None
     try:
         cmd = [
             "browserstack-sdk",
@@ -81,7 +86,20 @@ def run_browserstack_suite(
         }
 
         console.print(f"[blue]BrowserStack config: {config_path}[/]")
-        result = subprocess.run(cmd, env=env, check=False)
-        return result.returncode
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            start_new_session=True,
+        )
+        return proc.wait()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted — killing BrowserStack process tree[/]")
+        if proc is not None:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            proc.wait()
+        return 130
     finally:
+        if proc is not None and proc.poll() is None:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            proc.wait()
         _stop_e2e_server(server_process)

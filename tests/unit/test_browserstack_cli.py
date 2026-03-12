@@ -119,11 +119,20 @@ class TestRunBrowserstackSuite:
 
         captured_cmd: list[str] = []
 
-        def _fake_run(cmd: list[str], **_kw: Any) -> subprocess.CompletedProcess[bytes]:
-            captured_cmd.extend(cmd)
-            return subprocess.CompletedProcess(cmd, 0)
+        class _FakeProc:
+            pid = 12345
 
-        monkeypatch.setattr(subprocess, "run", _fake_run)
+            def wait(self) -> int:
+                return 0
+
+            def poll(self) -> int:
+                return 0
+
+        def _fake_popen(cmd: list[str], **_kw: Any) -> _FakeProc:
+            captured_cmd.extend(cmd)
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
 
         config = tmp_path / "test.yml"
         config.write_text("framework: pytest")
@@ -152,11 +161,20 @@ class TestRunBrowserstackSuite:
 
         captured_cmd: list[str] = []
 
-        def _fake_run(cmd: list[str], **_kw: Any) -> subprocess.CompletedProcess[bytes]:
-            captured_cmd.extend(cmd)
-            return subprocess.CompletedProcess(cmd, 0)
+        class _FakeProc:
+            pid = 12345
 
-        monkeypatch.setattr(subprocess, "run", _fake_run)
+            def wait(self) -> int:
+                return 0
+
+            def poll(self) -> int:
+                return 0
+
+        def _fake_popen(cmd: list[str], **_kw: Any) -> _FakeProc:
+            captured_cmd.extend(cmd)
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
 
         config = tmp_path / "unsupported.yml"
         config.write_text("framework: pytest")
@@ -180,13 +198,22 @@ class TestRunBrowserstackSuite:
 
         captured_env: dict[str, str] = {}
 
-        def _fake_run(
-            _cmd: list[str], *, env: dict[str, str], **_kw: Any
-        ) -> subprocess.CompletedProcess[bytes]:
-            captured_env.update(env)
-            return subprocess.CompletedProcess(_cmd, 0)
+        class _FakeProc:
+            pid = 12345
 
-        monkeypatch.setattr(subprocess, "run", _fake_run)
+            def wait(self) -> int:
+                return 0
+
+            def poll(self) -> int:
+                return 0
+
+        def _fake_popen(
+            _cmd: list[str], *, env: dict[str, str], **_kw: Any
+        ) -> _FakeProc:
+            captured_env.update(env)
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
 
         config = tmp_path / "test.yml"
         config.write_text("framework: pytest")
@@ -209,13 +236,11 @@ class TestRunBrowserstackSuite:
     ) -> None:
         from promptgrimoire.cli.e2e._browserstack import run_browserstack_suite
 
-        def _fake_run(
-            _cmd: list[str], **_kw: Any
-        ) -> subprocess.CompletedProcess[bytes]:
+        def _fake_popen(_cmd: list[str], **_kw: Any) -> None:
             msg = "BrowserStack connection failed"
             raise OSError(msg)
 
-        monkeypatch.setattr(subprocess, "run", _fake_run)
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
 
         config = tmp_path / "test.yml"
         config.write_text("framework: pytest")

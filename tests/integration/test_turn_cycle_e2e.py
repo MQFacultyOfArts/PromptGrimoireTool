@@ -8,7 +8,8 @@ Uses real database with TestModel for all AI calls.
 
 Verifies:
 - turn-cycle-296.AC1.1-AC1.4: Game start bootstrap
-- turn-cycle-296.AC2.1-AC2.3: Timer management (schedule_deadline monkeypatched)
+- turn-cycle-296.AC2.1-AC2.3: Timer management (current_deadline verified via
+  publish_all; scheduler polling covered by Phase 4 tests)
 - turn-cycle-296.AC3.1-AC3.3: Hard-deadline lock
 - turn-cycle-296.AC4.1-AC4.3: Snapshot pipeline (CRDT extraction in round 2)
 - turn-cycle-296.AC5.1-AC5.3: AI pre-processing (history accumulation)
@@ -104,21 +105,6 @@ async def _get_messages_for_team(
         .order_by(WargameMessage.sequence_no)  # type: ignore[arg-type]  -- SQLAlchemy column expression
     )
     return list(result.all())
-
-
-async def _set_teams_to_drafting(activity_id: Any) -> None:
-    """Set all teams to drafting state with a future deadline."""
-    from datetime import timedelta
-
-    async with get_session() as session:
-        result = await session.exec(
-            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
-        )
-        teams = list(result.all())
-        for team in teams:
-            team.round_state = "drafting"
-            team.current_deadline = datetime.now(UTC) + timedelta(hours=1)
-            session.add(team)
 
 
 async def _assert_bootstrap_state(
@@ -388,7 +374,7 @@ class TestEdgeCases:
                         WargameMessage.team_id == team.id,
                         WargameMessage.role == "assistant",
                     )
-                    .order_by(WargameMessage.sequence_no)  # type: ignore[arg-type]
+                    .order_by(WargameMessage.sequence_no)  # type: ignore[arg-type]  -- SQLAlchemy column expression
                 )
                 assistant_msgs = list(result.all())
                 assert len(assistant_msgs) == 2, (

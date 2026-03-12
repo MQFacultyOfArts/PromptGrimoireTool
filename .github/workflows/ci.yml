@@ -125,6 +125,10 @@ jobs:
 
   e2e-playwright:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
     services:
       postgres:
         image: postgres:17
@@ -164,21 +168,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          key: playwright-${{ matrix.browser }}-${{ runner.os }}-${{ hashFiles('uv.lock') }}
 
       - name: Install Playwright browsers
-        run: uv run playwright install --with-deps chromium
+        run: uv run playwright install --with-deps ${{ matrix.browser }}
 
       - name: Run E2E tests
         env:
           DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
-        run: uv run grimoire e2e run
+        run: uv run grimoire e2e run --browser ${{ matrix.browser }}
 
       - name: Upload Playwright lane artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-playwright-artifacts
+          name: e2e-playwright-${{ matrix.browser }}-artifacts
           path: output/test_output/e2e/playwright/**
           if-no-files-found: ignore
 
@@ -231,3 +235,63 @@ jobs:
           name: nicegui-ui-artifacts
           path: output/test_output/e2e/nicegui/**
           if-no-files-found: ignore
+
+  browserstack:
+    if: github.event_name == 'pull_request'
+    needs: [quality, test-all, e2e-playwright, nicegui-ui]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: promptgrimoire_test
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mecab libmecab-dev pandoc
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.3.1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install Playwright runtime (minimal)
+        run: uv run playwright install chromium
+        # BrowserStack SDK routes execution through CDP to cloud browsers,
+        # but pytest-playwright requires at least one local browser installed
+        # to initialise its fixtures without error.
+
+      - name: Run BrowserStack supported tier
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: uv run grimoire e2e browserstack
+
+      - name: Run BrowserStack unsupported tier
+        if: always()
+        env:
+          DEV__TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/promptgrimoire_test
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: uv run grimoire e2e browserstack unsupported

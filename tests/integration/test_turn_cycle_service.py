@@ -571,7 +571,7 @@ class TestOnDeadlineFired:
                     assert await _get_message(session, team.id, 4) is not None
 
 
-async def _start_and_preprocess_round1(activity_id: UUID) -> None:
+async def _bootstrap_round1(activity_id: UUID) -> None:
     """Bootstrap a game and run preprocessing so teams have draft responses.
 
     After this: teams are in round 1, state "locked", with seq=1 (user) and
@@ -589,7 +589,7 @@ class TestPublishAll:
     async def test_ac7_2_rejects_drafting_state(self) -> None:
         """AC7.2: publish_all raises ValueError if teams in drafting state."""
         activity, _config = await _make_wargame_activity_with_config("pub-drafting")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         # Transition teams to drafting
         await _set_teams_to_drafting(activity.id)
@@ -609,10 +609,16 @@ class TestPublishAll:
         with turn_agent.override(model=TestModel()):
             await start_game(activity.id)
 
-        # Delete all assistant messages to simulate missing drafts
+        # Delete assistant messages scoped to this activity to simulate missing drafts
         async with get_session() as session:
+            team_ids_subq = select(WargameTeam.id).where(
+                WargameTeam.activity_id == activity.id
+            )
             result = await session.exec(
-                select(WargameMessage).where(WargameMessage.role == "assistant")
+                select(WargameMessage).where(
+                    WargameMessage.team_id.in_(team_ids_subq),  # type: ignore[union-attr]  -- Column has .in_()
+                    WargameMessage.role == "assistant",
+                )
             )
             for msg in result.all():
                 await session.delete(msg)
@@ -628,7 +634,7 @@ class TestPublishAll:
     async def test_ac6_1_summary_text_populated(self) -> None:
         """AC6.1: After publish_all, each team has student_summary_text."""
         activity, _config = await _make_wargame_activity_with_config("pub-summary")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         with (
             turn_agent.override(model=TestModel()),
@@ -645,7 +651,7 @@ class TestPublishAll:
     async def test_ac6_2_round_advanced(self) -> None:
         """AC6.2: After publish_all, current_round advances by 1."""
         activity, _config = await _make_wargame_activity_with_config("pub-round")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         with (
             turn_agent.override(model=TestModel()),
@@ -661,7 +667,7 @@ class TestPublishAll:
     async def test_ac6_3_state_back_to_drafting(self) -> None:
         """AC6.3: After publish_all, all teams have round_state=drafting."""
         activity, _config = await _make_wargame_activity_with_config("pub-state")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         with (
             turn_agent.override(model=TestModel()),
@@ -677,7 +683,7 @@ class TestPublishAll:
     async def test_ac6_4_move_buffer_cleared(self) -> None:
         """AC6.4: After publish_all, move_buffer_crdt is None for all teams."""
         activity, _config = await _make_wargame_activity_with_config("pub-buffer")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         # Set move buffers before publish
         teams = await list_teams(activity.id)
@@ -702,7 +708,7 @@ class TestPublishAll:
     async def test_ac6_5_deadline_set(self) -> None:
         """AC6.5: After publish_all, all teams have a future deadline."""
         activity, _config = await _make_wargame_activity_with_config("pub-deadline")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         with (
             turn_agent.override(model=TestModel()),
@@ -782,7 +788,7 @@ class TestPublishAll:
         ``publish_all()``.
         """
         activity, _config = await _make_wargame_activity_with_config("pub-dup")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         teams = await list_teams(activity.id)
         team = teams[0]
@@ -850,7 +856,7 @@ class TestPublishAll:
     async def test_error_teams_skipped(self) -> None:
         """Error teams from preprocessing are skipped by publish_all."""
         activity, _config = await _make_wargame_activity_with_config("pub-errskip")
-        await _start_and_preprocess_round1(activity.id)
+        await _bootstrap_round1(activity.id)
 
         # Mark one team as errored
         teams = await list_teams(activity.id)

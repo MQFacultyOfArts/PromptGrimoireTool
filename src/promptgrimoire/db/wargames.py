@@ -1193,6 +1193,8 @@ async def _generate_team_summary(
         summary_prompt,
         instructions=config.summary_system_prompt or None,
     )
+    # ty cannot track PydanticAI Agent generics;
+    # cast narrows to the concrete output type.
     summary_output = cast("StudentSummary", ai_result.output)
     team.student_summary_text = summary_output.summary
 

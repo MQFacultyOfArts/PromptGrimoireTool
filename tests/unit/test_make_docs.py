@@ -17,7 +17,12 @@ import promptgrimoire.cli.docs as cli_module
 # Depth [3] matches _make_docs_build_and_serve() in cli/docs.py.
 _guides_dir = Path(cli_module.__file__).resolve().parents[3] / "docs" / "guides"
 
-_GUIDE_NAMES = ("instructor-setup", "student-workflow", "your-personal-grimoire")
+_GUIDE_NAMES = (
+    "instructor-setup",
+    "student-workflow",
+    "your-personal-grimoire",
+    "using-promptgrimoire",
+)
 
 
 def _create_guide_md(name: str):
@@ -63,12 +68,16 @@ def _mock_happy_path():
         patch(
             "promptgrimoire.docs.scripts.personal_grimoire.run_personal_grimoire_guide"
         ) as mock_personal,
+        patch(
+            "promptgrimoire.docs.scripts.using_promptgrimoire.run_using_promptgrimoire_guide"
+        ) as mock_using,
         patch("subprocess.run") as mock_subprocess_run,
     ):
         mock_sync_pw.return_value.start.return_value = mock_pw
         mock_instructor.side_effect = _create_guide_md("instructor-setup")
         mock_student.side_effect = _create_guide_md("student-workflow")
         mock_personal.side_effect = _create_guide_md("your-personal-grimoire")
+        mock_using.side_effect = _create_guide_md("using-promptgrimoire")
         yield {
             "start": mock_start,
             "stop": mock_stop,
@@ -80,6 +89,7 @@ def _mock_happy_path():
             "instructor": mock_instructor,
             "student": mock_student,
             "personal": mock_personal,
+            "using": mock_using,
             "subprocess_run": mock_subprocess_run,
         }
         # Cleanup: remove placeholder markdown files created by side_effects
@@ -127,7 +137,7 @@ class TestMakeDocsServerLifecycle:
 
         cli_module.build(action=None)
 
-        for key in ("instructor", "student", "personal"):
+        for key in ("instructor", "student", "personal", "using"):
             mocks[key].assert_called_once()
             page_arg, base_url_arg = mocks[key].call_args[0]
             assert page_arg is mocks["page"]
@@ -172,10 +182,11 @@ class TestMakeDocsGuideOrder:
         mocks["instructor"].side_effect = _record("instructor")
         mocks["student"].side_effect = _record("student")
         mocks["personal"].side_effect = _record("personal")
+        mocks["using"].side_effect = _record("using")
 
         cli_module.build(action=None)
 
-        assert call_order == ["instructor", "student", "personal"]
+        assert call_order == ["instructor", "student", "personal", "using"]
 
 
 class TestMakeDocsErrorHandling:
@@ -293,6 +304,7 @@ class TestMakeDocsMkdocsBuild:
         mocks["instructor"].side_effect = _record("instructor")
         mocks["student"].side_effect = _record("student")
         mocks["personal"].side_effect = _record("personal")
+        mocks["using"].side_effect = _record("using")
         mocks["subprocess_run"].side_effect = _record_subprocess
 
         cli_module.build(action=None)
@@ -300,11 +312,13 @@ class TestMakeDocsMkdocsBuild:
         assert "instructor" in call_order
         assert "student" in call_order
         assert "personal" in call_order
+        assert "using" in call_order
         assert "mkdocs" in call_order
         mkdocs_idx = call_order.index("mkdocs")
         assert call_order.index("instructor") < mkdocs_idx
         assert call_order.index("student") < mkdocs_idx
         assert call_order.index("personal") < mkdocs_idx
+        assert call_order.index("using") < mkdocs_idx
 
 
 class TestMakeDocsPandocPdf:
@@ -318,12 +332,13 @@ class TestMakeDocsPandocPdf:
         pandoc_calls = [
             c for c in mocks["subprocess_run"].call_args_list if c[0][0][0] == "pandoc"
         ]
-        assert len(pandoc_calls) == 3
+        assert len(pandoc_calls) == 4
 
         input_files = [c[0][0][-1] for c in pandoc_calls]
         assert any("instructor-setup.md" in f for f in input_files)
         assert any("student-workflow.md" in f for f in input_files)
         assert any("your-personal-grimoire.md" in f for f in input_files)
+        assert any("using-promptgrimoire.md" in f for f in input_files)
 
     def test_pandoc_ignores_unexpected_markdown_files(self, _mock_happy_path):
         mocks = _mock_happy_path

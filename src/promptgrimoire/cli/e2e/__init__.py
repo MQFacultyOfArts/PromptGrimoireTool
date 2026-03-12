@@ -391,6 +391,61 @@ def all_browsers(
 
 
 @e2e_app.command(
+    "browserstack",
+    context_settings={
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+    },
+)
+def browserstack(
+    ctx: typer.Context,
+    profile: str | None = typer.Argument(
+        None,
+        help="Browser profile: safari, firefox, unsupported (default: supported)",
+    ),
+    filter_expr: str | None = typer.Option(
+        None, "-k", "--filter", help="Pytest keyword filter expression"
+    ),
+    exit_first: bool = typer.Option(
+        False, "-x", "--exit-first", help="Stop on first failure (-x)"
+    ),
+    failed_first: bool = typer.Option(
+        False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
+    ),
+) -> None:
+    """Run E2E tests against real browsers via BrowserStack.
+
+    Requires BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY env vars.
+    """
+    from promptgrimoire.cli.e2e._browserstack import (
+        resolve_browserstack_config,
+        run_browserstack_suite,
+    )
+
+    if not os.environ.get("BROWSERSTACK_USERNAME") or not os.environ.get(
+        "BROWSERSTACK_ACCESS_KEY"
+    ):
+        console.print(
+            "[red]BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY must be set[/]"
+        )
+        raise typer.Exit(1)
+
+    config_path = resolve_browserstack_config(profile)
+    marker_expr = "browser_gate" if profile == "unsupported" else "e2e"
+
+    args = _prepend_filter(ctx.args, filter_expr)
+    args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
+
+    sys.exit(
+        run_browserstack_suite(
+            config_path=config_path,
+            user_args=args,
+            marker_expr=marker_expr,
+        )
+    )
+
+
+@e2e_app.command(
     "nicegui",
     context_settings={
         "allow_extra_args": True,

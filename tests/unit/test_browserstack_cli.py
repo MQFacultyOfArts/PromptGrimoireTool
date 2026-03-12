@@ -91,6 +91,22 @@ class TestRunBrowserstackSuite:
             "promptgrimoire.cli.e2e._browserstack._stop_e2e_server",
             _fake_stop_server,
         )
+
+        # Provide fake BrowserStack credentials via settings
+        from unittest.mock import MagicMock
+
+        from pydantic import SecretStr
+
+        fake_bs = MagicMock()
+        fake_bs.username = "test_user"
+        fake_bs.access_key = SecretStr("test_key")
+        fake_settings = MagicMock()
+        fake_settings.browserstack = fake_bs
+        monkeypatch.setattr(
+            "promptgrimoire.cli.e2e._browserstack.get_settings",
+            lambda: fake_settings,
+        )
+
         return captured
 
     def test_command_starts_with_browserstack_sdk_pytest(
@@ -182,6 +198,8 @@ class TestRunBrowserstackSuite:
 
         assert captured_env["BROWSERSTACK_CONFIG_FILE"] == str(config)
         assert captured_env["E2E_BASE_URL"] == "http://localhost:5555"
+        assert captured_env["BROWSERSTACK_USERNAME"] == "test_user"
+        assert captured_env["BROWSERSTACK_ACCESS_KEY"] == "test_key"
 
     def test_server_stopped_on_subprocess_failure(
         self,
@@ -216,10 +234,21 @@ class TestBrowserstackCredentialCheck:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("BROWSERSTACK_USERNAME", raising=False)
-        monkeypatch.delenv("BROWSERSTACK_ACCESS_KEY", raising=False)
+        from unittest.mock import MagicMock
+
+        from pydantic import SecretStr
 
         from promptgrimoire.cli.e2e import browserstack, e2e_app
+
+        fake_bs = MagicMock()
+        fake_bs.username = ""
+        fake_bs.access_key = SecretStr("")
+        fake_settings = MagicMock()
+        fake_settings.browserstack = fake_bs
+        monkeypatch.setattr(
+            "promptgrimoire.config.get_settings",
+            lambda: fake_settings,
+        )
 
         ctx = typer.Context(typer.main.get_command(e2e_app))
         ctx.args = []
@@ -231,10 +260,21 @@ class TestBrowserstackCredentialCheck:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("BROWSERSTACK_USERNAME", "test_user")
-        monkeypatch.delenv("BROWSERSTACK_ACCESS_KEY", raising=False)
+        from unittest.mock import MagicMock
+
+        from pydantic import SecretStr
 
         from promptgrimoire.cli.e2e import browserstack, e2e_app
+
+        fake_bs = MagicMock()
+        fake_bs.username = "test_user"
+        fake_bs.access_key = SecretStr("")
+        fake_settings = MagicMock()
+        fake_settings.browserstack = fake_bs
+        monkeypatch.setattr(
+            "promptgrimoire.config.get_settings",
+            lambda: fake_settings,
+        )
 
         ctx = typer.Context(typer.main.get_command(e2e_app))
         ctx.args = []

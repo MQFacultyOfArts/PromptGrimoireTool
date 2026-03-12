@@ -415,18 +415,19 @@ def browserstack(
 ) -> None:
     """Run E2E tests against real browsers via BrowserStack.
 
-    Requires BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY env vars.
+    Requires BROWSERSTACK__USERNAME and BROWSERSTACK__ACCESS_KEY in .env
+    (or BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY as env vars).
     """
     from promptgrimoire.cli.e2e._browserstack import (
         resolve_browserstack_config,
         run_browserstack_suite,
     )
+    from promptgrimoire.config import get_settings
 
-    if not os.environ.get("BROWSERSTACK_USERNAME") or not os.environ.get(
-        "BROWSERSTACK_ACCESS_KEY"
-    ):
+    bs = get_settings().browserstack
+    if not bs.username or not bs.access_key.get_secret_value():
         console.print(
-            "[red]BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY must be set[/]"
+            "[red]BROWSERSTACK__USERNAME and BROWSERSTACK__ACCESS_KEY must be set[/]"
         )
         raise typer.Exit(1)
 

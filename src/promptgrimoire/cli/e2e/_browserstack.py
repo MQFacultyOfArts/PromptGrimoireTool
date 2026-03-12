@@ -11,6 +11,7 @@ import typer
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
 from promptgrimoire.cli.e2e._server import _start_e2e_server, _stop_e2e_server
 from promptgrimoire.cli.e2e._workers import _allocate_ports
+from promptgrimoire.config import get_settings
 
 _BROWSERSTACK_PROFILES: dict[str | None, str] = {
     None: "browserstack/supported.yml",
@@ -69,10 +70,13 @@ def run_browserstack_suite(
             *user_args,
         ]
 
+        bs = get_settings().browserstack
         env = {
             **os.environ,
             "E2E_BASE_URL": url,
             "BROWSERSTACK_CONFIG_FILE": str(config_path),
+            "BROWSERSTACK_USERNAME": bs.username,
+            "BROWSERSTACK_ACCESS_KEY": bs.access_key.get_secret_value(),
             "GRIMOIRE_TEST_HARNESS": "1",
         }
 

@@ -5,6 +5,7 @@ Provides consistent header, navigation drawer, and page structure.
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -143,9 +144,9 @@ def _render_algolia_help(help_config: HelpConfig) -> None:
         if (typeof docsearch !== 'undefined') {{
             docsearch({{
                 container: '#docsearch-container',
-                appId: '{help_config.algolia_app_id}',
-                indexName: '{help_config.algolia_index_name}',
-                apiKey: '{help_config.algolia_search_api_key}',
+                appId: {json.dumps(help_config.algolia_app_id)},
+                indexName: {json.dumps(help_config.algolia_index_name)},
+                apiKey: {json.dumps(help_config.algolia_search_api_key)},
             }});
         }}
     }});
@@ -167,7 +168,7 @@ def _render_mkdocs_help() -> None:
 
     ui.button(
         icon="help_outline",
-        on_click=lambda: ui.navigate.to(docs_url, new_tab=True),
+        on_click=lambda url=docs_url: ui.navigate.to(url, new_tab=True),
     ).props('flat color=white data-testid="help-btn"').tooltip("Help documentation")
 
 

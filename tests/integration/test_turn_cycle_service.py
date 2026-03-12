@@ -20,6 +20,7 @@ Verifies:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -470,18 +471,39 @@ class TestRunPreprocessing:
 
     @pytest.mark.asyncio
     async def test_ac8_1_one_response_invariant(self) -> None:
-        """AC8.1: Calling run_preprocessing twice raises ValueError."""
-        from promptgrimoire.db.wargames import run_preprocessing
+        """AC8.1: Calling run_preprocessing twice skips already-processed teams.
+
+        The one-response invariant detects that assistant messages already
+        exist for the current round and silently skips those teams rather
+        than raising or re-processing them.
+        """
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, run_preprocessing
 
         activity, _config = await _make_wargame_activity_with_config("preproc-dup")
         await _start_game_and_advance_to_round2_locked(activity.id)
 
         with turn_agent.override(model=TestModel()):
             await run_preprocessing(activity.id)
-            with pytest.raises(
-                ValueError, match="assistant message already exists for current round"
-            ):
-                await run_preprocessing(activity.id)
+            # Second call should silently skip (no error, no duplicate messages)
+            await run_preprocessing(activity.id)
+
+        # Verify no duplicate messages: each team should have exactly one
+        # assistant message for round 2 (sequence_no=4)
+        teams = await list_teams(activity.id)
+        async with get_session() as session:
+            for team in teams:
+                result = await session.exec(
+                    select(WargameMessage).where(
+                        WargameMessage.team_id == team.id,
+                        WargameMessage.sequence_no == 4,
+                    )
+                )
+                messages = list(result.all())
+                assert len(messages) == 1, (
+                    f"Expected exactly 1 assistant message for round 2, "
+                    f"got {len(messages)} for team {team.codename}"
+                )
 
 
 class TestOnDeadlineFired:
@@ -547,8 +569,8 @@ class TestOnDeadlineFired:
                 assert asst_msg.role == "assistant"
 
     @pytest.mark.asyncio
-    async def test_atomicity_rollback_on_preprocessing_failure(self) -> None:
-        """Atomicity: if preprocessing fails, lock is also rolled back."""
+    async def test_lock_committed_even_when_preprocessing_fails(self) -> None:
+        """Lock phase commits independently; preprocessing errors mark teams."""
         from unittest.mock import AsyncMock, patch
 
         from promptgrimoire.db.wargames import list_teams, on_deadline_fired
@@ -560,20 +582,99 @@ class TestOnDeadlineFired:
         # Set to drafting
         await _set_teams_to_drafting(activity.id)
 
-        # Patch _run_preprocessing_with_session directly to raise during preprocessing.
-        # More robust than overriding turn_agent internals: tests the same atomicity
-        # property without relying on two competing PydanticAI override mechanisms.
-        with (
-            patch(
-                "promptgrimoire.db.wargames._run_preprocessing_with_session",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("AI service unavailable"),
-            ),
-            pytest.raises(RuntimeError, match="AI service unavailable"),
+        # Patch _preprocess_one_team to raise for ALL teams.
+        with patch(
+            "promptgrimoire.db.wargames._preprocess_one_team",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("AI service unavailable"),
         ):
             await on_deadline_fired(activity.id)
 
-        # Teams should still be in drafting state (lock was rolled back)
+        # Lock phase committed: teams should NOT be in drafting state.
+        # Since all teams' preprocessing failed, they should be in "error" state.
         teams = await list_teams(activity.id)
         for team in teams:
-            assert team.round_state == "drafting"
+            assert team.round_state == "error"
+
+    @pytest.mark.asyncio
+    async def test_partial_failure_marks_errored_team_continues_others(self) -> None:
+        """Per-team isolation: one team's AI failure doesn't block others."""
+        from unittest.mock import AsyncMock, patch
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.wargames import list_teams, on_deadline_fired
+
+        activity, _config = await _make_wargame_activity_with_config("deadline-partial")
+        with turn_agent.override(model=TestModel()):
+            await _start_game_and_advance_to_round2_locked(activity.id)
+
+        await _set_teams_to_drafting(activity.id)
+
+        teams = await list_teams(activity.id)
+        failing_team_id = teams[0].id
+
+        # Original function reference for selective failure
+        from promptgrimoire.db.wargames import _preprocess_one_team as real_fn
+
+        call_count = 0
+
+        async def _selective_fail(
+            session: Any,
+            config: Any,
+            team: Any,
+        ) -> None:
+            nonlocal call_count
+            call_count += 1
+            if team.id == failing_team_id:
+                raise RuntimeError("AI service unavailable")
+            await real_fn(session, config, team)  # type: ignore[arg-type]
+
+        with (
+            turn_agent.override(model=TestModel()),
+            patch(
+                "promptgrimoire.db.wargames._preprocess_one_team",
+                new_callable=AsyncMock,
+                side_effect=_selective_fail,
+            ),
+        ):
+            await on_deadline_fired(activity.id)
+
+        # Reload teams
+        teams = await list_teams(activity.id)
+        for team in teams:
+            if team.id == failing_team_id:
+                assert team.round_state == "error"
+            else:
+                # Successful team should still be "locked" (preprocessing
+                # doesn't change round_state — that's publish_all's job)
+                assert team.round_state == "locked"
+
+        # Successful team should have user + assistant messages for round 2
+        async with get_session() as session:
+            for team in teams:
+                if team.id == failing_team_id:
+                    # Errored team should NOT have round 2 assistant message
+                    result = await session.exec(
+                        select(WargameMessage).where(
+                            WargameMessage.team_id == team.id,
+                            WargameMessage.sequence_no == 4,
+                        )
+                    )
+                    assert result.one_or_none() is None
+                else:
+                    # Successful team should have round 2 messages
+                    user_result = await session.exec(
+                        select(WargameMessage).where(
+                            WargameMessage.team_id == team.id,
+                            WargameMessage.sequence_no == 3,
+                        )
+                    )
+                    assert user_result.one() is not None
+
+                    asst_result = await session.exec(
+                        select(WargameMessage).where(
+                            WargameMessage.team_id == team.id,
+                            WargameMessage.sequence_no == 4,
+                        )
+                    )
+                    assert asst_result.one() is not None

@@ -915,122 +915,212 @@ async def lock_round(activity_id: UUID) -> None:
         await _lock_round_with_session(session, activity_id, strict=True)
 
 
-async def _run_preprocessing_with_session(
+async def _preprocess_one_team(
     session: AsyncSession,
-    activity_id: UUID,
+    config: WargameConfig,
+    team: WargameTeam,
 ) -> None:
-    """Run AI preprocessing for all teams inside a caller-owned session.
+    """Run AI preprocessing for a single team inside a caller-owned session.
 
-    For each team: extracts move text from the CRDT buffer, restores
-    PydanticAI history from the previous assistant message, calls the
-    turn agent, and stores both user and assistant messages.
+    Extracts move text from the CRDT buffer, restores PydanticAI history
+    from the previous assistant message, calls the turn agent, and stores
+    both user and assistant messages.
 
     Parameters
     ----------
     session:
-        Active async database session.
+        Active async database session (one per team call).
+    config:
+        The wargame configuration for the activity.
+    team:
+        The team to preprocess (must be freshly loaded in this session).
+
+    Raises
+    ------
+    ValueError
+        If an assistant message already exists for the current round
+        (one-response invariant).
+    """
+    expected_assistant_seq = team.current_round * 2
+    expected_user_seq = team.current_round * 2 - 1
+
+    # One-response invariant: skip if assistant message already exists.
+    # This prevents double-processing of already-succeeded teams on retry
+    # after partial failure (errored teams won't have an assistant message,
+    # so they'll be processed; successful teams will have one and are skipped).
+    existing_result = await session.exec(
+        select(WargameMessage).where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.sequence_no == expected_assistant_seq,
+        )
+    )
+    if existing_result.one_or_none() is not None:
+        _logger.info(
+            "Skipping team %s: assistant message already exists for round %d",
+            team.id,
+            team.current_round,
+        )
+        return
+
+    # Snapshot: extract move text from CRDT buffer
+    move_text = extract_move_text(team.move_buffer_crdt)
+
+    # Restore PydanticAI history from most recent assistant message
+    history_result = await session.exec(
+        select(WargameMessage)
+        .where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.role == "assistant",
+        )
+        .order_by(
+            WargameMessage.sequence_no.desc()  # type: ignore[union-attr]  -- SQLAlchemy column expression
+        )
+        .limit(1)
+    )
+    prev_assistant = history_result.one_or_none()
+    message_history = (
+        ModelMessagesTypeAdapter.validate_python(prev_assistant.metadata_json)
+        if prev_assistant is not None and prev_assistant.metadata_json is not None
+        else None
+    )
+
+    # Build prompt and store user message
+    prompt = build_turn_prompt(move_text, team.game_state_text or "")
+
+    user_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=expected_user_seq,
+        role="user",
+        content=move_text,
+    )
+    session.add(user_msg)
+
+    # AI call
+    ai_result = await turn_agent.run(
+        prompt,
+        message_history=message_history,
+        instructions=config.system_prompt,
+    )
+    turn_output = cast("TurnResult", ai_result.output)
+
+    # Store assistant message with PydanticAI history
+    assistant_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=expected_assistant_seq,
+        role="assistant",
+        content=turn_output.response_text,
+        metadata_json=to_jsonable_python(ai_result.all_messages()),
+    )
+    session.add(assistant_msg)
+
+    # Update game state
+    team.game_state_text = turn_output.game_state
+    session.add(team)
+
+
+async def _validate_preprocessing_preconditions(
+    activity_id: UUID,
+) -> list[UUID]:
+    """Load teams and validate they are in a processable state.
+
+    Returns team IDs for per-team processing.
+
+    Raises
+    ------
+    ValueError
+        If no config exists, or if any team is not in ``"locked"`` or
+        ``"error"`` state.
+    """
+    async with get_session() as session:
+        config = await session.get(WargameConfig, activity_id)
+        if config is None:
+            msg = f"no wargame config for activity {activity_id}"
+            raise ValueError(msg)
+
+        result = await session.exec(
+            select(WargameTeam).where(WargameTeam.activity_id == activity_id)
+        )
+        teams = list(result.all())
+
+        # Accept "locked" and "error" states (error allows retry)
+        not_processable = [t for t in teams if t.round_state not in ("locked", "error")]
+        if not_processable:
+            msg = "not all teams in locked or error state"
+            raise ValueError(msg)
+
+        return [team.id for team in teams]
+
+
+async def _mark_team_errored(team_id: UUID) -> None:
+    """Mark a team as errored in a fresh session after preprocessing failure."""
+    try:
+        async with get_session() as err_session:
+            err_team = await err_session.get(WargameTeam, team_id)
+            if err_team is not None:
+                err_team.round_state = "error"
+                err_session.add(err_team)
+    except Exception:
+        _logger.exception("Failed to mark team %s as errored", team_id)
+
+
+async def _run_preprocessing_loop(activity_id: UUID) -> None:
+    """Run AI preprocessing for all eligible teams with per-team isolation.
+
+    Each team is processed in its own database session. If a team's
+    preprocessing fails, it is marked with ``round_state="error"`` and
+    processing continues for remaining teams.
+
+    The one-response invariant (checking for an existing assistant message)
+    allows safe retry: errored teams are re-processed, while teams that
+    already succeeded are skipped.
+
+    Parameters
+    ----------
     activity_id:
         The wargame activity to preprocess.
 
     Raises
     ------
     ValueError
-        If any team is not in ``"locked"`` state, or if an assistant
-        message already exists for the current round (one-response
-        invariant).
+        If no config exists, or if no teams are in a processable state
+        (``"locked"`` or ``"error"``).
     """
-    config = await session.get(WargameConfig, activity_id)
-    if config is None:
-        msg = f"no wargame config for activity {activity_id}"
-        raise ValueError(msg)
+    team_ids = await _validate_preprocessing_preconditions(activity_id)
 
-    result = await session.exec(
-        select(WargameTeam).where(WargameTeam.activity_id == activity_id)
-    )
-    teams = list(result.all())
+    # Per-team loop: each team gets its own session.
+    # Config and team are re-fetched inside each session to avoid
+    # detached-instance issues across session boundaries.
+    for team_id in team_ids:
+        try:
+            async with get_session() as session:
+                team_config = await session.get(WargameConfig, activity_id)
+                if team_config is None:  # pragma: no cover — validated above
+                    msg = f"no wargame config for activity {activity_id}"
+                    raise ValueError(msg)
+                team = await session.get(WargameTeam, team_id)
+                if team is None:  # pragma: no cover — loaded above
+                    msg = f"team {team_id} vanished during preprocessing"
+                    raise ValueError(msg)
 
-    not_locked = [t for t in teams if t.round_state != "locked"]
-    if not_locked:
-        msg = "not all teams in locked state"
-        raise ValueError(msg)
-
-    for team in teams:
-        expected_assistant_seq = team.current_round * 2
-        expected_user_seq = team.current_round * 2 - 1
-
-        # One-response invariant: no assistant message for this round yet
-        existing_result = await session.exec(
-            select(WargameMessage).where(
-                WargameMessage.team_id == team.id,
-                WargameMessage.sequence_no == expected_assistant_seq,
+                await _preprocess_one_team(session, team_config, team)
+        except Exception:
+            _logger.exception(
+                "Preprocessing failed for team %s in activity %s",
+                team_id,
+                activity_id,
             )
-        )
-        if existing_result.one_or_none() is not None:
-            msg = "assistant message already exists for current round"
-            raise ValueError(msg)
-
-        # Snapshot: extract move text from CRDT buffer
-        move_text = extract_move_text(team.move_buffer_crdt)
-
-        # Restore PydanticAI history from most recent assistant message
-        history_result = await session.exec(
-            select(WargameMessage)
-            .where(
-                WargameMessage.team_id == team.id,
-                WargameMessage.role == "assistant",
-            )
-            .order_by(
-                WargameMessage.sequence_no.desc()  # type: ignore[union-attr]  -- SQLAlchemy column expression
-            )
-            .limit(1)
-        )
-        prev_assistant = history_result.one_or_none()
-        message_history = (
-            ModelMessagesTypeAdapter.validate_python(prev_assistant.metadata_json)
-            if prev_assistant is not None and prev_assistant.metadata_json is not None
-            else None
-        )
-
-        # Build prompt and store user message
-        prompt = build_turn_prompt(move_text, team.game_state_text or "")
-
-        user_msg = WargameMessage(
-            team_id=team.id,
-            sequence_no=expected_user_seq,
-            role="user",
-            content=move_text,
-        )
-        session.add(user_msg)
-
-        # AI call
-        ai_result = await turn_agent.run(
-            prompt,
-            message_history=message_history,
-            instructions=config.system_prompt,
-        )
-        turn_output = cast("TurnResult", ai_result.output)
-
-        # Store assistant message with PydanticAI history
-        assistant_msg = WargameMessage(
-            team_id=team.id,
-            sequence_no=expected_assistant_seq,
-            role="assistant",
-            content=turn_output.response_text,
-            metadata_json=to_jsonable_python(ai_result.all_messages()),
-        )
-        session.add(assistant_msg)
-
-        # Update game state
-        team.game_state_text = turn_output.game_state
-        session.add(team)
+            await _mark_team_errored(team_id)
 
 
 async def run_preprocessing(activity_id: UUID) -> None:
     """Run AI preprocessing for all locked teams in a wargame activity.
 
-    For each team: extracts the move text from the CRDT buffer, restores
-    PydanticAI message history, calls the turn agent, and stores the
-    user move and assistant response messages.
+    Each team is processed in its own database session. If one team's
+    AI call fails, that team is marked with ``round_state="error"`` and
+    processing continues for remaining teams.
+
+    The one-response invariant prevents double-processing of
+    already-succeeded teams on retry.
 
     Parameters
     ----------
@@ -1040,26 +1130,28 @@ async def run_preprocessing(activity_id: UUID) -> None:
     Raises
     ------
     ValueError
-        If any team is not in ``"locked"`` state, or if an assistant
-        message already exists for the current round.
+        If any team is not in ``"locked"`` or ``"error"`` state, or if
+        no wargame config exists.
     """
-    async with get_session() as session:
-        await _run_preprocessing_with_session(session, activity_id)
+    await _run_preprocessing_loop(activity_id)
 
 
 async def on_deadline_fired(activity_id: UUID) -> None:
     """Handle an expired wargame deadline.
 
-    Locks all drafting teams for the activity and then runs the
-    preprocessing pipeline. Both operations share a single database
-    session for atomicity: if preprocessing crashes after locking,
-    the lock is also rolled back.
+    Locks all drafting teams for the activity in one session, then runs
+    the preprocessing pipeline with per-team isolation. The lock phase
+    commits independently so that teams are locked even if preprocessing
+    partially fails.
 
     Parameters
     ----------
     activity_id : UUID
         The wargame activity whose deadline has expired.
     """
+    # Lock phase: one atomic session
     async with get_session() as session:
         await _lock_round_with_session(session, activity_id, strict=False)
-        await _run_preprocessing_with_session(session, activity_id)
+
+    # Preprocessing phase: per-team sessions
+    await _run_preprocessing_loop(activity_id)

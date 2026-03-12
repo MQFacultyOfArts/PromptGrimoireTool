@@ -156,6 +156,13 @@ Note: Firefox 140 is the first version with **full** CSS Custom Highlight API su
 **Dependencies:** None
 
 **Done when:** `uv run grimoire e2e firefox` runs the full E2E suite on Firefox, `uv run grimoire e2e all-browsers` runs Chromium then Firefox sequentially with per-browser summary. CI matrix runs Chromium + Firefox.
+
+**Implementation notes (2026-03-12):**
+
+- `e2e run` gains an optional `--browser` flag (default: Chromium) for CI matrix usage (`e2e run --browser ${{ matrix.browser }}`)
+- `e2e firefox` is a convenience alias for `e2e run --browser firefox`
+- `browser` parameter threaded through the full call chain: `run_playwright_lane` → `_run_parallel_e2e` / `_run_serial_playwright_e2e` → `run_lane_files` → `_run_all_workers` / `_run_fail_fast_workers` → `_run_worker_for_lane` → `run_playwright_file`
+- Missing Firefox install produces a clear hint: "Run: uv run playwright install firefox"
 <!-- END_PHASE_1 -->
 
 <!-- START_PHASE_2 -->

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path  # noqa: TC003 -- Typer resolves annotations at runtime
 from typing import TYPE_CHECKING
 
 import typer
@@ -243,6 +244,70 @@ async def _cmd_instructor(
         )
 
 
+async def _cmd_enroll_bulk(
+    xlsx_file: Path,
+    code: str,
+    semester: str,
+    *,
+    role: str = "student",
+    force: bool = False,
+    console: Console | None = None,
+) -> None:
+    """Bulk-enrol students from a Moodle Grades XLSX export."""
+    from rich.table import Table
+
+    from promptgrimoire.db.enrolment import StudentIdConflictError, bulk_enrol
+    from promptgrimoire.enrol.xlsx_parser import EnrolmentParseError, parse_xlsx
+
+    con = console or Console()
+
+    # Parse XLSX
+    data = xlsx_file.read_bytes()
+    try:
+        entries = parse_xlsx(data)
+    except EnrolmentParseError as exc:
+        for err in exc.errors:
+            con.print(f"[red]Error:[/] {err}")
+        sys.exit(1)
+
+    # Resolve course
+    course = await _require_course(code, semester, con)
+
+    # Bulk enrol
+    try:
+        report = await bulk_enrol(entries, course.id, role=role, force=force)
+    except StudentIdConflictError as exc:
+        for email, old, new in exc.conflicts:
+            con.print(f"[red]Conflict:[/] {email}: existing={old!r}, new={new!r}")
+        con.print("\n[dim]Hint: use --force to overwrite conflicting student IDs.[/]")
+        sys.exit(1)
+
+    # Warnings for force-overwritten IDs
+    if force and report.student_id_warnings:
+        for email, old, new in report.student_id_warnings:
+            con.print(
+                f"[yellow]Warning:[/] {email}: student ID changed {old!r} -> {new!r}"
+            )
+
+    # Summary table
+    table = Table(title="Enrolment Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_row("Entries processed", str(report.entries_processed))
+    table.add_row("Users created", str(report.users_created))
+    table.add_row("Users existing", str(report.users_existing))
+    table.add_row("Enrolments created", str(report.enrolments_created))
+    table.add_row("Enrolments skipped", str(report.enrolments_skipped))
+    table.add_row("Groups created", str(report.groups_created))
+    table.add_row("Group memberships", str(report.group_memberships_created))
+    if report.student_ids_overwritten:
+        table.add_row(
+            "[yellow]Student IDs overwritten[/]",
+            str(report.student_ids_overwritten),
+        )
+    con.print(table)
+
+
 async def _cmd_enroll(
     email: str,
     code: str,
@@ -364,6 +429,18 @@ def instructor(
 ) -> None:
     """Set or remove instructor status (updates Stytch)."""
     asyncio.run(_cmd_instructor(email, remove=remove))
+
+
+@admin_app.command("enroll-bulk")
+def enroll_bulk(
+    xlsx_file: Path = typer.Argument(..., help="Path to Moodle Grades XLSX export"),  # noqa: B008 -- standard Typer pattern
+    code: str = typer.Argument(..., help="Course code (e.g. LAWS1100)"),
+    semester: str = typer.Argument(..., help="Semester (e.g. 2026-S1)"),
+    role: str = typer.Option("student", help="Enrolment role (default: student)"),
+    force: bool = typer.Option(False, "--force", help="Override student ID conflicts"),
+) -> None:
+    """Bulk-enrol students from a Moodle Grades XLSX export."""
+    asyncio.run(_cmd_enroll_bulk(xlsx_file, code, semester, role=role, force=force))
 
 
 @admin_app.command("enroll")

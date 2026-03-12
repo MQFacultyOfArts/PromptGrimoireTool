@@ -774,22 +774,18 @@ async def delete_team(team_id: UUID) -> bool:
         return True
 
 
-async def start_game(activity_id: UUID) -> None:
-    """Bootstrap all teams for a wargame activity with initial AI responses.
+async def _validate_start_game_preconditions(
+    activity_id: UUID,
+) -> list[UUID]:
+    """Load config and teams, verify no messages exist yet.
 
-    For each team: expands the scenario bootstrap template with the team's
-    codename, calls the turn agent for an initial response, and stores both
-    messages. Sets all teams to round 1, state "locked".
-
-    Parameters
-    ----------
-    activity_id : UUID
-        The wargame activity to start.
+    Returns team IDs for per-team bootstrapping.
 
     Raises
     ------
     ValueError
-        If the game has already been started (messages exist for any team).
+        If no config exists, no teams exist, or the game has already been
+        started (any messages exist for the activity's teams).
     """
     async with get_session() as session:
         config = await session.get(WargameConfig, activity_id)
@@ -806,7 +802,6 @@ async def start_game(activity_id: UUID) -> None:
             msg = f"no teams for activity {activity_id}"
             raise ValueError(msg)
 
-        # Precondition: no messages exist for any of these teams
         team_ids = [team.id for team in teams]
         msg_count_result = await session.exec(
             select(sa.func.count())
@@ -819,39 +814,146 @@ async def start_game(activity_id: UUID) -> None:
             msg = "game already started"
             raise ValueError(msg)
 
-        for team in teams:
-            bootstrap_text = expand_bootstrap(config.scenario_bootstrap, team.codename)
-            prompt = build_turn_prompt(bootstrap_text, "")
+        return team_ids
 
-            # Store the human-readable bootstrap as the user message
-            user_msg = WargameMessage(
-                team_id=team.id,
-                sequence_no=1,
-                role="user",
-                content=bootstrap_text,
+
+async def _bootstrap_one_team(
+    session: AsyncSession,
+    config: WargameConfig,
+    team: WargameTeam,
+) -> None:
+    """Bootstrap a single team inside a caller-owned session.
+
+    Expands the scenario bootstrap template with the team's codename, calls
+    the turn agent for an initial response, and stores both messages. Sets
+    the team to round 1, state "locked".
+
+    Idempotent via the one-response invariant: if the assistant message at
+    sequence 2 already exists (successful prior run), this function returns
+    without making changes. This guards against double-bootstrap on retry
+    after partial failure.
+
+    Parameters
+    ----------
+    session:
+        Active async database session (one per team call).
+    config:
+        The wargame configuration for the activity.
+    team:
+        The team to bootstrap (must be freshly loaded in this session).
+    """
+    # One-response invariant: skip if assistant message already exists.
+    # Sequence 2 is always the bootstrap assistant message (round 1 * 2).
+    existing_result = await session.exec(
+        select(WargameMessage).where(
+            WargameMessage.team_id == team.id,
+            WargameMessage.sequence_no == 2,
+        )
+    )
+    if existing_result.one_or_none() is not None:
+        _logger.info(
+            "Skipping team %s: bootstrap assistant message already exists",
+            team.id,
+        )
+        return
+
+    bootstrap_text = expand_bootstrap(config.scenario_bootstrap, team.codename)
+    prompt = build_turn_prompt(bootstrap_text, "")
+
+    # Store the human-readable bootstrap as the user message
+    user_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=1,
+        role="user",
+        content=bootstrap_text,
+    )
+    session.add(user_msg)
+
+    # Call the turn agent
+    ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
+    # ty cannot track PydanticAI Agent generics; cast narrows to the
+    # concrete output type.
+    turn_output = cast("TurnResult", ai_result.output)
+
+    # Store assistant response with PydanticAI history
+    assistant_msg = WargameMessage(
+        team_id=team.id,
+        sequence_no=2,
+        role="assistant",
+        content=turn_output.response_text,
+        metadata_json=to_jsonable_python(ai_result.all_messages()),
+    )
+    session.add(assistant_msg)
+
+    team.game_state_text = turn_output.game_state
+    team.current_round = 1
+    team.round_state = "locked"
+    session.add(team)
+
+
+async def _mark_bootstrap_team_errored(team_id: UUID) -> None:
+    """Mark a team as errored in a fresh session after bootstrap failure."""
+    try:
+        async with get_session() as err_session:
+            err_team = await err_session.get(WargameTeam, team_id)
+            if err_team is not None:
+                err_team.round_state = "error"
+                err_session.add(err_team)
+    except Exception:
+        _logger.exception("Failed to mark bootstrap team %s as errored", team_id)
+
+
+async def start_game(activity_id: UUID) -> None:
+    """Bootstrap all teams for a wargame activity with initial AI responses.
+
+    For each team: expands the scenario bootstrap template with the team's
+    codename, calls the turn agent for an initial response, and stores both
+    messages. Sets all teams to round 1, state "locked".
+
+    Each team is processed in its own database session. If one team's AI
+    call fails, that team is marked with ``round_state="error"`` and
+    bootstrapping continues for remaining teams.
+
+    The one-response invariant prevents double-bootstrapping of
+    already-succeeded teams on retry: if the bootstrap assistant message
+    (seq=2) already exists for a team, that team is skipped.
+
+    Parameters
+    ----------
+    activity_id : UUID
+        The wargame activity to start.
+
+    Raises
+    ------
+    ValueError
+        If the game has already been started (messages exist for any team),
+        no wargame config exists, or no teams exist.
+    """
+    team_ids = await _validate_start_game_preconditions(activity_id)
+
+    # Per-team loop: each team gets its own session.
+    # Config and team are re-fetched inside each session to avoid
+    # detached-instance issues across session boundaries.
+    for team_id in team_ids:
+        try:
+            async with get_session() as session:
+                team_config = await session.get(WargameConfig, activity_id)
+                if team_config is None:  # pragma: no cover — validated above
+                    msg = f"no wargame config for activity {activity_id}"
+                    raise ValueError(msg)
+                team = await session.get(WargameTeam, team_id)
+                if team is None:  # pragma: no cover — loaded above
+                    msg = f"team {team_id} vanished during bootstrap"
+                    raise ValueError(msg)
+
+                await _bootstrap_one_team(session, team_config, team)
+        except Exception:
+            _logger.exception(
+                "Bootstrap failed for team %s in activity %s",
+                team_id,
+                activity_id,
             )
-            session.add(user_msg)
-
-            # Call the turn agent
-            ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
-            # ty cannot track PydanticAI Agent generics; cast narrows to the
-            # concrete output type.
-            turn_output = cast("TurnResult", ai_result.output)
-
-            # Store assistant response with PydanticAI history
-            assistant_msg = WargameMessage(
-                team_id=team.id,
-                sequence_no=2,
-                role="assistant",
-                content=turn_output.response_text,
-                metadata_json=to_jsonable_python(ai_result.all_messages()),
-            )
-            session.add(assistant_msg)
-
-            team.game_state_text = turn_output.game_state
-            team.current_round = 1
-            team.round_state = "locked"
-            session.add(team)
+            await _mark_bootstrap_team_errored(team_id)
 
 
 async def _lock_round_with_session(

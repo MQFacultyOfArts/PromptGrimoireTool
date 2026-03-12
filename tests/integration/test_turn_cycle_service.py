@@ -532,7 +532,7 @@ class TestOnDeadlineFired:
             call_count += 1
             if team.id == failing_team_id:
                 raise RuntimeError("AI service unavailable")
-            await _preprocess_one_team(session, config, team)  # type: ignore[arg-type]
+            await _preprocess_one_team(session, config, team)
 
         with (
             turn_agent.override(model=TestModel()),

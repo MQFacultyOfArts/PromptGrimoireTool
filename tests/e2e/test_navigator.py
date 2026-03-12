@@ -874,8 +874,7 @@ class TestNavigator:
             _authenticate_page(page, app_server, email=email)
 
             # Use complete English words so PostgreSQL FTS can match
-            # them. FTS stems and does not support prefix matching,
-            # so partial words like "zygomo" won't match.
+            # them. FTS stems and supports prefix matching via :*.
             # Each workspace uses a unique marker phrase.
             marker_a = f"xylophone{uid}"
             marker_b = f"marimba{uid}"

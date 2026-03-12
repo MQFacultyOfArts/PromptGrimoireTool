@@ -155,8 +155,8 @@ def student_course_page(
     course_id = _create_course_with_enrollment(email, role="student")
     page.goto(f"{app_server}/courses/{course_id}")
 
-    # Wait for the page to render (badge with role is always present)
-    page.wait_for_selector("text=student", timeout=15000)
+    # Wait for the course detail page to finish rendering
+    page.wait_for_load_state("networkidle", timeout=15000)
 
     yield page, course_id
 

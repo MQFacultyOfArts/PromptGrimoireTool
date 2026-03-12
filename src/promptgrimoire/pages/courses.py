@@ -657,7 +657,7 @@ def _register_course_client(
 
 
 async def _handle_enrol_upload(
-    upload_event: Any,
+    upload_event: Any,  # NiceGUI UploadEventArguments; .file is async at runtime
     course: Course,
     force: bool,
 ) -> None:
@@ -666,6 +666,8 @@ async def _handle_enrol_upload(
     Parses the uploaded file, runs bulk enrolment, and notifies the user.
     Called from the upload widget in ``open_course_settings``.
     """
+    # NiceGUI UploadEventArguments.file.read() returns coroutine at runtime;
+    # ty sees IO[bytes].read() (sync), hence the suppression.
     data: bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
 
     try:

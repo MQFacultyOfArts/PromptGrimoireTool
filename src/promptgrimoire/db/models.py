@@ -784,3 +784,39 @@ class ACLEntry(SQLModel, table=True):
             msg = "exactly one of workspace_id or team_id must be set"
             raise ValueError(msg)
         return self
+
+
+class StudentGroup(SQLModel, table=True):
+    """Named group of students within a course for bulk enrolment operations."""
+
+    __tablename__ = "student_group"
+    __table_args__ = (
+        UniqueConstraint("course_id", "name", name="uq_student_group_course_name"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
+    name: str = Field(max_length=100)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class StudentGroupMembership(SQLModel, table=True):
+    """Maps a User to a StudentGroup."""
+
+    __tablename__ = "student_group_membership"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_group_id",
+            "user_id",
+            name="uq_student_group_membership_group_user",
+        ),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    student_group_id: UUID = Field(sa_column=_cascade_fk_column("student_group.id"))
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )

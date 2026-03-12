@@ -126,6 +126,19 @@ CLI subcommand
 **Dependencies:** None (pre-work)
 
 **Done when:** Gate minimum versions match caniuse data. Thresholds documented for BrowserStack config.
+
+**Validated thresholds (caniuse `mdn-api_highlight`, verified 2026-03-12):**
+
+| Browser | Minimum Version | caniuse First Support |
+|---------|-----------------|----------------------|
+| Chrome  | 105+            | 105                  |
+| Edge    | 105+            | 105                  |
+| Firefox | 140+            | 140                  |
+| Safari  | 17.2+           | 17.2                 |
+
+Gate JS in `auth.py:79-81` matches. No changes needed.
+
+Note: Firefox 140 is the first version with **full** CSS Custom Highlight API support (the `Highlight` interface and `CSS.highlights` registry). Earlier Firefox versions had partial implementations behind flags. The gate checks `CSS.highlights` availability, so 140 is the correct minimum.
 <!-- END_PHASE_0 -->
 
 <!-- START_PHASE_1 -->

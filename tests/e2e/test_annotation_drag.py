@@ -499,6 +499,7 @@ class TestBroadcastDrag:
         # Get the highlight ID
         card_p1 = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
         highlight_id = card_p1.get_attribute("data-highlight-id")
+        assert highlight_id is not None, "Card missing data-highlight-id attribute"
 
         # 5. On page1: drag the card to Procedural History
         proc_history_sortable = _get_sortable_for_tag(page1, "Procedural History")

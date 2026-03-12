@@ -313,8 +313,18 @@ class TestNaughtyStudent:
                 # Create a fresh workspace with a known-good naughty string
                 setup_workspace_with_content(page, app_server, highlightable_content)
 
-                # Attempt to highlight the naughty string content
-                select_text_range(page, highlightable_content)
+                # Get the actual rendered text (may differ from input
+                # after HTML sanitisation strips tags like <script>)
+                rendered_text = page.evaluate(
+                    """() => {
+                        const c = document.getElementById('doc-container');
+                        return c ? c.textContent.trim() : '';
+                    }"""
+                )
+                # Select a recognisable substring of the rendered content
+                select_text_range(
+                    page, rendered_text[:10] if rendered_text else highlightable_content
+                )
                 page.locator("[data-testid='tag-toolbar'] button").first.click()
 
                 # Verify annotation card appears

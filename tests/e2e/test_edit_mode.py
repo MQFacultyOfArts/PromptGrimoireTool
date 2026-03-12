@@ -279,19 +279,22 @@ class TestEditMode:
         page = edit_ready_page
 
         with subtests.test(msg="create_highlight"):
-            # Select some text to create a highlight
+            # Select text to trigger the highlight menu
             select_text_range(page, "Editable document")
 
-            # The highlight menu should appear — click the first tag
+            # No tags exist yet — use quick-create to make one and apply it
             highlight_menu = page.get_by_test_id("highlight-menu")
             expect(highlight_menu).to_be_visible(timeout=5000)
-            # Click the first tag button in the highlight menu
-            tag_btn = highlight_menu.get_by_test_id("highlight-menu-tag-btn").first
-            expect(tag_btn).to_be_visible(timeout=5000)
-            tag_btn.click()
+            highlight_menu.get_by_test_id("highlight-menu-new-tag").click()
+
+            dialog = page.locator("[data-testid='tag-quick-create-dialog']")
+            expect(dialog).to_be_visible(timeout=5000)
+            dialog.get_by_test_id("tag-quick-create-name-input").fill("TestTag")
+            dialog.get_by_test_id("quick-create-save-btn").click()
+            expect(dialog).to_be_hidden(timeout=5000)
+
             # Wait for highlight to be created
             wait_for_css_highlight(page)
-            # Click elsewhere to dismiss any lingering menus/dialogs
             page.keyboard.press("Escape")
             expect(highlight_menu).not_to_be_visible(timeout=5000)
 

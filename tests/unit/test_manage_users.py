@@ -584,6 +584,7 @@ class TestCmdEnrollBulk:
 
         output = buf.getvalue()
         assert "Error" in output
+        assert "NOPE999" in output
 
     @pytest.mark.anyio
     async def test_parse_error_exits_with_line_numbers(self) -> None:

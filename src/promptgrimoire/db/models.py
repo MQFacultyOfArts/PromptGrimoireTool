@@ -792,6 +792,7 @@ class StudentGroup(SQLModel, table=True):
     __tablename__ = "student_group"
     __table_args__ = (
         UniqueConstraint("course_id", "name", name="uq_student_group_course_name"),
+        sa.Index("ix_student_group_course_id", "course_id"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -812,6 +813,8 @@ class StudentGroupMembership(SQLModel, table=True):
             "user_id",
             name="uq_student_group_membership_group_user",
         ),
+        sa.Index("ix_student_group_membership_student_group_id", "student_group_id"),
+        sa.Index("ix_student_group_membership_user_id", "user_id"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)

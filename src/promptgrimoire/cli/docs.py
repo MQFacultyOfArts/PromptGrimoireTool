@@ -23,6 +23,7 @@ _GENERATED_GUIDE_MARKDOWN = (
     "instructor-setup.md",
     "student-workflow.md",
     "your-personal-grimoire.md",
+    "using-promptgrimoire.md",
 )
 
 
@@ -73,6 +74,9 @@ def build(
         run_personal_grimoire_guide,
     )
     from promptgrimoire.docs.scripts.student_workflow import run_student_guide
+    from promptgrimoire.docs.scripts.using_promptgrimoire import (
+        run_using_promptgrimoire_guide,
+    )
 
     if shutil.which("pandoc") is None:
         print(
@@ -105,6 +109,7 @@ def build(
         run_instructor_guide(page, base_url)
         run_student_guide(page, base_url)
         run_personal_grimoire_guide(page, base_url)
+        run_using_promptgrimoire_guide(page, base_url)
 
     finally:
         if browser is not None:

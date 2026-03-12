@@ -467,3 +467,75 @@ class TestConcurrentDrag:
         assert len(p1_jurisdiction) == 0, (
             "All cards should have moved out of Jurisdiction"
         )
+
+
+class TestBroadcastDrag:
+    """Verify broadcast auto-refresh on the Organise tab.
+
+    Verifies: organise-broadcast-e2e-304.AC1.1, AC1.2, AC1.3
+    """
+
+    @pytestmark_db
+    def test_organise_auto_refreshes_on_remote_drag(
+        self, two_annotation_contexts: tuple[Page, Page, str]
+    ) -> None:
+        """Client A drags a card; Client B sees the move via broadcast."""
+        page1, page2, _workspace_id = two_annotation_contexts
+
+        # 1. Create one highlight on page1 with tag Jurisdiction (index 0)
+        # Note: two_annotation_contexts uses "Sync test word1 word2 ..." content
+        create_highlight_with_tag(page1, *find_text_range(page1, "Sync"), tag_index=0)
+
+        # 2. Wait for broadcast to page2
+        expect(page2.locator("[data-testid='annotation-card']")).to_have_count(
+            1, timeout=10000
+        )
+
+        # 3. Both pages switch to Organise tab
+        _switch_to_organise(page1)
+        _switch_to_organise(page2)
+
+        # 4. Verify the card is in Jurisdiction column on both pages
+        jurisdiction_col_p1 = page1.locator(
+            '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
+        )
+        expect(
+            jurisdiction_col_p1.locator('[data-testid="organise-card"]')
+        ).to_have_count(1, timeout=5000)
+
+        jurisdiction_col_p2 = page2.locator(
+            '[data-testid="tag-column"][data-tag-name="Jurisdiction"]'
+        )
+        expect(
+            jurisdiction_col_p2.locator('[data-testid="organise-card"]')
+        ).to_have_count(1, timeout=5000)
+
+        # Get the highlight ID
+        card_p1 = jurisdiction_col_p1.locator('[data-testid="organise-card"]').first
+        highlight_id = card_p1.get_attribute("data-highlight-id")
+
+        # 5. On page1: drag the card to Procedural History
+        proc_history_sortable = _get_sortable_for_tag(page1, "Procedural History")
+        card_p1.drag_to(proc_history_sortable)
+
+        # 6. Wait for optimistic update on page1
+        proc_col_p1 = page1.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+        )
+        expect(
+            proc_col_p1.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_visible(timeout=5000)
+
+        # 7. Key assertion (AC1.1): page2 sees card in Procedural History via broadcast
+        #    NO tab switching, NO page reload
+        proc_col_p2 = page2.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+        )
+        expect(
+            proc_col_p2.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_visible(timeout=10000)
+
+        # 8. Key assertion (AC1.2): page2's Jurisdiction column no longer has the card
+        expect(
+            jurisdiction_col_p2.locator(f'[data-highlight-id="{highlight_id}"]')
+        ).to_be_hidden(timeout=5000)

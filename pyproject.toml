@@ -274,4 +274,5 @@ dev = [
     "mkdocs-glightbox>=0.5.2",
     "pip-audit>=2.10.0",
     "pyright>=1.1.408",
+    "browserstack-sdk>=1.40.0",
 ]

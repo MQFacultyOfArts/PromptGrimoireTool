@@ -562,3 +562,28 @@ def sample_chatgpt_conversation() -> str:
         "User: What about Germany?\n\n"
         "ChatGPT: The capital of Germany is Berlin."
     )
+
+
+# =============================================================================
+# XLSX Test Helpers
+# =============================================================================
+
+
+def make_xlsx_bytes(headers: list[str], rows: list[list]) -> bytes:
+    """Build an XLSX file in memory and return raw bytes.
+
+    Used by enrolment parser tests to create test data without file fixtures.
+    """
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()

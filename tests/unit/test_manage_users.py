@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from io import StringIO
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -406,3 +407,268 @@ class TestCmdEnroll:
         )
         output = buf.getvalue()
         assert "Enrolled" in output
+
+
+# ---------------------------------------------------------------------------
+# enroll-bulk — CliRunner argument forwarding (Layer 1)
+# ---------------------------------------------------------------------------
+
+
+class TestEnrollBulkCliRunner:
+    """Verify Typer argument forwarding for enroll-bulk command."""
+
+    def test_enroll_bulk_positionals_and_defaults(self) -> None:
+        """Positional args forwarded; defaults applied."""
+        with patch(f"{_CLI}._cmd_enroll_bulk", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app,
+                ["admin", "enroll-bulk", "/tmp/test.xlsx", "LAWS1100", "2026-S1"],
+            )
+            assert result.exit_code == 0
+            from pathlib import Path
+
+            mock.assert_called_once_with(
+                Path("/tmp/test.xlsx"),
+                "LAWS1100",
+                "2026-S1",
+                role="student",
+                force=False,
+            )
+
+    def test_enroll_bulk_role_option(self) -> None:
+        """--role option forwarded."""
+        with patch(f"{_CLI}._cmd_enroll_bulk", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app,
+                [
+                    "admin",
+                    "enroll-bulk",
+                    "/tmp/test.xlsx",
+                    "LAWS1100",
+                    "2026-S1",
+                    "--role",
+                    "tutor",
+                ],
+            )
+            assert result.exit_code == 0
+            from pathlib import Path
+
+            mock.assert_called_once_with(
+                Path("/tmp/test.xlsx"),
+                "LAWS1100",
+                "2026-S1",
+                role="tutor",
+                force=False,
+            )
+
+    def test_enroll_bulk_force_flag(self) -> None:
+        """--force flag forwarded."""
+        with patch(f"{_CLI}._cmd_enroll_bulk", new_callable=AsyncMock) as mock:
+            result = runner.invoke(
+                app,
+                [
+                    "admin",
+                    "enroll-bulk",
+                    "/tmp/test.xlsx",
+                    "LAWS1100",
+                    "2026-S1",
+                    "--force",
+                ],
+            )
+            assert result.exit_code == 0
+            from pathlib import Path
+
+            mock.assert_called_once_with(
+                Path("/tmp/test.xlsx"),
+                "LAWS1100",
+                "2026-S1",
+                role="student",
+                force=True,
+            )
+
+    def test_enroll_bulk_appears_in_help(self) -> None:
+        """enroll-bulk listed in admin --help."""
+        result = runner.invoke(app, ["admin", "--help"])
+        assert result.exit_code == 0
+        assert "enroll-bulk" in result.output
+
+
+# ---------------------------------------------------------------------------
+# enroll-bulk — handler logic (Layer 2)
+# ---------------------------------------------------------------------------
+
+_ENROL_XLSX = "promptgrimoire.enrol.xlsx_parser"
+_ENROL_DB = "promptgrimoire.db.enrolment"
+
+
+def _mock_xlsx_file() -> MagicMock:
+    """Build a mock Path-like object whose read_bytes returns dummy data."""
+    f = MagicMock(spec=Path)
+    f.read_bytes.return_value = b"fake xlsx bytes"
+    return f
+
+
+def _make_enrolment_report(
+    entries_processed: int = 3,
+    users_created: int = 2,
+    users_existing: int = 1,
+    enrolments_created: int = 2,
+    enrolments_skipped: int = 1,
+    groups_created: int = 1,
+    group_memberships_created: int = 2,
+    student_ids_overwritten: int = 0,
+    student_id_warnings: tuple[tuple[str, str, str], ...] = (),
+) -> MagicMock:
+    """Build a mock EnrolmentReport."""
+    report = MagicMock()
+    report.entries_processed = entries_processed
+    report.users_created = users_created
+    report.users_existing = users_existing
+    report.enrolments_created = enrolments_created
+    report.enrolments_skipped = enrolments_skipped
+    report.groups_created = groups_created
+    report.group_memberships_created = group_memberships_created
+    report.student_ids_overwritten = student_ids_overwritten
+    report.student_id_warnings = student_id_warnings
+    return report
+
+
+class TestCmdEnrollBulk:
+    """admin enroll-bulk — handler logic with mocked DB."""
+
+    @pytest.mark.anyio
+    async def test_success_prints_summary_table(self) -> None:
+        """AC6.1: Successful enrol prints Rich summary table."""
+        from promptgrimoire.cli.admin import _cmd_enroll_bulk
+
+        con, buf = _capture_console()
+        course = _make_course()
+        report = _make_enrolment_report()
+
+        with (
+            patch(f"{_CLI}._find_course", new_callable=AsyncMock) as mock_find,
+            patch(f"{_ENROL_XLSX}.parse_xlsx") as mock_parse,
+            patch(f"{_ENROL_DB}.bulk_enrol", new_callable=AsyncMock) as mock_enrol,
+        ):
+            mock_parse.return_value = [MagicMock()]
+            mock_find.return_value = course
+            mock_enrol.return_value = report
+
+            await _cmd_enroll_bulk(
+                _mock_xlsx_file(), "LAWS1100", "2026-S1", console=con
+            )
+
+        output = buf.getvalue()
+        assert "Enrolment Summary" in output
+        assert "2" in output  # users_created
+        assert "1" in output  # users_existing
+
+    @pytest.mark.anyio
+    async def test_course_not_found_exits(self) -> None:
+        """AC6.2: Non-existent course exits with code 1."""
+        from promptgrimoire.cli.admin import _cmd_enroll_bulk
+
+        con, buf = _capture_console()
+
+        with (
+            patch(f"{_CLI}._find_course", new_callable=AsyncMock) as mock_find,
+            patch(f"{_ENROL_XLSX}.parse_xlsx") as mock_parse,
+        ):
+            mock_parse.return_value = [MagicMock()]
+            mock_find.return_value = None
+
+            with pytest.raises(SystemExit):
+                await _cmd_enroll_bulk(
+                    _mock_xlsx_file(), "NOPE999", "2026-S1", console=con
+                )
+
+        output = buf.getvalue()
+        assert "Error" in output
+        assert "NOPE999" in output
+
+    @pytest.mark.anyio
+    async def test_parse_error_exits_with_line_numbers(self) -> None:
+        """AC6.3: Parse errors printed with line numbers, exit code 1."""
+        from promptgrimoire.cli.admin import _cmd_enroll_bulk
+        from promptgrimoire.enrol.xlsx_parser import EnrolmentParseError
+
+        con, buf = _capture_console()
+        errors = ["Row 2: invalid email 'bad'", "Row 5: invalid email ''"]
+
+        with patch(f"{_ENROL_XLSX}.parse_xlsx") as mock_parse:
+            mock_parse.side_effect = EnrolmentParseError(errors)
+
+            with pytest.raises(SystemExit):
+                await _cmd_enroll_bulk(
+                    _mock_xlsx_file(), "LAWS1100", "2026-S1", console=con
+                )
+
+        output = buf.getvalue()
+        assert "Row 2" in output
+        assert "Row 5" in output
+
+    @pytest.mark.anyio
+    async def test_student_id_conflict_exits_with_force_suggestion(self) -> None:
+        """AC6.4: Student ID conflicts printed, suggests --force, exit code 1."""
+        from promptgrimoire.cli.admin import _cmd_enroll_bulk
+        from promptgrimoire.db.enrolment import StudentIdConflictError
+
+        con, buf = _capture_console()
+        course = _make_course()
+        conflicts = [("alice@uni.edu", "OLD123", "NEW456")]
+
+        with (
+            patch(f"{_CLI}._find_course", new_callable=AsyncMock) as mock_find,
+            patch(f"{_ENROL_XLSX}.parse_xlsx") as mock_parse,
+            patch(f"{_ENROL_DB}.bulk_enrol", new_callable=AsyncMock) as mock_enrol,
+        ):
+            mock_parse.return_value = [MagicMock()]
+            mock_find.return_value = course
+            mock_enrol.side_effect = StudentIdConflictError(conflicts)
+
+            with pytest.raises(SystemExit):
+                await _cmd_enroll_bulk(
+                    _mock_xlsx_file(), "LAWS1100", "2026-S1", console=con
+                )
+
+        output = buf.getvalue()
+        assert "alice@uni.edu" in output
+        assert "OLD123" in output
+        assert "NEW456" in output
+        assert "--force" in output
+
+    @pytest.mark.anyio
+    async def test_force_with_overwrites_prints_warnings(self) -> None:
+        """AC6.5: --force with overwritten IDs prints warning lines."""
+        from promptgrimoire.cli.admin import _cmd_enroll_bulk
+
+        con, buf = _capture_console()
+        course = _make_course()
+        warnings = (("bob@uni.edu", "OLD999", "NEW111"),)
+        report = _make_enrolment_report(
+            student_ids_overwritten=1,
+            student_id_warnings=warnings,
+        )
+
+        with (
+            patch(f"{_CLI}._find_course", new_callable=AsyncMock) as mock_find,
+            patch(f"{_ENROL_XLSX}.parse_xlsx") as mock_parse,
+            patch(f"{_ENROL_DB}.bulk_enrol", new_callable=AsyncMock) as mock_enrol,
+        ):
+            mock_parse.return_value = [MagicMock()]
+            mock_find.return_value = course
+            mock_enrol.return_value = report
+
+            await _cmd_enroll_bulk(
+                _mock_xlsx_file(),
+                "LAWS1100",
+                "2026-S1",
+                force=True,
+                console=con,
+            )
+
+        output = buf.getvalue()
+        assert "bob@uni.edu" in output
+        assert "OLD999" in output
+        assert "NEW111" in output
+        assert "Student IDs overwritten" in output

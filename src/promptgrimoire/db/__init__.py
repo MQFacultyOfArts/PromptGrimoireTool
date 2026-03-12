@@ -47,6 +47,11 @@ from promptgrimoire.db.courses import (
     update_user_role,
 )
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
+from promptgrimoire.db.enrolment import (
+    EnrolmentReport,
+    StudentIdConflictError,
+    bulk_enrol,
+)
 from promptgrimoire.db.models import (
     ACLEntry,
     Activity,
@@ -143,9 +148,11 @@ __all__ = [
     "CourseRoleRef",
     "DuplicateCodenameError",
     "DuplicateEnrollmentError",
+    "EnrolmentReport",
     "Permission",
     "PlacementContext",
     "RosterReport",
+    "StudentIdConflictError",
     "Tag",
     "TagGroup",
     "User",
@@ -158,6 +165,7 @@ __all__ = [
     "ZeroEditorError",
     "add_document",
     "archive_course",
+    "bulk_enrol",
     "check_clone_eligibility",
     "clone_workspace_from_activity",
     "close_db",

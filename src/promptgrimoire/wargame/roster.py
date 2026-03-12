@@ -8,6 +8,8 @@ import csv
 from dataclasses import dataclass, replace
 from io import StringIO
 
+from promptgrimoire.validation import is_valid_email
+
 _VALID_ROLES = frozenset({"viewer", "editor"})
 
 
@@ -50,12 +52,6 @@ def _get_cell(row: list[str], index: int | None) -> str:
     if index is None or index >= len(row):
         return ""
     return row[index]
-
-
-def _is_valid_email(email: str) -> bool:
-    """Return True when ``email`` has exactly one @ and non-empty parts."""
-    local, separator, domain = email.partition("@")
-    return bool(separator and local and domain and "@" not in domain)
 
 
 def parse_roster(csv_content: str) -> list[RosterEntry]:
@@ -103,7 +99,7 @@ def parse_roster(csv_content: str) -> list[RosterEntry]:
         email = _get_cell(row, email_index).strip().lower()
         team_value = _get_cell(row, team_index).strip()
         role_value = _get_cell(row, role_index).strip().lower()
-        if not _is_valid_email(email):
+        if not is_valid_email(email):
             msg = f"malformed email: {email}"
             raise RosterParseError(msg, line_numbers=(line_number,))
 

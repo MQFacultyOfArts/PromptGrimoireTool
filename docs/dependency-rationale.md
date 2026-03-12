@@ -383,6 +383,15 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `src/promptgrimoire/cli/e2e/__init__.py` — `browserstack` subcommand swaps subprocess prefix to `["browserstack-sdk", "pytest"]`. `browserstack/*.yml` — platform configs.
 **Serves:** Developers (local cross-browser testing), CI (PR gate against real Safari/Firefox).
 
+### openpyxl
+
+**Added:** 2026-03-12
+**Design plan:** docs/design-plans/2026-03-12-bulk-enrol-320.md
+**Claim:** Parses Moodle "Grades" XLSX exports for bulk student enrolment. Used in `src/promptgrimoire/enrol/xlsx_parser.py` to read workbook bytes, iterate rows, and extract student data.
+**Evidence:** `from openpyxl import load_workbook` in `enrol/xlsx_parser.py` (to be created in Phase 2 of bulk-enrol-320).
+**Serves:** Runtime — admin CLI and instructor UI upload both depend on XLSX parsing.
+**Why not alternatives:** `pandas` is heavyweight for simple row iteration. `xlrd` only supports `.xls` (not `.xlsx`). openpyxl is the de facto standard for `.xlsx` in Python, read-only mode is memory-efficient.
+
 ### ~~bandit~~ (REMOVED)
 
 **Removed:** 2026-03-03

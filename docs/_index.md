@@ -74,6 +74,10 @@ library references during development.
 - [NiceGUI UI patterns - timer, refreshable, pages, events, storage, styling](nicegui/ui-patterns.md)
 - [NiceGUI User fixture for fast headless page testing without a browser](nicegui/user-fixture-testing.md)
 
+## openpyxl
+
+- [Read-only mode for memory-efficient XLSX parsing, load_workbook API, iter_rows usage](openpyxl/read-only-mode.md)
+
 ## openrouter
 
 - [Programmatic API key provisioning with per-key budgets, expiry, and lifecycle management](openrouter/key-management-api.md)

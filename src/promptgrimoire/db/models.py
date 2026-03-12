@@ -106,6 +106,7 @@ class User(SQLModel, table=True):
         display_name: Human-readable name shown in UI.
         stytch_member_id: Optional link to Stytch B2B member.
         is_admin: Whether user has org-level admin rights.
+        student_id: Optional institutional student ID (unique when set).
         created_at: Timestamp when user was created.
         last_login: Timestamp of last successful login.
     """
@@ -115,6 +116,11 @@ class User(SQLModel, table=True):
     display_name: str = Field(max_length=100)
     stytch_member_id: str | None = Field(default=None, unique=True, index=True)
     is_admin: bool = Field(default=False)
+    student_id: str | None = Field(
+        default=None,
+        max_length=50,
+        sa_column=Column(String(50), unique=True, nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )
@@ -778,3 +784,42 @@ class ACLEntry(SQLModel, table=True):
             msg = "exactly one of workspace_id or team_id must be set"
             raise ValueError(msg)
         return self
+
+
+class StudentGroup(SQLModel, table=True):
+    """Named group of students within a course for bulk enrolment operations."""
+
+    __tablename__ = "student_group"
+    __table_args__ = (
+        UniqueConstraint("course_id", "name", name="uq_student_group_course_name"),
+        sa.Index("ix_student_group_course_id", "course_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    course_id: UUID = Field(sa_column=_cascade_fk_column("course.id"))
+    name: str = Field(max_length=100)
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )
+
+
+class StudentGroupMembership(SQLModel, table=True):
+    """Maps a User to a StudentGroup."""
+
+    __tablename__ = "student_group_membership"
+    __table_args__ = (
+        UniqueConstraint(
+            "student_group_id",
+            "user_id",
+            name="uq_student_group_membership_group_user",
+        ),
+        sa.Index("ix_student_group_membership_student_group_id", "student_group_id"),
+        sa.Index("ix_student_group_membership_user_id", "user_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    student_group_id: UUID = Field(sa_column=_cascade_fk_column("student_group.id"))
+    user_id: UUID = Field(sa_column=_cascade_fk_column("user.id"))
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=_timestamptz_column()
+    )

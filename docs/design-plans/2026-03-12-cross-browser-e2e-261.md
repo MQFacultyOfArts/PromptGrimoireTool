@@ -207,3 +207,21 @@ Note: Firefox 140 is the first version with **full** CSS Custom Highlight API su
 **Race condition sensitivity:** NiceGUI's async task reordering may manifest differently across browser engines. The existing value-capture (`on_submit_with_value`) and rebuild-epoch patterns should handle this, but Firefox/Safari may surface new timing-dependent failures. These are genuine cross-browser bugs to investigate, not tests to skip.
 
 **Safari StaticRange compatibility:** Verified that `annotation-highlight.js` uses `new StaticRange(...)` exclusively for CSS Highlight API ranges (line 183). Safari's implementation requires StaticRange — no code changes needed.
+
+## CI Pipeline Structure (Implemented)
+
+```
+quality ─────────────────────────────────────┐
+test-all ────────────────────────────────────┤
+e2e-playwright (chromium) ───────────────────┼── browserstack (PRs only)
+e2e-playwright (firefox) ────────────────────┤     ├── supported tier (full suite)
+nicegui-ui ──────────────────────────────────┘     └── unsupported tier (gate tests)
+```
+
+**Required GitHub Secrets:**
+- `BROWSERSTACK_USERNAME` — BrowserStack account username
+- `BROWSERSTACK_ACCESS_KEY` — BrowserStack access key
+
+These must be configured in the repository's Settings → Secrets and variables → Actions.
+
+The `browserstack` job must also be added to the repository's branch protection rules (required status checks) to enforce AC5.4 (BrowserStack failure blocks PR merge).

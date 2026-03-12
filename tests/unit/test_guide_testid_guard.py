@@ -25,9 +25,6 @@ ALLOWED_TESTIDS: set[str] = {
     # f'data-testid="{testid}"' at annotation/css.py:455
     "tag-settings-btn",
     "tag-create-btn",
-    # CSS class used as locator, not a data-testid attr.
-    # Navigator search input uses .classes() not .props().
-    "navigator-search-input",
     # Indirect: prefix passed to _add_option_testids() which
     # constructs Vue :data-testid bindings at runtime
     "placement-course-opt-",

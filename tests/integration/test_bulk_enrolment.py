@@ -228,6 +228,16 @@ class TestAC3UserCreationAndEnrolment:
         count = await _count_enrolments(course.id)
         assert count == 1
 
+        # Verify the actual role value (AC3.3)
+        from promptgrimoire.db.engine import get_session
+
+        async with get_session() as session:
+            result = await session.exec(
+                select(CourseEnrollment).where(CourseEnrollment.course_id == course.id)
+            )
+            enrollment = result.one()
+            assert enrollment.role == "student"
+
     @pytest.mark.asyncio
     async def test_student_id_conflict_raises_error(self) -> None:
         """Conflicting student_id raises StudentIdConflictError."""

@@ -661,6 +661,66 @@ class TestMetadataSearchSnippetHighlight:
         assert "</mark>" in hit.snippet
 
 
+class TestMetadataSearchSnippetLabelled:
+    """Metadata snippets include field labels (Author:, Unit:, etc.)."""
+
+    @pytest.mark.asyncio
+    async def test_snippet_shows_author_label(self) -> None:
+        """Author match snippet includes 'Author:' label."""
+        tag = uuid4().hex[:8]
+        name = f"Bartholomew {tag}"
+        user_id, ws_id = await _create_workspace_with_metadata(
+            owner_display_name=name,
+        )
+
+        results = await _search(f"Bartholomew {tag}", user_id)
+
+        assert len(results) >= 1
+        hit = next(h for h in results if h.row.workspace_id == ws_id)
+        assert "Author:" in hit.snippet
+
+    @pytest.mark.asyncio
+    async def test_snippet_shows_unit_label(self) -> None:
+        """Course code match snippet includes 'Unit:' label."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_code="XYZQ9999",
+        )
+
+        results = await _search("XYZQ9999", user_id)
+
+        assert len(results) >= 1
+        hit = next(h for h in results if h.row.workspace_id == ws_id)
+        assert "Unit:" in hit.snippet
+
+
+class TestPrefixMatchCourseCode:
+    """Prefix matching: partial course codes find workspaces."""
+
+    @pytest.mark.asyncio
+    async def test_prefix_matches_course_code(self) -> None:
+        """Searching 'LAWS' prefix matches 'LAWS3100'."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_code="LAWS3100",
+        )
+
+        results = await _search("LAWS", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+    @pytest.mark.asyncio
+    async def test_numeric_suffix_matches_course_code(self) -> None:
+        """Searching '7742' matches 'ZZQX7742' via split tokens."""
+        user_id, ws_id = await _create_workspace_with_metadata(
+            course_code="ZZQX7742",
+        )
+
+        results = await _search("7742", user_id)
+
+        assert len(results) >= 1
+        assert any(h.row.workspace_id == ws_id for h in results)
+
+
 class TestMetadataSearchOrphanWorkspace:
     """AC9.1: Orphan workspace (no activity/week/course) still searchable."""
 

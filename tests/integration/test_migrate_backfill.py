@@ -82,7 +82,7 @@ class TestBackfillEmptyHydration:
         assert not tags_before
         assert not groups_before
 
-        await _backfill_tags(fix=True)
+        await _backfill_tags(fix=True, single_workspace_id=str(ws_id))
 
         # Verify CRDT now has the tags and group
         crdt_state = await _get_workspace_crdt_state(ws_id)
@@ -124,12 +124,12 @@ class TestBackfillIdempotency:
         await create_tag(ws_id, name="Issue", color="#2ca02c", group_id=group.id)
 
         # First run: hydrates
-        await _backfill_tags(fix=True)
+        await _backfill_tags(fix=True, single_workspace_id=str(ws_id))
         crdt_state_1 = await _get_workspace_crdt_state(ws_id)
         tags_1, groups_1 = _load_crdt(crdt_state_1)
 
         # Second run: should be idempotent
-        await _backfill_tags(fix=True)
+        await _backfill_tags(fix=True, single_workspace_id=str(ws_id))
         crdt_state_2 = await _get_workspace_crdt_state(ws_id)
         tags_2, groups_2 = _load_crdt(crdt_state_2)
 
@@ -161,7 +161,7 @@ class TestBackfillDriftDetection:
         tag1 = await create_tag(ws_id, name="Original", color="#1f77b4")
 
         # Initial backfill
-        await _backfill_tags(fix=True)
+        await _backfill_tags(fix=True, single_workspace_id=str(ws_id))
 
         crdt_state = await _get_workspace_crdt_state(ws_id)
         tags, _ = _load_crdt(crdt_state)
@@ -171,13 +171,13 @@ class TestBackfillDriftDetection:
         tag2 = await create_tag(ws_id, name="NewTag", color="#ff7f0e")
 
         # Verify-only mode: drift reported but not fixed
-        await _backfill_tags(fix=False)
+        await _backfill_tags(fix=False, single_workspace_id=str(ws_id))
         crdt_state = await _get_workspace_crdt_state(ws_id)
         tags_verify, _ = _load_crdt(crdt_state)
         assert str(tag2.id) not in tags_verify  # Not fixed yet
 
         # Fix mode: drift resolved
-        await _backfill_tags(fix=True)
+        await _backfill_tags(fix=True, single_workspace_id=str(ws_id))
         crdt_state = await _get_workspace_crdt_state(ws_id)
         tags_fixed, _ = _load_crdt(crdt_state)
         assert str(tag2.id) in tags_fixed

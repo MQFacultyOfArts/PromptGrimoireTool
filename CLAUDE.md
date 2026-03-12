@@ -157,7 +157,7 @@ src/promptgrimoire/
 │   ├── acl.py           # ACL operations (grant, revoke, resolve, share) for workspaces and teams
 │   ├── activities.py    # Activity CRUD (create, get, update, delete)
 │   ├── crdt_extraction.py # Pure CRDT-to-text extraction for FTS indexing
-│   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit
+│   ├── navigator.py     # Navigator query (UNION ALL CTE), NavigatorRow, SearchHit, metadata FTS
 │   ├── roles.py         # Cached staff role queries
 │   ├── tags.py          # Tag/TagGroup CRUD, import, reorder, CRDT cleanup
 │   ├── wargames.py      # Wargame team CRUD, ACL (grant/revoke/update), roster ingestion
@@ -250,6 +250,12 @@ ACLEntry supports two target types: `workspace_id` or `team_id`. Exactly one mus
 ### Full-Text Search (FTS)
 
 `workspace.search_text` stores materialised CRDT content (highlights, tags, comments, notes) for FTS. `workspace.search_dirty` is a boolean queue flag set on every CRDT save, cleared by the background `search_worker`. Two GIN expression indexes (`idx_workspace_document_fts`, `idx_workspace_search_text_fts`) power `search_navigator()` in `db/navigator.py`. See [docs/database.md](docs/database.md) for index naming convention.
+
+**Three-leg UNION ALL search:** `search_navigator()` runs FTS across three sources in a single query: (1) `workspace_document.content` (HTML-stripped), (2) `workspace.search_text` (materialised CRDT), (3) metadata (owner display name, workspace title, activity title, week title, course code/name). The metadata leg joins through `acl_entry` (owner), `activity`, `week`, and `course` tables. Course codes are split via `regexp_replace` for partial matching (e.g. searching "LAWS" matches "LAWS1100"). No GIN index on metadata yet (sequential scan on visible workspaces).
+
+**Prefix matching:** All FTS uses `to_tsquery` with `:*` suffix tokens (not `websearch_to_tsquery`). `_build_prefix_query()` sanitises user input, splits on whitespace, removes non-word characters, and AND-joins tokens with `:*` suffixes. This enables type-ahead search ("tort" matches "tortfeasor").
+
+**Labelled metadata snippets:** Metadata hits return snippets with field labels ("Title: ... | Author: ... | Activity: ... | Week: ... | Unit: ...") via a separate `_META_DISPLAY` string distinct from the `_META_MATCH` string used for FTS matching.
 
 ### Key Rules
 

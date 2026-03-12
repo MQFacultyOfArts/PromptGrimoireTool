@@ -87,3 +87,5 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **Permission `can_edit` classifier**: `Permission.can_edit` (boolean) marks editorial capability. The zero-editor invariant queries this flag instead of hardcoding permission names.
 
 **Wargame team management API** (`db/wargames.py`): Full team CRUD, ACL (grant/revoke/update with upsert), and atomic CSV roster ingestion (named-team and auto-assign modes). `ZeroEditorError` prevents leaving a team with no editable member. Pure-domain helpers (codename generation, roster parsing) live in `wargame/`.
+
+**Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").

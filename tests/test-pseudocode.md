@@ -2975,7 +2975,7 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Search for "legal &" (trailing operator)
 3. Assert results returned, no SQL error
 
-**Verifies:** websearch_to_tsquery gracefully handles malformed input
+**Verifies:** _build_prefix_query strips non-word characters, gracefully handles malformed input
 
 ### ACL restricts search results
 **File:** tests/integration/test_fts_search.py::TestFTSACLRestriction::test_other_users_workspaces_not_visible
@@ -3002,6 +3002,136 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert no error, workspace not in results
 
 **Verifies:** NULL search_text handled via COALESCE in index expression, no SQL errors
+
+### Metadata search by owner display name
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchOwnerName::test_search_by_owner_display_name
+1. Create workspace with full hierarchy, owner display name "Bartholomew Greenfield"
+2. Search for "Bartholomew"
+3. Assert workspace found
+
+**Verifies:** AC1.1 -- metadata FTS leg matches owner display name
+
+### Metadata search by activity title
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchActivityTitle::test_search_by_activity_title
+1. Create workspace with activity title "Contractual Obligations Analysis"
+2. Search for "Contractual Obligations"
+3. Assert workspace found
+
+**Verifies:** AC2.1 -- metadata FTS leg matches activity title
+
+### Metadata search by week title
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchWeekTitle::test_search_by_week_title
+1. Create workspace with week title "Foundations of Tort"
+2. Search for "Foundations Tort"
+3. Assert workspace found
+
+**Verifies:** AC3.1 -- metadata FTS leg matches week title
+
+### Metadata search by course code
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchCourseCode::test_search_by_course_code
+1. Create workspace with course code "LAWS3100"
+2. Search for "LAWS3100"
+3. Assert workspace found
+
+**Verifies:** AC4.1 -- metadata FTS leg matches course code
+
+### Metadata search by course name
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchCourseName::test_search_by_course_name
+1. Create workspace with course name "Environmental Regulation"
+2. Search for "Environmental Regulation"
+3. Assert workspace found
+
+**Verifies:** AC5.1 -- metadata FTS leg matches course name
+
+### Metadata search by workspace title
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchWorkspaceTitle::test_search_by_workspace_title
+1. Create workspace with title "Jurisprudential Analysis Portfolio"
+2. Search for "Jurisprudential Analysis"
+3. Assert workspace found
+
+**Verifies:** Metadata FTS leg matches workspace title
+
+### Metadata snippet has mark tags
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchSnippetHighlight::test_metadata_snippet_has_mark_tags
+1. Create workspace with course code "LAWS3100"
+2. Search for "LAWS3100"
+3. Assert snippet contains <mark> and </mark> tags
+
+**Verifies:** AC6.1 -- metadata hit snippets use ts_headline with <mark> highlighting
+
+### Metadata snippet shows author label
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchSnippetLabelled::test_snippet_shows_author_label
+1. Create workspace with unique owner display name
+2. Search for owner name
+3. Assert snippet contains "Author:" label
+
+**Verifies:** Metadata snippets include field labels for context
+
+### Metadata snippet shows unit label
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchSnippetLabelled::test_snippet_shows_unit_label
+1. Create workspace with course code "XYZQ9999"
+2. Search for "XYZQ9999"
+3. Assert snippet contains "Unit:" label
+
+**Verifies:** Metadata snippets include "Unit:" label (not "Course:")
+
+### Prefix matches course code
+**File:** tests/integration/test_fts_search.py::TestPrefixMatchCourseCode::test_prefix_matches_course_code
+1. Create workspace with course code "LAWS3100"
+2. Search for "LAWS" (prefix only)
+3. Assert workspace found
+
+**Verifies:** Prefix matching via :* suffix enables partial course code search
+
+### Numeric suffix matches course code
+**File:** tests/integration/test_fts_search.py::TestPrefixMatchCourseCode::test_numeric_suffix_matches_course_code
+1. Create workspace with course code "ZZQX7742"
+2. Search for "7742" (numeric part only)
+3. Assert workspace found
+
+**Verifies:** regexp_replace splits course codes (ZZQX7742 -> ZZQX + 7742) for partial matching
+
+### Orphan workspace searchable by title
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchOrphanWorkspace::test_orphan_workspace_found_by_title
+1. Create workspace with title but no activity/week/course hierarchy
+2. Search for workspace title
+3. Assert workspace found
+
+**Verifies:** AC9.1 -- orphan workspaces (no activity) still appear in metadata search via title
+
+### Document content still searchable alongside metadata
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchRegressionDocumentContent::test_document_content_still_searchable
+1. Create workspace with full hierarchy and document about "promissory estoppel"
+2. Search for "promissory estoppel"
+3. Assert workspace found
+
+**Verifies:** AC7.1 -- adding metadata leg does not break existing document content search
+
+### CRDT search_text still searchable alongside metadata
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchRegressionCRDTSearchText::test_crdt_search_text_still_searchable
+1. Create workspace with search_text about "quantum meruit restitution"
+2. Search for "quantum meruit"
+3. Assert workspace found
+
+**Verifies:** AC7.2 -- adding metadata leg does not break existing CRDT search_text search
+
+### Metadata search latency at scale
+**File:** tests/integration/test_fts_search.py::TestMetadataSearchPerformance::test_metadata_search_latency_at_scale
+1. Skip if fewer than 1000 workspaces in database
+2. Find a privileged staff user with enrollments
+3. Search for "LAWS" prefix as privileged user
+4. Assert results returned in under 2 seconds
+
+**Verifies:** Metadata search performs acceptably at 1k-workspace scale without GIN index
+
+### Privileged user sees unshared peer workspace
+**File:** tests/integration/test_fts_search.py::TestFTSACLRestriction::test_privileged_sees_unshared_peer_workspace
+1. Create instructor and student in same course
+2. Student creates workspace with "tortfeasor" content, NOT shared
+3. Non-privileged instructor searches -- assert workspace NOT visible
+4. Privileged instructor searches -- assert workspace visible
+
+**Verifies:** Privileged users bypass sharing restrictions in FTS search (consistent with navigator ACL)
 
 ## Load-Test CRDT Tag Validity (Integration)
 

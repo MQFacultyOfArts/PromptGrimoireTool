@@ -295,3 +295,5 @@ jobs:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
         run: uv run grimoire e2e browserstack unsupported
+      # No artifact upload — BrowserStack session recordings and logs are
+      # available in the BrowserStack dashboard, not as local files.

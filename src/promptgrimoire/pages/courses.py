@@ -686,11 +686,14 @@ async def _handle_enrol_upload(
         ui.notify(f"Student ID conflicts: {details}", type="negative")
         return
 
-    ui.notify(
+    msg = (
         f"Enrolled {report.enrolments_created} of {report.entries_processed} students"
-        f" ({report.enrolments_skipped} already enrolled)",
-        type="positive",
+        f" ({report.enrolments_skipped} already enrolled)"
     )
+    if report.enrolments_created == 0:
+        ui.notify(msg, type="info")
+    else:
+        ui.notify(msg, type="positive")
 
 
 async def open_course_settings(course: Course) -> None:

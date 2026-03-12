@@ -110,6 +110,37 @@ class TestHandleEnrolUploadSuccess:
         assert "3" in msg  # entries_processed
         assert "2" in msg  # enrolments_created
 
+    @pytest.mark.anyio
+    async def test_all_duplicates_shows_info_not_positive(self) -> None:
+        """Re-upload with all existing students shows info notification."""
+        from promptgrimoire.pages.courses import _handle_enrol_upload
+
+        course = _make_course()
+        event = _make_upload_event()
+        report = _make_enrolment_report(
+            entries_processed=50,
+            enrolments_created=0,
+            enrolments_skipped=50,
+            users_created=0,
+            users_existing=50,
+        )
+
+        with (
+            patch(f"{_COURSES}.parse_xlsx") as mock_parse,
+            patch(f"{_COURSES}.bulk_enrol", new_callable=AsyncMock) as mock_enrol,
+            patch(f"{_COURSES}.ui") as mock_ui,
+        ):
+            mock_parse.return_value = [MagicMock()]
+            mock_enrol.return_value = report
+
+            await _handle_enrol_upload(event, course, force=False)
+
+        call_kwargs = mock_ui.notify.call_args
+        assert call_kwargs.kwargs.get("type") == "info"
+        msg = call_kwargs.args[0]
+        assert "0" in msg
+        assert "50 already enrolled" in msg
+
 
 class TestHandleEnrolUploadParseError:
     """AC7.2: EnrolmentParseError shows warning notification."""

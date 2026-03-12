@@ -44,6 +44,7 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
+from promptgrimoire.db.enrolment import StudentIdConflictError, bulk_enrol
 from promptgrimoire.db.exceptions import DeletionBlockedError
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user, get_user_by_id
@@ -66,6 +67,7 @@ from promptgrimoire.db.workspaces import (
     has_student_workspaces,
     resolve_tristate,
 )
+from promptgrimoire.enrol.xlsx_parser import EnrolmentParseError, parse_xlsx
 from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
@@ -654,6 +656,41 @@ def _register_course_client(
     client.on_disconnect(on_disconnect)
 
 
+async def _handle_enrol_upload(
+    upload_event: Any,
+    course: Course,
+    force: bool,
+) -> None:
+    """Handle bulk enrolment XLSX upload.
+
+    Parses the uploaded file, runs bulk enrolment, and notifies the user.
+    Called from the upload widget in ``open_course_settings``.
+    """
+    data: bytes = await upload_event.file.read()  # pyright: ignore[reportAttributeAccessIssue]
+
+    try:
+        entries = parse_xlsx(data)
+    except EnrolmentParseError as exc:
+        ui.notify("; ".join(exc.errors), type="warning")
+        return
+
+    try:
+        report = await bulk_enrol(entries, course.id, force=force)
+    except StudentIdConflictError as exc:
+        details = "; ".join(
+            f"{email}: existing={old!r}, new={new!r}"
+            for email, old, new in exc.conflicts
+        )
+        ui.notify(f"Student ID conflicts: {details}", type="negative")
+        return
+
+    ui.notify(
+        f"Enrolled {report.enrolments_created} of {report.entries_processed} students"
+        f" ({report.enrolments_skipped} already enrolled)",
+        type="positive",
+    )
+
+
 async def open_course_settings(course: Course) -> None:
     """Open a dialog to edit course settings.
 
@@ -670,6 +707,27 @@ async def open_course_settings(course: Course) -> None:
             switches[attr] = ui.switch(label, value=getattr(course, attr)).props(
                 f'data-testid="course-{attr}-switch"'
             )
+
+        # -- Bulk enrolment upload --
+        ui.separator()
+        ui.label("Bulk Enrol Students").classes("text-sm font-semibold")
+
+        force_checkbox = ui.checkbox(
+            "Override student ID conflicts",
+            value=False,
+        )
+        force_checkbox.props('data-testid="enrol-force-checkbox"')
+
+        async def on_upload(e: Any) -> None:
+            await _handle_enrol_upload(e, course, force_checkbox.value)
+
+        upload = ui.upload(
+            label="Upload Moodle Grades XLSX",
+            on_upload=on_upload,
+            auto_upload=True,
+            max_file_size=10 * 1024 * 1024,
+        )
+        upload.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
 
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props(

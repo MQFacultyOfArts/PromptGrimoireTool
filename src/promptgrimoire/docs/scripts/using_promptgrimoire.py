@@ -110,7 +110,7 @@ def _entry_log_in(page: Page, base_url: str, guide: Guide) -> None:
         )
         page.goto(f"{base_url}/auth/login")
         page.wait_for_timeout(1000)
-        g.screenshot("Login page", highlight=["login-email-input"])
+        g.screenshot("Login page", highlight=["email-input"])
         g.note(
             "Enter your university email address and click **Send Magic Link**. "
             "Check your inbox for the login link."
@@ -301,15 +301,10 @@ def _entry_highlight_text(page: Page, base_url: str, guide: Guide) -> None:
         page.goto(base_url)
         page.wait_for_timeout(2000)
 
-        # Try to find an existing workspace link on the Navigator
-        workspace_link = page.locator('[data-testid^="workspace-link-"]').first
-        try:
-            workspace_link.wait_for(state="visible", timeout=5000)
-            workspace_link.click()
-        except PlaywrightTimeoutError:
-            # Fall back to starting a new workspace
-            start_btn = page.locator('[data-testid^="start-activity-btn"]')
-            start_btn.first.click()
+        # Click Start to open an existing workspace (or create one)
+        start_btn = page.locator('[data-testid^="start-activity-btn"]').first
+        start_btn.wait_for(state="visible", timeout=10000)
+        start_btn.click()
 
         wait_for_text_walker(page, timeout=15000)
 
@@ -332,14 +327,11 @@ def _entry_add_comment(page: Page, guide: Guide) -> None:
             "type your comment in the text input and click the post button."
         )
         card = page.locator("[data-testid='annotation-card']").first
-        try:
-            card.wait_for(state="visible", timeout=5000)
-            g.screenshot(
-                "Comment input on an annotation card",
-                highlight=["comment-input"],
-            )
-        except PlaywrightTimeoutError:
-            g.screenshot("Annotation sidebar")
+        card.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Comment input on an annotation card",
+            highlight=["comment-input"],
+        )
         g.note(
             "Comments let you record your analysis and reasoning. "
             "They appear below each highlight in the sidebar."
@@ -539,14 +531,11 @@ def _entry_search_workspaces(page: Page, guide: Guide) -> None:
             "workspaces by content, tag, or comment text."
         )
         search_input = page.get_by_test_id("navigator-search-input")
-        try:
-            search_input.wait_for(state="visible", timeout=5000)
-            g.screenshot(
-                "Search bar on the Navigator",
-                highlight=["navigator-search-input"],
-            )
-        except PlaywrightTimeoutError:
-            g.screenshot("Navigator page")
+        search_input.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Search bar on the Navigator",
+            highlight=["navigator-search-input"],
+        )
         g.note(
             "Full-text search looks across your highlights, tags, "
             "comments, and response text."
@@ -565,15 +554,12 @@ def _entry_share_workspace(page: Page, guide: Guide) -> None:
             "Open the workspace you want to share. Click the **Share** "
             "button in the toolbar to open the sharing dialog."
         )
-        share_btn = page.get_by_test_id("share-btn")
-        try:
-            share_btn.wait_for(state="visible", timeout=5000)
-            g.screenshot(
-                "Share button in the workspace toolbar",
-                highlight=["share-btn"],
-            )
-        except PlaywrightTimeoutError:
-            g.screenshot("Workspace toolbar")
+        share_btn = page.get_by_test_id("share-button")
+        share_btn.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Share button in the workspace toolbar",
+            highlight=["share-button"],
+        )
         g.note(
             "Enter the email address of the person you want to share "
             "with. They will see your workspace on their Navigator."
@@ -593,15 +579,12 @@ def _entry_upload_document(page: Page, guide: Guide) -> None:
             "document. Click the **Upload** button next to the paste "
             "editor."
         )
-        upload_btn = page.get_by_test_id("upload-document-btn")
-        try:
-            upload_btn.wait_for(state="visible", timeout=5000)
-            g.screenshot(
-                "Upload button for document import",
-                highlight=["upload-document-btn"],
-            )
-        except PlaywrightTimeoutError:
-            g.screenshot("Content editor area")
+        upload_btn = page.get_by_test_id("add-document-btn")
+        upload_btn.wait_for(state="visible", timeout=5000)
+        g.screenshot(
+            "Upload button for document import",
+            highlight=["add-document-btn"],
+        )
         g.note(
             "Supported formats: PDF (.pdf) and Word (.docx). "
             "The document is converted to annotatable text automatically."

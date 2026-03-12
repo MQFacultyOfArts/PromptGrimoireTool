@@ -145,24 +145,20 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 
 **Classification:** Protective belt. Used in one module. Could potentially be replaced by selectolax, but lxml's HTML normalisation behaviour is well-understood and standards-compliant.
 
-### pydantic-ai >= 1.56.0
+### pydantic-ai >= 1.67.0
 
 **Added:** 2026-02-10
 **Design plan:** docs/design-plans/2026-02-10-llm-playground.md
-**Revised:** 2026-03-11 — also used by wargame turn cycle engine (Seam 3, #296) for structured AI output with typed return models.
+**Revised:** 2026-03-12 — version bumped to >=1.67.0 for wargame turn cycle engine (Seam 3, #296). Used for structured AI output with typed return models.
 **Claim:** Model-agnostic LLM agent framework. Provides structured output validation (Pydantic-typed return models), unified streaming events, and message history serialisation across providers.
-**Evidence:** `src/promptgrimoire/wargame/agents.py` (turn_agent, summary_agent with TurnResult/StudentSummary output types). Will also be imported in `src/promptgrimoire/llm/playground_provider.py` (provider factory), `src/promptgrimoire/pages/playground.py` (streaming handler).
+**Evidence:** `src/promptgrimoire/wargame/agents.py` (turn_agent, summary_agent with TurnResult/StudentSummary output types). Called from `src/promptgrimoire/db/wargames.py` (start_game, run_preprocessing, publish_all). Will also be imported in `src/promptgrimoire/llm/playground_provider.py` (provider factory), `src/promptgrimoire/pages/playground.py` (streaming handler).
 **Why not alternatives:** The existing `ClaudeClient` (anthropic SDK) only supports Anthropic and lacks structured output validation. pydantic-ai abstracts multiple providers with a single streaming interface, validates model responses against Pydantic schemas with automatic retry on validation failure, and handles `message_history` serialization. LiteLLM was considered but adds a proxy server; pydantic-ai is a library.
 **Classification:** Hard core for playground and wargame features. The provider abstraction, structured output types, and message history serialisation are built around pydantic-ai's API.
 
-### apscheduler >= 3.11, < 4
+### ~~apscheduler >= 3.11, < 4~~ (REMOVED)
 
-**Added:** 2026-03-11
-**Design plan:** docs/design-plans/2026-03-10-turn-cycle-296.md
-**Claim:** Job scheduling for wargame hard-deadline timers. Schedules one-shot jobs at specific datetimes; SQLAlchemyJobStore persists jobs to PostgreSQL so deadlines survive app restarts. `misfire_grace_time=None` ensures missed deadlines always fire on recovery.
-**Evidence:** `src/promptgrimoire/scheduler.py` (init_scheduler, schedule_deadline, cancel_deadline). Called from `src/promptgrimoire/__init__.py` lifecycle hooks and `src/promptgrimoire/db/wargames.py` (publish_all schedules next deadline).
-**Why not alternatives:** asyncio.create_task + sleep loses jobs on restart. Polling introduces latency (up to poll interval). Celery/arq require external infrastructure (Redis). APScheduler runs in-process with database persistence — the minimum viable scheduler for one-shot datetime triggers.
-**Classification:** Hard core for wargame timer. The deadline enforcement architecture depends on APScheduler's job store recovery. Pinned below 4.0 — version 4 is alpha and not production-ready.
+**Removed:** 2026-03-12
+**Reason:** Never added to `pyproject.toml`. The design plan originally specified APScheduler for deadline scheduling, but implementation used a polling worker (`deadline_worker.py`) instead. Polling follows the same pattern as `search_worker.py` (30s adaptive interval) and avoids APScheduler's async compatibility issues (3.x requires sync PostgreSQL driver; 4.x is alpha). Deadlines survive restarts because state is in `WargameTeam.current_deadline` -- the worker simply polls for expired rows on startup.
 
 ### typer[all]
 

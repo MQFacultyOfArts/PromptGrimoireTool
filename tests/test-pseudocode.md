@@ -5546,3 +5546,301 @@ It catches any divergence that would cause highlights to render at wrong positio
 6. Query DB directly to verify content persisted and paragraph_map rebuilt
 
 **Verifies:** AC3.1, AC3.3 -- edit mode WYSIWYG save persists HTML and rebuilds paragraph map
+
+## Wargame Turn Cycle -- Pure Domain Helpers (Unit)
+
+### Bootstrap template expansion
+**File:** tests/unit/test_turn_cycle.py::TestExpandBootstrap
+1. Call expand_bootstrap with template containing {codename} placeholder
+2. Assert codename substituted into output
+3. Verify JSON-like braces ({}) in template are not corrupted
+4. Verify template without {codename} returned unchanged
+
+**Verifies:** str.replace-based expansion is safe for user-authored templates with arbitrary brace content
+
+### Deadline calculation
+**File:** tests/unit/test_turn_cycle.py::TestCalculateDeadline
+1. Delta mode: publish_time + timer_delta returns correct future datetime
+2. Wall-clock future today: returns same day at specified time
+3. Wall-clock past today: rolls to next day
+4. Wall-clock equal to publish time: rolls to next day
+5. Both fields set: raises ValueError
+6. Neither field set: raises ValueError
+
+**Verifies:** XOR enforcement between timer_delta and timer_wall_clock, correct next-occurrence logic
+
+### CRDT move buffer extraction
+**File:** tests/unit/test_turn_cycle.py::TestExtractMoveText
+1. Create CRDT doc with content_markdown text, extract via extract_move_text
+2. Assert populated buffer returns markdown string
+3. Assert None input returns NO_MOVE_SENTINEL
+4. Assert whitespace-only content returns NO_MOVE_SENTINEL
+5. Assert empty CRDT document (no content_markdown key) returns NO_MOVE_SENTINEL
+
+**Verifies:** AC4.1-AC4.3 -- move buffer extraction handles all edge cases with sentinel fallback
+
+### t-string prompt rendering
+**File:** tests/unit/test_turn_cycle.py::TestRenderPrompt
+1. Render static t-string, assert exact text output
+2. Render t-string with interpolated variable, assert stringified
+3. Test !r conversion (repr), !s conversion (str), !a conversion (ascii)
+
+**Verifies:** render_prompt correctly handles all Python conversion specifiers on t-string Interpolation objects
+
+### Turn prompt assembly
+**File:** tests/unit/test_turn_cycle.py::TestBuildTurnPrompt
+1. Call build_turn_prompt with move text and game state
+2. Assert output contains both values and XML tags (game_state, cadet_orders)
+
+**Verifies:** Turn agent user prompt includes game_state and cadet_orders in XML structure
+
+### Summary prompt assembly
+**File:** tests/unit/test_turn_cycle.py::TestBuildSummaryPrompt
+1. Call build_summary_prompt with response text
+2. Assert output contains response text and XML response tags
+
+**Verifies:** Summary agent user prompt wraps response in XML structure
+
+## Wargame Turn Cycle -- PydanticAI Agents (Unit)
+
+### turn_agent returns structured TurnResult
+**File:** tests/unit/test_wargame_agents.py::TestTurnAgent
+1. Override turn_agent model with TestModel, run with test prompt
+2. Assert output is TurnResult with response_text and game_state strings
+3. Test with custom instructions (runtime system_prompt injection)
+4. Test message history round-trip: serialise via pydantic_core, deserialise via ModelMessagesTypeAdapter, run second call with restored history
+
+**Verifies:** AC5.1 -- turn_agent produces structured TurnResult; message history survives serialisation cycle
+
+### summary_agent returns structured StudentSummary
+**File:** tests/unit/test_wargame_agents.py::TestSummaryAgent
+1. Override summary_agent model with TestModel, run with test prompt
+2. Assert output is StudentSummary with summary string
+3. Test with custom instructions (summary_system_prompt injection)
+
+**Verifies:** AC5.4 -- summary_agent produces structured StudentSummary
+
+### Output type structure
+**File:** tests/unit/test_wargame_agents.py::TestOutputTypes
+1. Construct TurnResult directly, verify response_text and game_state fields
+2. Construct StudentSummary directly, verify summary field
+
+**Verifies:** Pydantic model field access works as expected
+
+## Wargame Turn Cycle -- Deadline Worker (Unit)
+
+### Expired deadline fires callback
+**File:** tests/unit/test_deadline_worker.py::test_check_expired_deadlines_fires_for_expired
+1. Mock DB session returning one expired activity ID
+2. Mock on_deadline_fired callback
+3. Call check_expired_deadlines, assert callback called with correct activity ID
+4. Assert return value is 1 (one activity processed)
+
+**Verifies:** Worker correctly dispatches expired deadlines to on_deadline_fired
+
+### Future deadlines not fired
+**File:** tests/unit/test_deadline_worker.py::test_check_expired_deadlines_skips_future
+1. Mock DB session returning empty result set
+2. Call check_expired_deadlines, assert returns 0
+
+**Verifies:** Worker does not fire callbacks when no deadlines are expired
+
+### Exception isolation between activities
+**File:** tests/unit/test_deadline_worker.py::test_check_expired_deadlines_exception_doesnt_prevent_others
+1. Mock DB returning two activity IDs
+2. Mock on_deadline_fired to raise on first, succeed on second
+3. Assert return value is 1 (only second succeeded)
+4. Assert both activities were attempted (call log has 2 entries)
+
+**Verifies:** Exception in one activity does not prevent processing others
+
+### No pending deadlines returns None
+**File:** tests/unit/test_deadline_worker.py::test_next_deadline_seconds_returns_none_when_no_deadlines
+1. Mock DB returning None for MIN(current_deadline)
+2. Call _next_deadline_seconds, assert returns None
+
+**Verifies:** Adaptive sleep correctly identifies when no deadlines are pending
+
+## Wargame Turn Cycle -- Deadline Worker (Integration)
+
+### AC2.1: Expired deadline fires callback
+**File:** tests/integration/test_deadline_worker.py::TestDeadlineWorkerIntegration::test_ac2_1_fires_for_expired_deadline
+1. Create wargame activity with team having current_deadline 1 minute in the past
+2. Monkeypatch on_deadline_fired to record calls
+3. Call check_expired_deadlines against real database
+4. Assert activity_id appears in fired list
+
+**Verifies:** AC2.1 -- real database query finds expired deadlines and dispatches callback
+
+### AC2.2: Misfire recovery
+**File:** tests/integration/test_deadline_worker.py::TestDeadlineWorkerIntegration::test_ac2_2_misfire_recovery
+1. Create wargame activity with team having current_deadline 1 hour in the past
+2. Monkeypatch on_deadline_fired, call check_expired_deadlines
+3. Assert stale activity fires (simulates server-was-down recovery)
+
+**Verifies:** AC2.2 -- stale deadlines from server downtime fire on next poll cycle
+
+### AC2.3: Cancelled deadline ignored
+**File:** tests/integration/test_deadline_worker.py::TestDeadlineWorkerIntegration::test_ac2_3_cancelled_deadline_ignored
+1. Create wargame activity with team having current_deadline=None
+2. Monkeypatch on_deadline_fired, call check_expired_deadlines
+3. Assert activity_id NOT in fired list
+
+**Verifies:** AC2.3 -- NULL current_deadline means team is not polled
+
+### Idempotency: locked teams skipped
+**File:** tests/integration/test_deadline_worker.py::TestDeadlineWorkerIntegration::test_idempotency_locked_teams_skipped
+1. Create wargame activity with team having expired deadline but round_state='locked'
+2. Monkeypatch on_deadline_fired, call check_expired_deadlines
+3. Assert activity_id NOT in fired list
+
+**Verifies:** Already-locked teams are not reprocessed on subsequent poll cycles
+
+## Wargame Turn Cycle -- Service Layer (Integration)
+
+### AC1.1: Bootstrap expanded with codename
+**File:** tests/integration/test_turn_cycle_service.py::TestStartGame::test_ac1_1_bootstrap_expanded_with_codename
+1. Create wargame activity with config and 2 teams
+2. Call start_game with TestModel override
+3. Query seq=1 user message for each team
+4. Assert codename appears in message content
+
+**Verifies:** AC1.1 -- scenario bootstrap template is expanded with each team's codename
+
+### AC1.2: AI response with PydanticAI history
+**File:** tests/integration/test_turn_cycle_service.py::TestStartGame::test_ac1_2_assistant_message_with_pydantic_history
+1. Start game, query seq=2 assistant message for each team
+2. Assert metadata_json is not None
+3. Deserialise via ModelMessagesTypeAdapter, assert non-empty
+
+**Verifies:** AC1.2 -- assistant message stores serialised PydanticAI message history
+
+### AC1.3: game_state_text populated
+**File:** tests/integration/test_turn_cycle_service.py::TestStartGame::test_ac1_3_game_state_text_populated
+1. Start game, reload teams
+2. Assert game_state_text is not None on each team
+
+**Verifies:** AC1.3 -- TurnResult.game_state is stored on WargameTeam
+
+### AC1.4: Rejects already-started game
+**File:** tests/integration/test_turn_cycle_service.py::TestStartGame::test_ac1_4_rejects_already_started
+1. Start game once
+2. Call start_game again, assert ValueError("game already started")
+
+**Verifies:** AC1.4 -- idempotency guard prevents double-start
+
+### AC5.2/5.3: Message history round-trip
+**File:** tests/integration/test_turn_cycle_service.py::TestStartGame::test_ac5_2_ac5_3_metadata_history_round_trip
+1. Start game, retrieve assistant message's metadata_json
+2. Deserialise via ModelMessagesTypeAdapter
+3. Make follow-up turn_agent.run call with restored history
+4. Assert second call produces valid TurnResult
+
+**Verifies:** AC5.2-5.3 -- PydanticAI history can be serialised to DB and restored for multi-turn conversation
+
+### AC3.1-3.3: Lock round
+**File:** tests/integration/test_turn_cycle_service.py::TestLockRound
+1. Set teams to drafting with deadlines, call lock_round
+2. Assert all teams have round_state='locked' (AC3.1)
+3. Assert current_deadline is None for all teams (AC3.2)
+4. Lock teams, try lock_round again, assert ValueError (AC3.3)
+
+**Verifies:** AC3.1-3.3 -- hard-deadline lock transitions, deadline clearing, and state guard
+
+### AC4.1-AC4.3 + AC5.1-AC5.3: Run preprocessing
+**File:** tests/integration/test_turn_cycle_service.py::TestRunPreprocessing
+1. Start game, advance teams to round 2 locked
+2. Set CRDT move buffers on teams, call run_preprocessing with TestModel
+3. Assert user message (seq=3) contains extracted markdown (AC4.1)
+4. Assert assistant message (seq=4) exists with metadata_json (AC5.1)
+5. Test None move buffer produces "No move submitted" sentinel (AC4.2)
+6. Test whitespace-only CRDT returns sentinel (AC4.3)
+7. Verify PydanticAI history restored from previous round's metadata_json (AC5.2)
+8. Verify updated history stored on new assistant message (AC5.3)
+
+**Verifies:** Full preprocessing pipeline: CRDT extraction, turn agent call, history accumulation
+
+### AC8.1: One-response invariant (duplicate preprocessing)
+**File:** tests/integration/test_turn_cycle_service.py::TestOneResponseInvariant::test_ac8_1_duplicate_preprocessing_rejected
+1. Start game, advance to round 2, run preprocessing once
+2. Call run_preprocessing again
+3. Assert no duplicate assistant messages (still exactly 1 per round per team)
+
+**Verifies:** AC8.1 -- sequence-number check prevents duplicate assistant messages from repeated preprocessing
+
+### AC6.1-6.5: Publish pipeline
+**File:** tests/integration/test_turn_cycle_service.py::TestPublishAll
+1. Start game, call publish_all with TestModel overrides
+2. Assert student_summary_text populated on each team (AC6.1)
+3. Assert current_round incremented (AC6.2)
+4. Assert round_state='drafting' (AC6.3)
+5. Assert move_buffer_crdt cleared to None (AC6.4)
+6. Assert current_deadline set to future datetime (AC6.5)
+
+**Verifies:** AC6.1-6.5 -- publish generates summaries, advances round, resets state, sets next deadline
+
+### AC7.1-7.2: Publish gating
+**File:** tests/integration/test_turn_cycle_service.py::TestPublishGating
+1. Create activity but do NOT run preprocessing
+2. Call publish_all, assert ValueError("missing assistant responses") (AC7.1)
+3. Set teams to 'drafting' state, call publish_all, assert ValueError("not all teams in locked state") (AC7.2)
+
+**Verifies:** AC7.1-7.2 -- publish_all rejects if preprocessing incomplete or teams not locked
+
+### AC8.2: One-response invariant on publish
+**File:** tests/integration/test_turn_cycle_service.py::TestOneResponseInvariant::test_ac8_2_duplicate_detection_on_publish
+1. Start game, publish round 1, run deadline/preprocessing for round 2
+2. Publish round 2
+3. Assert exactly 2 assistant messages per team (one per round)
+
+**Verifies:** AC8.2 -- no duplicate assistant messages across full round cycle
+
+### AC2.4: Wall-clock deadline rollover
+**File:** tests/integration/test_turn_cycle_service.py::TestWallClockDeadline
+1. Create config with timer_wall_clock instead of timer_delta
+2. Start game, publish_all
+3. Assert current_deadline set to next occurrence of wall-clock time
+4. Assert deadline timezone is UTC
+
+**Verifies:** AC2.4 -- wall-clock timer mode calculates correct next-day rollover
+
+## Wargame Turn Cycle -- Full Round Trip (Integration)
+
+### Two complete rounds
+**File:** tests/integration/test_turn_cycle_e2e.py::TestFullRoundTrip::test_two_full_rounds
+1. Create wargame activity with config and 2 teams
+2. start_game: verify round=1, state=locked, 2 messages per team (bootstrap)
+3. publish_all: verify round=2, state=drafting, summaries populated, deadlines set
+4. Simulate player moves via CRDT move buffers
+5. on_deadline_fired: verify teams locked, 4 messages per team (move + AI response)
+6. publish_all: verify round=3, state=drafting, no duplicate assistant messages
+
+**Verifies:** AC1-AC8 end-to-end -- complete two-round cycle exercises all turn cycle operations
+
+### Empty moves (all teams)
+**File:** tests/integration/test_turn_cycle_e2e.py::TestEdgeCases::test_empty_moves_all_teams
+1. Start game, publish round 1
+2. on_deadline_fired with no move buffers set (all None)
+3. Assert user messages contain "No move submitted" sentinel
+4. publish_all succeeds, round advances to 3
+
+**Verifies:** Turn cycle handles all-empty moves gracefully (sentinel substitution)
+
+### Mixed moves (some teams have content, others None)
+**File:** tests/integration/test_turn_cycle_e2e.py::TestEdgeCases::test_mixed_moves
+1. Start game, publish round 1
+2. Set CRDT move on first team only, leave second team None
+3. on_deadline_fired
+4. Assert first team's user message contains move text
+5. Assert second team's user message is "No move submitted"
+6. publish_all succeeds for both teams
+
+**Verifies:** Mixed move states within an activity are handled correctly per-team
+
+### AC8.3: No duplicate assistants across rounds
+**File:** tests/integration/test_turn_cycle_e2e.py::TestEdgeCases::test_ac8_3_no_duplicate_assistants_across_rounds
+1. Run two full rounds: start -> publish -> deadline -> publish
+2. Query assistant messages per team
+3. Assert exactly 2 assistant messages per team (seq=2 bootstrap, seq=4 round 2)
+
+**Verifies:** AC8.3 -- one-response invariant holds across multiple rounds

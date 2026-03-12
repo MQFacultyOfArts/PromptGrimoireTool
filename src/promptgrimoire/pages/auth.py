@@ -513,7 +513,9 @@ async def _handle_magic_link_callback(token: str | None) -> None:
     """Authenticate a magic link token and establish session."""
     if not _validate_token(token):
         logger.warning("Magic link callback: invalid or missing token")
-        ui.label("Invalid or missing token").classes("text-xl text-red-500")
+        ui.label("Invalid or missing token").classes("text-xl text-red-500").props(
+            'data-testid="auth-error-msg"'
+        )
         ui.notify("Invalid or missing token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
@@ -548,7 +550,9 @@ async def _handle_magic_link_callback(token: str | None) -> None:
         ui.navigate.to("/")
     else:
         logger.warning("Magic link auth failed: %s", result.error)
-        ui.label(f"Error: {result.error}").classes("text-red-500")
+        ui.label(f"Error: {result.error}").classes("text-red-500").props(
+            'data-testid="auth-error-msg"'
+        )
         ui.notify(f"Authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
@@ -557,7 +561,9 @@ async def _handle_sso_callback(token: str | None) -> None:
     """Authenticate an SSO token and establish session."""
     if not _validate_token(token):
         logger.warning("SSO callback: invalid or missing token")
-        ui.label("Invalid or missing SSO token").classes("text-xl text-red-500")
+        ui.label("Invalid or missing SSO token").classes("text-xl text-red-500").props(
+            'data-testid="auth-error-msg"'
+        )
         ui.notify("Invalid or missing SSO token", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
         return
@@ -607,7 +613,9 @@ async def _handle_sso_callback(token: str | None) -> None:
         ui.navigate.to("/")
     else:
         logger.warning("SSO auth failed: %s", result.error)
-        ui.label(f"Error: {result.error}").classes("text-red-500")
+        ui.label(f"Error: {result.error}").classes("text-red-500").props(
+            'data-testid="auth-error-msg"'
+        )
         ui.notify(f"SSO authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
@@ -651,7 +659,9 @@ async def _handle_oauth_callback(token: str | None) -> None:
         ui.navigate.to("/")
     else:
         logger.warning("OAuth auth failed: %s", result.error)
-        ui.label(f"Error: {result.error}").classes("text-red-500")
+        ui.label(f"Error: {result.error}").classes("text-red-500").props(
+            'data-testid="auth-error-msg"'
+        )
         ui.notify(f"OAuth authentication failed: {result.error}", type="negative")
         ui.timer(_ERROR_DISPLAY_SECONDS, lambda: ui.navigate.to("/login"), once=True)
 
@@ -730,16 +740,16 @@ async def protected_page() -> None:
 
         with ui.row().classes("gap-2"):
             ui.label("Email:").classes("font-semibold")
-            ui.label(user["email"])
+            ui.label(user["email"]).props('data-testid="user-email"')
 
         with ui.row().classes("gap-2"):
             ui.label("Member ID:").classes("font-semibold")
-            ui.label(user["member_id"])
+            ui.label(user["member_id"]).props('data-testid="user-member-id"')
 
         with ui.row().classes("gap-2"):
             ui.label("Roles:").classes("font-semibold")
             for role in user["roles"]:
-                ui.badge(role).classes("mr-1")
+                ui.badge(role).classes("mr-1").props('data-testid="user-role"')
 
     def logout() -> None:
         _clear_session()

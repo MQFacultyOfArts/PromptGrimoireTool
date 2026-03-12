@@ -70,7 +70,7 @@ async def _build_navigator_ui(
             search_input = (
                 ui.input(placeholder="Search titles and content...")
                 .classes("w-full mb-4 navigator-search-input")
-                .props("outlined dense clearable")
+                .props('outlined dense clearable data-testid="navigator-search-input"')
             )
 
             no_results_container = ui.column().classes("w-full")

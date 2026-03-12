@@ -166,9 +166,9 @@ def _render_empty_tag_state(on_add_click: Any | None) -> None:
     if on_add_click is not None:
         _render_new_tag_button(on_add_click)
     else:
-        ui.label("No tags available").classes("text-sm text-gray-600").tooltip(
-            "Ask your instructor to add tags to this activity"
-        )
+        ui.label("No tags available").classes("text-sm text-gray-600").props(
+            'data-testid="no-tags-label"'
+        ).tooltip("Ask your instructor to add tags to this activity")
 
 
 def _populate_highlight_menu(

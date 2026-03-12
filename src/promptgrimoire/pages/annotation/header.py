@@ -141,6 +141,66 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
     ).props('data-testid="paragraph-toggle"')
 
 
+def _render_export_button(state: PageState, workspace_id: UUID) -> None:
+    """Render the Export PDF button with loading state."""
+    export_btn = ui.button(
+        "Export PDF",
+        icon="picture_as_pdf",
+    ).props('color=primary data-testid="export-pdf-btn"')
+
+    async def on_export_click() -> None:
+        export_btn.disable()
+        export_btn.props("loading")
+        try:
+            await _handle_pdf_export(state, workspace_id)
+        finally:
+            export_btn.props(remove="loading")
+            export_btn.enable()
+
+    export_btn.on_click(on_export_click)
+
+
+def _render_placement_chip(
+    workspace_id: UUID,
+    user_id: UUID | None,
+) -> ui.refreshable:
+    """Build and return a refreshable placement chip."""
+
+    @ui.refreshable
+    async def placement_chip() -> None:
+        logger.debug("[HEADER] placement_chip: querying placement")
+        ctx = await get_placement_context(workspace_id)
+        logger.debug("[HEADER] placement_chip: got ctx, rendering chip")
+        label, color, icon = _get_placement_chip_style(ctx)
+        is_authenticated = user_id is not None
+
+        async def open_dialog() -> None:
+            await show_placement_dialog(
+                workspace_id,
+                ctx,
+                placement_chip.refresh,
+                user_id=user_id,
+            )
+
+        clickable = is_authenticated and not ctx.is_template
+        props_str = 'data-testid="placement-chip" outline'
+        if not clickable:
+            props_str += " disable"
+        chip = ui.chip(
+            text=label,
+            icon=icon,
+            color=color,
+            on_click=open_dialog if clickable else None,
+        ).props(props_str)
+        if ctx.is_template:
+            chip.tooltip("Template placement is managed by the Activity")
+        elif not is_authenticated:
+            chip.tooltip("Log in to change placement")
+        logger.debug("[HEADER] placement_chip: done")
+
+    return placement_chip
+
+
 async def render_workspace_header(
     state: PageState,
     workspace_id: UUID,
@@ -179,7 +239,6 @@ async def render_workspace_header(
             .classes("text-sm text-blue-600 bg-blue-100 px-2 py-0.5 rounded")
             .props('data-testid="user-count"')
         )
-        # Update with actual count now that badge exists
         _update_user_count(state)
 
         # Word count badge (only when limits are configured)
@@ -193,22 +252,7 @@ async def render_workspace_header(
                 .props('data-testid="word-count-badge"')
             )
 
-        # Export PDF button with loading state
-        export_btn = ui.button(
-            "Export PDF",
-            icon="picture_as_pdf",
-        ).props('color=primary data-testid="export-pdf-btn"')
-
-        async def on_export_click() -> None:
-            export_btn.disable()
-            export_btn.props("loading")
-            try:
-                await _handle_pdf_export(state, workspace_id)
-            finally:
-                export_btn.props(remove="loading")
-                export_btn.enable()
-
-        export_btn.on_click(on_export_click)
+        _render_export_button(state, workspace_id)
 
         # Manage Documents button (owners only)
         if state.is_owner:
@@ -219,41 +263,7 @@ async def render_workspace_header(
             ).props('outline color=primary data-testid="manage-documents-btn"')
 
         logger.debug("[HEADER] buttons done, calling placement_chip")
-
-        # Placement status chip (refreshable)
-        @ui.refreshable
-        async def placement_chip() -> None:
-            logger.debug("[HEADER] placement_chip: querying placement")
-            ctx = await get_placement_context(workspace_id)
-            logger.debug("[HEADER] placement_chip: got ctx, rendering chip")
-            label, color, icon = _get_placement_chip_style(ctx)
-            is_authenticated = user_id is not None
-
-            async def open_dialog() -> None:
-                await show_placement_dialog(
-                    workspace_id,
-                    ctx,
-                    placement_chip.refresh,
-                    user_id=user_id,
-                )
-
-            # Template workspaces have locked placement
-            clickable = is_authenticated and not ctx.is_template
-            props_str = 'data-testid="placement-chip" outline'
-            if not clickable:
-                props_str += " disable"
-            chip = ui.chip(
-                text=label,
-                icon=icon,
-                color=color,
-                on_click=open_dialog if clickable else None,
-            ).props(props_str)
-            if ctx.is_template:
-                chip.tooltip("Template placement is managed by the Activity")
-            elif not is_authenticated:
-                chip.tooltip("Log in to change placement")
-            logger.debug("[HEADER] placement_chip: done")
-
+        placement_chip = _render_placement_chip(workspace_id, user_id)
         await placement_chip()
         logger.debug("[HEADER] placement_chip awaited")
 
@@ -266,6 +276,7 @@ async def render_workspace_header(
                 text_color="white",
             ).props(
                 'dense aria-label="Copy protection is enabled for this activity"'
+                ' data-testid="copy-protection-chip"'
             ).tooltip("Copy protection is enabled for this activity")
 
         # Paragraph numbering toggle (Phase 7)

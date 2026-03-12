@@ -710,27 +710,6 @@ async def open_course_settings(course: Course) -> None:
                 f'data-testid="course-{attr}-switch"'
             )
 
-        # -- Bulk enrolment upload --
-        ui.separator()
-        ui.label("Bulk Enrol Students").classes("text-sm font-semibold")
-
-        force_checkbox = ui.checkbox(
-            "Override student ID conflicts",
-            value=False,
-        )
-        force_checkbox.props('data-testid="enrol-force-checkbox"')
-
-        async def on_upload(e: Any) -> None:
-            await _handle_enrol_upload(e, course, force_checkbox.value)
-
-        upload = ui.upload(
-            label="Upload Moodle Grades XLSX",
-            on_upload=on_upload,
-            auto_upload=True,
-            max_file_size=10 * 1024 * 1024,
-        )
-        upload.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
-
         with ui.row().classes("w-full justify-end gap-2"):
             ui.button("Cancel", on_click=dialog.close).props(
                 'flat data-testid="cancel-course-settings-btn"'
@@ -1669,6 +1648,30 @@ async def manage_enrollments_page(course_id: str) -> None:
                 )
 
     await _render_add_enrollment_form(cid, on_added=enrollments_list.refresh)
+
+    # -- Bulk enrolment upload --
+    ui.separator()
+    ui.label("Bulk Enrol Students").classes("text-sm font-semibold")
+
+    force_checkbox = ui.checkbox(
+        "Override student ID conflicts",
+        value=False,
+    )
+    force_checkbox.props('data-testid="enrol-force-checkbox"')
+
+    async def on_upload(e: Any) -> None:
+        await _handle_enrol_upload(e, ctx.course, force_checkbox.value)
+        await enrollments_list.refresh()
+
+    upload = ui.upload(
+        label="Upload Moodle Grades XLSX",
+        on_upload=on_upload,
+        auto_upload=True,
+        max_file_size=10 * 1024 * 1024,
+    )
+    upload.props('accept=".xlsx" data-testid="enrol-upload"').classes("w-full")
+
+    ui.separator()
     await enrollments_list()
 
     ui.button(

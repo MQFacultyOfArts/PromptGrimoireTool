@@ -1,9 +1,9 @@
-"""E2E tests for bulk enrolment upload widget in unit settings.
+"""E2E tests for bulk enrolment upload widget on manage enrollments page.
 
 Verifies that:
 - Instructors can upload an XLSX and see a success notification (AC7.1)
 - Invalid XLSX shows a warning notification (AC7.2)
-- Students cannot see the upload widget (AC7.4)
+- Students cannot access manage enrollments page (AC7.4)
 
 Run with: uv run grimoire e2e run -k test_bulk_enrol
 
@@ -110,10 +110,10 @@ def _create_course_with_enrollment(
 
 
 @pytest.fixture
-def instructor_course_page(
+def instructor_enrollments_page(
     browser: Browser, app_server: str
 ) -> Generator[tuple[Page, str]]:
-    """Authenticated instructor page at a course detail page.
+    """Authenticated instructor page at the manage enrollments page.
 
     Yields (page, course_id).
     """
@@ -125,10 +125,10 @@ def instructor_course_page(
     _authenticate_page(page, app_server, email=email)
 
     course_id = _create_course_with_enrollment(email, role="instructor")
-    page.goto(f"{app_server}/courses/{course_id}")
+    page.goto(f"{app_server}/courses/{course_id}/enrollments")
 
-    # Wait for course detail to render
-    page.wait_for_selector('[data-testid="course-settings-btn"]', timeout=15000)
+    # Wait for the manage enrollments page to render
+    page.get_by_test_id("enrol-upload").wait_for(state="visible", timeout=15000)
 
     yield page, course_id
 
@@ -153,9 +153,9 @@ def student_course_page(
     _authenticate_page(page, app_server, email=email)
 
     course_id = _create_course_with_enrollment(email, role="student")
-    page.goto(f"{app_server}/courses/{course_id}")
+    page.goto(f"{app_server}/courses/{course_id}/enrollments")
 
-    # Wait for the course detail page to finish rendering
+    # Wait for the page to finish rendering
     page.wait_for_load_state("networkidle", timeout=15000)
 
     yield page, course_id
@@ -165,23 +165,17 @@ def student_course_page(
     context.close()
 
 
-def _open_settings_dialog(page: Page) -> None:
-    """Click the Unit Settings button and wait for the dialog."""
-    page.get_by_test_id("course-settings-btn").click()
-    page.get_by_test_id("course-settings-title").wait_for(state="visible", timeout=5000)
-
-
 def _upload_xlsx(page: Page, xlsx_bytes: bytes) -> None:
     """Upload XLSX bytes via the enrol-upload widget."""
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
         f.write(xlsx_bytes)
-        fixture_path = f.name
+        fixture_path = Path(f.name)
 
     upload_widget = page.get_by_test_id("enrol-upload")
     file_input = upload_widget.locator('input[type="file"]')
-    file_input.set_input_files(fixture_path)
+    file_input.set_input_files(str(fixture_path))
 
-    Path(fixture_path).unlink()
+    fixture_path.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +189,10 @@ class TestBulkEnrolUpload:
 
     def test_valid_xlsx_shows_success_notification(
         self,
-        instructor_course_page: tuple[Page, str],
+        instructor_enrollments_page: tuple[Page, str],
     ) -> None:
         """AC7.1: Upload valid XLSX, verify success notification."""
-        page, _course_id = instructor_course_page
-        _open_settings_dialog(page)
+        page, _course_id = instructor_enrollments_page
 
         xlsx_bytes = make_xlsx_bytes(
             ["First name", "Last name", "ID number", "Email address"],
@@ -214,11 +207,10 @@ class TestBulkEnrolUpload:
 
     def test_invalid_xlsx_shows_warning_notification(
         self,
-        instructor_course_page: tuple[Page, str],
+        instructor_enrollments_page: tuple[Page, str],
     ) -> None:
         """AC7.2: Upload XLSX with missing column, verify warning."""
-        page, _course_id = instructor_course_page
-        _open_settings_dialog(page)
+        page, _course_id = instructor_enrollments_page
 
         # Missing "ID number" column
         xlsx_bytes = make_xlsx_bytes(
@@ -235,9 +227,9 @@ class TestBulkEnrolUpload:
         self,
         student_course_page: tuple[Page, str],
     ) -> None:
-        """AC7.4: Students should not see the settings button or upload widget."""
+        """AC7.4: Students should not see the upload widget."""
         page, _course_id = student_course_page
 
-        # Students should not see the settings button at all
-        settings_btn = page.get_by_test_id("course-settings-btn")
-        expect(settings_btn).not_to_be_visible(timeout=5000)
+        # Students should see the access denial message, not the upload widget
+        upload = page.get_by_test_id("enrol-upload")
+        expect(upload).not_to_be_visible(timeout=5000)

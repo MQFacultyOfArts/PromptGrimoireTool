@@ -307,12 +307,35 @@ LIMIT :lim
 )
 
 # Combined search: nav CTE (permissions) + FTS in one query.
-# Additional binds: :query, :lim
+# Additional binds: :prefix_query, :lim
 _HEADLINE_OPTIONS = (
     "MaxWords=35, MinWords=15, MaxFragments=3, StartSel=<mark>, StopSel=</mark>"
 )
+_META_HEADLINE_OPTIONS = (
+    "MaxWords=8, MinWords=1, MaxFragments=1, StartSel=<mark>, StopSel=</mark>"
+)
+
+# Labelled metadata string for ts_headline display.
+_META_DISPLAY = (
+    "'Title: ' || COALESCE(w.title, 'Untitled')"
+    " || ' | Author: ' || COALESCE(u.display_name, '')"
+    " || ' | Activity: ' || COALESCE(a.title, '')"
+    " || ' | Week: ' || COALESCE(wk.title, '')"
+    " || ' | Unit: ' || COALESCE(c.code, '') || ' ' || COALESCE(c.name, '')"
+)
+
+# Matching string includes split course codes for partial matching
+# (LAWS1100 → LAWS + 1100).
+_META_MATCH = (
+    "COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '"
+    " || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '"
+    " || COALESCE(c.code, '') || ' '"
+    " || regexp_replace(COALESCE(c.code, ''), '([A-Za-z]+)([0-9]+)', '\\1 \\2', 'g')"
+    " || ' ' || COALESCE(c.name, '')"
+)
+
 # S608 suppressed via per-file-ignore: f-string only interpolates module constants
-# (_NAV_CTE, _HEADLINE_OPTIONS); all user input is bound via :query.
+# (_NAV_CTE, _HEADLINE_OPTIONS, etc.); all user input is bound via :prefix_query.
 _SEARCH_SQL = text(
     _NAV_CTE
     + f"""\
@@ -323,49 +346,45 @@ fts AS (
   SELECT wd.workspace_id AS ws_id,
     ts_headline('english',
       regexp_replace(wd.content, '<[^>]+>', ' ', 'g'),
-      websearch_to_tsquery('english', :query),
+      to_tsquery('english', :prefix_query),
       '{_HEADLINE_OPTIONS}'
     ) AS snippet,
     ts_rank(
       to_tsvector('english', regexp_replace(wd.content, '<[^>]+>', ' ', 'g')),
-      websearch_to_tsquery('english', :query)
+      to_tsquery('english', :prefix_query)
     ) AS rank
   FROM workspace_document wd
   WHERE wd.workspace_id IN (SELECT workspace_id FROM visible_ws)
     AND to_tsvector('english', regexp_replace(wd.content, '<[^>]+>', ' ', 'g'))
-      @@ websearch_to_tsquery('english', :query)
+      @@ to_tsquery('english', :prefix_query)
   UNION ALL
   SELECT w.id AS ws_id,
     ts_headline('english',
       COALESCE(w.search_text, ''),
-      websearch_to_tsquery('english', :query),
+      to_tsquery('english', :prefix_query),
       '{_HEADLINE_OPTIONS}'
     ) AS snippet,
     ts_rank(
       to_tsvector('english', COALESCE(w.search_text, '')),
-      websearch_to_tsquery('english', :query)
+      to_tsquery('english', :prefix_query)
     ) AS rank
   FROM workspace w
   WHERE w.id IN (SELECT workspace_id FROM visible_ws)
     AND to_tsvector('english', COALESCE(w.search_text, ''))
-      @@ websearch_to_tsquery('english', :query)
+      @@ to_tsquery('english', :prefix_query)
   UNION ALL
   -- Metadata FTS: owner name, activity/week/course titles, workspace title.
   -- No GIN index — sequential scan on visible workspaces. See #316 phase-2.
+  -- Uses labelled display text for snippets, split course codes for matching.
   SELECT w.id AS ws_id,
     ts_headline('english',
-      COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
-        || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
-        || COALESCE(c.code, '') || ' ' || COALESCE(c.name, ''),
-      websearch_to_tsquery('english', :query),
-      '{_HEADLINE_OPTIONS}'
+      {_META_DISPLAY},
+      to_tsquery('english', :prefix_query),
+      '{_META_HEADLINE_OPTIONS}'
     ) AS snippet,
     ts_rank(
-      to_tsvector('english',
-        COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
-          || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
-          || COALESCE(c.code, '') || ' ' || COALESCE(c.name, '')),
-      websearch_to_tsquery('english', :query)
+      to_tsvector('english', {_META_MATCH}),
+      to_tsquery('english', :prefix_query)
     ) AS rank
   FROM workspace w
   JOIN acl_entry acl ON acl.workspace_id = w.id AND acl.permission = 'owner'
@@ -374,11 +393,8 @@ fts AS (
   LEFT JOIN week wk ON wk.id = a.week_id
   LEFT JOIN course c ON c.id = COALESCE(wk.course_id, w.course_id)
   WHERE w.id IN (SELECT workspace_id FROM visible_ws)
-    AND to_tsvector('english',
-      COALESCE(w.title, '') || ' ' || COALESCE(u.display_name, '') || ' '
-        || COALESCE(a.title, '') || ' ' || COALESCE(wk.title, '') || ' '
-        || COALESCE(c.code, '') || ' ' || COALESCE(c.name, ''))
-      @@ websearch_to_tsquery('english', :query)
+    AND to_tsvector('english', {_META_MATCH})
+      @@ to_tsquery('english', :prefix_query)
 ),
 best_fts AS (
   SELECT DISTINCT ON (ws_id) ws_id, snippet, rank
@@ -510,6 +526,30 @@ class SearchHit:
     rank: float
 
 
+_PREFIX_TOKEN_RE = __import__("re").compile(r"[^\w]", flags=__import__("re").UNICODE)
+
+
+def _build_prefix_query(raw: str) -> str:
+    """Convert user input to a prefix-matching tsquery string.
+
+    Each whitespace-delimited token is sanitised, suffixed with
+    ``:*`` for prefix matching, and AND-joined::
+
+        "José Núñez"  → "josé:* & núñez:*"
+        "LAWS1100"    → "laws1100:*"
+        "tort law"    → "tort:* & law:*"
+
+    Returns empty string if no valid tokens remain.
+    """
+    tokens = raw.strip().split()
+    safe: list[str] = []
+    for t in tokens:
+        cleaned = _PREFIX_TOKEN_RE.sub("", t)
+        if cleaned:
+            safe.append(cleaned + ":*")
+    return " & ".join(safe)
+
+
 async def search_navigator(
     query: str,
     *,
@@ -528,8 +568,12 @@ async def search_navigator(
     if len(stripped) < 3:
         return []
 
+    prefix_query = _build_prefix_query(stripped)
+    if not prefix_query:
+        return []
+
     params = _base_params(user_id, is_privileged, enrolled_course_ids)
-    params["query"] = stripped
+    params["prefix_query"] = prefix_query
     params["lim"] = limit
 
     async with get_session() as session:

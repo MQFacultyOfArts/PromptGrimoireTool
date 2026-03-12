@@ -106,6 +106,7 @@ class User(SQLModel, table=True):
         display_name: Human-readable name shown in UI.
         stytch_member_id: Optional link to Stytch B2B member.
         is_admin: Whether user has org-level admin rights.
+        student_id: Optional institutional student ID (unique when set).
         created_at: Timestamp when user was created.
         last_login: Timestamp of last successful login.
     """
@@ -115,6 +116,11 @@ class User(SQLModel, table=True):
     display_name: str = Field(max_length=100)
     stytch_member_id: str | None = Field(default=None, unique=True, index=True)
     is_admin: bool = Field(default=False)
+    student_id: str | None = Field(
+        default=None,
+        max_length=50,
+        sa_column=Column(String(50), unique=True, nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=_timestamptz_column()
     )

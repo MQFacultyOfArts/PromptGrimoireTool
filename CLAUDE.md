@@ -113,6 +113,24 @@ uv run grimoire e2e all
 # Run E2E tests (smart selection based on changes)
 uv run grimoire e2e changed
 
+# Run E2E tests against Firefox
+uv run grimoire e2e firefox
+
+# Run E2E tests against all browsers (Chromium then Firefox)
+uv run grimoire e2e all-browsers
+
+# Run E2E tests with specific browser
+uv run grimoire e2e run --browser firefox
+
+# Run E2E tests against BrowserStack real browsers (requires BROWSERSTACK_USERNAME/ACCESS_KEY)
+uv run grimoire e2e browserstack
+
+# Run E2E tests against BrowserStack Safari only
+uv run grimoire e2e browserstack safari
+
+# Run E2E tests against BrowserStack unsupported browsers (gate tests only)
+uv run grimoire e2e browserstack unsupported
+
 # Run card-specific E2E tests
 uv run grimoire e2e cards
 

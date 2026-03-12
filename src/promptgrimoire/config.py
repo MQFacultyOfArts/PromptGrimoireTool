@@ -92,6 +92,13 @@ class I18nConfig(BaseModel):
     unit_label: str = "Unit"
 
 
+class BrowserstackConfig(BaseModel):
+    """BrowserStack credentials for cross-browser E2E testing."""
+
+    username: str = ""
+    access_key: SecretStr = SecretStr("")
+
+
 class DevConfig(BaseModel):
     """Development and testing toggles."""
 
@@ -231,6 +238,7 @@ class Settings(BaseSettings):
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()
+    browserstack: BrowserstackConfig = BrowserstackConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

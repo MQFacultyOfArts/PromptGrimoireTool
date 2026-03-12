@@ -13,12 +13,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
+@pytest.mark.browser_gate
 class TestBrowserGate:
     """Tests for the browser feature gate on /login."""
 

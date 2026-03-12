@@ -466,7 +466,7 @@ async def _finalise_parallel_results(
 
 def _default_worker_count(file_count: int) -> int:
     """Return the bounded worker count for lane execution."""
-    return max(1, min(file_count, max(1, (os.cpu_count() or 4) // 2), 4))
+    return max(1, min(file_count, max(1, (os.cpu_count() or 4) // 2)))
 
 
 async def run_lane_files(

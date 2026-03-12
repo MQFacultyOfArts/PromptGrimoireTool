@@ -1,0 +1,25 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+framework: pytest
+
+platforms:
+  - os: OS X
+    osVersion: Ventura
+    browserName: playwright-webkit
+    browserVersion: latest
+    playwrightConfigOptions:
+      name: safari-macos-latest
+
+  - os: Windows
+    osVersion: 11
+    browserName: playwright-firefox
+    browserVersion: latest
+    playwrightConfigOptions:
+      name: firefox-windows-latest
+
+browserstackLocal: true
+buildName: grimoire-e2e-supported
+projectName: PromptGrimoire
+testObservability: true
+debug: true
+consoleLogs: info

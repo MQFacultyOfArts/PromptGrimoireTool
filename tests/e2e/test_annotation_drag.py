@@ -342,7 +342,7 @@ class TestConcurrentDrag:
     """
 
     @pytestmark_db
-    def test_concurrent_drag_produces_consistent_result(  # noqa: PLR0915
+    def test_concurrent_drag_produces_consistent_result(
         self, two_annotation_contexts: tuple[Page, Page, str]
     ) -> None:
         """Two clients drag different cards simultaneously, both persist.
@@ -403,21 +403,13 @@ class TestConcurrentDrag:
             decision_col_p1.locator(f'[data-highlight-id="{card_x_id}"]')
         ).to_be_visible(timeout=5000)
 
-        # Wait for broadcast to Page 2
-        # The Organise tab doesn't auto-refresh for remote drags, so we must
-        # switch tabs to trigger a re-render from the CRDT state.
-        import time
-
-        start_time = time.time()
-        while True:
-            _switch_to_annotate(page2)
-            _switch_to_organise(page2)
-            col = page2.locator('[data-testid="tag-column"][data-tag-name="Decision"]')
-            if col.locator(f'[data-highlight-id="{card_x_id}"]').is_visible():
-                break
-            if time.time() - start_time > 10:
-                raise TimeoutError("Broadcast not received on Page 2")
-            page2.wait_for_timeout(500)
+        # Wait for broadcast to Page 2 (auto-refresh via broadcast path)
+        decision_col_p2 = page2.locator(
+            '[data-testid="tag-column"][data-tag-name="Decision"]'
+        )
+        expect(
+            decision_col_p2.locator(f'[data-highlight-id="{card_x_id}"]')
+        ).to_be_visible(timeout=10000)
 
         # Page2: drag (remaining) card to Procedural History
         jurisdiction_col_p2 = page2.locator(
@@ -435,19 +427,13 @@ class TestConcurrentDrag:
             proc_history_col_p2.locator(f'[data-highlight-id="{card_y_id}"]')
         ).to_be_visible(timeout=5000)
 
-        # Wait for broadcast back to Page 1
-        start_time = time.time()
-        while True:
-            _switch_to_annotate(page1)
-            _switch_to_organise(page1)
-            col = page1.locator(
-                '[data-testid="tag-column"][data-tag-name="Procedural History"]'
-            )
-            if col.locator(f'[data-highlight-id="{card_y_id}"]').is_visible():
-                break
-            if time.time() - start_time > 10:
-                raise TimeoutError("Broadcast not received on Page 1")
-            page1.wait_for_timeout(500)
+        # Wait for broadcast to Page 1 (auto-refresh via broadcast path)
+        proc_history_col_p1 = page1.locator(
+            '[data-testid="tag-column"][data-tag-name="Procedural History"]'
+        )
+        expect(
+            proc_history_col_p1.locator(f'[data-highlight-id="{card_y_id}"]')
+        ).to_be_visible(timeout=10000)
 
         # Verify both pages show consistent state
         p1_jurisdiction = _get_card_ids_in_column(page1, "Jurisdiction")

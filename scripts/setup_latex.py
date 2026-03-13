@@ -32,6 +32,7 @@ After installing fonts, refresh LuaLaTeX font cache:
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,7 +134,19 @@ REQUIRED_SYSTEM_FONTS = [
 def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command and return the result."""
     print(f"  Running: {' '.join(cmd)}")
-    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+    result = subprocess.run(cmd, check=False, capture_output=True)
+    # Decode output, replacing invalid bytes (tlmgr can emit binary data)
+    decoded = subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        stdout=result.stdout.decode("utf-8", errors="replace"),
+        stderr=result.stderr.decode("utf-8", errors="replace"),
+    )
+    if check and decoded.returncode != 0:
+        raise subprocess.CalledProcessError(
+            decoded.returncode, cmd, decoded.stdout, decoded.stderr
+        )
+    return decoded
 
 
 def is_tinytex_installed() -> bool:
@@ -168,9 +181,12 @@ def install_tinytex() -> None:
 def update_tlmgr() -> None:
     """Update tlmgr and TeX Live to the latest release.
 
-    Without this, tlmgr refuses to install packages when the local TeX Live
-    year is behind the remote repository ('Cross release updates are only
-    supported with update-tlmgr-latest').
+    If the local TeX Live year is behind the remote repository, delete and
+    reinstall TinyTeX rather than attempting a cross-release update.
+    Cross-release updates are officially discouraged by TeX Live upstream
+    (https://tug.org/texlive/upgrade.html) and the update-tlmgr-latest.sh
+    download is fragile (CTAN mirrors return gzip-compressed responses that
+    break subprocess piping).
     """
     print("Updating tlmgr and TeX Live...")
     result = run_cmd([str(TLMGR), "update", "--self", "--all"], check=False)
@@ -178,31 +194,11 @@ def update_tlmgr() -> None:
         stderr = result.stderr or ""
         if "Cross release" in stderr:
             print(
-                "  Local TeX Live is a major version behind"
-                " — running cross-release update..."
+                "  Local TeX Live is a major version behind remote."
+                " Removing and reinstalling TinyTeX..."
             )
-            dl = run_cmd(
-                [
-                    "curl",
-                    "-sL",
-                    "https://mirror.ctan.org/systems/texlive/tlnet/update-tlmgr-latest.sh",
-                ],
-                check=True,
-            )
-            upgrade = subprocess.run(
-                ["sh", "-s", "--", "--update"],
-                input=dl.stdout,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if upgrade.returncode != 0:
-                print(
-                    f"  Warning: cross-release update failed: {upgrade.stderr[-500:]}"
-                )
-            else:
-                print("  Cross-release update succeeded, running tlmgr update...")
-                run_cmd([str(TLMGR), "update", "--self", "--all"], check=False)
+            shutil.rmtree(TINYTEX_DIR, ignore_errors=True)
+            install_tinytex()
         else:
             print(f"  Warning: tlmgr update returned: {stderr[-500:]}")
 

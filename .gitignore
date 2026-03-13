@@ -1,6 +1,7 @@
 docs/implementation_plans/*
 .gemini
 .brainstorming*
+.commit-msg.tmp
 
 *.log
 

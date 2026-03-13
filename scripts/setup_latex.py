@@ -69,6 +69,7 @@ REQUIRED_PACKAGES = [
     "needspace",  # Space checking (mdframed dependency)
     # Unicode/CJK support (Issue #101)
     "emoji",  # Emoji rendering in LuaLaTeX
+    "accsupp",  # PDF /ActualText annotations for emoji accessibility (#274)
     "luatexja",  # CJK support for LuaLaTeX
     "haranoaji",  # Default Japanese fonts for luatexja-fontspec
     # Typography and tables (required by promptgrimoire-export.sty)
@@ -160,6 +161,48 @@ def install_tinytex() -> None:
         sys.exit(1)
 
     print("TinyTeX installed successfully.")
+
+
+def update_tlmgr() -> None:
+    """Update tlmgr and TeX Live to the latest release.
+
+    Without this, tlmgr refuses to install packages when the local TeX Live
+    year is behind the remote repository ('Cross release updates are only
+    supported with update-tlmgr-latest').
+    """
+    print("Updating tlmgr and TeX Live...")
+    result = run_cmd([str(TLMGR), "update", "--self", "--all"], check=False)
+    if result.returncode != 0:
+        stderr = result.stderr or ""
+        if "Cross release" in stderr:
+            print(
+                "  Local TeX Live is a major version behind"
+                " — running cross-release update..."
+            )
+            dl = run_cmd(
+                [
+                    "curl",
+                    "-sL",
+                    "https://mirror.ctan.org/systems/texlive/tlnet/update-tlmgr-latest.sh",
+                ],
+                check=True,
+            )
+            upgrade = subprocess.run(
+                ["sh", "-s", "--", "--update"],
+                input=dl.stdout,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if upgrade.returncode != 0:
+                print(
+                    f"  Warning: cross-release update failed: {upgrade.stderr[-500:]}"
+                )
+            else:
+                print("  Cross-release update succeeded, running tlmgr update...")
+                run_cmd([str(TLMGR), "update", "--self", "--all"], check=False)
+        else:
+            print(f"  Warning: tlmgr update returned: {stderr[-500:]}")
 
 
 def install_packages() -> None:
@@ -303,6 +346,7 @@ def main() -> int:
             print("ERROR: TinyTeX installation failed - binaries not found")
             return 1
 
+    update_tlmgr()
     install_packages()
 
     if not verify_installation():

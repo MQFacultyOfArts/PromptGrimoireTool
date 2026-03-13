@@ -9,14 +9,14 @@ narrative markdown with highlighted screenshots.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from promptgrimoire.docs import Guide
+from promptgrimoire.docs.seed import seed_user_and_enrol
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-from promptgrimoire.docs import Guide
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -29,29 +29,7 @@ def _authenticate(page: Page, base_url: str, email: str) -> None:
 
 def _create_demo_student() -> None:
     """Create and enrol a demo student for the student view step."""
-    for cmd in [
-        [
-            "uv",
-            "run",
-            "grimoire",
-            "admin",
-            "create",
-            "student-demo@test.example.edu.au",
-            "--name",
-            "Demo Student",
-        ],
-        [
-            "uv",
-            "run",
-            "grimoire",
-            "admin",
-            "enroll",
-            "student-demo@test.example.edu.au",
-            "UNIT1234",
-            "S1 2026",
-        ],
-    ]:
-        subprocess.run(cmd, capture_output=True, check=False)
+    seed_user_and_enrol("student-demo@test.example.edu.au", "Demo Student")
 
 
 # ---------------------------------------------------------------------------

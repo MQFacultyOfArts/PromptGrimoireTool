@@ -302,7 +302,10 @@ def _render_workspace_right_column(
             ui.button(
                 action,
                 on_click=lambda u=url: ui.navigate.to(u),
-            ).props("flat dense size=sm color=primary").classes("navigator-action-btn")
+            ).props(
+                "flat dense size=sm color=primary"
+                f' data-testid="open-workspace-btn-{row.workspace_id}"'
+            ).classes("navigator-action-btn")
 
             if row.permission == "owner" and page_state is not None:
                 user_id = page_state["user_id"]

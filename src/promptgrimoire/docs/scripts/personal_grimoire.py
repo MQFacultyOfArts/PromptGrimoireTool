@@ -10,7 +10,6 @@ highlighted screenshots.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +20,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from promptgrimoire.docs import Guide
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from promptgrimoire.docs.seed import seed_user_and_enrol
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -63,29 +63,7 @@ def _authenticate(page: Page, base_url: str, email: str) -> None:
 
 def _setup_loose_student() -> None:
     """Create the loose-student user and enrol in UNIT1234."""
-    for cmd in [
-        [
-            "uv",
-            "run",
-            "grimoire",
-            "admin",
-            "create",
-            "loose-student@test.example.edu.au",
-            "--name",
-            "Loose Student",
-        ],
-        [
-            "uv",
-            "run",
-            "grimoire",
-            "admin",
-            "enroll",
-            "loose-student@test.example.edu.au",
-            "UNIT1234",
-            "S1 2026",
-        ],
-    ]:
-        subprocess.run(cmd, capture_output=True, check=False)
+    seed_user_and_enrol("loose-student@test.example.edu.au", "Loose Student")
 
 
 def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
@@ -357,8 +335,10 @@ def _section_annotate(page: Page, guide: Guide) -> None:
             "annotation. The highlight appears in the sidebar."
         )
 
-        # Add a comment
+        # Expand card detail (collapsed by default) to reveal comment input
         card = page.locator("[data-testid='annotation-card']").first
+        card.get_by_test_id("card-expand-btn").click()
+        card.get_by_test_id("card-detail").wait_for(state="visible", timeout=5000)
         comment_input = card.get_by_test_id("comment-input")
         comment_input.fill(
             "The AI assumes 'good faith' is a direct equivalent, "

@@ -654,6 +654,45 @@ class TestDynamicFontLoading:
         )
 
     @pytest.mark.asyncio
+    async def test_emoji_in_document_compiles(self, tmp_path: Path) -> None:
+        """Emoji in document content must not crash LuaLaTeX.
+
+        Regression test for production crash: luaotfload-harf-plug.lua:721
+        "attempt to index a nil value" when Noto Color Emoji fallback font
+        was loaded with contradictory mode flags (mode=node;mode=harf;;).
+
+        Uses chatgpt54-emoji fixture (6 distinct emoji: 🎮👍🔋😄🛵⚡).
+        """
+        from tests.conftest import load_conversation_fixture
+
+        html = load_conversation_fixture("chatgpt54-emoji")
+        highlights: list[dict] = []
+        tag_colours: dict[str, str] = {}
+
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=highlights,
+            tag_colours=tag_colours,
+            output_dir=tmp_path,
+        )
+
+        # Verify the fallback chain uses mode=harf (not mode=node) for emoji
+        tex_content = tex_path.read_text()
+        assert "Noto Color Emoji:mode=harf;" in tex_content, (
+            "Emoji font must use mode=harf, not mode=node"
+        )
+        assert "Noto Color Emoji:mode=node;" not in tex_content, (
+            "Emoji font must NOT use mode=node (causes HarfBuzz crash)"
+        )
+
+        # Must compile without error
+        pdf_path = await compile_latex(tex_path, output_dir=tmp_path)
+        assert pdf_path.exists(), "PDF must be created for document with emoji"
+        with pdf_path.open("rb") as f:
+            header = f.read(4)
+        assert header == b"%PDF", "Output must be a valid PDF"
+
+    @pytest.mark.asyncio
     async def test_cjktext_passthrough_ac3_8(self, tmp_path: Path) -> None:
         r"""AC3.8: \cjktext{} works as pass-through when CJK fonts not loaded.
 

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from playwright.sync_api import ElementHandle, Page
+    from playwright.sync_api import Page
 
 
 def trim_whitespace(image_bytes: bytes) -> bytes:
@@ -83,34 +83,65 @@ def generate_thumbnail(
     return dest
 
 
-def highlight_elements(page: Page, test_ids: Sequence[str]) -> ElementHandle | None:
-    """Inject a ``<style>`` element highlighting elements by ``data-testid``.
+def highlight_elements(page: Page, test_ids: Sequence[str]) -> list[str] | None:
+    """Inject highlight overlays for elements matching ``data-testid`` prefixes.
 
-    Applies ``outline: 3px solid #e53e3e; outline-offset: 2px;`` to each
-    selector.  Returns the ``ElementHandle`` for later removal via
-    :func:`remove_highlight`.  If *test_ids* is empty, returns ``None``.
+    Creates absolutely-positioned ``<div>`` elements appended to ``<body>``
+    with high ``z-index``, so highlights float above all content regardless
+    of parent ``overflow`` settings.  Returns a list of overlay element IDs
+    for later removal via :func:`remove_highlight`.
+
+    If *test_ids* is empty, returns ``None``.
     """
     if not test_ids:
         return None
 
-    selectors = ", ".join(f'[data-testid="{tid}"]' for tid in test_ids)
-    css = f"{selectors} {{ outline: 3px solid #e53e3e; outline-offset: 2px; }}"
-    return page.add_style_tag(content=css)
+    # JS that creates a fixed-position overlay div per matched element.
+    overlay_ids: list[str] = []
+    for tid in test_ids:
+        oid = f"_hl_{tid}"
+        overlay_ids.append(oid)
+        page.evaluate(
+            """([selector, overlayId]) => {
+                document.querySelectorAll(selector).forEach((el, i) => {
+                    const rect = el.getBoundingClientRect();
+                    const pad = 4;
+                    const div = document.createElement('div');
+                    div.id = overlayId + '_' + i;
+                    div.className = '__doc_highlight__';
+                    Object.assign(div.style, {
+                        position: 'fixed',
+                        top: (rect.top - pad) + 'px',
+                        left: (rect.left - pad) + 'px',
+                        width: (rect.width + pad * 2) + 'px',
+                        height: (rect.height + pad * 2) + 'px',
+                        border: '3px solid #e53e3e',
+                        borderRadius: '6px',
+                        zIndex: '999999',
+                        pointerEvents: 'none',
+                    });
+                    document.body.appendChild(div);
+                });
+            }""",
+            [f'[data-testid^="{tid}"]', oid],
+        )
+    return overlay_ids
 
 
-def remove_highlight(page: Page, style_handle: ElementHandle | None) -> None:
-    """Remove a previously injected highlight ``<style>`` element.
+def remove_highlight(page: Page, overlay_ids: list[str] | None) -> None:
+    """Remove previously injected highlight overlay ``<div>`` elements.
 
-    If *style_handle* is ``None``, this is a no-op.
+    If *overlay_ids* is ``None``, this is a no-op.
     """
-    if style_handle is None:
+    if overlay_ids is None:
         return
-    # page.evaluate() with a JS arrow function is the documented Playwright way
-    # to call methods on ElementHandles that have no Python-side equivalent
-    # (ElementHandle has no .remove() method).  This is docs-generation library
-    # code — not an E2E test — so JS injection via evaluate() is appropriate and
-    # intentional.  See: https://playwright.dev/python/docs/api/class-page#page-evaluate
-    page.evaluate("el => el.remove()", style_handle)
+    page.evaluate(
+        """() => {
+            document.querySelectorAll('.__doc_highlight__').forEach(
+                el => el.remove()
+            );
+        }"""
+    )
 
 
 def capture_screenshot(
@@ -146,7 +177,7 @@ def capture_screenshot(
     Path
         The *path* argument, for chaining convenience.
     """
-    style_handle = highlight_elements(page, highlight)
+    overlay_ids = highlight_elements(page, highlight)
 
     try:
         if settle_ms > 0:
@@ -156,7 +187,7 @@ def capture_screenshot(
         else:
             image_bytes = page.screenshot()
     finally:
-        remove_highlight(page, style_handle)
+        remove_highlight(page, overlay_ids)
 
     if trim:
         image_bytes = trim_whitespace(image_bytes)

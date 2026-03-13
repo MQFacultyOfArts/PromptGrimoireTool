@@ -94,9 +94,14 @@ class Guide:
         """Emit a ``## section`` heading for grouping steps."""
         self._append(f"## {heading}\n")
 
-    def step(self, heading: str, *, level: int = 2) -> Step:
-        """Create a ``Step`` context manager bound to this guide."""
-        return Step(self, heading, level=level)
+    def step(self, heading: str, *, level: int = 2, text_only: bool = False) -> Step:
+        """Create a ``Step`` context manager bound to this guide.
+
+        When ``text_only=True``, the step will NOT auto-capture a
+        screenshot on exit.  Use this for entries that contain only
+        narrative text and no browser interaction.
+        """
+        return Step(self, heading, level=level, text_only=text_only)
 
     def subheading(self, heading: str, *, level: int = 3) -> None:
         """Emit a sub-heading within a step (default ``###``)."""
@@ -166,10 +171,18 @@ class Step:
     ``g.note()``, etc.
     """
 
-    def __init__(self, guide: Guide, heading: str, *, level: int = 2) -> None:
+    def __init__(
+        self,
+        guide: Guide,
+        heading: str,
+        *,
+        level: int = 2,
+        text_only: bool = False,
+    ) -> None:
         self._guide = guide
         self._heading = heading
         self._level = level
+        self._text_only = text_only
         self._screenshot_count_at_entry: int = 0
 
     def __enter__(self) -> Guide:
@@ -186,9 +199,10 @@ class Step:
     ) -> bool:
         if (
             exc_type is None
+            and not self._text_only
             and self._guide._screenshot_counter == self._screenshot_count_at_entry
         ):
             # Auto-capture only if no explicit screenshot was
-            # taken during this step.
+            # taken during this step and step is not text-only.
             self._guide.screenshot(caption=self._heading)
         return False

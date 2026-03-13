@@ -33,6 +33,10 @@ def _make_docs_build_and_serve(action: str | None) -> None:
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[3]
+    # Clear optimize plugin cache to prevent stale file index crashes.
+    cache_dir = project_root / ".cache"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
     subprocess.run(["uv", "run", "mkdocs", "build"], cwd=project_root, check=True)
 
     guides_dir = project_root / "docs" / "guides"
@@ -52,6 +56,10 @@ def _make_docs_build_and_serve(action: str | None) -> None:
         )
 
     if action:
+        # Clear optimize cache again — mkdocs build populates it, but
+        # serve/gh-deploy run their own build and the stale index crashes.
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
         cmd = ["uv", "run", "mkdocs", action]
         if action == "serve":
             cmd += ["--dev-addr", "localhost:8484"]

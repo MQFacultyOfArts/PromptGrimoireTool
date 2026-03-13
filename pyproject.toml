@@ -221,6 +221,7 @@ markers = [
     "latexmk_full: marks full compiled-PDF suites that `test all` deselects",
     "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
     "browser_gate: marks browser feature-gate tests (run with '-m browser_gate')",
+    "skip_browserstack: marks tests incompatible with BrowserStack (WebSocket timing, tunnel routing)",
 ]
 log_file = "test-debug.log"
 log_file_level = "WARNING"

@@ -58,7 +58,13 @@ def run_browserstack_suite(
     _pre_test_db_cleanup()
 
     port = _allocate_ports(1)[0]
-    url = f"http://localhost:{port}"
+    # BrowserStack Local tunnel routes bs-local.com → 127.0.0.1.
+    # Tests must navigate to bs-local.com, not localhost, per BrowserStack docs.
+    url = f"http://bs-local.com:{port}"
+    # Set before _start_e2e_server so the server subprocess inherits it.
+    # The server script uses this to force polling-only Socket.IO transport
+    # (WebSocket upgrades fail through the BrowserStack Local tunnel).
+    os.environ["E2E_BROWSERSTACK"] = "1"
     server_process = _start_e2e_server(port)
     console.print(f"[green]Server ready at {url}[/]")
 
@@ -83,6 +89,7 @@ def run_browserstack_suite(
             "BROWSERSTACK_USERNAME": bs.username,
             "BROWSERSTACK_ACCESS_KEY": bs.access_key.get_secret_value(),
             "GRIMOIRE_TEST_HARNESS": "1",
+            "E2E_BROWSERSTACK": "1",
         }
 
         console.print(f"[blue]BrowserStack config: {config_path}[/]")

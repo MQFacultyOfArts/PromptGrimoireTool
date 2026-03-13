@@ -432,7 +432,9 @@ def browserstack(
         raise typer.Exit(1)
 
     config_path = resolve_browserstack_config(profile)
-    marker_expr = "browser_gate" if profile == "unsupported" else "e2e"
+    marker_expr = (
+        "browser_gate" if profile == "unsupported" else "e2e and not skip_browserstack"
+    )
 
     args = _prepend_filter(ctx.args, filter_expr)
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)

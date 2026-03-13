@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from promptgrimoire.export.latex_render import NoEscape, latex_cmd
+from promptgrimoire.export.latex_render import NoEscape, latex_cmd, render_latex
 
 # Static LaTeX preamble content lives in promptgrimoire-export.sty.
 
@@ -371,6 +371,33 @@ def _escape_ascii_special(text: str) -> str:
     return text
 
 
+def _is_emoji(c: str) -> bool:
+    """Check if a single character is an emoji that needs AccSupp wrapping.
+
+    Covers the main emoji ranges where Noto Color Emoji renders as CBDT
+    bitmaps (not extractable as text from PDF without /ActualText).
+    """
+    cp = ord(c)
+    return (
+        # Miscellaneous Symbols
+        (0x2600 <= cp <= 0x26FF)
+        # Dingbats
+        or (0x2700 <= cp <= 0x27BF)
+        # Misc Symbols and Pictographs
+        or (0x1F300 <= cp <= 0x1F5FF)
+        # Emoticons
+        or (0x1F600 <= cp <= 0x1F64F)
+        # Transport and Map Symbols
+        or (0x1F680 <= cp <= 0x1F6FF)
+        # Supplemental Symbols and Pictographs
+        or (0x1F900 <= cp <= 0x1F9FF)
+        # Symbols and Pictographs Extended-A
+        or (0x1FA00 <= cp <= 0x1FA6F)
+        # Symbols and Pictographs Extended-B
+        or (0x1FA70 <= cp <= 0x1FAFF)
+    )
+
+
 def escape_unicode_latex(text: str) -> str:
     """Escape text for LaTeX with unicode handling.
 
@@ -405,6 +432,16 @@ def escape_unicode_latex(text: str) -> str:
     while i < len(text):
         if is_cjk(text[i]):
             cjk_buffer.append(text[i])
+            i += 1
+        elif _is_emoji(text[i]):
+            flush_cjk()
+            # Wrap emoji in AccSupp so PDF text extraction works (#274).
+            # Noto Color Emoji renders as CBDT bitmaps — without /ActualText
+            # the emoji codepoint is lost in the PDF.
+            e = NoEscape(text[i])
+            result.append(
+                render_latex(rt"\BeginAccSupp{{ActualText={{{e}}}}}{e}\EndAccSupp{{}}")
+            )
             i += 1
         else:
             flush_cjk()

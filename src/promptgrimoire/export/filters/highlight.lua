@@ -185,3 +185,56 @@ function Header(el)
   el.content = cleaned
   return { el, pandoc.Plain(annots) }
 end
+
+--- Check if a Unicode codepoint is an emoji that needs AccSupp wrapping.
+--- Noto Color Emoji renders these as CBDT bitmaps — without /ActualText
+--- the codepoint is lost in the PDF.
+--- @param cp number  Unicode codepoint
+--- @return boolean
+local function is_emoji(cp)
+  return (cp >= 0x2600 and cp <= 0x26FF)    -- Miscellaneous Symbols
+      or (cp >= 0x2700 and cp <= 0x27BF)    -- Dingbats
+      or (cp >= 0x1F300 and cp <= 0x1F5FF)  -- Misc Symbols and Pictographs
+      or (cp >= 0x1F600 and cp <= 0x1F64F)  -- Emoticons
+      or (cp >= 0x1F680 and cp <= 0x1F6FF)  -- Transport and Map Symbols
+      or (cp >= 0x1F900 and cp <= 0x1F9FF)  -- Supplemental Symbols
+      or (cp >= 0x1FA00 and cp <= 0x1FA6F)  -- Symbols Extended-A
+      or (cp >= 0x1FA70 and cp <= 0x1FAFF)  -- Symbols Extended-B
+end
+
+--- Str callback: wrap emoji characters in AccSupp for PDF /ActualText (#274).
+--- Pandoc passes document text through as Str elements.  Emoji rendered by
+--- Noto Color Emoji become bitmap images in the PDF — AccSupp adds /ActualText
+--- so text extractors (PyMuPDF) can recover the Unicode codepoints.
+function Str(el)
+  if FORMAT ~= "latex" then return el end
+
+  local text = el.text
+  local result = pandoc.List({})
+  local buf = {}
+
+  for _, cp in utf8.codes(text) do
+    if is_emoji(cp) then
+      -- Flush non-emoji buffer
+      if #buf > 0 then
+        result:insert(pandoc.Str(table.concat(buf)))
+        buf = {}
+      end
+      local ch = utf8.char(cp)
+      result:insert(pandoc.RawInline("latex",
+        "\\BeginAccSupp{ActualText={" .. ch .. "}}" .. ch .. "\\EndAccSupp{}"))
+    else
+      table.insert(buf, utf8.char(cp))
+    end
+  end
+
+  -- Flush remaining non-emoji text
+  if #buf > 0 then
+    result:insert(pandoc.Str(table.concat(buf)))
+  end
+
+  if #result == 1 and result[1].t == "Str" then
+    return el  -- No emoji found, return unchanged
+  end
+  return result
+end

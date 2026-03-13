@@ -446,11 +446,13 @@ class TestUnicodeAnnotationEscaping:
         cjks = find_macros(nodes, "cjktext")
         assert len(cjks) >= 1
 
-    def test_emoji_in_comment_passed_through(self) -> None:
-        """Emoji in comment text passes through raw."""
+    def test_emoji_in_comment_wrapped_accsupp(self) -> None:
+        """Emoji in comment text wrapped with AccSupp (#274)."""
 
         result = escape_unicode_latex("Great work! 🎉")
-        assert result == "Great work! 🎉"
+        assert "Great work! " in result
+        assert r"\BeginAccSupp{ActualText={🎉}}" in result
+        assert r"\EndAccSupp{}" in result
 
     def test_mixed_ascii_cjk_special_chars(self) -> None:
         """Mixed content with special chars handles all correctly."""

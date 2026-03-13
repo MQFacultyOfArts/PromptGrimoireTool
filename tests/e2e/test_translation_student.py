@@ -331,9 +331,9 @@ class TestTranslationStudent:
 
             with subtests.test(msg="export_emoji_gh274"):
                 # Emoji must survive the full pipeline (#274)
+                # AccSupp /ActualText makes emoji extractable from PDF
                 assert result is not None, "export_pdf subtest must run first"
-                if "\U0001f389" not in result:
-                    pytest.xfail("Emoji 🎉 not in export — #274 open")
+                assert "\U0001f389" in result, "Emoji 🎉 not found in export"
 
         finally:
             page.close()

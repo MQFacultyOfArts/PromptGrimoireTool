@@ -76,6 +76,14 @@ output/
 # Tool caches
 .complexipy_cache/
 
+# Smoke test data (contains prompts — keep examples only)
+scripts/smoke_data/*.md
+!scripts/smoke_data/*.md.example
+scripts/smoke_data/*.log
+
+# Runtime logs
+log/
+
 # Git worktrees (parallel development)
 .worktrees/
 .playwright-mcp/

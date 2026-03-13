@@ -30,6 +30,9 @@ ALLOWED_TESTIDS: set[str] = {
     "placement-course-opt-",
     "placement-week-opt-",
     "placement-activity-opt-",
+    # Dynamic: built from section_key at runtime in navigator/_sections.py
+    "section-header-unstarted",
+    "section-header-my-work",
 }
 
 # Files whose testid references are test fixtures / infrastructure,

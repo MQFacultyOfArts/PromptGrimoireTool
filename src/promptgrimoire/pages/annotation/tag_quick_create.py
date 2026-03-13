@@ -107,7 +107,11 @@ async def _quick_create_save(
     if new_tag is None:
         return False
 
-    await _refresh_tag_state(state)
+    # skip_card_rebuild=True: the dialog is still open; a full rebuild
+    # here races with dialog.close() and can leave the dialog visible
+    # (flaky test_transition_to_compact_on_fifth_tag).  The caller
+    # rebuilds after the dialog closes via `await dialog`.
+    await _refresh_tag_state(state, skip_card_rebuild=True)
 
     tag_id = getattr(new_tag, "id", None)
     if saved_start is not None and saved_end is not None and tag_id is not None:
@@ -210,3 +214,9 @@ async def open_quick_create(state: PageState) -> None:
 
     dialog.open()
     await dialog
+    # Deferred rebuild: now that the dialog is closed, safely rebuild
+    # annotation cards and broadcast the tag change to peers.
+    if state.refresh_annotations:
+        state.refresh_annotations()
+    if state.broadcast_update:
+        await state.broadcast_update()

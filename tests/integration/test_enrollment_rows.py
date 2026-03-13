@@ -60,7 +60,7 @@ async def _make_user(
             assert db_user is not None
             db_user.student_id = student_id
             session.add(db_user)
-            await session.flush()
+            await session.commit()
     return user
 
 

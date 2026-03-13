@@ -415,7 +415,7 @@ async def list_enrollment_rows(course_id: UUID) -> list[dict[str, Any]]:
             select(CourseEnrollment, User)
             .join(User, User.id == CourseEnrollment.user_id)  # type: ignore[arg-type]
             .where(CourseEnrollment.course_id == course_id)
-            .order_by(CourseEnrollment.role, User.display_name)  # type: ignore[arg-type]
+            .order_by(CourseEnrollment.role, User.display_name)
         )
         return [
             {

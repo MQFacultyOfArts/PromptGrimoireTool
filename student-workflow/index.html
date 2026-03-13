@@ -1,7 +1,4 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
+<!DOCTYPE html><html lang="en" class="no-js"><head>
     
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -41,7 +38,7 @@
         
         
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
         <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
       
     
@@ -52,7 +49,17 @@
 
     
     
-  </head>
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
   
   
     <body dir="ltr">
@@ -83,12 +90,12 @@
     <a href=".." title="PromptGrimoire Guides" class="md-header__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
       
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
       
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
     </label>
     <div class="md-header__title" data-md-component="header-title">
       <div class="md-header__ellipsis">
@@ -116,7 +123,7 @@
       
         <label class="md-header__button md-icon" for="__search">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         </label>
         <div class="md-search" data-md-component="search" role="dialog">
   <label class="md-search__overlay" for="__search"></label>
@@ -125,15 +132,15 @@
       <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
       <label class="md-search__icon md-icon" for="__search">
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
       </label>
       <nav class="md-search__options" aria-label="Search">
         
         <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
         </button>
       </nav>
       
@@ -169,7 +176,7 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -181,7 +188,7 @@
     <a href=".." title="PromptGrimoire Guides" class="md-nav__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
       
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
 
     </a>
     PromptGrimoire Guides
@@ -220,6 +227,55 @@
       
   
   
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -242,9 +298,10 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
     
@@ -343,10 +400,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-pasting-your-ai-conversation" class="md-nav__link">
+  <a href="#step-4-annotating-creating-a-highlight" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Pasting Your AI Conversation
+        Step 4: Annotating - Creating a Highlight
       
     </span>
   </a>
@@ -354,10 +411,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-annotating-creating-a-highlight" class="md-nav__link">
+  <a href="#step-5-adding-a-comment" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Annotating - Creating a Highlight
+        Step 5: Adding a Comment
       
     </span>
   </a>
@@ -365,10 +422,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-adding-a-comment" class="md-nav__link">
+  <a href="#step-6-organising-by-tag" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6: Adding a Comment
+        Step 6: Organising by Tag
       
     </span>
   </a>
@@ -376,10 +433,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-7-organising-by-tag" class="md-nav__link">
+  <a href="#step-7-writing-your-response" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 7: Organising by Tag
+        Step 7: Writing Your Response
       
     </span>
   </a>
@@ -387,21 +444,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-8-writing-your-response" class="md-nav__link">
+  <a href="#step-8-exporting-to-pdf" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 8: Writing Your Response
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-9-exporting-to-pdf" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 9: Exporting to PDF
+        Step 8: Exporting to PDF
       
     </span>
   </a>
@@ -415,9 +461,10 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
   
@@ -442,6 +489,41 @@
     </li>
   
 
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../using-promptgrimoire/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using the Application
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
     
   </ul>
 </nav>
@@ -451,7 +533,7 @@
             
             
               
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -503,10 +585,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-pasting-your-ai-conversation" class="md-nav__link">
+  <a href="#step-4-annotating-creating-a-highlight" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Pasting Your AI Conversation
+        Step 4: Annotating - Creating a Highlight
       
     </span>
   </a>
@@ -514,10 +596,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-annotating-creating-a-highlight" class="md-nav__link">
+  <a href="#step-5-adding-a-comment" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Annotating - Creating a Highlight
+        Step 5: Adding a Comment
       
     </span>
   </a>
@@ -525,10 +607,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-adding-a-comment" class="md-nav__link">
+  <a href="#step-6-organising-by-tag" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6: Adding a Comment
+        Step 6: Organising by Tag
       
     </span>
   </a>
@@ -536,10 +618,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-7-organising-by-tag" class="md-nav__link">
+  <a href="#step-7-writing-your-response" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 7: Organising by Tag
+        Step 7: Writing Your Response
       
     </span>
   </a>
@@ -547,21 +629,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-8-writing-your-response" class="md-nav__link">
+  <a href="#step-8-exporting-to-pdf" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 8: Writing Your Response
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-9-exporting-to-pdf" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 9: Exporting to PDF
+        Step 8: Exporting to PDF
       
     </span>
   </a>
@@ -588,43 +659,35 @@
 <h1 id="student-workflow">Student Workflow</h1>
 <h2 id="step-1-logging-in">Step 1: Logging In</h2>
 <p>After logging in, you see the Navigator - your home page. Activities assigned by your instructor appear here.</p>
-<p><img alt="Step 1: Logging In" src="../screenshots/student-workflow-01.png" /></p>
+<p><a href="../screenshots/student-workflow-01.png"><img alt="Step 1: Logging In" src="../screenshots/student-workflow-01-thumb.png"></a></p>
 <h2 id="step-2-finding-your-activity">Step 2: Finding Your Activity</h2>
 <p>The Navigator shows activities available to you. Find the activity your instructor created.</p>
-<p><img alt="Navigator showing the unit and activity" src="../screenshots/student-workflow-02.png" /></p>
+<p><a href="../screenshots/student-workflow-02.png"><img alt="Navigator showing the unit and activity" src="../screenshots/student-workflow-02-thumb.png"></a></p>
 <p>You can see the unit and activity on your Navigator.</p>
 <h2 id="step-3-creating-a-workspace">Step 3: Creating a Workspace</h2>
-<p>Click Start on the activity to create your workspace. The workspace inherits the tag configuration set by your instructor.</p>
-<p><img alt="New workspace on the annotation page" src="../screenshots/student-workflow-03.png" /></p>
-<p>Your workspace is created. You are now on the annotation page with three tabs: Annotate, Organise, and Respond.</p>
-<h2 id="step-4-pasting-your-ai-conversation">Step 4: Pasting Your AI Conversation</h2>
-<p>Copy your AI conversation from ChatGPT, Claude, or another tool. Then paste it into the editor.</p>
-<p><img alt="AI conversation pasted into the editor" src="../screenshots/student-workflow-04.png" /></p>
-<p>Paste your AI conversation into the editor. PromptGrimoire accepts content from ChatGPT, Claude, and other tools.</p>
-<p><img alt="Content type confirmation dialog" src="../screenshots/student-workflow-05.png" /></p>
-<p>PromptGrimoire detects the content type. Confirm the detected type or change it, then click Confirm.</p>
-<p><img alt="Processed conversation with formatted turns" src="../screenshots/student-workflow-06.png" /></p>
-<p>Your conversation is now processed and displayed with formatted turns.</p>
-<h2 id="step-5-annotating-creating-a-highlight">Step 5: Annotating - Creating a Highlight</h2>
+<p>Click Start on the activity to create your workspace. The workspace inherits the content and tag configuration set by your instructor.</p>
+<p><a href="../screenshots/student-workflow-03.png"><img alt="New workspace on the annotation page with inherited content" src="../screenshots/student-workflow-03-thumb.png"></a></p>
+<p>Your workspace is created with the instructor's content already loaded. You are now on the annotation page with three tabs: Annotate, Organise, and Respond.</p>
+<h2 id="step-4-annotating-creating-a-highlight">Step 4: Annotating - Creating a Highlight</h2>
 <p>Select text in the conversation to highlight it. A tag menu appears so you can categorise the highlight.</p>
-<p><img alt="Text highlighted and tagged with colour coding" src="../screenshots/student-workflow-07.png" /></p>
+<p><a href="../screenshots/student-workflow-04.png"><img alt="Text highlighted and tagged with colour coding" src="../screenshots/student-workflow-04-thumb.png"></a></p>
 <p>Select text and click a tag in the popup menu to create a highlight. The text is colour-coded by tag.</p>
-<h2 id="step-6-adding-a-comment">Step 6: Adding a Comment</h2>
+<h2 id="step-5-adding-a-comment">Step 5: Adding a Comment</h2>
 <p>Click on a highlighted section to select it, then type a comment in the sidebar.</p>
-<p><img alt="Comment added to a highlight in the sidebar" src="../screenshots/student-workflow-08.png" /></p>
+<p><a href="../screenshots/student-workflow-05.png"><img alt="Comment added to a highlight in the sidebar" src="../screenshots/student-workflow-05-thumb.png"></a></p>
 <p>Comments appear below each highlight in the sidebar. Use comments to record your analysis.</p>
-<h2 id="step-7-organising-by-tag">Step 7: Organising by Tag</h2>
+<h2 id="step-6-organising-by-tag">Step 6: Organising by Tag</h2>
 <p>Switch to the Organise tab to view your annotations grouped by tag.</p>
-<p><img alt="Organise tab with highlights grouped by tag" src="../screenshots/student-workflow-09.png" /></p>
+<p><a href="../screenshots/student-workflow-06.png"><img alt="Organise tab with highlights grouped by tag" src="../screenshots/student-workflow-06-thumb.png"></a></p>
 <p>The Organise tab shows your highlights in columns by tag. You can drag highlights between columns to reclassify them.</p>
-<h2 id="step-8-writing-your-response">Step 8: Writing Your Response</h2>
+<h2 id="step-7-writing-your-response">Step 7: Writing Your Response</h2>
 <p>Switch to the Respond tab to write your analysis. Your highlights appear in the reference panel on the right.</p>
-<p><img alt="Respond tab with markdown editor and highlight references" src="../screenshots/student-workflow-10.png" /></p>
+<p><a href="../screenshots/student-workflow-07.png"><img alt="Respond tab with markdown editor and highlight references" src="../screenshots/student-workflow-07-thumb.png"></a></p>
 <p>The Respond tab has a markdown editor on the left and your highlights as reference on the right. Write your analysis using the highlights as evidence.</p>
-<h2 id="step-9-exporting-to-pdf">Step 9: Exporting to PDF</h2>
+<h2 id="step-8-exporting-to-pdf">Step 8: Exporting to PDF</h2>
 <p>Click Export PDF to generate a PDF of your complete annotation work.</p>
-<p><img alt="Export PDF button on the annotation page" src="../screenshots/student-workflow-11.png" /></p>
-<p>The exported PDF includes your pasted conversation with highlights, comments, organised notes, and your written response.</p>
+<p><a href="../screenshots/student-workflow-08.png"><img alt="Export PDF button on the annotation page" src="../screenshots/student-workflow-08-thumb.png"></a></p>
+<p>The exported PDF includes your conversation with highlights, comments, organised notes, and your written response.</p>
 
 
 
@@ -680,5 +743,7 @@
       <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
-  </body>
-</html>
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "fade", "closeEffect": "fade", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

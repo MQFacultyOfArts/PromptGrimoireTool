@@ -1,0 +1,1959 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../your-personal-grimoire/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Using the Application - PromptGrimoire Guides</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#using-promptgrimoire" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="PromptGrimoire Guides" class="md-header__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            PromptGrimoire Guides
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Using the Application
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="PromptGrimoire Guides" class="md-nav__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    PromptGrimoire Guides
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instructor-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Instructor Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../student-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Student Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../your-personal-grimoire/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your Personal Grimoire
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using the Application
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using the Application
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-log-in-for-the-first-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to log in for the first time
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-log-in-with-my-university-aaf-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I log in with my university (AAF) credentials?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-dont-see-any-activities-after-logging-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I don't see any activities after logging in
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workspaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-workspace-for-an-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a workspace for an activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-configured-tags-but-students-cant-see-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I configured tags but students can't see them
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-clicked-start-but-wanted-the-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I clicked Start but wanted the template
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-tag-group-for-my-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a tag group for my activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tag-import-from-another-activity-shows-nothing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag import from another activity shows nothing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotating
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Annotating">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-highlight-text-and-apply-a-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to highlight text and apply a tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-add-a-comment-to-my-highlight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to add a comment to my highlight
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-apply-two-different-tags-to-the-same-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I apply two different tags to the same text?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-cant-i-select-or-copy-text-from-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why can't I select or copy text from my workspace?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#organising" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Organising
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Organising">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-view-my-highlights-grouped-by-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to view my highlights grouped by tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-locate-button-do-on-the-organise-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What does the Locate button do on the Organise tab?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-reorder-or-reclassify-highlights-on-the-organise-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to reorder or reclassify highlights on the Organise tab
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#responding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Responding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Responding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-write-a-response-using-my-highlights-as-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to write a response using my highlights as reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-does-my-response-show-a-word-count-and-what-do-the-colours-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why does my response show a word count, and what do the colours mean?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-export-my-work-as-pdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to export my work as PDF
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-will-my-exported-pdf-be-named" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What will my exported PDF be named?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unit-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unit Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-unit-and-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a unit and activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-know-if-im-in-a-template-or-instance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I know if I'm in a template or instance?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-rename-a-week-activity-or-unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to rename a week, activity, or unit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enrolment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enrolment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Enrolment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-enrol-students-in-my-unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to enrol students in my unit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ive-enrolled-students-what-happens-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I've enrolled students. What happens next?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-enrol-a-whole-cohort-at-once-from-moodle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to enrol a whole cohort at once from Moodle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-enrolled-a-student-but-they-dont-have-an-account-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I enrolled a student but they don't have an account yet
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#housekeeping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Housekeeping
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Housekeeping">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-clean-up-my-test-activities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I clean up my test activities?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Navigation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-find-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to find my workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-search-across-my-workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to search across my workspaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-collaboration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharing &amp; Collaboration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sharing &amp; Collaboration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-share-my-workspace-with-someone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to share my workspace with someone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-other-students-view-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do other students view my workspace?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-multiple-people-work-in-the-same-workspace-at-the-same-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can multiple people work in the same workspace at the same time?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#content-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Content Input
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Content Input">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-upload-a-document-instead-of-pasting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to upload a document instead of pasting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-ai-platforms-can-i-paste-conversations-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What AI platforms can I paste conversations from?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Started">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-log-in-for-the-first-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to log in for the first time
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-log-in-with-my-university-aaf-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I log in with my university (AAF) credentials?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-dont-see-any-activities-after-logging-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I don't see any activities after logging in
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workspaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-workspace-for-an-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a workspace for an activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-configured-tags-but-students-cant-see-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I configured tags but students can't see them
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-clicked-start-but-wanted-the-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I clicked Start but wanted the template
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-tag-group-for-my-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a tag group for my activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tag-import-from-another-activity-shows-nothing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag import from another activity shows nothing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotating
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Annotating">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-highlight-text-and-apply-a-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to highlight text and apply a tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-add-a-comment-to-my-highlight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to add a comment to my highlight
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-apply-two-different-tags-to-the-same-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I apply two different tags to the same text?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-cant-i-select-or-copy-text-from-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why can't I select or copy text from my workspace?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#organising" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Organising
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Organising">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-view-my-highlights-grouped-by-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to view my highlights grouped by tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-locate-button-do-on-the-organise-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What does the Locate button do on the Organise tab?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-reorder-or-reclassify-highlights-on-the-organise-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to reorder or reclassify highlights on the Organise tab
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#responding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Responding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Responding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-write-a-response-using-my-highlights-as-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to write a response using my highlights as reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-does-my-response-show-a-word-count-and-what-do-the-colours-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why does my response show a word count, and what do the colours mean?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-export-my-work-as-pdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to export my work as PDF
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-will-my-exported-pdf-be-named" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What will my exported PDF be named?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unit-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Unit Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-create-a-unit-and-activity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to create a unit and activity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-know-if-im-in-a-template-or-instance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I know if I'm in a template or instance?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-rename-a-week-activity-or-unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to rename a week, activity, or unit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enrolment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enrolment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Enrolment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-enrol-students-in-my-unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to enrol students in my unit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ive-enrolled-students-what-happens-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I've enrolled students. What happens next?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-enrol-a-whole-cohort-at-once-from-moodle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to enrol a whole cohort at once from Moodle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-enrolled-a-student-but-they-dont-have-an-account-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I enrolled a student but they don't have an account yet
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#housekeeping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Housekeeping
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Housekeeping">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-clean-up-my-test-activities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I clean up my test activities?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Navigation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-find-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to find my workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-search-across-my-workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to search across my workspaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-collaboration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharing &amp; Collaboration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sharing &amp; Collaboration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-share-my-workspace-with-someone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to share my workspace with someone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-other-students-view-my-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do other students view my workspace?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-multiple-people-work-in-the-same-workspace-at-the-same-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can multiple people work in the same workspace at the same time?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#content-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Content Input
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Content Input">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-upload-a-document-instead-of-pasting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to upload a document instead of pasting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-ai-platforms-can-i-paste-conversations-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What AI platforms can I paste conversations from?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="using-promptgrimoire">Using PromptGrimoire</h1>
+<p>Quick answers to common tasks and problems. Each entry shows you exactly what to click, with screenshots from the live application.</p>
+<h2 id="getting-started">Getting Started</h2>
+<h3 id="i-want-to-log-in-for-the-first-time">I want to log in for the first time</h3>
+<p>Navigate to the application URL. The production login page offers AAF SSO as the primary login method, with Google, GitHub, and magic link as alternatives. Use whichever method your institution supports.</p>
+<p>For magic link login, enter your university email address and click <strong>Send Magic Link</strong>. Check your inbox for the login link.</p>
+<p>See <a href="../student-workflow/#step-1-logging-in">Student Workflow - Step 1</a> for a step-by-step walkthrough.</p>
+<h3 id="how-do-i-log-in-with-my-university-aaf-credentials">How do I log in with my university (AAF) credentials?</h3>
+<p>Click <strong>Login with AAF</strong> on the login page. You will be redirected to the Australian Access Federation (AAF) identity hub, where you select your institution and authenticate with your usual university username and password. After a successful login you are returned to PromptGrimoire automatically.</p>
+<p><strong>AAF is the recommended login method in production.</strong> It uses your institution's own identity provider (SAML 2.0) so no separate PromptGrimoire password is required. Roles (e.g. <code>instructor</code>) are derived from the SAML attributes passed by your institution.</p>
+<p><strong>Alternative methods</strong> are available if AAF is not available to you:</p>
+<ul>
+<li><strong>Google or GitHub</strong> -- OAuth login, available on the same login page.</li>
+<li><strong>Magic link</strong> -- enter your Macquarie University email (<code>@mq.edu.au</code> or <code>@students.mq.edu.au</code>) and a one-time login link will be sent to your inbox. Magic links are restricted to MQ email domains.</li>
+</ul>
+<p>If you see <strong>"SSO not configured"</strong>, contact your system administrator -- the AAF connection ID has not been set up in the deployment environment.</p>
+<h3 id="i-dont-see-any-activities-after-logging-in">I don't see any activities after logging in</h3>
+<p><strong>Diagnosis:</strong> You are not enrolled in any units, or the instructor has not yet published any weeks with activities.</p>
+<p><strong>Fix:</strong> Check with your instructor that you are enrolled in the correct unit and semester. The instructor can verify your enrolment in Unit Settings.</p>
+<p>See <a href="../instructor-setup/#step-6-enrolling-students">Instructor Setup - Step 6</a> for how instructors add students to a unit.</p>
+<h2 id="workspaces">Workspaces</h2>
+<h3 id="i-want-to-create-a-workspace-for-an-activity">I want to create a workspace for an activity</h3>
+<p>On the Navigator, find the activity your instructor assigned. Click <strong>Start</strong> to create your own workspace.</p>
+<p><a href="../screenshots/using-promptgrimoire-01.png"><img alt="Navigator showing Start button for the activity" src="../screenshots/using-promptgrimoire-01-thumb.png"></a></p>
+<p>Your workspace inherits the tag configuration set by your instructor. You can start annotating immediately -- assuming the instructor has added content to the template. If the template has no documents, you will see a content form to paste or upload your own text first.</p>
+<p>See <a href="../student-workflow/#step-3-creating-a-workspace">Student Workflow - Step 3</a> for the full walkthrough.</p>
+<h3 id="i-configured-tags-but-students-cant-see-them">I configured tags but students can't see them</h3>
+<p><strong>Diagnosis:</strong> You configured tags in your own workspace (a student instance), not the template. Tags set on instances only affect that workspace.</p>
+<p><strong>Fix:</strong> Go to <strong>Unit Settings</strong> and click the green <strong>Create Template</strong> or <strong>Edit Template</strong> button next to the activity. This opens the template workspace (purple chip). Configure tags there -- students will inherit them when they start the activity.</p>
+<p><a href="../screenshots/using-promptgrimoire-02.png"><img alt="Unit Settings page showing Create Template button" src="../screenshots/using-promptgrimoire-02-thumb.png"></a></p>
+<p>See <a href="../instructor-setup/#step-5-configuring-tags-in-the-template">Instructor Setup - Step 5</a> for a complete walkthrough.</p>
+<h3 id="i-clicked-start-but-wanted-the-template">I clicked Start but wanted the template</h3>
+<p>The <strong>Start</strong> button on the Navigator creates your own student workspace (blue chip). To configure the activity for students, go to <strong>Unit Settings</strong> instead and click the green <strong>Create Template</strong> / <strong>Edit Template</strong> button.</p>
+<p>Your student workspace is not wasted -- it is just your own working copy. It won't be visible to students unless you explicitly share it.</p>
+<p><a href="../screenshots/using-promptgrimoire-03.png"><img alt="Start button creates a student workspace, not the template" src="../screenshots/using-promptgrimoire-03-thumb.png"></a></p>
+<h2 id="tags">Tags</h2>
+<h3 id="i-want-to-create-a-tag-group-for-my-activity">I want to create a tag group for my activity</h3>
+<p>Open the template workspace from <strong>Unit Settings</strong>, then click the gear icon to open tag management.</p>
+<p><a href="../screenshots/using-promptgrimoire-04.png"><img alt="Tag management dialog with Add Group button" src="../screenshots/using-promptgrimoire-04-thumb.png"></a></p>
+<p>Click <strong>Add Group</strong> to create a new tag group, then add tags within the group. Students will inherit this tag vocabulary when they start the activity.</p>
+<p>See <a href="../instructor-setup/#step-5-configuring-tags-in-the-template">Instructor Setup - Step 5</a> for a complete walkthrough.</p>
+<h3 id="tag-import-from-another-activity-shows-nothing">Tag import from another activity shows nothing</h3>
+<p><strong>Diagnosis:</strong> The tag import dropdown lists any workspace you can read that contains tags. If no workspaces with tags appear, either no readable workspace has tags configured, or you configured tags in your own workspace instead of the template.</p>
+<p><strong>Fix:</strong> Open the source activity's template (Unit Settings -&gt; Edit Template), configure tags there, then try the import again.</p>
+<h2 id="annotating">Annotating</h2>
+<h3 id="i-want-to-highlight-text-and-apply-a-tag">I want to highlight text and apply a tag</h3>
+<p>Select text in your conversation by clicking and dragging. A tag menu appears -- click a tag to apply it.</p>
+<p><a href="../screenshots/using-promptgrimoire-05.png"><img alt="Tag toolbar appearing after text selection" src="../screenshots/using-promptgrimoire-05-thumb.png"></a></p>
+<p>See <a href="../student-workflow/#step-4-annotating-creating-a-highlight">Student Workflow - Step 5</a> for a detailed walkthrough.</p>
+<h3 id="i-want-to-add-a-comment-to-my-highlight">I want to add a comment to my highlight</h3>
+<p>Click on a highlight in the sidebar to expand it, then type your comment in the text input and click the post button.</p>
+<p><a href="../screenshots/using-promptgrimoire-06.png"><img alt="Comment input on an annotation card" src="../screenshots/using-promptgrimoire-06-thumb.png"></a></p>
+<p>Comments let you record your analysis and reasoning. They appear below each highlight in the sidebar.</p>
+<p>See <a href="../student-workflow/#step-5-adding-a-comment">Student Workflow - Step 6</a> for a detailed walkthrough.</p>
+<h3 id="can-i-apply-two-different-tags-to-the-same-text">Can I apply two different tags to the same text?</h3>
+<p>Yes. Overlapping highlights are fully supported. You can select a passage and apply multiple tags -- the highlighted regions can overlap partially or completely.</p>
+<p><strong>How they display in the browser:</strong> each tag has its own semi-transparent highlight colour (using the browser's CSS Custom Highlight API). Where two highlights overlap, both transparent colours layer on top of each other, producing a blended shade. An underline in the tag colour is also applied, so you can distinguish tags even where the background blending is subtle.</p>
+<p><strong>How they display in PDF export:</strong> the export pipeline uses an event-sweep algorithm to split the document into non-overlapping character regions, then renders each region with all active highlight colours blended. Regions covered by three or more overlapping highlights receive a dark neutral colour (#333333) to remain legible. Annotation markers (numbered superscripts) are placed at the end of each highlight.</p>
+<p><strong>Practical advice:</strong> overlapping highlights are useful when a single passage is relevant to more than one analytical category. If you find yourself applying every tag to every turn, consider whether your tag vocabulary needs refinement.</p>
+<h3 id="why-cant-i-select-or-copy-text-from-my-workspace">Why can't I select or copy text from my workspace?</h3>
+<p>Your instructor has enabled <strong>copy protection</strong> on this activity. When active, the application intercepts copy, cut, right-click (context menu), drag, and print actions on the conversation text. A toast notification appears to explain why the action was blocked. An amber <strong>Protected</strong> chip is visible in the workspace header.</p>
+<p>Copy protection also suppresses the browser print dialog (Ctrl+P / Cmd+P). If you need a printable copy of your work, use the <strong>Export PDF</strong> button instead -- the PDF is not affected by copy protection.</p>
+<p><strong>Who bypasses copy protection:</strong> instructors, coordinators, and system administrators are not subject to copy protection. The restriction applies only to students. If you are an instructor and see the Protected chip, check that your account has the correct role assigned in the authentication system.</p>
+<p><strong>Turning copy protection on or off (instructors):</strong> go to <strong>Unit Settings</strong> and open the unit settings dialog to toggle the default for the whole unit. Individual activities can override the unit default: in the activity row, use the per-activity copy protection selector -- <strong>Inherit from unit</strong>, <strong>On</strong>, or <strong>Off</strong>.</p>
+<h2 id="organising">Organising</h2>
+<h3 id="i-want-to-view-my-highlights-grouped-by-tag">I want to view my highlights grouped by tag</h3>
+<p>Click the <strong>Organise</strong> tab to see your highlights arranged in columns by tag. You can drag highlights between columns to reclassify them.</p>
+<p><a href="../screenshots/using-promptgrimoire-07.png"><img alt="Organise tab with highlights grouped by tag" src="../screenshots/using-promptgrimoire-07-thumb.png"></a></p>
+<p>See <a href="../student-workflow/#step-6-organising-by-tag">Student Workflow - Step 7</a> for more details.</p>
+<h3 id="what-does-the-locate-button-do-on-the-organise-tab">What does the Locate button do on the Organise tab?</h3>
+<p>Each highlight card on the <strong>Organise</strong> tab and the reference panel on the <strong>Respond</strong> tab has a small map-pin icon button (tooltip: <strong>Locate in document</strong>).</p>
+<p>Clicking <strong>Locate</strong> does two things:</p>
+<ol>
+<li><strong>Switches you to the Annotate tab</strong> -- the tab containing the source document</li>
+<li><strong>Scrolls to the highlight</strong> in the document and briefly flashes it gold so you can find it instantly</li>
+</ol>
+<p>This is useful when you are on the Organise or Respond tab and want to re-read the surrounding context for a highlight without manually hunting for it in the document.</p>
+<p>Locate is per-client only -- it navigates your own view and does not affect other users who are in the same workspace.</p>
+<h3 id="i-want-to-reorder-or-reclassify-highlights-on-the-organise-tab">I want to reorder or reclassify highlights on the Organise tab</h3>
+<p>On the <strong>Organise</strong> tab, highlight cards are draggable. Grab a card by clicking and holding, then drag it to its new position.</p>
+<p><strong>Drag within a column</strong> to reorder highlights under the same tag. The new order is saved and will persist across sessions and for collaborators in the same workspace.</p>
+<p><strong>Drag between columns</strong> to reassign a highlight to a different tag. The card moves to the target column and the highlight's tag is updated in the shared document.</p>
+<p>All drag operations sync live to every connected client via the shared CRDT document -- collaborators see the updated order and tag assignments immediately without needing to reload.</p>
+<p>If you need to scroll the Organise tab horizontally to reach a column that is off-screen, scroll the row of columns first, then drag. The columns scroll independently of the page.</p>
+<h2 id="responding">Responding</h2>
+<h3 id="i-want-to-write-a-response-using-my-highlights-as-reference">I want to write a response using my highlights as reference</h3>
+<p>Click the <strong>Respond</strong> tab. Your highlights appear in the reference panel on the left; write your analysis in the markdown editor on the right.</p>
+<p><a href="../screenshots/using-promptgrimoire-08.png"><img alt="Respond tab with editor and reference panel" src="../screenshots/using-promptgrimoire-08-thumb.png"></a></p>
+<p>See <a href="../student-workflow/#step-7-writing-your-response">Student Workflow - Step 8</a> for a detailed walkthrough.</p>
+<h3 id="why-does-my-response-show-a-word-count-and-what-do-the-colours-mean">Why does my response show a word count, and what do the colours mean?</h3>
+<p>When an instructor has configured word limits for an activity, a <strong>word count badge</strong> appears in the annotation page header while you write your response on the <strong>Respond</strong> tab. The badge shows your current count and, if a limit is set, the target.</p>
+<p><strong>Badge colours:</strong></p>
+<ul>
+<li><strong>Grey</strong> -- within acceptable range</li>
+<li><strong>Amber</strong> -- approaching the limit (within 10%)</li>
+<li><strong>Red</strong> -- over the word limit, or below the word minimum</li>
+</ul>
+<p>Word counting uses multilingual tokenisation: Latin and Korean text use Unicode word-break rules (UAX #29), Chinese uses dictionary-based segmentation (jieba), and Japanese uses morphological analysis (MeCab). Zero-width characters and markdown link URLs are stripped before counting to prevent gaming the count.</p>
+<p><strong>On PDF export:</strong> if your response violates the word limit or falls below the minimum, a red violation badge is prepended to your exported PDF showing the current count and the configured threshold. If you are within limits, a neutral italic line shows the count instead. If no limits are configured, no badge appears.</p>
+<p>Word limits are set by your instructor in the activity template. Contact your instructor if you believe the limit is incorrect or if you need an extension.</p>
+<h2 id="export">Export</h2>
+<h3 id="i-want-to-export-my-work-as-pdf">I want to export my work as PDF</h3>
+<p>On the Annotate tab, click the <strong>Export PDF</strong> button. The export includes your conversation with highlights, comments, and written response.</p>
+<p><a href="../screenshots/using-promptgrimoire-09.png"><img alt="Export PDF button on the annotation page" src="../screenshots/using-promptgrimoire-09-thumb.png"></a></p>
+<h3 id="what-will-my-exported-pdf-be-named">What will my exported PDF be named?</h3>
+<p>The PDF filename is assembled automatically from your workspace metadata in this order:</p>
+<p><code>{UnitCode}_{LastName}_{FirstName}_{ActivityTitle}_{WorkspaceTitle}_{YYYYMMDD}.pdf</code></p>
+<p><strong>How each segment is derived:</strong></p>
+<ul>
+<li><strong>Unit code</strong> -- the code set when the unit was created (e.g. <code>LAWS1100</code>)</li>
+<li><strong>Last name / First name</strong> -- taken from your display name; the system uses the last token as surname and the first token as given name</li>
+<li><strong>Activity title</strong> -- the title of the activity your workspace belongs to</li>
+<li><strong>Workspace title</strong> -- your workspace's title; omitted when it is the same as the activity title (the default for cloned workspaces)</li>
+<li><strong>Date</strong> -- the server's local date at export time, formatted <code>YYYYMMDD</code></li>
+</ul>
+<p>All segments are made filesystem-safe: special characters and spaces are replaced with underscores, and non-ASCII characters are transliterated. The total filename is capped at 100 characters; if it is too long, the workspace title is trimmed first, then the activity title, and finally the given name is reduced to an initial.</p>
+<p><strong>Fallbacks when metadata is missing:</strong> <code>Unplaced</code> (no unit), <code>Loose_Work</code> (no activity), <code>Workspace</code> (no workspace title), <code>Unknown_Unknown</code> (no display name).</p>
+<p>To influence the filename, rename your workspace title before exporting -- the new title will appear as the workspace segment.</p>
+<h2 id="unit-settings">Unit Settings</h2>
+<h3 id="i-want-to-create-a-unit-and-activity">I want to create a unit and activity</h3>
+<p>Navigate to <strong>Units</strong> and click <strong>New Unit</strong>. Fill in the unit code, name, and semester, then add weeks and activities.</p>
+<p><a href="../screenshots/using-promptgrimoire-10.png"><img alt="Units page" src="../screenshots/using-promptgrimoire-10-thumb.png"></a></p>
+<p>See <a href="../instructor-setup/#step-1-login-and-navigator">Instructor Setup</a> for the full step-by-step guide to creating a unit, adding weeks and activities, configuring tags, and enrolling students.</p>
+<h3 id="how-do-i-know-if-im-in-a-template-or-instance">How do I know if I'm in a template or instance?</h3>
+<p>Look at the coloured chip near the top of the annotation page:</p>
+<ul>
+<li>
+<p><strong>Purple chip</strong> saying "Template: [activity name]" -- you are editing the template. Changes here propagate to new student workspaces.</p>
+</li>
+<li>
+<p><strong>Blue chip</strong> showing the activity name -- you are in a student workspace. Changes here are private to this workspace.</p>
+</li>
+</ul>
+<p>The chip is visible at the top of every annotation page. If you are unsure which workspace you are in, check the chip colour before making any tag or content changes.</p>
+<h3 id="i-want-to-rename-a-week-activity-or-unit">I want to rename a week, activity, or unit</h3>
+<p><strong>Renaming a week:</strong> In Unit Settings, click the <strong>Edit</strong> button next to the week heading. A dialog opens where you can update the week number and title. Click <strong>Save</strong> to apply.</p>
+<p><strong>Renaming an activity:</strong> In Unit Settings, click the <strong>Edit</strong> button next to the activity. A dialog opens where you can update the activity title and description. Click <strong>Save</strong> to apply.</p>
+<p><strong>Unit code and name:</strong> The unit code and name are set when the unit is first created and cannot be changed through the UI. <strong>Unit Settings</strong> (the gear icon) only offers default policy toggles -- copy protection, sharing, and word count enforcement. If the code or name must change, an administrator can update it via the database.</p>
+<p><strong>Edit buttons are only visible to instructors</strong> with manage permission on the unit. Students do not see Edit buttons.</p>
+<h2 id="enrolment">Enrolment</h2>
+<h3 id="i-want-to-enrol-students-in-my-unit">I want to enrol students in my unit</h3>
+<p>On the unit detail page, click <strong>Manage Enrollments</strong>. This opens a separate enrolment page where you can enter student email addresses individually, or upload a bulk XLSX spreadsheet to add many students at once.</p>
+<p><a href="../screenshots/using-promptgrimoire-11.png"><img alt="Manage Enrolments button in Unit Settings" src="../screenshots/using-promptgrimoire-11-thumb.png"></a></p>
+<p>See <a href="../instructor-setup/#step-6-enrolling-students">Instructor Setup - Step 6</a> for a detailed walkthrough.</p>
+<h3 id="ive-enrolled-students-what-happens-next">I've enrolled students. What happens next?</h3>
+<p>Once students are enrolled, they log in and see the Navigator -- their home page. Any <strong>published</strong> activities in the unit appear automatically with a <strong>Start</strong> button.</p>
+<p><a href="../screenshots/using-promptgrimoire-12.png"><img alt="Student Navigator showing enrolled unit and activities" src="../screenshots/using-promptgrimoire-12-thumb.png"></a></p>
+<p>When a student clicks <strong>Start</strong>, the application clones your template workspace -- they get their own copy with the content and tag configuration you set up. Students cannot see or modify the template itself.</p>
+<p><strong>What to check before telling students to log in:</strong></p>
+<ol>
+<li>The week containing the activity is <strong>published</strong> (unpublished weeks are invisible to students)</li>
+<li>The template workspace has <strong>content</strong> added (otherwise students get an empty workspace)</li>
+<li><strong>Tags</strong> are configured on the template (students inherit the tag vocabulary)</li>
+</ol>
+<h3 id="i-want-to-enrol-a-whole-cohort-at-once-from-moodle">I want to enrol a whole cohort at once from Moodle</h3>
+<p>In <strong>Manage Enrolments</strong>, scroll past the single-email form to the <strong>Bulk Enrol Students</strong> section. Click the upload area and select your XLSX file.</p>
+<p><strong>Where to get the file:</strong> Export your class list from Moodle using <strong>Gradebook -&gt; Export -&gt; Excel spreadsheet</strong>. The parser expects these columns (case-insensitive): <strong>First name</strong>, <strong>Last name</strong>, <strong>ID number</strong>, and <strong>Email address</strong>. An optional <strong>Groups</strong> column is supported -- values like <code>[Tutorial 1], [Lab A]</code> are parsed automatically. Extra columns are ignored.</p>
+<p>After upload, a notification reports how many students were enrolled and how many were skipped because they were already in the unit.</p>
+<p><strong>Student ID conflicts:</strong> If a student's Moodle ID number differs from the one already stored (e.g., a re-enrolment with a corrected ID), the upload stops and lists the conflicts. Tick <strong>Override student ID conflicts</strong> before uploading to force the new ID to win.</p>
+<p>If the file fails validation, the upload reports every error before stopping -- for example, invalid email addresses or duplicate rows. Fix the XLSX and re-upload; the widget resets automatically.</p>
+<h3 id="i-enrolled-a-student-but-they-dont-have-an-account-yet">I enrolled a student but they don't have an account yet</h3>
+<p>You can enrol any email address even if the person has never logged in. When you click <strong>Add</strong> with an unknown email, the system creates a placeholder account in the local database and shows <strong>"Enrollment added (new user created)"</strong>.</p>
+<p>The student does <strong>not</strong> receive any automatic notification. Tell them the application URL and ask them to log in. When they authenticate for the first time -- via AAF, Google, GitHub, or magic link -- their session is matched to the placeholder by email address and the enrolment activates immediately.</p>
+<p>Until the student logs in, their name in the enrolment list is derived from the email prefix (e.g. <code>jsmith</code> from <code>jsmith@uni.edu</code>). It updates to their real display name on first login.</p>
+<p><strong>Bulk upload:</strong> The same behaviour applies to the XLSX bulk upload -- students who have never logged in receive placeholder accounts. There is no separate invitation step required.</p>
+<h2 id="housekeeping">Housekeeping</h2>
+<h3 id="how-do-i-clean-up-my-test-activities">How do I clean up my test activities?</h3>
+<p>While learning the system you may have created test activities or clicked <strong>Start</strong> on your own activities. Now you want to tidy up, but the delete button says workspaces exist.</p>
+<p><strong>Why this happens:</strong> Clicking <strong>Start</strong> on an activity creates a student workspace (a clone of the template). Even though you are the instructor, the system treats this as a student workspace -- and activities cannot be deleted while student workspaces exist.</p>
+<p><strong>How to clean up:</strong></p>
+<ol>
+<li><strong>Delete student workspaces first.</strong> On the Navigator, find the workspace you created by clicking Start. Click the trash icon on the workspace card to delete it.</li>
+<li><strong>Then delete the activity, week, or unit directly.</strong> Once no student workspaces remain, you can delete at any level -- deleting a week cascades to its activities, and deleting a unit cascades to its weeks and activities.</li>
+</ol>
+<p>The rule is: <strong>student workspaces block deletion</strong> at every level (activity, week, and unit). You must clear them first. But the structural entities themselves cascade automatically -- you do not need to delete activities before weeks, or weeks before units.</p>
+<p><strong>Admin shortcut:</strong> Admin users have a <strong>force-delete</strong> option that purges student workspaces and cascades automatically -- no need to manually delete workspaces first.</p>
+<h2 id="navigation">Navigation</h2>
+<h3 id="i-want-to-find-my-workspace">I want to find my workspace</h3>
+<p>The Navigator is your home page. It shows all your workspaces organised by unit and activity.</p>
+<p><a href="../screenshots/using-promptgrimoire-13.png"><img alt="Navigator showing workspaces" src="../screenshots/using-promptgrimoire-13-thumb.png"></a></p>
+<p>Click on a workspace to open it. Your most recent workspaces appear at the top.</p>
+<h3 id="i-want-to-search-across-my-workspaces">I want to search across my workspaces</h3>
+<p>Use the search bar at the top of the Navigator to find workspaces by content, tag, or comment text.</p>
+<p><a href="../screenshots/using-promptgrimoire-14.png"><img alt="Search bar on the Navigator" src="../screenshots/using-promptgrimoire-14-thumb.png"></a></p>
+<p>Full-text search looks across your highlights, tags, comments, and response text.</p>
+<h2 id="sharing-collaboration">Sharing &amp; Collaboration</h2>
+<h3 id="i-want-to-share-my-workspace-with-someone">I want to share my workspace with someone</h3>
+<p>Open the workspace you want to share. Click the <strong>Share</strong> button in the toolbar to open the sharing dialog.</p>
+<p><a href="../screenshots/using-promptgrimoire-15.png"><img alt="Share button in the workspace toolbar" src="../screenshots/using-promptgrimoire-15-thumb.png"></a></p>
+<p>Enter the email address of the person you want to share with. They will see your workspace on their Navigator.</p>
+<p><strong>Note:</strong> The Share button is only visible to workspace owners and privileged users (instructors and admins). Sharing by email only works for users who already have an account -- the system cannot send invitations to addresses with no existing account.</p>
+<h3 id="how-do-other-students-view-my-workspace">How do other students view my workspace?</h3>
+<p>There are two ways a classmate can see your workspace:</p>
+<p><strong>1. Share with class toggle.</strong> If your instructor has enabled peer sharing for the activity, a <strong>Share with class</strong> toggle appears in your workspace toolbar. Switching it on lets every enrolled student in the unit view your workspace. They get <strong>peer</strong> access -- read-only. They can see your highlights, comments, tags, and response, but cannot change anything.</p>
+<p><strong>2. Share by email.</strong> The workspace owner (and instructors) can click <strong>Share</strong> in the toolbar to open the sharing dialog. Enter a classmate's email address and choose <strong>Viewer</strong> or <strong>Editor</strong> permission. Viewer is read-only; Editor allows them to add highlights and comments alongside you.</p>
+<p><strong>What peer access means:</strong> A student with peer access sees your workspace on their Navigator. They can read everything in it, but the workspace remains yours -- they cannot delete highlights, change tags, or modify your response.</p>
+<p><strong>If the toggle is missing:</strong> The instructor has not enabled peer sharing for the activity. Contact your instructor to ask them to turn on sharing in the activity settings.</p>
+<h3 id="can-multiple-people-work-in-the-same-workspace-at-the-same-time">Can multiple people work in the same workspace at the same time?</h3>
+<p>Yes. PromptGrimoire uses <strong>CRDT</strong> (Conflict-free Replicated Data Type) synchronisation, so multiple people can be in the same workspace simultaneously without overwriting each other's work. Changes merge automatically -- no locking, no "someone else is editing" warnings.</p>
+<p><strong>What syncs in real time:</strong></p>
+<ul>
+<li>Highlights (creating, deleting, moving between tags)</li>
+<li>Comments on highlights</li>
+<li>Tags and tag groups</li>
+<li>General notes</li>
+<li>Response draft (the markdown editor on the Respond tab)</li>
+</ul>
+<p><strong>Who is connected?</strong> The toolbar shows a small badge -- for example <strong>2 users</strong> -- counting everyone currently viewing the workspace. Each connected user is assigned a distinct colour for their cursor and presence indicator.</p>
+<p><strong>Common use case:</strong> An instructor opens a student's workspace to leave comments at the same time the student is working. Both see each other's changes appear within seconds.</p>
+<p><strong>Note:</strong> Real-time sync requires an active connection. If you lose connectivity, your changes are queued locally and sync when the connection is restored. Work is never lost.</p>
+<h2 id="content-input">Content Input</h2>
+<h3 id="i-want-to-upload-a-document-instead-of-pasting">I want to upload a document instead of pasting</h3>
+<p>When you first open a workspace that has no content yet, you see the content form. Below the paste editor there is an <strong>Upload</strong> button for importing files directly.</p>
+<p>Supported formats: PDF (.pdf), Word (.docx), Markdown (.md), HTML, and plain text. The document is converted to annotatable text automatically.</p>
+<p>The upload option appears on the initial content form when a workspace has no documents. It also reappears as <strong>Add Document</strong> when multi-document mode is enabled for the activity.</p>
+<h3 id="what-ai-platforms-can-i-paste-conversations-from">What AI platforms can I paste conversations from?</h3>
+<p>PromptGrimoire automatically detects the source platform when you paste a conversation and strips the native UI chrome (buttons, labels, avatars). Speaker turns are re-labelled with uniform <strong>User:</strong> and <strong>Assistant:</strong> markers so you can annotate consistently regardless of where the conversation came from.</p>
+<p><strong>Supported platforms (auto-detected):</strong></p>
+<ul>
+<li><strong>ChatGPT</strong> (OpenAI) -- copy the conversation page in your browser</li>
+<li><strong>Claude</strong> (Anthropic) -- copy the conversation page in your browser</li>
+<li><strong>Gemini</strong> (Google) -- copy the conversation page in your browser</li>
+<li><strong>AI Studio</strong> (Google) -- copy the conversation page in your browser</li>
+<li><strong>OpenRouter</strong> -- copy the conversation page in your browser</li>
+<li><strong>ChatCraft</strong> -- copy the conversation page in your browser</li>
+<li><strong>ScienceOS</strong> -- copy the conversation page in your browser</li>
+<li><strong>Wikimedia</strong> -- copy the conversation page in your browser</li>
+<li><strong>Plain text</strong> -- any platform not listed above; paste as-is</li>
+</ul>
+<p><strong>How to paste:</strong> Open your workspace, click into the content area, and paste (Ctrl+V / Cmd+V). The pipeline detects the format from the clipboard structure -- HTML with recognisable platform markers is preprocessed automatically; plain text is wrapped in paragraphs.</p>
+<p><strong>File upload alternative:</strong> PDF (.pdf) and Word (.docx) files can be uploaded directly using the <strong>Upload</strong> button on the initial content form. The document is converted to annotatable HTML automatically. See <a href="#i-want-to-upload-a-document-instead-of-pasting">I want to upload a document instead of pasting</a> for details.</p>
+<p><strong>If your platform is not listed:</strong> paste as plain text. The content will be imported without automatic speaker labelling. You can still annotate all the text; you will just need to identify turns manually.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "fade", "closeEffect": "fade", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

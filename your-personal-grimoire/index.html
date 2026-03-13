@@ -1,7 +1,4 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
+<!DOCTYPE html><html lang="en" class="no-js"><head>
     
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -11,6 +8,8 @@
       
         <link rel="prev" href="../student-workflow/">
       
+      
+        <link rel="next" href="../using-promptgrimoire/">
       
       
         
@@ -39,7 +38,7 @@
         
         
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
         <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
       
     
@@ -50,7 +49,17 @@
 
     
     
-  </head>
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
   
   
     <body dir="ltr">
@@ -81,12 +90,12 @@
     <a href=".." title="PromptGrimoire Guides" class="md-header__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
       
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
       
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
     </label>
     <div class="md-header__title" data-md-component="header-title">
       <div class="md-header__ellipsis">
@@ -114,7 +123,7 @@
       
         <label class="md-header__button md-icon" for="__search">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         </label>
         <div class="md-search" data-md-component="search" role="dialog">
   <label class="md-search__overlay" for="__search"></label>
@@ -123,15 +132,15 @@
       <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
       <label class="md-search__icon md-icon" for="__search">
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
       </label>
       <nav class="md-search__options" aria-label="Search">
         
         <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
         </button>
       </nav>
       
@@ -167,7 +176,7 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -179,7 +188,7 @@
     <a href=".." title="PromptGrimoire Guides" class="md-nav__button md-logo" aria-label="PromptGrimoire Guides" data-md-component="logo">
       
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
 
     </a>
     PromptGrimoire Guides
@@ -218,6 +227,55 @@
       
   
   
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -240,9 +298,10 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
   
@@ -267,9 +326,10 @@
     </li>
   
 
-    
-      
-      
+              
+            
+              
+                
   
   
     
@@ -485,6 +545,41 @@
     </li>
   
 
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../using-promptgrimoire/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using the Application
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
     
   </ul>
 </nav>
@@ -494,7 +589,7 @@
             
             
               
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -675,43 +770,43 @@
 
 <h1 id="your-personal-grimoire">Your Personal Grimoire</h1>
 <h2 id="enter-the-grimoire">Enter the Grimoire</h2>
-<p><img alt="Navigator showing your enrolled unit and activities" src="../screenshots/your-personal-grimoire-01.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-01.png"><img alt="Navigator showing your enrolled unit and activities" src="../screenshots/your-personal-grimoire-01-thumb.png"></a></p>
 <p>After logging in, you see the Navigator with your enrolled units and activities. Instead of clicking Start on an activity, you will create your own workspace — your personal grimoire.</p>
-<p><img alt="Annotation page with Create Workspace button" src="../screenshots/your-personal-grimoire-02.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-02.png"><img alt="Annotation page with Create Workspace button" src="../screenshots/your-personal-grimoire-02-thumb.png"></a></p>
 <p>Navigate to the annotation page directly. The Create Workspace button lets you start a workspace outside any activity — a loose workspace that belongs only to you.</p>
-<p><img alt="Your new loose workspace on the annotation page" src="../screenshots/your-personal-grimoire-03.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-03.png"><img alt="Your new loose workspace on the annotation page" src="../screenshots/your-personal-grimoire-03-thumb.png"></a></p>
 <p>Your workspace is created. Unlike activity-based workspaces, this one has no inherited tags and no course association. It is your blank slate — a grimoire waiting to be filled.</p>
 <h2 id="bring-your-conversation">Bring Your Conversation</h2>
 <p>Copy an AI conversation that you want to analyse. This could be from ChatGPT, Claude, or any other tool. Paste it into the editor to begin building your grimoire.</p>
-<p><img alt="AI conversation pasted into the editor" src="../screenshots/your-personal-grimoire-04.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-04.png"><img alt="AI conversation pasted into the editor" src="../screenshots/your-personal-grimoire-04-thumb.png"></a></p>
 <p>Paste your AI conversation into the editor. This conversation about cultural markers in Japanese legal translation will be the artefact you annotate.</p>
-<p><img alt="Processed conversation with formatted turns" src="../screenshots/your-personal-grimoire-05.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-05.png"><img alt="Processed conversation with formatted turns" src="../screenshots/your-personal-grimoire-05-thumb.png"></a></p>
 <p>Your conversation is processed and displayed with formatted turns. The grimoire now holds your artefact — ready for annotation.</p>
 <h2 id="make-meaning-through-tags">Make Meaning Through Tags</h2>
 <p>Your workspace has no tags — unlike activity-based workspaces that inherit the instructor's tag vocabulary, your grimoire starts empty. You build your own analytical vocabulary: an emergent folksonomy that reflects how you see the conversation.</p>
-<p><img alt="Tag settings button in the toolbar" src="../screenshots/your-personal-grimoire-06.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-06.png"><img alt="Tag settings button in the toolbar" src="../screenshots/your-personal-grimoire-06-thumb.png"></a></p>
 <p>Click the tag settings button (gear icon) in the toolbar.</p>
-<p><img alt="Tag management dialog with no existing tags" src="../screenshots/your-personal-grimoire-07.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-07.png"><img alt="Tag management dialog with no existing tags" src="../screenshots/your-personal-grimoire-07-thumb.png"></a></p>
 <p>The dialog is empty — you are starting from scratch. Click Add Group to create your first tag group.</p>
-<p><img alt="Tag group 'My Analysis' with three student-created tags" src="../screenshots/your-personal-grimoire-08.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-08.png"><img alt="Tag group 'My Analysis' with three student-created tags" src="../screenshots/your-personal-grimoire-08-thumb.png"></a></p>
 <p>Create a tag group and tags that make sense for your analysis. These tags — 'AI Assumption', 'Cultural Gap', and 'Useful Insight' — reflect the student's own analytical categories, not the instructor's.</p>
-<p><img alt="Done button to close tag management" src="../screenshots/your-personal-grimoire-09.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-09.png"><img alt="Done button to close tag management" src="../screenshots/your-personal-grimoire-09-thumb.png"></a></p>
 <p>Click Done to save your tags and return to the annotation page.</p>
 <h2 id="annotate-your-conversation">Annotate Your Conversation</h2>
 <p>With your tags ready, read through the conversation and annotate the parts that matter. Each highlight is a claim about the text — a moment where you assert that this passage is significant and why.</p>
-<p><img alt="Tag toolbar with your custom tags" src="../screenshots/your-personal-grimoire-10.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-10.png"><img alt="Tag toolbar with your custom tags" src="../screenshots/your-personal-grimoire-10-thumb.png"></a></p>
 <p>Select text in the conversation, then click a tag to apply it.</p>
-<p><img alt="Text highlighted and tagged with your own category" src="../screenshots/your-personal-grimoire-11.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-11.png"><img alt="Text highlighted and tagged with your own category" src="../screenshots/your-personal-grimoire-11-thumb.png"></a></p>
 <p>Your tags — not the instructor's — categorise the annotation. The highlight appears in the sidebar.</p>
-<p><img alt="Comment input on the annotation card" src="../screenshots/your-personal-grimoire-12.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-12.png"><img alt="Comment input on the annotation card" src="../screenshots/your-personal-grimoire-12-thumb.png"></a></p>
 <p>Type your comment, then click the post button.</p>
-<p><img alt="Comment reflecting on the AI's cultural assumption" src="../screenshots/your-personal-grimoire-13.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-13.png"><img alt="Comment reflecting on the AI's cultural assumption" src="../screenshots/your-personal-grimoire-13-thumb.png"></a></p>
 <p>Add a comment explaining your annotation. This is where reflection happens — you are not just marking text, you are articulating why it matters.</p>
 <h2 id="organise-your-highlights">Organise Your Highlights</h2>
-<p><img alt="Organise tab button" src="../screenshots/your-personal-grimoire-14.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-14.png"><img alt="Organise tab button" src="../screenshots/your-personal-grimoire-14-thumb.png"></a></p>
 <p>Click the Organise tab to see your highlights grouped by tag.</p>
 <h3 id="viewing-your-tags">Viewing Your Tags</h3>
-<p><img alt="Organise tab showing highlights grouped by your tags" src="../screenshots/your-personal-grimoire-15.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-15.png"><img alt="Organise tab showing highlights grouped by your tags" src="../screenshots/your-personal-grimoire-15-thumb.png"></a></p>
 <p>The Organise tab displays your highlights in columns, one column per tag. Your emergent vocabulary becomes a lens for seeing patterns across the conversation.</p>
 <h3 id="reordering-within-a-column">Reordering Within a Column</h3>
 <p>Drag highlights up and down within a column to group related passages together. This lets you build clusters of evidence before writing your response.</p>
@@ -719,26 +814,26 @@
 <p>Drag a highlight from one column to another to reclassify it under a different tag. As your analysis develops, you may find that a passage fits a different category than you first thought.</p>
 <p><em>Note: with longer conversations, you may need to scroll within each column to see all your highlights.</em></p>
 <h2 id="write-your-response">Write Your Response</h2>
-<p><img alt="Respond tab button" src="../screenshots/your-personal-grimoire-16.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-16.png"><img alt="Respond tab button" src="../screenshots/your-personal-grimoire-16-thumb.png"></a></p>
 <p>Click the Respond tab to write your analysis.</p>
 <h3 id="writing-your-response">Writing Your Response</h3>
-<p><img alt="Respond tab with reference panel and markdown editor" src="../screenshots/your-personal-grimoire-17.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-17.png"><img alt="Respond tab with reference panel and markdown editor" src="../screenshots/your-personal-grimoire-17-thumb.png"></a></p>
 <p>The Respond tab gives you a markdown editor alongside your highlights. Use it to draft a reflection that draws on the patterns you identified.</p>
-<p><img alt="Drafting a response with markdown formatting" src="../screenshots/your-personal-grimoire-18.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-18.png"><img alt="Drafting a response with markdown formatting" src="../screenshots/your-personal-grimoire-18-thumb.png"></a></p>
 <p>The editor supports markdown formatting: <code>#</code> for headings, <code>**bold**</code> for emphasis, and <code>*</code> for bullet lists. Your formatting renders as you type.</p>
 <p>For a full guide to markdown syntax, see <a href="https://www.markdownguide.org/basic-syntax/">Markdown Guide</a>.</p>
 <h3 id="locating-source-text">Locating Source Text</h3>
-<p><img alt="Locate button on a reference card" src="../screenshots/your-personal-grimoire-19.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-19.png"><img alt="Locate button on a reference card" src="../screenshots/your-personal-grimoire-19-thumb.png"></a></p>
 <p>Click the target icon on any reference card to jump back to its highlight in the Annotate tab.</p>
-<p><img alt="Navigated back to the highlighted passage from Respond tab" src="../screenshots/your-personal-grimoire-20.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-20.png"><img alt="Navigated back to the highlighted passage from Respond tab" src="../screenshots/your-personal-grimoire-20-thumb.png"></a></p>
 <p>This lets you move between analysis and source text — check the original context while writing your response.</p>
 <h2 id="connect-to-your-unit">Connect to Your Unit</h2>
 <p>Your grimoire has grown from a blank slate into a structured analysis. Now you can connect it to your unit — associating your personal work with the course activity so your instructor can see it alongside the class work.</p>
-<p><img alt="Placement dialog for associating workspace with a unit" src="../screenshots/your-personal-grimoire-21.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-21.png"><img alt="Placement dialog for associating workspace with a unit" src="../screenshots/your-personal-grimoire-21-thumb.png"></a></p>
 <p>Click the placement chip in the header to open the placement dialog. Your enrolled units appear in the cascading selects because you are already enrolled.</p>
-<p><img alt="Cascading selects with UNIT1234, week, and activity selected" src="../screenshots/your-personal-grimoire-22.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-22.png"><img alt="Cascading selects with UNIT1234, week, and activity selected" src="../screenshots/your-personal-grimoire-22-thumb.png"></a></p>
 <p>Select your unit, week, and activity from the cascading dropdowns. Your enrolment in UNIT1234 makes it available in the placement dialog.</p>
-<p><img alt="Workspace now associated with the course activity" src="../screenshots/your-personal-grimoire-23.png" /></p>
+<p><a href="../screenshots/your-personal-grimoire-23.png"><img alt="Workspace now associated with the course activity" src="../screenshots/your-personal-grimoire-23-thumb.png"></a></p>
 <p>Your personal grimoire is now connected to the course activity. It appears alongside other students' work in the unit, while retaining your personal tag vocabulary and annotations.</p>
 
 
@@ -795,5 +890,7 @@
       <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
-  </body>
-</html>
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "fade", "closeEffect": "fade", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

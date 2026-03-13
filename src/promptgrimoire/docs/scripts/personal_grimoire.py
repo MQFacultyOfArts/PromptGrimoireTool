@@ -67,7 +67,8 @@ def _setup_loose_student() -> None:
         [
             "uv",
             "run",
-            "manage-users",
+            "grimoire",
+            "admin",
             "create",
             "loose-student@test.example.edu.au",
             "--name",
@@ -76,7 +77,8 @@ def _setup_loose_student() -> None:
         [
             "uv",
             "run",
-            "manage-users",
+            "grimoire",
+            "admin",
             "enroll",
             "loose-student@test.example.edu.au",
             "UNIT1234",

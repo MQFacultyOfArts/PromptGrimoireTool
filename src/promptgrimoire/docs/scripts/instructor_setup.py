@@ -33,7 +33,8 @@ def _create_demo_student() -> None:
         [
             "uv",
             "run",
-            "manage-users",
+            "grimoire",
+            "admin",
             "create",
             "student-demo@test.example.edu.au",
             "--name",
@@ -42,7 +43,8 @@ def _create_demo_student() -> None:
         [
             "uv",
             "run",
-            "manage-users",
+            "grimoire",
+            "admin",
             "enroll",
             "student-demo@test.example.edu.au",
             "UNIT1234",

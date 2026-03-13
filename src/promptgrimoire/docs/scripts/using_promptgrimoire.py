@@ -18,8 +18,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from playwright.sync_api import Page  # annotation-only; safe with PEP 563
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-
 from promptgrimoire.docs import Guide
 from promptgrimoire.docs.helpers import wait_for_text_walker
 
@@ -42,7 +40,8 @@ def _enrol_instructor() -> None:
         [
             "uv",
             "run",
-            "manage-users",
+            "grimoire",
+            "admin",
             "enroll",
             "instructor@uni.edu",
             "UNIT1234",
@@ -65,17 +64,13 @@ def _ensure_prerequisites(page: Page, base_url: str) -> str:
     If missing, runs the instructor guide to create it. Returns the
     course URL for entries that need Unit Settings navigation.
     """
-    _enrol_instructor()
     _authenticate(page, base_url, "instructor@uni.edu")
 
-    try:
-        page.locator('[data-testid^="start-activity-btn"]').first.wait_for(
-            state="visible",
-            timeout=5000,
-        )
-        unit_visible = page.locator("text=UNIT1234").count() > 0
-    except PlaywrightTimeoutError:
-        unit_visible = False
+    # Check /courses page for UNIT1234 — this is a simple server-rendered
+    # list, no async card rendering or enrollment dependency.
+    page.goto(f"{base_url}/courses")
+    unit_link = page.locator("a", has_text="UNIT1234").first
+    unit_visible = unit_link.count() > 0
 
     if not unit_visible:
         from promptgrimoire.docs.scripts.instructor_setup import (  # noqa: PLC0415
@@ -83,16 +78,14 @@ def _ensure_prerequisites(page: Page, base_url: str) -> str:
         )
 
         run_instructor_guide(page, base_url)
-        _enrol_instructor()
         _authenticate(page, base_url, "instructor@uni.edu")
+        page.goto(f"{base_url}/courses")
+        unit_link = page.locator("a", has_text="UNIT1234").first
 
-    # Navigate to course detail page via /courses and find UNIT1234
-    page.goto(f"{base_url}/courses")
-    page.wait_for_timeout(2000)
-    unit_link = page.locator("a", has_text="UNIT1234").first
     unit_link.wait_for(state="visible", timeout=10000)
     unit_link.click()
     page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+    _enrol_instructor()
     return page.url
 
 

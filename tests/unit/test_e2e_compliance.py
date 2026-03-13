@@ -66,12 +66,6 @@ ALLOWED_JS_FILES = {
     # interact with it. JS native setter injection is the only reliable way
     # to programmatically set the colour value and trigger Vue reactivity.
     "test_tag_colour.py",
-    # window.open interception — no Playwright-native equivalent when target
-    # URL is unreachable. The mkdocs backend calls ui.navigate.to(url,
-    # new_tab=True) which invokes window.open. expect_popup() requires the
-    # pop-up to actually open, but the docs server is not running during
-    # E2E tests, so we intercept window.open via evaluate().
-    "test_help_button.py",
 }
 
 

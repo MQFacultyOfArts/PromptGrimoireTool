@@ -89,7 +89,7 @@ Select text in your conversation by clicking and dragging. A tag menu appears --
 
 [![Tag toolbar appearing after text selection](screenshots/using-promptgrimoire-05-thumb.png)](screenshots/using-promptgrimoire-05.png)
 
-See [Student Workflow - Step 5](student-workflow.md#step-4-annotating-creating-a-highlight) for a detailed walkthrough.
+See [Student Workflow - Step 4](student-workflow.md#step-4-annotating---creating-a-highlight) for a detailed walkthrough.
 
 ### I want to add a comment to my highlight
 

@@ -29,47 +29,22 @@ class TestHelpButton:
         help_btn = authenticated_page.get_by_test_id("help-btn")
         help_btn.wait_for(state="visible", timeout=10_000)
 
-    def test_help_button_clickable(self, authenticated_page: Page) -> None:
-        """Clicking help button in mkdocs mode opens docs URL in new tab (AC5.3).
+    def test_help_button_opens_dialog(self, authenticated_page: Page) -> None:
+        """Clicking help button opens an iframe dialog with docs site (AC5.3).
 
-        The mkdocs backend calls ``ui.navigate.to(url, new_tab=True)`` which
-        invokes ``window.open(url, "_blank")``.  We intercept ``window.open``
-        to capture the target URL without relying on the docs server being
-        reachable from the test environment.
+        The mkdocs backend renders a dialog containing an iframe that
+        loads the docs URL. We verify the dialog appears and contains
+        an iframe with the expected src.
         """
         help_btn = authenticated_page.get_by_test_id("help-btn")
         help_btn.wait_for(state="visible", timeout=10_000)
-
-        # Intercept window.open to capture the URL without actually opening
-        # a new tab (the docs server is not running during E2E tests).
-        authenticated_page.evaluate(
-            """() => {
-                window.__helpOpenedUrl = null;
-                window.__origOpen = window.open;
-                window.open = (url, target) => {
-                    window.__helpOpenedUrl = url;
-                    return null;
-                };
-            }"""
-        )
-
-        # Capture console errors during click
-        errors: list[str] = []
-        authenticated_page.on("pageerror", lambda exc: errors.append(str(exc)))
-
         help_btn.click()
 
-        # Give NiceGUI WebSocket time to deliver the open command
-        authenticated_page.wait_for_function(
-            "() => window.__helpOpenedUrl !== null",
-            timeout=5_000,
+        # Dialog should appear with an iframe
+        iframe = authenticated_page.locator("iframe")
+        iframe.wait_for(state="visible", timeout=5_000)
+
+        src = iframe.get_attribute("src") or ""
+        assert "github.io" in src or "/docs" in src, (
+            f"Expected docs URL in iframe src, got: {src}"
         )
-
-        opened_url = authenticated_page.evaluate("() => window.__helpOpenedUrl")
-        assert "/docs/" in opened_url, f"Expected docs URL, got: {opened_url}"
-
-        # Restore original window.open
-        authenticated_page.evaluate("() => { window.open = window.__origOpen; }")
-
-        # No JS errors should have occurred
-        assert not errors, f"JS errors after clicking help button: {errors}"

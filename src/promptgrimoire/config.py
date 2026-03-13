@@ -119,6 +119,7 @@ class HelpConfig(BaseModel):
 
     help_enabled: bool = False
     help_backend: Literal["algolia", "mkdocs"] = "mkdocs"
+    docs_url: str = "https://mqfacultyofarts.github.io/PromptGrimoireTool/"
     algolia_app_id: str = ""
     algolia_search_api_key: str = ""
     algolia_index_name: str = ""

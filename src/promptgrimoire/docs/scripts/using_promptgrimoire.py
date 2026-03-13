@@ -313,8 +313,8 @@ def _entry_highlight_text(page: Page, base_url: str, guide: Guide) -> None:
             highlight=["tag-toolbar"],
         )
         g.note(
-            "See [Student Workflow - Step 5]"
-            "(student-workflow.md#step-4-annotating-creating-a-highlight) "
+            "See [Student Workflow - Step 4]"
+            "(student-workflow.md#step-4-annotating---creating-a-highlight) "
             "for a detailed walkthrough."
         )
 

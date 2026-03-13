@@ -96,6 +96,56 @@ def _extract_crosslinks(
     return links
 
 
+def test_headings_contain_no_non_ascii() -> None:
+    """Heading strings must not contain non-ASCII characters.
+
+    Characters like em-dashes (U+2014), curly quotes, or accented letters
+    are silently stripped by the Pandoc/MkDocs slugifier, producing anchors
+    that diverge from what authors expect. For example, "Annotating —
+    Creating" slugifies to "annotating---creating" (triple hyphen), not
+    "annotating-creating" (single hyphen).
+
+    Use ASCII equivalents: ``--`` for em-dash, straight quotes, etc.
+    """
+    violations: list[str] = []
+    heading_methods = {"step", "section", "subheading"}
+
+    for script_file in sorted(_SCRIPTS_DIR.glob("*.py")):
+        if script_file.name == "__init__.py":
+            continue
+        source = script_file.read_text()
+        tree = ast.parse(source, filename=str(script_file))
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in heading_methods:
+                continue
+            if not node.args:
+                continue
+            arg = node.args[0]
+            if not isinstance(arg, ast.Constant):
+                continue
+            if not isinstance(arg.value, str):
+                continue
+            non_ascii = [(c, f"U+{ord(c):04X}") for c in arg.value if ord(c) > 127]
+            if non_ascii:
+                chars = ", ".join(f"{c!r} ({code})" for c, code in non_ascii)
+                violations.append(
+                    f"  {script_file.name}:{node.lineno}: "
+                    f"{arg.value!r} contains: {chars}"
+                )
+
+    if violations:
+        msg = (
+            "Guide headings with non-ASCII characters "
+            "(these produce unexpected slugs):\n" + "\n".join(violations)
+        )
+        raise AssertionError(msg)
+
+
 def test_crosslink_anchors_resolve() -> None:
     """Every cross-link anchor in guide scripts must resolve to a heading.
 

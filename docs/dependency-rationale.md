@@ -397,3 +397,12 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Removed:** 2026-03-03
 **Design plan:** docs/design-plans/2026-03-03-ci-harness.md
 **Reason:** Replaced by ruff's `S` rule set, which reimplements Bandit's security checks natively with 10-100x better performance. Rule skips (B101→S101, B404→S404, B603→S603, B607→S607) carry over to ruff configuration.
+
+### openpyxl
+
+**Added:** 2026-03-12
+**Design plan:** docs/design-plans/2026-03-12-bulk-enrol-320.md
+**Claim:** Parses Moodle "Grades" XLSX exports for bulk student enrolment. Used in `src/promptgrimoire/enrol/xlsx_parser.py` to read workbook bytes, iterate rows, and extract student data.
+**Evidence:** `from openpyxl import load_workbook` in `enrol/xlsx_parser.py` (to be created in Phase 2 of bulk-enrol-320).
+**Serves:** Runtime — admin CLI and instructor UI upload both depend on XLSX parsing.
+**Why not alternatives:** `pandas` is heavyweight for simple row iteration. `xlrd` only supports `.xls` (not `.xlsx`). openpyxl is the de facto standard for `.xlsx` in Python, read-only mode is memory-efficient.

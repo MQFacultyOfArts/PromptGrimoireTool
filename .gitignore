@@ -75,6 +75,7 @@ output/
 
 # Tool caches
 .complexipy_cache/
+.cache/
 
 # Smoke test data (contains prompts — keep examples only)
 scripts/smoke_data/*.md

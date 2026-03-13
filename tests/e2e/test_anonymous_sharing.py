@@ -173,8 +173,7 @@ def _setup_course(
             _fill_template_workspace(page)
 
         with subtests.test(msg="publish_week"):
-            page.go_back()
-            page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+            page.goto(f"{app_server}/courses/{course_id}")
             publish_week(page, "Sharing Test")
 
         with subtests.test(msg="enrol_students"):

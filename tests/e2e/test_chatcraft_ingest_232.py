@@ -28,7 +28,7 @@ class TestChatCraftIngest232:
         app_server: str,
     ) -> None:
         """Clipboard paste keeps all ChatCraft turns and role labels intact."""
-        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        context = browser.new_context()
         page = context.new_page()
 
         try:
@@ -59,7 +59,7 @@ class TestChatCraftIngest232:
         app_server: str,
     ) -> None:
         """The surviving final assistant card retains its nested rich content."""
-        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        context = browser.new_context()
         page = context.new_page()
 
         try:

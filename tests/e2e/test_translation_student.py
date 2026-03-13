@@ -271,7 +271,7 @@ class TestTranslationStudent:
         comment_uuid = ""
         result = None
 
-        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        context = browser.new_context()
         page = context.new_page()
 
         try:

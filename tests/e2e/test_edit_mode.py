@@ -28,6 +28,7 @@ from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.paste_helpers import simulate_paste
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -101,9 +102,7 @@ def edit_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
     """
     from uuid import uuid4
 
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
-    )
+    context = browser.new_context()
     page = context.new_page()
 
     unique_id = uuid4().hex[:8]
@@ -115,26 +114,13 @@ def edit_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
-    # Paste HTML content to create a document
+    # Paste HTML content to create a document via synthetic paste event
     html_content = "<p>Editable document content for testing.</p>"
     editor = page.get_by_test_id("content-editor")
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
-    page.evaluate(
-        """(html) => {
-            const plainText = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([plainText], { type: 'text/plain' })
-                })
-            ]);
-        }""",
-        html_content,
-    )
-
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html_content)
     expect(editor).to_contain_text("Content pasted", timeout=5000)
 
     page.get_by_test_id("add-document-btn").click()

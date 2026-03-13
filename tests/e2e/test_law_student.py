@@ -83,8 +83,7 @@ class TestLawStudent:
         uuid1 = ""
         uuid2 = ""
 
-        # Create browser context with clipboard permissions
-        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        context = browser.new_context()
         page = context.new_page()
 
         try:

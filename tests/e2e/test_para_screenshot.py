@@ -21,6 +21,8 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
+from tests.e2e.paste_helpers import simulate_paste
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -65,9 +67,7 @@ def _load_fixture(name: str) -> str:
 
 @pytest.fixture
 def page_with_paste(browser: Browser, app_server: str) -> Generator[Page]:
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
-    )
+    context = browser.new_context()
     page = context.new_page()
     page.set_viewport_size({"width": 1280, "height": 900})
 
@@ -94,26 +94,7 @@ def _paste_and_render(page: Page, html: str) -> None:
     editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
     editor.click()
 
-    page.evaluate(
-        """(html) => {
-            const plain = html.replace(/<[^>]*>/g, '');
-            window.__clipboardWritePromise = navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob(
-                        [html], { type: 'text/html' }
-                    ),
-                    'text/plain': new Blob(
-                        [plain], { type: 'text/plain' }
-                    )
-                })
-            ]);
-        }""",
-        html,
-    )
-    page.wait_for_function(
-        "async () => { await window.__clipboardWritePromise; return true; }"
-    )
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html)
 
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)

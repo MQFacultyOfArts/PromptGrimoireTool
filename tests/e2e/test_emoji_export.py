@@ -64,9 +64,7 @@ class TestEmojiExport:
         3. add_emoji_comment — post comment containing emoji
         4. export_contains_emoji — verify emoji in .tex/.pdf output
         """
-        context = browser.new_context(
-            permissions=["clipboard-read", "clipboard-write"],
-        )
+        context = browser.new_context()
         page = context.new_page()
 
         try:

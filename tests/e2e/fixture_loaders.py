@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import wait_for_text_walker
+from tests.e2e.paste_helpers import simulate_paste
 from tests.e2e.tag_helpers import _seed_tags_for_workspace
 
 if TYPE_CHECKING:
@@ -99,9 +100,9 @@ def _load_fixture_via_paste(
             tags into the workspace after content is loaded.
 
     Note:
-        The browser context MUST have been created with clipboard permissions:
-        ``permissions=["clipboard-read", "clipboard-write"]``
-        This is the caller's responsibility.
+        Uses synthetic paste events (``paste_helpers.simulate_paste``) so
+        no clipboard permissions are needed.  Works on both Chromium and
+        Firefox.
 
     Traceability:
         Part of E2E test migration (#156) to unify fixture loading patterns
@@ -119,27 +120,12 @@ def _load_fixture_via_paste(
     else:
         html_content = fixture_path.read_text(encoding="utf-8")
 
-    # Focus the editor
+    # Focus the editor and dispatch synthetic paste event
     editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
     expect(editor).to_be_visible()
     editor.click()
 
-    # Write HTML to clipboard (same pattern as test_html_paste_whitespace.py)
-    page.evaluate(
-        """(html) => {
-            const plainText = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([plainText], { type: 'text/plain' })
-                })
-            ]);
-        }""",
-        html_content,
-    )
-
-    # Trigger paste
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html_content)
 
     # Wait for "Content pasted" confirmation
     expect(editor).to_contain_text("Content pasted", timeout=5000)

@@ -269,3 +269,42 @@ See [docs/e2e-debugging.md](e2e-debugging.md) for:
 - NiceGUI task leak patterns and fixes
 - Watchdog stack dump analysis
 - Server log (`test-e2e-server.log`) post-mortem
+
+## Debugging Production Issues
+
+### Extract/Rehydrate Workspace
+
+Two scripts support pulling production workspace state into a local dev database for debugging:
+
+```bash
+# On prod (peer auth via Unix socket):
+sudo -u promptgrimoire uv run scripts/extract_workspace.py <workspace-uuid>
+# Output: /tmp/workspace_<uuid>.json
+
+# Copy to local:
+scp grimoire.drbbs.org:/tmp/workspace_<uuid>.json /tmp/
+
+# Load into local dev database:
+uv run scripts/rehydrate_workspace.py /tmp/workspace_<uuid>.json
+# Then open: http://localhost:8080/annotation?workspace_id=<uuid>
+```
+
+The JSON contains workspace, documents, tag groups, and tags. Binary fields (CRDT state) are base64-encoded. The workspace is inserted standalone (`activity_id` and `course_id` set to NULL) so no parent records are needed.
+
+### Retrieving LaTeX Export Logs from Production
+
+The systemd service runs with `PrivateTmp=true`, so `/tmp` inside the service is isolated. Export logs are not visible from a normal shell.
+
+**Find the private tmp path:**
+
+```bash
+sudo bash -c 'ls /tmp/systemd-private-*-promptgrimoire.service-*/tmp/'
+```
+
+**Copy a specific log out:**
+
+```bash
+sudo bash -c 'cp /tmp/systemd-private-*-promptgrimoire.service-*/tmp/promptgrimoire_export_<hash>/<filename>.log /tmp/export_debug.log'
+```
+
+**Note:** `nsenter` also works but writes into the private namespace — use real paths (e.g. `/tmp/systemd-private-*/...`) from outside the namespace, not `nsenter` + `cp`.

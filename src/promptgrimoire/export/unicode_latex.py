@@ -79,7 +79,7 @@ FONT_REGISTRY: tuple[FallbackFont, ...] = (
     FallbackFont("Noto Sans Osage", "osge"),
     FallbackFont("Noto Sans Shavian", "shaw"),
     # Emoji and Symbols
-    FallbackFont("Noto Color Emoji", "zsym", "mode=harf;"),
+    FallbackFont("Noto Color Emoji", "zsym", "mode=harf"),
     FallbackFont("Noto Sans Symbols", "zsym"),
     FallbackFont("Noto Sans Symbols2", "zsym"),
     FallbackFont("Noto Sans Math", "zmth"),
@@ -198,7 +198,12 @@ def build_font_preamble(scripts: frozenset[str]) -> str:
     entries: list[str] = []
     for font in selected:
         if font.options:
-            entry = f'    "{font.name}:mode=node;{font.options};",'
+            # If options specify their own mode (e.g. "mode=harf"), use it
+            # instead of the default "mode=node".
+            if "mode=" in font.options:
+                entry = f'    "{font.name}:{font.options};",'
+            else:
+                entry = f'    "{font.name}:mode=node;{font.options};",'
         else:
             entry = f'    "{font.name}:mode=node;",'
         entries.append(entry)

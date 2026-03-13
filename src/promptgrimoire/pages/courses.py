@@ -77,7 +77,7 @@ logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
     from promptgrimoire.db.models import (
         Activity,
@@ -733,7 +733,6 @@ async def _handle_enrol_upload(
     logger.info("Bulk enrol result: %s", msg)
     ntype = "info" if report.enrolments_created == 0 else "positive"
     ui.notify(msg, type=ntype, position="top", close_button="OK")
-    ui.run_javascript(f"console.log('notify fired: {ntype}', '{msg}')")
 
 
 async def open_course_settings(course: Course) -> None:
@@ -1590,7 +1589,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
 
 async def _render_add_enrollment_form(
     cid: UUID,
-    on_added: Callable[[], Any],
+    on_added: Callable[[], Awaitable[None]],
 ) -> None:
     """Render the add-enrollment form with email input and role select."""
     with ui.card().classes("mb-4 p-4"):
@@ -1634,7 +1633,7 @@ async def _render_add_enrollment_form(
                         msg += " (new user created)"
                     ui.notify(msg, type="positive")
                     new_email.value = ""
-                    on_added()
+                    await on_added()
                 except Exception as e:
                     logger.exception("enroll_failed", operation="add_enrollment")
                     ui.notify(f"Failed to enroll: {e}", type="negative")
@@ -1714,7 +1713,9 @@ async def manage_enrollments_page(course_id: str) -> None:
 
     with enrollment_table.add_slot("body-cell-action"):
         with enrollment_table.cell("action"):
-            ui.button(icon="delete").props("flat round dense color=negative").on(
+            ui.button(icon="delete").props(
+                'flat round dense color=negative data-testid="delete-enrollment-btn"'
+            ).on(
                 "click",
                 js_handler="() => emit(props.row.user_id)",
                 handler=lambda e: handle_delete(e.args),

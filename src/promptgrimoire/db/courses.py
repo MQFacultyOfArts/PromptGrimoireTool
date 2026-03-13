@@ -413,7 +413,7 @@ async def list_enrollment_rows(course_id: UUID) -> list[dict[str, Any]]:
     async with get_session() as session:
         result = await session.exec(
             select(CourseEnrollment, User)
-            .join(User, User.id == CourseEnrollment.user_id)  # type: ignore[arg-type]
+            .join(User, User.id == CourseEnrollment.user_id)  # type: ignore[arg-type]  -- SQLModel Column expression valid at runtime; ty infers InstrumentedAttribute mismatch
             .where(CourseEnrollment.course_id == course_id)
             .order_by(CourseEnrollment.role, User.display_name)
         )

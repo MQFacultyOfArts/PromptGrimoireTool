@@ -220,6 +220,12 @@ class TestBulkEnrolUpload:
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("Enrolled")
 
+        # AC3.1: table rows update to reflect new enrollment
+        table = page.get_by_test_id("enrollment-table")
+        expect(table.locator("tr", has_text="alice-e2e@example.com")).to_be_visible(
+            timeout=5000
+        )
+
     def test_invalid_xlsx_shows_warning_notification(
         self,
         instructor_enrollments_page: tuple[Page, str],
@@ -387,9 +393,7 @@ class TestBulkEnrolUpload:
         student_row = table.locator("tr", has_text=student_email)
         expect(student_row).to_be_visible(timeout=5000)
 
-        delete_btn = student_row.locator(
-            'button[aria-label="delete"], button:has(i:text("delete"))'
-        )
+        delete_btn = student_row.get_by_test_id("delete-enrollment-btn")
         delete_btn.click()
 
         # Verify the row disappears after deletion
@@ -399,6 +403,31 @@ class TestBulkEnrolUpload:
         delete_notification = page.get_by_role("alert")
         expect(delete_notification).to_be_visible(timeout=10000)
         expect(delete_notification).to_contain_text("removed")
+
+    def test_add_single_enrollment_updates_table(
+        self,
+        instructor_enrollments_page: tuple[Page, str],
+    ) -> None:
+        """AC3.2: After add-single enrollment, new student appears in table."""
+        page, _course_id = instructor_enrollments_page
+
+        unique = uuid.uuid4().hex[:6]
+        email = f"single-{unique}@test.example.edu.au"
+
+        email_input = page.get_by_test_id("enrollment-email-input")
+        email_input.fill(email)
+        page.get_by_test_id("add-enrollment-btn").click()
+
+        # Quasar notifications use role="alert" natively. ui.notify() does not
+        # support data-testid, so get_by_role("alert") is the accepted exception
+        # to the project's data-testid locator convention.
+        notification = page.get_by_role("alert")
+        expect(notification).to_be_visible(timeout=15000)
+        expect(notification).to_contain_text("Enrollment added")
+
+        # AC3.2: table rows update to reflect new enrollment
+        table = page.get_by_test_id("enrollment-table")
+        expect(table.locator("tr", has_text=email)).to_be_visible(timeout=5000)
 
     def test_student_cannot_see_upload_widget(
         self,

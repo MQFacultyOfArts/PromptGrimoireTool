@@ -24,6 +24,7 @@ from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.paste_helpers import simulate_paste
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -36,12 +37,10 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 @pytest.fixture
 def upload_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
-    """Authenticated page with clipboard permissions at a fresh workspace."""
+    """Authenticated page at a fresh workspace."""
     from uuid import uuid4
 
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
-    )
+    context = browser.new_context()
     page = context.new_page()
 
     unique_id = uuid4().hex[:8]
@@ -70,20 +69,7 @@ def _paste_html_and_add(page: Page, html_content: str) -> None:
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
-    page.evaluate(
-        """(html) => {
-            const plainText = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([plainText], { type: 'text/plain' })
-                })
-            ]);
-        }""",
-        html_content,
-    )
-
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html_content)
     expect(editor).to_contain_text("Content pasted", timeout=5000)
 
     page.get_by_test_id("add-document-btn").click()

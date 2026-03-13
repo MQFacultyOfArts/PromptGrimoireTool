@@ -95,10 +95,7 @@ def _expected_author_labels(
 
 def _fill_template_workspace(page: Page) -> None:
     """Click Create Template, add content, seed tags."""
-    page.get_by_role(
-        "button",
-        name=re.compile(r"Create Template|Edit Template"),
-    ).click()
+    page.locator('[data-testid^="template-btn-"]').first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
 
     content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
@@ -176,8 +173,7 @@ def _setup_course(
             _fill_template_workspace(page)
 
         with subtests.test(msg="publish_week"):
-            page.go_back()
-            page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+"), timeout=10000)
+            page.goto(f"{app_server}/courses/{course_id}")
             publish_week(page, "Sharing Test")
 
         with subtests.test(msg="enrol_students"):

@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
+from tests.e2e.paste_helpers import simulate_paste
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -49,13 +51,10 @@ def libreoffice_html() -> str:
 
 @pytest.fixture
 def paste_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
-    """Authenticated page with clipboard permission, at workspace creation."""
+    """Authenticated page at workspace creation."""
     from uuid import uuid4
 
-    # Create context with clipboard permissions
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
-    )
+    context = browser.new_context()
     page = context.new_page()
 
     # Authenticate
@@ -66,7 +65,7 @@ def paste_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
 
     # Navigate to annotation and create workspace
     page.goto(f"{app_server}/annotation")
-    page.get_by_role("button", name=re.compile("create", re.IGNORECASE)).click()
+    page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
     yield page
@@ -78,35 +77,14 @@ def paste_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
 def simulate_html_paste(page: Page, html_content: str) -> None:
     """Simulate pasting HTML content into the editor.
 
-    Uses Playwright's clipboard API to write HTML, then simulates
-    Ctrl+V to trigger the paste event handler.
+    Dispatches a synthetic paste event via ``paste_helpers.simulate_paste``.
+    Works on both Chromium and Firefox (no clipboard permissions needed).
     """
-    # Focus the editor
     editor = page.get_by_test_id("content-editor").locator(".q-editor__content")
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
-    # Write HTML to clipboard via JavaScript (respects clipboard permissions)
-    # This sets both text/html and text/plain MIME types
-    page.evaluate(
-        """(html) => {
-            const plainText = html.replace(/<[^>]*>/g, '');
-            window.__clipboardWritePromise = navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([plainText], { type: 'text/plain' })
-                })
-            ]);
-        }""",
-        html_content,
-    )
-
-    page.wait_for_function(
-        "async () => { await window.__clipboardWritePromise; return true; }"
-    )
-
-    # Trigger paste with Ctrl+V
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html_content)
 
     # Wait for paste handler to process (console shows [PASTE] message)
     expect(editor).to_contain_text("Content pasted", timeout=5000)
@@ -137,7 +115,7 @@ class TestHTMLPasteWhitespace:
         page.screenshot(path=str(SCREENSHOT_DIR / "02_after_paste_editor.png"))
 
         # Click Add Document to process
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
 
         # Wait for document to render - first chars may be hidden newlines
         page.wait_for_function(
@@ -245,7 +223,7 @@ class TestHTMLPasteWhitespace:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -335,7 +313,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -435,7 +413,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,
@@ -496,7 +474,7 @@ class TestParagraphNumberingAndIndent:
         page = paste_ready_page
 
         simulate_html_paste(page, libreoffice_html)
-        page.get_by_role("button", name=re.compile("add", re.IGNORECASE)).click()
+        page.get_by_test_id("add-document-btn").click()
         page.wait_for_function(
             "() => window._textNodes && window._textNodes.length > 0",
             timeout=15000,

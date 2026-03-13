@@ -490,7 +490,9 @@ def _render_week_header(
     """Render week card header with management controls."""
     with ui.row().classes("items-center justify-between w-full"):
         with ui.column().classes("gap-1"):
-            ui.label(f"Week {week.week_number}: {week.title}").classes("font-semibold")
+            ui.label(f"Week {week.week_number}: {week.title}").classes(
+                "font-semibold"
+            ).props(f'data-testid="week-label-{week.week_number}"')
             if can_view_drafts:
                 status = "Published" if week.is_published else "Draft"
                 if week.visible_from:
@@ -1367,7 +1369,11 @@ async def course_detail_page(course_id: str) -> None:
 
                 with ui.column().classes("gap-2 w-full"):
                     for week in weeks:
-                        with ui.card().classes("w-full"):
+                        with (
+                            ui.card()
+                            .classes("w-full")
+                            .props(f'data-testid="week-card-{week.id}"')
+                        ):
                             _render_week_header(
                                 week,
                                 can_view_drafts=can_view_drafts,

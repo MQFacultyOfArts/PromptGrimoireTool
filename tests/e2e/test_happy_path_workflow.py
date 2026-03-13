@@ -19,7 +19,7 @@ from uuid import uuid4
 import pytest
 from playwright.sync_api import expect
 
-from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.card_helpers import expand_card
 from tests.e2e.conftest import _authenticate_page
 from tests.e2e.course_helpers import (
@@ -29,6 +29,7 @@ from tests.e2e.course_helpers import (
     enrol_student,
     publish_week,
 )
+from tests.e2e.highlight_tools import select_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -96,11 +97,9 @@ def _student_start_and_apply_tag(
         wait_for_text_walker(student_page, timeout=10000)
 
         # Select text and click the first (only) tag button
-        select_chars(student_page, 0, 5)
+        select_text_range(student_page, "Lions")
 
-        toolbar = student_page.locator("[data-testid='tag-toolbar']")
-        toolbar.wait_for(state="visible", timeout=5000)
-        toolbar.locator("[data-tag-id]").first.click()
+        student_page.locator("[data-testid='tag-toolbar'] [data-tag-id]").first.click()
 
         first_card = student_page.locator("[data-testid='annotation-card']").first
         first_card.wait_for(state="visible", timeout=5000)

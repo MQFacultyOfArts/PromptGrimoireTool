@@ -62,7 +62,7 @@ class TestLoginPage:
         with subtests.test(msg="magic_link_send_success"):
             fresh_page.get_by_test_id("email-input").fill("test@mq.edu.au")
             fresh_page.get_by_test_id("send-magic-link-btn").click()
-            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
+            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()  # noqa: PG002
 
         # Reload for next test
         fresh_page.goto(f"{app_server}/login")
@@ -71,7 +71,7 @@ class TestLoginPage:
         with subtests.test(msg="magic_link_domain_rejected"):
             fresh_page.get_by_test_id("email-input").fill("arbitrary@anywhere.com")
             fresh_page.get_by_test_id("send-magic-link-btn").click()
-            expect(fresh_page.get_by_text("Macquarie University email")).to_be_visible()
+            expect(fresh_page.get_by_text("Macquarie University email")).to_be_visible()  # noqa: PG002
 
         # Reload for next test
         fresh_page.goto(f"{app_server}/login")
@@ -80,7 +80,7 @@ class TestLoginPage:
         with subtests.test(msg="magic_link_student_email"):
             fresh_page.get_by_test_id("email-input").fill("student@students.mq.edu.au")
             fresh_page.get_by_test_id("send-magic-link-btn").click()
-            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()
+            expect(fresh_page.get_by_text("Magic link sent")).to_be_visible()  # noqa: PG002
 
 
 class TestMagicLinkCallback:
@@ -106,15 +106,13 @@ class TestMagicLinkCallback:
         # --- Subtest: invalid token shows error ---
         with subtests.test(msg="invalid_token_shows_error"):
             fresh_page.goto(f"{app_server}/auth/callback?token=bad-token")
-            expect(fresh_page.get_by_text("Error: invalid_token")).to_be_visible()
+            expect(fresh_page.get_by_test_id("auth-error-msg")).to_be_visible()
             expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
         # --- Subtest: missing token shows error ---
         with subtests.test(msg="missing_token_shows_error"):
             fresh_page.goto(f"{app_server}/auth/callback")
-            expect(
-                fresh_page.get_by_text("Invalid or missing token").first
-            ).to_be_visible()
+            expect(fresh_page.get_by_test_id("auth-error-msg")).to_be_visible()
             expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
 
@@ -135,13 +133,12 @@ class TestSSOFlow:
             redirect_url = None
 
             def capture_redirect(route):
-                nonlocal redirect_url
-                redirect_url = route.request.url
                 route.abort()
 
             fresh_page.route("**/mock.stytch.com/**", capture_redirect)
-            fresh_page.get_by_test_id("sso-login-btn").click()
-            fresh_page.wait_for_timeout(200)
+            with fresh_page.expect_request("**/mock.stytch.com/**") as req_info:
+                fresh_page.get_by_test_id("sso-login-btn").click()
+            redirect_url = req_info.value.url
 
             assert redirect_url is not None, "SSO redirect was not triggered"
             assert "mock.stytch.com" in redirect_url
@@ -164,7 +161,7 @@ class TestSSOFlow:
         # --- Subtest: invalid SSO token shows error ---
         with subtests.test(msg="sso_callback_invalid_token"):
             fresh_page.goto(f"{app_server}/auth/sso/callback?token=bad-sso-token")
-            expect(fresh_page.get_by_text("invalid_token").first).to_be_visible()
+            expect(fresh_page.get_by_test_id("auth-error-msg")).to_be_visible()
             expect(fresh_page).to_have_url(f"{app_server}/login", timeout=5000)
 
 
@@ -194,8 +191,10 @@ class TestProtectedPage:
 
         # --- Subtest: shows user info ---
         with subtests.test(msg="shows_user_info"):
-            expect(fresh_page.get_by_text("test@example.com")).to_be_visible()
-            expect(fresh_page.get_by_text("stytch_member")).to_be_visible()
+            expect(fresh_page.get_by_test_id("user-email")).to_have_text(
+                "test@example.com"
+            )
+            expect(fresh_page.get_by_test_id("user-role").first).to_be_visible()
 
         # --- Subtest: logout clears session ---
         with subtests.test(msg="logout_clears_session"):
@@ -228,9 +227,7 @@ class TestSessionPersistence:
         with subtests.test(msg="persists_on_refresh"):
             fresh_page.reload()
             # NiceGUI re-renders via WebSocket after reload — give it time
-            expect(fresh_page.get_by_text("test@example.com")).to_be_visible(
-                timeout=10000
-            )
+            expect(fresh_page.get_by_test_id("user-email")).to_be_visible(timeout=10000)
 
         # --- Subtest: session persists across navigation ---
         with subtests.test(msg="persists_across_navigation"):

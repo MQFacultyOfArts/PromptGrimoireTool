@@ -185,7 +185,8 @@ def enrol_student(page: Page, *, email: str) -> None:
     page.get_by_test_id("add-enrollment-btn").click()
 
     # Wait for success notification
-    page.get_by_text(re.compile(r"Enrollment added")).wait_for(
+    # ui.notify() toast has no data-testid support
+    page.get_by_text(re.compile(r"Enrollment added")).wait_for(  # noqa: PG002
         state="visible", timeout=5000
     )
 
@@ -206,12 +207,9 @@ def publish_week(page: Page, week_title: str) -> None:
         week_title: The title text to locate the week card
             (e.g. ``"Introduction to Contracts"``).
     """
-    # Find the week label containing the title, then scope to its card ancestor
-    week_label = page.get_by_text(re.compile(rf"Week \d+:\s*{re.escape(week_title)}"))
-    week_label.wait_for(state="visible", timeout=5000)
-
-    # Navigate up to the card container — the card is a .q-card ancestor
-    card = week_label.locator("xpath=ancestor::div[contains(@class, 'q-card')]")
+    # Find the week card containing the title
+    card = page.locator('[data-testid^="week-card-"]').filter(has_text=week_title)
+    card.wait_for(state="visible", timeout=5000)
 
     # Click the Publish button within that card
     card.get_by_test_id("publish-week-btn").click()

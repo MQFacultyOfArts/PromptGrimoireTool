@@ -183,7 +183,7 @@ async def open_quick_create(state: PageState) -> None:
             ui.button(
                 "Cancel",
                 on_click=dialog.close,
-            ).props("flat")
+            ).props('flat data-testid="quick-create-cancel-btn"')
 
             async def _save(text: str) -> None:
                 ok = await _quick_create_save(

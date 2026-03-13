@@ -43,7 +43,7 @@ from tests.e2e.course_helpers import (
     publish_week,
 )
 from tests.e2e.fixture_loaders import setup_workspace_with_content
-from tests.e2e.highlight_tools import find_text_range
+from tests.e2e.highlight_tools import find_text_range, select_text_range
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
@@ -117,16 +117,14 @@ class TestNaughtyStudent:
 
                 # Page should show the "No workspace selected" fallback UI
                 # (invalid UUID parses as None, falls through to create form)
-                expect(page.get_by_text("No workspace selected")).to_be_visible(
+                expect(page.get_by_test_id("workspace-status-msg")).to_be_visible(
                     timeout=10000
                 )
 
                 # A "Create Workspace" button should be available
-                expect(
-                    page.get_by_role(
-                        "button", name=re.compile("Create Workspace", re.IGNORECASE)
-                    )
-                ).to_be_visible(timeout=5000)
+                expect(page.get_by_test_id("create-workspace-btn")).to_be_visible(
+                    timeout=5000
+                )
 
             with subtests.test(msg="nonexistent_workspace_id"):
                 # Navigate to annotation with a valid UUID that doesn't exist
@@ -137,17 +135,14 @@ class TestNaughtyStudent:
                 page.wait_for_load_state("networkidle")
 
                 # Page should show "Workspace not found" in red
-                expect(page.get_by_text("Workspace not found")).to_be_visible(
+                expect(page.get_by_test_id("workspace-status-msg")).to_be_visible(
                     timeout=10000
                 )
 
                 # A "Create New Workspace" button should be visible as fallback
-                expect(
-                    page.get_by_role(
-                        "button",
-                        name=re.compile("Create New Workspace", re.IGNORECASE),
-                    )
-                ).to_be_visible(timeout=5000)
+                expect(page.get_by_test_id("create-workspace-btn")).to_be_visible(
+                    timeout=5000
+                )
 
             with subtests.test(msg="no_workspace_id"):
                 # Navigate to annotation with no query parameter
@@ -155,16 +150,14 @@ class TestNaughtyStudent:
                 page.wait_for_load_state("networkidle")
 
                 # Page should show the workspace creation UI
-                expect(page.get_by_text("No workspace selected")).to_be_visible(
+                expect(page.get_by_test_id("workspace-status-msg")).to_be_visible(
                     timeout=10000
                 )
 
                 # Create Workspace button should be accessible
-                expect(
-                    page.get_by_role(
-                        "button", name=re.compile("Create Workspace", re.IGNORECASE)
-                    )
-                ).to_be_visible(timeout=5000)
+                expect(page.get_by_test_id("create-workspace-btn")).to_be_visible(
+                    timeout=5000
+                )
 
         finally:
             page.close()
@@ -277,9 +270,7 @@ class TestNaughtyStudent:
                     with subtests.test(msg=f"blns_{category}_{idx}"):
                         # Navigate to annotation and create workspace
                         page.goto(f"{app_server}/annotation")
-                        page.get_by_role(
-                            "button", name=re.compile("create", re.IGNORECASE)
-                        ).click()
+                        page.get_by_test_id("create-workspace-btn").click()
                         page.wait_for_url(re.compile(r"workspace_id="))
 
                         # Fill content with the naughty string
@@ -287,14 +278,10 @@ class TestNaughtyStudent:
                             ".q-editor__content"
                         )
                         content_input.fill(naughty_string)
-                        page.get_by_role(
-                            "button", name=re.compile("add|submit", re.IGNORECASE)
-                        ).click()
+                        page.get_by_test_id("add-document-btn").click()
 
                         # Confirm content type dialog if it appears
-                        confirm_btn = page.get_by_role(
-                            "button", name=re.compile("confirm", re.IGNORECASE)
-                        )
+                        confirm_btn = page.get_by_test_id("confirm-content-type-btn")
                         try:
                             confirm_btn.wait_for(state="visible", timeout=5000)
                             confirm_btn.click()
@@ -326,8 +313,16 @@ class TestNaughtyStudent:
                 # Create a fresh workspace with a known-good naughty string
                 setup_workspace_with_content(page, app_server, highlightable_content)
 
-                # Attempt to highlight the first few characters
-                select_chars(page, 0, 2)
+                # The first BLNS string <script>alert("XSS")</script> is always
+                # selected as highlightable_content.  After Playwright .fill()
+                # inserts it as text, the browser escapes < > & in the
+                # contenteditable innerHTML.  The input pipeline detects "text"
+                # type (no real HTML tags), double-encodes entities, and the
+                # browser decodes one level — so the rendered text becomes
+                # '&lt;script&gt;alert("XSS")&lt;/script&gt;'.
+                # The substring 'alert("XSS")' survives all pipeline paths
+                # unchanged (quotes are never entity-encoded by the browser).
+                select_text_range(page, 'alert("XSS")')
                 page.locator("[data-testid='tag-toolbar'] button").first.click()
 
                 # Verify annotation card appears
@@ -387,10 +382,7 @@ class TestNaughtyStudent:
                 configure_course_copy_protection(instructor_page, enabled=True)
 
                 # Fill template workspace with content
-                instructor_page.get_by_role(
-                    "button",
-                    name=re.compile(r"Create Template|Edit Template"),
-                ).click()
+                instructor_page.locator('[data-testid^="template-btn-"]').first.click()
                 instructor_page.wait_for_url(
                     re.compile(r"/annotation\?workspace_id="),
                     timeout=10000,
@@ -431,12 +423,13 @@ class TestNaughtyStudent:
 
                 # Navigate to course and clone workspace
                 student_page.goto(f"{app_server}/courses/{course_id}")
-                activity_label = student_page.get_by_text("Protected Activity")
-                activity_label.wait_for(state="visible", timeout=10000)
-                card = activity_label.locator(
-                    "xpath=ancestor::div[contains(@class, 'q-card')]"
-                )
-                card.locator("[data-testid^='start-activity-btn-']").first.click()
+                activity_card = student_page.locator(
+                    '[data-testid^="activity-row-"]'
+                ).filter(has_text="Protected Activity")
+                activity_card.wait_for(state="visible", timeout=10000)
+                activity_card.locator(
+                    "[data-testid^='start-activity-btn-']"
+                ).first.click()
 
                 # Wait for annotation page with cloned workspace
                 student_page.wait_for_url(
@@ -508,9 +501,9 @@ class TestNaughtyStudent:
                 # Verify the "Protected" lock icon chip is visible.
                 # Use exact=True to avoid matching "Protected Activity..."
                 # placement chip and document content containing "protected".
-                expect(student_page.get_by_text("Protected", exact=True)).to_be_visible(
-                    timeout=5000
-                )
+                expect(
+                    student_page.get_by_test_id("copy-protection-chip")
+                ).to_be_visible(timeout=5000)
 
         finally:
             student_page.close()

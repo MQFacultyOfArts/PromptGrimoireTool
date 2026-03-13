@@ -151,7 +151,7 @@ class TestTextSelection:
         )
         page.mouse.up()
         # Proving a negative — must wait to ensure no async highlight fires.
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(500)  # noqa: PG001
 
         # No highlight should exist (no valid selection)
         count = page.evaluate(
@@ -189,7 +189,7 @@ class TestTextSelection:
             doc_box["y"] + 30,
         )
         # Proving a negative — must wait to ensure no async highlight fires.
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(500)  # noqa: PG001
 
         # No highlight should exist
         count = page.evaluate(

@@ -96,7 +96,9 @@ class TestHistoryTutorial:
             comment_uuid = uuid4().hex[:8]
 
             add_comment_to_highlight(page1, comment_uuid, card_index=0)
-            expect(page1.get_by_text(comment_uuid)).to_be_visible(timeout=5000)
+            expect(
+                page1.get_by_test_id("comment").filter(has_text=comment_uuid)
+            ).to_be_visible(timeout=5000)
 
         with subtests.test(msg="comment_syncs_to_student_b"):
             # Student B should see the comment

@@ -371,7 +371,9 @@ async def annotation_page(client: Client) -> None:
             logger.debug("[PAGE] annotation_page: render complete for %s", workspace_id)
         else:
             # Show create workspace form
-            ui.label("No workspace selected. Create a new one:").classes("mb-2")
+            ui.label("No workspace selected. Create a new one:").classes("mb-2").props(
+                'data-testid="workspace-status-msg"'
+            )
             ui.button(
                 "Create Workspace",
                 on_click=_create_workspace_and_redirect,

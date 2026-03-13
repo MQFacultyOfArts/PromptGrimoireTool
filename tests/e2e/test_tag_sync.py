@@ -80,11 +80,15 @@ class TestTagSync:
         # --- Client A: verify the tag appeared locally ---
         # Buttons render as "[N] TagName" — use substring match
         toolbar_a = page_a.get_by_test_id("tag-toolbar")
-        expect(toolbar_a.get_by_text(tag_name)).to_be_visible(timeout=5000)
+        expect(
+            toolbar_a.locator('[data-testid^="tag-btn-"]').filter(has_text=tag_name)
+        ).to_be_visible(timeout=5000)
 
         # --- Client B: verify the tag appeared via broadcast (no refresh) ---
         toolbar_b = page_b.get_by_test_id("tag-toolbar")
-        expect(toolbar_b.get_by_text(tag_name)).to_be_visible(
+        expect(
+            toolbar_b.locator('[data-testid^="tag-btn-"]').filter(has_text=tag_name)
+        ).to_be_visible(
             timeout=15000,
         )
 

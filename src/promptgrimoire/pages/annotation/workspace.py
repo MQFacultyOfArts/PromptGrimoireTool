@@ -377,7 +377,9 @@ async def _resolve_workspace_context(
     if workspace is None:
         workspace = await get_workspace(workspace_id)
     if workspace is None:
-        ui.label("Workspace not found").classes("text-red-500")
+        ui.label("Workspace not found").classes("text-red-500").props(
+            'data-testid="workspace-status-msg"'
+        )
         ui.button(
             "Create New Workspace", on_click=_create_workspace_and_redirect
         ).props('data-testid="create-workspace-btn"')

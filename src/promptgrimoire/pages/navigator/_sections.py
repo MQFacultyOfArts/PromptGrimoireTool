@@ -61,6 +61,39 @@ def _get_owner_display_name(
 # ---------------------------------------------------------------------------
 
 
+def _render_owner_group(
+    owner_rows: list[NavigatorRow],
+    user_id: UUID,
+    is_privileged: bool,
+    *,
+    snippets: dict[UUID, str] | None = None,
+    page_state: PageState | None = None,
+    show_header: bool = True,
+) -> None:
+    """Render an owner group: header, placed entries, then loose entries."""
+    if show_header:
+        display_name = _get_owner_display_name(owner_rows[0], user_id, is_privileged)
+        ui.label(display_name).classes(
+            "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
+        )
+
+    placed = [r for r in owner_rows if r.activity_id is not None]
+    loose = [r for r in owner_rows if r.activity_id is None]
+
+    for row in placed:
+        render_workspace_entry(
+            row, show_owner=False, snippets=snippets, page_state=page_state
+        )
+    if loose:
+        ui.label("Unsorted").classes(
+            "text-xs font-medium mt-2 mb-1 ml-4 text-gray-400 navigator-unsorted-label"
+        )
+        for row in loose:
+            render_workspace_entry(
+                row, show_owner=False, snippets=snippets, page_state=page_state
+            )
+
+
 async def _render_shared_in_unit(
     shared_in_unit_rows: list[NavigatorRow],
     enrolled_course_ids: list[UUID],
@@ -76,45 +109,19 @@ async def _render_shared_in_unit(
         course_rows = by_course.get(course_id, [])
         if not course_rows:
             continue
-        course = course_cache.get(course_id)
-        course_name = (
-            course.name
-            if course
-            else course_rows[0].course_name or get_settings().i18n.unit_label
-        )
+        course_name = _resolve_course_name(course_cache, course_id, course_rows)
         ui.label(f"Shared in {course_name}").classes(
             "text-xl font-bold mt-6 mb-2 navigator-section-header"
-        )
+        ).props('data-testid="section-header-shared-in-unit"')
 
-        by_owner_groups = group_by_owner(course_rows)
-        for _owner_id, owner_rows in by_owner_groups.items():
-            display_name = _get_owner_display_name(
-                owner_rows[0], user_id, is_privileged
+        for _owner_id, owner_rows in group_by_owner(course_rows).items():
+            _render_owner_group(
+                owner_rows,
+                user_id,
+                is_privileged,
+                snippets=snippets,
+                page_state=page_state,
             )
-            ui.label(display_name).classes(
-                "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
-            )
-
-            placed = [r for r in owner_rows if r.activity_id is not None]
-            loose = [r for r in owner_rows if r.activity_id is None]
-
-            for row in placed:
-                render_workspace_entry(
-                    row, show_owner=False, snippets=snippets, page_state=page_state
-                )
-
-            if loose:
-                ui.label("Unsorted").classes(
-                    "text-xs font-medium mt-2 mb-1 ml-4 "
-                    "text-gray-400 navigator-unsorted-label"
-                )
-                for row in loose:
-                    render_workspace_entry(
-                        row,
-                        show_owner=False,
-                        snippets=snippets,
-                        page_state=page_state,
-                    )
 
 
 async def _render_simple_section(
@@ -127,9 +134,10 @@ async def _render_simple_section(
 ) -> None:
     """Render a non-shared_in_unit section."""
     display_name = SECTION_DISPLAY_NAMES.get(section_key, section_key)
+    testid = f"section-header-{section_key.replace('_', '-')}"
     ui.label(display_name).classes(
         "text-xl font-bold mt-6 mb-2 navigator-section-header"
-    )
+    ).props(f'data-testid="{testid}"')
 
     for row in section_rows:
         if section_key == "unstarted":
@@ -147,6 +155,19 @@ async def _render_simple_section(
             render_workspace_entry(row, snippets=snippets, page_state=page_state)
 
 
+async def _populate_course_cache(
+    rows: list[NavigatorRow],
+) -> dict[UUID, Course]:
+    """Build a course cache from shared_in_unit rows."""
+    cache: dict[UUID, Course] = {}
+    needed = {r.course_id for r in rows if r.course_id is not None}
+    for cid in needed:
+        course = await get_course_by_id(cid)
+        if course is not None:
+            cache[cid] = course
+    return cache
+
+
 async def render_sections(
     rows: list[NavigatorRow],
     user_id: UUID,
@@ -161,16 +182,8 @@ async def render_sections(
     Empty sections produce no output (AC1.7).
     """
     grouped = group_rows_by_section(rows)
-
-    course_cache: dict[UUID, Course] = {}
     shared_rows = grouped.get("shared_in_unit", [])
-    if shared_rows:
-        needed = {r.course_id for r in shared_rows if r.course_id is not None}
-        for cid in needed:
-            if cid not in course_cache:
-                course = await get_course_by_id(cid)
-                if course is not None:
-                    course_cache[cid] = course
+    course_cache = await _populate_course_cache(shared_rows) if shared_rows else {}
 
     for section_key in SECTION_ORDER:
         if section_key == "shared_in_unit":
@@ -234,6 +247,52 @@ def record_rendered_headers(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_course_name(
+    course_cache: dict[UUID, Course],
+    course_id: UUID,
+    fallback_rows: list[NavigatorRow],
+) -> str:
+    """Resolve display name for a course, with fallback to row data."""
+    course = course_cache.get(course_id)
+    if course:
+        return course.name
+    return fallback_rows[0].course_name or get_settings().i18n.unit_label
+
+
+def _append_owner_group_incremental(
+    owner_rows: list[NavigatorRow],
+    owner_key: tuple[UUID, UUID | None],
+    user_id: UUID,
+    is_privileged: bool,
+    page_state: PageState,
+) -> None:
+    """Append entries for one owner, rendering header/unsorted only if new."""
+    rendered_owners = page_state["rendered_owners"]
+    rendered_unsorted = page_state["rendered_unsorted"]
+
+    if owner_key not in rendered_owners:
+        display_name = _get_owner_display_name(owner_rows[0], user_id, is_privileged)
+        ui.label(display_name).classes(
+            "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
+        )
+        rendered_owners.add(owner_key)
+
+    placed = [r for r in owner_rows if r.activity_id is not None]
+    loose = [r for r in owner_rows if r.activity_id is None]
+
+    for row in placed:
+        render_workspace_entry(row, show_owner=False, page_state=page_state)
+    if loose:
+        if owner_key not in rendered_unsorted:
+            ui.label("Unsorted").classes(
+                "text-xs font-medium mt-2 mb-1 ml-4 "
+                "text-gray-400 navigator-unsorted-label"
+            )
+            rendered_unsorted.add(owner_key)
+        for row in loose:
+            render_workspace_entry(row, show_owner=False, page_state=page_state)
+
+
 async def _append_shared_in_unit(
     shared_rows: list[NavigatorRow],
     *,
@@ -244,8 +303,6 @@ async def _append_shared_in_unit(
 ) -> None:
     """Append shared_in_unit rows, adding course/owner headers as needed."""
     rendered_courses = page_state["rendered_courses"]
-    rendered_owners = page_state["rendered_owners"]
-    rendered_unsorted = page_state["rendered_unsorted"]
     course_cache: dict[UUID, Course] = page_state.get("course_cache", {})
 
     needed = {r.course_id for r in shared_rows if r.course_id is not None}
@@ -262,43 +319,20 @@ async def _append_shared_in_unit(
             continue
 
         if course_id not in rendered_courses:
-            course = course_cache.get(course_id)
-            course_name = (
-                course.name
-                if course
-                else course_rows[0].course_name or get_settings().i18n.unit_label
-            )
+            course_name = _resolve_course_name(course_cache, course_id, course_rows)
             ui.label(f"Shared in {course_name}").classes(
                 "text-xl font-bold mt-6 mb-2 navigator-section-header"
-            )
+            ).props('data-testid="section-header-shared-in-unit"')
             rendered_courses.add(course_id)
 
-        by_owner_groups = group_by_owner(course_rows)
-        for owner_id, owner_rows in by_owner_groups.items():
-            owner_key = (course_id, owner_id)
-            if owner_key not in rendered_owners:
-                display_name = _get_owner_display_name(
-                    owner_rows[0], user_id, is_privileged
-                )
-                ui.label(display_name).classes(
-                    "text-sm font-semibold mt-3 mb-1 ml-2 text-gray-600"
-                )
-                rendered_owners.add(owner_key)
-
-            placed = [r for r in owner_rows if r.activity_id is not None]
-            loose = [r for r in owner_rows if r.activity_id is None]
-
-            for row in placed:
-                render_workspace_entry(row, show_owner=False, page_state=page_state)
-            if loose:
-                if owner_key not in rendered_unsorted:
-                    ui.label("Unsorted").classes(
-                        "text-xs font-medium mt-2 mb-1 ml-4 "
-                        "text-gray-400 navigator-unsorted-label"
-                    )
-                    rendered_unsorted.add(owner_key)
-                for row in loose:
-                    render_workspace_entry(row, show_owner=False, page_state=page_state)
+        for owner_id, owner_rows in group_by_owner(course_rows).items():
+            _append_owner_group_incremental(
+                owner_rows,
+                (course_id, owner_id),
+                user_id,
+                is_privileged,
+                page_state,
+            )
 
 
 def _append_simple_section(
@@ -314,9 +348,10 @@ def _append_simple_section(
 
     if section_key not in rendered_sections:
         display_name = SECTION_DISPLAY_NAMES.get(section_key, section_key)
+        testid = f"section-header-{section_key.replace('_', '-')}"
         ui.label(display_name).classes(
             "text-xl font-bold mt-6 mb-2 navigator-section-header"
-        )
+        ).props(f'data-testid="{testid}"')
         rendered_sections.add(section_key)
 
     for row in section_rows:

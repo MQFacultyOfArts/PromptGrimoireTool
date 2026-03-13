@@ -79,21 +79,16 @@ def _fill_template_workspace(page: Page) -> None:
     Expects the page to be on a course detail page with an activity
     showing a "Create Template" button.
     """
-    page.get_by_role(
-        "button",
-        name=re.compile(r"Create Template|Edit Template"),
-    ).click()
+    page.locator('[data-testid^="template-btn-"]').first.click()
     page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=10000)
 
-    content_input = page.get_by_placeholder(
-        "Paste HTML content or type plain text here..."
-    )
+    content_input = page.get_by_test_id("content-editor").locator(".q-editor__content")
     content_input.wait_for(state="visible", timeout=5000)
     content_input.fill("Navigator test content for template workspace.")
 
-    page.get_by_role("button", name=re.compile(r"add document", re.IGNORECASE)).click()
+    page.get_by_test_id("add-document-btn").click()
 
-    confirm = page.get_by_role("button", name=re.compile(r"confirm", re.IGNORECASE))
+    confirm = page.get_by_test_id("confirm-content-type-btn")
     confirm.wait_for(state="visible", timeout=5000)
     confirm.click()
 
@@ -142,17 +137,21 @@ def _student_start_and_verify(
             student_page.goto(f"{app_server}/")
 
             # Wait for the true boundary: the "Unstarted Work" header is rendered
-            expect(student_page.get_by_text("Unstarted Work")).to_be_visible(
-                timeout=10000
-            )
+            expect(
+                student_page.get_by_test_id("section-header-unstarted")
+            ).to_be_visible(timeout=10000)
 
             header_texts = _get_section_header_texts(student_page)
             assert "Unstarted Work" in header_texts, (
                 f"Expected 'Unstarted Work', got: {header_texts}"
             )
 
-            activity_label = student_page.get_by_text(activity_title, exact=False)
-            expect(activity_label.first).to_be_visible(timeout=5000)
+            activity_card = (
+                student_page.locator('[data-testid^="start-activity-btn-"]')
+                .locator("xpath=ancestor::div[contains(@class, 'q-card')]")
+                .filter(has_text=activity_title)
+            )
+            expect(activity_card.first).to_be_visible(timeout=5000)
 
         with subtests.test(msg="start_navigates_to_annotation"):
             start_btn = student_page.locator(".navigator-start-btn").first
@@ -171,7 +170,9 @@ def _student_start_and_verify(
             student_page.goto(f"{app_server}/")
 
             # Wait for the true boundary: the "My Work" header is rendered
-            expect(student_page.get_by_text("My Work")).to_be_visible(timeout=10000)
+            expect(student_page.get_by_test_id("section-header-my-work")).to_be_visible(
+                timeout=10000
+            )
 
             header_texts = _get_section_header_texts(student_page)
             assert "My Work" in header_texts, (
@@ -356,7 +357,7 @@ def _search_subtests(
         _type_in_search(page, search_input, "ab")
         # To prove a negative (that the UI does *not* change), we must wait
         # longer than the debounce (500ms) + theoretical render time.
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1500)  # noqa: PG001 — proving a negative
 
         # Both workspaces should still be visible (no filtering)
         expect(ws_a).to_be_visible(timeout=3000)
@@ -671,7 +672,9 @@ class TestNavigator:
                 page.goto(f"{app_server}/")
 
                 # Wait for the true boundary: the "My Work" header is rendered
-                expect(page.get_by_text("My Work")).to_be_visible(timeout=15000)
+                expect(page.get_by_test_id("section-header-my-work")).to_be_visible(
+                    timeout=15000
+                )
 
                 header_texts = _get_section_header_texts(page)
                 assert "My Work" in header_texts, (
@@ -705,7 +708,9 @@ class TestNavigator:
             with subtests.test(msg="action_button_navigates"):
                 # AC2.2: clicking Resume/Open/View button navigates to workspace
                 page.goto(f"{app_server}/")
-                expect(page.get_by_text("My Work")).to_be_visible(timeout=15000)
+                expect(page.get_by_test_id("section-header-my-work")).to_be_visible(
+                    timeout=15000
+                )
 
                 action_btn = page.locator(".navigator-action-btn").first
                 expect(action_btn).to_be_visible(timeout=5000)
@@ -772,9 +777,9 @@ class TestNavigator:
 
             with subtests.test(msg="unstarted_section_renders"):
                 student_page.goto(f"{app_server}/")
-                expect(student_page.get_by_text("Unstarted Work")).to_be_visible(
-                    timeout=15000
-                )
+                expect(
+                    student_page.get_by_test_id("section-header-unstarted")
+                ).to_be_visible(timeout=15000)
 
                 header_texts = _get_section_header_texts(student_page)
                 assert "Unstarted Work" in header_texts, (
@@ -782,8 +787,12 @@ class TestNavigator:
                 )
 
             with subtests.test(msg="activity_title_visible"):
-                activity_label = student_page.get_by_text(activity_title, exact=False)
-                expect(activity_label.first).to_be_visible(timeout=5000)
+                activity_card = (
+                    student_page.locator('[data-testid^="start-activity-btn-"]')
+                    .locator("xpath=ancestor::div[contains(@class, 'q-card')]")
+                    .filter(has_text=activity_title)
+                )
+                expect(activity_card.first).to_be_visible(timeout=5000)
 
             with subtests.test(msg="start_button_visible"):
                 start_btn = student_page.locator(".navigator-start-btn")
@@ -1090,17 +1099,13 @@ class TestNavigator:
                 )
 
             with subtests.test(msg="scroll_loads_more"):
-                import time
-
-                start_time = time.time()
-                while True:
-                    _scroll_navigator(page, to="bottom")
-                    current_count = _count_workspace_entries(page)
-                    if current_count > initial_count:
-                        break
-                    if time.time() - start_time > 10:
-                        raise TimeoutError(f"Stuck at {initial_count} after scroll")
-                    page.wait_for_timeout(500)
+                _scroll_navigator(page, to="bottom")
+                page.wait_for_function(
+                    "(n) => document.querySelectorAll"
+                    "('[data-workspace-id]').length > n",
+                    arg=initial_count,
+                    timeout=10000,
+                )
 
             # --- AC5.5: no duplicate workspace IDs ---
             with subtests.test(msg="no_duplicate_entries"):
@@ -1116,17 +1121,20 @@ class TestNavigator:
             # --- AC5.5: scroll again to load remaining rows ---
             with subtests.test(msg="scroll_loads_all_rows"):
                 # Keep scrolling until all 60 rows are loaded
-                import time
-
-                start_time = time.time()
-                while True:
+                for _ in range(20):
                     _scroll_navigator(page, to="bottom")
-                    final_count = _count_workspace_entries(page)
-                    if final_count >= 60:
+                    try:
+                        page.wait_for_function(
+                            "() => document.querySelectorAll"
+                            "('[data-workspace-id]').length >= 60",
+                            timeout=2000,
+                        )
                         break
-                    if time.time() - start_time > 15:
-                        raise TimeoutError(f"Expected >=60, got {final_count}")
-                    page.wait_for_timeout(500)
+                    except Exception:  # noqa: S112
+                        continue
+                else:
+                    final = _count_workspace_entries(page)
+                    raise TimeoutError(f"Expected >=60, got {final}")
 
         finally:
             page.goto("about:blank")
@@ -1170,7 +1178,7 @@ class TestNavigator:
                 # Since we are testing that something does NOT happen, we cannot
                 # use `to_pass` to wait for a change. We explicitly wait 2 seconds
                 # to prove the negative.
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(2000)  # noqa: PG001 — proving a negative
 
                 after_count = _count_workspace_entries(page)
                 assert after_count == 10, (
@@ -1183,7 +1191,7 @@ class TestNavigator:
             context.close()
 
     @pytest.mark.skip(reason="Intermittent failure, needs investigation. See #235.")
-    def test_pagination_disabled_during_search(  # noqa: PLR0912, PLR0915
+    def test_pagination_disabled_during_search(
         self,
         browser: Browser,
         app_server: str,
@@ -1234,38 +1242,28 @@ class TestNavigator:
                 # in headless mode when many cards fill the scroll area.
                 _scroll_navigator(page, to="top")
 
-                import time
-
-                start_time = time.time()
-                while True:
-                    page.evaluate(
-                        "() => new Promise(resolve => requestAnimationFrame(resolve))"
-                    )
-                    search_input.focus()
-                    if search_input.evaluate("node => document.activeElement === node"):
-                        break
-                    if time.time() - start_time > 3:
-                        raise TimeoutError("Failed to focus search input")
-                    page.wait_for_timeout(200)
+                search_input.focus()
+                search_input.wait_for(state="visible", timeout=3000)
 
                 page.keyboard.type(marker, delay=30)
 
-                # Wait for debounce (500ms) + DB query + render boundary
-                start_time = time.time()
-                while True:
-                    count = _count_workspace_entries(page)
-                    if 0 < count <= 3:
-                        break
-                    if time.time() - start_time > 10:
-                        raise TimeoutError(f"Expected 1-3 results, got {count}")
-                    page.wait_for_timeout(500)
+                # Wait for debounce + DB query + render
+                page.wait_for_function(
+                    """() => {
+                        const n = document.querySelectorAll(
+                            '[data-workspace-id]'
+                        ).length;
+                        return n > 0 && n <= 3;
+                    }""",
+                    timeout=10000,
+                )
                 search_count = _count_workspace_entries(page)
 
             # --- Scroll during search does NOT load more ---
             with subtests.test(msg="scroll_during_search_no_load"):
                 _scroll_navigator(page, to="bottom")
                 # Wait to prove a negative (that the UI does *not* change).
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(2000)  # noqa: PG001 — proving a negative
 
                 after_scroll_count = _count_workspace_entries(page)
                 assert after_scroll_count == search_count, (
@@ -1281,17 +1279,12 @@ class TestNavigator:
                 page.keyboard.press("Control+a")
                 page.keyboard.press("Backspace")
 
-                # Wait for restore boundary (all generic + 3 marker entries = 60 total,
-                # meaning >=40 loaded)
-                start_time = time.time()
-                while True:
-                    count = _count_workspace_entries(page)
-                    if count >= 40:
-                        break
-                    if time.time() - start_time > 10:
-                        raise TimeoutError(f"Expected >=40, got {count}")
-                    page.wait_for_timeout(500)
-
+                # Wait for restore boundary (>=40 loaded)
+                page.wait_for_function(
+                    "() => document.querySelectorAll"
+                    "('[data-workspace-id]').length >= 40",
+                    timeout=10000,
+                )
                 restored_count = _count_workspace_entries(page)
                 assert restored_count <= 50, (
                     f"Expected restored view to show at most 50 (one page), "
@@ -1301,16 +1294,13 @@ class TestNavigator:
             # --- Scroll after clearing search loads more ---
             with subtests.test(msg="scroll_after_clear_loads_more"):
                 before_scroll = _count_workspace_entries(page)
-
-                start_time = time.time()
-                while True:
-                    _scroll_navigator(page, to="bottom")
-                    current = _count_workspace_entries(page)
-                    if current > before_scroll:
-                        break
-                    if time.time() - start_time > 15:
-                        raise TimeoutError(f"Still stuck at {before_scroll}")
-                    page.wait_for_timeout(500)
+                _scroll_navigator(page, to="bottom")
+                page.wait_for_function(
+                    "(n) => document.querySelectorAll"
+                    "('[data-workspace-id]').length > n",
+                    arg=before_scroll,
+                    timeout=15000,
+                )
                 after_scroll = _count_workspace_entries(page)
                 assert after_scroll > before_scroll, (
                     f"Expected more rows after scroll post-clear. "

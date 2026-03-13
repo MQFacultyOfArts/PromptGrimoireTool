@@ -201,7 +201,7 @@ class TestBulkEnrolUpload:
         _upload_xlsx(page, xlsx_bytes)
 
         # Wait for notification
-        notification = page.get_by_role("alert")
+        notification = page.get_by_role("alert")  # noqa: PG002 — Quasar notification toast
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("Enrolled")
 
@@ -219,7 +219,7 @@ class TestBulkEnrolUpload:
         )
         _upload_xlsx(page, xlsx_bytes)
 
-        notification = page.get_by_role("alert")
+        notification = page.get_by_role("alert")  # noqa: PG002 — Quasar notification toast
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("Missing required column")
 

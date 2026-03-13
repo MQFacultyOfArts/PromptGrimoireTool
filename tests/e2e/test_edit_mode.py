@@ -28,6 +28,7 @@ from playwright.sync_api import expect
 
 from promptgrimoire.docs.helpers import wait_for_text_walker
 from tests.e2e.conftest import _authenticate_page
+from tests.e2e.paste_helpers import simulate_paste
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -101,9 +102,7 @@ def edit_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
     """
     from uuid import uuid4
 
-    context = browser.new_context(
-        permissions=["clipboard-read", "clipboard-write"],
-    )
+    context = browser.new_context()
     page = context.new_page()
 
     unique_id = uuid4().hex[:8]
@@ -115,26 +114,13 @@ def edit_ready_page(browser: Browser, app_server: str) -> Generator[Page]:
     page.get_by_test_id("create-workspace-btn").click()
     page.wait_for_url(re.compile(r"workspace_id="))
 
-    # Paste HTML content to create a document
+    # Paste HTML content to create a document via synthetic paste event
     html_content = "<p>Editable document content for testing.</p>"
     editor = page.get_by_test_id("content-editor")
     expect(editor).to_be_visible(timeout=5000)
     editor.click()
 
-    page.evaluate(
-        """(html) => {
-            const plainText = html.replace(/<[^>]*>/g, '');
-            return navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([html], { type: 'text/html' }),
-                    'text/plain': new Blob([plainText], { type: 'text/plain' })
-                })
-            ]);
-        }""",
-        html_content,
-    )
-
-    page.keyboard.press("Control+v")
+    simulate_paste(page, html_content)
     expect(editor).to_contain_text("Content pasted", timeout=5000)
 
     page.get_by_test_id("add-document-btn").click()
@@ -274,25 +260,29 @@ class TestEditMode:
         2. Open Manage Documents dialog
         3. Verify no edit button is visible
         """
-        from promptgrimoire.docs.helpers import select_chars
+        from tests.e2e.highlight_tools import select_text_range, wait_for_css_highlight
 
         page = edit_ready_page
 
         with subtests.test(msg="create_highlight"):
-            # Select some text to create a highlight
-            select_chars(page, 0, 10)
+            # Select text to trigger the highlight menu
+            select_text_range(page, "Editable document")
 
-            # The highlight menu should appear — click the first tag
+            # No tags exist yet — use quick-create to make one and apply it
             highlight_menu = page.get_by_test_id("highlight-menu")
             expect(highlight_menu).to_be_visible(timeout=5000)
-            # Click the first tag button in the highlight menu
-            tag_btn = highlight_menu.locator("button").first
-            tag_btn.click()
-            # Wait for highlight to be created and dismiss any overlays
-            page.wait_for_timeout(1000)
-            # Click elsewhere to dismiss any lingering menus/dialogs
+            highlight_menu.get_by_test_id("highlight-menu-new-tag").click()
+
+            dialog = page.locator("[data-testid='tag-quick-create-dialog']")
+            expect(dialog).to_be_visible(timeout=5000)
+            dialog.get_by_test_id("tag-quick-create-name-input").fill("TestTag")
+            dialog.get_by_test_id("quick-create-save-btn").click()
+            expect(dialog).to_be_hidden(timeout=5000)
+
+            # Wait for highlight to be created
+            wait_for_css_highlight(page)
             page.keyboard.press("Escape")
-            page.wait_for_timeout(500)
+            expect(highlight_menu).not_to_be_visible(timeout=5000)
 
         with subtests.test(msg="no_edit_button"):
             manage_btn = page.get_by_test_id("manage-documents-btn")
@@ -367,8 +357,12 @@ class TestEditMode:
             expect(save_btn).not_to_be_visible(timeout=5000)
 
         with subtests.test(msg="paragraph_map_matches_saved_content"):
-            # Give the server a moment to flush the DB write
-            page.wait_for_timeout(500)
+            from promptgrimoire.input_pipeline import build_paragraph_map_for_json
+
+            # Wait for document view to refresh — proves the DB write is flushed
+            wait_for_text_walker(page, timeout=15000)
+            doc = page.get_by_test_id("doc-container")
+            expect(doc).to_contain_text("Second paragraph text", timeout=10000)
 
             db_state = _fetch_document_db_state(workspace_id)
             saved_content: str = db_state["content"]  # type: ignore[assignment]

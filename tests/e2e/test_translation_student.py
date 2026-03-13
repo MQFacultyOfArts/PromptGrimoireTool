@@ -248,7 +248,9 @@ class TestTranslationStudent:
             with subtests.test(msg="add_comment_with_uuid"):
                 comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
-                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=comment_uuid)
+                ).to_be_visible(timeout=10000)
 
         finally:
             page.close()
@@ -269,7 +271,7 @@ class TestTranslationStudent:
         comment_uuid = ""
         result = None
 
-        context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+        context = browser.new_context()
         page = context.new_page()
 
         try:
@@ -295,12 +297,16 @@ class TestTranslationStudent:
 
                 comment_uuid = uuid4().hex[:8]
                 _post_comment_on_first_card(page, comment_uuid)
-                expect(page.get_by_text(comment_uuid)).to_be_visible(timeout=10000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=comment_uuid)
+                ).to_be_visible(timeout=10000)
 
                 # Post a second comment with emoji to test #274
                 emoji_comment = f"Great work! \U0001f389 {uuid4().hex[:8]}"
                 add_comment_to_highlight(page, emoji_comment, card_index=0)
-                expect(page.get_by_text(emoji_comment)).to_be_visible(timeout=10000)
+                expect(
+                    page.get_by_test_id("comment").filter(has_text=emoji_comment)
+                ).to_be_visible(timeout=10000)
 
             with subtests.test(msg="export_pdf"):
                 try:
@@ -325,9 +331,9 @@ class TestTranslationStudent:
 
             with subtests.test(msg="export_emoji_gh274"):
                 # Emoji must survive the full pipeline (#274)
+                # AccSupp /ActualText makes emoji extractable from PDF
                 assert result is not None, "export_pdf subtest must run first"
-                if "\U0001f389" not in result:
-                    pytest.xfail("Emoji 🎉 not in export — #274 open")
+                assert "\U0001f389" in result, "Emoji 🎉 not found in export"
 
         finally:
             page.close()

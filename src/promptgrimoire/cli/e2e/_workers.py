@@ -112,7 +112,13 @@ async def _wait_for_server_ready(
 
 
 def _collect_playwright_artifacts(worker_dir: Path) -> None:
-    """Copy known Playwright artifact directories into *worker_dir* if present."""
+    """Copy known Playwright artifact directories into *worker_dir* if present.
+
+    Best-effort: failures are logged but never propagated.  The shared
+    ``tests/e2e/screenshots/`` directory is mutated by parallel workers
+    (e.g. ``test_para_screenshot.py``), so TOCTOU races on ``copytree``
+    are expected.
+    """
     playwright_dir = worker_dir / "playwright"
     known_paths = [
         Path("test-results"),
@@ -123,11 +129,18 @@ def _collect_playwright_artifacts(worker_dir: Path) -> None:
         if not source.exists():
             continue
         target = playwright_dir / source.name
-        if source.is_dir():
-            shutil.copytree(source, target, dirs_exist_ok=True)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+        try:
+            if source.is_dir():
+                shutil.copytree(source, target, dirs_exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        except shutil.Error:
+            # TOCTOU race: file listed then removed by another worker.
+            pass
+        except OSError:
+            # Permissions, disk full, etc. — don't mask test results.
+            pass
 
 
 async def _run_pytest_subprocess(

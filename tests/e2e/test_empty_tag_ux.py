@@ -101,13 +101,13 @@ class TestEmptyTagFloatingMenu:
 
                 # Verify "No tags available" is NOT present
                 menu = page.get_by_test_id("highlight-menu")
-                expect(menu.get_by_text("No tags available")).not_to_be_attached()
+                expect(menu.get_by_test_id("no-tags-label")).not_to_be_attached()
 
             with subtests.test(msg="ac3_1_tooltip_on_new_button"):
                 # AC3.1: Verify tooltip text on the "+ New" button
                 new_btn = page.get_by_test_id("highlight-menu-new-tag")
                 new_btn.hover()
-                tooltip = page.get_by_text(
+                tooltip = page.get_by_text(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "Create a new tag and apply it to your selection"
                 )
                 expect(tooltip).to_be_visible(timeout=5000)
@@ -123,7 +123,7 @@ class TestEmptyTagFloatingMenu:
                 dialog = page.get_by_test_id("tag-quick-create-dialog")
                 expect(dialog).to_be_visible(timeout=5000)
 
-                dialog.get_by_role("button", name="Cancel").click()
+                dialog.get_by_test_id("quick-create-cancel-btn").click()
 
                 dialog.wait_for(state="hidden", timeout=5000)
                 cards = page.locator("[data-testid='annotation-card']")
@@ -173,7 +173,7 @@ class TestEmptyTagFloatingMenu:
                 expect(dialog).to_be_visible(timeout=5000)
 
                 dialog.get_by_test_id("tag-quick-create-name-input").fill("TestTag")
-                dialog.get_by_role("button", name="Create").click()
+                dialog.get_by_test_id("quick-create-save-btn").click()
 
                 card = page.locator("[data-testid='annotation-card']").first
                 expect(card).to_be_visible(timeout=10000)
@@ -227,7 +227,7 @@ class TestEmptyTagNoPermission:
 
                 expect(menu).to_be_visible(timeout=5000)
 
-                no_tags_label = menu.get_by_text("No tags available")
+                no_tags_label = menu.get_by_test_id("no-tags-label")
                 expect(no_tags_label).to_be_visible(timeout=5000)
 
                 expect(
@@ -235,9 +235,9 @@ class TestEmptyTagNoPermission:
                 ).not_to_be_attached()
 
             with subtests.test(msg="ac1_4_tooltip_mentions_instructor"):
-                no_tags_label = menu.get_by_text("No tags available")
+                no_tags_label = menu.get_by_test_id("no-tags-label")
                 no_tags_label.hover()
-                tooltip = page.get_by_text("Ask your instructor")
+                tooltip = page.get_by_text("Ask your instructor")  # noqa: PG002 — Quasar tooltip, framework-generated
                 expect(tooltip).to_be_visible(timeout=5000)
 
         finally:
@@ -267,7 +267,7 @@ def _create_tag_via_toolbar(page: Page, tag_name: str) -> None:
     expect(dialog).to_be_visible(timeout=5000)
 
     dialog.get_by_test_id("tag-quick-create-name-input").fill(tag_name)
-    dialog.get_by_role("button", name="Create").click()
+    dialog.get_by_test_id("quick-create-save-btn").click()
 
     expect(dialog).to_be_hidden(timeout=5000)
 
@@ -426,7 +426,7 @@ class TestToolbarTooltips:
                 # AC3.2: Hover create button, verify tooltip
                 create_btn = page.get_by_test_id("tag-create-btn")
                 create_btn.hover()
-                tooltip = page.get_by_role(
+                tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Create a new tag for highlighting and annotating text",
                 )
@@ -436,7 +436,7 @@ class TestToolbarTooltips:
                 # AC3.3: Hover manage button, verify tooltip
                 # Move mouse away first to dismiss previous tooltip
                 page.mouse.move(0, 0)
-                prev_tooltip = page.get_by_role(
+                prev_tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Create a new tag for highlighting and annotating text",
                 )
@@ -444,7 +444,7 @@ class TestToolbarTooltips:
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()
-                tooltip = page.get_by_role(
+                tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Manage tags -- create, edit, reorder, and import tags",
                 )
@@ -480,7 +480,7 @@ class TestToolbarTooltips:
                 # AC3.2 at 5+: Hover create button
                 create_btn = page.get_by_test_id("tag-create-btn")
                 create_btn.hover()
-                tooltip = page.get_by_role(
+                tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Create a new tag for highlighting and annotating text",
                 )
@@ -489,7 +489,7 @@ class TestToolbarTooltips:
             with subtests.test(msg="ac3_3_manage_tooltip_at_five_plus"):
                 # AC3.3 at 5+: Hover manage button
                 page.mouse.move(0, 0)
-                prev_tooltip = page.get_by_role(
+                prev_tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Create a new tag for highlighting and annotating text",
                 )
@@ -497,7 +497,7 @@ class TestToolbarTooltips:
 
                 manage_btn = page.get_by_test_id("tag-settings-btn")
                 manage_btn.hover()
-                tooltip = page.get_by_role(
+                tooltip = page.get_by_role(  # noqa: PG002 — Quasar tooltip, framework-generated
                     "tooltip",
                     name="Manage tags -- create, edit, reorder, and import tags",
                 )

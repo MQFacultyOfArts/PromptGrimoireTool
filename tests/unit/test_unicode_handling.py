@@ -83,12 +83,14 @@ class TestEscapeUnicodeLaTeX:
         # All should be wrapped (language-agnostic for now)
         assert "\\cjktext{" in result
 
-    def test_emoji_passed_through_raw(self) -> None:
-        """Emoji passes through raw without \\emoji{} command."""
+    def test_emoji_wrapped_with_accsupp(self) -> None:
+        """Emoji wrapped in AccSupp for PDF /ActualText extraction (#274)."""
         from promptgrimoire.export.unicode_latex import escape_unicode_latex
 
         result = escape_unicode_latex("Test 🎉!")
-        assert result == "Test 🎉!"
+        assert r"\BeginAccSupp{ActualText={🎉}}" in result
+        assert r"\EndAccSupp{}" in result
+        assert "🎉" in result  # raw emoji still present
 
     def test_pure_ascii_unchanged(self) -> None:
         """Pure ASCII without special chars passes through."""

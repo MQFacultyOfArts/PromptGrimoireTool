@@ -331,19 +331,36 @@ This prevents complexity from accumulating silently across phases.
 
 ## Pre-PR Gate
 
-Before raising a PR, **both** test suites must pass:
+Before raising a PR or merging to main, **all three** test suites must pass:
 
 ```bash
 # Full unit + integration suite
 uv run grimoire test all
 
-# Full E2E suite (starts server)
+# Full E2E suite (Chromium + Firefox lanes)
 uv run grimoire e2e all
+
+# Firefox-specific E2E suite (cross-browser verification)
+uv run grimoire e2e firefox
 ```
 
-Do not raise a PR with either suite failing. If E2E tests fail on unrelated issues, document them explicitly in the PR description.
+Do not raise a PR with any suite failing. If E2E tests fail on unrelated issues, document them explicitly in the PR description.
 
-YOU MUST PRESENT THE RESULTS OF e2e all and test all to the user before making the PR.
+YOU MUST PRESENT THE RESULTS OF `test all`, `e2e all`, AND `e2e firefox` to the user before making the PR.
+
+### Documentation Gate
+
+After tests pass, build and verify documentation:
+
+```bash
+uv run grimoire docs build
+```
+
+Documentation requirements:
+1. **User guide updated** — Any new or changed user-facing behaviour must be reflected in the relevant guide script(s) under `src/promptgrimoire/docs/scripts/` (at minimum `using_promptgrimoire.py`)
+2. **Feature assertions cite tests** — Claims about what a feature does must reference the test(s) that verify the behaviour
+3. **Screenshots for UI features** — UI elements and workflows should have screenshots where applicable
+4. **All UI elements have `data-testid`** — Every interactable element created or modified must have a `data-testid` attribute (enforced in code review, verified by E2E tests)
 
 ## Review Criteria
 
@@ -355,6 +372,9 @@ Code review will check:
 - [ ] All interactable elements have `data-testid` attributes
 - [ ] E2E tests use `get_by_test_id()` — no text/role/CSS locators
 - [ ] UAT steps provided and testable
+- [ ] User-facing docs updated (`using_promptgrimoire.py` at minimum)
+- [ ] `uv run grimoire docs build` succeeds
+- [ ] Feature assertions in docs cite backing tests
 - [ ] Specific files staged (not `git add .`)
 - [ ] Conventional commit message
 - [ ] Type hints on all functions

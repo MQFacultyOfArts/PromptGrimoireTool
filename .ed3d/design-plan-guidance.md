@@ -73,6 +73,21 @@ PromptGrimoire is a **metacognition platform** for process management and reflec
 - `phase:mvp` - Must ship for Feb 23
 - `phase:post-mvp` - Nice to have, after launch
 
+## Mandatory Documentation Phase
+
+Every design plan MUST include a documentation update phase. This is not optional — features that ship without updated docs are incomplete.
+
+### Minimum Requirements
+
+1. **Update user-facing guide** — `src/promptgrimoire/docs/scripts/using_promptgrimoire.py` (or relevant guide script) must reflect any new or changed user-facing behaviour
+2. **Verify docs build** — `uv run grimoire docs build` must succeed after updates
+3. **Citation backing** — Any feature assertions in documentation must cite the test(s) that verify them
+4. **Screenshots** — UI-facing features should include screenshots in the documentation where applicable
+
+### Where This Phase Goes
+
+Add a documentation phase as the **final phase before PR** in every design plan. It runs after implementation and testing are complete, so the docs accurately reflect what was built.
+
 ## Scope Defaults
 
 **Typically IN scope:**

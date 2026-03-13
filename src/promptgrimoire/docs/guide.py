@@ -90,9 +90,23 @@ class Guide:
         md_path.write_text("\n".join(self._buffer))
         return False
 
-    def step(self, heading: str) -> Step:
-        """Create a ``Step`` context manager bound to this guide."""
-        return Step(self, heading)
+    def section(self, heading: str) -> None:
+        """Emit a ``## section`` heading for grouping steps."""
+        self._append(f"## {heading}\n")
+
+    def step(self, heading: str, *, level: int = 2, text_only: bool = False) -> Step:
+        """Create a ``Step`` context manager bound to this guide.
+
+        When ``text_only=True``, the step will NOT auto-capture a
+        screenshot on exit.  Use this for entries that contain only
+        narrative text and no browser interaction.
+        """
+        return Step(self, heading, level=level, text_only=text_only)
+
+    def subheading(self, heading: str, *, level: int = 3) -> None:
+        """Emit a sub-heading within a step (default ``###``)."""
+        prefix = "#" * level
+        self._append(f"{prefix} {heading}\n")
 
     def _append(self, line: str) -> None:
         """Append a line to the internal markdown buffer."""
@@ -148,22 +162,32 @@ class Guide:
 class Step:
     """Context manager for a guide step.
 
-    On entry, appends a ``## heading`` to the guide's buffer.
-    On exit (if no exception and no explicit screenshot was taken),
-    auto-captures a screenshot.  Steps with explicit screenshots
-    skip the auto-capture to avoid redundant images.
-    Returns the parent ``Guide`` from ``__enter__`` so callers can
-    use ``with guide.step("...") as g:`` and call ``g.note()``,
-    etc.
+    On entry, appends a heading to the guide's buffer at the
+    configured ``level`` (default ``##``).  On exit (if no exception
+    and no explicit screenshot was taken), auto-captures a screenshot.
+    Steps with explicit screenshots skip the auto-capture to avoid
+    redundant images.  Returns the parent ``Guide`` from ``__enter__``
+    so callers can use ``with guide.step("...") as g:`` and call
+    ``g.note()``, etc.
     """
 
-    def __init__(self, guide: Guide, heading: str) -> None:
+    def __init__(
+        self,
+        guide: Guide,
+        heading: str,
+        *,
+        level: int = 2,
+        text_only: bool = False,
+    ) -> None:
         self._guide = guide
         self._heading = heading
+        self._level = level
+        self._text_only = text_only
         self._screenshot_count_at_entry: int = 0
 
     def __enter__(self) -> Guide:
-        self._guide._append(f"## {self._heading}\n")
+        prefix = "#" * self._level
+        self._guide._append(f"{prefix} {self._heading}\n")
         self._screenshot_count_at_entry = self._guide._screenshot_counter
         return self._guide
 
@@ -175,9 +199,10 @@ class Step:
     ) -> bool:
         if (
             exc_type is None
+            and not self._text_only
             and self._guide._screenshot_counter == self._screenshot_count_at_entry
         ):
             # Auto-capture only if no explicit screenshot was
-            # taken during this step.
+            # taken during this step and step is not text-only.
             self._guide.screenshot(caption=self._heading)
         return False

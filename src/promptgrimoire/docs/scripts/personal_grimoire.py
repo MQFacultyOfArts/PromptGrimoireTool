@@ -10,7 +10,6 @@ highlighted screenshots.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +20,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from promptgrimoire.docs import Guide
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
+from promptgrimoire.docs.seed import seed_user_and_enrol
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -63,27 +63,7 @@ def _authenticate(page: Page, base_url: str, email: str) -> None:
 
 def _setup_loose_student() -> None:
     """Create the loose-student user and enrol in UNIT1234."""
-    for cmd in [
-        [
-            "uv",
-            "run",
-            "manage-users",
-            "create",
-            "loose-student@test.example.edu.au",
-            "--name",
-            "Loose Student",
-        ],
-        [
-            "uv",
-            "run",
-            "manage-users",
-            "enroll",
-            "loose-student@test.example.edu.au",
-            "UNIT1234",
-            "S1 2026",
-        ],
-    ]:
-        subprocess.run(cmd, capture_output=True, check=False)
+    seed_user_and_enrol("loose-student@test.example.edu.au", "Loose Student")
 
 
 def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
@@ -355,8 +335,10 @@ def _section_annotate(page: Page, guide: Guide) -> None:
             "annotation. The highlight appears in the sidebar."
         )
 
-        # Add a comment
+        # Expand card detail (collapsed by default) to reveal comment input
         card = page.locator("[data-testid='annotation-card']").first
+        card.get_by_test_id("card-expand-btn").click()
+        card.get_by_test_id("card-detail").wait_for(state="visible", timeout=5000)
         comment_input = card.get_by_test_id("comment-input")
         comment_input.fill(
             "The AI assumes 'good faith' is a direct equivalent, "
@@ -402,7 +384,7 @@ def _section_organise(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
-        g._append("### Viewing Your Tags\n")
+        g.subheading("Viewing Your Tags")
         g.screenshot(
             "Organise tab showing highlights grouped by your tags",
             highlight=["organise-columns"],
@@ -413,14 +395,14 @@ def _section_organise(page: Page, guide: Guide) -> None:
             "lens for seeing patterns across the conversation."
         )
 
-        g._append("### Reordering Within a Column\n")
+        g.subheading("Reordering Within a Column")
         g.note(
             "Drag highlights up and down within a column to group "
             "related passages together. This lets you build clusters "
             "of evidence before writing your response."
         )
 
-        g._append("### Moving Between Columns\n")
+        g.subheading("Moving Between Columns")
         g.note(
             "Drag a highlight from one column to another to reclassify "
             "it under a different tag. As your analysis develops, you "
@@ -453,7 +435,7 @@ def _section_respond(page: Page, guide: Guide) -> None:
         )
         page.wait_for_timeout(1000)
 
-        g._append("### Writing Your Response\n")
+        g.subheading("Writing Your Response")
         g.screenshot(
             "Respond tab with reference panel and markdown editor",
             highlight=["respond-reference-panel", "milkdown-editor-container"],
@@ -491,7 +473,7 @@ def _section_respond(page: Page, guide: Guide) -> None:
             "[Markdown Guide](https://www.markdownguide.org/basic-syntax/)."
         )
 
-        g._append("### Locating Source Text\n")
+        g.subheading("Locating Source Text")
 
         # Use the locate button to jump back to the highlight
         locate_btn = page.get_by_test_id("respond-locate-btn").first

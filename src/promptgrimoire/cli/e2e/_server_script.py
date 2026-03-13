@@ -18,6 +18,9 @@ os.environ["APP__STORAGE_SECRET"] = "test-secret-for-e2e"
 os.environ.setdefault("STYTCH__DEFAULT_ORG_ID", "mock-org-test")
 os.environ.setdefault("STYTCH__SSO_CONNECTION_ID", "test-sso-connection-id")
 os.environ.setdefault("STYTCH__PUBLIC_TOKEN", "test-public-token")
+# Enable help button in mkdocs mode for E2E tests (no Algolia credentials needed)
+os.environ.setdefault("HELP__HELP_ENABLED", "true")
+os.environ.setdefault("HELP__HELP_BACKEND", "mkdocs")
 
 port = int(sys.argv[1])
 

@@ -1,8 +1,8 @@
 """Tests for the docs screenshot module.
 
 Verifies:
-- docs-platform-208.AC2.1: CSS injection adds outline to data-testid elements
-- docs-platform-208.AC2.2: Injected style element is removed after capture
+- docs-platform-208.AC2.1: DOM overlay injection for data-testid elements
+- docs-platform-208.AC2.2: Injected overlay elements are removed after capture
 - docs-platform-208.AC2.3: Multiple elements highlighted simultaneously
 - docs-platform-208.AC2.4: Highlighting non-existent data-testid is a no-op
 - docs-platform-208.AC3.1: Pillow-based trimming removes empty margins
@@ -111,63 +111,61 @@ class TestTrimWhitespace:
 
 
 # ===========================================================================
-# AC2: CSS highlight injection
+# AC2: DOM overlay highlight injection
 # ===========================================================================
 
 
 class TestHighlightElements:
     """Tests for highlight_elements() and remove_highlight()."""
 
-    def test_injects_css_for_test_ids(self) -> None:
-        """AC2.1: CSS injection adds outline to data-testid elements."""
+    def test_injects_overlay_for_test_ids(self) -> None:
+        """AC2.1: evaluate() is called to create overlay divs for each testid."""
         mock_page = MagicMock()
-        mock_handle = MagicMock()
-        mock_page.add_style_tag.return_value = mock_handle
 
         result = highlight_elements(mock_page, ["btn-save", "input-name"])
 
-        mock_page.add_style_tag.assert_called_once()
-        content = mock_page.add_style_tag.call_args.kwargs["content"]
-
-        assert '[data-testid="btn-save"]' in content
-        assert '[data-testid="input-name"]' in content
-        assert "outline" in content
-        assert result is mock_handle
+        # One evaluate() call per testid
+        assert mock_page.evaluate.call_count == 2
+        # First call uses prefix selector for btn-save
+        first_args = mock_page.evaluate.call_args_list[0]
+        assert '[data-testid^="btn-save"]' in first_args[0][1][0]
+        # Second call uses prefix selector for input-name
+        second_args = mock_page.evaluate.call_args_list[1]
+        assert '[data-testid^="input-name"]' in second_args[0][1][0]
+        # Returns overlay IDs
+        assert result == ["_hl_btn-save", "_hl_input-name"]
 
     def test_remove_highlight_calls_evaluate(self) -> None:
-        """AC2.2: Injected style element is removed after capture."""
+        """AC2.2: Overlay elements are removed via querySelectorAll."""
         mock_page = MagicMock()
-        mock_handle = MagicMock()
 
-        remove_highlight(mock_page, mock_handle)
+        remove_highlight(mock_page, ["_hl_btn-save"])
 
-        mock_page.evaluate.assert_called_once_with("el => el.remove()", mock_handle)
+        mock_page.evaluate.assert_called_once()
+        js_code = mock_page.evaluate.call_args[0][0]
+        assert "__doc_highlight__" in js_code
 
     def test_multiple_elements_highlighted(self) -> None:
         """AC2.3: Multiple elements can be highlighted simultaneously."""
         mock_page = MagicMock()
-        mock_page.add_style_tag.return_value = MagicMock()
 
-        highlight_elements(mock_page, ["a", "b", "c"])
+        result = highlight_elements(mock_page, ["a", "b", "c"])
 
-        # Single style tag call (all selectors in one CSS block)
-        mock_page.add_style_tag.assert_called_once()
-        content = mock_page.add_style_tag.call_args.kwargs["content"]
-        assert '[data-testid="a"]' in content
-        assert '[data-testid="b"]' in content
-        assert '[data-testid="c"]' in content
+        # One evaluate() call per testid
+        assert mock_page.evaluate.call_count == 3
+        assert result == ["_hl_a", "_hl_b", "_hl_c"]
 
     def test_empty_test_ids_returns_none(self) -> None:
-        """AC2.4: Highlighting with empty test_ids does not inject CSS."""
+        """AC2.4: Highlighting with empty test_ids does not inject anything."""
         mock_page = MagicMock()
 
         result = highlight_elements(mock_page, [])
 
-        mock_page.add_style_tag.assert_not_called()
+        mock_page.evaluate.assert_not_called()
         assert result is None
 
     def test_remove_highlight_none_handle_is_noop(self) -> None:
-        """AC2.4: remove_highlight with None handle is a no-op."""
+        """AC2.4: remove_highlight with None overlay_ids is a no-op."""
         mock_page = MagicMock()
 
         remove_highlight(mock_page, None)
@@ -204,16 +202,15 @@ class TestCaptureScreenshot:
         test_png = _make_png_no_margins()
         mock_page = MagicMock()
         mock_page.screenshot.return_value = test_png
-        mock_handle = MagicMock()
-        mock_page.add_style_tag.return_value = mock_handle
 
         out = tmp_path / "shot.png"
         capture_screenshot(mock_page, out, highlight=["btn-1"])
 
-        # Style was injected
-        mock_page.add_style_tag.assert_called_once()
-        # Style was removed
-        mock_page.evaluate.assert_called_once_with("el => el.remove()", mock_handle)
+        # evaluate() called: once for highlight injection, once for removal
+        assert mock_page.evaluate.call_count == 2
+        # Last call is the removal (querySelectorAll __doc_highlight__)
+        removal_js = mock_page.evaluate.call_args_list[-1][0][0]
+        assert "__doc_highlight__" in removal_js
 
     def test_capture_with_focus_uses_locator(self, tmp_path: Path) -> None:
         """Focus capture uses page.get_by_test_id().screenshot()."""

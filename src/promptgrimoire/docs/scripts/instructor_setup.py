@@ -9,14 +9,14 @@ narrative markdown with highlighted screenshots.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from promptgrimoire.docs import Guide
+from promptgrimoire.docs.seed import seed_user_and_enrol
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
-
-from promptgrimoire.docs import Guide
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -27,114 +27,9 @@ def _authenticate(page: Page, base_url: str, email: str) -> None:
     page.wait_for_url(lambda url: "/auth/callback" not in url, timeout=10000)
 
 
-def _enrol_instructor() -> None:
-    """Enrol the instructor in the course via manage-users CLI.
-
-    The navigator's 'Start' button only appears for activities in
-    enrolled courses, so the instructor must be enrolled before
-    navigating to the annotation page.
-    """
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "manage-users",
-            "enroll",
-            "instructor@uni.edu",
-            "UNIT1234",
-            "S1 2026",
-        ],
-        capture_output=True,
-        check=False,
-    )
-
-
-_SEED_TEMPLATE_TAGS_SCRIPT = """\
-import asyncio
-from sqlmodel import select
-from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.models import (
-    Activity, Course, Tag, TagGroup, Week, Workspace,
-)
-
-async def main():
-    async with get_session() as s:
-        c = (await s.exec(
-            select(Course).where(
-                Course.code == "{code}",
-                Course.semester == "{semester}",
-            )
-        )).first()
-        if not c:
-            return
-        a = (await s.exec(
-            select(Activity).join(Week).where(Week.course_id == c.id)
-        )).first()
-        if not a:
-            return
-        wid = a.template_workspace_id
-        if (await s.exec(select(TagGroup).where(TagGroup.workspace_id == wid))).first():
-            return
-        g = TagGroup(workspace_id=wid, name="Translation Analysis",
-                     color="#4a90d9", order_index=0)
-        s.add(g)
-        await s.flush()
-        tags = [("Source Text Features", "#1f77b4"),
-                ("Translation Strategy", "#2ca02c"),
-                ("Cultural Adaptation", "#d62728")]
-        for i, (n, cl) in enumerate(tags):
-            s.add(Tag(workspace_id=wid, group_id=g.id, name=n,
-                      color=cl, locked=False, order_index=i))
-        await s.flush()
-        w = await s.get(Workspace, wid)
-        if w:
-            w.next_tag_order = len(tags)
-            w.next_group_order = 1
-            s.add(w)
-            await s.flush()
-
-asyncio.run(main())
-"""
-
-
-def _seed_template_tags(course_code: str, semester: str) -> None:
-    """Seed tags into the activity's template workspace via DB.
-
-    Runs in a separate subprocess because the NiceGUI server already
-    owns the event loop — ``asyncio.run()`` cannot be called from a
-    running loop. The bash script used the same subprocess pattern.
-    """
-    script = _SEED_TEMPLATE_TAGS_SCRIPT.format(code=course_code, semester=semester)
-    subprocess.run(
-        ["uv", "run", "python", "-c", script],
-        capture_output=True,
-        check=False,
-    )
-
-
 def _create_demo_student() -> None:
     """Create and enrol a demo student for the student view step."""
-    for cmd in [
-        [
-            "uv",
-            "run",
-            "manage-users",
-            "create",
-            "student-demo@test.example.edu.au",
-            "--name",
-            "Demo Student",
-        ],
-        [
-            "uv",
-            "run",
-            "manage-users",
-            "enroll",
-            "student-demo@test.example.edu.au",
-            "UNIT1234",
-            "S1 2026",
-        ],
-    ]:
-        subprocess.run(cmd, capture_output=True, check=False)
+    seed_user_and_enrol("student-demo@test.example.edu.au", "Demo Student")
 
 
 # ---------------------------------------------------------------------------
@@ -215,25 +110,32 @@ def _step_create_activity(page: Page, guide: Guide) -> None:
         page.wait_for_url(re.compile(r"/courses/[0-9a-f-]+$"), timeout=10000)
 
 
-def _step_configure_tags(page: Page, base_url: str, guide: Guide) -> None:
-    """Step 5: Open annotation workspace, create tag group and tags."""
-    with guide.step("Step 5: Configuring Tags") as g:
+def _step_configure_tags(page: Page, course_url: str, guide: Guide) -> None:
+    """Step 5: Open template workspace via Unit Settings and configure tags."""
+    with guide.step("Step 5: Configuring Tags in the Template") as g:
         g.note(
-            "Tags help students categorise their annotations. "
-            "Configure tag groups and tags for the activity."
+            "Each activity has a **template workspace** (shown with a purple chip) "
+            "that holds the canonical tag configuration. When students start the "
+            "activity, they receive a cloned **instance workspace** (blue chip) "
+            "that inherits the template's tags.\n\n"
+            "Navigate to Unit Settings and click the template button to open "
+            "the template workspace directly."
         )
 
-        # Enrol instructor so navigator shows Start button
-        _enrol_instructor()
-
-        # Navigate home and start the activity to create a workspace
-        page.goto(base_url)
+        # Navigate to Unit Settings (course detail page)
+        page.goto(course_url)
         page.wait_for_timeout(2000)
-        start_btn = page.locator('[data-testid^="start-activity-btn"]')
-        start_btn.first.wait_for(state="visible", timeout=10000)
-        start_btn.first.click()
 
-        # Wait for annotation page
+        # Click the template button for the activity
+        template_btn = page.locator('[data-testid^="template-btn-"]').first
+        template_btn.wait_for(state="visible", timeout=10000)
+        g.screenshot(
+            "Unit Settings page showing the template button for the activity",
+            highlight=["template-btn"],
+        )
+        template_btn.click()
+
+        # Wait for annotation page (template workspace)
         page.wait_for_url(re.compile(r"/annotation\?workspace_id="), timeout=15000)
 
         _add_sample_content(page)
@@ -242,9 +144,6 @@ def _step_configure_tags(page: Page, base_url: str, guide: Guide) -> None:
         # Close tag management dialog
         page.get_by_test_id("tag-management-done-btn").click()
         page.wait_for_timeout(1000)
-
-        # Seed tags into template workspace for student inheritance
-        _seed_template_tags("UNIT1234", "S1 2026")
 
 
 def _step_enrol_student(page: Page, course_url: str, guide: Guide) -> None:
@@ -371,7 +270,7 @@ def run_instructor_guide(page: Page, base_url: str) -> None:
         course_url = _step_create_unit(page, base_url, guide)
         _step_add_week(page, guide)
         _step_create_activity(page, guide)
-        _step_configure_tags(page, base_url, guide)
+        _step_configure_tags(page, course_url, guide)
 
         # Step 6: Enrollment UI
         _step_enrol_student(page, course_url, guide)

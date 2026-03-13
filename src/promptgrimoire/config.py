@@ -12,6 +12,7 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, Self
 
 from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -107,6 +108,41 @@ class DevConfig(BaseModel):
     database_echo: bool = False
     test_database_url: str | None = None
     branch_db_suffix: bool = True
+
+
+class HelpConfig(BaseModel):
+    """In-app help button and search configuration.
+
+    Controls whether a help button renders in the application header
+    and which search backend powers it.
+    """
+
+    help_enabled: bool = False
+    help_backend: Literal["algolia", "mkdocs"] = "mkdocs"
+    docs_url: str = "https://mqfacultyofarts.github.io/PromptGrimoireTool/"
+    algolia_app_id: str = ""
+    algolia_search_api_key: str = ""
+    algolia_index_name: str = ""
+
+    @model_validator(mode="after")
+    def _validate_algolia_credentials(self) -> Self:
+        """Require Algolia credentials when Algolia backend is enabled."""
+        if self.help_enabled and self.help_backend == "algolia":
+            missing = []
+            if not self.algolia_app_id:
+                missing.append("algolia_app_id")
+            if not self.algolia_search_api_key:
+                missing.append("algolia_search_api_key")
+            if not self.algolia_index_name:
+                missing.append("algolia_index_name")
+            if missing:
+                msg = (
+                    f"Algolia backend requires: {', '.join(missing)}. "
+                    "Set HELP__ALGOLIA_APP_ID, HELP__ALGOLIA_SEARCH_API_KEY, "
+                    "and HELP__ALGOLIA_INDEX_NAME environment variables."
+                )
+                raise ValueError(msg)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +275,7 @@ class Settings(BaseSettings):
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()
     browserstack: BrowserstackConfig = BrowserstackConfig()
+    help: HelpConfig = HelpConfig()
 
     @model_validator(mode="after")
     def _apply_branch_db_suffix(self) -> Settings:

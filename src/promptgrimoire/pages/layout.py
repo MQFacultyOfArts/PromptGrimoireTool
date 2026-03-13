@@ -5,6 +5,7 @@ Provides consistent header, navigation drawer, and page structure.
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,8 @@ from promptgrimoire.pages.registry import get_pages_by_category
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from promptgrimoire.config import HelpConfig
 
 
 def _get_session_user() -> dict | None:
@@ -125,12 +128,85 @@ def _render_nav_drawer(user: dict | None, drawer_open: bool) -> ui.left_drawer:
     return drawer
 
 
+def _render_algolia_help(help_config: HelpConfig) -> None:
+    """Render help button that opens DocSearch modal."""
+    ui.add_head_html(
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@docsearch/css@4" />'
+    )
+    ui.add_head_html(
+        '<script src="https://cdn.jsdelivr.net/npm/@docsearch/js@4"></script>'
+    )
+
+    ui.html('<div id="docsearch-container" style="display:none"></div>')
+
+    ui.add_head_html(f"""<script>
+    document.addEventListener('DOMContentLoaded', function() {{
+        if (typeof docsearch !== 'undefined') {{
+            docsearch({{
+                container: '#docsearch-container',
+                appId: {json.dumps(help_config.algolia_app_id)},
+                indexName: {json.dumps(help_config.algolia_index_name)},
+                apiKey: {json.dumps(help_config.algolia_search_api_key)},
+            }});
+        }}
+    }});
+    </script>""")
+
+    ui.button(
+        icon="help_outline",
+        on_click=lambda: ui.run_javascript(
+            "document.dispatchEvent("
+            "new KeyboardEvent('keydown', "
+            "{key: 'k', metaKey: true, ctrlKey: true}))"
+        ),
+    ).props('flat color=white data-testid="help-btn"').tooltip("Search help")
+
+
+def _render_mkdocs_help() -> None:
+    """Render help button that opens docs site in an iframe dialog."""
+    docs_url = get_settings().help.docs_url
+
+    with ui.dialog() as help_dialog, ui.card().classes("w-full max-w-4xl h-[80vh]"):
+        with ui.row().classes("w-full justify-between items-center q-pb-sm"):
+            ui.label("Help").classes("text-h6")
+            ui.button(
+                icon="open_in_new",
+                on_click=lambda url=docs_url: ui.navigate.to(url, new_tab=True),
+            ).props("flat dense").tooltip("Open in new tab")
+        ui.element("iframe").props(f'src="{docs_url}" frameborder="0"').classes(
+            "w-full flex-grow"
+        ).style("height: calc(80vh - 60px)")
+
+    ui.button(
+        icon="help_outline",
+        on_click=help_dialog.open,
+    ).props('flat color=white data-testid="help-btn"').tooltip("Help documentation")
+
+
+def _render_help_button() -> None:
+    """Render help button in header if help is enabled.
+
+    With ``help_backend="algolia"``, injects DocSearch CDN assets and
+    opens the DocSearch modal on click. With ``help_backend="mkdocs"``,
+    opens the docs site in a new tab.
+    """
+    help_config = get_settings().help
+    if not help_config.help_enabled:
+        return
+
+    if help_config.help_backend == "algolia":
+        _render_algolia_help(help_config)
+    else:
+        _render_mkdocs_help()
+
+
 def _render_header(title: str, user: dict | None) -> ui.button:
     """Build the header bar. Returns the menu button for drawer wiring."""
     with ui.header().classes("bg-primary items-center q-py-xs"):
         menu_btn = ui.button(icon="menu").props("flat color=white")
         ui.label(title).classes("text-h6 text-white q-ml-sm")
         ui.element("div").classes("flex-grow")
+        _render_help_button()
         if user:
             ui.label(user.get("email", "")).classes("text-white text-body2 q-mr-md")
             ui.button(icon="logout", on_click=lambda: ui.navigate.to("/logout")).props(

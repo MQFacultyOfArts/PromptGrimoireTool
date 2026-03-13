@@ -20,6 +20,7 @@ All configuration is managed through `src/promptgrimoire/config.py` using pydant
 | `FEATURES__` | `FeaturesConfig` | `enable_roleplay`, `enable_file_upload`, `enable_multi_document` |
 | `DEV__` | `DevConfig` | `auth_mock`, `enable_demo_pages`, `database_echo`, `test_database_url`, `branch_db_suffix` |
 | `STYTCH__` | `StytchConfig` | `project_id`, `secret`, `public_token`, `default_org_id`, `sso_connection_id` |
+| `HELP__` | `HelpConfig` | `help_enabled`, `help_backend`, `algolia_app_id`, `algolia_search_api_key`, `algolia_index_name` |
 
 ## Environment Variables
 

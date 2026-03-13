@@ -153,6 +153,11 @@ if os.environ.get("E2E_SKIP_LATEXMK", "1") == "1":
 from nicegui import app, ui
 import promptgrimoire.pages  # noqa: F401
 
+# BrowserStack Local tunnel doesn't reliably forward WebSocket upgrades.
+# Force polling-only transport so Socket.IO connects through HTTP.
+if os.environ.get("E2E_BROWSERSTACK"):
+    app.config.socket_io_js_transports = ["polling"]
+
 from promptgrimoire import __file__ as _pg_init
 
 _static_dir = Path(_pg_init).parent / "static"

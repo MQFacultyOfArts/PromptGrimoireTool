@@ -238,6 +238,8 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "cli" / "docs.py",
     # E2E runner sets env vars for subprocess coordination (not config reading)
     _SRC_DIR / "cli" / "e2e" / "__init__.py",
+    # BrowserStack runner sets E2E_BROWSERSTACK before spawning server subprocess
+    _SRC_DIR / "cli" / "e2e" / "_browserstack.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
 }

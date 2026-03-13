@@ -74,6 +74,17 @@ def _fix_invalid_newlines(latex: str) -> str:
     return latex
 
 
+def _strip_foreignlanguage(latex: str) -> str:
+    r"""Strip \foreignlanguage{lang}{content} wrappers, keeping content.
+
+    Pandoc emits these for HTML elements with lang attributes (e.g.
+    ``lang="en-GB"`` → ``\foreignlanguage{british}{...}``).  They require
+    babel/polyglossia which we don't load; we handle multilingual text
+    via font fallbacks instead.
+    """
+    return re.sub(r"\\foreignlanguage\{[^}]*\}\{", "{", latex)
+
+
 # ---------------------------------------------------------------------------
 # Annotation post-processing: move \annot outside restricted contexts
 # ---------------------------------------------------------------------------
@@ -294,6 +305,7 @@ async def convert_html_to_latex(
         # Post-process Pandoc output
         latex = stdout_bytes.decode()
         latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
+        latex = _strip_foreignlanguage(latex)  # Strip lang wrappers from HTML
         return latex
     finally:
         html_path.unlink(missing_ok=True)

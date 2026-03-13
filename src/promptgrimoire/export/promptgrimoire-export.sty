@@ -49,6 +49,7 @@
 % No-op otherlanguage environment - Pandoc generates \begin{otherlanguage}{X}
 % for non-English content but we handle multilingual via luatexja + font fallbacks.
 % babel (loaded by hyperref/luabidi chain) may define it, so override safely.
+% \foreignlanguage{} is stripped in pandoc.py post-processing instead.
 \makeatletter
 \@ifundefined{otherlanguage}%
   {\newenvironment{otherlanguage}[1]{}{}}%

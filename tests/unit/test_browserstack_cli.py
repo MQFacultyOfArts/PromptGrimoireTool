@@ -224,7 +224,7 @@ class TestRunBrowserstackSuite:
         )
 
         assert captured_env["BROWSERSTACK_CONFIG_FILE"] == str(config)
-        assert captured_env["E2E_BASE_URL"] == "http://localhost:5555"
+        assert captured_env["E2E_BASE_URL"] == "http://bs-local.com:5555"
         assert captured_env["BROWSERSTACK_USERNAME"] == "test_user"
         assert captured_env["BROWSERSTACK_ACCESS_KEY"] == "test_key"
 

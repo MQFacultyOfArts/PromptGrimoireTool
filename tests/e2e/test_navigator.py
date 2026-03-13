@@ -631,6 +631,7 @@ def _setup_course_with_activity(
 class TestNavigator:
     """E2E tests for the workspace navigator page."""
 
+    @pytest.mark.skip_browserstack
     def test_unauthenticated_redirect(self, fresh_page: Page, app_server: str) -> None:
         """AC2.5: Unauthenticated access to / redirects to /login."""
         fresh_page.goto(f"{app_server}/")

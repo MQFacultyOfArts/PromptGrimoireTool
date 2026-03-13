@@ -9,6 +9,12 @@ ALLOWED_JS_FILES = {
     # Clipboard API (navigator.clipboard.write) has no Playwright equivalent.
     # HTML paste simulation requires JavaScript to write text/html MIME type.
     # Bounding box measurements for visual regression also require evaluate().
+    # BrowserStack diagnostic probes Socket.IO connectivity via JavaScript.
+    # No Playwright API equivalent for inspecting window.socket state.
+    "test_browserstack_diag.py",
+    # Clipboard API (navigator.clipboard.write) has no Playwright equivalent.
+    # HTML paste simulation requires JavaScript to write text/html MIME type.
+    # Bounding box measurements for visual regression also require evaluate().
     "test_html_paste_whitespace.py",
     # Fixture screenshot tests use clipboard paste simulation (same as above)
     # and DOM introspection (data-speaker element counts, scroll positions).

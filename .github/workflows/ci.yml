@@ -237,7 +237,7 @@ jobs:
           if-no-files-found: ignore
 
   browserstack:
-    if: github.event_name == 'pull_request'
+    if: false  # Disabled: BrowserStack tunnel doesn't forward WebSocket upgrades reliably. See polling-only fix in _server_script.py — needs timeout tuning before re-enabling.
     needs: [quality, test-all, e2e-playwright, nicegui-ui]
     runs-on: ubuntu-latest
     services:

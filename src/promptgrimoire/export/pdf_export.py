@@ -444,6 +444,7 @@ async def export_annotation_pdf(
     user_id: str | None = None,
     filename: str = "annotated_document",
     *,
+    workspace_id: str | None = None,
     word_count: int | None = None,
     word_minimum: int | None = None,
     word_limit: int | None = None,
@@ -467,6 +468,7 @@ async def export_annotation_pdf(
         user_id: Optional user identifier for scoped temp directory.
             If provided, creates a per-user export dir that is cleaned on reuse.
         filename: Base name for the output PDF file (without extension).
+        workspace_id: Optional workspace identifier for log correlation.
         word_count: Word count to display in the snitch badge (keyword-only).
         word_minimum: Minimum word count threshold (keyword-only).
         word_limit: Maximum word count threshold (keyword-only).
@@ -483,7 +485,16 @@ async def export_annotation_pdf(
         if user_id:
             output_dir = _get_export_dir(user_id)
         else:
-            output_dir = Path(tempfile.mkdtemp(prefix="promptgrimoire_export_"))
+            prefix = "promptgrimoire_export_"
+            if workspace_id:
+                prefix = f"promptgrimoire_export_{workspace_id[:8]}_"
+            output_dir = Path(tempfile.mkdtemp(prefix=prefix))
+
+    logger.info(
+        "PDF export workspace=%s output_dir=%s",
+        workspace_id or "unknown",
+        output_dir,
+    )
 
     # Generate .tex file via the shared pipeline
     tex_path = await generate_tex_only(

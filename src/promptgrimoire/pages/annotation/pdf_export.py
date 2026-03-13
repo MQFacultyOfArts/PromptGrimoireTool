@@ -344,6 +344,7 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
             notes_latex=notes_latex,
             word_to_legal_para=legal_para_map,
             filename=filename,
+            workspace_id=str(workspace_id),
             word_count=export_word_count,
             word_minimum=state.word_minimum,
             word_limit=state.word_limit,

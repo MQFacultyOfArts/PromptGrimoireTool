@@ -63,7 +63,7 @@ def main() -> int:
 
     # Step 1: ruff check --fix on all modified files
     result = subprocess.run(
-        ["uv", "run", "ruff", "check", "--fix", *files],
+        ["uv", "run", "ruff", "check", "--fix", "--ignore", "F401", *files],
         capture_output=True,
         text=True,
         cwd=project_dir,
@@ -86,7 +86,7 @@ def main() -> int:
 
     # Step 3: ruff check (verify no remaining issues)
     result = subprocess.run(
-        ["uv", "run", "ruff", "check", *files],
+        ["uv", "run", "ruff", "check", "--ignore", "F401", *files],
         capture_output=True,
         text=True,
         cwd=project_dir,

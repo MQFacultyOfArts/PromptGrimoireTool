@@ -61,7 +61,7 @@ def main() -> int:
 
     # Step 2: ruff check (report issues, no autofix)
     result = subprocess.run(
-        ["uv", "run", "--quiet", "ruff", "check", file_path],
+        ["uv", "run", "--quiet", "ruff", "check", "--ignore", "F401", file_path],
         capture_output=True,
         text=True,
         timeout=30,

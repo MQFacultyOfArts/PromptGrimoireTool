@@ -313,18 +313,16 @@ class TestNaughtyStudent:
                 # Create a fresh workspace with a known-good naughty string
                 setup_workspace_with_content(page, app_server, highlightable_content)
 
-                # Get the actual rendered text (may differ from input
-                # after HTML sanitisation strips tags like <script>)
-                rendered_text = page.evaluate(
-                    """() => {
-                        const c = document.getElementById('doc-container');
-                        return c ? c.textContent.trim() : '';
-                    }"""
-                )
-                # Select a recognisable substring of the rendered content
-                select_text_range(
-                    page, rendered_text[:10] if rendered_text else highlightable_content
-                )
+                # The first BLNS string <script>alert("XSS")</script> is always
+                # selected as highlightable_content.  After Playwright .fill()
+                # inserts it as text, the browser escapes < > & in the
+                # contenteditable innerHTML.  The input pipeline detects "text"
+                # type (no real HTML tags), double-encodes entities, and the
+                # browser decodes one level — so the rendered text becomes
+                # '&lt;script&gt;alert("XSS")&lt;/script&gt;'.
+                # The substring 'alert("XSS")' survives all pipeline paths
+                # unchanged (quotes are never entity-encoded by the browser).
+                select_text_range(page, 'alert("XSS")')
                 page.locator("[data-testid='tag-toolbar'] button").first.click()
 
                 # Verify annotation card appears

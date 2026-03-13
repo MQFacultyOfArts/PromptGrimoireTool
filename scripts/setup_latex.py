@@ -77,6 +77,8 @@ REQUIRED_PACKAGES = [
     "tools",  # longtable, array, calc, tabularx (TeX Live bundle)
     "booktabs",  # Professional table rules
     "changepage",  # Adjustable page margins
+    # Fonts (must be in texmf tree for luaotfload, not just OS fonts)
+    "tex-gyre",  # TeX Gyre Termes — main document font
     # amsmath, hyperref are in base LaTeX distribution
 ]
 

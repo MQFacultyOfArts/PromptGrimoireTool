@@ -279,6 +279,13 @@ Deliver:
 - Student document zone: student summary side panel + extensible area for future read-only artifact blobs.
 - Read-only behaviour after simulation end.
 
+Design note: Consider using Anthropic Batch API for turn cycle AI calls
+(turn_agent, summary_agent). All per-team calls are independent — ideal
+batch candidates. 50% cost reduction. Changes flow from "call and await"
+to "submit batch → poll → collect", so deadline worker needs redesign.
+PydanticAI has no built-in batch support; use anthropic SDK directly and
+map results back to TurnResult/StudentSummary structured types.
+
 Dependencies:
 
 - Seams 1, 2, 3.

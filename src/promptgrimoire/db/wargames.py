@@ -25,7 +25,11 @@ from promptgrimoire.db.models import (
 )
 from promptgrimoire.db.users import _find_or_create_user_with_session
 from promptgrimoire.wargame import generate_codename
-from promptgrimoire.wargame.agents import summary_agent, turn_agent
+from promptgrimoire.wargame.agents import (
+    TURN_OUTPUT_CONTRACT,
+    summary_agent,
+    turn_agent,
+)
 from promptgrimoire.wargame.roster import auto_assign_teams, parse_roster
 from promptgrimoire.wargame.turn_cycle import (
     build_summary_prompt,
@@ -858,7 +862,7 @@ async def _bootstrap_one_team(
         return
 
     bootstrap_text = expand_bootstrap(config.scenario_bootstrap, team.codename)
-    prompt = build_turn_prompt(bootstrap_text, "")
+    prompt = bootstrap_text
 
     # Store the human-readable bootstrap as the user message
     user_msg = WargameMessage(
@@ -870,7 +874,8 @@ async def _bootstrap_one_team(
     session.add(user_msg)
 
     # Call the turn agent
-    ai_result = await turn_agent.run(prompt, instructions=config.system_prompt)
+    turn_instructions = config.system_prompt + TURN_OUTPUT_CONTRACT
+    ai_result = await turn_agent.run(prompt, instructions=turn_instructions)
     # ty cannot track PydanticAI Agent generics; cast narrows to the
     # concrete output type.
     turn_output = cast("TurnResult", ai_result.output)
@@ -1103,7 +1108,7 @@ async def _preprocess_one_team(
     ai_result = await turn_agent.run(
         prompt,
         message_history=message_history,
-        instructions=config.system_prompt,
+        instructions=config.system_prompt + TURN_OUTPUT_CONTRACT,
     )
     turn_output = cast("TurnResult", ai_result.output)
 

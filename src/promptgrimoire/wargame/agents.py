@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
+from pydantic_ai.output import ToolOutput
 
 __all__ = [
+    "TURN_OUTPUT_CONTRACT",
     "StudentSummary",
     "TurnResult",
     "summary_agent",
@@ -28,6 +30,37 @@ __all__ = [
 ]
 
 _MODEL = "anthropic:claude-sonnet-4-6"
+
+TURN_OUTPUT_CONTRACT = """\
+
+## Input format
+
+On the first turn you receive the scenario bootstrap text directly.
+
+On subsequent turns you receive:
+
+<game_state>
+[The GM-only game state from the previous turn]
+</game_state>
+
+<cadet_orders>
+[The team's submitted orders for this turn]
+</cadet_orders>
+
+## Output contract
+
+You MUST always return BOTH fields via the structured output tool:
+
+- response_text: Your narrative response to the team. This is the draft \
+message the GM will review before showing to students.
+- game_state: The complete updated GM-only game state artifact. This \
+tracks all hidden information (unit positions, NPC states, event \
+triggers, resource levels, trackers, etc.). It is injected into your \
+next turn's prompt as the <game_state> block. Students never see it. \
+On the first turn, create the full initial game state from the scenario. \
+On subsequent turns, update it based on the team's orders and your \
+narrative response. NEVER omit this field.
+"""
 
 
 class TurnResult(BaseModel):
@@ -62,12 +95,26 @@ class StudentSummary(BaseModel):
 
 turn_agent = Agent(
     _MODEL,
-    output_type=TurnResult,
+    output_type=ToolOutput(
+        TurnResult,
+        description=(
+            "Return the GM's draft response to the team's orders "
+            "and the updated game state. Both fields are required."
+        ),
+    ),
     defer_model_check=True,
+    retries=3,
 )
 
 summary_agent = Agent(
     _MODEL,
-    output_type=StudentSummary,
+    output_type=ToolOutput(
+        StudentSummary,
+        description=(
+            "Return a student-safe situation summary. "
+            "Must contain only information safe for students to see."
+        ),
+    ),
     defer_model_check=True,
+    retries=3,
 )

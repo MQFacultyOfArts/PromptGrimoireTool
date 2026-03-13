@@ -1,0 +1,12 @@
+# Example Scenario Bootstrap
+
+Replace this file with your actual scenario bootstrap.
+
+Copy to `scenario_bootstrap.md` (gitignored) and fill in your content.
+
+Use `{codename}` as a placeholder for the team's codename. Example:
+
+    Welcome, team {codename}. You are operating in a contested environment...
+
+The bootstrap is expanded per-team and sent as the first user message to the
+turn_agent, which responds with the initial game state and briefing.

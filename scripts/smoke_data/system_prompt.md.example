@@ -1,0 +1,8 @@
+# Example System Prompt
+
+Replace this file with your actual system prompt.
+
+Copy to `system_prompt.md` (gitignored) and fill in your content.
+
+The system prompt is injected as the PydanticAI agent's system prompt for the
+turn_agent. It should instruct the AI on how to act as the Game Master.

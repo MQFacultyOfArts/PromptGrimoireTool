@@ -67,13 +67,19 @@ class LlmConfig(BaseModel):
     lorebook_token_budget: int = 0
 
 
+class AlertingConfig(BaseModel):
+    """Error alerting configuration."""
+
+    discord_webhook_url: str = ""
+
+
 class AppConfig(BaseModel):
     """Application runtime configuration."""
 
     base_url: str = "http://localhost:8080"
     port: int = 8080
     storage_secret: SecretStr = SecretStr("dev-secret-change-me")
-    log_dir: Path = Path("logs/sessions")
+    log_dir: Path = Path("logs")
     latexmk_path: str = ""
     reload: bool = True
 
@@ -271,6 +277,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = DatabaseConfig()
     llm: LlmConfig = LlmConfig()
     app: AppConfig = AppConfig()
+    alerting: AlertingConfig = AlertingConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()

@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import ui
 
-from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import PageState, _render_js
 from promptgrimoire.pages.annotation.card_shared import (
+    anonymise_display_author,
     author_initials,
     build_expandable_text,
 )
@@ -90,16 +90,7 @@ def _build_single_comment(
     c_text = comment.get("text", "")
     c_user_id = comment.get("user_id")
     c_id = comment.get("id", "")
-    c_author = anonymise_author(
-        author=c_author_raw,
-        user_id=c_user_id,
-        viewing_user_id=state.user_id,
-        anonymous_sharing=state.is_anonymous,
-        viewer_is_privileged=state.viewer_is_privileged,
-        author_is_privileged=(
-            c_user_id is not None and c_user_id in state.privileged_user_ids
-        ),
-    )
+    c_author = anonymise_display_author(c_author_raw, c_user_id, state)
     with (
         ui.element("div")
         .classes("bg-gray-100 p-2 rounded mt-1")
@@ -440,16 +431,7 @@ def _build_annotation_card(
                 tag_display = ti.name
                 break
     hl_user_id = highlight.get("user_id")
-    display_author = anonymise_author(
-        author=author,
-        user_id=hl_user_id,
-        viewing_user_id=state.user_id,
-        anonymous_sharing=state.is_anonymous,
-        viewer_is_privileged=state.viewer_is_privileged,
-        author_is_privileged=(
-            hl_user_id is not None and hl_user_id in state.privileged_user_ids
-        ),
-    )
+    display_author = anonymise_display_author(author, hl_user_id, state)
     initials = author_initials(display_author)
 
     card = (

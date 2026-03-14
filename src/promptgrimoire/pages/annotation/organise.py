@@ -25,9 +25,11 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import ui
 
-from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.elements.sortable import Sortable
-from promptgrimoire.pages.annotation.card_shared import build_expandable_text
+from promptgrimoire.pages.annotation.card_shared import (
+    anonymise_display_author,
+    build_expandable_text,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -104,16 +106,7 @@ def _build_highlight_card(
 
         # Anonymise highlight author
         hl_user_id = highlight.get("user_id")
-        display_author = anonymise_author(
-            author=raw_author,
-            user_id=hl_user_id,
-            viewing_user_id=state.user_id,
-            anonymous_sharing=state.is_anonymous,
-            viewer_is_privileged=state.viewer_is_privileged,
-            author_is_privileged=(
-                hl_user_id is not None and hl_user_id in state.privileged_user_ids
-            ),
-        )
+        display_author = anonymise_display_author(raw_author, hl_user_id, state)
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if full_text:
             build_expandable_text(full_text)
@@ -123,16 +116,7 @@ def _build_highlight_card(
                 raw_c_author = comment.get("author", "Unknown")
                 comment_text = comment.get("text", "")
                 c_uid = comment.get("user_id")
-                display_c_author = anonymise_author(
-                    author=raw_c_author,
-                    user_id=c_uid,
-                    viewing_user_id=state.user_id,
-                    anonymous_sharing=state.is_anonymous,
-                    viewer_is_privileged=state.viewer_is_privileged,
-                    author_is_privileged=(
-                        c_uid is not None and c_uid in state.privileged_user_ids
-                    ),
-                )
+                display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
                 with ui.row().classes("w-full gap-1 items-start"):
                     ui.label(f"{display_c_author}:").classes(
                         "text-xs font-semibold text-gray-600 flex-shrink-0"

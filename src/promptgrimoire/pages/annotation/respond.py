@@ -28,9 +28,11 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import ui
 
-from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.pages.annotation.card_shared import build_expandable_text
+from promptgrimoire.pages.annotation.card_shared import (
+    anonymise_display_author,
+    build_expandable_text,
+)
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 from promptgrimoire.word_count import word_count
 
@@ -134,16 +136,7 @@ def _build_reference_card(
     full_text = highlight.get("text", "")
     comments: list[dict[str, Any]] = highlight.get("comments", [])
 
-    display_author = anonymise_author(
-        author=raw_author,
-        user_id=hl_user_id,
-        viewing_user_id=state.user_id,
-        anonymous_sharing=state.is_anonymous,
-        viewer_is_privileged=state.viewer_is_privileged,
-        author_is_privileged=(
-            hl_user_id is not None and hl_user_id in state.privileged_user_ids
-        ),
-    )
+    display_author = anonymise_display_author(raw_author, hl_user_id, state)
 
     with (
         ui.card()
@@ -171,16 +164,7 @@ def _build_reference_card(
             raw_c_author = comment.get("author", "")
             c_uid = comment.get("user_id")
             comment_text = comment.get("text", "")
-            display_c_author = anonymise_author(
-                author=raw_c_author,
-                user_id=c_uid,
-                viewing_user_id=state.user_id,
-                anonymous_sharing=state.is_anonymous,
-                viewer_is_privileged=state.viewer_is_privileged,
-                author_is_privileged=(
-                    c_uid is not None and c_uid in state.privileged_user_ids
-                ),
-            )
+            display_c_author = anonymise_display_author(raw_c_author, c_uid, state)
             if comment_text:
                 with (
                     ui.row()
@@ -193,17 +177,33 @@ def _build_reference_card(
                     ui.label(comment_text).classes("text-xs text-gray-700")
 
 
-def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
-    """Check if a highlight matches the search filter (case-insensitive)."""
+def _matches_filter(
+    highlight: dict[str, Any],
+    filter_text: str,
+    state: PageState,
+) -> bool:
+    """Check if a highlight matches the search filter (case-insensitive).
+
+    Author names are resolved through ``anonymise_display_author`` so that
+    the filter searches against the *displayed* name (pseudonym when
+    anonymous sharing is active), not the raw CRDT value.
+    """
     needle = filter_text.lower()
     text = highlight.get("text", "").lower()
-    author = highlight.get("author", "").lower()
-    if needle in text or needle in author:
+    # Anonymise highlight author for filtering
+    raw_author = highlight.get("author", "")
+    hl_user_id = highlight.get("user_id")
+    display_author = anonymise_display_author(raw_author, hl_user_id, state).lower()
+    if needle in text or needle in display_author:
         return True
     for comment in highlight.get("comments", []):
         if needle in comment.get("text", "").lower():
             return True
-        if needle in comment.get("author", "").lower():
+        # Anonymise comment author for filtering
+        raw_c_author = comment.get("author", "")
+        c_uid = comment.get("user_id")
+        display_c_author = anonymise_display_author(raw_c_author, c_uid, state).lower()
+        if needle in display_c_author:
             return True
     return False
 
@@ -211,6 +211,7 @@ def _matches_filter(highlight: dict[str, Any], filter_text: str) -> bool:
 def _filter_highlights(
     highlights: list[dict[str, Any]],
     active_filter: str,
+    state: PageState,
     tag_name: str = "",
 ) -> list[dict[str, Any]]:
     """Filter highlights by text content or author, optionally matching tag name."""
@@ -219,7 +220,7 @@ def _filter_highlights(
     return [
         hl
         for hl in highlights
-        if _matches_filter(hl, active_filter)
+        if _matches_filter(hl, active_filter, state)
         or (tag_name and active_filter.lower() in tag_name.lower())
     ]
 
@@ -282,7 +283,7 @@ def _build_reference_panel(
 
     for tag_info in tags:
         filtered = _filter_highlights(
-            tagged_highlights[tag_info.name], active_filter, tag_info.name
+            tagged_highlights[tag_info.name], active_filter, state, tag_info.name
         )
         if not filtered:
             continue
@@ -292,7 +293,7 @@ def _build_reference_panel(
                     hl, tag_info.colour, tag_info.name, state, on_locate
                 )
 
-    untagged_filtered = _filter_highlights(untagged_highlights, active_filter)
+    untagged_filtered = _filter_highlights(untagged_highlights, active_filter, state)
     if untagged_filtered:
         with _tracked_expansion("Untagged", accordion_state):
             for hl in untagged_filtered:

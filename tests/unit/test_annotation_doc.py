@@ -1569,3 +1569,59 @@ class TestGetHighlightsForDocument:
         result = doc.get_highlights_for_document("doc-a")
 
         assert result == []
+
+
+class TestRemoveHighlightsForDocument:
+    """Tests for remove_highlights_for_document() bulk removal."""
+
+    def test_removes_all_highlights_for_target_document(self) -> None:
+        """Removes all highlights belonging to the target document and returns count."""
+        doc = AnnotationDocument("test-doc")
+        for i in range(5):
+            doc.add_highlight(
+                start_char=i * 10,
+                end_char=i * 10 + 5,
+                tag="t1",
+                text=f"doc-a hl {i}",
+                author="A",
+                document_id="doc-a",
+            )
+        for i in range(3):
+            doc.add_highlight(
+                start_char=i * 10,
+                end_char=i * 10 + 5,
+                tag="t1",
+                text=f"doc-b hl {i}",
+                author="A",
+                document_id="doc-b",
+            )
+
+        removed = doc.remove_highlights_for_document("doc-a")
+
+        assert removed == 5
+        assert doc.get_highlights_for_document("doc-a") == []
+        assert len(doc.get_highlights_for_document("doc-b")) == 3
+
+    def test_nonexistent_document_returns_zero(self) -> None:
+        """Calling on a document with no highlights returns 0."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="t1",
+            text="other",
+            author="A",
+            document_id="doc-a",
+        )
+
+        removed = doc.remove_highlights_for_document("doc-nonexistent")
+
+        assert removed == 0
+
+    def test_empty_doc_returns_zero(self) -> None:
+        """Calling on a doc with no highlights at all returns 0."""
+        doc = AnnotationDocument("test-doc")
+
+        removed = doc.remove_highlights_for_document("doc-a")
+
+        assert removed == 0

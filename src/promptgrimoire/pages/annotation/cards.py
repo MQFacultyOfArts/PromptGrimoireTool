@@ -570,15 +570,17 @@ def _diff_annotation_cards(state: PageState) -> None:
     # ADDED: IDs in CRDT but not in registry
     added_ids = crdt_ids - registry_ids
     if added_ids:
-        # highlights list is already sorted by start_char
+        # highlights list is already sorted by start_char; process adds
+        # in ascending position order so each move(target_index=N) is
+        # correct after prior insertions have shifted later elements.
         sorted_hl_ids = [hl["id"] for hl in highlights]
+        added_in_order = [hid for hid in sorted_hl_ids if hid in added_ids]
         with state.annotations_container:
-            for add_id in added_ids:
+            for add_id in added_in_order:
                 hl = crdt_map[add_id]
                 card = _build_annotation_card(state, hl)
                 state.annotation_cards[add_id] = card
                 state.card_snapshots[add_id] = _snapshot_highlight(hl)
-                # Find correct position in sorted order
                 position = sorted_hl_ids.index(add_id)
                 card.move(
                     target_container=state.annotations_container,

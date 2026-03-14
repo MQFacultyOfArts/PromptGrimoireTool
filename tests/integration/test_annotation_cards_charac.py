@@ -13,7 +13,7 @@ Traceability:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -431,126 +431,250 @@ class TestAnnotateCardRendering:
 
 # ---------------------------------------------------------------------------
 # Diff-based card update tests (AC12)
+#
+# These tests exercise _diff_annotation_cards() directly by calling
+# _refresh_annotation_cards() twice: first with annotation_cards=None
+# (full build), then after CRDT mutation (diff path).  This verifies
+# the diff algorithm itself, not just the full-build rendering.
 # ---------------------------------------------------------------------------
 
 
+def _make_diff_test_state(
+    crdt_doc: Any,
+    document_id: UUID,
+    container: Any,
+) -> Any:
+    """Create a minimal PageState for diff-path testing.
+
+    Uses ``effective_permission="viewer"`` so ``can_annotate=False``,
+    avoiding the tag ``ui.select`` which requires valid tag options.
+    The diff algorithm doesn't depend on annotation capability.
+    """
+    from promptgrimoire.pages.annotation import PageState
+
+    state = PageState(
+        workspace_id=uuid4(),
+        effective_permission="viewer",
+        user_name="DiffTest",
+        user_id="diff-test-user",
+    )
+    state.crdt_doc = crdt_doc
+    state.document_id = document_id
+    state.annotations_container = container
+    state.tag_info_list = []
+    return state
+
+
+def _card_start_chars(state: Any) -> list[int]:
+    """Extract start_char values from annotation_cards in container order.
+
+    Reads the ``data-start-char`` prop from each card in the
+    container's slot children (preserves DOM insertion order).
+    """
+    assert state.annotations_container is not None
+    result = []
+    for child in state.annotations_container.default_slot.children:
+        sc = child.props.get("data-start-char")
+        if sc is not None:
+            result.append(int(float(sc)))
+    return result
+
+
 class TestDiffBasedCardUpdates:
-    """Tests for diff-based annotation card updates.
+    """Tests that exercise the _diff_annotation_cards diff path directly.
 
-    Verifies AC12: adding/removing highlights updates individual cards
-    without destroying/rebuilding the entire container.
-
-    These tests set up the CRDT with the desired state before navigating,
-    then verify the rendered cards match. Each test navigates once to
-    avoid NiceGUI user-simulation element leakage between page renders.
+    Each test:
+    1. Creates a CRDT doc with initial highlights
+    2. Calls _refresh_annotation_cards (full build — annotation_cards=None)
+    3. Mutates the CRDT
+    4. Calls _refresh_annotation_cards again (diff path — annotation_cards populated)
+    5. Asserts on the result
 
     Traceability:
-    - AC12.1: Adding a highlight inserts one card
-    - AC12.2: Removing a highlight deletes one card
-    - AC12.3: New card inserted at correct position sorted by start_char
+    - AC12.1: Adding a highlight inserts one card via diff
+    - AC12.2: Removing a highlight deletes one card via diff
+    - AC12.3: Multiple cards inserted at correct positions via diff
     """
 
     @pytest.mark.asyncio
-    async def test_four_highlights_render_four_cards(self, nicegui_user: User) -> None:
-        """AC12.1: A workspace with 4 highlights renders 4 cards."""
-        email = "student-diff-add@test.example.edu.au"
-        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+    async def test_diff_add_inserts_one_card(self, nicegui_user: User) -> None:
+        """AC12.1: diff path adds one card when CRDT gains a highlight."""
+        from nicegui import ui
 
-        # Add a 4th highlight at start_char=25 before navigating
-        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 
-        registry = AnnotationDocumentRegistry()
-        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
-        tags = crdt_doc.list_tags()
-        tag_id = next(iter(tags))
-        crdt_doc.add_highlight(
-            start_char=25,
-            end_char=28,
-            tag=tag_id,
-            text="new",
-            author=email.split("@", maxsplit=1)[0],
-            document_id=str(doc_id),
-            user_id=user_id,
-        )
-        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+        await nicegui_user.open("/")
 
-        await _authenticate(nicegui_user, email=email)
-        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "annotation-card")
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-diff-add")
+        crdt_doc.add_highlight(10, 20, "t", "first", "u", document_id=doc_id)
+        crdt_doc.add_highlight(50, 60, "t", "second", "u", document_id=doc_id)
 
-        cards = _find_all_by_testid(nicegui_user, "annotation-card")
-        assert len(cards) == 4, f"Expected 4 cards with 4 highlights, got {len(cards)}"
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
 
-    @pytest.mark.asyncio
-    async def test_two_highlights_render_two_cards(self, nicegui_user: User) -> None:
-        """AC12.2: A workspace with 2 highlights (one removed) renders 2 cards."""
-        email = "student-diff-rm@test.example.edu.au"
-        ws_id, doc_id, _user_id = await _setup_workspace_with_highlights(email=email)
+        # Full build
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert state.annotation_cards is not None
+        assert len(state.annotation_cards) == 2
 
-        # Remove the middle highlight (start_char=30) before navigating
-        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+        # Mutate CRDT: add a third highlight
+        crdt_doc.add_highlight(30, 40, "t", "third", "u", document_id=doc_id)
 
-        registry = AnnotationDocumentRegistry()
-        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
-        highlights = crdt_doc.get_highlights_for_document(str(doc_id))
-        hl_to_remove = next(h for h in highlights if h.get("start_char") == 30)
-        crdt_doc.remove_highlight(hl_to_remove["id"])
-        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
-
-        await _authenticate(nicegui_user, email=email)
-        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "annotation-card")
-
-        cards = _find_all_by_testid(nicegui_user, "annotation-card")
-        assert len(cards) == 2, f"Expected 2 cards after removal, got {len(cards)}"
-
-        remaining_chars = sorted(
-            int(float(c.props.get("data-start-char", "0"))) for c in cards
-        )
-        assert remaining_chars == [10, 50], (
-            f"Expected start_chars [10, 50], got {remaining_chars}"
-        )
+        # Diff path
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert len(state.annotation_cards) == 3
 
     @pytest.mark.asyncio
-    async def test_added_card_at_correct_position(self, nicegui_user: User) -> None:
-        """AC12.3: New card inserted at correct position by start_char."""
-        email = "student-diff-pos@test.example.edu.au"
-        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+    async def test_diff_remove_deletes_one_card(self, nicegui_user: User) -> None:
+        """AC12.2: diff path removes card when CRDT loses a highlight."""
+        from nicegui import ui
 
-        # Add highlight at start_char=25 (should land between 10 and 30)
-        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
-        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
 
-        registry = AnnotationDocumentRegistry()
-        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
-        tags = crdt_doc.list_tags()
-        tag_id = next(iter(tags))
-        crdt_doc.add_highlight(
-            start_char=25,
-            end_char=28,
-            tag=tag_id,
-            text="inserted",
-            author=email.split("@", maxsplit=1)[0],
-            document_id=str(doc_id),
-            user_id=user_id,
+        await nicegui_user.open("/")
+
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-diff-rm")
+        hl1 = crdt_doc.add_highlight(10, 20, "t", "first", "u", document_id=doc_id)
+        crdt_doc.add_highlight(30, 40, "t", "second", "u", document_id=doc_id)
+        crdt_doc.add_highlight(50, 60, "t", "third", "u", document_id=doc_id)
+
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
+
+        # Full build
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert len(state.annotation_cards) == 3
+
+        # Mutate CRDT: remove the first highlight
+        crdt_doc.remove_highlight(hl1)
+
+        # Diff path
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert len(state.annotation_cards) == 2
+        assert hl1 not in state.annotation_cards
+        assert _card_start_chars(state) == [30, 50]
+
+    @pytest.mark.asyncio
+    async def test_diff_multi_add_correct_order(self, nicegui_user: User) -> None:
+        """AC12.3: multiple cards added via diff land in start_char order."""
+        from nicegui import ui
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
+
+        await nicegui_user.open("/")
+
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-diff-order")
+        crdt_doc.add_highlight(10, 20, "t", "first", "u", document_id=doc_id)
+        crdt_doc.add_highlight(50, 60, "t", "last", "u", document_id=doc_id)
+
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
+
+        # Full build: 2 cards at [10, 50]
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert _card_start_chars(state) == [10, 50]
+
+        # Mutate CRDT: add two highlights between existing ones
+        crdt_doc.add_highlight(25, 30, "t", "mid1", "u", document_id=doc_id)
+        crdt_doc.add_highlight(35, 40, "t", "mid2", "u", document_id=doc_id)
+
+        # Diff path: should insert both in correct positions
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert len(state.annotation_cards) == 4
+        assert _card_start_chars(state) == [10, 25, 35, 50]
+
+    @pytest.mark.asyncio
+    async def test_diff_tag_change_rebuilds_card(self, nicegui_user: User) -> None:
+        """AC12.4: tag change on one highlight rebuilds only that card."""
+        from nicegui import ui
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
+
+        await nicegui_user.open("/")
+
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-diff-tag")
+        hl1 = crdt_doc.add_highlight(10, 20, "old_tag", "text", "u", document_id=doc_id)
+        hl2 = crdt_doc.add_highlight(
+            50, 60, "old_tag", "text2", "u", document_id=doc_id
         )
-        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
 
-        await _authenticate(nicegui_user, email=email)
-        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "annotation-card")
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
 
-        cards = _find_all_by_testid(nicegui_user, "annotation-card")
-        # Sort because NiceGUI DFS traversal order is unreliable across tests;
-        # we verify all expected positions exist with correct values.
-        start_chars = sorted(
-            int(float(c.props.get("data-start-char", "0"))) for c in cards
-        )
-        assert start_chars == [10, 25, 30, 50], (
-            f"Expected start_chars [10, 25, 30, 50], got {start_chars}"
-        )
+        # Full build
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        card1_before = state.annotation_cards[hl1]
+        card2_before = state.annotation_cards[hl2]
+
+        # Change tag on hl1 only
+        crdt_doc.update_highlight_tag(hl1, "new_tag")
+
+        # Diff path
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+
+        # hl1's card should be a NEW object (rebuilt)
+        assert state.annotation_cards[hl1] is not card1_before
+        # hl2's card should be the SAME object (untouched)
+        assert state.annotation_cards[hl2] is card2_before
+
+    @pytest.mark.asyncio
+    async def test_diff_preserves_expanded_state(self, nicegui_user: User) -> None:
+        """AC12.4: expansion state survives diff-based card rebuild."""
+        from nicegui import ui
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
+
+        await nicegui_user.open("/")
+
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-diff-expand")
+        hl1 = crdt_doc.add_highlight(10, 20, "t", "text", "u", document_id=doc_id)
+
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
+
+        # Full build
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+
+        # Mark hl1 as expanded
+        state.expanded_cards.add(hl1)
+
+        # Mutate: add a new highlight (triggers diff)
+        crdt_doc.add_highlight(50, 60, "t", "new", "u", document_id=doc_id)
+
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+
+        # hl1 should still be in expanded_cards
+        assert hl1 in state.expanded_cards
 
 
 # ---------------------------------------------------------------------------
@@ -648,11 +772,15 @@ class TestSnapshotHighlight:
 
 
 class TestDiffChangedHighlights:
-    """Tests for AC12.4: tag/comment changes update only the affected card.
+    """Characterisation tests: card rendering reflects CRDT mutations.
+
+    NOTE: These tests mutate CRDT state before page navigation, so they
+    exercise the full-build path only.  The actual diff path is tested
+    in ``TestDiffBasedCardUpdates`` above.
 
     Traceability:
-    - AC12.4: Tag or comment change on a highlight updates only that card;
-      other cards unaffected; expansion state preserved
+    - AC12.4 (full-build rendering): tag/comment changes visible in
+      rendered cards
     """
 
     @pytest.mark.asyncio
@@ -776,17 +904,16 @@ class TestDiffChangedHighlights:
 
 
 class TestRapidCRDTUpdates:
-    """Tests for AC12.5: rapid successive CRDT updates produce correct state.
+    """Characterisation tests: rapid CRDT mutations render correctly.
 
-    CRDT operations (add_highlight, remove_highlight, update_highlight_tag)
-    are synchronous. "Rapid successive" means calling them without yielding
-    to the event loop between calls. The diff algorithm processes the final
-    CRDT state, so these tests verify that it produces correct output
-    regardless of how many intermediate mutations occurred.
+    NOTE: These tests mutate CRDT state before page navigation, so they
+    exercise the full-build path only.  They verify that the final CRDT
+    state produces correct rendered output regardless of how many
+    intermediate mutations occurred.
 
     Traceability:
-    - AC12.5: Rapid successive CRDT updates produce correct final card
-      state with no duplicates or missing cards
+    - AC12.5 (full-build rendering): rapid successive CRDT updates
+      produce correct final card state with no duplicates
     """
 
     @pytest.mark.asyncio

@@ -255,7 +255,7 @@ async def _handle_client_delete(
     Runs after reconnect_timeout expires with no reconnection.
     """
     t0 = _time.monotonic()
-    logger.warning("DELETE[%s] ws=%s start", client_id, workspace_id)
+    logger.debug("DELETE[%s] ws=%s start", client_id, workspace_id)
 
     last_client = False
     if workspace_key in _workspace_presence:
@@ -289,7 +289,7 @@ async def _handle_client_delete(
         pm.evict_workspace(workspace_id, doc_id)
         _workspace_registry.remove(doc_id)
 
-    logger.warning(
+    logger.debug(
         "DELETE[%s] total: %.3fs last=%s",
         client_id,
         _time.monotonic() - t0,

@@ -280,7 +280,7 @@ async def _cleanup():
     await asyncio.sleep(0)  # let cancellations propagate
     elapsed_total = _time.monotonic() - t_total
     tasks_after = len(asyncio.all_tasks())
-    _cleanup_logger.warning(
+    _cleanup_logger.debug(
         "CLEANUP: clients=%d/%d sids=%d eio=%d orphan_wait=%d"
         " tasks=%d->%d elapsed=%.3fs",
         deleted,
@@ -334,7 +334,7 @@ def _timed_delete(self):
     t0 = _time.monotonic()
     _orig_delete(self)
     elapsed = _time.monotonic() - t0
-    _delete_logger.warning(
+    _delete_logger.debug(
         "CLIENT_DELETE: id=%s elements=%d elapsed=%.3fs",
         self.id[:8],
         n_elements,

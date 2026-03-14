@@ -179,8 +179,10 @@ class TestBranchInfoPrintedForFeatureBranch:
             main()
 
         captured = capsys.readouterr()
-        assert "Branch: 165-auto-create-branch-db" in captured.out
-        assert "pg_branch_165" in captured.out
+        combined = captured.out + captured.err
+        assert "branch_config" in combined
+        assert "165-auto-create-branch-db" in combined
+        assert "pg_branch_165" in combined
 
 
 class TestBranchInfoNotPrintedForMain:
@@ -208,7 +210,8 @@ class TestBranchInfoNotPrintedForMain:
             main()
 
         captured = capsys.readouterr()
-        assert "Branch:" not in captured.out
+        combined = captured.out + captured.err
+        assert "branch_config" not in combined
 
 
 class TestNoBootstrapWithoutDbUrl:

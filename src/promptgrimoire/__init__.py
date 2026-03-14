@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 __version__ = "0.1.0"
 
+log = structlog.get_logger()
+
 
 def get_git_commit() -> str:
     """Get the short git commit hash, or 'unknown' if not in a git repo."""
@@ -137,14 +139,17 @@ def _setup_logging() -> None:
             event_dict.pop("exc_info", None)
         return event_dict
 
+    # Full pre-chain used by both handlers and structlog.configure
+    full_pre_chain: list[structlog.types.Processor] = [
+        *shared_processors,
+        add_global_fields,
+        ensure_null_context,
+        level_gated_traceback,
+    ]
+
     # --- File handler (JSON) ---
     file_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[
-            *shared_processors,
-            add_global_fields,
-            ensure_null_context,
-            level_gated_traceback,
-        ],
+        foreign_pre_chain=full_pre_chain,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.processors.format_exc_info,
@@ -168,12 +173,7 @@ def _setup_logging() -> None:
     # (via rich) handles exception rendering itself. Including format_exc_info
     # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
     console_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[
-            *shared_processors,
-            add_global_fields,
-            ensure_null_context,
-            level_gated_traceback,
-        ],
+        foreign_pre_chain=full_pre_chain,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.dev.ConsoleRenderer(),
@@ -192,15 +192,7 @@ def _setup_logging() -> None:
     # --- structlog configuration ---
     structlog.configure(
         processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(
-                fmt="iso",
-                utc=True,
-            ),
-            add_global_fields,
-            ensure_null_context,
-            level_gated_traceback,
+            *full_pre_chain,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -225,17 +217,17 @@ def _bootstrap_database(db_url: str) -> None:
     run_alembic_upgrade()  # idempotent
 
     if created:
-        print("Created database — seeding development data...")
+        log.info("database_created", action="seeding development data")
         subprocess.run(
             ["uv", "run", "grimoire", "seed", "run"],
             check=False,
         )
 
-    # Print branch + DB info for feature branches
+    # Log branch + DB info for feature branches
     branch = get_current_branch()
     if branch and branch not in ("main", "master"):
         db_name = db_url.split("?", maxsplit=1)[0].rsplit("/", 1)[-1]
-        print(f"Branch: {branch} | Database: {db_name}")
+        log.info("branch_config", branch=branch, database=db_name)
 
 
 def main() -> None:
@@ -291,7 +283,7 @@ def main() -> None:
             _deadline_worker_task = asyncio.create_task(
                 start_deadline_worker(),
             )
-            print("Database connected")
+            log.info("database_connected")
 
         @app.on_shutdown
         async def shutdown() -> None:
@@ -311,8 +303,7 @@ def main() -> None:
     port = settings.app.port
     storage_secret = settings.app.storage_secret.get_secret_value()
 
-    print(f"PromptGrimoire v{get_version_string()}")
-    print(f"Starting application on http://0.0.0.0:{port}")
+    log.info("app_starting", version=get_version_string(), host="0.0.0.0", port=port)  # noqa: S104 — intentional bind
 
     ui.run(
         host="0.0.0.0",  # noqa: S104 — intentional bind

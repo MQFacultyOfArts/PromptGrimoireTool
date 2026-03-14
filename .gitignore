@@ -1,5 +1,7 @@
 docs/implementation_plans/*
 .gemini
+.claude-review
+.codex
 .brainstorming*
 .commit-msg.tmp
 

@@ -6,10 +6,12 @@ automatic navigation generation based on user permissions.
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from nicegui import ui
+from nicegui import app, ui
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from promptgrimoire.auth import is_privileged_user
 from promptgrimoire.config import get_settings
@@ -117,7 +119,20 @@ def page_route(
             order=order,
         )
         _page_registry[route] = meta
-        return ui.page(route)(func)
+
+        @functools.wraps(func)
+        async def _with_log_context() -> None:
+            clear_contextvars()
+            user_id = None
+            try:
+                auth_user = app.storage.user.get("auth_user")
+                user_id = auth_user.get("user_id") if auth_user else None
+            except RuntimeError:
+                pass  # storage not available (e.g. tests without ui.run)
+            bind_contextvars(user_id=user_id, request_path=route)
+            await func()
+
+        return ui.page(route)(_with_log_context)
 
     return decorator
 

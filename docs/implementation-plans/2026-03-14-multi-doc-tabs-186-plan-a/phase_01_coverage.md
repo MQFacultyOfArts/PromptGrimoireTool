@@ -22,13 +22,13 @@
 | Scroll recovery (no solitaire collapse) | `tests/e2e/test_card_layout.py::TestCardPositioning::test_scroll_recovery_no_solitaire_collapse` | Existing |
 | SPA navigation race condition | `tests/e2e/test_card_layout.py::TestCardPositioning::test_race_condition_highlights_ready` | Existing |
 | Comment posting via card UI | `tests/e2e/test_annotation_canvas.py::test_instructor_marking_interactions` | Existing |
-| `_author_initials(name)` pure function | `tests/unit/test_card_functions.py` | Planned (Task 1) |
-| `anonymise_author()` rules | `tests/unit/test_card_functions.py` | Planned (Task 1) |
-| `_build_expandable_text` 80-char threshold | `tests/integration/test_annotation_cards_charac.py` | Planned (Task 3) |
-| `cards_epoch` incremented after rendering | `tests/integration/test_annotation_cards_charac.py` | Planned (Task 3) |
-| Tag name on card header | `tests/integration/test_annotation_cards_charac.py` | Planned (Task 3) |
-| Comment count badge | `tests/integration/test_annotation_cards_charac.py` | Planned (Task 3) |
-| Locate button on card | `tests/integration/test_annotation_cards_charac.py` | Planned (Task 3) |
+| `_author_initials(name)` pure function | `tests/unit/test_card_functions.py` | New (Task 1) |
+| `anonymise_author()` rules | `tests/unit/test_card_functions.py` | New (Task 1) |
+| `_build_expandable_text` 80-char threshold (exact boundary pinned) | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |
+| `cards_epoch` increments on rebuild (characterises epoch mechanism) | `tests/integration/test_annotation_cards_charac.py` | New (Codex audit fix) |
+| Tag name on card header | Not directly tested — cards render with tag context but no assertion on tag label text | Gap |
+| Comment count badge | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |
+| Locate button on card | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |
 
 ### Organise Tab (organise.py)
 
@@ -43,9 +43,9 @@
 | Drag-to-retag | `tests/e2e/test_annotation_drag.py` | Existing |
 | Performance with 10 highlights | `tests/e2e/test_organise_perf.py` | Existing |
 | Highlight text visible after cross-tab nav | `tests/e2e/test_organise_respond_flow.py::test_highlight_appears_across_all_three_tabs` | New (Task 6) |
-| Snippet truncated at 100 chars | `tests/integration/test_organise_charac.py` | Planned (Task 4) |
-| Full text shown for short snippets | `tests/integration/test_organise_charac.py` | Planned (Task 4) |
-| `anonymise_author()` applied | `tests/integration/test_organise_charac.py` | Planned (Task 4) |
+| Snippet truncated at 100 chars | `tests/integration/test_organise_charac.py` | New (Task 4) |
+| Full text shown for short snippets | `tests/integration/test_organise_charac.py` | New (Task 4) |
+| `anonymise_author()` called (cross-user with anonymous_sharing=True) | `tests/integration/test_organise_charac.py` | New (Codex audit fix) |
 
 ### Respond Tab (respond.py)
 
@@ -58,8 +58,8 @@
 | Cross-tab sync (new ref card appears) | `tests/e2e/test_history_tutorial.py` (cross_tab_respond_sync) | Existing |
 | Comment text visible on reference card | `tests/e2e/test_organise_respond_flow.py::test_comment_visible_on_respond_tab` | New (Task 6) |
 | Highlight text visible on reference card | `tests/e2e/test_organise_respond_flow.py::test_highlight_appears_across_all_three_tabs` | New (Task 6) |
-| Snippet truncated at 100 chars | `tests/integration/test_respond_charac.py` | Planned (Task 5) |
-| **Raw author displayed (NOT anonymised)** | `tests/integration/test_respond_charac.py` | Planned (Task 5) |
+| Snippet truncated at 100 chars | `tests/integration/test_respond_charac.py` | New (Task 5) |
+| **Raw author displayed to viewer with anonymous_sharing=True (known bug)** | `tests/integration/test_respond_charac.py` | New (Codex audit fix) |
 
 ### Cross-Tab Flows
 
@@ -68,16 +68,16 @@
 | Highlight -> Annotate card -> Organise card -> Respond ref card | `tests/e2e/test_law_student.py` | Existing |
 | Comment on Annotate -> visible on Organise | `tests/e2e/test_annotation_canvas.py` | Existing |
 | Comment on Annotate -> visible on Respond | `tests/e2e/test_organise_respond_flow.py` | New (Task 6) |
-| Full cross-tab content consistency | `tests/e2e/test_organise_respond_flow.py` | New (Task 6) |
+| Cross-tab highlight text visibility (smoke test, not full consistency) | `tests/e2e/test_organise_respond_flow.py` | New (Task 6) |
 
 ### Pure Functions
 
 | Function | Test File | Status |
 |----------|-----------|--------|
-| `group_highlights_by_tag()` | `tests/unit/test_card_functions.py` | Planned (Task 1) |
-| `_author_initials()` | `tests/unit/test_card_functions.py` | Planned (Task 1) |
-| `anonymise_author()` | `tests/unit/test_card_functions.py` | Planned (Task 1) |
-| `get_highlights_for_document()` filtering | `tests/unit/test_annotation_doc.py` | Planned (Task 2) |
+| `group_highlights_by_tag()` | `tests/unit/test_card_functions.py` | New (Task 1) |
+| `_author_initials()` | `tests/unit/test_card_functions.py` | New (Task 1) |
+| `anonymise_author()` | `tests/unit/test_card_functions.py` | New (Task 1) |
+| `get_highlights_for_document()` filtering | `tests/unit/test_annotation_doc.py` | New (Task 2) |
 
 ---
 
@@ -85,7 +85,7 @@
 
 ### 1. `anonymise_author` missing from respond.py
 
-**Bug:** `respond.py` displays raw author names instead of calling `anonymise_author()`. The characterisation test in Task 5 (`test_respond_charac.py`) will lock in this broken behaviour. Phase 2 will fix it by adding `anonymise_author()` to respond.py.
+**Bug:** `respond.py` displays raw author names instead of calling `anonymise_author()`. The characterisation test `test_respond_shows_raw_author_to_viewer` locks in this broken behaviour with `anonymous_sharing=True` on the Activity and a second viewer user — so when Phase 2 adds `anonymise_author()` to respond.py, the viewer will see a pseudonym and the test will fail, requiring update.
 
 ### 2. Snippet truncation inconsistency
 

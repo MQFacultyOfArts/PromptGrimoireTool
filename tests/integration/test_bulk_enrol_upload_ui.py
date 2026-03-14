@@ -149,7 +149,7 @@ class TestBulkEnrolUploadWidget:
         await upload_el.handle_uploads([file_upload])
 
         # Allow async handler to complete
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
 
         # Verify success notification appeared
         await nicegui_user.should_see("Enrolled")
@@ -186,10 +186,10 @@ class TestBulkEnrolUploadWidget:
 
         # First upload
         await upload_el.handle_uploads([file_upload])
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
         await nicegui_user.should_see("Enrolled 1 of 1")
 
         # Second upload of same data — should show info (all duplicates)
         await upload_el.handle_uploads([file_upload])
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
         await nicegui_user.should_see("already enrolled")

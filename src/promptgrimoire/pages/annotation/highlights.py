@@ -41,10 +41,15 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
         start_char: First character index of the highlight range.
         end_char: Last character index (exclusive) of the highlight range.
     """
-    # 1. Switch tab to Annotate
-    if state.tab_panels is not None:
-        state.tab_panels.set_value("Annotate")
-    state.active_tab = "Annotate"
+    # 1. Switch tab to the first source tab (replaces old "Annotate" tab)
+    if state.tab_panels is not None and state.document_tabs:
+        first_doc_id = next(iter(state.document_tabs))
+        tab_name = str(first_doc_id)
+        state.tab_panels.set_value(tab_name)
+        state.active_tab = tab_name
+    elif state.tab_panels is not None:
+        # Zero-document fallback — no source tab to switch to
+        pass
 
     # 2. Refresh Tab 1 annotations and highlight CSS.
     # _update_highlight_css() pushes highlight ranges to the client internally,

@@ -292,7 +292,7 @@ class TestNaughtyStudent:
 
                         # Core assertion: page didn't crash
                         # Verify known UI element is still visible
-                        tab_label = page.locator('[data-testid="tab-annotate"]')
+                        tab_label = page.locator('[data-testid="tab-source-1"]')
                         expect(tab_label).to_be_visible(timeout=5000)
 
                         # Try to detect if text walker initialised

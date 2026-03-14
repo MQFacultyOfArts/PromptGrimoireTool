@@ -17,7 +17,6 @@ import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import check_workspace_access, is_privileged_user
-from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import (
     get_privileged_user_ids_for_workspace,
     grant_permission,
@@ -238,24 +237,21 @@ def _render_content_form_outside_refreshable(
     """Render the content form outside the refreshable boundary.
 
     Placement depends on whether documents already exist:
-    - With documents: collapsible "Add Document" (gated by multi-document flag)
+    - With documents: collapsible "Add Document" expansion panel
     - Without documents: bare content form for first upload
 
-    Returns the wrapper element so the caller can hide it after the first
-    document is added (when multi-document is disabled).
+    Returns the wrapper element (used by the caller for layout purposes).
     """
     if not state.can_upload:
         return None
 
     if has_documents and has_documents[0]:
-        if get_settings().features.enable_multi_document:
-            with ui.expansion(
-                "Add Document",
-                icon="note_add",
-            ).classes("w-full mt-4") as wrapper:
-                _render_add_content_form(workspace_id, on_document_added)
-            return wrapper
-        return None
+        with ui.expansion(
+            "Add Document",
+            icon="note_add",
+        ).classes("w-full mt-4") as wrapper:
+            _render_add_content_form(workspace_id, on_document_added)
+        return wrapper
     else:
         with ui.column().classes("w-full") as wrapper:
             _render_add_content_form(workspace_id, on_document_added)
@@ -366,9 +362,12 @@ async def _render_workspace_view(
     ui.add_body_html('<script src="/milkdown/milkdown-bundle.js"></script>')
 
     # Three-tab container (Phase 1: three-tab UI)
-    state.initialised_tabs = {"Annotate"}
+    # When documents exist, the first source tab replaces the old "Annotate" tab.
+    first_doc_tab_name = str(documents[0].id) if documents else "Organise"
+    state.initialised_tabs = {first_doc_tab_name}
+    state.active_tab = first_doc_tab_name
 
-    tabs = build_tabs()
+    tabs = build_tabs(documents, state)
 
     # Store footer on state so the tab change handler can toggle visibility
     state.footer = footer
@@ -382,6 +381,7 @@ async def _render_workspace_view(
         workspace_id,
         tabs,
         on_tab_change,
+        documents,
         on_add_tag=on_add_tag,
         on_manage_tags=on_manage_tags,
         can_create_tags=can_create_tags,

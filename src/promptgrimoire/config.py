@@ -110,7 +110,6 @@ class FeaturesConfig(BaseModel):
     enable_roleplay: bool = True
     roleplay_require_privileged: bool = True
     enable_file_upload: bool = True
-    enable_multi_document: bool = False
 
 
 class I18nConfig(BaseModel):

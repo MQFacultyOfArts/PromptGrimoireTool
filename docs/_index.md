@@ -50,9 +50,6 @@ library references during development.
 ## guides
 
 - [PromptGrimoire Guides](guides/index.md)
-- [Instructor Setup](guides/instructor-setup.md)
-- [Student Workflow](guides/student-workflow.md)
-- [Your Personal Grimoire](guides/your-personal-grimoire.md)
 
 ## investigations
 

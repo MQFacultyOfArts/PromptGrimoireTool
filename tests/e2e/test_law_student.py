@@ -120,7 +120,7 @@ class TestLawStudent:
                 expect(no_highlights).to_contain_text("No highlights yet")
 
                 # Return to Annotate tab to start highlighting
-                page.get_by_test_id("tab-annotate").click()
+                page.get_by_test_id("tab-source-1").click()
                 wait_for_text_walker(page, timeout=10000)
 
             # Resolve char offsets by searching for unique text in the
@@ -320,7 +320,7 @@ class TestLawStudent:
                 page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
-                annotate_tab = page.get_by_test_id("tab-annotate")
+                annotate_tab = page.get_by_test_id("tab-source-1")
                 expect(annotate_tab).to_have_attribute(
                     "aria-selected", "true", timeout=3000
                 )
@@ -376,14 +376,14 @@ class TestLawStudent:
                 page.wait_for_function("new Promise(r => requestAnimationFrame(r))")
 
                 # Verify Annotate tab is now active
-                annotate_tab = page.get_by_test_id("tab-annotate")
+                annotate_tab = page.get_by_test_id("tab-source-1")
                 expect(annotate_tab).to_have_attribute(
                     "aria-selected", "true", timeout=3000
                 )
 
             with subtests.test(msg="reload_persistence"):
                 # Return to Annotate tab
-                page.get_by_test_id("tab-annotate").click()
+                page.get_by_test_id("tab-source-1").click()
 
                 # Reload page
                 page.reload()

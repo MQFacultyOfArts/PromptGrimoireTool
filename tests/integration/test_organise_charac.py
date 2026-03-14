@@ -20,11 +20,11 @@ import pytest
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
+    _find_all_by_testid,
     _should_see_testid,
 )
 
 if TYPE_CHECKING:
-    from nicegui.element import Element
     from nicegui.testing.user import User
 
 pytestmark = [
@@ -34,32 +34,6 @@ pytestmark = [
     ),
     pytest.mark.nicegui_ui,
 ]
-
-
-# ---------------------------------------------------------------------------
-# Element lookup helpers
-# ---------------------------------------------------------------------------
-
-
-def _find_all_by_testid(user: User, testid: str) -> list[Element]:
-    """Return all visible elements matching data-testid."""
-    from nicegui import ElementFilter
-
-    from tests.integration.nicegui_helpers import (
-        _is_in_open_dialog,
-    )
-
-    results: list[Element] = []
-    with user:
-        for el in ElementFilter():
-            if not el.visible:
-                continue
-            if el.props.get("data-testid") != testid:
-                continue
-            if not _is_in_open_dialog(el):
-                continue
-            results.append(el)
-    return results
 
 
 # ---------------------------------------------------------------------------

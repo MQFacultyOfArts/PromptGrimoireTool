@@ -13,7 +13,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -22,12 +21,13 @@ import pytest
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
+    _find_all_by_testid,
     _fire_event_listeners,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
-    from nicegui.element import Element
     from nicegui.testing.user import User
 
 pytestmark = [
@@ -37,30 +37,6 @@ pytestmark = [
     ),
     pytest.mark.nicegui_ui,
 ]
-
-
-# ---------------------------------------------------------------------------
-# Element lookup helpers
-# ---------------------------------------------------------------------------
-
-
-def _find_all_by_testid(user: User, testid: str) -> list[Element]:
-    """Return all visible elements matching data-testid."""
-    from nicegui import ElementFilter
-
-    from tests.integration.nicegui_helpers import _is_in_open_dialog
-
-    results: list[Element] = []
-    with user:
-        for el in ElementFilter():
-            if not el.visible:
-                continue
-            if el.props.get("data-testid") != testid:
-                continue
-            if not _is_in_open_dialog(el):
-                continue
-            results.append(el)
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -344,19 +320,24 @@ class TestAnnotateCardRendering:
 
         header = next(child for child in long_card if isinstance(child, ui.row))
         _fire_event_listeners(header, "click")
-        await asyncio.sleep(0.1)
 
-        # After expansion, look for truncated text with "..."
-        found_truncated = False
-        for desc in long_card.descendants():
-            if not hasattr(desc, "text"):
-                continue
-            text_val = str(getattr(desc, "text", ""))
-            if "..." in text_val and text_val.startswith('"'):
+        # Wait until a descendant with truncated "..." text is visible.
+        # Polling replaces bare asyncio.sleep(0.1) — we assert on the actual
+        # condition rather than guessing at a timing window.
+        def _has_truncated_text() -> bool:
+            for desc in long_card.descendants():
+                if not hasattr(desc, "text"):
+                    continue
+                text_val = str(getattr(desc, "text", ""))
                 # Format: '"AAAA...AAA..."' (80 A's + "...")
-                found_truncated = True
-                break
-        assert found_truncated, "Expected truncated text with '...' in expanded card"
+                if "..." in text_val and text_val.startswith('"'):
+                    return True
+            return False
+
+        await wait_for(_has_truncated_text, timeout=2.0)
+        assert _has_truncated_text(), (
+            "Expected truncated text with '...' in expanded card"
+        )
 
     @pytest.mark.asyncio
     async def test_comment_count_badge(self, nicegui_user: User) -> None:

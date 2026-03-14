@@ -21,11 +21,11 @@ import pytest
 from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
+    _find_all_by_testid,
     _should_see_testid,
 )
 
 if TYPE_CHECKING:
-    from nicegui.element import Element
     from nicegui.testing.user import User
 
 pytestmark = [
@@ -35,32 +35,6 @@ pytestmark = [
     ),
     pytest.mark.nicegui_ui,
 ]
-
-
-# ---------------------------------------------------------------------------
-# Element lookup helpers
-# ---------------------------------------------------------------------------
-
-
-def _find_all_by_testid(user: User, testid: str) -> list[Element]:
-    """Return all visible elements matching data-testid."""
-    from nicegui import ElementFilter
-
-    from tests.integration.nicegui_helpers import (
-        _is_in_open_dialog,
-    )
-
-    results: list[Element] = []
-    with user:
-        for el in ElementFilter():
-            if not el.visible:
-                continue
-            if el.props.get("data-testid") != testid:
-                continue
-            if not _is_in_open_dialog(el):
-                continue
-            results.append(el)
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -348,34 +322,62 @@ class TestRespondTabRendering:
 
     @pytest.mark.asyncio
     async def test_author_not_anonymised_bug(self, nicegui_user: User) -> None:
-        """CHARACTERISATION: respond.py displays raw author.
+        """CHARACTERISATION: respond.py displays raw author to a second viewer.
 
         This documents the known bug: respond.py does NOT call
-        anonymise_author(). The raw author string is displayed
-        directly. This test locks in the current (broken)
-        behaviour so Phase 2 can fix it and we see the test
-        change.
+        anonymise_author(). The raw author string is displayed directly.
+
+        Setup:
+        - Author user creates highlights with anonymous_sharing=True on the
+          workspace.  Under correct anonymisation a non-owner viewer would see
+          a pseudonym, NOT the real name.
+        - A second viewer is granted explicit "viewer" ACL on the workspace.
+        - The test opens the workspace as the viewer and asserts the raw author
+          name is still shown (broken behaviour).
+
+        After Phase 2 adds anonymise_author() to respond.py this test will need
+        to change: the viewer will see the adjective-animal pseudonym instead of
+        the raw author name.
         """
-        email = "student-rsp-author@test.example.edu.au"
-        ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
-        await _open_respond_tab(nicegui_user, ws_id, email)
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.users import find_or_create_user
+        from promptgrimoire.db.workspaces import _update_workspace_fields
+
+        author_email = "student-rsp-author@test.example.edu.au"
+        viewer_email = "student-rsp-viewer@test.example.edu.au"
+
+        ws_id, _, _ = await _setup_workspace_with_highlights(email=author_email)
+
+        # Enable anonymous_sharing so anonymise_author() would be meaningful
+        await _update_workspace_fields(ws_id, anonymous_sharing=True)
+
+        # Create the viewer user and give them explicit viewer ACL
+        viewer_record, _ = await find_or_create_user(
+            email=viewer_email,
+            display_name=viewer_email.split("@", maxsplit=1)[0],
+        )
+        await grant_permission(ws_id, viewer_record.id, "viewer")
+
+        # Open as the viewer (not the author)
+        await _open_respond_tab(nicegui_user, ws_id, viewer_email)
 
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
-        # respond.py displays raw author without anonymisation
-        user_name = email.split("@", maxsplit=1)[0]
+        # respond.py currently shows raw author -- anonymise_author() not called
+        author_name = author_email.split("@", maxsplit=1)[0]
         found_raw_author = False
         for card in cards:
             for desc in card.descendants():
                 if not hasattr(desc, "text"):
                     continue
-                if f"by {user_name}" in str(desc.text):
+                if f"by {author_name}" in str(desc.text):
                     found_raw_author = True
                     break
             if found_raw_author:
                 break
         assert found_raw_author, (
-            f"Expected raw 'by {user_name}' in respond card "
-            "(non-anonymised -- known bug)"
+            f"Expected raw 'by {author_name}' in respond card as seen by "
+            "a different viewer with anonymous_sharing=True "
+            "(non-anonymised -- known bug, Phase 2 will fix)"
         )
 
     @pytest.mark.asyncio

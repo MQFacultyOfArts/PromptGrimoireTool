@@ -173,9 +173,7 @@ class TestPreprocessForExport:
 
         captured = capsys.readouterr()
         combined = captured.out + captured.err
-        assert (
-            "Unknown platform_hint" in combined or "unknown_platform_hint" in combined
-        )
+        assert "Unknown platform_hint" in combined
         assert "Content" in result  # Still processed via autodiscovery
 
     def test_generic_loop_injects_labels_for_all_roles(self) -> None:

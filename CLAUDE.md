@@ -39,6 +39,8 @@ Structured legal case brief generation and analysis. PRD forthcoming.
 - **pymupdf4llm** - PDF to Markdown extraction with layout analysis (file upload)
 - **lxml** - HTML normalisation in export pipeline
 - **PydanticAI** - structured LLM output for wargame agents (turn_agent, summary_agent)
+- **structlog** - structured JSON logging (replaces stdlib logging across all modules)
+- **httpx** - async HTTP client for Discord webhook alerting
 
 ## Development Workflow
 
@@ -146,6 +148,9 @@ uv run grimoire seed run
 # Manage users, roles, and course enrollments
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role
 
+# Test Discord webhook alerting
+uv run grimoire admin webhook
+
 # Generate user-facing documentation (requires pandoc)
 uv run grimoire docs build
 
@@ -190,6 +195,7 @@ src/promptgrimoire/
 ├── word_count_enforcement.py  # Export-time violation check (pure functions, no UI)
 ├── deadline_worker.py   # Background polling worker for expired wargame deadlines
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
+├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
 └── static/              # JS/CSS assets
 
 tests/

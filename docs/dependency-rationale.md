@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-03-10
+Last reviewed: 2026-03-15
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -177,6 +177,24 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** Phase 1 of `pdf-export-filename-271` selects a transliteration dependency for the new filename policy in `src/promptgrimoire/export/filename.py`. The builder must convert names such as `José Núñez` to `Jose_Nunez` and remove emoji/symbol-only input before the export basename is passed into `export_annotation_pdf(...)`.
 **Why not alternatives:** The design explicitly rejects relying on a vague "Unidecode or similar" layer. The tests need the concrete `text-unidecode` behaviour that `python-slugify` provides in this environment, including deterministic transliteration plus punctuation-to-underscore normalisation for Turnitin- and Windows-safe filenames. Recreating that behaviour with stdlib-only code would mean maintaining our own transliteration table and separator cleanup rules.
 **Classification:** Protective belt. Narrow runtime dependency used only by the export filename policy.
+
+### structlog >= 25.0
+
+**Added:** 2026-03-14
+**Design plan:** docs/design-plans/2026-03-14-structured-logging-339.md
+**Claim:** Structured JSON logging framework. Replaces stdlib `logging` across all modules with machine-parseable JSON Lines output and human-readable console rendering.
+**Evidence:** Every module in `src/promptgrimoire/` uses `logger = structlog.get_logger()` at module level. `src/promptgrimoire/__init__.py` configures the structlog processor chain and `ProcessorFormatter` that captures both structlog and stdlib logger output into a single JSON Lines file. Context fields (`user_id`, `workspace_id`, `request_path`) propagate via `structlog.contextvars`. Guard tests (`test_print_usage_guard.py`, `test_exception_logging_guard.py`) enforce the convention.
+**Why not alternatives:** stdlib `logging` produces unstructured text. structlog provides processor pipelines, context variable binding, and JSON serialisation without a separate serialisation layer. python-json-logger was considered but lacks the contextvar integration and processor composition model.
+**Classification:** Hard core. Every module imports structlog; the logging pipeline, Discord alerting processor, and all exception handlers depend on it.
+
+### httpx >= 0.27
+
+**Added:** 2026-03-14
+**Design plan:** docs/design-plans/2026-03-14-structured-logging-339.md
+**Claim:** Async HTTP client for Discord webhook alerting. Used exclusively by `logging_discord.py` to POST error embeds to a Discord webhook.
+**Evidence:** `src/promptgrimoire/logging_discord.py` imports `httpx.AsyncClient` for fire-and-forget webhook POSTs. No other module imports httpx directly.
+**Why not alternatives:** The application already runs in an asyncio event loop (NiceGUI). `aiohttp` was considered but httpx has a smaller API surface and does not require a persistent session. stdlib `urllib` is sync-only and would block the event loop.
+**Classification:** Protective belt. Used only by the Discord alerting processor; removing it disables alerting but does not affect core functionality.
 
 ## Dev Dependencies
 

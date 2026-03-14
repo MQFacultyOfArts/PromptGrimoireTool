@@ -5,7 +5,7 @@
 ## Project Context
 PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, annotation, and sharing in educational contexts.
 
-- **Tech Stack**: Python 3.14, NiceGUI, SQLModel (Pydantic + SQLAlchemy), PostgreSQL, pycrdt (real-time collaboration), Stytch (auth), mammoth (DOCX conversion), pymupdf4llm (PDF extraction).
+- **Tech Stack**: Python 3.14, NiceGUI, SQLModel (Pydantic + SQLAlchemy), PostgreSQL, pycrdt (real-time collaboration), Stytch (auth), mammoth (DOCX conversion), pymupdf4llm (PDF extraction), structlog (structured JSON logging), httpx (async HTTP for alerting).
 - **Terminology**: Use "Unit" instead of "Course" in all user-facing UI text (Australian university standard). Code identifiers remain `course_id`, `/courses/`, etc.
 
 ## Core Rules & Guardrails
@@ -57,6 +57,7 @@ uvx ty check                # Type checking
 # Execution & Data
 uv run grimoire seed run            # Idempotent development data seeding
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role  # User management
+uv run grimoire admin webhook         # Test Discord webhook alerting
 uv run grimoire docs build          # Generate user-facing documentation (requires pandoc)
 uv run run.py                       # Run the application
 ```
@@ -70,6 +71,16 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 3. **UAT Contracts**: Before marking an implementation plan or feature as complete, you must agree on a contract for the PR and User Acceptance Testing (UAT).
 4. **Documentation Caching**: Prefer reading cached docs in `docs/` over running web searches.
 
+## Logging
+
+Structured JSON logging via structlog. Full details in `docs/logging.md`.
+
+- **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging.
+- **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing.
+- **Context propagation:** `page_route` decorator auto-binds `user_id` and `request_path`. Workspace handlers bind `workspace_id`.
+- **Print guard:** No `print()` in `src/promptgrimoire/` except `cli/`. Guard test enforces this.
+- **Discord alerting:** ERROR/CRITICAL events fire Discord webhook embeds (configured via `ALERTING__DISCORD_WEBHOOK_URL`). Fire-and-forget, deduplicated by `(exception_type, logger_name)` within 60s.
+
 ## Architecture References
 Before modifying core systems, reference the detailed documentation in the `docs/` folder:
 - Schema & Persistence: `docs/database.md`
@@ -78,6 +89,7 @@ Before modifying core systems, reference the detailed documentation in the `docs
 - Web UI & Routing: `docs/annotation-architecture.md`
 - Input Pipeline (HTML/DOCX/PDF): `docs/input-pipeline.md`
 - Export Pipeline: `docs/export.md`
+- Structured Logging: `docs/logging.md`
 - Testing: `docs/testing.md`
 
 ### Database Model Summary

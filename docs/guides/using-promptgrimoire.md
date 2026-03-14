@@ -240,13 +240,37 @@ The chip is visible at the top of every annotation page. If you are unsure which
 
 **Edit buttons are only visible to instructors** with manage permission on the unit. Students do not see Edit buttons.
 
+### What does 'Students with no work' mean?
+
+On the Unit Settings page, an expandable panel labelled **Students with no work (N)** lists enrolled students who have not yet clicked **Start** on any activity in the unit. The number in parentheses is the count of those students.
+
+[![Students with no work expansion on Unit Settings](screenshots/using-promptgrimoire-11-thumb.png)](screenshots/using-promptgrimoire-11.png)
+
+**This does not mean anything is wrong.** It simply means those students have not started a workspace yet. Once you **publish** a week containing activities, students can see the activities on their Navigator and click **Start** to create their own workspace.
+
+See [I want to make my activity visible to students](#i-want-to-make-my-activity-visible-to-students) for how to publish.
+
+### I want to make my activity visible to students
+
+Activities live inside **weeks**, and weeks have a **Published** / **Draft** status. Students can only see activities in published weeks -- draft weeks are invisible to them.
+
+To publish: go to **Unit Settings**, find the week containing your activity, and click the **Publish** button next to the week heading. The status changes to **Published** and the activities in that week immediately appear on every enrolled student's Navigator with a **Start** button.
+
+**Before publishing, check that:**
+
+1. The template workspace has **content** added (otherwise students get an empty workspace)
+2. **Tags** are configured on the template (students inherit the tag vocabulary)
+3. Students are **enrolled** in the unit
+
+See [I've enrolled students. What happens next?](#ive-enrolled-students-what-happens-next) for what students see after publishing.
+
 ## Enrolment
 
 ### I want to enrol students in my unit
 
 On the unit detail page, click **Manage Enrollments**. This opens a separate enrolment page where you can enter student email addresses individually, or upload a bulk XLSX spreadsheet to add many students at once.
 
-[![Manage Enrolments button in Unit Settings](screenshots/using-promptgrimoire-11-thumb.png)](screenshots/using-promptgrimoire-11.png)
+[![Manage Enrolments button in Unit Settings](screenshots/using-promptgrimoire-12-thumb.png)](screenshots/using-promptgrimoire-12.png)
 
 See [Instructor Setup - Step 6](instructor-setup.md#step-6-enrolling-students) for a detailed walkthrough.
 
@@ -254,7 +278,7 @@ See [Instructor Setup - Step 6](instructor-setup.md#step-6-enrolling-students) f
 
 Once students are enrolled, they log in and see the Navigator -- their home page. Any **published** activities in the unit appear automatically with a **Start** button.
 
-[![Student Navigator showing enrolled unit and activities](screenshots/using-promptgrimoire-12-thumb.png)](screenshots/using-promptgrimoire-12.png)
+[![Student Navigator showing enrolled unit and activities](screenshots/using-promptgrimoire-13-thumb.png)](screenshots/using-promptgrimoire-13.png)
 
 When a student clicks **Start**, the application clones your template workspace -- they get their own copy with the content and tag configuration you set up. Students cannot see or modify the template itself.
 
@@ -309,7 +333,7 @@ The rule is: **student workspaces block deletion** at every level (activity, wee
 
 The Navigator is your home page. It shows all your workspaces organised by unit and activity.
 
-[![Navigator showing workspaces](screenshots/using-promptgrimoire-13-thumb.png)](screenshots/using-promptgrimoire-13.png)
+[![Navigator showing workspaces](screenshots/using-promptgrimoire-14-thumb.png)](screenshots/using-promptgrimoire-14.png)
 
 Click on a workspace to open it. Your most recent workspaces appear at the top.
 
@@ -317,7 +341,7 @@ Click on a workspace to open it. Your most recent workspaces appear at the top.
 
 Use the search bar at the top of the Navigator to find workspaces by content, tag, or comment text.
 
-[![Search bar on the Navigator](screenshots/using-promptgrimoire-14-thumb.png)](screenshots/using-promptgrimoire-14.png)
+[![Search bar on the Navigator](screenshots/using-promptgrimoire-15-thumb.png)](screenshots/using-promptgrimoire-15.png)
 
 Full-text search looks across your highlights, tags, comments, and response text.
 
@@ -327,7 +351,7 @@ Full-text search looks across your highlights, tags, comments, and response text
 
 Open the workspace you want to share. Click the **Share** button in the toolbar to open the sharing dialog.
 
-[![Share button in the workspace toolbar](screenshots/using-promptgrimoire-15-thumb.png)](screenshots/using-promptgrimoire-15.png)
+[![Share button in the workspace toolbar](screenshots/using-promptgrimoire-16-thumb.png)](screenshots/using-promptgrimoire-16.png)
 
 Enter the email address of the person you want to share with. They will see your workspace on their Navigator.
 

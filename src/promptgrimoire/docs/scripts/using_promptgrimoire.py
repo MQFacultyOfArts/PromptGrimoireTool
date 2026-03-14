@@ -1038,6 +1038,72 @@ def _entry_rename_entities(guide: Guide) -> None:
         )
 
 
+def _entry_students_no_work(
+    page: Page, base_url: str, course_url: str, guide: Guide
+) -> None:
+    """What does 'Students with no work' mean?"""
+    with guide.step("What does 'Students with no work' mean?", level=3) as g:
+        g.note(
+            "On the Unit Settings page, an expandable panel labelled "
+            "**Students with no work (N)** lists enrolled students who "
+            "have not yet clicked **Start** on any activity in the unit. "
+            "The number in parentheses is the count of those students."
+        )
+        _authenticate(page, base_url, "instructor@uni.edu")
+        page.goto(course_url)
+        page.get_by_test_id("students-no-work").wait_for(state="visible", timeout=10000)
+        g.screenshot(
+            "Students with no work expansion on Unit Settings",
+            highlight=["students-no-work"],
+        )
+        g.note(
+            "**This does not mean anything is wrong.** It simply means "
+            "those students have not started a workspace yet. Once you "
+            "**publish** a week containing activities, students can see "
+            "the activities on their Navigator and click **Start** to "
+            "create their own workspace."
+        )
+        g.note(
+            "See [I want to make my activity visible to students]"
+            "(#i-want-to-make-my-activity-visible-to-students) "
+            "for how to publish."
+        )
+
+
+def _entry_publish_activity(guide: Guide) -> None:
+    """I want to make my activity visible to students."""
+    with guide.step(
+        "I want to make my activity visible to students", level=3, text_only=True
+    ) as g:
+        g.note(
+            "Activities live inside **weeks**, and weeks have a "
+            "**Published** / **Draft** status. Students can only see "
+            "activities in published weeks -- draft weeks are invisible "
+            "to them."
+        )
+        g.note(
+            "To publish: go to **Unit Settings**, find the week "
+            "containing your activity, and click the **Publish** button "
+            "next to the week heading. The status changes to "
+            "**Published** and the activities in that week immediately "
+            "appear on every enrolled student's Navigator with a "
+            "**Start** button."
+        )
+        g.note(
+            "**Before publishing, check that:**\n\n"
+            "1. The template workspace has **content** added "
+            "(otherwise students get an empty workspace)\n"
+            "2. **Tags** are configured on the template "
+            "(students inherit the tag vocabulary)\n"
+            "3. Students are **enrolled** in the unit"
+        )
+        g.note(
+            "See [I've enrolled students. What happens next?]"
+            "(#ive-enrolled-students-what-happens-next) "
+            "for what students see after publishing."
+        )
+
+
 def _entry_pdf_filename(guide: Guide) -> None:
     """What will my exported PDF be named?"""
     with guide.step(
@@ -1252,6 +1318,8 @@ def _run_management_sections(
     _entry_create_unit(page, base_url, guide)
     _entry_chip_colours(guide)
     _entry_rename_entities(guide)
+    _entry_students_no_work(page, base_url, course_url, guide)
+    _entry_publish_activity(guide)
 
     guide.section("Enrolment")
     _entry_enrol_students(page, course_url, guide)

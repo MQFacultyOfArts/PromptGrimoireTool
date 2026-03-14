@@ -132,14 +132,7 @@ class TestDeleteOwnershipContext:
             effective_permission="viewer",
             user_id="user-a",
         )
-        # Viewer: not own, not owner, not privileged
-        is_own = state.user_id is not None and state.user_id == "user-b"
-        can_delete = (
-            is_own
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
-        )
-        assert can_delete is False
+        assert state.can_delete_content("user-b") is False
 
     def test_peer_can_delete_own_highlight(self) -> None:
         """Peer can delete their own highlight."""
@@ -148,13 +141,7 @@ class TestDeleteOwnershipContext:
             effective_permission="peer",
             user_id="user-a",
         )
-        is_own = state.user_id is not None and state.user_id == "user-a"
-        can_delete = (
-            is_own
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
-        )
-        assert can_delete is True
+        assert state.can_delete_content("user-a") is True
 
     def test_peer_cannot_delete_others_highlight(self) -> None:
         """Peer cannot delete another user's highlight."""
@@ -163,28 +150,29 @@ class TestDeleteOwnershipContext:
             effective_permission="peer",
             user_id="user-a",
         )
-        is_own = state.user_id is not None and state.user_id == "user-b"
-        can_delete = (
-            is_own
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
-        )
-        assert can_delete is False
+        assert state.can_delete_content("user-b") is False
 
-    def test_owner_can_delete_any_highlight(self) -> None:
-        """Owner can delete any user's highlight."""
+    def test_owner_cannot_delete_others_highlight_unless_privileged(self) -> None:
+        """Owner without privilege cannot delete another user's highlight.
+
+        Ownership grants workspace management, not content moderation.
+        Only privileged users (instructors/admins) can delete others' content.
+        """
         state = PageState(
             workspace_id=uuid4(),
             effective_permission="owner",
             user_id="user-a",
         )
-        is_own = state.user_id is not None and state.user_id == "user-b"
-        can_delete = (
-            is_own
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
+        assert state.can_delete_content("user-b") is False
+
+    def test_owner_can_delete_own_highlight(self) -> None:
+        """Owner can always delete their own highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="owner",
+            user_id="user-a",
         )
-        assert can_delete is True
+        assert state.can_delete_content("user-a") is True
 
     def test_privileged_can_delete_any_highlight(self) -> None:
         """Privileged user (instructor) can delete any highlight."""
@@ -194,13 +182,17 @@ class TestDeleteOwnershipContext:
             user_id="user-a",
             viewer_is_privileged=True,
         )
-        is_own = state.user_id is not None and state.user_id == "user-b"
-        can_delete = (
-            is_own
-            or state.effective_permission == "owner"
-            or state.viewer_is_privileged
+        assert state.can_delete_content("user-b") is True
+
+    def test_privileged_owner_can_delete_any_highlight(self) -> None:
+        """Privileged owner can delete any highlight."""
+        state = PageState(
+            workspace_id=uuid4(),
+            effective_permission="owner",
+            user_id="user-a",
+            viewer_is_privileged=True,
         )
-        assert can_delete is True
+        assert state.can_delete_content("user-b") is True
 
     def test_peer_cannot_manage_acl_ac1_7(self) -> None:
         """AC1.7: Peer cannot manage ACL (share workspace)."""

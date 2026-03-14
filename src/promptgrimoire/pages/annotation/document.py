@@ -231,6 +231,7 @@ async def _render_document_with_highlights(
     state.document_id = doc.id
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
+    state.card_snapshots = {}
 
     # Extract characters from clean HTML for text extraction when highlighting
     # (char spans are injected client-side, not stored in DB)

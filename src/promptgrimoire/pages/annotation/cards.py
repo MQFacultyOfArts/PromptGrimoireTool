@@ -35,6 +35,23 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+def _snapshot_highlight(hl: dict[str, Any]) -> dict[str, Any]:
+    """Create a comparable snapshot of highlight data for change detection.
+
+    Captures tag, comment count, and comment text content to detect
+    when a card needs rebuilding.
+    """
+    comments = hl.get("comments", [])
+    return {
+        "tag": hl.get("tag", ""),
+        "comment_count": len(comments),
+        "comment_texts": tuple(
+            c.get("text", "")
+            for c in sorted(comments, key=lambda c: c.get("created_at", ""))
+        ),
+    }
+
+
 def _build_comment_delete_btn(
     state: PageState,
     highlight_id: str,
@@ -561,6 +578,7 @@ def _diff_annotation_cards(state: PageState) -> None:
         card = state.annotation_cards.pop(removed_id)
         card.delete()
         state.expanded_cards.discard(removed_id)
+        state.card_snapshots.pop(removed_id, None)
         changed = True
 
     # ADDED: IDs in CRDT but not in registry
@@ -573,6 +591,7 @@ def _diff_annotation_cards(state: PageState) -> None:
                 hl = crdt_map[add_id]
                 card = _build_annotation_card(state, hl)
                 state.annotation_cards[add_id] = card
+                state.card_snapshots[add_id] = _snapshot_highlight(hl)
                 # Find correct position in sorted order
                 position = sorted_hl_ids.index(add_id)
                 card.move(
@@ -580,6 +599,28 @@ def _diff_annotation_cards(state: PageState) -> None:
                     target_index=position,
                 )
                 changed = True
+
+    # CHANGED: IDs in both — check if highlight data differs
+    common_ids = crdt_ids & registry_ids
+    for hl_id in common_ids:
+        hl = crdt_map[hl_id]
+        new_snap = _snapshot_highlight(hl)
+        old_snap = state.card_snapshots.get(hl_id)
+        if old_snap != new_snap:
+            old_card = state.annotation_cards[hl_id]
+            old_card.delete()
+            with state.annotations_container:
+                new_card = _build_annotation_card(state, hl)
+                state.annotation_cards[hl_id] = new_card
+                state.card_snapshots[hl_id] = new_snap
+                # Restore position in sorted order
+                sorted_hl_ids = [h["id"] for h in highlights]
+                position = sorted_hl_ids.index(hl_id)
+                new_card.move(
+                    target_container=state.annotations_container,
+                    target_index=position,
+                )
+            changed = True
 
     if changed:
         state.cards_epoch += 1
@@ -637,6 +678,7 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
             logger.debug("[CARDS] Creating card for highlight %s", hl_id[:8])
             card = _build_annotation_card(state, hl)
             state.annotation_cards[hl_id] = card
+            state.card_snapshots[hl_id] = _snapshot_highlight(hl)
 
         state.cards_epoch += 1
         ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")

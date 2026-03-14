@@ -126,12 +126,14 @@ class TestLaTeXPackages:
         preamble = build_annotation_preamble({}, body_text=cjk_text)
 
         # Create minimal document using production preamble
+        # Note: emoji rendering is tested via the full export pipeline
+        # (escape_unicode_latex + AccSupp), not here. This test verifies
+        # preamble compilation and CJK font loading only.
         tex_content = (
             "\\documentclass{article}\n"
             f"{preamble}\n"
             "\\begin{document}\n"
-            f"Hello World. CJK: \\cjktext{{{cjk_text}}} "
-            "Emoji: \\emoji{party-popper}\n"
+            f"Hello World. CJK: \\cjktext{{{cjk_text}}}\n"
             "\\end{document}\n"
         )
         tex_file = tmp_path / "test_unicode.tex"

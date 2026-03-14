@@ -87,7 +87,11 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     return "\n".join(definitions)
 
 
-def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") -> str:
+def build_annotation_preamble(
+    tag_colours: dict[str, str],
+    body_text: str = "",
+    scripts: frozenset[str] | None = None,
+) -> str:
     """Build complete annotation preamble with dynamic font loading.
 
     The .sty file handles all static content (packages, commands, environments,
@@ -99,11 +103,14 @@ def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") 
         tag_colours: Dict of tag_name -> hex colour.
         body_text: Document body text for Unicode script detection.
             Empty string = Latin-only fonts (fast compilation).
+        scripts: Pre-computed script detection result. If provided,
+            skips calling detect_scripts(body_text).
 
     Returns:
         Complete LaTeX preamble string.
     """
-    scripts = detect_scripts(body_text)
+    if scripts is None:
+        scripts = detect_scripts(body_text)
     font_preamble = build_font_preamble(scripts)
     colour_defs = generate_tag_colour_definitions(tag_colours)
     return f"\\usepackage{{promptgrimoire-export}}\n{font_preamble}\n{colour_defs}"

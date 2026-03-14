@@ -2,7 +2,7 @@
 
 Verifies ACs:
 - structured-logging-339.AC3.1: Export produces log events for each stage
-  (pandoc_convert, tex_generate, latex_compile, pdf_validate) with
+  (pandoc_convert, tex_generate, latex_compile, export_complete) with
   export_id, export_stage, stage_duration_ms
 - structured-logging-339.AC3.2: All stage events share the same export_id
 - structured-logging-339.AC3.3: LaTeX compilation failure produces log event
@@ -107,7 +107,7 @@ class TestExportStageTiming:
 
     async def test_export_produces_four_stage_events(self, tmp_path: Path) -> None:
         """AC3.1: Successful export logs pandoc_convert, tex_generate,
-        latex_compile, pdf_validate stages."""
+        latex_compile, export_complete stages."""
         log_file = _setup_json_logging(tmp_path)
 
         # Create a minimal but valid export environment
@@ -139,12 +139,15 @@ class TestExportStageTiming:
             "pandoc_convert",
             "tex_generate",
             "latex_compile",
-            "pdf_validate",
         }
         actual_stages = {e["export_stage"] for e in stage_events}
         assert expected_stages <= actual_stages, (
             f"Missing stages: {expected_stages - actual_stages}"
         )
+
+        # Verify export_complete event exists
+        complete_events = [e for e in all_events if e.get("event") == "export_complete"]
+        assert len(complete_events) == 1, "Expected one export_complete event"
 
         for ev in stage_events:
             assert "export_id" in ev, f"Missing export_id in {ev['export_stage']}"
@@ -481,4 +484,4 @@ class TestSubprocessOutputCapture:
 
         assert len(subprocess_events) >= 1
         ev = subprocess_events[0]
-        assert len(str(ev["latex_stdout"])) <= 4096
+        assert len(ev["latex_stdout"]) <= 4096

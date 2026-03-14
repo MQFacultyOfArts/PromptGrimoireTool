@@ -487,6 +487,7 @@ async def export_annotation_pdf(
         ValueError: If highlights are provided but content is empty.
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
+    t_export_start = time.monotonic()
     export_id = str(uuid4())
     log = logger.bind(export_id=export_id)
 
@@ -540,8 +541,10 @@ async def export_annotation_pdf(
         general_notes, latex_content=notes_latex
     )
     full_text = f"{latex_body}\n{notes_section}" if notes_section else latex_body
-    preamble = build_annotation_preamble(tag_colours, body_text=full_text)
     scripts = detect_scripts(full_text)
+    preamble = build_annotation_preamble(
+        tag_colours, body_text=full_text, scripts=scripts
+    )
 
     ensure_sty_in_dir(output_dir)
     document = _DOCUMENT_TEMPLATE.format(
@@ -566,15 +569,11 @@ async def export_annotation_pdf(
         stage_duration_ms=round((time.monotonic() - t0) * 1000),
     )
 
-    # --- Stage: pdf_validate ---
-    t0 = time.monotonic()
-    # PDF existence and size already checked by compile_latex;
-    # log completion with font fallback info.
+    # --- Export complete ---
     log.info(
-        "export_stage_complete",
-        export_stage="pdf_validate",
-        stage_duration_ms=round((time.monotonic() - t0) * 1000),
+        "export_complete",
         font_fallbacks=sorted(scripts),
+        total_duration_ms=round((time.monotonic() - t_export_start) * 1000),
     )
 
     return pdf_path

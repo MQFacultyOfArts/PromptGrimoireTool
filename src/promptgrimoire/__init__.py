@@ -200,7 +200,13 @@ def _setup_logging() -> None:
     console_handler.setFormatter(console_formatter)
 
     # --- Root stdlib logger ---
+    # Clear any pre-existing handlers (e.g. from uvicorn's LOGGING_CONFIG
+    # dictConfig call during reload, or NiceGUI's default setup) to prevent
+    # duplicate output with raw dict formatting.
     root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)

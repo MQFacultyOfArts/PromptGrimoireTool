@@ -287,8 +287,10 @@ class TestRespondTabRendering:
         assert len(cards) == 2, f"Expected 2 reference cards, got {len(cards)}"
 
     @pytest.mark.asyncio
-    async def test_snippet_truncated_at_100_chars(self, nicegui_user: User) -> None:
-        """Text >100 chars is truncated with '...' suffix."""
+    async def test_expandable_text_truncated_at_80_chars(
+        self, nicegui_user: User
+    ) -> None:
+        """Text >80 chars uses expandable text with expand chevron (AC11.2)."""
         email = "student-rsp-trunc@test.example.edu.au"
         ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
         await _open_respond_tab(nicegui_user, ws_id, email)
@@ -303,12 +305,17 @@ class TestRespondTabRendering:
                 if "CCC" in text_val and "..." in text_val:
                     inner = text_val.strip('"')
                     assert inner.endswith("..."), f"Expected '...' suffix: {text_val}"
-                    assert len(inner) == 103, f"Expected 103 chars, got {len(inner)}"
+                    # 80 chars of C + "..."
+                    assert len(inner) == 83, (
+                        f"Expected 83 chars (80+...), got {len(inner)}"
+                    )
                     found_truncated = True
                     break
             if found_truncated:
                 break
-        assert found_truncated, "Expected truncated text in respond reference card"
+        assert found_truncated, (
+            "Expected expandable truncated text in respond reference card"
+        )
 
     @pytest.mark.asyncio
     async def test_locate_button_present(self, nicegui_user: User) -> None:
@@ -344,65 +351,65 @@ class TestRespondTabRendering:
         assert found_comment, "Expected comment text in respond reference card"
 
     @pytest.mark.asyncio
-    async def test_respond_shows_raw_author_to_viewer(self, nicegui_user: User) -> None:
-        """CHARACTERISATION: respond.py displays raw author to a second viewer.
+    async def test_respond_anonymises_author_for_other_viewer(
+        self, nicegui_user: User
+    ) -> None:
+        """Respond tab anonymises author for non-author viewer (AC11.3).
 
-        Known defect in src/promptgrimoire/pages/annotation/respond.py:
-        respond.py does NOT call anonymise_author(). The raw author string
-        is displayed directly to all viewers, even when anonymous_sharing=True.
-
-        Setup:
-        - anonymous_sharing=True is set on the Activity so that a correct call
-          to anonymise_author() would return a pseudonym for non-author viewers.
-        - A second viewer is granted explicit "viewer" ACL on the workspace.
-        - The test opens the workspace as the viewer and asserts the raw author
-          name is still shown (broken behaviour -- respond.py skips
-          anonymise_author() entirely).
-
-        After Phase 2 adds anonymise_author() to respond.py, the viewer will
-        see the adjective-animal pseudonym instead of the raw author name, and
-        this assertion will fail -- which is the intended regression signal.
+        With anonymous_sharing=True, a viewer who did NOT create the
+        highlights must see the adjective-animal pseudonym, not the raw
+        author name. This verifies respond.py calls anonymise_author().
         """
+        from promptgrimoire.auth.anonymise import _adjective_animal_label
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.users import find_or_create_user
 
         author_email = "student-rsp-author@test.example.edu.au"
         viewer_email = "student-rsp-viewer@test.example.edu.au"
 
-        # anonymous_sharing=True: if respond.py called anonymise_author(),
-        # the viewer would see a pseudonym. Since it doesn't, the viewer
-        # still sees the raw name -- that's the broken behaviour we lock in.
-        ws_id, _, _ = await _setup_workspace_with_highlights(
+        ws_id, _, author_user_id = await _setup_workspace_with_highlights(
             email=author_email, anonymous_sharing=True
         )
 
-        # Create the viewer user and give them explicit viewer ACL
+        # Create viewer and grant explicit ACL
         viewer_record, _ = await find_or_create_user(
             email=viewer_email,
             display_name=viewer_email.split("@", maxsplit=1)[0],
         )
         await grant_permission(ws_id, viewer_record.id, "viewer")
 
+        # Compute the exact pseudonym that anonymise_author() will produce
+        expected_pseudonym = _adjective_animal_label(author_user_id)
+
         # Open as the viewer (not the author)
         await _open_respond_tab(nicegui_user, ws_id, viewer_email)
 
         cards = _find_all_by_testid(nicegui_user, "respond-reference-card")
-        # respond.py currently shows raw author -- anonymise_author() not called
         author_name = author_email.split("@", maxsplit=1)[0]
-        found_raw_author = False
+
+        # Raw author name must NOT appear (anonymised)
+        raw_author_found = False
+        # The exact deterministic pseudonym must appear
+        pseudonym_found = False
         for card in cards:
             for desc in card.descendants():
                 if not hasattr(desc, "text"):
                     continue
-                if f"by {author_name}" in str(desc.text):
-                    found_raw_author = True
-                    break
-            if found_raw_author:
-                break
-        assert found_raw_author, (
-            f"Expected raw 'by {author_name}' in respond card as seen by "
-            f"viewer '{viewer_email}' with anonymous_sharing=True on the Activity "
-            "(respond.py skips anonymise_author() -- known bug, Phase 2 will fix)"
+                text_val = str(desc.text)
+                if f"by {author_name}" in text_val:
+                    raw_author_found = True
+                if f"by {expected_pseudonym}" in text_val:
+                    pseudonym_found = True
+
+        assert not raw_author_found, (
+            f"Raw author '{author_name}' must NOT appear when "
+            "anonymous_sharing=True and viewing as a different user "
+            "(respond.py must call anonymise_author())"
+        )
+        assert pseudonym_found, (
+            f"Expected exact pseudonym 'by {expected_pseudonym}' in respond card "
+            f"for viewer '{viewer_email}' with anonymous_sharing=True "
+            "(from _adjective_animal_label deterministic contract)"
         )
 
     @pytest.mark.asyncio

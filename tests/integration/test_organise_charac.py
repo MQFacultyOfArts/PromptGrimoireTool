@@ -298,14 +298,16 @@ class TestOrganiseTabRendering:
         assert len(cards) == 3, f"Expected 3 organise cards, got {len(cards)}"
 
     @pytest.mark.asyncio
-    async def test_snippet_truncated_at_100_chars(self, nicegui_user: User) -> None:
-        """Text >100 chars is truncated with '...' suffix."""
+    async def test_expandable_text_truncated_at_80_chars(
+        self, nicegui_user: User
+    ) -> None:
+        """Text >80 chars uses expandable text with expand chevron (AC11.1)."""
         email = "student-org-trunc@test.example.edu.au"
         ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
         await _open_organise_tab(nicegui_user, ws_id, email)
 
         cards = _find_all_by_testid(nicegui_user, "organise-card")
-        # Find the card with long text (120 B's)
+        # Find the card with long text (120 B's) — now 80-char truncation
         found_truncated = False
         for card in cards:
             for desc in card.descendants():
@@ -313,20 +315,22 @@ class TestOrganiseTabRendering:
                     continue
                 text_val = str(desc.text)
                 if "BBB" in text_val and "..." in text_val:
-                    # Should be 100 B's + "..."
+                    # Should be 80 B's + "..."
                     inner = text_val.strip('"')
                     assert inner.endswith("..."), (
                         f"Expected '...' suffix, got: {text_val}"
                     )
-                    # 100 chars of B + "..."
-                    assert len(inner) == 103, (
-                        f"Expected 103 chars (100+...), got {len(inner)}"
+                    # 80 chars of B + "..."
+                    assert len(inner) == 83, (
+                        f"Expected 83 chars (80+...), got {len(inner)}"
                     )
                     found_truncated = True
                     break
             if found_truncated:
                 break
-        assert found_truncated, "Expected truncated text with '...' in organise card"
+        assert found_truncated, (
+            "Expected expandable truncated text with '...' in organise card"
+        )
 
     @pytest.mark.asyncio
     async def test_short_text_not_truncated(self, nicegui_user: User) -> None:

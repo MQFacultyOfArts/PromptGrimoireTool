@@ -49,7 +49,6 @@ library references during development.
 ## guides
 
 - [PromptGrimoire Guides](guides/index.md)
-- [Using PromptGrimoire](guides/using-promptgrimoire.md)
 
 ## lark
 

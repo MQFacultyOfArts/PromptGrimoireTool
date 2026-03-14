@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -25,9 +26,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.pool import _ConnectionRecord
 
-logger = logging.getLogger(__name__)
-_pool_logger = logging.getLogger(f"{__name__}.pool")
-_pool_logger.setLevel(logging.INFO)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
+_pool_logger = structlog.get_logger(f"{__name__}.pool")
+logging.getLogger(f"{__name__}.pool").setLevel(logging.INFO)
 
 
 def _pool_status(pool: object) -> str:

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import app, events, ui
 
 from promptgrimoire.auth import check_workspace_access, is_privileged_user
@@ -68,7 +69,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import Workspace
     from promptgrimoire.pages.annotation import PermissionLevel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_current_username() -> str:

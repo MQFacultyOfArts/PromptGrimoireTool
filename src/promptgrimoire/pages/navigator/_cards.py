@@ -6,6 +6,7 @@ import dataclasses
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.db.workspaces import (
@@ -30,7 +31,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.navigator import NavigatorRow
     from promptgrimoire.pages.navigator._helpers import PageState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _update_row_title(

@@ -10,6 +10,7 @@ import json
 import logging
 from typing import Any
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -22,7 +23,8 @@ from promptgrimoire.pages.annotation import (
 )
 from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
@@ -176,6 +178,21 @@ async def _delete_highlight(
         await state.broadcast_update()
 
 
+def _validate_highlight_state(state: PageState) -> str | None:
+    """Check preconditions for adding a highlight.
+
+    Returns an error message if invalid, or None if ready to proceed.
+    """
+    if state.selection_start is None or state.selection_end is None:
+        logger.debug("[HIGHLIGHT] No selection - returning early")
+        return "No selection"
+    if state.document_id is None:
+        return "No document"
+    if state.crdt_doc is None:
+        return "CRDT not initialized"
+    return None
+
+
 async def _add_highlight(state: PageState, tag: str) -> None:
     """Add a highlight from current selection to CRDT.
 
@@ -195,21 +212,16 @@ async def _add_highlight(state: PageState, tag: str) -> None:
         state.selection_end,
         tag,
     )
-    if state.selection_start is None or state.selection_end is None:
-        logger.debug("[HIGHLIGHT] No selection - returning early")
+    error = _validate_highlight_state(state)
+    if error:
         state.processing_highlight = False
-        ui.notify("No selection", type="warning")
+        ui.notify(error, type="warning")
         return
 
-    if state.document_id is None:
-        state.processing_highlight = False
-        ui.notify("No document", type="warning")
-        return
-
-    if state.crdt_doc is None:
-        state.processing_highlight = False
-        ui.notify("CRDT not initialized", type="warning")
-        return
+    # Type narrowing — _validate_highlight_state guarantees these are not None
+    assert state.selection_start is not None  # noqa: S101
+    assert state.selection_end is not None  # noqa: S101
+    assert state.crdt_doc is not None  # noqa: S101
 
     try:
         # Update status to show saving

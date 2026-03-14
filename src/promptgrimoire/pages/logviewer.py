@@ -12,6 +12,7 @@ import json
 import logging
 from pathlib import Path
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.config import get_settings
@@ -19,7 +20,8 @@ from promptgrimoire.pages.layout import require_roleplay_enabled
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.roleplay_access import require_roleplay_page_access
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def parse_log_file(path: Path) -> tuple[dict | None, list[dict]]:

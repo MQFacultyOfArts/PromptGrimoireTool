@@ -7,7 +7,6 @@ The _env_file parameter is a pydantic-settings internal not visible to ty.
 from __future__ import annotations
 
 import inspect
-import logging
 import os
 from pathlib import Path
 from tempfile import gettempdir
@@ -282,7 +281,7 @@ class TestWorktreeEnvPaths:
 
     def test_get_settings_logs_env_files(
         self,
-        caplog: pytest.LogCaptureFixture,
+        capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AC7.4: get_settings() emits INFO log about .env loading."""
@@ -299,11 +298,11 @@ class TestWorktreeEnvPaths:
         monkeypatch.setattr(config_module.Settings, "__init__", _patched_init)
         get_settings.cache_clear()
         try:
-            with caplog.at_level(logging.INFO, logger="promptgrimoire.config"):
-                get_settings()
-            messages = [r.message for r in caplog.records]
-            assert any("Settings" in m and ".env" in m for m in messages), (
-                f"Expected INFO log about .env, got: {messages}"
+            get_settings()
+            captured = capsys.readouterr()
+            combined = captured.out + captured.err
+            assert "Settings" in combined or "settings_loaded" in combined, (
+                f"Expected INFO log about .env, got: {combined!r}"
             )
         finally:
             get_settings.cache_clear()

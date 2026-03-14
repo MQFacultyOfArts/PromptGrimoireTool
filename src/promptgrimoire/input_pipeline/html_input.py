@@ -19,6 +19,7 @@ import logging
 import re
 from typing import Literal
 
+import structlog
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.converters import (
@@ -40,7 +41,8 @@ from promptgrimoire.input_pipeline.text_extraction import (
     walk_and_map,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Content types supported by the pipeline
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")

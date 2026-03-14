@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
@@ -72,7 +73,8 @@ from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -97,8 +99,6 @@ class _CourseDetailContext(NamedTuple):
     can_view_drafts: bool
     client_id: str
 
-
-logger = logging.getLogger(__name__)
 
 _CSS_FILE = Path(__file__).resolve().parent.parent / "static" / "courses.css"
 

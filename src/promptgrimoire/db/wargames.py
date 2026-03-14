@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
+import structlog
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_core import to_jsonable_python
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -47,7 +48,8 @@ if TYPE_CHECKING:
     from promptgrimoire.wargame import RosterEntry
     from promptgrimoire.wargame.agents import StudentSummary, TurnResult
 
-_logger = logging.getLogger(__name__)
+_logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
 
 _DUPLICATE_CODENAME_CONSTRAINT = "uq_wargame_team_activity_codename"
 # SQLModel exposes mapped attributes as scalar Python types to `ty`, so we grab

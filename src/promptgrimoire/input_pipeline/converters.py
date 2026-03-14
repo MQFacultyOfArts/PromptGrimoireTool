@@ -13,8 +13,10 @@ import logging
 import fitz
 import mammoth
 import pymupdf4llm
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def convert_docx_to_html(content: bytes) -> str:

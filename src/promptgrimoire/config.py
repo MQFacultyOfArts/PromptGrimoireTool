@@ -14,10 +14,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
+import structlog
 from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # ---------------------------------------------------------------------------
 # Path resolution for worktree-aware .env loading

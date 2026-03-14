@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
 
@@ -33,7 +34,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 _PREVIEW_MAX_CHARS = 50

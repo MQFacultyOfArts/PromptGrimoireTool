@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import os
 import shutil
 import time
 from typing import TYPE_CHECKING
+
+import structlog
 
 from promptgrimoire.cli._shared import _pre_test_db_cleanup, console
 from promptgrimoire.cli.e2e._artifacts import (
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 def _drop_database_with_debug(db_url: str, *, context: str) -> None:

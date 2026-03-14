@@ -10,12 +10,15 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
 
 
 class PersistenceManager:

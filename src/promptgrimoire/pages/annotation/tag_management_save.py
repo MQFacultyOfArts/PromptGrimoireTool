@@ -12,9 +12,11 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

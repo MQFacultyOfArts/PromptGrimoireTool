@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import structlog
+
 from promptgrimoire.export.highlight_spans import compute_highlight_spans
 from promptgrimoire.export.html_normaliser import (
     fix_midword_font_splits,
@@ -26,7 +28,8 @@ from promptgrimoire.export.html_normaliser import (
 )
 from promptgrimoire.export.list_normalizer import normalize_list_values
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Path to highlight.lua Pandoc filter (always included for annotation export)
 _HIGHLIGHT_FILTER = Path(__file__).parent / "filters" / "highlight.lua"

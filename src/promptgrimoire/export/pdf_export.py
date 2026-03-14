@@ -19,13 +19,16 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
 from promptgrimoire.word_count_enforcement import check_word_count_violation
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Path to the .sty file that contains all static LaTeX preamble content
 STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"

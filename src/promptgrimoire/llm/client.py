@@ -6,11 +6,13 @@ import logging
 from typing import TYPE_CHECKING
 
 import anthropic
+import structlog
 
 from promptgrimoire.llm.lorebook import activate_entries
 from promptgrimoire.llm.prompt import build_messages, build_system_prompt
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -158,6 +160,44 @@ class ClaudeClient:
             metadata={"model": self.model, "api": "claude"},
         )
 
+    def _build_api_params(
+        self,
+        system_prompt: str,
+        messages: list[anthropic.types.MessageParam],
+    ) -> dict:
+        """Build API parameters for the Claude messages stream call."""
+        params: dict = {
+            "model": self.model,
+            "max_tokens": 16000 if self.thinking_budget > 0 else 1024,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if self.thinking_budget > 0:
+            params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self.thinking_budget,
+            }
+        return params
+
+    def _build_turn_metadata(
+        self,
+        activated_names: list[str],
+        thinking_content: str,
+        error: Exception | None,
+    ) -> dict:
+        """Build metadata dict for the response turn."""
+        metadata: dict = {
+            "model": self.model,
+            "api": "claude",
+            "activated_lorebook": activated_names,
+        }
+        if thinking_content:
+            metadata["reasoning"] = thinking_content
+        if error:
+            metadata["partial"] = True
+            metadata["error"] = str(error)
+        return metadata
+
     async def stream_message_only(self, session: Session) -> AsyncIterator[str]:
         """Stream response without adding user turn to session.
 
@@ -170,10 +210,7 @@ class ClaudeClient:
         Yields:
             Text chunks as they arrive (response only, not thinking).
         """
-        # Activate lorebook entries
         activated = activate_entries(session.character.lorebook_entries, session.turns)
-
-        # Build prompts
         system_prompt = build_system_prompt(
             session.character,
             activated,
@@ -181,42 +218,19 @@ class ClaudeClient:
             lorebook_budget=self.lorebook_budget,
         )
         messages = build_messages(session.turns)
-
-        # Build metadata including activated lorebook entries
         activated_names = [e.comment or ", ".join(e.keys[:3]) for e in activated]
+        api_params = self._build_api_params(system_prompt, messages)
 
-        # Build API params
-        api_params: dict = {
-            "model": self.model,
-            "max_tokens": 16000 if self.thinking_budget > 0 else 1024,
-            "system": system_prompt,
-            "messages": messages,
-        }
-
-        # Add thinking if budget > 0
-        if self.thinking_budget > 0:
-            api_params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": self.thinking_budget,
-            }
-
-        # Stream response - collect thinking separately from response (async)
-        # Uses high-level SDK events: "text" and "thinking" (not raw deltas)
         full_response = ""
         thinking_content = ""
         error_occurred: Exception | None = None
 
-        # HIGH-4: Wrap in try/finally to capture partial responses on error
         try:
             async with self._client.messages.stream(**api_params) as stream:
                 async for event in stream:
                     if event.type == "thinking":
-                        # Capture thinking but don't yield it (hidden from students)
-                        # getattr for type checker - ThinkingEvent always has .thinking
                         thinking_content += getattr(event, "thinking", "")
                     elif event.type == "text":
-                        # Yield text response to UI
-                        # getattr for type checker - TextEvent always has .text
                         text: str = getattr(event, "text", "")
                         full_response += text
                         yield text
@@ -229,29 +243,12 @@ class ClaudeClient:
                 exc_info=True,
             )
         finally:
-            # Always add turn to session (even if partial) for audit trail
-            metadata: dict = {
-                "model": self.model,
-                "api": "claude",
-                "activated_lorebook": activated_names,
-            }
-
-            # Add thinking to metadata if present (for logging, not display)
-            if thinking_content:
-                metadata["reasoning"] = thinking_content
-
-            # HIGH-4: Mark partial responses with error info
-            if error_occurred:
-                metadata["partial"] = True
-                metadata["error"] = str(error_occurred)
-
-            # Add response as turn (complete or partial)
-            session.add_turn(
-                full_response,
-                is_user=False,
-                metadata=metadata,
+            metadata = self._build_turn_metadata(
+                activated_names,
+                thinking_content,
+                error_occurred,
             )
+            session.add_turn(full_response, is_user=False, metadata=metadata)
 
-        # Re-raise the error after logging the partial turn
         if error_occurred:
             raise error_occurred

@@ -338,6 +338,7 @@ def main() -> None:
         storage_secret=storage_secret,
         reconnect_timeout=30.0,
         show_welcome_message=False,
+        log_config=None,  # Prevent uvicorn from overwriting our structlog config
     )
 
 

@@ -11,7 +11,6 @@ tag select, text preview, and comments.
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -20,6 +19,10 @@ from nicegui import ui
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import PageState, _render_js
+from promptgrimoire.pages.annotation.card_shared import (
+    author_initials,
+    build_expandable_text,
+)
 from promptgrimoire.pages.annotation.highlights import (
     _delete_highlight,
     _update_highlight_css,
@@ -31,53 +34,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
-
-_EXPANDABLE_THRESHOLD = 80
-
-
-def _author_initials(name: str) -> str:
-    """Derive compact initials from a display name.
-
-    Splits on whitespace and hyphens, takes first char of each segment,
-    joins with dots.  "Brian Ballsun-Stanton" -> "B.B.S.", "Ada" -> "A."
-    """
-    segments = re.split(r"[\s\-]+", name)
-    return ".".join(s[0].upper() for s in segments if s) + "."
-
-
-def _build_expandable_text(full_text: str) -> None:
-    """Build expandable text preview for annotation card."""
-    is_long = len(full_text) > _EXPANDABLE_THRESHOLD
-    if is_long:
-        truncated_text = full_text[:_EXPANDABLE_THRESHOLD] + "..."
-        with ui.element("div").classes("mt-1 w-full overflow-hidden"):
-            # Truncated view with expand icon
-            with ui.row().classes(
-                "items-start gap-1 cursor-pointer w-full"
-            ) as truncated_row:
-                ui.icon("expand_more", size="xs").classes("text-gray-400 flex-shrink-0")
-                ui.label(f'"{truncated_text}"').classes("text-sm italic")
-
-            # Full view with collapse icon
-            with ui.row().classes(
-                "items-start gap-1 cursor-pointer w-full"
-            ) as full_row:
-                ui.icon("expand_less", size="xs").classes("text-gray-400 flex-shrink-0")
-                ui.label(f'"{full_text}"').classes("text-sm italic min-w-0").style(
-                    "white-space: pre-wrap; overflow-wrap: break-word"
-                )
-            full_row.set_visibility(False)
-
-            def toggle_expand(
-                tr: ui.row = truncated_row, fr: ui.row = full_row
-            ) -> None:
-                tr.set_visibility(not tr.visible)
-                fr.set_visibility(not fr.visible)
-
-            truncated_row.on("click", toggle_expand)
-            full_row.on("click", toggle_expand)
-    else:
-        ui.label(f'"{full_text}"').classes("text-sm italic mt-1")
 
 
 def _build_comment_delete_btn(
@@ -447,7 +403,7 @@ def _build_detail_section(
 
     # Highlighted text preview
     if full_text:
-        _build_expandable_text(full_text)
+        build_expandable_text(full_text)
 
     # Comments
     _build_comments_section(state, highlight_id, comments)
@@ -488,7 +444,7 @@ def _build_annotation_card(
             hl_user_id is not None and hl_user_id in state.privileged_user_ids
         ),
     )
-    initials = _author_initials(display_author)
+    initials = author_initials(display_author)
 
     card = (
         ui.card()

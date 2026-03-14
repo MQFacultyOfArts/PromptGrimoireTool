@@ -11,7 +11,7 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation.cards import _EXPANDABLE_THRESHOLD
+from promptgrimoire.pages.annotation.card_shared import _EXPANDABLE_THRESHOLD
 from promptgrimoire.pages.annotation.respond import (
     _matches_filter,
     group_highlights_by_tag,

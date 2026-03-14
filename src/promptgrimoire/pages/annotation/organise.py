@@ -27,6 +27,7 @@ from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.elements.sortable import Sortable
+from promptgrimoire.pages.annotation.cards import _build_expandable_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,9 +46,6 @@ _UNTAGGED_COLOUR = "#999999"
 
 # Raw key for the untagged pseudo-tag (empty string in CRDT)
 _UNTAGGED_RAW_KEY = ""
-
-# Maximum characters to show in text snippet before truncation
-_SNIPPET_MAX_CHARS = 100
 
 
 def _build_highlight_card(
@@ -78,9 +76,6 @@ def _build_highlight_card(
     start_char: int = int(highlight.get("start_char", 0))
     end_char: int = int(highlight.get("end_char", 0))
     full_text = highlight.get("text", "")
-    snippet = full_text[:_SNIPPET_MAX_CHARS]
-    if len(full_text) > _SNIPPET_MAX_CHARS:
-        snippet += "..."
     comments: list[dict[str, Any]] = list(highlight.get("comments", []))
 
     card = (
@@ -120,8 +115,8 @@ def _build_highlight_card(
             ),
         )
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
-        if snippet:
-            ui.label(f'"{snippet}"').classes("text-sm italic mt-1")
+        if full_text:
+            _build_expandable_text(full_text)
         if comments:
             ui.separator().classes("my-1")
             for comment in comments:

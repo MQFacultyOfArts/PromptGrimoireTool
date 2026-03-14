@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 from promptgrimoire.pages.annotation.respond import (
-    _SNIPPET_MAX_CHARS,
     _matches_filter,
     group_highlights_by_tag,
 )
@@ -81,21 +80,23 @@ class TestReferenceHighlightGrouping:
         assert len(tagged["Jurisdiction"]) == 1
         assert len(untagged) == 2
 
-    def test_snippet_truncation(self) -> None:
-        """Long highlight text is truncated with ellipsis."""
+    def test_expandable_text_truncation(self) -> None:
+        """Long highlight text is truncated at 80 chars by _build_expandable_text."""
+        _expandable_threshold = 80
         long_text = "x" * 150
-        snippet = long_text[:_SNIPPET_MAX_CHARS]
-        if len(long_text) > _SNIPPET_MAX_CHARS:
+        snippet = long_text[:_expandable_threshold]
+        if len(long_text) > _expandable_threshold:
             snippet += "..."
 
-        assert len(snippet) == _SNIPPET_MAX_CHARS + 3
+        assert len(snippet) == _expandable_threshold + 3  # 80 + "..."
         assert snippet.endswith("...")
 
-    def test_snippet_short_text_no_truncation(self) -> None:
+    def test_expandable_text_short_no_truncation(self) -> None:
         """Short highlight text is not truncated."""
+        _expandable_threshold = 80
         short_text = "short"
-        snippet = short_text[:_SNIPPET_MAX_CHARS]
-        if len(short_text) > _SNIPPET_MAX_CHARS:
+        snippet = short_text[:_expandable_threshold]
+        if len(short_text) > _expandable_threshold:
             snippet += "..."
 
         assert snippet == "short"

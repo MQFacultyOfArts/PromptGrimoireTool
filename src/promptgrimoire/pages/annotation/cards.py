@@ -49,16 +49,22 @@ def _build_expandable_text(full_text: str) -> None:
     is_long = len(full_text) > _EXPANDABLE_THRESHOLD
     if is_long:
         truncated_text = full_text[:_EXPANDABLE_THRESHOLD] + "..."
-        with ui.element("div").classes("mt-1"):
+        with ui.element("div").classes("mt-1 w-full overflow-hidden"):
             # Truncated view with expand icon
-            with ui.row().classes("items-start gap-1 cursor-pointer") as truncated_row:
-                ui.icon("expand_more", size="xs").classes("text-gray-400")
+            with ui.row().classes(
+                "items-start gap-1 cursor-pointer w-full"
+            ) as truncated_row:
+                ui.icon("expand_more", size="xs").classes("text-gray-400 flex-shrink-0")
                 ui.label(f'"{truncated_text}"').classes("text-sm italic")
 
             # Full view with collapse icon
-            with ui.row().classes("items-start gap-1 cursor-pointer") as full_row:
-                ui.icon("expand_less", size="xs").classes("text-gray-400")
-                ui.label(f'"{full_text}"').classes("text-sm italic")
+            with ui.row().classes(
+                "items-start gap-1 cursor-pointer w-full"
+            ) as full_row:
+                ui.icon("expand_less", size="xs").classes("text-gray-400 flex-shrink-0")
+                ui.label(f'"{full_text}"').classes("text-sm italic min-w-0").style(
+                    "white-space: pre-wrap; overflow-wrap: break-word"
+                )
             full_row.set_visibility(False)
 
             def toggle_expand(

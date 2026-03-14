@@ -427,3 +427,123 @@ class TestAnnotateCardRendering:
     # (the public contract) is untestable at this layer. Phase 5 E2E
     # tests will cover the epoch mechanism via Playwright's
     # wait_for_function("() => window.__annotationCardsEpoch >= N").
+
+
+# ---------------------------------------------------------------------------
+# Diff-based card update tests (AC12)
+# ---------------------------------------------------------------------------
+
+
+class TestDiffBasedCardUpdates:
+    """Tests for diff-based annotation card updates.
+
+    Verifies AC12: adding/removing highlights updates individual cards
+    without destroying/rebuilding the entire container.
+
+    These tests set up the CRDT with the desired state before navigating,
+    then verify the rendered cards match. Each test navigates once to
+    avoid NiceGUI user-simulation element leakage between page renders.
+
+    Traceability:
+    - AC12.1: Adding a highlight inserts one card
+    - AC12.2: Removing a highlight deletes one card
+    - AC12.3: New card inserted at correct position sorted by start_char
+    """
+
+    @pytest.mark.asyncio
+    async def test_four_highlights_render_four_cards(self, nicegui_user: User) -> None:
+        """AC12.1: A workspace with 4 highlights renders 4 cards."""
+        email = "student-diff-add@test.example.edu.au"
+        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+
+        # Add a 4th highlight at start_char=25 before navigating
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        tags = crdt_doc.list_tags()
+        tag_id = next(iter(tags))
+        crdt_doc.add_highlight(
+            start_char=25,
+            end_char=28,
+            tag=tag_id,
+            text="new",
+            author=email.split("@", maxsplit=1)[0],
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        assert len(cards) == 4, f"Expected 4 cards with 4 highlights, got {len(cards)}"
+
+    @pytest.mark.asyncio
+    async def test_two_highlights_render_two_cards(self, nicegui_user: User) -> None:
+        """AC12.2: A workspace with 2 highlights (one removed) renders 2 cards."""
+        email = "student-diff-rm@test.example.edu.au"
+        ws_id, doc_id, _user_id = await _setup_workspace_with_highlights(email=email)
+
+        # Remove the middle highlight (start_char=30) before navigating
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        highlights = crdt_doc.get_highlights_for_document(str(doc_id))
+        hl_to_remove = next(h for h in highlights if h.get("start_char") == 30)
+        crdt_doc.remove_highlight(hl_to_remove["id"])
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        assert len(cards) == 2, f"Expected 2 cards after removal, got {len(cards)}"
+
+        remaining_chars = sorted(
+            int(float(c.props.get("data-start-char", "0"))) for c in cards
+        )
+        assert remaining_chars == [10, 50], (
+            f"Expected start_chars [10, 50], got {remaining_chars}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_added_card_at_correct_position(self, nicegui_user: User) -> None:
+        """AC12.3: New card inserted at correct position by start_char."""
+        email = "student-diff-pos@test.example.edu.au"
+        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+
+        # Add highlight at start_char=25 (should land between 10 and 30)
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        tags = crdt_doc.list_tags()
+        tag_id = next(iter(tags))
+        crdt_doc.add_highlight(
+            start_char=25,
+            end_char=28,
+            tag=tag_id,
+            text="inserted",
+            author=email.split("@", maxsplit=1)[0],
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        start_chars = [int(float(c.props.get("data-start-char", "0"))) for c in cards]
+        assert start_chars == [10, 25, 30, 50], (
+            f"Expected ordering [10, 25, 30, 50], got {start_chars}"
+        )

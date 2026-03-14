@@ -328,12 +328,14 @@ class TestRespondTabRendering:
         anonymise_author(). The raw author string is displayed directly.
 
         Setup:
-        - Author user creates highlights with anonymous_sharing=True on the
-          workspace.  Under correct anonymisation a non-owner viewer would see
-          a pseudonym, NOT the real name.
         - A second viewer is granted explicit "viewer" ACL on the workspace.
         - The test opens the workspace as the viewer and asserts the raw author
           name is still shown (broken behaviour).
+
+        Note: anonymous_sharing lives on Activity, not Workspace. Setting it
+        is not needed here -- the bug being characterised is that respond.py
+        skips anonymise_author() entirely, regardless of the anonymous_sharing
+        flag value.
 
         After Phase 2 adds anonymise_author() to respond.py this test will need
         to change: the viewer will see the adjective-animal pseudonym instead of
@@ -341,15 +343,11 @@ class TestRespondTabRendering:
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.users import find_or_create_user
-        from promptgrimoire.db.workspaces import _update_workspace_fields
 
         author_email = "student-rsp-author@test.example.edu.au"
         viewer_email = "student-rsp-viewer@test.example.edu.au"
 
         ws_id, _, _ = await _setup_workspace_with_highlights(email=author_email)
-
-        # Enable anonymous_sharing so anonymise_author() would be meaningful
-        await _update_workspace_fields(ws_id, anonymous_sharing=True)
 
         # Create the viewer user and give them explicit viewer ACL
         viewer_record, _ = await find_or_create_user(

@@ -28,6 +28,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _flush_and_read_last(log_file: Path) -> dict[str, object]:
+    """Flush all root handlers and return the last JSON log line as a dict."""
+    for h in logging.getLogger().handlers:
+        h.flush()
+    lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
+    assert lines, f"No log lines found in {log_file}"
+    return json.loads(lines[-1])
+
+
 def _reset_logging() -> None:
     """Remove all handlers from root logger and reset structlog."""
     root = logging.getLogger()
@@ -163,14 +172,7 @@ class TestJsonOutput:
         logger = logging.getLogger("test.stdlib")
         logger.info("test event from stdlib")
 
-        # Flush handlers
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        assert len(lines) >= 1
-        parsed = json.loads(lines[-1])
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         assert parsed["event"] == "test event from stdlib"
 
     def test_structlog_logger_produces_valid_json(
@@ -182,14 +184,31 @@ class TestJsonOutput:
         logger = structlog.get_logger("test.structlog")
         logger.info("test event from structlog")
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        assert len(lines) >= 1
-        parsed = json.loads(lines[-1])
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         assert parsed["event"] == "test event from structlog"
+
+
+class TestThirdPartyJsonOutput:
+    """AC2.3: Third-party stdlib loggers produce JSON via ProcessorFormatter."""
+
+    def test_third_party_logger_produces_json_with_standard_fields(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """AC2.3: Third-party stdlib log produces JSON with standard fields."""
+        _call_setup_logging(tmp_path, branch="test-branch")
+        # Simulate a third-party library using stdlib logging directly
+        stdlib_logger = logging.getLogger("nicegui.helpers")
+        stdlib_logger.warning("third party message")
+
+        parsed = _flush_and_read_last(
+            tmp_path / "promptgrimoire-test_branch.jsonl",
+        )
+        assert parsed["event"] == "third party message"
+        assert parsed["level"] == "warning"
+        # Standard fields from ProcessorFormatter's foreign_pre_chain
+        for key in ("timestamp", "pid", "branch", "commit"):
+            assert key in parsed, f"Missing standard field: {key}"
 
 
 class TestAppendMode:
@@ -240,15 +259,10 @@ class TestTracebackPolicy:
         except ValueError:
             logger.info("handled the error", exc_info=True)
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        last_line = json.loads(lines[-1])
+        last_line = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         assert "exc_info" not in last_line
         assert "traceback" not in last_line
-        assert "Traceback" not in last_line.get("event", "")
+        assert "Traceback" not in str(last_line.get("event", ""))
 
     def test_error_inside_except_has_traceback(
         self,
@@ -262,13 +276,7 @@ class TestTracebackPolicy:
         except ValueError:
             logger.error("something went wrong", exc_info=True)
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        last_line = json.loads(lines[-1])
-        # Traceback should be present in some form
+        last_line = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         has_traceback = (
             "exc_info" in last_line
             or "traceback" in last_line
@@ -289,12 +297,7 @@ class TestNullContextFields:
         logger = logging.getLogger("test.context")
         logger.info("no context bound")
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        parsed = json.loads(lines[-1])
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         assert parsed["user_id"] is None
         assert parsed["workspace_id"] is None
         assert parsed["request_path"] is None
@@ -308,12 +311,7 @@ class TestNullContextFields:
         logger = structlog.get_logger("test.context.structlog")
         logger.info("no context bound structlog")
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        parsed = json.loads(lines[-1])
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
         assert parsed["user_id"] is None
         assert parsed["workspace_id"] is None
         assert parsed["request_path"] is None
@@ -331,16 +329,9 @@ class TestGlobalFields:
         logger = logging.getLogger("test.global")
         logger.info("check fields")
 
-        for h in logging.getLogger().handlers:
-            h.flush()
-
-        log_file = tmp_path / "promptgrimoire-test_branch.jsonl"
-        lines = [ln for ln in log_file.read_text().splitlines() if ln.strip()]
-        parsed = json.loads(lines[-1])
-        assert "pid" in parsed
+        parsed = _flush_and_read_last(
+            tmp_path / "promptgrimoire-test_branch.jsonl",
+        )
         assert parsed["pid"] == os.getpid()
-        assert "branch" in parsed
-        assert "commit" in parsed
-        assert "level" in parsed
-        assert "timestamp" in parsed
-        assert "event" in parsed
+        for key in ("branch", "commit", "level", "timestamp", "event"):
+            assert key in parsed

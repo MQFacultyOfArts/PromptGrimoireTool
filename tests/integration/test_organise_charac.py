@@ -443,6 +443,7 @@ class TestOrganiseTabRendering:
         name, and the "raw name NOT present" assertion below would fail,
         correctly flagging the regression.
         """
+        from promptgrimoire.auth.anonymise import _adjective_animal_label
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.users import find_or_create_user
 
@@ -451,7 +452,7 @@ class TestOrganiseTabRendering:
 
         # anonymous_sharing=True: organise.py calls anonymise_author(), so the
         # viewer should see a pseudonym instead of the real author name.
-        ws_id, _, _ = await _setup_workspace_with_highlights(
+        ws_id, _, author_user_id = await _setup_workspace_with_highlights(
             email=author_email, anonymous_sharing=True
         )
 
@@ -462,6 +463,9 @@ class TestOrganiseTabRendering:
         )
         await grant_permission(ws_id, viewer_record.id, "viewer")
 
+        # Compute the exact pseudonym that anonymise_author() will produce
+        expected_pseudonym = _adjective_animal_label(author_user_id)
+
         # Open as viewer
         await _open_organise_tab(nicegui_user, ws_id, viewer_email)
 
@@ -470,7 +474,7 @@ class TestOrganiseTabRendering:
 
         # Raw author name must NOT appear (anonymised)
         raw_author_found = False
-        # Some pseudonym starting with "by " must appear
+        # The exact deterministic pseudonym must appear
         pseudonym_found = False
         for card in cards:
             for desc in card.descendants():
@@ -479,7 +483,7 @@ class TestOrganiseTabRendering:
                 text_val = str(desc.text)
                 if f"by {author_name}" in text_val:
                     raw_author_found = True
-                if text_val.startswith("by ") and author_name not in text_val:
+                if f"by {expected_pseudonym}" in text_val:
                     pseudonym_found = True
 
         assert not raw_author_found, (
@@ -488,6 +492,7 @@ class TestOrganiseTabRendering:
             "(organise.py must call anonymise_author())"
         )
         assert pseudonym_found, (
-            "Expected an anonymised 'by <pseudonym>' label in organise card "
-            f"for viewer '{viewer_email}' with anonymous_sharing=True"
+            f"Expected exact pseudonym 'by {expected_pseudonym}' in organise card "
+            f"for viewer '{viewer_email}' with anonymous_sharing=True "
+            "(from _adjective_animal_label deterministic contract)"
         )

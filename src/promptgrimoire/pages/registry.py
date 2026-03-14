@@ -126,7 +126,7 @@ def page_route(
         _page_registry[route] = meta
 
         @functools.wraps(func)
-        async def _with_log_context() -> None:
+        async def _with_log_context(*args: object, **kwargs: object) -> None:
             clear_contextvars()
             user_id = None
             try:
@@ -135,7 +135,7 @@ def page_route(
             except RuntimeError:
                 logger.debug("storage_unavailable", route=route)
             bind_contextvars(user_id=user_id, request_path=route)
-            await func()
+            await func(*args, **kwargs)
 
         return ui.page(route)(_with_log_context)
 

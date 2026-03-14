@@ -34,7 +34,8 @@ Package structure (26 authored modules):
     tags                    Tag definitions and colour mapping
     word_count_badge        Word count badge UI component
     word_count_enforcement  Export-time word count violation check
-    workspace               Workspace tabs, view orchestration, organise drag
+    tab_bar                  Tab bar builder, tab change handler, organise drag
+    workspace               Workspace view, document rendering, tag callbacks
 """
 
 from __future__ import annotations
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
 
     from nicegui import Client
 
+    from promptgrimoire.pages.annotation.tab_state import DocumentTabState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
 logger = structlog.get_logger()
@@ -238,6 +240,8 @@ class PageState:
     # Annotation cards
     annotations_container: ui.element | None = None
     annotation_cards: dict[str, ui.card] | None = None
+    # Per-document tab state (multi-document workspace)
+    document_tabs: dict[UUID, DocumentTabState] = field(default_factory=dict)
     card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
     expanded_cards: set[str] = field(
         default_factory=set

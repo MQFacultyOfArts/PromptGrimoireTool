@@ -8,7 +8,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import structlog
+
 from promptgrimoire.config import get_settings
+
+logger = structlog.get_logger()
 
 
 class LaTeXCompilationError(Exception):
@@ -121,6 +125,11 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     try:
         _, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
     except TimeoutError:
+        logger.warning(
+            "latex_compilation_timeout",
+            operation="compile_latex",
+            tex_path=str(tex_path),
+        )
         proc.kill()
         raise LaTeXCompilationError(
             "LaTeX compilation timed out after 120s",

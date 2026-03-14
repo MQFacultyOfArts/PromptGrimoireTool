@@ -212,6 +212,7 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
             proc.communicate(input=markdown_content.encode("utf-8")), timeout=30
         )
     except TimeoutError:
+        logger.warning("pandoc_timeout", operation="markdown_to_latex")
         proc.kill()
         raise subprocess.CalledProcessError(
             1, ["pandoc"], "Pandoc timed out after 30s"

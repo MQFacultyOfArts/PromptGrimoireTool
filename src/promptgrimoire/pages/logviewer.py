@@ -50,6 +50,11 @@ def parse_log_file(path: Path) -> tuple[dict | None, list[dict]]:
                 else:
                     turns.append(data)
             except json.JSONDecodeError:
+                logger.warning(
+                    "jsonl_line_parse_failed",
+                    operation="parse_jsonl",
+                    line_number=len(turns) + 1,
+                )
                 continue
 
     return header, turns

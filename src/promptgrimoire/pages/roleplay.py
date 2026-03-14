@@ -146,6 +146,7 @@ async def _handle_send(
             streaming_label.text = full_response
             scroll_area.scroll_to(percent=1.0)
     except Exception as e:
+        logger.exception("stream_response_failed", operation="stream_response")
         ui.notify(f"Error: {e}", type="negative")
         send_button.enable()
         return
@@ -162,9 +163,9 @@ async def _handle_send(
 
     # Log turns
     with log_path.open("a") as f:
-        logger = JSONLLogger(f)
+        jsonl_log = JSONLLogger(f)
         for turn in session.turns[-2:]:
-            logger.write_turn(turn)
+            jsonl_log.write_turn(turn)
 
 
 def _setup_session(
@@ -188,10 +189,10 @@ def _setup_session(
     log_path = log_dir / generate_log_filename(session)
 
     with log_path.open("w") as f:
-        logger = JSONLLogger(f)
-        logger.write_header(session)
+        jsonl_log = JSONLLogger(f)
+        jsonl_log.write_header(session)
         for turn in session.turns:
-            logger.write_turn(turn)
+            jsonl_log.write_turn(turn)
 
     client = ClaudeClient(
         api_key=settings.llm.api_key.get_secret_value(),
@@ -329,8 +330,10 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         ui.notify(f"Loaded {character.name}")
 
     except ValueError as ve:
+        logger.warning("character_load_validation_error", operation="load_character")
         ui.notify(str(ve), type="negative")
     except Exception as ex:
+        logger.exception("character_load_failed", operation="load_character")
         ui.notify(f"Failed to load: {ex}", type="negative")
     finally:
         # Clean up temp file

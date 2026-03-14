@@ -178,6 +178,7 @@ def _current_branch() -> str | None:
     try:
         head = head_path.read_text().strip()
     except OSError:
+        logger.warning("git_head_unreadable", operation="detect_branch")
         return None
     if head.startswith("ref: refs/heads/"):
         return head.removeprefix("ref: refs/heads/")

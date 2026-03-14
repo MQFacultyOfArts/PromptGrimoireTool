@@ -9,8 +9,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from selectolax.lexbor import LexborHTMLParser
+
+logger = structlog.get_logger()
 
 # Common chrome patterns - apply to all platforms
 _CHROME_CLASS_PATTERNS = [
@@ -67,7 +71,12 @@ def _remove_chrome_images(tree: LexborHTMLParser) -> None:
                 img.decompose()
                 continue
         except ValueError:
-            pass
+            logger.warning(
+                "img_dimension_parse_failed",
+                operation="remove_icons_and_remote_images",
+                width=width,
+                height=height,
+            )
 
         # Remove remote images (including blob: URLs which can't be resolved)
         src = attrs.get("src") or ""

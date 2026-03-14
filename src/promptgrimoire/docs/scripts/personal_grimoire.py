@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
@@ -21,6 +23,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from promptgrimoire.docs import Guide
 from promptgrimoire.docs.helpers import select_chars, wait_for_text_walker
 from promptgrimoire.docs.seed import seed_user_and_enrol
+
+logger = structlog.get_logger()
 
 GUIDE_OUTPUT_DIR = Path("docs/guides")
 
@@ -87,6 +91,7 @@ def _ensure_instructor_guide_ran(page: Page, base_url: str) -> None:
         )
         unit_visible = page.locator("text=UNIT1234").count() > 0
     except PlaywrightTimeoutError:
+        logger.warning("unit_check_timeout", operation="check_unit_visibility")
         unit_visible = False
 
     if not unit_visible:

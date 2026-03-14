@@ -157,6 +157,7 @@ def _decode_bytes(content: bytes) -> str:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         # Fall back to latin-1 which accepts all byte values
+        logger.warning("utf8_decode_fallback_latin1", operation="decode_bytes")
         return content.decode("latin-1")
 
 

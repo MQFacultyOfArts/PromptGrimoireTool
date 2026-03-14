@@ -133,14 +133,17 @@ async def _create_tag_or_notify(
             crdt_doc=state.crdt_doc,
         )
     except PermissionError:
+        logger.warning("tag_creation_denied", operation="create_tag")
         ui.notify("Tag creation not allowed", type="negative")
         return None
     except Exception as exc:
         from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
 
         if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
+            logger.warning("duplicate_tag_name", operation="create_tag", name=name)
             ui.notify(f"A tag named '{name}' already exists", type="warning")
         else:
+            logger.exception("tag_creation_failed", operation="create_tag")
             ui.notify(f"Failed to create tag: {exc}", type="negative")
         return None
 
@@ -215,14 +218,21 @@ async def _save_single_tag(
             crdt_doc=crdt_doc,
         )
     except ValueError as exc:
+        logger.warning(
+            "tag_save_validation_error", operation="save_tag", tag_id=str(tag_id)
+        )
         ui.notify(str(exc), type="warning")
         return False
     except Exception as exc:
         from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
 
         if isinstance(exc, IntegrityError) and "uq_tag_workspace_name" in str(exc):
+            logger.warning("duplicate_tag_name", operation="save_tag", name=name)
             ui.notify(f"A tag named '{name}' already exists", type="warning")
         else:
+            logger.exception(
+                "tag_save_failed", operation="save_tag", tag_id=str(tag_id)
+            )
             ui.notify(f"Failed to save: {exc}", type="negative")
         return False
     # Update originals so subsequent blur doesn't re-save
@@ -256,6 +266,9 @@ async def _save_single_group(
             group_id, name=name, color=color or None, crdt_doc=crdt_doc
         )
     except Exception as exc:
+        logger.exception(
+            "group_save_failed", operation="save_group", group_id=str(group_id)
+        )
         ui.notify(f"Failed to save group: {exc}", type="negative")
         return False
     # Update originals so subsequent blur doesn't re-save

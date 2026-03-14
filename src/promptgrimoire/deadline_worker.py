@@ -113,6 +113,9 @@ async def start_deadline_worker(
         try:
             next_in = await _next_deadline_seconds()
         except Exception:
+            logger.exception(
+                "next_deadline_query_failed", operation="next_deadline_seconds"
+            )
             next_in = None
 
         if next_in is not None and next_in < max_interval:

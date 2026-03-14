@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import app, ui
 
 from promptgrimoire.crdt import SharedDocument
@@ -19,6 +20,8 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.label import Label
+
+logger = structlog.get_logger()
 
 # Per-user document registry: doc_id -> SharedDocument
 _user_documents: dict[str, SharedDocument] = {}
@@ -63,7 +66,11 @@ def _broadcast_to_other_clients(
                 input_elem.update()
             except Exception:
                 # Client may have disconnected
-                pass
+                logger.warning(
+                    "sync_broadcast_client_error",
+                    operation="broadcast_update",
+                    client_id=client_id,
+                )
 
 
 @page_route(

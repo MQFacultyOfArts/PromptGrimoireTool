@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from nicegui import ui
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
         TagRowInputs,
     )
 
+logger = structlog.get_logger()
 
 # ── Element creation helpers ────────────────────────────────────────
 
@@ -419,6 +421,11 @@ def _open_confirm_delete(
                 try:
                     await delete_fn()
                 except Exception as exc:
+                    logger.exception(
+                        "delete_entity_failed",
+                        operation="delete_entity",
+                        entity_name=entity_name,
+                    )
                     ui.notify(str(exc), type="negative")
                     dlg.close()
                     return

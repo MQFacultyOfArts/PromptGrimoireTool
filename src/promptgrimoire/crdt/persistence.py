@@ -104,7 +104,11 @@ class PersistenceManager:
             await asyncio.sleep(self.debounce_seconds)
             await self._persist_workspace(workspace_id)
         except asyncio.CancelledError:
-            pass  # Save was superseded by a newer one
+            logger.warning(
+                "crdt_save_cancelled",
+                operation="debounced_workspace_save",
+                workspace_id=str(workspace_id),
+            )
 
     async def _persist_workspace(self, workspace_id: UUID) -> None:
         """Persist CRDT state to Workspace table."""

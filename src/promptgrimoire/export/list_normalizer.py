@@ -14,6 +14,10 @@ from __future__ import annotations
 
 import re
 
+import structlog
+
+logger = structlog.get_logger()
+
 
 def _add_start(match: re.Match[str]) -> str:
     """Add start attribute to <ol> based on first <li value>."""
@@ -24,6 +28,9 @@ def _add_start(match: re.Match[str]) -> str:
     try:
         start_value = int(value_str)
     except ValueError, TypeError:
+        logger.warning(
+            "list_value_parse_failed", operation="add_start", value=value_str
+        )
         return match.group(0)
 
     # Don't add start=1 (it's the default)

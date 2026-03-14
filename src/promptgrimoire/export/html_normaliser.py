@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import re
 
+import structlog
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
+
+logger = structlog.get_logger()
 
 
 def strip_scripts_and_styles(html_content: str) -> str:
@@ -42,6 +45,9 @@ def strip_scripts_and_styles(html_content: str) -> str:
         tree = lxml_html.fromstring(html_content)
     except Exception:
         # If parsing fails completely, try regex fallback
+        logger.warning(
+            "html_parse_failed_fallback_regex", operation="strip_scripts_and_styles"
+        )
         return _strip_scripts_regex_fallback(html_content)
 
     # Remove script, style, noscript elements and their content
@@ -143,6 +149,7 @@ def normalise_styled_paragraphs(html_content: str) -> str:
         tree = lxml_html.fromstring(html_content)
     except Exception:
         # If parsing fails, return unchanged
+        logger.warning("html_parse_failed", operation="normalise_styled_paragraphs")
         return html_content
 
     # Handle case where the root element itself is a styled <p>

@@ -38,6 +38,7 @@ def get_git_commit() -> str:
         FileNotFoundError,
         subprocess.TimeoutExpired,
     ):
+        log.warning("git_commit_unavailable", operation="get_git_commit")
         return "unknown"
 
 

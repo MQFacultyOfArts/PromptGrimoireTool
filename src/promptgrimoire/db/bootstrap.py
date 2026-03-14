@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import psycopg
 import psycopg.sql
+import structlog
 from sqlalchemy import inspect
 from sqlmodel import SQLModel
 
@@ -27,6 +28,8 @@ from promptgrimoire.config import get_settings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+logger = structlog.get_logger()
 
 
 def ensure_database_exists(url: str | None) -> bool:
@@ -316,4 +319,5 @@ def _mask_password(url: str) -> str:
                 return f"{protocol}://{user}:***@{host_part}"
         return url
     except ValueError:
+        logger.warning("url_mask_parse_failed", operation="mask_password")
         return url

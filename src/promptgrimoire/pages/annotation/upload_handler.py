@@ -61,6 +61,11 @@ def _get_file_preview(
             return content_bytes.decode("utf-8")[:500]
         return f"[Binary file: {filename}]"
     except UnicodeDecodeError:
+        logger.warning(
+            "file_preview_decode_failed",
+            operation="get_file_preview",
+            filename=filename,
+        )
         return f"[Binary file: {filename}]"
 
 
@@ -92,6 +97,9 @@ def _detect_source_numbering_from_bytes(
     try:
         text = content_bytes.decode("utf-8")
     except UnicodeDecodeError:
+        logger.warning(
+            "source_numbering_decode_failed", operation="detect_source_numbering"
+        )
         return False
     return detect_source_numbering(text)
 
@@ -152,6 +160,11 @@ async def _handle_file_upload(
         ui.notify(f"Uploaded: {filename}", type="positive")
         on_document_added()
     except NotImplementedError as not_impl_err:
+        logger.warning(
+            "unsupported_format",
+            operation="handle_file_upload",
+            error=str(not_impl_err),
+        )
         ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
     except Exception as exc:
         logger.exception("Failed to process uploaded file")

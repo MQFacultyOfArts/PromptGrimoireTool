@@ -15,8 +15,12 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+import structlog
+
 from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scripts
+
+logger = structlog.get_logger()
 
 # Note: Static LaTeX preamble content (packages, commands, environments,
 # macros, fonts) is now in promptgrimoire-export.sty. The .sty is copied
@@ -111,6 +115,11 @@ def _format_timestamp(iso_timestamp: str) -> str:
         dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         return dt.strftime("%-d %b %Y %H:%M")
     except ValueError, AttributeError:
+        logger.warning(
+            "timestamp_format_failed",
+            operation="format_timestamp",
+            timestamp=iso_timestamp,
+        )
         return ""
 
 

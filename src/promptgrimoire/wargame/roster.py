@@ -8,7 +8,11 @@ import csv
 from dataclasses import dataclass, replace
 from io import StringIO
 
+import structlog
+
 from promptgrimoire.validation import is_valid_email
+
+logger = structlog.get_logger()
 
 _VALID_ROLES = frozenset({"viewer", "editor"})
 
@@ -44,6 +48,7 @@ def _sniff_dialect(csv_content: str) -> csv.Dialect | type[csv.Dialect]:
     try:
         return csv.Sniffer().sniff(csv_content)
     except csv.Error:
+        logger.warning("csv_dialect_sniff_failed", operation="sniff_dialect")
         return csv.excel
 
 

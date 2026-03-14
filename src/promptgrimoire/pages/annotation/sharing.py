@@ -196,6 +196,7 @@ async def open_sharing_dialog(
                 email_input.value = ""
                 shares_list.refresh()
             except PermissionError as exc:
+                logger.warning("share_permission_denied", operation="share_workspace")
                 ui.notify(str(exc), type="negative")
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):

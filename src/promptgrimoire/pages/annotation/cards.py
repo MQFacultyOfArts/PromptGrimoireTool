@@ -20,14 +20,14 @@ from nicegui import ui
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.pages.annotation import PageState, _render_js
-from promptgrimoire.ui_helpers import on_submit_with_value
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 from promptgrimoire.pages.annotation.highlights import (
     _delete_highlight,
     _update_highlight_css,
 )
+from promptgrimoire.ui_helpers import on_submit_with_value
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
@@ -71,12 +71,8 @@ def _build_expandable_text(full_text: str) -> None:
             def toggle_expand(
                 tr: ui.row = truncated_row, fr: ui.row = full_row
             ) -> None:
-                if tr.visible:
-                    tr.set_visibility(False)
-                    fr.set_visibility(True)
-                else:
-                    tr.set_visibility(True)
-                    fr.set_visibility(False)
+                tr.set_visibility(not tr.visible)
+                fr.set_visibility(not fr.visible)
 
             truncated_row.on("click", toggle_expand)
             full_row.on("click", toggle_expand)

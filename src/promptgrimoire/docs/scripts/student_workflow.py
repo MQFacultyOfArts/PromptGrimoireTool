@@ -225,8 +225,8 @@ def _step_export_pdf(page: Page, guide: Guide) -> None:
     with guide.step("Step 8: Exporting to PDF") as g:
         g.note("Click Export PDF to generate a PDF of your complete annotation work.")
 
-        # Switch back to Annotate tab for the export button
-        page.get_by_test_id("tab-annotate").click()
+        # Switch back to source tab for the export button
+        page.get_by_test_id("tab-source-1").click()
         page.get_by_test_id("export-pdf-btn").wait_for(state="visible", timeout=5000)
 
         g.screenshot(

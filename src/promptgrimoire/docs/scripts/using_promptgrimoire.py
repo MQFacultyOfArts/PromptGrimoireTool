@@ -371,8 +371,8 @@ def _entry_organise_by_tag(page: Page, guide: Guide) -> None:
             "(student-workflow.md#step-6-organising-by-tag) "
             "for more details."
         )
-        # Switch back to Annotate tab
-        page.get_by_test_id("tab-annotate").click()
+        # Switch back to source tab
+        page.get_by_test_id("tab-source-1").click()
         page.wait_for_timeout(1000)
 
 
@@ -405,8 +405,8 @@ def _entry_write_response(page: Page, guide: Guide) -> None:
             "(student-workflow.md#step-7-writing-your-response) "
             "for a detailed walkthrough."
         )
-        # Switch back to Annotate tab
-        page.get_by_test_id("tab-annotate").click()
+        # Switch back to source tab
+        page.get_by_test_id("tab-source-1").click()
         page.wait_for_timeout(1000)
 
 

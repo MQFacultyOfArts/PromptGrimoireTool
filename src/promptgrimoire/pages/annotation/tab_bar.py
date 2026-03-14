@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import events, ui
 
-from promptgrimoire.config import get_settings
 from promptgrimoire.crdt.persistence import get_persistence_manager
 from promptgrimoire.db.workspace_documents import list_documents
 from promptgrimoire.pages.annotation import (
@@ -322,11 +321,26 @@ async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:
         state.refresh_respond_references()
 
 
+def _is_source_tab(tab_name: str) -> bool:
+    """Check whether a tab name is a source document tab (UUID string)."""
+    try:
+        from uuid import UUID as _UUID
+
+        _UUID(tab_name)
+    except ValueError:
+        return False
+    return True
+
+
 def _make_tab_change_handler(
     state: PageState,
     workspace_id: UUID,
 ) -> Any:
-    """Create the tab-change callback for the three-tab workspace UI.
+    """Create the tab-change callback for the workspace tab UI.
+
+    Handles source tabs (UUID-named), Organise, and Respond.
+    Source tabs are treated like the old "Annotate" tab for backward
+    compatibility until Task 3 adds per-document deferred rendering.
 
     Returns an async handler suitable for ``ui.tab_panels(on_change=...)``.
     """
@@ -338,9 +352,9 @@ def _make_tab_change_handler(
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
-        # Tag toolbar footer is only relevant on the Annotate tab
+        # Tag toolbar footer is visible on source tabs, hidden on Organise/Respond
         if state.footer is not None:
-            state.footer.set_visibility(tab_name == "Annotate")
+            state.footer.set_visibility(_is_source_tab(tab_name))
 
         if prev_tab == "Respond":
             await _sync_respond_on_leave(state)
@@ -349,7 +363,8 @@ def _make_tab_change_handler(
             _handle_organise_tab(state)
             return
 
-        if tab_name == "Annotate":
+        if _is_source_tab(tab_name):
+            # Source tabs function like the old "Annotate" tab
             _handle_annotate_tab(state)
             return
 
@@ -363,146 +378,144 @@ def _make_tab_change_handler(
     return _on_tab_change
 
 
-async def _build_tab_panels(
+async def _load_crdt_for_workspace(
     state: PageState,
     workspace_id: UUID,
-    tabs: ui.tabs,
-    on_tab_change: Any,
+) -> None:
+    """Load the CRDT document and populate tag state.
+
+    Shared by both document-present and zero-document workspace paths.
+    """
+    logger.debug("[RENDER] loading CRDT doc")
+    crdt_doc = await _workspace_registry.get_or_create_for_workspace(workspace_id)
+    state.crdt_doc = crdt_doc
+    state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
+    logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
+
+
+async def _build_first_source_panel(
+    state: PageState,
+    workspace_id: UUID,
     *,
     on_add_tag: Any,
     on_manage_tags: Any,
     can_create_tags: bool,
-    footer: Any | None = None,
+    footer: Any | None,
 ) -> None:
-    """Build the three tab panels and store panel refs on ``state``.
+    """Build the first source document panel content.
 
-    Populates Annotate (with CRDT load + document render), Organise, and
-    Respond panels.  Stores ``state.tab_panels``, ``state.organise_panel``,
-    and ``state.respond_panel`` for later use by broadcast callbacks.
+    Contains the CRDT-backed document renderer wrapped in
+    ``@ui.refreshable`` for in-place re-render on document upload.
     """
-    # Late import to break circular dependency: workspace.py imports from
-    # tab_bar.py (this module), so tab_bar.py cannot import from workspace.py
-    # at module level.
+    # Late import to break circular dependency
     from promptgrimoire.pages.annotation.workspace import (
         _render_content_form_outside_refreshable,
         _render_document_container,
         _render_empty_template_toolbar,
     )
 
-    with ui.tab_panels(tabs, value="Annotate", on_change=on_tab_change).classes(
+    assert state.crdt_doc is not None
+    crdt_doc = state.crdt_doc
+
+    # WARNING -- @ui.refreshable destroys the entire subtree and
+    # recreates it on .refresh().  See the NiceGUI 3.7.x regression note.
+    # Side-channel: populated once so the content form can branch
+    # on has_documents[0] without a second DB query.
+    has_documents: list[bool] = []
+
+    @ui.refreshable
+    async def document_container() -> None:
+        """Load documents and render the first one, or show empty state."""
+        if footer is not None:
+            footer.clear()
+
+        docs = await list_documents(workspace_id)
+        has_documents.clear()
+        has_documents.append(bool(docs))
+        logger.debug("[RENDER] documents loaded: count=%d", len(docs))
+
+        if docs:
+            await _render_document_container(
+                state,
+                docs[0],
+                crdt_doc,
+                on_add_tag=on_add_tag if can_create_tags else None,
+                on_manage_tags=on_manage_tags,
+                footer=footer,
+            )
+        elif state.can_upload:
+            _render_empty_template_toolbar(
+                state,
+                on_add_tag=on_add_tag if can_create_tags else None,
+                on_manage_tags=on_manage_tags,
+                can_create_tags=can_create_tags,
+                footer=footer,
+            )
+        else:
+            ui.label("This workspace has no documents yet.").classes(
+                "text-gray-500 italic mt-4"
+            )
+
+    await document_container()
+    state.refresh_documents = document_container.refresh
+
+    _render_content_form_outside_refreshable(
+        state,
+        workspace_id,
+        has_documents=has_documents,
+        on_document_added=document_container.refresh,
+    )
+
+
+async def _build_tab_panels(
+    state: PageState,
+    workspace_id: UUID,
+    tabs: ui.tabs,
+    on_tab_change: Any,
+    documents: list[Any],
+    *,
+    on_add_tag: Any,
+    on_manage_tags: Any,
+    can_create_tags: bool,
+    footer: Any | None = None,
+) -> None:
+    """Build tab panels for source documents, Organise, and Respond.
+
+    When documents exist, the first source tab contains the CRDT load
+    and document render (backward-compatible with the old "Annotate" panel).
+    When no documents exist, defaults to the Organise tab.
+
+    Stores ``state.tab_panels``, ``state.organise_panel``,
+    and ``state.respond_panel`` for later use by broadcast callbacks.
+    """
+    # Default selected tab: first document if any, else Organise
+    default_tab = str(documents[0].id) if documents else "Organise"
+
+    with ui.tab_panels(tabs, value=default_tab, on_change=on_tab_change).classes(
         "w-full"
     ) as panels:
         state.tab_panels = panels
 
-        with ui.tab_panel("Annotate"):
-            # Load CRDT document for this workspace
-            logger.debug("[RENDER] loading CRDT doc")
-            crdt_doc = await _workspace_registry.get_or_create_for_workspace(
-                workspace_id
-            )
-            state.crdt_doc = crdt_doc
-            state.tag_info_list = workspace_tags_from_crdt(crdt_doc)
-            logger.debug("[RENDER] CRDT doc loaded, tag_info_list populated")
+        # Load CRDT (shared by all paths)
+        await _load_crdt_for_workspace(state, workspace_id)
 
-            # WARNING -- @ui.refreshable destroys the entire subtree and
-            # recreates it on .refresh().  The document renderer is complex:
-            # JavaScript init (selection handlers, scroll sync, highlight CSS
-            # injection), CRDT state connections, and char span rendering.
-            # The NiceGUI 3.7.x regression was caused by a destroy+recreate
-            # cycle that wiped char spans -- @ui.refreshable does exactly this.
-            #
-            # If after refresh you see char spans disappearing, JS init
-            # failing, CRDT connections dropping, or selection handlers
-            # broken -- look here first.  Fallback: remove @ui.refreshable,
-            # hold a reference to a container div, call container.clear()
-            # then _render_document_with_highlights() into it.
-            # Side-channel from document_container() to
-            # _render_content_form_outside_refreshable(): populated once
-            # after the first await document_container() call so the content
-            # form can branch on has_documents[0] without a second DB query.
-            has_documents: list[bool] = []
+        if documents:
+            with ui.tab_panel(str(documents[0].id)):
+                await _build_first_source_panel(
+                    state,
+                    workspace_id,
+                    on_add_tag=on_add_tag,
+                    on_manage_tags=on_manage_tags,
+                    can_create_tags=can_create_tags,
+                    footer=footer,
+                )
 
-            @ui.refreshable
-            async def document_container() -> None:
-                """Load documents and render the first one, or show empty state.
-
-                Wrapped in ``@ui.refreshable`` so that adding a document via
-                upload or paste can re-render in-place without a full page
-                reload (file-upload-109.AC4.1).
-                """
-                # The footer lives outside the refreshable boundary (it's a
-                # page-level Quasar element), so @ui.refreshable won't clear
-                # it automatically.  Clear it here to prevent duplicate tag
-                # toolbars on refresh.
-                if footer is not None:
-                    footer.clear()
-
-                documents = await list_documents(workspace_id)
-                has_documents.clear()
-                has_documents.append(bool(documents))
-                logger.debug("[RENDER] documents loaded: count=%d", len(documents))
-
-                if documents:
-                    await _render_document_container(
-                        state,
-                        documents[0],
-                        crdt_doc,
-                        on_add_tag=on_add_tag if can_create_tags else None,
-                        on_manage_tags=on_manage_tags,
-                        footer=footer,
+            # Additional source tab panels (stubs for Task 3 deferred rendering)
+            for doc in documents[1:]:
+                with ui.tab_panel(str(doc.id)):
+                    ui.label(f"Document: {doc.title or 'Untitled'}").classes(
+                        "text-gray-400"
                     )
-                elif state.can_upload:
-                    _render_empty_template_toolbar(
-                        state,
-                        on_add_tag=on_add_tag if can_create_tags else None,
-                        on_manage_tags=on_manage_tags,
-                        can_create_tags=can_create_tags,
-                        footer=footer,
-                    )
-                else:
-                    # Read-only empty state for viewers/peers
-                    ui.label("This workspace has no documents yet.").classes(
-                        "text-gray-500 italic mt-4"
-                    )
-
-            await document_container()
-
-            # Expose document refresh on PageState so the Manage Documents
-            # dialog can re-render documents after edit-mode save.
-            state.refresh_documents = document_container.refresh
-
-            # Late-bound callback: content_form.py captures this closure,
-            # and we swap in a smarter implementation after the wrapper
-            # element is created (so we can hide it on first add).
-            _document_added_impl: list[Callable[[], object]] = [
-                document_container.refresh
-            ]
-
-            def _on_document_added() -> object:
-                return _document_added_impl[0]()
-
-            # Content form lives OUTSIDE the refreshable boundary so it
-            # is not destroyed when document_container.refresh() is called.
-            content_form_wrapper = _render_content_form_outside_refreshable(
-                state,
-                workspace_id,
-                has_documents=has_documents,
-                on_document_added=_on_document_added,
-            )
-
-            # When multi-document is disabled, hide the content form after
-            # the first document is added.  The wrapper persists because
-            # it's outside the refreshable; we hide it via the callback.
-            if (
-                content_form_wrapper is not None
-                and not get_settings().features.enable_multi_document
-            ):
-
-                def _hide_and_refresh() -> object:
-                    content_form_wrapper.set_visibility(False)
-                    return document_container.refresh()
-
-                _document_added_impl[0] = _hide_and_refresh
 
         with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel
@@ -515,10 +528,33 @@ async def _build_tab_panels(
     logger.debug("[RENDER] tab panels built, workspace=%s", workspace_id)
 
 
-def build_tabs() -> ui.tabs:
-    """Create the three-tab bar for the annotation workspace."""
+def build_tabs(
+    documents: list[Any],
+    state: PageState,
+) -> ui.tabs:
+    """Create dynamic tab bar from document list.
+
+    Source tabs use ``str(doc.id)`` as the tab name (UUID string)
+    for stability.  Display labels use "Source N: Title" format.
+    Untitled documents show "Source N" without a trailing colon.
+
+    Args:
+        documents: Ordered list of WorkspaceDocument objects.
+        state: Page state to populate ``document_tabs``.
+    """
+    from promptgrimoire.pages.annotation.tab_state import DocumentTabState
+
     with ui.row().classes("w-full items-center"), ui.tabs().classes("w-full") as tabs:
-        ui.tab("Annotate").props('data-testid="tab-annotate"')
+        for i, doc in enumerate(documents):
+            label = f"Source {i + 1}: {doc.title}" if doc.title else f"Source {i + 1}"
+            tab = ui.tab(str(doc.id), label=label).props(
+                f'data-testid="tab-source-{i + 1}"'
+            )
+            state.document_tabs[doc.id] = DocumentTabState(
+                document_id=doc.id,
+                tab=tab,
+                panel=None,
+            )
         ui.tab("Organise").props('data-testid="tab-organise"')
         ui.tab("Respond").props('data-testid="tab-respond"')
     return tabs

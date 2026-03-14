@@ -52,8 +52,8 @@ def _switch_to_organise(page: Page) -> None:
 
 
 def _switch_to_annotate(page: Page) -> None:
-    """Click the Annotate tab and wait for it to be active."""
-    page.get_by_test_id("tab-annotate").click()
+    """Click the first source tab and wait for it to be active."""
+    page.get_by_test_id("tab-source-1").click()
     expect(page.locator("#doc-container")).to_be_visible(timeout=5000)
 
 

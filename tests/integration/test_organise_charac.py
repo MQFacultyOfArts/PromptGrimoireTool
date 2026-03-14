@@ -260,7 +260,7 @@ async def _open_organise_tab(user: User, ws_id: UUID, email: str) -> None:
 
     await _authenticate(user, email=email)
     await user.open(f"/annotation?workspace_id={ws_id}")
-    await _should_see_testid(user, "tab-annotate")
+    await _should_see_testid(user, "tab-source-1")
 
     # Find tab_panels and switch to Organise
     with user:

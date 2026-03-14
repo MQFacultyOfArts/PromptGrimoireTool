@@ -519,8 +519,8 @@ def _section_connect_to_unit(page: Page, guide: Guide) -> None:
             "instructor can see it alongside the class work."
         )
 
-        # Switch back to Annotate tab
-        page.get_by_test_id("tab-annotate").click()
+        # Switch back to source tab
+        page.get_by_test_id("tab-source-1").click()
         page.wait_for_timeout(1000)
 
         # Open placement dialog via placement chip

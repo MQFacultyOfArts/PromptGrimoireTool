@@ -415,7 +415,7 @@ class TestWordCountBadge:
                 expect(badge).to_contain_text("10", timeout=10000)
 
             with subtests.test(msg="AC4.1: Badge visible on Annotate tab"):
-                page.get_by_test_id("tab-annotate").click()
+                page.get_by_test_id("tab-source-1").click()
                 badge = page.get_by_test_id("word-count-badge")
                 expect(badge).to_be_visible(timeout=5000)
         finally:

@@ -248,7 +248,7 @@ class TestOrganiseTabSync:
 
         # 6. Switch back to Annotate tab (tag-settings-btn is in the tag
         # toolbar which only renders on the Annotate tab)
-        page_b.get_by_test_id("tab-annotate").click()
+        page_b.get_by_test_id("tab-source-1").click()
 
         # Verify the group change persisted by reopening the management
         # dialog on client B and checking the group selector value

@@ -130,3 +130,22 @@ Expected: All files within complexity limits
 **Commit:** `refactor: respond.py uses shared anonymise_display_author`
 <!-- END_TASK_3 -->
 <!-- END_SUBCOMPONENT_A -->
+
+---
+
+### Plan gap identified during Phase 3 review: `_matches_filter()` uses raw author names
+
+**Problem:** `_matches_filter()` in `respond.py` (line ~194) searches `highlight["author"]` and `comment["author"]` directly — the raw CRDT values. When `anonymous_sharing=True`, the UI renders pseudonyms via `anonymise_display_author()`, but the filter searches against hidden real names. This means:
+- Filtering by the pseudonym shown in the UI **will not match**
+- Filtering by the hidden real name **will match** (information leak)
+
+**Required fix (as part of this phase):**
+1. `_matches_filter()` must accept `state: PageState` and use `anonymise_display_author()` on author fields before matching
+2. Update `filter_highlights()` to pass `state` through to `_matches_filter()`
+3. Update the caller in respond.py to pass `state` when calling `filter_highlights()`
+4. Add/update characterisation tests at `test_annotation_respond.py` to verify:
+   - Filter by pseudonym matches when `anonymous_sharing=True`
+   - Filter by real name does NOT match when `anonymous_sharing=True`
+   - Filter by real name still works when `anonymous_sharing=False`
+
+**Why this belongs in Phase 4:** This phase consolidates all anonymisation into `anonymise_display_author()`. The filter path is an anonymisation consumer that was missed in the original plan. Fixing it here keeps all anonymisation work in one phase.

@@ -588,25 +588,26 @@ def _diff_annotation_cards(state: PageState) -> None:
 
     # CHANGED: IDs in both — check if highlight data differs
     common_ids = crdt_ids & registry_ids
-    for hl_id in common_ids:
-        hl = crdt_map[hl_id]
-        new_snap = _snapshot_highlight(hl)
-        old_snap = state.card_snapshots.get(hl_id)
-        if old_snap != new_snap:
-            old_card = state.annotation_cards[hl_id]
-            old_card.delete()
-            with state.annotations_container:
+    # Reuse sorted_hl_ids from ADDED block or compute once for position lookup
+    if not added_ids:
+        sorted_hl_ids = [hl["id"] for hl in highlights]
+    with state.annotations_container:
+        for hl_id in common_ids:
+            hl = crdt_map[hl_id]
+            new_snap = _snapshot_highlight(hl)
+            old_snap = state.card_snapshots.get(hl_id)
+            if old_snap != new_snap:
+                old_card = state.annotation_cards[hl_id]
+                old_card.delete()
                 new_card = _build_annotation_card(state, hl)
                 state.annotation_cards[hl_id] = new_card
                 state.card_snapshots[hl_id] = new_snap
-                # Restore position in sorted order
-                sorted_hl_ids = [h["id"] for h in highlights]
                 position = sorted_hl_ids.index(hl_id)
                 new_card.move(
                     target_container=state.annotations_container,
                     target_index=position,
                 )
-            changed = True
+                changed = True
 
     if changed:
         state.cards_epoch += 1

@@ -203,5 +203,9 @@ class DiscordAlertProcessor:
                     sys.stderr.write(
                         f"Discord webhook rate-limited (429) for {self._webhook_url}\n"
                     )
+                elif response.status_code >= 400:
+                    url = self._webhook_url
+                    code = response.status_code
+                    sys.stderr.write(f"Discord webhook returned {code} for {url}\n")
         except Exception:  # noqa: S110 -- intentional: webhook failures must never propagate (AC5.4)
             pass

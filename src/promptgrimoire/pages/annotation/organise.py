@@ -27,7 +27,7 @@ from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.elements.sortable import Sortable
-from promptgrimoire.pages.annotation.cards import _build_expandable_text
+from promptgrimoire.pages.annotation.card_shared import build_expandable_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -116,7 +116,7 @@ def _build_highlight_card(
         )
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if full_text:
-            _build_expandable_text(full_text)
+            build_expandable_text(full_text)
         if comments:
             ui.separator().classes("my-1")
             for comment in comments:

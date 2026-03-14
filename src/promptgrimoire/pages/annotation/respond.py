@@ -30,7 +30,7 @@ from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
-from promptgrimoire.pages.annotation.cards import _build_expandable_text
+from promptgrimoire.pages.annotation.card_shared import build_expandable_text
 from promptgrimoire.pages.annotation.word_count_badge import format_word_count_badge
 from promptgrimoire.word_count import word_count
 
@@ -166,7 +166,7 @@ def _build_reference_card(
 
         ui.label(f"by {display_author}").classes("text-xs text-gray-500")
         if full_text:
-            _build_expandable_text(full_text)
+            build_expandable_text(full_text)
         for comment in comments:
             raw_c_author = comment.get("author", "")
             c_uid = comment.get("user_id")

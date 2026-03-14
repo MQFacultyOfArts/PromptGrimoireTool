@@ -14,35 +14,35 @@ from typing import Any
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
-from promptgrimoire.pages.annotation.cards import _author_initials
+from promptgrimoire.pages.annotation.card_shared import author_initials
 from promptgrimoire.pages.annotation.respond import group_highlights_by_tag
 
 # ---------------------------------------------------------------------------
-# _author_initials
+# author_initials
 # ---------------------------------------------------------------------------
 
 
 class TestAuthorInitials:
-    """Tests for _author_initials() in cards.py."""
+    """Tests for author_initials() in cards.py."""
 
     def test_two_word_name(self) -> None:
-        assert _author_initials("Alice Smith") == "A.S."
+        assert author_initials("Alice Smith") == "A.S."
 
     def test_single_name(self) -> None:
-        assert _author_initials("Ada") == "A."
+        assert author_initials("Ada") == "A."
 
     def test_hyphenated_name(self) -> None:
-        assert _author_initials("Brian Ballsun-Stanton") == "B.B.S."
+        assert author_initials("Brian Ballsun-Stanton") == "B.B.S."
 
     def test_empty_string(self) -> None:
         # Empty string has no segments -> empty initials with trailing dot
-        assert _author_initials("") == "."
+        assert author_initials("") == "."
 
     def test_whitespace_only(self) -> None:
-        assert _author_initials("   ") == "."
+        assert author_initials("   ") == "."
 
     def test_three_word_name(self) -> None:
-        assert _author_initials("Mary Jane Watson") == "M.J.W."
+        assert author_initials("Mary Jane Watson") == "M.J.W."
 
 
 # ---------------------------------------------------------------------------

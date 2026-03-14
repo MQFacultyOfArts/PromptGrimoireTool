@@ -21,7 +21,9 @@ from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _find_all_by_testid,
+    _find_by_testid,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
@@ -83,10 +85,13 @@ async def _create_week(course_id: UUID) -> UUID:
 
 async def _create_activity(
     week_id: UUID,
+    anonymous_sharing: bool | None = None,
 ) -> tuple[UUID, UUID]:
-    from promptgrimoire.db.activities import create_activity
+    from promptgrimoire.db.activities import create_activity, update_activity
 
     activity = await create_activity(week_id=week_id, title="Organise Test Activity")
+    if anonymous_sharing is not None:
+        await update_activity(activity.id, anonymous_sharing=anonymous_sharing)
     return activity.id, activity.template_workspace_id
 
 
@@ -204,8 +209,19 @@ async def _add_highlights_to_workspace(
 
 async def _setup_workspace_with_highlights(
     email: str = "student-org@test.example.edu.au",
+    anonymous_sharing: bool | None = None,
 ) -> tuple[UUID, UUID, str]:
-    """Full setup returning (workspace_id, doc_id, user_id_str)."""
+    """Full setup returning (workspace_id, doc_id, user_id_str).
+
+    Parameters
+    ----------
+    email:
+        Email address for the student user who creates highlights.
+    anonymous_sharing:
+        When True, sets anonymous_sharing=True on the Activity so that
+        anonymise_author() will return a pseudonym for other viewers.
+        None (default) leaves the activity at the course default (False).
+    """
     course_id, _ = await _create_course()
     await _enroll(course_id, "coordinator@uni.edu", "coordinator")
     user_id = await _enroll(course_id, email, "student")
@@ -215,7 +231,9 @@ async def _setup_workspace_with_highlights(
 
     await publish_week(week_id)
 
-    activity_id, template_ws_id = await _create_activity(week_id)
+    activity_id, template_ws_id = await _create_activity(
+        week_id, anonymous_sharing=anonymous_sharing
+    )
     await _setup_template_tags(template_ws_id)
     template_doc_id = await _add_template_document(template_ws_id)
 
@@ -238,8 +256,6 @@ async def _open_organise_tab(user: User, ws_id: UUID, email: str) -> None:
     NiceGUI User harness cannot simulate Quasar tab click DOM
     events. Set tab_panels.value programmatically instead.
     """
-    import asyncio
-
     from nicegui import ElementFilter, ui
 
     await _authenticate(user, email=email)
@@ -253,7 +269,13 @@ async def _open_organise_tab(user: User, ws_id: UUID, email: str) -> None:
                 el.value = "Organise"
                 break
 
-    await asyncio.sleep(0.3)
+    # Wait until the Organise columns container is rendered rather than
+    # sleeping for a fixed duration -- fixed sleeps are unreliable under
+    # parallel xdist execution (PG001).
+    await wait_for(
+        lambda: _find_by_testid(user, "organise-columns") is not None,
+        timeout=5.0,
+    )
     await _should_see_testid(user, "organise-columns", retries=20)
 
 
@@ -383,14 +405,16 @@ class TestOrganiseTabRendering:
         assert "Evidence" in col_names, f"Missing Evidence column: {col_names}"
 
     @pytest.mark.asyncio
-    async def test_author_displayed_with_anonymise(self, nicegui_user: User) -> None:
-        """Author display uses anonymise_author (own name shown)."""
+    async def test_author_own_name_shown(self, nicegui_user: User) -> None:
+        """Own name is shown when viewing own highlights (anonymise_author rule 4)."""
         email = "student-org-author@test.example.edu.au"
-        ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
+        ws_id, _, _ = await _setup_workspace_with_highlights(
+            email=email, anonymous_sharing=True
+        )
         await _open_organise_tab(nicegui_user, ws_id, email)
 
         cards = _find_all_by_testid(nicegui_user, "organise-card")
-        # Since viewing own highlights, author should be real
+        # Viewing own highlights with anonymous_sharing=True -> real name shown
         user_name = email.split("@", maxsplit=1)[0]
         found_author = False
         for card in cards:
@@ -402,4 +426,68 @@ class TestOrganiseTabRendering:
                     break
             if found_author:
                 break
-        assert found_author, f"Expected 'by {user_name}' in organise card"
+        assert found_author, f"Expected 'by {user_name}' in organise card (own view)"
+
+    @pytest.mark.asyncio
+    async def test_organise_anonymises_author_for_other_viewer(
+        self, nicegui_user: User
+    ) -> None:
+        """Organise calls anonymise_author(): viewer sees pseudonym, not raw name.
+
+        With anonymous_sharing=True on the Activity, a viewer who did NOT
+        create the highlights must see the adjective-animal pseudonym, not the
+        real author name. This proves organise.py actually calls
+        anonymise_author() rather than displaying the raw author string.
+
+        After Phase 2 (if organise.py breaks), the viewer would see the raw
+        name, and the "raw name NOT present" assertion below would fail,
+        correctly flagging the regression.
+        """
+        from promptgrimoire.db.acl import grant_permission
+        from promptgrimoire.db.users import find_or_create_user
+
+        author_email = "student-org-anon-author@test.example.edu.au"
+        viewer_email = "student-org-anon-viewer@test.example.edu.au"
+
+        # anonymous_sharing=True: organise.py calls anonymise_author(), so the
+        # viewer should see a pseudonym instead of the real author name.
+        ws_id, _, _ = await _setup_workspace_with_highlights(
+            email=author_email, anonymous_sharing=True
+        )
+
+        # Create viewer and grant explicit ACL
+        viewer_record, _ = await find_or_create_user(
+            email=viewer_email,
+            display_name=viewer_email.split("@", maxsplit=1)[0],
+        )
+        await grant_permission(ws_id, viewer_record.id, "viewer")
+
+        # Open as viewer
+        await _open_organise_tab(nicegui_user, ws_id, viewer_email)
+
+        cards = _find_all_by_testid(nicegui_user, "organise-card")
+        author_name = author_email.split("@", maxsplit=1)[0]
+
+        # Raw author name must NOT appear (anonymised)
+        raw_author_found = False
+        # Some pseudonym starting with "by " must appear
+        pseudonym_found = False
+        for card in cards:
+            for desc in card.descendants():
+                if not hasattr(desc, "text"):
+                    continue
+                text_val = str(desc.text)
+                if f"by {author_name}" in text_val:
+                    raw_author_found = True
+                if text_val.startswith("by ") and author_name not in text_val:
+                    pseudonym_found = True
+
+        assert not raw_author_found, (
+            f"Raw author '{author_name}' must NOT appear when "
+            "anonymous_sharing=True and viewing as a different user "
+            "(organise.py must call anonymise_author())"
+        )
+        assert pseudonym_found, (
+            "Expected an anonymised 'by <pseudonym>' label in organise card "
+            f"for viewer '{viewer_email}' with anonymous_sharing=True"
+        )

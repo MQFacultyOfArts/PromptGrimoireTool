@@ -12,7 +12,6 @@ Traceability:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -22,7 +21,9 @@ from promptgrimoire.config import get_settings
 from tests.integration.conftest import _authenticate
 from tests.integration.nicegui_helpers import (
     _find_all_by_testid,
+    _find_by_testid,
     _should_see_testid,
+    wait_for,
 )
 
 if TYPE_CHECKING:
@@ -84,10 +85,13 @@ async def _create_week(course_id: UUID) -> UUID:
 
 async def _create_activity(
     week_id: UUID,
+    anonymous_sharing: bool | None = None,
 ) -> tuple[UUID, UUID]:
-    from promptgrimoire.db.activities import create_activity
+    from promptgrimoire.db.activities import create_activity, update_activity
 
     activity = await create_activity(week_id=week_id, title="Respond Test Activity")
+    if anonymous_sharing is not None:
+        await update_activity(activity.id, anonymous_sharing=anonymous_sharing)
     return activity.id, activity.template_workspace_id
 
 
@@ -193,8 +197,19 @@ async def _add_highlights_to_workspace(
 
 async def _setup_workspace_with_highlights(
     email: str = "student-rsp@test.example.edu.au",
+    anonymous_sharing: bool | None = None,
 ) -> tuple[UUID, UUID, str]:
-    """Full setup returning (workspace_id, doc_id, user_id_str)."""
+    """Full setup returning (workspace_id, doc_id, user_id_str).
+
+    Parameters
+    ----------
+    email:
+        Email address for the student user who creates highlights.
+    anonymous_sharing:
+        When True, sets anonymous_sharing=True on the Activity so that
+        anonymise_author() will return a pseudonym for other viewers.
+        None (default) leaves the activity at the course default (False).
+    """
     course_id, _ = await _create_course()
     await _enroll(course_id, "coordinator@uni.edu", "coordinator")
     user_id = await _enroll(course_id, email, "student")
@@ -204,7 +219,9 @@ async def _setup_workspace_with_highlights(
 
     await publish_week(week_id)
 
-    activity_id, template_ws_id = await _create_activity(week_id)
+    activity_id, template_ws_id = await _create_activity(
+        week_id, anonymous_sharing=anonymous_sharing
+    )
     await _setup_template_tags(template_ws_id)
     template_doc_id = await _add_template_document(template_ws_id)
 
@@ -240,7 +257,13 @@ async def _open_respond_tab(user: User, ws_id: UUID, email: str) -> None:
                 el.value = "Respond"
                 break
 
-    await asyncio.sleep(0.3)
+    # Wait until the Respond reference panel is rendered rather than
+    # sleeping for a fixed duration -- fixed sleeps are unreliable under
+    # parallel xdist execution (PG001).
+    await wait_for(
+        lambda: _find_by_testid(user, "respond-reference-panel") is not None,
+        timeout=5.0,
+    )
     # Respond tab renders reference panel
     await _should_see_testid(user, "respond-reference-panel", retries=20)
 
@@ -321,25 +344,24 @@ class TestRespondTabRendering:
         assert found_comment, "Expected comment text in respond reference card"
 
     @pytest.mark.asyncio
-    async def test_author_not_anonymised_bug(self, nicegui_user: User) -> None:
+    async def test_respond_shows_raw_author_to_viewer(self, nicegui_user: User) -> None:
         """CHARACTERISATION: respond.py displays raw author to a second viewer.
 
-        This documents the known bug: respond.py does NOT call
-        anonymise_author(). The raw author string is displayed directly.
+        Known defect in src/promptgrimoire/pages/annotation/respond.py:
+        respond.py does NOT call anonymise_author(). The raw author string
+        is displayed directly to all viewers, even when anonymous_sharing=True.
 
         Setup:
+        - anonymous_sharing=True is set on the Activity so that a correct call
+          to anonymise_author() would return a pseudonym for non-author viewers.
         - A second viewer is granted explicit "viewer" ACL on the workspace.
         - The test opens the workspace as the viewer and asserts the raw author
-          name is still shown (broken behaviour).
+          name is still shown (broken behaviour -- respond.py skips
+          anonymise_author() entirely).
 
-        Note: anonymous_sharing lives on Activity, not Workspace. Setting it
-        is not needed here -- the bug being characterised is that respond.py
-        skips anonymise_author() entirely, regardless of the anonymous_sharing
-        flag value.
-
-        After Phase 2 adds anonymise_author() to respond.py this test will need
-        to change: the viewer will see the adjective-animal pseudonym instead of
-        the raw author name.
+        After Phase 2 adds anonymise_author() to respond.py, the viewer will
+        see the adjective-animal pseudonym instead of the raw author name, and
+        this assertion will fail -- which is the intended regression signal.
         """
         from promptgrimoire.db.acl import grant_permission
         from promptgrimoire.db.users import find_or_create_user
@@ -347,7 +369,12 @@ class TestRespondTabRendering:
         author_email = "student-rsp-author@test.example.edu.au"
         viewer_email = "student-rsp-viewer@test.example.edu.au"
 
-        ws_id, _, _ = await _setup_workspace_with_highlights(email=author_email)
+        # anonymous_sharing=True: if respond.py called anonymise_author(),
+        # the viewer would see a pseudonym. Since it doesn't, the viewer
+        # still sees the raw name -- that's the broken behaviour we lock in.
+        ws_id, _, _ = await _setup_workspace_with_highlights(
+            email=author_email, anonymous_sharing=True
+        )
 
         # Create the viewer user and give them explicit viewer ACL
         viewer_record, _ = await find_or_create_user(
@@ -374,8 +401,8 @@ class TestRespondTabRendering:
                 break
         assert found_raw_author, (
             f"Expected raw 'by {author_name}' in respond card as seen by "
-            "a different viewer with anonymous_sharing=True "
-            "(non-anonymised -- known bug, Phase 2 will fix)"
+            f"viewer '{viewer_email}' with anonymous_sharing=True on the Activity "
+            "(respond.py skips anonymise_author() -- known bug, Phase 2 will fix)"
         )
 
     @pytest.mark.asyncio

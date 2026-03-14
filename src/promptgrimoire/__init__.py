@@ -209,6 +209,7 @@ def _setup_logging() -> None:
         ],
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            _clean_for_console,
             structlog.dev.ConsoleRenderer(
                 sort_keys=False,
             ),

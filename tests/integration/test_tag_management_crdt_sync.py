@@ -112,7 +112,7 @@ class TestTagColourEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
             await _should_see_testid(user, "tag-management-dialog")
 
             color_el = _find_value_element_by_testid(user, f"tag-color-input-{tag.id}")
@@ -122,7 +122,7 @@ class TestTagColourEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
 
             # Verify via DB: update_tag writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag
@@ -154,7 +154,7 @@ class TestTagNameEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
             await _should_see_testid(user, "tag-management-dialog")
 
             name_el = _find_value_element_by_testid(user, f"tag-name-input-{tag.id}")
@@ -164,7 +164,7 @@ class TestTagNameEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
 
             # Verify via DB: update_tag writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag
@@ -202,7 +202,7 @@ class TestGroupColourEditUpdatesCrdt:
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
             _click_testid(user, "tag-settings-btn")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.3)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
             await _should_see_testid(user, "tag-management-dialog")
 
             group_color_el = _find_value_element_by_testid(
@@ -214,7 +214,7 @@ class TestGroupColourEditUpdatesCrdt:
             # Click Done to trigger batch save
             await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
 
             # Verify via DB: update_tag_group writes to both DB and CRDT
             from promptgrimoire.db.tags import get_tag_group

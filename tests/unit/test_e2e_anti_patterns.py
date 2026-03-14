@@ -36,12 +36,26 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _E2E_DIR = _REPO_ROOT / "tests" / "e2e"
+_INTEGRATION_DIR = _REPO_ROOT / "tests" / "integration"
 _SRC_DIR = _REPO_ROOT / "src"
 
 
 def _iter_py_files(directory: Path):
     """Yield .py files, skipping __pycache__."""
     for py_file in directory.rglob("*.py"):
+        if "__pycache__" in py_file.parts:
+            continue
+        yield py_file
+
+
+def _iter_test_py_files(directory: Path):
+    """Yield test_*.py files, skipping __pycache__ and support files.
+
+    Only test files (test_*.py) are scanned for anti-patterns.  Support
+    modules like nicegui_helpers.py and conftest.py legitimately use
+    asyncio.sleep inside poll loops and must not be flagged.
+    """
+    for py_file in directory.rglob("test_*.py"):
         if "__pycache__" in py_file.parts:
             continue
         yield py_file
@@ -72,6 +86,38 @@ def _collect_violations(
     violations: list[str] = []
 
     for py_file in _iter_py_files(directory):
+        tree = _parse_file(py_file)
+        if tree is None:
+            continue
+
+        source_lines = py_file.read_text().splitlines()
+
+        for node in ast.walk(tree):
+            desc = checker(node)
+            if desc is None or not hasattr(node, "lineno"):
+                continue
+            lineno: int = node.lineno  # type: ignore[union-attr]
+            if not _has_noqa(source_lines, lineno, noqa_code):
+                rel = py_file.relative_to(_REPO_ROOT)
+                violations.append(f"{rel}:{lineno} - {desc}")
+
+    return sorted(violations)
+
+
+def _collect_violations_from_files(
+    files,
+    checker,
+    noqa_code: str,
+) -> list[str]:
+    """Collect violations from an iterable of file paths.
+
+    Like ``_collect_violations`` but accepts a pre-built file iterable
+    instead of a directory.  Used when the caller needs a custom file
+    filter (e.g. only test_*.py, skipping support modules).
+    """
+    violations: list[str] = []
+
+    for py_file in files:
         tree = _parse_file(py_file)
         if tree is None:
             continue
@@ -134,6 +180,35 @@ def test_no_fixed_sleeps_in_e2e() -> None:
     assert not violations, (
         "E2E tests must not use fixed sleeps (wait_for_timeout, asyncio.sleep).\n"
         "Use condition-based waits instead (expect, wait_for_function, etc.).\n"
+        "Suppress with: # noqa: PG001\n\n"
+        "Violations:\n" + "\n".join(f"  {v}" for v in violations)
+    )
+
+
+def test_no_fixed_sleeps_in_integration() -> None:
+    """Integration tests must not use asyncio.sleep() directly (PG001).
+
+    Bare ``asyncio.sleep(N)`` in integration test files is a timing guess
+    that becomes flaky under xdist parallel execution.  Use assertion-based
+    waiting instead:
+    - ``await _should_see_testid(user, testid, retries=N)``
+    - ``await wait_for(lambda: condition, timeout=N)``
+
+    Only ``test_*.py`` files are scanned; support modules (nicegui_helpers.py,
+    conftest.py) legitimately use ``asyncio.sleep`` inside poll loops and are
+    excluded.
+
+    Suppress with: # noqa: PG001
+    """
+    violations = _collect_violations_from_files(
+        _iter_test_py_files(_INTEGRATION_DIR),
+        _check_fixed_sleep,
+        "PG001",
+    )
+
+    assert not violations, (
+        "Integration tests must not use bare asyncio.sleep() (PG001).\n"
+        "Use _should_see_testid() or wait_for() instead.\n"
         "Suppress with: # noqa: PG001\n\n"
         "Violations:\n" + "\n".join(f"  {v}" for v in violations)
     )

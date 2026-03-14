@@ -295,7 +295,7 @@ class TestRespondTabExportFilename:
         # Small wait for tab switch
         import asyncio
 
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.3)  # noqa: PG001 -- pre-existing timing guess, replace with wait_for in future cleanup
 
         # Click export
         btn = _find_by_testid(nicegui_user, "export-pdf-btn")

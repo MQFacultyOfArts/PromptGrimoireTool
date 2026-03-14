@@ -77,44 +77,12 @@ def _has_noqa(source_lines: list[str], lineno: int, code: str) -> bool:
     return f"noqa: {code}" in line or ("noqa" in line and code in line)
 
 
-def _collect_violations(
-    directory: Path,
-    checker,
-    noqa_code: str,
-) -> list[str]:
-    """Walk E2E files and collect violations, respecting noqa comments."""
-    violations: list[str] = []
-
-    for py_file in _iter_py_files(directory):
-        tree = _parse_file(py_file)
-        if tree is None:
-            continue
-
-        source_lines = py_file.read_text().splitlines()
-
-        for node in ast.walk(tree):
-            desc = checker(node)
-            if desc is None or not hasattr(node, "lineno"):
-                continue
-            lineno: int = node.lineno  # type: ignore[union-attr]
-            if not _has_noqa(source_lines, lineno, noqa_code):
-                rel = py_file.relative_to(_REPO_ROOT)
-                violations.append(f"{rel}:{lineno} - {desc}")
-
-    return sorted(violations)
-
-
 def _collect_violations_from_files(
     files,
     checker,
     noqa_code: str,
 ) -> list[str]:
-    """Collect violations from an iterable of file paths.
-
-    Like ``_collect_violations`` but accepts a pre-built file iterable
-    instead of a directory.  Used when the caller needs a custom file
-    filter (e.g. only test_*.py, skipping support modules).
-    """
+    """Collect violations from an iterable of file paths, respecting noqa comments."""
     violations: list[str] = []
 
     for py_file in files:
@@ -134,6 +102,15 @@ def _collect_violations_from_files(
                 violations.append(f"{rel}:{lineno} - {desc}")
 
     return sorted(violations)
+
+
+def _collect_violations(
+    directory: Path,
+    checker,
+    noqa_code: str,
+) -> list[str]:
+    """Walk all .py files in *directory* and collect violations."""
+    return _collect_violations_from_files(_iter_py_files(directory), checker, noqa_code)
 
 
 # ---------------------------------------------------------------------------

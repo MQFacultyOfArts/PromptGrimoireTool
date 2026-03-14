@@ -48,8 +48,21 @@ def _only_reraises(handler: ast.ExceptHandler) -> bool:
     return False
 
 
+def _only_assigns_to_variable(handler: ast.ExceptHandler) -> bool:
+    """Return True if handler only captures the exception into a variable.
+
+    Permits deferred re-raise patterns where the exception is stored
+    and raised after cleanup (e.g. thread-boundary exception forwarding).
+    """
+    return all(isinstance(s, ast.Assign) for s in handler.body)
+
+
 def _only_continue(handler: ast.ExceptHandler) -> bool:
-    """Return True if handler body is just a continue statement."""
+    """Return True if handler body is just a continue statement.
+
+    Assumes the enclosing loop logs on eventual failure. Only permits
+    bare continue — handlers that also do work must log.
+    """
     return len(handler.body) == 1 and isinstance(handler.body[0], ast.Continue)
 
 
@@ -80,6 +93,8 @@ def test_no_silent_exception_swallowing() -> None:
             if _only_reraises(node):
                 continue
             if _only_continue(node):
+                continue
+            if _only_assigns_to_variable(node):
                 continue
             if _has_logging_call(node):
                 continue

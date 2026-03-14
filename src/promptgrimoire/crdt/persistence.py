@@ -104,8 +104,8 @@ class PersistenceManager:
             await asyncio.sleep(self.debounce_seconds)
             await self._persist_workspace(workspace_id)
         except asyncio.CancelledError:
-            logger.warning(
-                "crdt_save_cancelled",
+            logger.debug(
+                "crdt_save_superseded",
                 operation="debounced_workspace_save",
                 workspace_id=str(workspace_id),
             )

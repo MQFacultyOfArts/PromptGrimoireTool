@@ -190,10 +190,18 @@ def _setup_logging() -> None:
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
+    # --- Discord webhook alerting processor ---
+    from promptgrimoire.logging_discord import DiscordAlertProcessor
+
+    discord_processor = DiscordAlertProcessor(
+        webhook_url=settings.alerting.discord_webhook_url,
+    )
+
     # --- structlog configuration ---
     structlog.configure(
         processors=[
             *full_pre_chain,
+            discord_processor,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

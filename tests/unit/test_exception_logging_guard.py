@@ -13,7 +13,13 @@ from pathlib import Path
 
 SRC_DIR = Path(__file__).parent.parent.parent / "src" / "promptgrimoire"
 EXCLUDED_DIRS = {"cli", "__pycache__"}
-EXCLUDED_FILES = {"cli_loadtest.py"}
+EXCLUDED_FILES = {
+    "cli_loadtest.py",
+    # logging_discord.py intentionally swallows all exceptions (AC5.4):
+    # webhook failures must never disrupt application logging, and using
+    # structlog inside a structlog processor would cause infinite recursion.
+    "logging_discord.py",
+}
 
 LOG_METHODS = frozenset({"exception", "error", "warning", "debug"})
 

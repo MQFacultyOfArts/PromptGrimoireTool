@@ -1212,10 +1212,14 @@ async def _render_students_without_work(cid: UUID, *, can_view_drafts: bool) -> 
     no_work = await list_students_without_workspaces(cid)
     if not no_work:
         return
-    with ui.expansion(
-        f"Students with no work ({len(no_work)})",
-        icon="warning",
-    ).classes("w-full max-w-2xl mt-4"):
+    with (
+        ui.expansion(
+            f"Students with no work ({len(no_work)})",
+            icon="warning",
+        )
+        .classes("w-full max-w-2xl mt-4")
+        .props('data-testid="students-no-work"')
+    ):
         with ui.element("ul").classes("ml-4"):
             for name, email in no_work:
                 with ui.element("li"):

@@ -172,6 +172,7 @@ async def _delete_highlight(
     card.delete()
     if state.annotation_cards and highlight_id in state.annotation_cards:
         del state.annotation_cards[highlight_id]
+    state.card_snapshots.pop(highlight_id, None)
     _update_highlight_css(state)
     # Broadcast to other clients
     if state.broadcast_update:

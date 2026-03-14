@@ -238,6 +238,7 @@ class PageState:
     # Annotation cards
     annotations_container: ui.element | None = None
     annotation_cards: dict[str, ui.card] | None = None
+    card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded

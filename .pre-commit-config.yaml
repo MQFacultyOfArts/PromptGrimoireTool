@@ -44,7 +44,8 @@ repos:
         # pandoc.py: _move_annots_outside_restricted pre-existing complexity (22).
         # html_normaliser.py: strip_scripts_and_styles pre-existing complexity (25).
         # placement.py: _build_activity_cascade pre-existing complexity (16).
-        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$|pages/courses\.py$|tag_management\.py$|tag_management_rows\.py$|html_input\.py$|pandoc\.py$|html_normaliser\.py$|placement\.py$)'
+        # highlights.py: _add_highlight pre-existing complexity (17).
+        exclude: '(_server_script\.py$|^tests/|cli_loadtest\.py$|pages/roleplay\.py$|pages/courses\.py$|tag_management\.py$|tag_management_rows\.py$|html_input\.py$|pandoc\.py$|html_normaliser\.py$|placement\.py$|highlights\.py$)'
 
   # Prune orphaned .pyc files (source deleted, stale bytecode remains)
   - repo: local

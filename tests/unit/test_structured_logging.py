@@ -62,7 +62,7 @@ def _call_setup_logging(
     )
 
     settings = Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,  # type: ignore[call-arg]  # pydantic-settings private init arg not in __init__ signature
         app=AppConfig(log_dir=tmp_path),
         dev=DevConfig(branch_db_suffix=False),
     )

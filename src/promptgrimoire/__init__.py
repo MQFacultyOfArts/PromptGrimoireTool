@@ -10,8 +10,12 @@ import subprocess
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from promptgrimoire.config import Settings
 
 __version__ = "0.1.0"
 
@@ -44,7 +48,7 @@ def get_version_string() -> str:
 # ---------------------------------------------------------------------------
 # Patchable references for _setup_logging (tests override these)
 # ---------------------------------------------------------------------------
-def _get_settings_for_logging():
+def _get_settings_for_logging() -> Settings:
     """Return settings; exists as a seam for test patching."""
     from promptgrimoire.config import get_settings
 
@@ -160,6 +164,9 @@ def _setup_logging() -> None:
     log_file.chmod(0o644)
 
     # --- Console handler (human-readable) ---
+    # Note: format_exc_info is intentionally omitted here — ConsoleRenderer
+    # (via rich) handles exception rendering itself. Including format_exc_info
+    # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
     console_formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=[
             *shared_processors,
@@ -169,7 +176,6 @@ def _setup_logging() -> None:
         ],
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.processors.format_exc_info,
             structlog.dev.ConsoleRenderer(),
         ],
     )

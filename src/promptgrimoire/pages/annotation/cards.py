@@ -31,6 +31,8 @@ from promptgrimoire.pages.annotation.highlights import (
 
 logger = structlog.get_logger()
 
+_EXPANDABLE_THRESHOLD = 80
+
 
 def _author_initials(name: str) -> str:
     """Derive compact initials from a display name.
@@ -44,9 +46,9 @@ def _author_initials(name: str) -> str:
 
 def _build_expandable_text(full_text: str) -> None:
     """Build expandable text preview for annotation card."""
-    is_long = len(full_text) > 80
+    is_long = len(full_text) > _EXPANDABLE_THRESHOLD
     if is_long:
-        truncated_text = full_text[:80] + "..."
+        truncated_text = full_text[:_EXPANDABLE_THRESHOLD] + "..."
         with ui.element("div").classes("mt-1"):
             # Truncated view with expand icon
             with ui.row().classes("items-start gap-1 cursor-pointer") as truncated_row:

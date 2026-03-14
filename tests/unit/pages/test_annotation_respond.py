@@ -11,6 +11,7 @@ Traceability:
 from __future__ import annotations
 
 from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+from promptgrimoire.pages.annotation.cards import _EXPANDABLE_THRESHOLD
 from promptgrimoire.pages.annotation.respond import (
     _matches_filter,
     group_highlights_by_tag,
@@ -81,22 +82,20 @@ class TestReferenceHighlightGrouping:
         assert len(untagged) == 2
 
     def test_expandable_text_truncation(self) -> None:
-        """Long highlight text is truncated at 80 chars by _build_expandable_text."""
-        _expandable_threshold = 80
+        """Long highlight text is truncated at _EXPANDABLE_THRESHOLD chars."""
         long_text = "x" * 150
-        snippet = long_text[:_expandable_threshold]
-        if len(long_text) > _expandable_threshold:
+        snippet = long_text[:_EXPANDABLE_THRESHOLD]
+        if len(long_text) > _EXPANDABLE_THRESHOLD:
             snippet += "..."
 
-        assert len(snippet) == _expandable_threshold + 3  # 80 + "..."
+        assert len(snippet) == _EXPANDABLE_THRESHOLD + 3  # threshold + "..."
         assert snippet.endswith("...")
 
     def test_expandable_text_short_no_truncation(self) -> None:
         """Short highlight text is not truncated."""
-        _expandable_threshold = 80
         short_text = "short"
-        snippet = short_text[:_expandable_threshold]
-        if len(short_text) > _expandable_threshold:
+        snippet = short_text[:_EXPANDABLE_THRESHOLD]
+        if len(short_text) > _EXPANDABLE_THRESHOLD:
             snippet += "..."
 
         assert snippet == "short"

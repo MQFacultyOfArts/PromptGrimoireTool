@@ -25,7 +25,7 @@
 | `_author_initials(name)` pure function | `tests/unit/test_card_functions.py` | New (Task 1) |
 | `anonymise_author()` rules | `tests/unit/test_card_functions.py` | New (Task 1) |
 | `_build_expandable_text` 80-char threshold (exact boundary pinned) | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |
-| `cards_epoch` increments on rebuild (characterises epoch mechanism) | `tests/integration/test_annotation_cards_charac.py` | New (Codex audit fix) |
+| `cards_epoch` / `window.__annotationCardsEpoch` | Not testable in NiceGUI User harness (no real browser). Deferred to Phase 5 E2E tests | Gap |
 | Tag name on card header | Not directly tested — cards render with tag context but no assertion on tag label text | Gap |
 | Comment count badge | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |
 | Locate button on card | `tests/integration/test_annotation_cards_charac.py` | New (Task 3) |

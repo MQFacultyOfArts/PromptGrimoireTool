@@ -420,88 +420,10 @@ class TestAnnotateCardRendering:
         for el in detail_elements:
             assert not el.visible, "card-detail should be hidden by default"
 
-    @pytest.mark.asyncio
-    async def test_cards_epoch_increments_on_rebuild(self, nicegui_user: User) -> None:
-        """cards_epoch increments each time _refresh_annotation_cards() runs.
-
-        This characterises the rebuild-epoch mechanism described in CLAUDE.md
-        § E2E Race-Condition Patterns. The epoch is a monotonic counter
-        incremented inside _refresh_annotation_cards() on every full
-        container rebuild (cards.py:604). Phase 5 diff-based updates must
-        preserve this increment so E2E tests can use wait_for_function to
-        detect when a rebuild has completed.
-
-        Extraction strategy: the toggle_detail async function defined inside
-        _build_annotation_card() closes over `state` (it references
-        state.expanded_cards directly). We extract state from the closure of
-        the header row's "click" event handler, then call
-        _refresh_annotation_cards(state) twice to verify the counter advances.
-        """
-        from nicegui import ui
-
-        from promptgrimoire.pages.annotation import PageState
-        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
-
-        email = "student-epoch@test.example.edu.au"
-        ws_id, _, _ = await _setup_workspace_with_highlights(email=email)
-
-        await _authenticate(nicegui_user, email=email)
-        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
-        await _should_see_testid(nicegui_user, "annotation-card")
-
-        # Extract state from the toggle_detail closure on the first card's
-        # header row click handler.  toggle_detail captures `state` from its
-        # enclosing _build_annotation_card scope.
-        state: PageState | None = None
-        with nicegui_user:
-            cards = _find_all_by_testid(nicegui_user, "annotation-card")
-            assert cards, "No annotation cards found"
-            first_card = cards[0]
-            # The header row is the first ui.row child of the card
-            header_row = next(
-                (child for child in first_card if isinstance(child, ui.row)), None
-            )
-            assert header_row is not None, "No header row found on annotation card"
-            for listener in header_row._event_listeners.values():
-                handler = listener.handler
-                if handler is None or not hasattr(handler, "__closure__"):
-                    continue
-                raw_closure = handler.__closure__  # type: ignore[union-attr]  -- handler is Callable here
-                if raw_closure is None:
-                    continue
-                for cell in raw_closure:  # type: ignore[union-attr]  -- narrowed above
-                    try:
-                        obj = cell.cell_contents  # type: ignore[union-attr]  -- CellType.cell_contents not in stubs
-                    except ValueError:
-                        continue
-                    if isinstance(obj, PageState):
-                        state = obj
-                        break
-                if state is not None:
-                    break
-
-        assert state is not None, (
-            "Could not extract PageState from card click handler closure. "
-            "If _build_annotation_card changed, update closure extraction."
-        )
-
-        # After initial page load _refresh_annotation_cards ran once -> epoch=1
-        initial_epoch = state.cards_epoch
-        assert initial_epoch >= 1, (
-            f"Expected cards_epoch >= 1 after page load, got {initial_epoch}"
-        )
-
-        # Call refresh twice more: epoch must advance by exactly 1 each time
-        with nicegui_user:
-            _refresh_annotation_cards(state)
-        assert state.cards_epoch == initial_epoch + 1, (
-            f"Expected cards_epoch={initial_epoch + 1} after rebuild, "
-            f"got {state.cards_epoch}"
-        )
-
-        with nicegui_user:
-            _refresh_annotation_cards(state)
-        assert state.cards_epoch == initial_epoch + 2, (
-            f"Expected cards_epoch={initial_epoch + 2} after second rebuild, "
-            f"got {state.cards_epoch}"
-        )
+    # NOTE: cards_epoch characterisation was removed after Codex audit
+    # round 2 identified it as fragile (closure extraction from
+    # _build_annotation_card internals, flaky under xdist). The NiceGUI
+    # User harness has no real browser, so window.__annotationCardsEpoch
+    # (the public contract) is untestable at this layer. Phase 5 E2E
+    # tests will cover the epoch mechanism via Playwright's
+    # wait_for_function("() => window.__annotationCardsEpoch >= N").

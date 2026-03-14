@@ -785,3 +785,175 @@ class TestDiffChangedHighlights:
         snap = _snapshot_highlight({"id": "x", "tag": "t", "comments": []})
         assert isinstance(snap, dict)
         assert "tag" in snap
+
+
+# ---------------------------------------------------------------------------
+# Rapid CRDT update tests (AC12.5)
+# ---------------------------------------------------------------------------
+
+
+class TestRapidCRDTUpdates:
+    """Tests for AC12.5: rapid successive CRDT updates produce correct state.
+
+    CRDT operations (add_highlight, remove_highlight, update_highlight_tag)
+    are synchronous. "Rapid successive" means calling them without yielding
+    to the event loop between calls. The diff algorithm processes the final
+    CRDT state, so these tests verify that it produces correct output
+    regardless of how many intermediate mutations occurred.
+
+    Traceability:
+    - AC12.5: Rapid successive CRDT updates produce correct final card
+      state with no duplicates or missing cards
+    """
+
+    @pytest.mark.asyncio
+    async def test_rapid_successive_adds_produce_correct_state(
+        self, nicegui_user: User
+    ) -> None:
+        """AC12.5: Adding 3 highlights rapidly produces 6 total cards."""
+        email = "student-rapid-add@test.example.edu.au"
+        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        tags = crdt_doc.list_tags()
+        tag_id = next(iter(tags))
+
+        # Add 3 highlights rapidly -- no await between sync operations
+        crdt_doc.add_highlight(
+            start_char=5,
+            end_char=9,
+            tag=tag_id,
+            text="rapid1",
+            author="rapid",
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        crdt_doc.add_highlight(
+            start_char=22,
+            end_char=27,
+            tag=tag_id,
+            text="rapid2",
+            author="rapid",
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        crdt_doc.add_highlight(
+            start_char=45,
+            end_char=48,
+            tag=tag_id,
+            text="rapid3",
+            author="rapid",
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        assert len(cards) == 6, (
+            f"Expected 6 cards (3 original + 3 rapid adds), got {len(cards)}"
+        )
+
+        start_chars = sorted(
+            int(float(c.props.get("data-start-char", "0"))) for c in cards
+        )
+        # All 6 unique start_chars present, no duplicates
+        assert start_chars == [5, 10, 22, 30, 45, 50], (
+            f"Expected start_chars [5,10,22,30,45,50], got {start_chars}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rapid_add_then_immediate_remove(self, nicegui_user: User) -> None:
+        """AC12.5: Add then immediately remove leaves original count."""
+        email = "student-rapid-rm@test.example.edu.au"
+        ws_id, doc_id, user_id = await _setup_workspace_with_highlights(email=email)
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        tags = crdt_doc.list_tags()
+        tag_id = next(iter(tags))
+
+        # Add then immediately remove -- both sync, no yield
+        ephemeral_id = crdt_doc.add_highlight(
+            start_char=5,
+            end_char=9,
+            tag=tag_id,
+            text="ephemeral",
+            author="rapid",
+            document_id=str(doc_id),
+            user_id=user_id,
+        )
+        crdt_doc.remove_highlight(ephemeral_id)
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        assert len(cards) == 3, (
+            f"Expected 3 cards (add+remove should cancel out), got {len(cards)}"
+        )
+
+        start_chars = sorted(
+            int(float(c.props.get("data-start-char", "0"))) for c in cards
+        )
+        assert start_chars == [10, 30, 50], (
+            f"Expected original start_chars [10, 30, 50], got {start_chars}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rapid_tag_changes_reflect_final_value(
+        self, nicegui_user: User
+    ) -> None:
+        """AC12.5: Rapidly changing a tag 3 times renders the final tag value."""
+        email = "student-rapid-tag@test.example.edu.au"
+        ws_id, doc_id, _user_id = await _setup_workspace_with_highlights(email=email)
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocumentRegistry
+        from promptgrimoire.db.workspaces import save_workspace_crdt_state
+
+        registry = AnnotationDocumentRegistry()
+        crdt_doc = await registry.get_or_create_for_workspace(ws_id)
+        highlights = crdt_doc.get_highlights_for_document(str(doc_id))
+        hl1 = next(h for h in highlights if h.get("start_char") == 10)
+
+        tags = crdt_doc.list_tags()
+        jurisdiction_tag = next(
+            tid for tid, tdata in tags.items() if tdata["name"] == "Jurisdiction"
+        )
+        evidence_tag = next(
+            tid for tid, tdata in tags.items() if tdata["name"] == "Evidence"
+        )
+
+        # HL1 starts as Jurisdiction. Rapidly toggle 3 times:
+        # Jurisdiction -> Evidence -> Jurisdiction -> Evidence (final)
+        crdt_doc.update_highlight_tag(hl1["id"], evidence_tag)
+        crdt_doc.update_highlight_tag(hl1["id"], jurisdiction_tag)
+        crdt_doc.update_highlight_tag(hl1["id"], evidence_tag)
+        await save_workspace_crdt_state(ws_id, crdt_doc.get_full_state())
+
+        await _authenticate(nicegui_user, email=email)
+        await nicegui_user.open(f"/annotation?workspace_id={ws_id}")
+        await _should_see_testid(nicegui_user, "annotation-card")
+
+        cards = _find_all_by_testid(nicegui_user, "annotation-card")
+        assert len(cards) == 3, f"Expected 3 cards unchanged, got {len(cards)}"
+
+        hl1_card = next(
+            c for c in cards if int(float(c.props.get("data-start-char", "0"))) == 10
+        )
+        style = hl1_card._style.get("border-left", "")
+        assert "#ff7f0e" in style, (
+            f"Expected final Evidence colour #ff7f0e in border-left, got: {style}"
+        )

@@ -124,7 +124,7 @@ All Level 0 flows accounted for. No orphan flows introduced at Level 1.
 
 - **Parent:** [0-context-diagram.md](0-context-diagram.md)
 - **Children:** [4-run-simulations.md](4-run-simulations.md), [5-annotate-texts.md](5-annotate-texts.md), [6-generate-exports.md](6-generate-exports.md)
-- **Related docs:** [../../database.md](../../database.md) (schema for D1–D4), [../../dfd-annotation-pipeline.md](../../dfd-annotation-pipeline.md) (existing Level 2 for P5)
+- **Related docs:** [../../database.md](../../database.md) (schema for D1–D4)
 - **Related issues:** —
 
 ## Numbering

@@ -20,6 +20,7 @@ library references during development.
 
 - [Context Diagram (Level 0)](architecture/dfd/0-context-diagram.md)
 - [[1] Learning Workspace — Level 1 Decomposition](architecture/dfd/1-level-1-decomposition.md)
+- [[5] Annotate Texts — Level 2 Decomposition](architecture/dfd/5-annotate-texts.md)
 
 ## asyncpg
 
@@ -49,10 +50,7 @@ library references during development.
 ## guides
 
 - [PromptGrimoire Guides](guides/index.md)
-- [Instructor Setup](guides/instructor-setup.md)
-- [Student Workflow](guides/student-workflow.md)
 - [Using PromptGrimoire](guides/using-promptgrimoire.md)
-- [Your Personal Grimoire](guides/your-personal-grimoire.md)
 
 ## lark
 

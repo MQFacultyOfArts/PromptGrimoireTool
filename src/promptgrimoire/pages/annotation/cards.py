@@ -504,8 +504,84 @@ def _build_annotation_card(
     return card
 
 
+def _get_highlights(state: PageState) -> list[dict[str, Any]]:
+    """Get highlights for the current document from CRDT state.
+
+    Caller must ensure ``state.crdt_doc is not None`` before calling.
+    """
+    if state.crdt_doc is None:  # pragma: no cover — guarded by callers
+        return []
+    if state.document_id is not None:
+        return state.crdt_doc.get_highlights_for_document(
+            str(state.document_id),
+        )
+    return state.crdt_doc.get_all_highlights()
+
+
+def _diff_annotation_cards(state: PageState) -> None:
+    """Update annotation cards by diffing CRDT state against current cards.
+
+    Instead of clearing and rebuilding the entire container, this function:
+    - Removes cards for highlights that no longer exist in the CRDT
+    - Adds cards for new highlights at the correct sorted position
+    - Leaves unchanged cards untouched (preserving expansion state, input
+      focus, and DOM event handlers)
+
+    Only called when ``state.annotation_cards`` is already populated
+    (i.e. after the first full build).
+    """
+    if state.annotations_container is None or state.crdt_doc is None:
+        return
+    if state.annotation_cards is None:
+        return
+
+    highlights = _get_highlights(state)
+    crdt_map = {hl["id"]: hl for hl in highlights}
+    crdt_ids = set(crdt_map.keys())
+    registry_ids = set(state.annotation_cards.keys())
+
+    changed = False
+
+    # REMOVED: IDs in registry but not in CRDT
+    for removed_id in registry_ids - crdt_ids:
+        card = state.annotation_cards.pop(removed_id)
+        card.delete()
+        state.expanded_cards.discard(removed_id)
+        changed = True
+
+    # ADDED: IDs in CRDT but not in registry
+    added_ids = crdt_ids - registry_ids
+    if added_ids:
+        # highlights list is already sorted by start_char
+        sorted_hl_ids = [hl["id"] for hl in highlights]
+        with state.annotations_container:
+            for add_id in added_ids:
+                hl = crdt_map[add_id]
+                card = _build_annotation_card(state, hl)
+                state.annotation_cards[add_id] = card
+                # Find correct position in sorted order
+                position = sorted_hl_ids.index(add_id)
+                card.move(
+                    target_container=state.annotations_container,
+                    target_index=position,
+                )
+                changed = True
+
+    if changed:
+        state.cards_epoch += 1
+        with state.annotations_container:
+            ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+
+
 def _refresh_annotation_cards(state: PageState) -> None:
-    """Refresh all annotation cards from CRDT state."""
+    """Refresh annotation cards from CRDT state.
+
+    First call (``annotation_cards is None``): full build — clears the
+    container and creates all cards from scratch.
+
+    Subsequent calls: diff-based update via ``_diff_annotation_cards`` —
+    only adds/removes individual cards that changed, preserving the rest.
+    """
     logger.debug(
         "[CARDS] _refresh called: container=%s, crdt_doc=%s",
         state.annotations_container is not None,
@@ -514,8 +590,13 @@ def _refresh_annotation_cards(state: PageState) -> None:
     if state.annotations_container is None or state.crdt_doc is None:
         return
 
-    if state.annotation_cards is None:
-        state.annotation_cards = {}
+    if state.annotation_cards is not None:
+        # Subsequent render — diff
+        _diff_annotation_cards(state)
+        return
+
+    # First render — full build
+    state.annotation_cards = {}
 
     # Wrap the entire rebuild in ``with container`` so that every
     # ``ui.run_javascript`` call resolves the NiceGUI client through the
@@ -524,13 +605,7 @@ def _refresh_annotation_cards(state: PageState) -> None:
     with state.annotations_container:
         state.annotations_container.clear()
 
-        # Get highlights for this document
-        if state.document_id is not None:
-            highlights = state.crdt_doc.get_highlights_for_document(
-                str(state.document_id),
-            )
-        else:
-            highlights = state.crdt_doc.get_all_highlights()
+        highlights = _get_highlights(state)
 
         logger.debug(
             "[CARDS] Found %d highlights for doc_id=%s",

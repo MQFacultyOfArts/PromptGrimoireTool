@@ -106,6 +106,29 @@ Phase 2 will unify Organise and Respond to use the same 80-char expandable text 
 
 ---
 
+## Technical Debt Flagged by Phase 1
+
+### DB setup helper chain duplicated across integration test files
+
+`_create_course`, `_enroll`, `_create_week`, `_create_activity`,
+`_setup_template_tags`, `_add_template_document`, `_clone_workspace`,
+`_add_highlights_to_workspace`, and `_setup_workspace_with_highlights` are
+near-identical in all three integration test files:
+
+- `tests/integration/test_annotation_cards_charac.py`
+- `tests/integration/test_organise_charac.py`
+- `tests/integration/test_respond_charac.py`
+
+They differ only in course-code prefix (`ANN`, `ORG`, `RSP`) and test-specific
+highlight content. Extract these into a shared
+`tests/integration/annotation_fixtures.py` module during Phase 3 or as a
+standalone cleanup task. The course-code prefix can be passed as a parameter.
+
+**Scope:** Phase 3 cleanup task or dedicated refactor. Not urgent — tests are
+correct, the duplication is cosmetic.
+
+---
+
 ## Coverage Gaps Not Addressed by Phase 1
 
 These behaviours are not tested and are out of scope for Phase 1 characterisation:

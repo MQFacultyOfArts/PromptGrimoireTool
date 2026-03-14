@@ -85,6 +85,7 @@ def _run_in_thread(coro: object) -> None:
         try:
             asyncio.run(coro)  # type: ignore[arg-type]
         except BaseException as e:
+            logger.debug("async_thread_error", error=str(e))
             exc = e
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:

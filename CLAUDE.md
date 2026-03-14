@@ -214,6 +214,7 @@ Detailed subsystem docs live in `docs/`. Key references:
 | [e2e-debugging.md](docs/e2e-debugging.md) | E2E infrastructure, NiceGUI task leaks, cleanup endpoint |
 | [nicegui/lifecycle.md](docs/nicegui/lifecycle.md) | NiceGUI client lifecycle, on_disconnect vs on_delete |
 | [worktrees.md](docs/worktrees.md) | Git worktree setup, Serena memory management |
+| [logging.md](docs/logging.md) | Structured logging, log format, jq queries, Discord alerting |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow diagrams, integration patterns |
 
 ### Documentation Caching
@@ -293,6 +294,25 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 `is_privileged_user(auth_user)` in `auth/__init__.py` determines whether a user bypasses copy protection. Returns `True` for org-level admins (`is_admin=True`) and users with `instructor` or `stytch_admin` roles.
 
 `check_workspace_access(workspace_id, auth_user)` in `auth/__init__.py` resolves effective permission for a workspace. Resolution order: unauthenticated returns `None`; admins get `"owner"` (bypass); others go through `resolve_permission()` which checks explicit ACL then enrollment-derived access, highest wins, default deny.
+
+## Logging
+
+Structured JSON logging via structlog. Full details in [docs/logging.md](docs/logging.md).
+
+**Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging directly.
+
+**Exception handling rule:** Every `except` block must call `logger.exception()` (unexpected errors) or `logger.warning()` (expected business logic). No silent exception swallowing.
+
+**Context propagation:** The `page_route` decorator auto-binds `user_id` and `request_path` via `structlog.contextvars`. Workspace handlers bind `workspace_id` via `bind_contextvars(workspace_id=...)`.
+
+**Log levels by module category:**
+
+| Category | Level | Examples |
+|----------|-------|---------|
+| Database, CRDT | WARNING | `db/engine`, `db/wargames`, `crdt/` |
+| Everything else | INFO | pages, export, auth, workers, config |
+
+**Print guard:** No `print()` calls in `src/promptgrimoire/` except `cli/`. Guard test (`tests/unit/test_print_usage_guard.py`) enforces this.
 
 ## Conventions
 

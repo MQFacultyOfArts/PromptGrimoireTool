@@ -74,6 +74,33 @@ def _branch_db_suffix_for_logging(
     return _branch_db_suffix(branch)
 
 
+# Fields that only belong in JSON file output, not dev console.
+_CONSOLE_STRIP_KEYS = frozenset(
+    {
+        "pid",
+        "branch",
+        "commit",
+        "timestamp",
+        "user_id",
+        "workspace_id",
+        "request_path",
+    }
+)
+
+
+def _clean_for_console(
+    _logger: object,
+    _method_name: str,
+    event_dict: structlog.types.EventDict,
+) -> structlog.types.EventDict:
+    """Strip global/null fields from console; keep in JSON file."""
+    for key in _CONSOLE_STRIP_KEYS:
+        val = event_dict.get(key)
+        if val is None or key in ("pid", "branch", "commit", "timestamp"):
+            event_dict.pop(key, None)
+    return event_dict
+
+
 def _setup_logging() -> None:
     """Configure structured JSON logging via structlog.
 
@@ -173,24 +200,16 @@ def _setup_logging() -> None:
     # Note: format_exc_info is intentionally omitted here — ConsoleRenderer
     # (via rich) handles exception rendering itself. Including format_exc_info
     # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
-
-    def _drop_null_context_for_console(
-        _logger: object,
-        _method_name: str,
-        event_dict: structlog.types.EventDict,
-    ) -> structlog.types.EventDict:
-        """Strip None context fields from console output (keep in JSON)."""
-        for key in ("user_id", "workspace_id", "request_path"):
-            if event_dict.get(key) is None:
-                event_dict.pop(key, None)
-        return event_dict
-
     console_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=[*full_pre_chain, _drop_null_context_for_console],
+        foreign_pre_chain=[
+            *shared_processors,
+            add_global_fields,
+            level_gated_traceback,
+            _clean_for_console,
+        ],
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.dev.ConsoleRenderer(
-                pad_event_to=60,
                 sort_keys=False,
             ),
         ],

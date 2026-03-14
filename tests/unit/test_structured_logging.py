@@ -317,6 +317,64 @@ class TestNullContextFields:
         assert parsed["request_path"] is None
 
 
+class TestContextPropagation:
+    """AC1.1-AC1.4: Context vars propagate to log output."""
+
+    def test_authenticated_context(self, tmp_path: Path) -> None:
+        """AC1.1: Bound user_id and request_path appear in log JSON."""
+        from structlog.contextvars import bind_contextvars, clear_contextvars
+
+        _call_setup_logging(tmp_path)
+        clear_contextvars()
+        bind_contextvars(user_id="test-user-123", request_path="/courses")
+        structlog.get_logger("test.ctx").info("auth event")
+
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
+        assert parsed["user_id"] == "test-user-123"
+        assert parsed["request_path"] == "/courses"
+        for key in ("pid", "branch", "commit"):
+            assert key in parsed
+
+    def test_unauthenticated_context(self, tmp_path: Path) -> None:
+        """AC1.4: Unbound context has null user_id but request_path if set."""
+        from structlog.contextvars import clear_contextvars
+
+        _call_setup_logging(tmp_path)
+        clear_contextvars()
+        structlog.get_logger("test.ctx").info("unauth event")
+
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
+        assert parsed["user_id"] is None
+        assert parsed["request_path"] is None
+
+    def test_workspace_context(self, tmp_path: Path) -> None:
+        """AC1.2: Bound workspace_id appears in log JSON."""
+        from structlog.contextvars import bind_contextvars, clear_contextvars
+
+        _call_setup_logging(tmp_path)
+        clear_contextvars()
+        bind_contextvars(workspace_id="ws-uuid-456")
+        structlog.get_logger("test.ctx").info("workspace event")
+
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
+        assert parsed["workspace_id"] == "ws-uuid-456"
+
+    def test_context_isolation_after_clear(self, tmp_path: Path) -> None:
+        """AC1.3: clear_contextvars resets workspace_id for next page."""
+        from structlog.contextvars import bind_contextvars, clear_contextvars
+
+        _call_setup_logging(tmp_path)
+        clear_contextvars()
+        bind_contextvars(workspace_id="ws-1")
+        clear_contextvars()
+        bind_contextvars(user_id="user-2")
+        structlog.get_logger("test.ctx").info("isolated event")
+
+        parsed = _flush_and_read_last(tmp_path / "promptgrimoire.jsonl")
+        assert parsed["user_id"] == "user-2"
+        assert parsed["workspace_id"] is None
+
+
 class TestGlobalFields:
     """Verify pid, branch, commit are present in output."""
 

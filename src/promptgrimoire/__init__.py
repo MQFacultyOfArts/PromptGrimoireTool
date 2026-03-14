@@ -173,11 +173,26 @@ def _setup_logging() -> None:
     # Note: format_exc_info is intentionally omitted here — ConsoleRenderer
     # (via rich) handles exception rendering itself. Including format_exc_info
     # before ConsoleRenderer triggers a UserWarning on every ERROR/CRITICAL log.
+
+    def _drop_null_context_for_console(
+        _logger: object,
+        _method_name: str,
+        event_dict: structlog.types.EventDict,
+    ) -> structlog.types.EventDict:
+        """Strip None context fields from console output (keep in JSON)."""
+        for key in ("user_id", "workspace_id", "request_path"):
+            if event_dict.get(key) is None:
+                event_dict.pop(key, None)
+        return event_dict
+
     console_formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=full_pre_chain,
+        foreign_pre_chain=[*full_pre_chain, _drop_null_context_for_console],
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.dev.ConsoleRenderer(),
+            structlog.dev.ConsoleRenderer(
+                pad_event_to=60,
+                sort_keys=False,
+            ),
         ],
     )
     console_handler = logging.StreamHandler(sys.stderr)

@@ -16,6 +16,7 @@ from uuid import UUID
 
 import structlog
 from nicegui import app, ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import grant_permission
@@ -228,6 +229,7 @@ async def _handle_export(state: dict) -> None:
         html_content = session_to_html(session)
 
         workspace = await create_workspace()
+        bind_contextvars(workspace_id=str(workspace.id))
         title = f"Roleplay: {session.character.name}"
         await update_workspace_title(workspace.id, title)
         await add_document(

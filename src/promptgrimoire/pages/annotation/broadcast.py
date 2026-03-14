@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import structlog
 from nicegui import app, ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -372,6 +373,9 @@ def _setup_client_sync(
     # Resolve user_id for revocation lookup
     auth_user = app.storage.user.get("auth_user")
     client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
+
+    # Bind workspace context for structured logging
+    bind_contextvars(workspace_id=str(workspace_id))
 
     async def handle_peer_left() -> None:
         _update_user_count(state)

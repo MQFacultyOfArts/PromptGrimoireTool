@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from nicegui import ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.db.workspace_documents import get_document
@@ -265,6 +266,7 @@ async def _check_word_count_enforcement(
 
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     """Handle PDF export with loading notification."""
+    bind_contextvars(workspace_id=str(workspace_id))
     if state.crdt_doc is None or state.document_id is None:
         ui.notify("No document to export", type="warning")
         return

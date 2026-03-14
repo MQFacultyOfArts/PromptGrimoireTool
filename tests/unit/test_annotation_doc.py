@@ -1446,3 +1446,126 @@ class TestTagSyncViaCrdt:
         doc_b.apply_update(doc_a.get_full_state())
 
         assert len(workspace_tags_from_crdt(doc_b)) == 0
+
+
+class TestGetHighlightsForDocument:
+    """Characterisation tests for get_highlights_for_document().
+
+    Locks down filtering and ordering behaviour before multi-document
+    tab refactoring.
+
+    Traceability:
+    - Plan: phase_01.md Task 2 (multi-doc-tabs-186-plan-a)
+    - Protects: multi-doc-tabs-186.AC12 (Diff-Based Card Updates)
+    """
+
+    def test_filters_by_document_id(self) -> None:
+        """Only highlights matching the given document_id are returned."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag="t1",
+            text="doc-a text",
+            author="A",
+            document_id="doc-a",
+        )
+        doc.add_highlight(
+            start_char=0,
+            end_char=10,
+            tag="t2",
+            text="doc-b text",
+            author="A",
+            document_id="doc-b",
+        )
+
+        result = doc.get_highlights_for_document("doc-a")
+
+        assert len(result) == 1
+        assert result[0]["text"] == "doc-a text"
+
+    def test_ordered_by_start_char(self) -> None:
+        """Highlights within a document are sorted by start_char."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=50,
+            end_char=60,
+            tag="t1",
+            text="second",
+            author="A",
+            document_id="doc-a",
+        )
+        doc.add_highlight(
+            start_char=10,
+            end_char=20,
+            tag="t1",
+            text="first",
+            author="A",
+            document_id="doc-a",
+        )
+
+        result = doc.get_highlights_for_document("doc-a")
+
+        assert len(result) == 2
+        assert result[0]["text"] == "first"
+        assert result[1]["text"] == "second"
+
+    def test_no_cross_contamination(self) -> None:
+        """Highlights from different documents do not appear."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="t1",
+            text="in doc-a",
+            author="A",
+            document_id="doc-a",
+        )
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="t1",
+            text="in doc-b",
+            author="A",
+            document_id="doc-b",
+        )
+
+        result_a = doc.get_highlights_for_document("doc-a")
+        result_b = doc.get_highlights_for_document("doc-b")
+
+        assert len(result_a) == 1
+        assert result_a[0]["text"] == "in doc-a"
+        assert len(result_b) == 1
+        assert result_b[0]["text"] == "in doc-b"
+
+    def test_empty_document_returns_empty_list(self) -> None:
+        """Querying a document_id with no highlights returns []."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="t1",
+            text="other doc",
+            author="A",
+            document_id="doc-a",
+        )
+
+        result = doc.get_highlights_for_document("doc-nonexistent")
+
+        assert result == []
+
+    def test_highlights_without_document_id_excluded(self) -> None:
+        """Highlights with document_id=None are not returned."""
+        doc = AnnotationDocument("test-doc")
+        doc.add_highlight(
+            start_char=0,
+            end_char=5,
+            tag="t1",
+            text="no doc id",
+            author="A",
+            document_id=None,
+        )
+
+        result = doc.get_highlights_for_document("doc-a")
+
+        assert result == []

@@ -42,6 +42,7 @@ library references during development.
 ## dead-ends
 
 - [Dead End: Client-Side Char Span Synchronisation](dead-ends/2026-02-10-charspan-sync.md)
+- [Dead End: \annot with \par inside longtable + luatexja](dead-ends/2026-03-15-annot-par-in-longtable.md)
 
 ## design-notes
 

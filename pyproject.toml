@@ -212,7 +212,7 @@ docstring-code-format = true
 testpaths = ["tests/unit", "tests/integration", "tests/e2e"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-ra -q -m 'not blns and not slow and not perf'"
+addopts = "-ra -q -m 'not blns and not slow and not perf and not smoke'"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "e2e: marks end-to-end tests requiring Playwright browsers",
@@ -224,6 +224,7 @@ markers = [
     "cards: marks card-touching annotation E2E tests (run with 'uv run grimoire e2e cards')",
     "browser_gate: marks browser feature-gate tests (run with '-m browser_gate')",
     "skip_browserstack: marks tests incompatible with BrowserStack (WebSocket timing, tunnel routing)",
+    "smoke: marks tests requiring external toolchains (pandoc, lualatex, tlmgr)",
 ]
 log_file = "test-debug.log"
 log_file_level = "WARNING"

@@ -518,7 +518,7 @@ class TestEmptyStudentIdRegression:
             for email in (alice_email, bob_email):
                 result = await session.execute(
                     select(User).where(
-                        User.email == email,  # type: ignore[arg-type]
+                        User.email == email,
                     )
                 )
                 user = result.scalar_one()
@@ -526,3 +526,56 @@ class TestEmptyStudentIdRegression:
                     f"Empty student_id should be normalised to NULL, "
                     f"got {user.student_id!r} for {email}"
                 )
+
+    @pytest.mark.asyncio
+    async def test_xlsx_fixture_with_empty_student_ids(self) -> None:
+        """Full pipeline: XLSX parse → bulk_enrol with empty student_id cells.
+
+        Uses the tests/fixtures/enrolment/empty_student_ids.xlsx fixture
+        which has two rows with blank 'ID number' cells and one with a value.
+        """
+        from pathlib import Path
+
+        from promptgrimoire.db.enrolment import bulk_enrol
+        from promptgrimoire.enrol.xlsx_parser import parse_xlsx
+
+        fixture = (
+            Path(__file__).parent.parent
+            / "fixtures"
+            / "enrolment"
+            / "empty_student_ids.xlsx"
+        )
+        xlsx_bytes = fixture.read_bytes()
+
+        entries = parse_xlsx(xlsx_bytes)
+        assert len(entries) == 3
+
+        course = await _make_course("xlsx-empty-sid")
+        report = await bulk_enrol(entries, course.id)
+
+        assert report.entries_processed == 3
+        assert report.users_created == 3
+
+        # Verify: two users have NULL student_id, one has 'mq99999999'
+        from promptgrimoire.db import get_session
+
+        async with get_session() as session:
+            for email in ("alice.noid@test.mq.edu.au", "bob.noid@test.mq.edu.au"):
+                result = await session.execute(
+                    select(User).where(
+                        User.email == email,
+                    )
+                )
+                user = result.scalar_one()
+                assert user.student_id is None, (
+                    f"Blank XLSX cell should produce NULL student_id, "
+                    f"got {user.student_id!r} for {email}"
+                )
+
+            result = await session.execute(
+                select(User).where(
+                    User.email == "carol.hasid@test.mq.edu.au",
+                )
+            )
+            carol = result.scalar_one()
+            assert carol.student_id == "mq99999999"

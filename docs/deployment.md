@@ -1,6 +1,6 @@
 # Deployment Guide — PromptGrimoire
 
-*Last updated: 2026-03-01*
+*Last updated: 2026-03-15*
 *Target: NCI Cloud VM — Ubuntu 24.04 LTS, 4 vCPU / 8GB RAM, 60GB boot volume, grimoire.drbbs.org*
 
 ## Architecture Overview
@@ -50,6 +50,16 @@ Provision a new instance via the NCI Cloud dashboard (OpenStack).
 - **Customisation script:** Leave empty — manual setup from this guide
 
 **Disk layout:** Single 60GB Cinder boot volume at `/dev/vda`, mounted at `/`. Everything lives on root. Instance termination loses disk — restore from SharePoint backup (Step 14).
+
+**Swap:** The VM has no swap by default. A 2 GB swapfile prevents the OOM killer from taking down sshd during memory spikes (see [2026-03-15 post-mortem](postmortems/2026-03-15-production-oom.md)).
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
 
 ```bash
 ssh ubuntu@<floating-ip>
@@ -561,6 +571,32 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
+Create the systemd override for resource limits and NiceGUI storage:
+
+```bash
+sudo systemctl edit promptgrimoire
+```
+
+Add between the markers:
+
+```ini
+[Service]
+MemoryMax=6G
+OOMScoreAdjust=500
+ReadWritePaths=/opt/promptgrimoire/logs /opt/promptgrimoire/.venv /home/promptgrimoire/.TinyTeX /home/promptgrimoire/.cache/uv /opt/promptgrimoire/.nicegui
+```
+
+- `MemoryMax=6G` — hard cap; leaves 2 GB for OS, sshd, PostgreSQL
+- `OOMScoreAdjust=500` — kernel kills the app before sshd
+- `ReadWritePaths` — repeats the base list plus `/opt/promptgrimoire/.nicegui` (NiceGUI session storage; without it, `ProtectSystem=strict` causes `Errno 30` on every login)
+
+Create the `.nicegui` directory before starting:
+
+```bash
+sudo mkdir -p /opt/promptgrimoire/.nicegui
+sudo chown promptgrimoire:promptgrimoire /opt/promptgrimoire/.nicegui
+```
+
 Ensure the uv cache directory exists before starting (systemd's `ReadWritePaths` can't create it):
 
 ```bash
@@ -781,6 +817,14 @@ $AddUnixListenSocket /var/lib/haproxy/dev/log
 ```
 
 ```bash
+sudo systemctl restart rsyslog
+```
+
+Fix the apparmor profile so rsyslogd can access HAProxy's chroot log socket (without this, the journal fills with `apparmor="DENIED"` spam):
+
+```bash
+echo '/var/lib/haproxy/dev/log rw,' | sudo tee -a /etc/apparmor.d/local/usr.sbin.rsyslogd
+sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
 sudo systemctl restart rsyslog
 ```
 

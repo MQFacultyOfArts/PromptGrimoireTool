@@ -127,6 +127,7 @@ class TestProcessInputDocx:
             await process_input("not bytes", source_type="docx")
 
 
+@pytest.mark.smoke
 class TestProcessInputPdf:
     """Tests for PDF through process_input() pipeline.
 

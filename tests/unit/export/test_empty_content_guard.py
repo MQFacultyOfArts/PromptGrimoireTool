@@ -122,6 +122,7 @@ def _make_synthetic_highlights(
 # ------------------------------------------------------------------
 # AC1.5, AC1.6: ValueError guard tests
 # ------------------------------------------------------------------
+@pytest.mark.smoke
 class TestEmptyContentValueError:
     """ValueError when highlights provided with empty content."""
 

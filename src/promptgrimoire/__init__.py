@@ -296,6 +296,15 @@ def main() -> None:
 
     _ = promptgrimoire.pages  # side-effect import: registers routes
 
+    # Health check endpoint for UptimeRobot (HEAD + GET)
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    async def healthz(_request: object) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    app.routes.insert(0, Route("/healthz", healthz, methods=["GET", "HEAD"]))
+
     settings = get_settings()
 
     if settings.database.url:

@@ -76,7 +76,7 @@ def inject_copy_protection() -> None:
     intercepted via keydown handler. CSS ``@media print`` hides tab panels
     and shows a "Printing is disabled" message instead.
     """
-    _selectors = '#doc-container, [data-testid="respond-reference-panel"]'
+    _selectors = '.doc-container, [data-testid="respond-reference-panel"]'
     # On SPA navigations, annotation-copy-protection.js may not be loaded yet
     # (ui.add_body_html only injects on full page loads).  Stash the selectors
     # so the dynamic loader in document.py can call setupCopyProtection later.

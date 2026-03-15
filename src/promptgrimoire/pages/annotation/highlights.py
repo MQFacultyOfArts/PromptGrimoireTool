@@ -65,7 +65,7 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
     #    before the scroll, hiding cards that aren't yet in viewport).
     js = _render_js(
         t"(function(){{"
-        t"  var c = document.getElementById('doc-container');"
+        t"  var c = document.getElementById('{state.doc_container_id}');"
         t"  if (!c) return;"
         t"  window._textNodes = walkTextNodes(c);"
         t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
@@ -121,7 +121,7 @@ def _push_highlights_to_client(state: PageState) -> None:
     highlight_json = _RawJS(_build_highlight_json(state))
     js = _render_js(
         t"(function() {{"
-        t"  const c = document.getElementById('doc-container');"
+        t"  const c = document.getElementById('{state.doc_container_id}');"
         t"  if (c) applyHighlights(c, {highlight_json});"
         t"}})()"
     )

@@ -229,6 +229,8 @@ async def _render_document_with_highlights(
 ) -> None:
     """Render a document with highlight support."""
     state.document_id = doc.id
+    state.doc_container_id = f"doc-container-{doc.id}"
+    state.ann_container_id = f"ann-container-{doc.id}"
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
     state.card_snapshots = {}
@@ -302,7 +304,7 @@ async def _render_document_with_highlights(
             ui.element("div")
             .classes(container_classes)
             .style("flex: 2; min-width: 600px; max-width: 900px;")
-            .props('id="doc-container" data-testid="doc-container"')
+            .props(f'id="{state.doc_container_id}" data-testid="doc-container"')
         )
         state.doc_container = doc_container
         with doc_container:
@@ -353,11 +355,11 @@ async def _render_document_with_highlights(
             t"    '/static/annotation-copy-protection.js'"
             t"  ];"
             t"  function init() {{"
-            t"    var c = document.getElementById('doc-container');"
+            t"    var c = document.getElementById('{state.doc_container_id}');"
             t"    if (!c) return;"
             t"    window._textNodes = walkTextNodes(c);"
             t"    applyHighlights(c, {highlight_json});"
-            t"    setupAnnotationSelection('doc-container', function(sel) {{"
+            t"    setupAnnotationSelection('{state.doc_container_id}', function(sel) {{"
             t"      emitEvent('selection_made', sel);"
             t"    }});"
             t"    if (window._pendingCopyProtection) {{"
@@ -388,7 +390,7 @@ async def _render_document_with_highlights(
             ui.element("div")
             .classes("annotations-sidebar")
             .style("flex: 1; min-width: 300px; max-width: 450px;")
-            .props('id="annotations-container"')
+            .props(f'id="{state.ann_container_id}"')
         )
 
     # Set up refresh function
@@ -406,6 +408,6 @@ async def _render_document_with_highlights(
 
     # Set up scroll-synced card positioning and hover interaction
     # (loaded from static/annotation-card-sync.js)
-    ui.run_javascript(
-        "setupCardPositioning('doc-container', 'annotations-container', 8)"
-    )
+    doc_id = state.doc_container_id
+    ann_id = state.ann_container_id
+    ui.run_javascript(f"setupCardPositioning('{doc_id}', '{ann_id}', 8)")

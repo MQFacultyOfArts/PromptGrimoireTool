@@ -35,6 +35,9 @@ class DocumentTabState:
     paragraph_map: dict[str, int] = field(default_factory=dict)
     document_content: str = ""
     auto_number_paragraphs: bool = True
+    # Per-document HTML element IDs (parameterised to prevent cross-tab collisions)
+    doc_container_id: str = "doc-container"
+    ann_container_id: str = "annotations-container"
     # UI element refs (per-document DOM elements)
     doc_container: ui.element | None = None
     highlight_style: ui.element | None = None

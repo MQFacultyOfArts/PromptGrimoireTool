@@ -57,6 +57,33 @@ class TestSaveSourceTabState:
         assert doc_tab.card_snapshots == {"hl-1": {"tag": "foo"}}
         assert doc_tab.cards_epoch == 5
 
+    def test_saves_document_content_fields(self) -> None:
+        """Document chars, paragraph_map, and UI refs are saved."""
+        doc_id = uuid4()
+        doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
+
+        state = _make_mock_state(doc_id, doc_tab)
+        state.document_chars = ["a", "b", "c"]
+        state.paragraph_map = {"p1": 0, "p2": 10}
+        state.document_content = "<p>hello</p>"
+        state.doc_container = MagicMock()
+        state.highlight_style = MagicMock()
+        state.highlight_menu = MagicMock()
+        state.toolbar_container = MagicMock()
+        state.annotation_cards = {}
+        state.card_snapshots = {}
+        state.cards_epoch = 0
+
+        _save_source_tab_state(state, doc_tab)
+
+        assert doc_tab.document_chars == ["a", "b", "c"]
+        assert doc_tab.paragraph_map == {"p1": 0, "p2": 10}
+        assert doc_tab.document_content == "<p>hello</p>"
+        assert doc_tab.doc_container is state.doc_container
+        assert doc_tab.highlight_style is state.highlight_style
+        assert doc_tab.highlight_menu is state.highlight_menu
+        assert doc_tab.toolbar_container is state.toolbar_container
+
     def test_saves_none_annotation_cards_as_empty_dict(self) -> None:
         """When annotation_cards is None, saves as empty dict."""
         doc_id = uuid4()
@@ -95,6 +122,37 @@ class TestRestoreSourceTabState:
         assert state.annotation_cards == doc_tab.annotation_cards
         assert state.card_snapshots == {"hl-2": {"tag": "bar"}}
         assert state.cards_epoch == 3
+
+    def test_restores_document_content_and_ui_refs(self) -> None:
+        """Document chars, paragraph_map, and UI refs are restored."""
+        doc_id = uuid4()
+        mock_doc_container = MagicMock()
+        mock_hl_style = MagicMock()
+        mock_hl_menu = MagicMock()
+        mock_toolbar = MagicMock()
+
+        doc_tab = DocumentTabState(document_id=doc_id, tab=None, panel=None)
+        doc_tab.rendered = True
+        doc_tab.annotation_cards = {}
+        doc_tab.card_snapshots = {}
+        doc_tab.document_chars = ["x", "y"]
+        doc_tab.paragraph_map = {"p1": 5}
+        doc_tab.document_content = "<p>test</p>"
+        doc_tab.doc_container = mock_doc_container
+        doc_tab.highlight_style = mock_hl_style
+        doc_tab.highlight_menu = mock_hl_menu
+        doc_tab.toolbar_container = mock_toolbar
+
+        state = _make_mock_state(doc_id, doc_tab)
+        _restore_source_tab_state(state, doc_tab)
+
+        assert state.document_chars == ["x", "y"]
+        assert state.paragraph_map == {"p1": 5}
+        assert state.document_content == "<p>test</p>"
+        assert state.doc_container is mock_doc_container
+        assert state.highlight_style is mock_hl_style
+        assert state.highlight_menu is mock_hl_menu
+        assert state.toolbar_container is mock_toolbar
 
     def test_restores_unrendered_tab_with_none_cards(self) -> None:
         """Unrendered tabs restore annotation_cards as None for full build."""
@@ -150,4 +208,14 @@ def _make_mock_state(doc_id, doc_tab):
     state.card_snapshots = {}
     state.cards_epoch = 0
     state.annotations_container = None
+    # Document content fields
+    state.document_chars = None
+    state.paragraph_map = {}
+    state.document_content = ""
+    state.auto_number_paragraphs = True
+    # UI element refs
+    state.doc_container = None
+    state.highlight_style = None
+    state.highlight_menu = None
+    state.toolbar_container = None
     return state

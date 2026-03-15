@@ -46,7 +46,9 @@ test_app = typer.Typer(
     )
 )
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
-_TEST_ALL_MARKER_EXPRESSION = f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full"
+_TEST_ALL_MARKER_EXPRESSION = (
+    f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full and not smoke"
+)
 _SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"
 
 
@@ -554,10 +556,11 @@ def all_tests(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
 ) -> None:
-    """Run unit and integration tests under xdist parallel execution."""
+    """Run unit tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
     default_args = [
+        "tests/unit",
         "-m",
         _TEST_ALL_MARKER_EXPRESSION,
     ]
@@ -577,10 +580,7 @@ def all_tests(
 
     sys.exit(
         _run_pytest(
-            title=(
-                "Full Test Suite (unit + integration, excludes browser E2E, "
-                "NiceGUI UI, and latexmk compile-stage tests)"
-            ),
+            title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
             log_path=Path("test-all.log"),
             default_args=[
                 *default_args,

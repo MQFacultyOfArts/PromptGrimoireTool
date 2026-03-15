@@ -457,12 +457,13 @@ class TestTestingCommands:
         result = runner.invoke(app, ["test", "all"])
 
         assert result.exit_code == 0, result.output
-        assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui and not latexmk_full"
+        default_args = _captured_default_args(captured)
+        assert _marker_expression(default_args) == (
+            "not e2e and not nicegui_ui and not latexmk_full and not smoke"
         )
+        assert "tests/unit" in default_args
         assert captured["title"] == (
-            "Full Test Suite (unit + integration, excludes browser E2E, "
-            "NiceGUI UI, and latexmk compile-stage tests)"
+            "Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)"
         )
 
     def test_test_all_sets_latexmk_skip_guard(

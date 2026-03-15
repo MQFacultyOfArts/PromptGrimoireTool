@@ -5,7 +5,7 @@ Provides async database functions for course management.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +13,14 @@ from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.exceptions import DeletionBlockedError
-from promptgrimoire.db.models import Activity, Course, CourseEnrollment, Week, Workspace
+from promptgrimoire.db.models import (
+    Activity,
+    Course,
+    CourseEnrollment,
+    User,
+    Week,
+    Workspace,
+)
 from promptgrimoire.db.weeks import purge_activity
 from promptgrimoire.db.workspaces import has_student_workspaces
 
@@ -389,6 +396,38 @@ async def list_course_enrollments(course_id: UUID) -> list[CourseEnrollment]:
             .order_by("role", "user_id")
         )
         return list(result.all())
+
+
+async def list_enrollment_rows(course_id: UUID) -> list[dict[str, Any]]:
+    """Return enrollment + user data as table-ready dicts.
+
+    Single joined query — no N+1. Each dict contains keys:
+    email, display_name, student_id, role, created_at (ISO string), user_id (string).
+
+    Args:
+        course_id: The course UUID.
+
+    Returns:
+        List of dicts ready for ui.table rows parameter.
+    """
+    async with get_session() as session:
+        result = await session.exec(
+            select(CourseEnrollment, User)
+            .join(User, User.id == CourseEnrollment.user_id)  # type: ignore[arg-type]  -- SQLModel Column expression valid at runtime; ty infers InstrumentedAttribute mismatch
+            .where(CourseEnrollment.course_id == course_id)
+            .order_by(CourseEnrollment.role, User.display_name)
+        )
+        return [
+            {
+                "email": user.email,
+                "display_name": user.display_name,
+                "student_id": user.student_id or "",
+                "role": enrollment.role,
+                "created_at": enrollment.created_at.isoformat(),
+                "user_id": str(enrollment.user_id),
+            }
+            for enrollment, user in result.all()
+        ]
 
 
 async def unenroll_user(

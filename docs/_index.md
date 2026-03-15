@@ -78,6 +78,7 @@ library references during development.
 - [NiceGUI styling with CSS, Tailwind, Quasar props, and static files](nicegui/styling.md)
 - [NiceGUI E2E Testing with Playwright](nicegui/testing.md)
 - [NiceGUI UI patterns - timer, refreshable, pages, events, storage, styling](nicegui/ui-patterns.md)
+- [ui.table (Quasar QTable) — columns, rows, pagination, selection, slots, cell templates](nicegui/ui-table.md)
 - [NiceGUI User fixture for fast headless page testing without a browser](nicegui/user-fixture-testing.md)
 
 ## openpyxl

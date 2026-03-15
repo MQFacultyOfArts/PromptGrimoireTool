@@ -475,5 +475,10 @@ class TestEnrollStudent:
         # Should see success notification
         await nicegui_user.should_see("Enrollment added")
 
-        # The enrolled student should appear in the list
-        await nicegui_user.should_see(content=student_email)
+        # The enrolled student should appear in the table rows
+        from nicegui import ui
+
+        table = nicegui_user.find(ui.table).elements.pop()
+        assert any(row["email"] == student_email for row in table.rows), (
+            f"Expected {student_email} in table rows"
+        )

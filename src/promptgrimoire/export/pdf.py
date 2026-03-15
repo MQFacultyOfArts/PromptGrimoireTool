@@ -120,6 +120,10 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
     """Run latexmk subprocess with process group isolation."""
     latexmk = get_latexmk_path()
 
+    # Resolve to absolute paths before changing cwd
+    tex_path = tex_path.resolve()
+    output_dir = output_dir.resolve()
+
     cmd = [
         latexmk,
         "-lualatex",  # Use LuaLaTeX engine

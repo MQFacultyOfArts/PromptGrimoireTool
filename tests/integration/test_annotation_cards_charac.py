@@ -676,6 +676,42 @@ class TestDiffBasedCardUpdates:
         # hl1 should still be in expanded_cards
         assert hl1 in state.expanded_cards
 
+    @pytest.mark.asyncio
+    async def test_invalidate_card_cache_forces_full_rebuild(
+        self, nicegui_user: User
+    ) -> None:
+        """invalidate_card_cache forces full rebuild on next refresh."""
+        from nicegui import ui
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
+
+        await nicegui_user.open("/")
+
+        doc_uuid = uuid4()
+        doc_id = str(doc_uuid)
+        crdt_doc = AnnotationDocument("test-invalidate")
+        hl1 = crdt_doc.add_highlight(10, 20, "t", "text", "u", document_id=doc_id)
+
+        with nicegui_user:
+            container = ui.column()
+        state = _make_diff_test_state(crdt_doc, doc_uuid, container)
+
+        # Full build
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        card_before = state.annotation_cards[hl1]
+
+        # Invalidate cache (simulates tag metadata change)
+        state.invalidate_card_cache()
+        assert state.annotation_cards is None
+
+        # Next refresh does full build — card is a NEW object
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert state.annotation_cards is not None
+        assert state.annotation_cards[hl1] is not card_before
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for _snapshot_highlight (pure function)
@@ -755,6 +791,22 @@ class TestSnapshotHighlight:
         }
         assert _snapshot_highlight(hl) == _snapshot_highlight(hl)
 
+    def test_snapshot_captures_para_ref(self) -> None:
+        """Snapshot includes the para_ref value."""
+        from promptgrimoire.pages.annotation.cards import _snapshot_highlight
+
+        hl = {"id": "h1", "tag": "t", "para_ref": "[3]", "comments": []}
+        snap = _snapshot_highlight(hl)
+        assert snap["para_ref"] == "[3]"
+
+    def test_snapshot_detects_para_ref_change(self) -> None:
+        """Changing para_ref changes the snapshot."""
+        from promptgrimoire.pages.annotation.cards import _snapshot_highlight
+
+        hl1 = {"id": "h1", "tag": "t", "para_ref": "[3]", "comments": []}
+        hl2 = {"id": "h1", "tag": "t", "para_ref": "[4]", "comments": []}
+        assert _snapshot_highlight(hl1) != _snapshot_highlight(hl2)
+
     def test_snapshot_missing_fields_use_defaults(self) -> None:
         """Highlights with missing fields use sensible defaults."""
         from promptgrimoire.pages.annotation.cards import _snapshot_highlight
@@ -762,6 +814,7 @@ class TestSnapshotHighlight:
         hl: dict[str, object] = {"id": "h1"}
         snap = _snapshot_highlight(hl)
         assert snap["tag"] == ""
+        assert snap["para_ref"] == ""
         assert snap["comment_count"] == 0
         assert snap["comment_texts"] == ()
 

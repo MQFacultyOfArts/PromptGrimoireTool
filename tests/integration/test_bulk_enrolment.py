@@ -478,3 +478,51 @@ class TestPublicAPIExport:
         assert hasattr(EnrolmentReport, "users_created")
         err = StudentIdConflictError([("a@b.c", "old", "new")])
         assert hasattr(err, "conflicts")
+
+
+class TestEmptyStudentIdRegression:
+    """Regression: empty student_id must not violate unique constraint.
+
+    Moodle XLSX exports can have blank student_id fields. When two users
+    both have empty student_id, the upsert must normalise '' to NULL
+    (which the unique constraint allows duplicates of), not write ''
+    (which collides on the second user).
+
+    Regression test for 2026-03-15 production LAWS5000 enrolment failure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_multiple_users_with_empty_student_id(self) -> None:
+        """Two users with empty student_id should both enrol successfully."""
+        from promptgrimoire.db.enrolment import bulk_enrol
+
+        course = await _make_course("empty-sid")
+        alice_email = _unique_email("alice-emptysid")
+        bob_email = _unique_email("bob-emptysid")
+
+        entries = _make_entries(
+            (alice_email, "Alice Empty", "", ()),
+            (bob_email, "Bob Empty", "", ()),
+        )
+
+        # This must not raise IntegrityError
+        report = await bulk_enrol(entries, course.id)
+
+        assert report.entries_processed == 2
+        assert report.users_created == 2
+
+        # Verify neither user has empty string as student_id
+        from promptgrimoire.db import get_session
+
+        async with get_session() as session:
+            for email in (alice_email, bob_email):
+                result = await session.execute(
+                    select(User).where(
+                        User.email == email,  # type: ignore[arg-type]
+                    )
+                )
+                user = result.scalar_one()
+                assert user.student_id is None, (
+                    f"Empty student_id should be normalised to NULL, "
+                    f"got {user.student_id!r} for {email}"
+                )

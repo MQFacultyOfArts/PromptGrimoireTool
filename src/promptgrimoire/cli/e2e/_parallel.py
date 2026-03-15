@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -38,7 +39,6 @@ from promptgrimoire.db.bootstrap import clone_database, drop_database
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-    from pathlib import Path
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
@@ -493,8 +493,22 @@ async def run_lane_files(
     fail_fast: bool = False,
     browser: str | None = None,
 ) -> int:
-    """Run all files in *lane* using isolated per-file workers."""
-    files = discover_lane_files(lane)
+    """Run files in *lane* using isolated per-file workers.
+
+    When *user_args* contains specific test file paths, only those
+    files are run (filtered against the lane's discovered files).
+    When no file paths are in *user_args*, all lane files run.
+    """
+    all_files = discover_lane_files(lane)
+
+    # Filter to requested files if user specified specific paths
+    requested = {
+        Path(a.split("::")[0]).name
+        for a in user_args
+        if not a.startswith("-") and a.split("::")[0].endswith(".py")
+    }
+    files = [f for f in all_files if f.name in requested] if requested else all_files
+
     if not files:
         console.print(f"[yellow]No {lane.name} test files found[/]")
         return 0

@@ -521,6 +521,14 @@ async def _handle_source_tab_switch(
     if state.paragraph_toggle is not None:
         state.paragraph_toggle.value = state.auto_number_paragraphs
 
+    # Execute pending scroll from _warp_to_highlight (if any).
+    # Must run AFTER render/refresh so the DOM exists.
+    from promptgrimoire.pages.annotation.highlights import (
+        _execute_pending_scroll,
+    )
+
+    _execute_pending_scroll(state)
+
 
 def _save_previous_source_tab(state: PageState, prev_tab: str) -> None:
     """Save state of the previous source tab before switching away."""
@@ -557,12 +565,6 @@ def _make_tab_change_handler(
         e: events.ValueChangeEventArguments,
     ) -> None:
         """Handle tab switching with deferred rendering."""
-        # _warp_to_highlight does its own save/restore synchronously
-        # before calling set_value, so skip when warp is in progress.
-        if state._warp_in_progress:
-            state._warp_in_progress = False
-            return
-
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
         prev_tab = state.active_tab

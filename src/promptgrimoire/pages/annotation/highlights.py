@@ -41,17 +41,13 @@ async def _warp_to_highlight(
 ) -> None:
     """Switch to the correct source tab and scroll to a highlight range.
 
-    This is the cross-tab navigation entry point: Organise and Respond
-    "locate" buttons call this to warp the user to the highlight's
-    source tab and scroll it into view with a brief gold flash.
+    Stores the scroll target on ``state._pending_scroll`` and calls
+    ``set_value`` to trigger the tab change handler.  The handler
+    (``_handle_source_tab_switch``) executes the scroll after
+    render/refresh completes — this avoids duplicating tab-switch logic
+    and works for both rendered and unrendered (deferred) tabs.
 
-    Args:
-        state: Page state with tab_panels and annotations.
-        start_char: First character index of the highlight range.
-        end_char: Last character index (exclusive) of the highlight range.
-        document_id: UUID string of the document containing the highlight.
-            If provided, switches to that document's tab. Falls back to
-            the currently active source tab if not provided.
+    If the target tab is already active, executes the scroll directly.
     """
     # Resolve target document tab
     target_doc_id: str | None = None
@@ -63,45 +59,37 @@ async def _warp_to_highlight(
         if target_doc_id is None:
             target_doc_id = str(next(iter(state.document_tabs)))
 
+    # Store pending scroll for the tab change handler to execute.
+    state._pending_scroll = (start_char, end_char)
+
     if target_doc_id is not None and state.tab_panels is not None:
-        target_uuid = UUID(target_doc_id)
-        target_tab = state.document_tabs.get(target_uuid)
-
-        if target_tab is not None and target_tab.rendered:
-            # Already-rendered tab: do save/restore synchronously and
-            # skip the async on_change handler to avoid the race where
-            # it clobbers state after we've already refreshed.
-            from promptgrimoire.pages.annotation.tab_bar import (
-                _restore_source_tab_state,
-                _save_previous_source_tab,
-            )
-
-            _save_previous_source_tab(state, state.active_tab)
-            _restore_source_tab_state(state, target_tab)
-            state._warp_in_progress = True
-            state.active_tab = target_doc_id
-            state.tab_panels.set_value(target_doc_id)
+        if target_doc_id == state.active_tab:
+            # Already on the right tab — execute scroll directly.
+            _execute_pending_scroll(state)
         else:
-            # Unrendered tab: let the async on_change handler run so
-            # _render_source_tab_content creates the DOM first. We
-            # cannot skip it — there's no document to scroll to yet.
+            # Different tab — set_value triggers async _on_tab_change
+            # which does save/restore/render/refresh, then executes
+            # the pending scroll.
             state.tab_panels.set_value(target_doc_id)
-            # Return early — the tab change handler will render the tab.
-            # The scroll-to-highlight must be deferred to after render.
-            # For now, switching to the tab is the best we can do;
-            # the user can click locate again once the tab is visible.
-            return
 
-    # Refresh annotations and highlight CSS for the (now-active) tab.
+
+def _execute_pending_scroll(state: PageState) -> None:
+    """Execute and clear the pending scroll target.
+
+    Called by ``_handle_source_tab_switch`` after render/refresh,
+    or directly by ``_warp_to_highlight`` when already on the target tab.
+    """
+    scroll = state._pending_scroll
+    if scroll is None:
+        return
+    state._pending_scroll = None
+    start_char, end_char = scroll
+
+    # Refresh before scrolling
     if state.refresh_annotations:
         state.refresh_annotations(trigger="highlight_add")
     _update_highlight_css(state)
 
-    # 4. Scroll to highlight and throb it. Refreshes _textNodes inline
-    #    to guarantee fresh DOM references after tab switch + re-render.
-    #    After scrolling, explicitly trigger positionCards via rAF to ensure
-    #    annotation sidebar cards become visible (MutationObserver fires
-    #    before the scroll, hiding cards that aren't yet in viewport).
     js = _render_js(
         t"(function(){{"
         t"  var c = document.getElementById('{state.doc_container_id}');"
@@ -109,7 +97,8 @@ async def _warp_to_highlight(
         t"  window._textNodes = walkTextNodes(c);"
         t"  scrollToCharOffset(window._textNodes, {start_char}, {end_char});"
         t"  throbHighlight(window._textNodes, {start_char}, {end_char}, 800);"
-        t"  if (window._positionCards) requestAnimationFrame(window._positionCards);"
+        t"  if (window._positionCards)"
+        t"    requestAnimationFrame(window._positionCards);"
         t"}})()"
     )
     ui.run_javascript(js)

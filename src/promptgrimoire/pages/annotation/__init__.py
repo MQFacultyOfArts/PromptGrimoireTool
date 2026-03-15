@@ -271,9 +271,10 @@ class PageState:
     paragraph_toggle: ui.switch | None = None
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
-    # Guard: warp-to-highlight does save/restore synchronously, so the
-    # async on_change handler must skip its own save/restore/refresh.
-    _warp_in_progress: bool = False
+    # Pending scroll target: set by _warp_to_highlight, consumed by
+    # _handle_source_tab_switch after render/refresh completes.
+    # tuple of (start_char, end_char) or None.
+    _pending_scroll: tuple[int, int] | None = None
     # Tab container references (Phase 1: three-tab UI)
     tab_panels: ui.tab_panels | None = (
         None  # Tab panels container for programmatic switching

@@ -257,6 +257,9 @@ class PageState:
     paragraph_map: dict[str, int] = field(default_factory=dict)
     # Document container element for re-rendering (paragraph toggle)
     doc_container: ui.element | None = None
+    # Per-document HTML element IDs (parameterised to prevent cross-tab collisions)
+    doc_container_id: str = "doc-container"
+    ann_container_id: str = "annotations-container"
     # Raw document HTML content for paragraph map rebuild
     document_content: str = ""
     # Current auto-number mode for paragraph toggle

@@ -510,7 +510,10 @@ def run_tests(
 
         sys.exit(run_nicegui_lane(args))
 
-    # Unit / integration — serial, no retries, fail-fast for targeted runs
+    # Unit / integration — serial, no retries, fail-fast for targeted runs.
+    # Exclude nicegui_ui and e2e markers so directory-level runs
+    # (e.g. tests/integration/) don't collect NiceGUI tests that
+    # need the user_simulation harness.
     sys.exit(
         _run_pytest(
             title="Targeted Tests (no retries, fail-fast)",
@@ -519,6 +522,8 @@ def run_tests(
                 "-x",
                 "-v",
                 "--tb=short",
+                "-m",
+                _NON_UI_MARKER_EXPRESSION,
             ],
             extra_args=args,
         )

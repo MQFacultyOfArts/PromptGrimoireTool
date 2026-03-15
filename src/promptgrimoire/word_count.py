@@ -15,6 +15,8 @@ import re
 import unicodedata
 import warnings
 
+import structlog
+
 # Suppress jieba SyntaxWarning before importing
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="jieba")
 
@@ -31,7 +33,8 @@ except ImportError as exc:
 
 from uniseg.wordbreak import words as uniseg_words  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 try:
     _MECAB_TAGGER = MeCab.Tagger("-Owakati")
@@ -107,20 +110,8 @@ def _classify_codepoint(cp: int) -> str:
     return "latin"
 
 
-def segment_by_script(text: str) -> list[tuple[str, str]]:
-    """Segment text into runs of consecutive characters with the same script.
-
-    Returns a list of (script, text) tuples where script is one of:
-    "zh", "ja", "ko", "latin".
-
-    After initial per-codepoint classification, applies neighbour resolution:
-    any "zh" segment immediately adjacent to a "ja" segment is reclassified
-    as "ja" (kanji used in Japanese context).
-    """
-    if not text:
-        return []
-
-    # Phase 1: group consecutive codepoints by script
+def _group_by_script(text: str) -> list[tuple[str, str]]:
+    """Group consecutive codepoints by script classification."""
     segments: list[tuple[str, str]] = []
     current_script = _classify_codepoint(ord(text[0]))
     current_chars: list[str] = [text[0]]
@@ -135,8 +126,13 @@ def segment_by_script(text: str) -> list[tuple[str, str]]:
             current_chars = [ch]
 
     segments.append((current_script, "".join(current_chars)))
+    return segments
 
-    # Phase 2: neighbour resolution — reclassify "zh" adjacent to "ja" as "ja"
+
+def _resolve_zh_neighbours(
+    segments: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Reclassify "zh" segments adjacent to "ja" as "ja" (kanji in Japanese context)."""
     scripts = [s for s, _ in segments]
     for i, (script, seg_text) in enumerate(segments):
         if script != "zh":
@@ -146,8 +142,26 @@ def segment_by_script(text: str) -> list[tuple[str, str]]:
         if prev_ja or next_ja:
             segments[i] = ("ja", seg_text)
             scripts[i] = "ja"
+    return segments
 
-    # Phase 3: merge adjacent segments of the same script
+
+def segment_by_script(text: str) -> list[tuple[str, str]]:
+    """Segment text into runs of consecutive characters with the same script.
+
+    Returns a list of (script, text) tuples where script is one of:
+    "zh", "ja", "ko", "latin".
+
+    After initial per-codepoint classification, applies neighbour resolution:
+    any "zh" segment immediately adjacent to a "ja" segment is reclassified
+    as "ja" (kanji used in Japanese context).
+    """
+    if not text:
+        return []
+
+    segments = _group_by_script(text)
+    segments = _resolve_zh_neighbours(segments)
+
+    # Merge adjacent segments of the same script
     merged: list[tuple[str, str]] = [segments[0]]
     for script, seg_text in segments[1:]:
         if script == merged[-1][0]:

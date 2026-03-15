@@ -13,7 +13,9 @@ import time as _time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import structlog
 from nicegui import app, ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -32,7 +34,8 @@ if TYPE_CHECKING:
 
     from nicegui import Client
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def resolve_broadcast_label(
@@ -252,7 +255,7 @@ async def _handle_client_delete(
     Runs after reconnect_timeout expires with no reconnection.
     """
     t0 = _time.monotonic()
-    logger.warning("DELETE[%s] ws=%s start", client_id, workspace_id)
+    logger.debug("DELETE[%s] ws=%s start", client_id, workspace_id)
 
     last_client = False
     if workspace_key in _workspace_presence:
@@ -286,7 +289,7 @@ async def _handle_client_delete(
         pm.evict_workspace(workspace_id, doc_id)
         _workspace_registry.remove(doc_id)
 
-    logger.warning(
+    logger.debug(
         "DELETE[%s] total: %.3fs last=%s",
         client_id,
         _time.monotonic() - t0,
@@ -370,6 +373,9 @@ def _setup_client_sync(
     # Resolve user_id for revocation lookup
     auth_user = app.storage.user.get("auth_user")
     client_user_id = str(auth_user.get("user_id", "")) if auth_user else None
+
+    # Bind workspace context for structured logging
+    bind_contextvars(workspace_id=str(workspace_id))
 
     async def handle_peer_left() -> None:
         _update_user_count(state)

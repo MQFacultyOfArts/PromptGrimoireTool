@@ -13,13 +13,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+import structlog
 from pycrdt import Awareness, Doc, Map, Text, TransactionEvent, XmlFragment
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
 
 # Async-safe storage for the origin client ID during updates.
 _origin_var: ContextVar[str | None] = ContextVar("annotation_origin", default=None)

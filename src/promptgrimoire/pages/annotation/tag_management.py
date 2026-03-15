@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, TypedDict
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.pages.annotation.tag_import import (
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import Tag
     from promptgrimoire.db.workspaces import PlacementContext
     from promptgrimoire.pages.annotation import PageState
+
+logger = structlog.get_logger()
 
 
 class GroupCallbacks(TypedDict):
@@ -398,6 +401,7 @@ def _build_group_callbacks(
                 crdt_doc=state.crdt_doc,
             )
         except PermissionError:
+            logger.warning("tag_group_creation_denied", operation="add_group")
             ui.notify("Tag creation not allowed", type="negative")
             return
         await render_tag_list()
@@ -415,6 +419,11 @@ def _build_group_callbacks(
         try:
             old_idx = group_id_list.index(group_id)
         except ValueError:
+            logger.warning(
+                "group_not_found_for_move",
+                operation="move_group",
+                group_id=str(group_id),
+            )
             return
         new_idx = old_idx + direction
         if new_idx < 0 or new_idx >= len(group_id_list):
@@ -469,6 +478,11 @@ def _build_tag_reorder_callbacks(
                 try:
                     old_idx = id_list.index(tag_id)
                 except ValueError:
+                    logger.warning(
+                        "tag_not_found_for_move",
+                        operation="move_tag",
+                        tag_id=str(tag_id),
+                    )
                     return
                 new_idx = old_idx + direction
                 if new_idx < 0 or new_idx >= len(id_list):
@@ -517,6 +531,7 @@ def _build_tag_crud_callbacks(
         try:
             await update_tag(tag_id, locked=locked, crdt_doc=state.crdt_doc)
         except Exception as exc:
+            logger.exception("tag_lock_toggle_failed", operation="lock_toggle")
             ui.notify(f"Failed to update lock: {exc}", type="negative")
             return
         await render_tag_list()

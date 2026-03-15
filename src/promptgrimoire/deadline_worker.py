@@ -12,11 +12,13 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+import structlog
 from sqlalchemy import text
 
 from promptgrimoire.db.engine import get_session
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def check_expired_deadlines() -> int:
@@ -111,6 +113,9 @@ async def start_deadline_worker(
         try:
             next_in = await _next_deadline_seconds()
         except Exception:
+            logger.exception(
+                "next_deadline_query_failed", operation="next_deadline_seconds"
+            )
             next_in = None
 
         if next_in is not None and next_in < max_interval:

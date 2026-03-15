@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.pages.annotation.tag_management_save import (
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
 
     from promptgrimoire.db.models import Workspace
     from promptgrimoire.pages.annotation import PageState
+
+logger = structlog.get_logger()
 
 
 def _build_workspace_options(
@@ -108,6 +111,9 @@ async def _render_import_section(
                         crdt_doc=state.crdt_doc,
                     )
                 except PermissionError as exc:
+                    logger.warning(
+                        "tag_import_permission_denied", operation="import_tags"
+                    )
                     ui.notify(str(exc), type="negative")
                     return
 

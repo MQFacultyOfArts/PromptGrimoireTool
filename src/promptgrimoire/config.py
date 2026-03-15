@@ -14,10 +14,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
+import structlog
 from pydantic import BaseModel, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # ---------------------------------------------------------------------------
 # Path resolution for worktree-aware .env loading
@@ -67,13 +69,19 @@ class LlmConfig(BaseModel):
     lorebook_token_budget: int = 0
 
 
+class AlertingConfig(BaseModel):
+    """Error alerting configuration."""
+
+    discord_webhook_url: str = ""
+
+
 class AppConfig(BaseModel):
     """Application runtime configuration."""
 
     base_url: str = "http://localhost:8080"
     port: int = 8080
     storage_secret: SecretStr = SecretStr("dev-secret-change-me")
-    log_dir: Path = Path("logs/sessions")
+    log_dir: Path = Path("logs")
     latexmk_path: str = ""
     reload: bool = True
 
@@ -170,6 +178,7 @@ def _current_branch() -> str | None:
     try:
         head = head_path.read_text().strip()
     except OSError:
+        logger.warning("git_head_unreadable", operation="detect_branch")
         return None
     if head.startswith("ref: refs/heads/"):
         return head.removeprefix("ref: refs/heads/")
@@ -271,6 +280,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = DatabaseConfig()
     llm: LlmConfig = LlmConfig()
     app: AppConfig = AppConfig()
+    alerting: AlertingConfig = AlertingConfig()
     features: FeaturesConfig = FeaturesConfig()
     dev: DevConfig = DevConfig()
     i18n: I18nConfig = I18nConfig()

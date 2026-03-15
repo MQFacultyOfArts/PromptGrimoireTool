@@ -6,6 +6,7 @@ import dataclasses
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.db.workspaces import (
@@ -30,7 +31,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.navigator import NavigatorRow
     from promptgrimoire.pages.navigator._helpers import PageState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _update_row_title(
@@ -219,6 +221,7 @@ async def _delete_workspace_from_navigator(
                 try:
                     await delete_workspace(workspace_id, user_id=user_id)
                 except PermissionError:
+                    logger.warning("permission_denied", operation="delete_workspace")
                     ui.notify("Permission denied", type="negative")
                     dialog.close()
                     return
@@ -356,6 +359,7 @@ async def _start_activity(aid: UUID, uid: UUID) -> None:
     try:
         clone, _doc_map = await clone_workspace_from_activity(aid, uid)
     except ValueError as exc:
+        logger.warning("clone_workspace_failed", operation="clone_workspace")
         ui.notify(str(exc), type="negative")
         return
 

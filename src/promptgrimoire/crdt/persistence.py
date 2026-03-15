@@ -10,12 +10,15 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from uuid import UUID
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
 
 
 class PersistenceManager:
@@ -101,7 +104,11 @@ class PersistenceManager:
             await asyncio.sleep(self.debounce_seconds)
             await self._persist_workspace(workspace_id)
         except asyncio.CancelledError:
-            pass  # Save was superseded by a newer one
+            logger.debug(
+                "crdt_save_superseded",
+                operation="debounced_workspace_save",
+                workspace_id=str(workspace_id),
+            )
 
     async def _persist_workspace(self, workspace_id: UUID) -> None:
         """Persist CRDT state to Workspace table."""

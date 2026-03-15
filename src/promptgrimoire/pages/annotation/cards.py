@@ -14,6 +14,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.auth.anonymise import anonymise_author
@@ -28,7 +29,8 @@ from promptgrimoire.pages.annotation.highlights import (
     _update_highlight_css,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _author_initials(name: str) -> str:

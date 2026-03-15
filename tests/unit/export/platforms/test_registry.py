@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -163,17 +162,18 @@ class TestPreprocessForExport:
         assert "Content" in result
 
     def test_invalid_platform_hint_falls_back_to_autodiscovery(
-        self, caplog: pytest.LogCaptureFixture
+        self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Invalid platform_hint logs warning and falls back to autodiscovery."""
         from promptgrimoire.export.platforms import preprocess_for_export
 
         html = '<div class="agent-turn">Content</div>'
 
-        with caplog.at_level(logging.WARNING, logger="promptgrimoire.export.platforms"):
-            result = preprocess_for_export(html, platform_hint="nonexistent")
+        result = preprocess_for_export(html, platform_hint="nonexistent")
 
-        assert "Unknown platform_hint" in caplog.text
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "Unknown platform_hint" in combined
         assert "Content" in result  # Still processed via autodiscovery
 
     def test_generic_loop_injects_labels_for_all_roles(self) -> None:

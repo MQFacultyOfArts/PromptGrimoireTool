@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+import structlog
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -32,6 +33,8 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+
+logger = structlog.get_logger()
 
 
 async def get_user_workspace_for_activity(
@@ -626,6 +629,7 @@ def _remap_uuid_str(raw: str, id_map: dict[UUID, UUID] | None) -> str:
     try:
         original = UUID(raw)
     except ValueError:
+        logger.warning("uuid_remap_parse_failed", operation="remap_tag_id", raw=raw)
         return raw
     return str(id_map.get(original, original))
 

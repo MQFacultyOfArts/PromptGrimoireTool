@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import structlog
 from nicegui import app, ui
 from pycrdt import Doc
 
@@ -28,7 +29,8 @@ from promptgrimoire.pages.registry import page_route
 if TYPE_CHECKING:
     from nicegui import Client
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Serve the Milkdown bundle from static files
 _BUNDLE_DIR = Path(__file__).parent.parent / "static" / "milkdown" / "dist"

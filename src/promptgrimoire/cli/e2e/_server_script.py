@@ -31,10 +31,10 @@ _setup_logging()
 
 # --- Event loop watchdog (runs on a separate thread) ---
 import asyncio
-import logging
+import structlog
 import threading
 
-_watchdog_logger = logging.getLogger("e2e.watchdog")
+_watchdog_logger = structlog.get_logger("e2e.watchdog")
 _watchdog_loop_ref: asyncio.AbstractEventLoop | None = None
 
 
@@ -234,7 +234,7 @@ def _task_summary(tasks):
 async def _cleanup():
     from nicegui import Client, core
 
-    _cleanup_logger = logging.getLogger("e2e.cleanup")
+    _cleanup_logger = structlog.get_logger("e2e.cleanup")
     before = len(Client.instances)
     tasks_before = len(asyncio.all_tasks())
     stale_ids = list(Client.instances.keys())
@@ -280,7 +280,7 @@ async def _cleanup():
     await asyncio.sleep(0)  # let cancellations propagate
     elapsed_total = _time.monotonic() - t_total
     tasks_after = len(asyncio.all_tasks())
-    _cleanup_logger.warning(
+    _cleanup_logger.debug(
         "CLEANUP: clients=%d/%d sids=%d eio=%d orphan_wait=%d"
         " tasks=%d->%d elapsed=%.3fs",
         deleted,
@@ -326,7 +326,7 @@ import time as _time
 from nicegui import Client as _Client
 
 _orig_delete = _Client.delete
-_delete_logger = logging.getLogger("e2e.client_delete")
+_delete_logger = structlog.get_logger("e2e.client_delete")
 
 
 def _timed_delete(self):
@@ -334,7 +334,7 @@ def _timed_delete(self):
     t0 = _time.monotonic()
     _orig_delete(self)
     elapsed = _time.monotonic() - t0
-    _delete_logger.warning(
+    _delete_logger.debug(
         "CLIENT_DELETE: id=%s elements=%d elapsed=%.3fs",
         self.id[:8],
         n_elements,

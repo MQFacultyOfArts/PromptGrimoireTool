@@ -20,12 +20,15 @@ import pkgutil
 import re
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+import structlog
+
 if TYPE_CHECKING:
     from selectolax.lexbor import LexborHTMLParser
 
 __all__ = ["PlatformHandler", "get_handler", "preprocess_for_export"]
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Registry of platform handlers, populated by autodiscovery
 _handlers: dict[str, PlatformHandler] = {}

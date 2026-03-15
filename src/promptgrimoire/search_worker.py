@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import structlog
 from sqlalchemy import text
 
 from promptgrimoire.db.crdt_extraction import extract_searchable_text
 from promptgrimoire.db.engine import get_session
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def process_dirty_workspaces(batch_size: int = 500) -> int:

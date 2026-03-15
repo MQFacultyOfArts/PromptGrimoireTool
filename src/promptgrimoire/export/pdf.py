@@ -8,7 +8,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import structlog
+
 from promptgrimoire.config import get_settings
+
+logger = structlog.get_logger()
 
 
 class LaTeXCompilationError(Exception):
@@ -119,8 +123,15 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        _, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=120
+        )
     except TimeoutError:
+        logger.warning(
+            "latex_compilation_timeout",
+            operation="compile_latex",
+            tex_path=str(tex_path),
+        )
         proc.kill()
         raise LaTeXCompilationError(
             "LaTeX compilation timed out after 120s",
@@ -128,6 +139,8 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
             log_path=output_dir / (tex_path.stem + ".log"),
         ) from None
     returncode = proc.returncode or 0
+    stdout_text = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
+    stderr_text = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
 
     # Return path to generated PDF
     pdf_name = tex_path.stem + ".pdf"
@@ -135,20 +148,57 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
 
     log_file = output_dir / (tex_path.stem + ".log")
 
-    # Check if PDF was actually created
-    if not pdf_path.exists():
-        raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {returncode}): PDF not created",
-            tex_path=tex_path,
-            log_path=log_file,
+    # On failure, log subprocess output and extract LaTeX error lines
+    if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+        # Log captured subprocess output (truncated to last 4K chars)
+        logger.error(
+            "latex_subprocess_output",
+            export_stage="latex_compile",
+            latex_stdout=stdout_text[-4096:],
+            latex_stderr=stderr_text[-4096:],
+            return_code=returncode,
         )
 
-    # Check for empty PDF (indicates compilation error even if file exists)
-    if pdf_path.stat().st_size == 0:
+        # Extract !-prefixed error lines from the .log file
+        _log_latex_errors(log_file, tex_path)
+
+        if not pdf_path.exists():
+            raise LaTeXCompilationError(
+                f"LaTeX compilation failed (exit {returncode}): PDF not created",
+                tex_path=tex_path,
+                log_path=log_file,
+            )
         raise LaTeXCompilationError(
             f"LaTeX compilation failed (exit {returncode}): PDF is empty",
             tex_path=tex_path,
             log_path=log_file,
         )
 
+    # On success, optionally log stderr at DEBUG level
+    if stderr_text:
+        logger.debug(
+            "latex_compile_stderr",
+            export_stage="latex_compile",
+            latex_stderr=stderr_text[-4096:],
+        )
+
     return pdf_path
+
+
+def _log_latex_errors(log_file: Path, tex_path: Path) -> None:
+    """Extract and log !-prefixed error lines from a LaTeX log file."""
+    if log_file.exists():
+        log_content = log_file.read_text(errors="replace")
+        error_lines = [
+            line.strip() for line in log_content.splitlines() if line.startswith("!")
+        ]
+    else:
+        error_lines = []
+
+    logger.error(
+        "latex_compilation_failed",
+        export_stage="latex_compile",
+        latex_errors=error_lines,
+        tex_path=str(tex_path),
+        log_path=str(log_file),
+    )

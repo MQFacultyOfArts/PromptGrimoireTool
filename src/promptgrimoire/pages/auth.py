@@ -10,6 +10,7 @@ import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
+import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import derive_roles_from_metadata, get_auth_client
@@ -21,7 +22,8 @@ if TYPE_CHECKING:
 
     from starlette.requests import Request
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Time to display error message before redirecting (seconds)
 _ERROR_DISPLAY_SECONDS = 0.5

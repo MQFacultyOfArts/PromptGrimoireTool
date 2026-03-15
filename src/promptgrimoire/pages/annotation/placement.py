@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
+import structlog
 from nicegui import events, ui
 
 if TYPE_CHECKING:
@@ -19,6 +20,8 @@ from promptgrimoire.db.workspaces import (
     place_workspace_in_activity,
     place_workspace_in_course,
 )
+
+logger = structlog.get_logger()
 
 _OPTION_SLOT_TEMPLATE = (
     '<q-item v-bind="props.itemProps" '
@@ -108,6 +111,7 @@ def _build_activity_cascade(
                 if weeks:
                     week_select.enable()
             except Exception as exc:
+                logger.exception("course_select_failed", operation="on_course_change")
                 ui.notify(str(exc), type="negative")
 
     course_select.on_value_change(on_course_change)
@@ -124,6 +128,7 @@ def _build_activity_cascade(
                 if activities:
                     activity_select.enable()
             except Exception as exc:
+                logger.exception("week_select_failed", operation="on_week_change")
                 ui.notify(str(exc), type="negative")
 
     week_select.on_value_change(on_week_change)
@@ -250,6 +255,9 @@ async def show_placement_dialog(
                         cast("str", mode.value), workspace_id, selected
                     )
                 except ValueError as exc:
+                    logger.warning(
+                        "placement_validation_error", operation="apply_placement"
+                    )
                     ui.notify(str(exc), type="negative")
                     return
                 if ok:

@@ -25,6 +25,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.crdt.persistence import get_persistence_manager
@@ -39,7 +40,8 @@ if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState
     from promptgrimoire.pages.annotation.tags import TagInfo
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Maximum characters to show in highlight text snippet before truncation
 _SNIPPET_MAX_CHARS = 100

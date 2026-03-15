@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.pages.annotation.tag_management import _PRESET_PALETTE
@@ -20,7 +21,8 @@ from promptgrimoire.pages.annotation.tag_management_save import (
 )
 from promptgrimoire.ui_helpers import on_submit_with_value
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from promptgrimoire.pages.annotation import PageState

@@ -473,3 +473,50 @@ def role(
 ) -> None:
     """Change user's role in a course."""
     asyncio.run(_cmd_role(email, code, semester, new_role))
+
+
+# ---------------------------------------------------------------------------
+# Webhook test
+# ---------------------------------------------------------------------------
+
+
+@admin_app.command("webhook")
+def webhook() -> None:
+    """Send a test alert to the configured Discord webhook and show the response."""
+    import asyncio
+
+    import httpx
+
+    from promptgrimoire.config import get_settings
+    from promptgrimoire.logging_discord import DiscordAlertProcessor
+
+    console = Console()
+    url = get_settings().alerting.discord_webhook_url
+    if not url:
+        console.print("[red]ALERTING__DISCORD_WEBHOOK_URL is not set in .env[/red]")
+        raise typer.Exit(code=1)
+
+    # Build a test payload directly
+    processor = DiscordAlertProcessor(webhook_url=url)
+    payload = processor._build_payload(
+        "error",
+        {
+            "event": "webhook_test_alert",
+            "level": "error",
+            "operation": "admin_webhook",
+            "exc_info": "RuntimeError: Test alert from `uv run grimoire admin webhook`",
+        },
+    )
+
+    async def _send() -> int:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            return resp.status_code
+
+    console.print(f"[bold]Posting to {url[:60]}...[/bold]")
+    status = asyncio.run(_send())
+    if status in (200, 204):
+        console.print(f"[green]Discord returned {status} — check your channel.[/green]")
+    else:
+        console.print(f"[red]Discord returned {status} — check the webhook URL.[/red]")
+        raise typer.Exit(code=1)

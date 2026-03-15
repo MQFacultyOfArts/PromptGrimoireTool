@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from promptgrimoire.config import DatabaseConfig, DevConfig, Settings
-
-if TYPE_CHECKING:
-    from pytest import LogCaptureFixture
 
 
 def _settings_with_db(
@@ -29,7 +24,9 @@ class TestGetSession:
     """Tests for get_session() context manager."""
 
     @pytest.mark.asyncio
-    async def test_session_logs_on_exception(self, caplog: LogCaptureFixture) -> None:
+    async def test_session_logs_on_exception(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Session context manager logs exceptions before re-raising."""
         from promptgrimoire.db.engine import _state, get_session
 
@@ -48,16 +45,15 @@ class TestGetSession:
         _state.session_factory = mock_factory
 
         try:
-            with (
-                caplog.at_level(logging.ERROR, logger="promptgrimoire.db.engine"),
-                pytest.raises(ValueError, match="Test DB error"),
-            ):
+            with pytest.raises(ValueError, match="Test DB error"):
                 async with get_session():
                     pass  # Just entering and exiting triggers commit
 
-            # Verify logging occurred
-            assert "rolling back" in caplog.text.lower()
-            assert "database session error" in caplog.text.lower()
+            # Verify logging occurred — structlog emits to stdout/stderr
+            captured = capsys.readouterr()
+            combined = (captured.out + captured.err).lower()
+            assert "rolling back" in combined
+            assert "database session error" in combined
 
             # Verify rollback was called
             mock_session.rollback.assert_awaited_once()

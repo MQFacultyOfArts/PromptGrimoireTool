@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.db.workspace_documents import update_document_paragraph_settings
@@ -30,7 +31,8 @@ from promptgrimoire.pages.annotation.pdf_export import _handle_pdf_export
 from promptgrimoire.pages.annotation.placement import show_placement_dialog
 from promptgrimoire.pages.annotation.sharing import render_sharing_controls
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_placement_chip_style(ctx: PlacementContext) -> tuple[str, str, str]:

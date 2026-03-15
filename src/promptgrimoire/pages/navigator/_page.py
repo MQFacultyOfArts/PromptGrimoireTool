@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from promptgrimoire.pages.navigator._helpers import PageState
+
+logger = structlog.get_logger()
 
 _CSS_FILE = Path(__file__).resolve().parent.parent.parent / "static" / "navigator.css"
 
@@ -135,6 +138,7 @@ async def navigator_page() -> None:
             enrolled_course_ids=enrolled_course_ids,
         )
     except Exception:
+        logger.exception("navigator_load_failed", operation="load_navigator_page")
         ui.label("Failed to load workspaces. Please refresh.").classes("text-red-500")
         return
 

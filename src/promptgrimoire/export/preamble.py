@@ -15,8 +15,12 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+import structlog
+
 from promptgrimoire.export.latex_render import NoEscape, latex_cmd
 from promptgrimoire.export.unicode_latex import build_font_preamble, detect_scripts
+
+logger = structlog.get_logger()
 
 # Note: Static LaTeX preamble content (packages, commands, environments,
 # macros, fonts) is now in promptgrimoire-export.sty. The .sty is copied
@@ -83,7 +87,11 @@ def generate_tag_colour_definitions(tag_colours: dict[str, str]) -> str:
     return "\n".join(definitions)
 
 
-def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") -> str:
+def build_annotation_preamble(
+    tag_colours: dict[str, str],
+    body_text: str = "",
+    scripts: frozenset[str] | None = None,
+) -> str:
     """Build complete annotation preamble with dynamic font loading.
 
     The .sty file handles all static content (packages, commands, environments,
@@ -95,11 +103,14 @@ def build_annotation_preamble(tag_colours: dict[str, str], body_text: str = "") 
         tag_colours: Dict of tag_name -> hex colour.
         body_text: Document body text for Unicode script detection.
             Empty string = Latin-only fonts (fast compilation).
+        scripts: Pre-computed script detection result. If provided,
+            skips calling detect_scripts(body_text).
 
     Returns:
         Complete LaTeX preamble string.
     """
-    scripts = detect_scripts(body_text)
+    if scripts is None:
+        scripts = detect_scripts(body_text)
     font_preamble = build_font_preamble(scripts)
     colour_defs = generate_tag_colour_definitions(tag_colours)
     return f"\\usepackage{{promptgrimoire-export}}\n{font_preamble}\n{colour_defs}"
@@ -111,6 +122,11 @@ def _format_timestamp(iso_timestamp: str) -> str:
         dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         return dt.strftime("%-d %b %Y %H:%M")
     except ValueError, AttributeError:
+        logger.warning(
+            "timestamp_format_failed",
+            operation="format_timestamp",
+            timestamp=iso_timestamp,
+        )
         return ""
 
 

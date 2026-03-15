@@ -16,16 +16,22 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+import structlog
 
 from promptgrimoire.export.pandoc import convert_html_with_annotations
 from promptgrimoire.export.pdf import compile_latex
 from promptgrimoire.export.platforms import preprocess_for_export
 from promptgrimoire.export.preamble import build_annotation_preamble
+from promptgrimoire.export.unicode_latex import detect_scripts
 from promptgrimoire.word_count_enforcement import check_word_count_violation
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Path to the .sty file that contains all static LaTeX preamble content
 STY_SOURCE = Path(__file__).parent / "promptgrimoire-export.sty"
@@ -209,6 +215,7 @@ async def markdown_to_latex_notes(markdown_content: str | None) -> str:
             proc.communicate(input=markdown_content.encode("utf-8")), timeout=30
         )
     except TimeoutError:
+        logger.warning("pandoc_timeout", operation="markdown_to_latex")
         proc.kill()
         raise subprocess.CalledProcessError(
             1, ["pandoc"], "Pandoc timed out after 30s"
@@ -480,6 +487,10 @@ async def export_annotation_pdf(
         ValueError: If highlights are provided but content is empty.
         subprocess.CalledProcessError: If LaTeX compilation fails.
     """
+    t_export_start = time.monotonic()
+    export_id = str(uuid4())
+    log = logger.bind(export_id=export_id)
+
     # Resolve output directory
     if output_dir is None:
         if user_id:
@@ -490,28 +501,79 @@ async def export_annotation_pdf(
                 prefix = f"promptgrimoire_export_{workspace_id[:8]}_"
             output_dir = Path(tempfile.mkdtemp(prefix=prefix))
 
-    logger.info(
+    log.info(
         "PDF export workspace=%s output_dir=%s",
         workspace_id or "unknown",
         output_dir,
     )
 
-    # Generate .tex file via the shared pipeline
-    tex_path = await generate_tex_only(
-        html_content=html_content,
+    if highlights and (not html_content or not html_content.strip()):
+        raise ValueError(
+            "Cannot insert annotation markers into empty content. "
+            "Provide document content or remove highlights."
+        )
+
+    # --- Stage: pandoc_convert ---
+    t0 = time.monotonic()
+    processed_html = preprocess_for_export(html_content) if html_content else ""
+    latex_body = await convert_html_with_annotations(
+        html=processed_html,
         highlights=highlights,
         tag_colours=tag_colours,
-        output_dir=output_dir,
-        general_notes=general_notes,
-        notes_latex=notes_latex,
+        filter_paths=[_LIBREOFFICE_FILTER],
         word_to_legal_para=word_to_legal_para,
-        filename=filename,
-        word_count=word_count,
-        word_minimum=word_minimum,
-        word_limit=word_limit,
+    )
+    log.info(
+        "export_stage_complete",
+        export_stage="pandoc_convert",
+        stage_duration_ms=round((time.monotonic() - t0) * 1000),
     )
 
-    # Compile to PDF
+    # --- Stage: tex_generate ---
+    t0 = time.monotonic()
+    # Prepend word count badge if word count info is provided
+    if word_count is not None:
+        badge = _build_word_count_badge(word_count, word_minimum, word_limit)
+        if badge:
+            latex_body = badge + latex_body
+
+    notes_section = _build_general_notes_section(
+        general_notes, latex_content=notes_latex
+    )
+    full_text = f"{latex_body}\n{notes_section}" if notes_section else latex_body
+    scripts = detect_scripts(full_text)
+    preamble = build_annotation_preamble(
+        tag_colours, body_text=full_text, scripts=scripts
+    )
+
+    ensure_sty_in_dir(output_dir)
+    document = _DOCUMENT_TEMPLATE.format(
+        preamble=preamble,
+        body=latex_body,
+        general_notes_section=notes_section,
+    )
+    tex_path = output_dir / f"{filename}.tex"
+    tex_path.write_text(document)
+    log.info(
+        "export_stage_complete",
+        export_stage="tex_generate",
+        stage_duration_ms=round((time.monotonic() - t0) * 1000),
+    )
+
+    # --- Stage: latex_compile ---
+    t0 = time.monotonic()
     pdf_path = await compile_latex(tex_path, output_dir)
+    log.info(
+        "export_stage_complete",
+        export_stage="latex_compile",
+        stage_duration_ms=round((time.monotonic() - t0) * 1000),
+    )
+
+    # --- Export complete ---
+    log.info(
+        "export_complete",
+        font_fallbacks=sorted(scripts),
+        total_duration_ms=round((time.monotonic() - t_export_start) * 1000),
+    )
 
     return pdf_path

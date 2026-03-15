@@ -46,6 +46,7 @@ from string.templatelib import Interpolation, Template
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.crdt.annotation_doc import (
@@ -72,7 +73,8 @@ if TYPE_CHECKING:
 
     from promptgrimoire.pages.annotation.tags import TagInfo
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # ---------------------------------------------------------------------------
 # WARNING: Definition-before-import ordering is CRITICAL in this file.
@@ -356,6 +358,11 @@ async def annotation_page(client: Client) -> None:
         try:
             workspace_id = UUID(workspace_id_str)
         except ValueError:
+            logger.warning(
+                "invalid_workspace_id",
+                operation="parse_workspace_id",
+                workspace_id_str=workspace_id_str,
+            )
             ui.notify("Invalid workspace ID", type="negative")
 
     # Pre-fetch workspace record for _render_workspace_view

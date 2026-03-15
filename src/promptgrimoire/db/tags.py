@@ -9,13 +9,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import text
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
 from promptgrimoire.db.models import Tag, TagGroup
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
     from uuid import UUID

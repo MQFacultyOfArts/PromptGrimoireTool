@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import app, ui
 
 from promptgrimoire.auth import is_privileged_user
@@ -72,7 +73,8 @@ from promptgrimoire.pages.layout import page_layout
 from promptgrimoire.pages.registry import page_route
 from promptgrimoire.pages.ui_helpers import add_option_testids
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -97,8 +99,6 @@ class _CourseDetailContext(NamedTuple):
     can_view_drafts: bool
     client_id: str
 
-
-logger = logging.getLogger(__name__)
 
 _CSS_FILE = Path(__file__).resolve().parent.parent / "static" / "courses.css"
 
@@ -128,6 +128,11 @@ async def _confirm_and_delete(
         try:
             await delete_fn(entity_id, force=force)
         except DeletionBlockedError as e:
+            logger.warning(
+                "deletion_blocked",
+                operation="delete_entity",
+                student_workspace_count=e.student_workspace_count,
+            )
             msg = f"Cannot delete: {e.student_workspace_count} student workspaces exist"
             ui.notify(msg, type="warning")
             if is_admin:
@@ -312,6 +317,7 @@ async def _handle_delete_workspace(
                 try:
                     await delete_workspace(workspace_id, user_id=user_id)
                 except PermissionError:
+                    logger.warning("permission_denied", operation="delete_workspace")
                     ui.notify("Permission denied", type="negative")
                     dialog.close()
                     return
@@ -637,6 +643,11 @@ def _broadcast_weeks_refresh(
                 refresh_func()
             except Exception:
                 # Client may have disconnected
+                logger.warning(
+                    "broadcast_client_disconnected",
+                    operation="broadcast_weeks_refresh",
+                    client_id=client_id,
+                )
                 _course_clients[course_id].pop(client_id, None)
 
 
@@ -682,6 +693,9 @@ async def _handle_enrol_upload(
     try:
         entries = parse_xlsx(data)
     except EnrolmentParseError as exc:
+        logger.warning(
+            "enrolment_parse_error", operation="bulk_enrol_upload", errors=exc.errors
+        )
         ui.notify(
             "; ".join(exc.errors), type="warning", position="top", close_button="OK"
         )
@@ -690,6 +704,9 @@ async def _handle_enrol_upload(
     try:
         report = await bulk_enrol(entries, course.id, force=force)
     except StudentIdConflictError as exc:
+        logger.warning(
+            "student_id_conflict", operation="bulk_enrol", conflicts=exc.conflicts
+        )
         details = "; ".join(
             f"{email}: existing={old!r}, new={new!r}"
             for email, old, new in exc.conflicts
@@ -892,6 +909,9 @@ async def open_activity_settings(activity: Activity) -> None:
                 try:
                     await update_activity(activity.id, **kwargs)
                 except ValueError as e:
+                    logger.warning(
+                        "activity_update_validation_error", operation="update_activity"
+                    )
                     ui.notify(str(e), type="negative")
                     return
 
@@ -1221,6 +1241,9 @@ async def _resolve_course_detail(
     try:
         cid = UUID(course_id)
     except ValueError:
+        logger.warning(
+            "invalid_course_id", operation="course_page", course_id=course_id
+        )
         ui.label("Invalid unit ID").classes("text-red-500")
         return None
 
@@ -1424,6 +1447,7 @@ async def create_week_page(course_id: str) -> None:
     try:
         cid = UUID(course_id)
     except ValueError:
+        logger.warning("invalid_course_id", operation="enrol_page", course_id=course_id)
         ui.label("Invalid unit ID").classes("text-red-500")
         return
 
@@ -1499,6 +1523,7 @@ async def create_activity_page(course_id: str, week_id: str) -> None:
         cid = UUID(course_id)
         wid = UUID(week_id)
     except ValueError:
+        logger.warning("invalid_course_or_week_id", operation="activity_page")
         ui.label("Invalid unit or week ID").classes("text-red-500")
         return
 
@@ -1639,6 +1664,7 @@ async def _render_add_enrollment_form(
                     new_email.value = ""
                     on_added()
                 except Exception as e:
+                    logger.exception("enroll_failed", operation="add_enrollment")
                     ui.notify(f"Failed to enroll: {e}", type="negative")
 
             ui.button("Add", on_click=add_enrollment).props(

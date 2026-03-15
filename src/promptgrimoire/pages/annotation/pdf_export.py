@@ -15,7 +15,9 @@ import logging
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.auth.anonymise import anonymise_author
 from promptgrimoire.db.workspace_documents import get_document
@@ -40,7 +42,8 @@ if TYPE_CHECKING:
 
     from promptgrimoire.pages.annotation import PageState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _server_local_export_date() -> date:
@@ -263,6 +266,7 @@ async def _check_word_count_enforcement(
 
 async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     """Handle PDF export with loading notification."""
+    bind_contextvars(workspace_id=str(workspace_id))
     if state.crdt_doc is None or state.document_id is None:
         ui.notify("No document to export", type="warning")
         return

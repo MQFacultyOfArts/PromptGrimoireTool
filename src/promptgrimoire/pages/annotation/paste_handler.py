@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.db.workspace_documents import add_document
@@ -31,7 +32,8 @@ if TYPE_CHECKING:
 
     from promptgrimoire.input_pipeline.html_input import ContentType
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def handle_add_document_submission(

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import events, ui
 
 from promptgrimoire.db.workspace_documents import add_document
@@ -28,7 +29,8 @@ if TYPE_CHECKING:
 
     from promptgrimoire.input_pipeline.html_input import ContentType
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _detect_type_from_extension(filename: str) -> ContentType | None:
@@ -59,6 +61,11 @@ def _get_file_preview(
             return content_bytes.decode("utf-8")[:500]
         return f"[Binary file: {filename}]"
     except UnicodeDecodeError:
+        logger.warning(
+            "file_preview_decode_failed",
+            operation="get_file_preview",
+            filename=filename,
+        )
         return f"[Binary file: {filename}]"
 
 
@@ -90,6 +97,9 @@ def _detect_source_numbering_from_bytes(
     try:
         text = content_bytes.decode("utf-8")
     except UnicodeDecodeError:
+        logger.warning(
+            "source_numbering_decode_failed", operation="detect_source_numbering"
+        )
         return False
     return detect_source_numbering(text)
 
@@ -150,6 +160,11 @@ async def _handle_file_upload(
         ui.notify(f"Uploaded: {filename}", type="positive")
         on_document_added()
     except NotImplementedError as not_impl_err:
+        logger.warning(
+            "unsupported_format",
+            operation="handle_file_upload",
+            error=str(not_impl_err),
+        )
         ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
     except Exception as exc:
         logger.exception("Failed to process uploaded file")

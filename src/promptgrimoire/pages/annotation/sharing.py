@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.ui_helpers import on_submit_with_value
@@ -20,7 +21,8 @@ from promptgrimoire.db.acl import (
 from promptgrimoire.db.users import get_user_by_email, get_user_by_id
 from promptgrimoire.db.workspaces import update_workspace_sharing
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def render_sharing_controls(
@@ -194,6 +196,7 @@ async def open_sharing_dialog(
                 email_input.value = ""
                 shares_list.refresh()
             except PermissionError as exc:
+                logger.warning("share_permission_denied", operation="share_workspace")
                 ui.notify(str(exc), type="negative")
 
         with ui.row().classes("w-full justify-end gap-2 mt-4"):

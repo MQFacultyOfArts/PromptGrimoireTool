@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import structlog
 from nicegui import ui
 
 from promptgrimoire.export.pdf_export import export_annotation_pdf
@@ -24,7 +25,8 @@ from promptgrimoire.input_pipeline.html_input import extract_text_from_html
 from promptgrimoire.pages.layout import require_demo_enabled
 from promptgrimoire.pages.registry import page_route
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # --- Fixture path (pre-processed workspace export, no pipeline needed) ---
 _FIXTURE_PATH = (

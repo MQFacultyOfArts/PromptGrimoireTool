@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
 
@@ -33,7 +34,8 @@ if TYPE_CHECKING:
     from promptgrimoire.db.models import WorkspaceDocument
     from promptgrimoire.pages.annotation import PageState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 _PREVIEW_MAX_CHARS = 50
@@ -311,9 +313,11 @@ async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
     try:
         await delete_document(doc.id, user_id=UUID(state.user_id))
     except PermissionError:
+        logger.warning("permission_denied", operation="delete_document")
         ui.notify("Permission denied", type="negative")
         return
     except ProtectedDocumentError:
+        logger.warning("protected_document_delete", operation="delete_document")
         ui.notify("This document is protected and cannot be deleted", type="negative")
         return
 

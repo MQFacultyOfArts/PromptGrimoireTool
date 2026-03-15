@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from uuid import UUID
 
+import structlog
 from nicegui import app, ui
+from structlog.contextvars import bind_contextvars
 
 from promptgrimoire.config import get_settings
 from promptgrimoire.db.acl import grant_permission
@@ -35,7 +37,8 @@ if TYPE_CHECKING:
     from nicegui.elements.input import Input
     from nicegui.elements.scroll_area import ScrollArea
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 def _get_default_user_name() -> str:
@@ -143,6 +146,7 @@ async def _handle_send(
             streaming_label.text = full_response
             scroll_area.scroll_to(percent=1.0)
     except Exception as e:
+        logger.exception("stream_response_failed", operation="stream_response")
         ui.notify(f"Error: {e}", type="negative")
         send_button.enable()
         return
@@ -159,9 +163,9 @@ async def _handle_send(
 
     # Log turns
     with log_path.open("a") as f:
-        logger = JSONLLogger(f)
+        jsonl_log = JSONLLogger(f)
         for turn in session.turns[-2:]:
-            logger.write_turn(turn)
+            jsonl_log.write_turn(turn)
 
 
 def _setup_session(
@@ -185,10 +189,10 @@ def _setup_session(
     log_path = log_dir / generate_log_filename(session)
 
     with log_path.open("w") as f:
-        logger = JSONLLogger(f)
-        logger.write_header(session)
+        jsonl_log = JSONLLogger(f)
+        jsonl_log.write_header(session)
         for turn in session.turns:
-            logger.write_turn(turn)
+            jsonl_log.write_turn(turn)
 
     client = ClaudeClient(
         api_key=settings.llm.api_key.get_secret_value(),
@@ -226,6 +230,7 @@ async def _handle_export(state: dict) -> None:
         html_content = session_to_html(session)
 
         workspace = await create_workspace()
+        bind_contextvars(workspace_id=str(workspace.id))
         title = f"Roleplay: {session.character.name}"
         await update_workspace_title(workspace.id, title)
         await add_document(
@@ -325,8 +330,10 @@ async def _handle_upload(e, *, state: dict, widgets: dict) -> None:
         ui.notify(f"Loaded {character.name}")
 
     except ValueError as ve:
+        logger.warning("character_load_validation_error", operation="load_character")
         ui.notify(str(ve), type="negative")
     except Exception as ex:
+        logger.exception("character_load_failed", operation="load_character")
         ui.notify(f"Failed to load: {ex}", type="negative")
     finally:
         # Clean up temp file

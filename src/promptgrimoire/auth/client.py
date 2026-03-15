@@ -11,6 +11,7 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
+import structlog
 from stytch import B2BClient
 from stytch.core.response_base import StytchError
 
@@ -23,7 +24,8 @@ from promptgrimoire.auth.models import (
     SSOStartResult,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Stytch API base URLs
 STYTCH_TEST_API = "https://test.stytch.com"

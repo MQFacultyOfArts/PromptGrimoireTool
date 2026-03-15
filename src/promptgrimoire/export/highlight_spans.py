@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import structlog
+
 from promptgrimoire.export.latex_format import format_annot_latex
 from promptgrimoire.export.span_boundaries import (
     INLINE_FORMATTING_ELEMENTS,
@@ -42,7 +44,8 @@ from promptgrimoire.input_pipeline.html_input import (
     walk_and_map,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +149,33 @@ def _compute_regions(
 # ---------------------------------------------------------------------------
 
 
+def _migrate_annotations_backward(
+    annots: list[int],
+    valid: list[_HlRegion],
+) -> None:
+    """Move annotations from a gap-only region to the nearest preceding visible region.
+
+    Each annotation is placed on the last valid region whose ``active`` set
+    contains that highlight index.  If no match, the annotation is dropped.
+    """
+    for annot_idx in annots:
+        for prev in reversed(valid):
+            if annot_idx in prev.active:
+                prev.annots.append(annot_idx)
+                break
+
+
+def _overlaps_any_text_node(
+    region: _HlRegion,
+    text_nodes: list[TextNodeInfo],
+) -> bool:
+    """Return True if the region overlaps at least one text node."""
+    for tn in text_nodes:
+        if tn.char_start < region.end and region.start < tn.char_end:
+            return True
+    return False
+
+
 def _migrate_gap_annotations(
     regions: list[_HlRegion],
     text_nodes: list[TextNodeInfo],
@@ -166,25 +196,13 @@ def _migrate_gap_annotations(
     if not text_nodes:
         return regions
 
-    def _overlaps_text(region: _HlRegion) -> bool:
-        for tn in text_nodes:
-            if tn.char_start < region.end and region.start < tn.char_end:
-                return True
-        return False
-
     valid: list[_HlRegion] = []
 
     for region in regions:
-        if _overlaps_text(region):
+        if _overlaps_any_text_node(region, text_nodes):
             valid.append(region)
         else:
-            # Gap-only: migrate each annotation to the nearest preceding
-            # valid region that contains the same highlight in its active set.
-            for annot_idx in region.annots:
-                for prev in reversed(valid):
-                    if annot_idx in prev.active:
-                        prev.annots.append(annot_idx)
-                        break
+            _migrate_annotations_backward(region.annots, valid)
 
     return valid
 
@@ -362,6 +380,33 @@ def _insert_spans_into_html(
     return result
 
 
+def _byte_pos_at_node_end(
+    node: TextNodeInfo,
+    byte_offset: int,
+) -> int:
+    """Compute the byte position at the end of a text node."""
+    raw_offset = collapsed_to_html_offset(
+        node.html_text, node.decoded_text, len(node.collapsed_text)
+    )
+    return byte_offset + raw_offset
+
+
+def _resolve_boundary(
+    idx: int,
+    text_nodes: list[TextNodeInfo],
+    byte_offsets: list[int],
+    is_region_end: bool,
+) -> int:
+    """Resolve byte position at a block boundary (char_idx == node.char_start)."""
+    if is_region_end and idx > 0:
+        # For region ends at a boundary, use the END of the previous node
+        return _byte_pos_at_node_end(text_nodes[idx - 1], byte_offsets[idx - 1])
+    # For region starts, use the START of this node
+    tn = text_nodes[idx]
+    raw_offset = collapsed_to_html_offset(tn.html_text, tn.decoded_text, 0)
+    return byte_offsets[idx] + raw_offset
+
+
 def _char_to_byte_pos(
     char_idx: int,
     text_nodes: list[TextNodeInfo],
@@ -398,22 +443,7 @@ def _char_to_byte_pos(
     # At block boundaries: char_idx == prev_node.char_end == next_node.char_start.
     for i, tn in enumerate(text_nodes):
         if char_idx == tn.char_start:
-            if is_region_end and i > 0:
-                # For region ends at a boundary, use the END of the previous node
-                prev = text_nodes[i - 1]
-                prev_idx = i - 1
-                raw_offset = collapsed_to_html_offset(
-                    prev.html_text, prev.decoded_text, len(prev.collapsed_text)
-                )
-                return byte_offsets[prev_idx] + raw_offset
-            else:
-                # For region starts or positions within first node,
-                # use the START of this node
-                offset_in_collapsed = 0
-                raw_offset = collapsed_to_html_offset(
-                    tn.html_text, tn.decoded_text, offset_in_collapsed
-                )
-                return byte_offsets[i] + raw_offset
+            return _resolve_boundary(i, text_nodes, byte_offsets, is_region_end)
 
     # Match char_idx at the end of any text node.
     # Handles both the last text node (end of document) and non-last nodes
@@ -422,10 +452,7 @@ def _char_to_byte_pos(
     # of the next node, so this only fires for gap positions.  Fixes #160.
     for i, tn in enumerate(text_nodes):
         if char_idx == tn.char_end:
-            raw_offset = collapsed_to_html_offset(
-                tn.html_text, tn.decoded_text, len(tn.collapsed_text)
-            )
-            return byte_offsets[i] + raw_offset
+            return _byte_pos_at_node_end(tn, byte_offsets[i])
 
     # Fallback: char_idx truly beyond all text nodes -> end of last text node.
     # Gap positions (between text nodes, e.g. from <br>) return None so the
@@ -437,12 +464,7 @@ def _char_to_byte_pos(
             char_idx,
             text_nodes[-1].char_end,
         )
-        last = text_nodes[-1]
-        last_idx = len(text_nodes) - 1
-        raw_offset = collapsed_to_html_offset(
-            last.html_text, last.decoded_text, len(last.collapsed_text)
-        )
-        return byte_offsets[last_idx] + raw_offset
+        return _byte_pos_at_node_end(text_nodes[-1], byte_offsets[-1])
 
     return None
 

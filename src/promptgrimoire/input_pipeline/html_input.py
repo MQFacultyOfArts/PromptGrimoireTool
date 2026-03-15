@@ -19,6 +19,7 @@ import logging
 import re
 from typing import Literal
 
+import structlog
 from selectolax.lexbor import LexborHTMLParser
 
 from promptgrimoire.input_pipeline.converters import (
@@ -40,7 +41,8 @@ from promptgrimoire.input_pipeline.text_extraction import (
     walk_and_map,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 # Content types supported by the pipeline
 CONTENT_TYPES = ("html", "rtf", "docx", "pdf", "text")
@@ -155,6 +157,7 @@ def _decode_bytes(content: bytes) -> str:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         # Fall back to latin-1 which accepts all byte values
+        logger.warning("utf8_decode_fallback_latin1", operation="decode_bytes")
         return content.decode("latin-1")
 
 

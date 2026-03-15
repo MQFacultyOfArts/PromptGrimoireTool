@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from promptgrimoire.enrol.xlsx_parser import EnrolmentEntry
+
+logger = structlog.get_logger()
 
 
 class StudentIdConflictError(Exception):
@@ -172,6 +175,7 @@ async def _create_enrolments(
             )
             created += 1
         except DuplicateEnrollmentError:
+            logger.warning("duplicate_enrollment_skipped", operation="enrol_users")
             skipped += 1
     return created, skipped
 

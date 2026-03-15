@@ -12,6 +12,7 @@ import concurrent.futures
 import contextlib
 import logging
 
+import structlog
 from sqlmodel import select
 
 from promptgrimoire.db.courses import DuplicateEnrollmentError, enroll_user
@@ -19,7 +20,8 @@ from promptgrimoire.db.engine import get_session, init_db
 from promptgrimoire.db.models import Course
 from promptgrimoire.db.users import create_user, get_user_by_email
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+logging.getLogger(__name__).setLevel(logging.INFO)
 
 
 async def _ensure_user(email: str, display_name: str) -> None:
@@ -83,7 +85,7 @@ def _run_in_thread(coro: object) -> None:
         try:
             asyncio.run(coro)  # type: ignore[arg-type]
         except BaseException as e:
-            exc = e
+            exc = e  # Deferred re-raise after thread cleanup (line 94)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         pool.submit(target).result()

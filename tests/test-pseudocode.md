@@ -5844,3 +5844,266 @@ It catches any divergence that would cause highlights to render at wrong positio
 3. Assert exactly 2 assistant messages per team (seq=2 bootstrap, seq=4 round 2)
 
 **Verifies:** AC8.3 -- one-response invariant holds across multiple rounds
+
+## Structured Logging -- Core Pipeline (Unit)
+
+### Log file path for main branch
+**File:** tests/unit/test_structured_logging.py::TestLogFilePath::test_main_branch_produces_promptgrimoire_jsonl
+1. Call _setup_logging with branch="main"
+2. Assert `promptgrimoire.jsonl` exists in log directory
+
+**Verifies:** Main/master branch produces the default log filename
+
+### Log file path for feature branch
+**File:** tests/unit/test_structured_logging.py::TestLogFilePath::test_feature_branch_produces_slugged_filename
+1. Call _setup_logging with branch="structured-logging-339"
+2. Assert `promptgrimoire-structured_logging_339.jsonl` exists
+
+**Verifies:** Feature branches get branch-slugged log filenames for isolation
+
+### Log file path for None branch
+**File:** tests/unit/test_structured_logging.py::TestLogFilePath::test_none_branch_produces_promptgrimoire_jsonl
+1. Call _setup_logging with branch=None
+2. Assert `promptgrimoire.jsonl` exists
+
+**Verifies:** Absent branch info falls back to default filename
+
+### RotatingFileHandler configuration
+**File:** tests/unit/test_structured_logging.py::TestLogFilePath::test_rotating_file_handler_config
+1. Call _setup_logging
+2. Find RotatingFileHandler in root logger handlers
+3. Assert exactly one, with maxBytes=10MB and backupCount=5
+
+**Verifies:** Log rotation configured correctly (AC6.1)
+
+### Log file permissions 0644
+**File:** tests/unit/test_structured_logging.py::TestLogFilePermissions::test_log_file_has_644_permissions
+1. Call _setup_logging
+2. Stat the log file
+3. Assert mode is 0o644
+
+**Verifies:** Log files readable by SSH users without sudo (AC6.2)
+
+### stdlib logger produces valid JSON
+**File:** tests/unit/test_structured_logging.py::TestJsonOutput::test_stdlib_logger_produces_valid_json
+1. Set up logging, emit via stdlib `logging.getLogger("test.stdlib")`
+2. Read last line of log file, parse as JSON
+3. Assert event field matches message
+
+**Verifies:** stdlib loggers routed through ProcessorFormatter produce JSON (AC6.3)
+
+### structlog logger produces valid JSON
+**File:** tests/unit/test_structured_logging.py::TestJsonOutput::test_structlog_logger_produces_valid_json
+1. Set up logging, emit via `structlog.get_logger("test.structlog")`
+2. Parse last JSON line
+3. Assert event field matches
+
+**Verifies:** structlog loggers produce JSON output (AC6.3)
+
+### Third-party stdlib logger produces JSON with standard fields
+**File:** tests/unit/test_structured_logging.py::TestThirdPartyJsonOutput::test_third_party_logger_produces_json_with_standard_fields
+1. Set up logging on branch "test-branch"
+2. Emit via `logging.getLogger("nicegui.helpers")`
+3. Parse JSON from branch-slugged log file
+4. Assert standard fields (timestamp, pid, branch, commit) present
+
+**Verifies:** Third-party libraries using stdlib logging get JSON with global fields (AC2.3)
+
+### Append mode (no clobber on restart)
+**File:** tests/unit/test_structured_logging.py::TestAppendMode::test_second_setup_appends_not_clobbers
+1. Set up logging, emit one message, flush
+2. Count lines
+3. Reset, set up again, emit second message
+4. Assert line count increased (not reset)
+
+**Verifies:** Restarting logging appends to existing file (AC6.4)
+
+### INFO inside except has no traceback
+**File:** tests/unit/test_structured_logging.py::TestTracebackPolicy::test_info_inside_except_has_no_traceback
+1. Set up logging
+2. Inside a `try/except`, log at INFO with `exc_info=True`
+3. Parse JSON, assert no traceback/exc_info fields
+
+**Verifies:** DEBUG/INFO suppress tracebacks even when exc_info passed (AC7.1)
+
+### ERROR inside except has traceback
+**File:** tests/unit/test_structured_logging.py::TestTracebackPolicy::test_error_inside_except_has_traceback
+1. Set up logging
+2. Inside a `try/except`, log at ERROR with `exc_info=True`
+3. Parse JSON, assert traceback present
+
+**Verifies:** WARNING+ include tracebacks (AC7.2)
+
+### Null context fields when unbound (stdlib and structlog)
+**File:** tests/unit/test_structured_logging.py::TestNullContextFields
+1. Set up logging, emit without binding context
+2. Parse JSON
+3. Assert user_id, workspace_id, request_path are all null
+
+**Verifies:** Context fields default to null when not bound (AC7.3)
+
+### Context propagation -- authenticated, unauthenticated, workspace, isolation
+**File:** tests/unit/test_structured_logging.py::TestContextPropagation
+1. Bind user_id and request_path via contextvars, emit, assert they appear in JSON
+2. Emit without binding, assert user_id and request_path are null
+3. Bind workspace_id, emit, assert it appears
+4. Bind workspace_id, clear, bind user_id only, emit, assert workspace_id is null
+
+**Verifies:** structlog.contextvars propagation and isolation (AC1.1--AC1.4)
+
+### Global fields present
+**File:** tests/unit/test_structured_logging.py::TestGlobalFields::test_global_fields_present
+1. Set up logging with branch="test-branch"
+2. Emit, parse JSON
+3. Assert pid, branch, commit, level, timestamp, event all present
+
+**Verifies:** Every log line includes global correlation fields
+
+## Structured Logging -- Discord Alerting (Unit)
+
+### Empty webhook URL is no-op
+**File:** tests/unit/test_logging_discord.py::TestNoOpWhenUnconfigured
+1. Create DiscordAlertProcessor with empty webhook URL
+2. Call with ERROR event
+3. Assert event dict returned unchanged, no POST attempted
+
+**Verifies:** Unconfigured webhook does not send (AC5.2)
+
+### Non-error levels ignored
+**File:** tests/unit/test_logging_discord.py::TestNonErrorLevelsIgnored
+1. Create processor with valid URL
+2. Call with INFO and DEBUG events
+3. Assert no webhook fired for either
+
+**Verifies:** Only ERROR and CRITICAL trigger Discord alerts
+
+### ERROR fires webhook with correct embed
+**File:** tests/unit/test_logging_discord.py::TestErrorTriggersWebhook
+1. Call processor with ERROR event, mock _fire_and_forget
+2. Assert called once with payload containing embed
+3. Verify embed title has "[ERROR]" and event name
+4. Verify colour is red (15548997), CRITICAL is dark red (10040115)
+5. Verify context fields (user_id, workspace_id, logger, pid) in embed fields
+6. Verify None-valued fields omitted from embed
+7. Verify timestamp present in embed
+
+**Verifies:** ERROR/CRITICAL events produce correctly formatted Discord embeds (AC5.1)
+
+### Deduplication within window
+**File:** tests/unit/test_logging_discord.py::TestDeduplication
+1. Fire same error twice -- assert only one webhook
+2. Fire same error with different logger -- assert two webhooks
+3. Fire errors with different exc_info types -- assert two webhooks
+4. Fire same error, sleep past dedup window, fire again -- assert two webhooks
+
+**Verifies:** Same (exc_type, logger) deduplicated within 60s window (AC5.3)
+
+### Webhook failure does not disrupt logging
+**File:** tests/unit/test_logging_discord.py::TestWebhookFailureSafe
+1. Mock httpx.AsyncClient.post to raise TimeoutException -- no exception propagated
+2. Mock to raise ConnectError -- no exception propagated
+3. Mock 429 response -- logged to stderr, no exception
+4. Mock successful 204 -- post called once
+5. Mock _fire_and_forget to raise RuntimeError -- processor swallows it
+
+**Verifies:** Webhook failures never disrupt the logging pipeline (AC5.4)
+
+### Discord embed truncation
+**File:** tests/unit/test_logging_discord.py::TestTruncation
+1. Event with 300-char event name -- title truncated to 256
+2. Event with 5000-char exc_info -- description truncated to 4096
+3. Event with 2000-char user_id -- field value truncated to 1024
+
+**Verifies:** Discord embed limits respected
+
+## Structured Logging -- Guard Tests (Unit)
+
+### No print() calls in source
+**File:** tests/unit/test_print_usage_guard.py::test_no_print_calls_in_source
+1. Walk all .py files in src/promptgrimoire/ (excluding cli/)
+2. AST-parse each file
+3. Find any `print(...)` call nodes
+4. Assert no violations found
+
+**Verifies:** All output uses structlog, not print()
+
+### No silent exception swallowing
+**File:** tests/unit/test_exception_logging_guard.py::test_no_silent_exception_swallowing
+1. Walk all .py files in src/promptgrimoire/ (excluding cli/, logging_discord.py)
+2. AST-parse each file
+3. For each ExceptHandler, check it: logs (logger.exception/error/warning/debug), re-raises, assigns to variable, or continues
+4. Assert no violations found
+
+**Verifies:** Every except block logs or re-raises (logging_discord.py excluded because structlog inside a structlog processor would recurse)
+
+## Structured Logging -- Export Instrumentation (Unit)
+
+### Export produces stage events with timing
+**File:** tests/unit/export/test_export_instrumentation.py::TestExportStageTiming
+1. Set up JSON logging, mock compile_latex
+2. Run export_annotation_pdf with "<p>Hello world</p>"
+3. Parse all JSON log lines, filter by export_stage
+4. Assert pandoc_convert, tex_generate, latex_compile stages present
+5. Assert one export_complete event
+6. Assert each stage has export_id and stage_duration_ms (non-negative int)
+
+**Verifies:** Export pipeline emits structured stage timing events (AC3.1)
+
+### All stages share same export_id
+**File:** tests/unit/export/test_export_instrumentation.py::TestExportStageTiming::test_all_stages_share_same_export_id
+1. Run export, collect export_ids from all stage events
+2. Assert exactly one unique export_id
+
+**Verifies:** Correlation ID ties all stages together (AC3.2)
+
+### LaTeX error extraction
+**File:** tests/unit/export/test_export_instrumentation.py::TestLatexErrorExtraction
+1. Create fake .tex and .log with "! Undefined control sequence" and "! Missing $ inserted"
+2. Mock subprocess to fail (returncode=1)
+3. Assert latex_errors field contains both !-prefixed lines
+4. Repeat with no !-lines, assert latex_errors is empty list
+
+**Verifies:** LaTeX !-prefixed error lines extracted into structured field (AC3.3)
+
+### Font fallback logging
+**File:** tests/unit/export/test_export_instrumentation.py::TestFontFallbackLogging
+1. Run export with Latin-only content, assert font_fallbacks is a list
+2. Run export with CJK content, assert font_fallbacks is non-empty list
+
+**Verifies:** Successful export logs detect_scripts() result (AC3.4)
+
+### Subprocess output capture
+**File:** tests/unit/export/test_export_instrumentation.py::TestSubprocessOutputCapture
+1. Mock compile failure with known stdout/stderr
+2. Assert latex_stdout and latex_stderr fields present in log
+3. Assert return_code field present
+4. Mock 10KB stdout, assert truncated to 4096 chars
+
+**Verifies:** Failed LaTeX subprocess output captured in structured log
+
+## Database Engine (Unit)
+
+### Session logs on exception
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_session_logs_on_exception
+1. Replace session factory with mock that raises ValueError on commit
+2. Enter get_session() context
+3. Assert "rolling back" and "database session error" in captured output
+4. Assert rollback was called
+
+**Verifies:** Database session errors are logged before re-raising
+
+### Session lazy-initializes when factory is None
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_session_lazy_initializes_when_factory_is_none
+1. Set _state.session_factory and _state.engine to None
+2. Enter get_session() with mocked settings providing a DB URL
+3. Assert engine and session_factory are now non-None
+4. Assert session is usable
+
+**Verifies:** Lazy engine initialization on first use
+
+### get_engine returns None before init, engine after init
+**File:** tests/unit/test_db_engine.py::TestGetEngine
+1. Set _state.engine to None, assert get_engine() returns None
+2. Set _state.engine to mock, assert get_engine() returns the mock
+
+**Verifies:** Engine accessor reflects initialization state

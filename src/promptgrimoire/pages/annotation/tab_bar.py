@@ -410,6 +410,9 @@ async def _render_source_tab_content(
 
     assert doc_tab.panel is not None
     assert state.crdt_doc is not None
+    # Clear panel to prevent duplicate subtrees if re-rendered
+    # (e.g. after invalidate_card_cache set rendered=False).
+    doc_tab.panel.clear()
     with doc_tab.panel:
         await _render_document_container(
             state,

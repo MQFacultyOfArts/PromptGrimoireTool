@@ -56,16 +56,16 @@ trap cleanup EXIT
 
 # 1. Pull
 step "git pull"
-PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH git -C "$APP_DIR" pull --rebase
+sudo -u promptgrimoire env PATH="$PG_PATH" git -C "$APP_DIR" pull --rebase
 
 # 2. Sync dependencies
 step "uv sync --no-dev"
-PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH "$UV" --directory "$APP_DIR" sync --no-dev
+sudo -u promptgrimoire env PATH="$PG_PATH" "$UV" --directory "$APP_DIR" sync --no-dev
 
 # 3. Unit tests (e-stop)
 if [[ "$SKIP_TESTS" == "false" ]]; then
     step "Running unit tests (e-stop — will abort deploy on failure)"
-    if ! PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH "$UV" --directory "$APP_DIR" run grimoire test all; then
+    if ! grimoire-run grimoire test all; then
         echo "ABORT: unit tests failed — not restarting" >&2
         exit 1
     fi

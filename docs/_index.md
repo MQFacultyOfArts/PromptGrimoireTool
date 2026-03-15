@@ -50,6 +50,10 @@ library references during development.
 ## guides
 
 - [PromptGrimoire Guides](guides/index.md)
+- [Instructor Setup](guides/instructor-setup.md)
+- [Student Workflow](guides/student-workflow.md)
+- [Using PromptGrimoire](guides/using-promptgrimoire.md)
+- [Your Personal Grimoire](guides/your-personal-grimoire.md)
 
 ## lark
 
@@ -108,6 +112,10 @@ library references during development.
 
 - [Browser class API for multi-context testing](playwright/browser-api.md)
 - [Playwright Python E2E testing with pytest](playwright/e2e-testing.md)
+
+## postmortems
+
+- [Post-Mortem: 2026-03-15 Production OOM Outage](postmortems/2026-03-15-production-oom.md)
 
 ## prds
 

@@ -276,9 +276,19 @@ def _run_collect_only(
     extra_args: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> int:
-    """Run pytest --collect-only -q — lightweight, no DB cleanup or log files."""
+    """Run pytest --collect-only -q — lightweight, no DB cleanup or log files.
+
+    Strips verbosity and traceback flags from *default_args* since ``--co -q``
+    needs terse output.
+    """
+    _STRIP = {"-v", "-vv", "--verbose"}
+    cleaned = [
+        a
+        for i, a in enumerate(default_args)
+        if a not in _STRIP and not a.startswith("--tb=")
+    ]
     user_args = extra_args or []
-    all_args = ["uv", "run", "pytest", *default_args, "--co", "-q", *user_args]
+    all_args = ["uv", "run", "pytest", *cleaned, "--co", "-q", *user_args]
     result = subprocess.run(
         all_args,
         env={
@@ -596,10 +606,10 @@ def all_tests(
 
 
 @test_app.command(
-    "all-fixtures",
+    "smoke",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
-def all_fixtures_tests(
+def smoke_tests(
     ctx: typer.Context,
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
@@ -614,10 +624,10 @@ def all_fixtures_tests(
         False, "--co", "--collect-only", help="Only collect tests, don't run them"
     ),
 ) -> None:
-    """Run full test corpus including BLNS and slow tests."""
+    """Run toolchain smoke tests (pandoc, lualatex, tlmgr) serially."""
     from promptgrimoire.cli._shared import _prepend_filter
 
-    default_args = ["-m", _NON_UI_MARKER_EXPRESSION]
+    default_args = ["-m", "smoke", "-v", "--tb=short", "-o", "addopts="]
 
     args = _prepend_filter(ctx.args, filter_expr)
 
@@ -633,9 +643,9 @@ def all_fixtures_tests(
 
     sys.exit(
         _run_pytest(
-            title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
-            log_path=Path("test-all-fixtures.log"),
-            default_args=[*default_args, "-v", "--tb=short"],
+            title="Smoke Tests (toolchain: pandoc, lualatex, tlmgr)",
+            log_path=Path("test-smoke.log"),
+            default_args=default_args,
             extra_args=args,
         )
     )

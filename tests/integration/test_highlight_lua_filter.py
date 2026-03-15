@@ -92,9 +92,11 @@ def _run_pandoc_with_both_filters(html: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _check_filter_exists() -> None:
-    """Skip all tests if the Lua filter file is missing."""
+    """Skip all tests if either Lua filter file is missing."""
     if not _FILTER_PATH.exists():
         pytest.skip(f"Lua filter not found: {_FILTER_PATH}")
+    if not _LIBREOFFICE_FILTER_PATH.exists():
+        pytest.skip(f"Lua filter not found: {_LIBREOFFICE_FILTER_PATH}")
 
 
 class TestSingleHighlight:
@@ -452,6 +454,17 @@ class TestAnnotInTable:
         assert r"\annotref{tag-evidence-dark}" in latex, "In-table annot split"
         assert r"\annotendnote{tag-evidence-dark}" in latex, "In-table endnote emitted"
         assert r"\annot{tag-ratio-dark}" in latex, "After-table annot preserved"
+
+        # AC2.3: Verify counter sequencing — the \annotendnote for the single in-table
+        # annotation (annot K=1 of N=1 in the table) must use
+        # \the\numexpr\value{annotnum}-1+1\relax, which evaluates to the correct
+        # sequential number regardless of annotations before the table.
+        # This catches off-by-one errors in the \numexpr assembly.
+        expected_num_expr = r"\the\numexpr\value{annotnum}-1+1\relax"
+        assert expected_num_expr in latex, (
+            f"Expected \\annotendnote to use numexpr '{expected_num_expr}' "
+            f"for sequential numbering, got:\n{latex}"
+        )
 
     def test_multiple_annotations_in_table(self) -> None:
         """AC2.4: Multiple annotations in the same table each get their own ref."""

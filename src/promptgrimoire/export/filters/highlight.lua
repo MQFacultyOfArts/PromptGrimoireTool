@@ -309,11 +309,7 @@ function Table(el)
   local function process_blocks(blocks)
     local filter = {
       RawInline = function(el)
-        local replacements = process_rawinline(el)
-        if #replacements == 1 and replacements[1] == el then
-          return el
-        end
-        return replacements
+        return process_rawinline(el)
       end
     }
     local new_blocks = pandoc.List({})

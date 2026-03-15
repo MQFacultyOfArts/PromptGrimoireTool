@@ -23,7 +23,7 @@ class DocumentTabState:
     tab: ui.tab | None
     panel: ui.tab_panel | None
     document_container: ui.column | None = None
-    cards_container: ui.column | None = None
+    cards_container: ui.element | None = None
     annotation_cards: dict[str, Any] = field(default_factory=dict)
     card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
     rendered: bool = False

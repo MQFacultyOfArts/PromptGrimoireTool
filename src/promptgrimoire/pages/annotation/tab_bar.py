@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from uuid import UUID
 
+    from promptgrimoire.pages.annotation.tab_state import DocumentTabState
+
 logger = logging.getLogger(__name__)
 
 
@@ -332,27 +334,175 @@ def _is_source_tab(tab_name: str) -> bool:
     return True
 
 
+def _save_source_tab_state(
+    state: PageState,
+    doc_tab: DocumentTabState,
+) -> None:
+    """Save current PageState annotation fields into a DocumentTabState.
+
+    Called before switching away from a source tab so the tab's card
+    registry, snapshots, and epoch are preserved for later restoration.
+    """
+    doc_tab.annotation_cards = state.annotation_cards or {}
+    doc_tab.card_snapshots = dict(state.card_snapshots)
+    doc_tab.cards_epoch = state.cards_epoch
+
+
+def _restore_source_tab_state(
+    state: PageState,
+    doc_tab: DocumentTabState,
+) -> None:
+    """Restore a DocumentTabState's annotation fields into PageState.
+
+    Called when switching to a source tab.  Sets document_id,
+    annotations_container, and card state so that refresh/diff
+    operations target the correct document.
+
+    For unrendered tabs, annotation_cards is set to None so that
+    ``_refresh_annotation_cards`` performs a full build on first render.
+    """
+    state.document_id = doc_tab.document_id
+    state.annotations_container = doc_tab.cards_container
+    state.cards_epoch = doc_tab.cards_epoch
+
+    if doc_tab.rendered:
+        state.annotation_cards = doc_tab.annotation_cards
+        state.card_snapshots = dict(doc_tab.card_snapshots)
+    else:
+        # Force full build on first render
+        state.annotation_cards = None
+        state.card_snapshots = {}
+
+
+async def _render_source_tab_content(
+    state: PageState,
+    doc_tab: DocumentTabState,
+    *,
+    on_add_tag: Any,
+    on_manage_tags: Any,
+    can_create_tags: bool,
+    footer: Any | None,
+) -> None:
+    """Render document content in a source tab on first visit.
+
+    Fetches the document from the database, renders it with
+    highlights inside the tab panel, and saves the resulting
+    card state back to ``doc_tab``.
+    """
+    # Late imports to avoid circular dependency
+    from promptgrimoire.db.workspace_documents import get_document
+    from promptgrimoire.pages.annotation.workspace import (
+        _render_document_container,
+    )
+
+    doc = await get_document(doc_tab.document_id)
+    if doc is None:
+        logger.warning(
+            "Document %s not found for deferred render",
+            doc_tab.document_id,
+        )
+        return
+
+    # Reset card state for fresh full build
+    state.annotation_cards = None
+    state.card_snapshots = {}
+
+    assert doc_tab.panel is not None
+    assert state.crdt_doc is not None
+    with doc_tab.panel:
+        await _render_document_container(
+            state,
+            doc,
+            state.crdt_doc,
+            on_add_tag=(on_add_tag if can_create_tags else None),
+            on_manage_tags=on_manage_tags,
+            footer=footer,
+        )
+
+    # Save rendered state
+    doc_tab.rendered = True
+    doc_tab.cards_container = state.annotations_container
+    _save_source_tab_state(state, doc_tab)
+
+
+async def _handle_source_tab_switch(
+    state: PageState,
+    tab_name: str,
+    *,
+    on_add_tag: Any,
+    on_manage_tags: Any,
+    can_create_tags: bool,
+    footer: Any | None,
+) -> None:
+    """Handle switching to a source document tab.
+
+    Restores per-document state, then either triggers deferred
+    rendering (first visit) or refreshes highlights (return visit).
+    """
+    from uuid import UUID as _UUID
+
+    doc_id = _UUID(tab_name)
+    doc_tab = state.document_tabs.get(doc_id)
+    if doc_tab is None:
+        return
+
+    _restore_source_tab_state(state, doc_tab)
+
+    if not doc_tab.rendered:
+        await _render_source_tab_content(
+            state,
+            doc_tab,
+            on_add_tag=on_add_tag,
+            on_manage_tags=on_manage_tags,
+            can_create_tags=can_create_tags,
+            footer=footer,
+        )
+    else:
+        _handle_annotate_tab(state)
+
+
+def _save_previous_source_tab(state: PageState, prev_tab: str) -> None:
+    """Save state of the previous source tab before switching away."""
+    if not _is_source_tab(prev_tab):
+        return
+    from uuid import UUID as _UUID
+
+    prev_id = _UUID(prev_tab)
+    prev_doc = state.document_tabs.get(prev_id)
+    if prev_doc is not None:
+        _save_source_tab_state(state, prev_doc)
+
+
 def _make_tab_change_handler(
     state: PageState,
     workspace_id: UUID,
+    *,
+    on_add_tag: Any = None,
+    on_manage_tags: Any = None,
+    can_create_tags: bool = False,
+    footer: Any | None = None,
 ) -> Any:
     """Create the tab-change callback for the workspace tab UI.
 
     Handles source tabs (UUID-named), Organise, and Respond.
-    Source tabs are treated like the old "Annotate" tab for backward
-    compatibility until Task 3 adds per-document deferred rendering.
+    Per-document state is saved/restored on source tab switches.
+    Deferred rendering triggers on first visit to non-first tabs.
 
-    Returns an async handler suitable for ``ui.tab_panels(on_change=...)``.
+    Returns an async handler suitable for
+    ``ui.tab_panels(on_change=...)``.
     """
 
-    async def _on_tab_change(e: events.ValueChangeEventArguments) -> None:
-        """Handle tab switching with deferred rendering and refresh."""
+    async def _on_tab_change(
+        e: events.ValueChangeEventArguments,
+    ) -> None:
+        """Handle tab switching with deferred rendering."""
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
         prev_tab = state.active_tab
         state.active_tab = tab_name
 
-        # Tag toolbar footer is visible on source tabs, hidden on Organise/Respond
+        _save_previous_source_tab(state, prev_tab)
+
         if state.footer is not None:
             state.footer.set_visibility(_is_source_tab(tab_name))
 
@@ -364,8 +514,14 @@ def _make_tab_change_handler(
             return
 
         if _is_source_tab(tab_name):
-            # Source tabs function like the old "Annotate" tab
-            _handle_annotate_tab(state)
+            await _handle_source_tab_switch(
+                state,
+                tab_name,
+                on_add_tag=on_add_tag,
+                on_manage_tags=on_manage_tags,
+                can_create_tags=can_create_tags,
+                footer=footer,
+            )
             return
 
         if tab_name == "Respond":
@@ -500,7 +656,10 @@ async def _build_tab_panels(
         await _load_crdt_for_workspace(state, workspace_id)
 
         if documents:
-            with ui.tab_panel(str(documents[0].id)):
+            # First document: eager render
+            with ui.tab_panel(str(documents[0].id)) as first_panel:
+                first_doc_tab = state.document_tabs[documents[0].id]
+                first_doc_tab.panel = first_panel
                 await _build_first_source_panel(
                     state,
                     workspace_id,
@@ -509,13 +668,16 @@ async def _build_tab_panels(
                     can_create_tags=can_create_tags,
                     footer=footer,
                 )
+                # Save rendered state into DocumentTabState
+                first_doc_tab.rendered = True
+                first_doc_tab.cards_container = state.annotations_container
+                _save_source_tab_state(state, first_doc_tab)
 
-            # Additional source tab panels (stubs for Task 3 deferred rendering)
+            # Additional documents: deferred (empty panels)
             for doc in documents[1:]:
-                with ui.tab_panel(str(doc.id)):
-                    ui.label(f"Document: {doc.title or 'Untitled'}").classes(
-                        "text-gray-400"
-                    )
+                with ui.tab_panel(str(doc.id)) as panel:
+                    doc_tab = state.document_tabs[doc.id]
+                    doc_tab.panel = panel
 
         with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -96,9 +97,17 @@ def _skip_latexmk_reason() -> str | None:
     return None
 
 
+def requires_pandoc(func_or_class):
+    """Skip tests when pandoc is not installed, and apply the smoke marker."""
+    wrapped = pytest.mark.skipif(
+        not shutil.which("pandoc"), reason="Pandoc not installed"
+    )(func_or_class)
+    return pytest.mark.smoke(wrapped)
+
+
 def requires_full_latexmk(func_or_class):
     """Mark full PDF-assertion suites for deselection from `test all`."""
-    return pytest.mark.latexmk_full(requires_latexmk(func_or_class))
+    return pytest.mark.smoke(pytest.mark.latexmk_full(requires_latexmk(func_or_class)))
 
 
 def requires_latexmk(func_or_class):
@@ -117,7 +126,7 @@ def requires_latexmk(func_or_class):
         for name, method in list(vars(func_or_class).items()):
             if name.startswith("test_") and callable(method):
                 setattr(func_or_class, name, requires_latexmk(method))
-        return pytest.mark.latex(func_or_class)
+        return pytest.mark.smoke(pytest.mark.latex(func_or_class))
     elif inspect.iscoroutinefunction(func_or_class):
         # Async function decorator
         @functools.wraps(func_or_class)
@@ -140,7 +149,7 @@ def requires_latexmk(func_or_class):
                 if short_circuit:
                     set_latexmk_short_circuit(False)
 
-        return pytest.mark.latex(async_wrapper)
+        return pytest.mark.smoke(pytest.mark.latex(async_wrapper))
     else:
         # Sync function decorator
         @functools.wraps(func_or_class)
@@ -163,7 +172,7 @@ def requires_latexmk(func_or_class):
                 if short_circuit:
                     set_latexmk_short_circuit(False)
 
-        return pytest.mark.latex(wrapper)
+        return pytest.mark.smoke(pytest.mark.latex(wrapper))
 
 
 # =============================================================================

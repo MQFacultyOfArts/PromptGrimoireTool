@@ -6,7 +6,6 @@ Tests the markdown_to_latex_notes() function added for Phase 7
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from unittest.mock import AsyncMock, patch
 
@@ -16,12 +15,9 @@ from promptgrimoire.export.pdf_export import (
     _build_general_notes_section,
     markdown_to_latex_notes,
 )
+from tests.conftest import requires_pandoc
 
 __all__ = ["TestBuildGeneralNotesSectionWithLatex", "TestMarkdownToLatexNotes"]
-
-requires_pandoc = pytest.mark.skipif(
-    not shutil.which("pandoc"), reason="Pandoc not installed"
-)
 
 
 @requires_pandoc

@@ -8,7 +8,6 @@ See: https://github.com/MQFacultyOfArts/PromptGrimoireTool/issues/76
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from promptgrimoire.export.pandoc import convert_html_to_latex
-from tests.conftest import load_conversation_fixture
+from tests.conftest import load_conversation_fixture, requires_pandoc
 
 # Filter paths
 FILTERS_DIR = (
@@ -24,13 +23,6 @@ FILTERS_DIR = (
 )
 LIBREOFFICE_FILTER = FILTERS_DIR / "libreoffice.lua"
 LEGAL_FILTER = FILTERS_DIR / "legal.lua"
-
-
-def _has_pandoc() -> bool:
-    return shutil.which("pandoc") is not None
-
-
-requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not installed")
 
 
 class TestAsyncErrorHandling:

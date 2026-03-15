@@ -714,6 +714,86 @@ class TestDiffBasedCardUpdates:
 
 
 # ---------------------------------------------------------------------------
+# Guard: refresh_annotations targets correct container after tab switch
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshAfterTabSwitch:
+    """Guard test: refresh_annotations must target the restored container.
+
+    If someone refactors the refresh_annotations closure to capture
+    the container at creation time instead of reading
+    state.annotations_container dynamically, this test will fail.
+    """
+
+    @pytest.mark.asyncio
+    async def test_refresh_targets_restored_container(self, nicegui_user: User) -> None:
+        """After save(A)/restore(B), refresh builds cards in B's container."""
+        from nicegui import ui
+
+        from promptgrimoire.crdt.annotation_doc import AnnotationDocument
+        from promptgrimoire.pages.annotation.cards import _refresh_annotation_cards
+        from promptgrimoire.pages.annotation.tab_bar import (
+            _restore_source_tab_state,
+            _save_source_tab_state,
+        )
+        from promptgrimoire.pages.annotation.tab_state import DocumentTabState
+
+        await nicegui_user.open("/")
+
+        doc_a = uuid4()
+        doc_b = uuid4()
+        crdt = AnnotationDocument("test-tab-switch")
+        crdt.add_highlight(10, 20, "t", "a1", "u", document_id=str(doc_a))
+        crdt.add_highlight(50, 60, "t", "b1", "u", document_id=str(doc_b))
+        crdt.add_highlight(70, 80, "t", "b2", "u", document_id=str(doc_b))
+
+        with nicegui_user:
+            container_a = ui.column()
+            container_b = ui.column()
+
+        state = _make_diff_test_state(crdt, doc_a, container_a)
+
+        tab_a = DocumentTabState(document_id=doc_a, tab=None, panel=None)
+        tab_b = DocumentTabState(document_id=doc_b, tab=None, panel=None)
+        tab_a.cards_container = container_a
+        tab_b.cards_container = container_b
+        state.document_tabs = {doc_a: tab_a, doc_b: tab_b}
+
+        # Build doc A (1 highlight)
+        with nicegui_user:
+            _refresh_annotation_cards(state)
+        assert len(state.annotation_cards) == 1
+        tab_a.rendered = True
+        _save_source_tab_state(state, tab_a)
+
+        # Switch to doc B
+        _restore_source_tab_state(state, tab_b)
+        assert state.annotations_container is container_b
+
+        # Set up refresh_annotations as document.py does
+        def refresh_annotations() -> None:
+            _refresh_annotation_cards(state)
+
+        state.refresh_annotations = refresh_annotations
+
+        # Build doc B (2 highlights)
+        with nicegui_user:
+            state.refresh_annotations()
+        assert len(state.annotation_cards) == 2
+
+        # Save B, restore A
+        tab_b.rendered = True
+        _save_source_tab_state(state, tab_b)
+        _restore_source_tab_state(state, tab_a)
+
+        # Refresh — must target A's container and show 1 card
+        with nicegui_user:
+            state.refresh_annotations()
+        assert len(state.annotation_cards) == 1
+
+
+# ---------------------------------------------------------------------------
 # Unit tests for _snapshot_highlight (pure function)
 # ---------------------------------------------------------------------------
 

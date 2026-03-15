@@ -241,6 +241,10 @@ class PageState:
     # Per-document tab state (multi-document workspace)
     document_tabs: dict[UUID, DocumentTabState] = field(default_factory=dict)
     card_snapshots: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # WARNING: expanded_cards is workspace-global, not per-document.
+    # Works because highlight IDs are UUIDs (globally unique within a
+    # workspace).  Do NOT change to integer or sequential IDs without
+    # making this per-document via DocumentTabState save/restore.
     expanded_cards: set[str] = field(
         default_factory=set
     )  # highlight IDs currently expanded

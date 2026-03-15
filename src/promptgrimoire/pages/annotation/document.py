@@ -207,7 +207,12 @@ def _build_highlight_menu(
     highlight_menu.set_visibility(False)
     state.highlight_menu = highlight_menu
 
-    # Store callbacks for rebuilds triggered by _refresh_tag_state
+    # Store callbacks for rebuilds triggered by _refresh_tag_state.
+    # WARNING: these are NOT saved/restored on tab switch — they hold
+    # the callback from the last-rendered tab.  It works because
+    # on_tag_click calls _add_highlight(state, key) which reads
+    # state.document_id dynamically.  Do NOT refactor to capture
+    # document_id at callback creation time.
     state._highlight_menu_tag_click = on_tag_click
     state._highlight_menu_on_add_click = on_add_click
 
@@ -369,7 +374,13 @@ async def _render_document_with_highlights(
             .props(f'id="{state.ann_container_id}"')
         )
 
-    # Set up refresh function
+    # Set up refresh function.
+    # WARNING: this closure is NOT saved/restored on tab switch — each
+    # source tab render overwrites it.  It works because it reads
+    # state.annotations_container dynamically at call time (restored by
+    # _restore_source_tab_state).  Do NOT refactor to capture the
+    # container at closure creation time — that would silently target
+    # the wrong document after a tab switch.
     def refresh_annotations() -> None:
         _refresh_annotation_cards(state)
 

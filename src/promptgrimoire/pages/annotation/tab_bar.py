@@ -9,6 +9,7 @@ live in ``workspace.py``.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from nicegui import events, ui
@@ -323,15 +324,15 @@ async def _handle_respond_tab(state: PageState, workspace_id: UUID) -> None:
         state.refresh_respond_references()
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
 def _is_source_tab(tab_name: str) -> bool:
     """Check whether a tab name is a source document tab (UUID string)."""
-    try:
-        from uuid import UUID as _UUID
-
-        _UUID(tab_name)
-    except ValueError:
-        return False
-    return True
+    return bool(_UUID_RE.match(tab_name))
 
 
 def _save_source_tab_state(

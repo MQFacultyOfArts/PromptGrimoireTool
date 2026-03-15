@@ -6,6 +6,8 @@ Uses LuaLaTeX for better font support (fontspec) and highlighting (lua-ul).
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 from pathlib import Path
 
 import structlog
@@ -40,6 +42,10 @@ TINYTEX_DIR = Path.home() / ".TinyTeX"
 TINYTEX_BIN = TINYTEX_DIR / "bin" / "x86_64-linux"
 TINYTEX_LATEXMK = TINYTEX_BIN / "latexmk"
 _TEST_FLAGS = {"short_circuit_latexmk": False}
+
+# Cap concurrent LaTeX compilations to prevent OOM from stacked processes.
+# Each lualatex process uses 200-500MB; on an 8GB VM, 2 concurrent is safe.
+_compile_semaphore = asyncio.Semaphore(2)
 
 
 def set_latexmk_short_circuit(enabled: bool) -> None:
@@ -106,6 +112,12 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
     if _TEST_FLAGS["short_circuit_latexmk"]:
         raise LaTeXCompileStageShortCircuit(tex_path)
 
+    async with _compile_semaphore:
+        return await _run_latexmk(tex_path, output_dir)
+
+
+async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
+    """Run latexmk subprocess with process group isolation."""
     latexmk = get_latexmk_path()
 
     cmd = [
@@ -121,6 +133,7 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -132,7 +145,7 @@ async def compile_latex(tex_path: Path, output_dir: Path | None = None) -> Path:
             operation="compile_latex",
             tex_path=str(tex_path),
         )
-        proc.kill()
+        os.killpg(proc.pid, signal.SIGKILL)
         raise LaTeXCompilationError(
             "LaTeX compilation timed out after 120s",
             tex_path=tex_path,

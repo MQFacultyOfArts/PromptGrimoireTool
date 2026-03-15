@@ -1,6 +1,6 @@
 # PDF Export / LaTeX
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-15*
 
 PDF export uses TinyTeX for portable, consistent LaTeX compilation.
 
@@ -33,6 +33,19 @@ The `APP__LATEXMK_PATH` env var overrides the default TinyTeX path if needed. Le
 - Does NOT fall back to system PATH - TinyTeX only for consistency
 
 **Note:** `compile_latex()` is async and uses `asyncio.create_subprocess_exec()` for non-blocking compilation.
+
+### Concurrency & Process Safety
+
+Two layers prevent LaTeX compilations from exhausting server memory (regression from 2026-03-15 production OOM):
+
+1. **Server-wide semaphore** (`_compile_semaphore`, capacity 2) -- caps concurrent `latexmk` subprocesses. Each `lualatex` process uses 200-500 MB; on an 8 GB VM, 2 concurrent is the safe limit. The semaphore wraps the internal `_run_latexmk()` helper.
+2. **Process group isolation** -- `start_new_session=True` on subprocess creation puts `latexmk` in its own process group. On timeout, `os.killpg()` kills the entire group (latexmk + child lualatex), preventing orphaned processes from leaking memory.
+3. **Per-user export lock** (`_get_user_export_lock()` in `pages/annotation/pdf_export.py`) -- each user gets an `asyncio.Lock`. If a user's lock is already held (export in progress), the handler rejects the request immediately with a notification. Different users export independently.
+
+**Invariants:**
+- At most 2 concurrent LaTeX compilations server-wide (semaphore)
+- Timeout always kills the full process group, never just the parent
+- A single user cannot stack concurrent PDF exports (per-user lock)
 
 ## Word Count Snitch Badge
 

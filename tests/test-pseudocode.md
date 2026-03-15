@@ -277,6 +277,55 @@ they reveal where the test suite is redundant or incomplete.
 
 **Verifies:** Image syntax in response drafts cannot produce \includegraphics in LaTeX
 
+## LaTeX Compilation Safety (Process & Concurrency)
+
+### Timeout kills entire process group
+**File:** tests/unit/test_compile_latex_timeout.py::test_timeout_kills_process_group
+1. Write a shell script that forks a child process (simulating latexmk -> lualatex), both sleep forever
+2. Patch get_latexmk_path to use the script, patch wait_for to use 1s timeout
+3. Call compile_latex, assert LaTeXCompilationError with "timed out"
+4. Wait 0.2s for OS cleanup
+5. Read child PID from file written by script
+6. Assert os.kill(child_pid, 0) raises OSError (child is dead)
+
+**Verifies:** Process group kill (os.killpg) kills both latexmk and its child lualatex, preventing orphaned processes from leaking memory
+
+### Semaphore caps concurrent compilations at 2
+**File:** tests/unit/test_compile_latex_timeout.py::test_semaphore_caps_concurrent_compilations
+1. Create a fake _run_latexmk that tracks concurrent invocations and blocks until released
+2. Launch 3 concurrent compile_latex tasks
+3. Wait until 2 are running, then assert concurrent_count == 2 (third is blocked by semaphore)
+4. Release all, gather results
+5. Assert peak concurrency was exactly 2
+
+**Verifies:** asyncio.Semaphore(2) prevents more than 2 concurrent LaTeX subprocesses server-wide
+
+## Per-User PDF Export Lock
+
+### Same user gets same lock instance
+**File:** tests/unit/test_per_user_export_lock.py::test_same_user_gets_same_lock
+1. Call _get_user_export_lock("user-1") twice
+2. Assert both return the same Lock object (identity check)
+
+**Verifies:** Lock registry returns consistent locks per user ID
+
+### Different users get independent locks
+**File:** tests/unit/test_per_user_export_lock.py::test_different_users_get_different_locks
+1. Call _get_user_export_lock with "user-1" and "user-2"
+2. Assert locks are different objects
+
+**Verifies:** Users do not share export locks
+
+### Lock blocks concurrent export for same user
+**File:** tests/unit/test_per_user_export_lock.py::test_lock_blocks_concurrent_export_for_same_user
+1. Acquire lock for "user-1" via async with
+2. While held, assert lock.locked() is True
+3. Re-fetch lock for same user, assert still locked (same instance)
+4. Fetch lock for "user-2", assert not locked (independent)
+5. After release, assert lock is no longer locked
+
+**Verifies:** Per-user mutex prevents a single user from stacking concurrent PDF exports
+
 ## LaTeX Rendering Utilities
 
 ### NoEscape marker

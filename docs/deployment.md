@@ -999,6 +999,22 @@ Two layers: external uptime monitoring (UptimeRobot) and internal metrics trendi
 
 [Beszel](https://beszel.dev/) provides system metrics trending (CPU, memory, disk, network) with 30-day retention and Discord alerting. Agent on the prod box (<15 MB RAM), hub on a separate monitoring machine.
 
+**Networking prerequisites:**
+
+The hub listens on port 8090. The agent connects outbound to the hub. You need:
+
+1. **NCI Cloud security group:** Create a `beszel` security group. Add an ingress rule: TCP port 8090, source CIDR `10.0.0.0/16` (internal network only — do NOT open to `0.0.0.0/0`). Attach this security group to Machine B.
+2. **Machine B UFW (if enabled):** `sudo ufw allow from 10.0.0.0/16 to any port 8090 proto tcp`
+3. **Machine A:** No inbound rules needed. The agent connects outbound to the hub.
+
+**Dashboard access:** The hub dashboard is not exposed to the internet. Use an SSH tunnel:
+
+```bash
+# From your LOCAL machine
+ssh -L 8090:localhost:8090 <user>@<machine-b>
+# Then open http://localhost:8090 in your browser
+```
+
 **Hub setup (Machine B — monitoring server):**
 
 ```bash
@@ -1007,27 +1023,50 @@ curl -sL https://get.beszel.dev/hub -o /tmp/install-hub.sh
 chmod +x /tmp/install-hub.sh
 /tmp/install-hub.sh
 
-# Open firewall for dashboard
-sudo ufw allow 8090/tcp
-
 # Verify
 sudo systemctl status beszel
 ```
 
-Access the dashboard at `http://<machine-b-ip>:8090`. Create an admin account on first visit.
+Open the dashboard via SSH tunnel (`http://localhost:8090`). Create an admin account on first visit.
 
-**Agent setup (Machine A — production server):**
+**Agent setup — Machine B (self-monitoring):**
+
+Install the agent on the same machine as the hub:
+
+1. In the hub dashboard, click **Add System**
+2. Set the host to `localhost`
+3. Copy the install command the UI generates — it includes the SSH key and token pre-filled
+4. Run that command on Machine B
+
+**Agent setup — Machine A (production server, grimoire.drbbs.org):**
+
+1. In the hub dashboard, click **Add System**
+2. Set the host to Machine A's internal IP (e.g. `10.0.0.x`)
+3. Copy the install command the UI generates
+4. **Before running it on Machine A**, check the `-url` flag in the command. If it says `localhost:8090`, change it to Machine B's internal IP:
 
 ```bash
-# Install agent binary
-curl -sL https://get.beszel.dev -o /tmp/install-agent.sh
-chmod +x /tmp/install-agent.sh
-/tmp/install-agent.sh
+# The generated command will look like:
+curl -sL https://get.beszel.dev | bash -s -- -p 45876 -k "ssh-ed25519 AAAA..." -t "token..." -url "http://localhost:8090"
+
+# Change -url to Machine B's internal IP:
+curl -sL https://get.beszel.dev | bash -s -- -p 45876 -k "ssh-ed25519 AAAA..." -t "token..." -url "http://10.0.1.x:8090"
 ```
 
-Pair with the hub: on the hub dashboard, click **Add System** and copy the preconfigured command. Run it on the production server — it configures the agent automatically.
+5. Run the corrected command on Machine A
+6. If the agent was already installed with the wrong URL, fix it:
 
-The agent communicates outbound to the hub via WebSocket (port 8090). No inbound firewall rule needed on the production server unless WebSocket fails (fallback uses SSH on port 45876).
+```bash
+sudo systemctl edit beszel-agent
+# Add between the markers:
+[Service]
+Environment="HUB_URL=http://<machine-b-internal-ip>:8090"
+
+sudo systemctl daemon-reload
+sudo systemctl restart beszel-agent
+```
+
+7. Verify: the hub dashboard should show Machine A as connected (green status)
 
 **Configure alerting:**
 

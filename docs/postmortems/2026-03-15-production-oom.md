@@ -81,6 +81,21 @@ Each retry by the student leaked another orphaned `lualatex` process. After 5 re
 |-----|------|--------|
 | Suppress test alerts | `logging_discord.py` | Discord webhook doesn't fire during test harness |
 | Server hostname in alerts | `logging_discord.py` | Alerts show which server fired |
+| `/healthz` endpoint | `__init__.py` | HEAD + GET health check for UptimeRobot |
+| Empty student_id normalisation | `db/enrolment.py` | Normalise `""` to `None` in bulk enrolment (unrelated bug found during incident) |
+
+### Server-side fixes (2026-03-15)
+
+| Fix | Effect |
+|-----|--------|
+| HAProxy apparmor rule | `rsyslogd` can access chroot log socket — stops journal spam |
+| UptimeRobot monitor | External uptime monitoring on `/healthz`, alerts via Pushbullet |
+| Beszel hub + agent | Internal metrics trending (CPU, memory, disk) with Discord alerting |
+
+### Monitoring added
+
+- **UptimeRobot**: External HTTP check every 5 minutes on `/healthz`, alerts via Pushbullet
+- **Beszel**: Hub on monitoring server (`brian.fedarch.org`), agent on prod (`grimoire.drbbs.org`). Memory/disk/CPU trending with 30-day retention, Discord alerts at 80% memory / 85% disk / 90% CPU
 
 ### Pending
 
@@ -88,6 +103,7 @@ Each retry by the student leaked another orphaned `lualatex` process. After 5 re
 |-----|--------|
 | Move `\annot` macros outside longtable cells | In progress (separate branch) |
 | Rehydrate workspace `ead417b9` as test fixture | Blocked on annot fix |
+| Model-level `student_id` validator (defence-in-depth) | Deferred — normalise at boundary not just enrolment |
 
 ## Lessons Learned
 
@@ -100,3 +116,7 @@ Each retry by the student leaked another orphaned `lualatex` process. After 5 re
 4. **User-facing error messages should discourage retries.** A retry button on a 120-second timeout is an invitation to stack processes.
 
 5. **LaTeX compilation is untrusted input processing.** User content drives the .tex file. Pathological inputs (CJK + tables + annotations) can cause unbounded resource consumption. The compilation pipeline needs the same defence-in-depth as any input processing boundary.
+
+6. **Monitoring must exist before the first outage, not after.** No external uptime check, no memory trending, no alerting. The outage was discovered by users, not by monitoring. UptimeRobot and Beszel were both set up the same day as the outage.
+
+7. **Direct-to-main commits under pressure skip review.** Several fixes were pushed to main without PRs during this incident. The urgency was real but the process was wrong — at least one commit (empty student_id fix) was pushed without adequate testing initially.

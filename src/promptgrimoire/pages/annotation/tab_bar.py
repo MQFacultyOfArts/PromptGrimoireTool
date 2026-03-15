@@ -217,9 +217,11 @@ def _setup_organise_drag(state: PageState) -> None:
         # Cross-column card label/colour updates on next full rebuild
         # (tab switch or broadcast). The CRDT is already correct.
 
-    async def _on_locate(start_char: int, end_char: int) -> None:
-        """Warp to a highlight in Tab 1 from Tab 2 or Tab 3."""
-        await _warp_to_highlight(state, start_char, end_char)
+    async def _on_locate(
+        start_char: int, end_char: int, document_id: str | None = None
+    ) -> None:
+        """Warp to a highlight's source tab from Organise or Respond."""
+        await _warp_to_highlight(state, start_char, end_char, document_id)
 
     def _render_organise_now() -> None:
         """Re-render the Organise tab with current CRDT state."""
@@ -257,8 +259,10 @@ async def _initialise_respond_tab(state: PageState, workspace_id: UUID) -> None:
     def _on_broadcast(b64_update: str, origin_client_id: str) -> None:
         _broadcast_yjs_update(workspace_id, origin_client_id, b64_update)
 
-    async def _on_respond_locate(start_char: int, end_char: int) -> None:
-        await _warp_to_highlight(state, start_char, end_char)
+    async def _on_respond_locate(
+        start_char: int, end_char: int, document_id: str | None = None
+    ) -> None:
+        await _warp_to_highlight(state, start_char, end_char, document_id)
 
     (
         state.refresh_respond_references,
@@ -304,6 +308,17 @@ def _refresh_source_tab(state: PageState) -> None:
     if state.refresh_annotations:
         state.refresh_annotations()
     _update_highlight_css(state)
+    # Restore per-document card positioning function
+    cid = state.doc_container_id
+    ui.run_javascript(
+        f"if (window._positionCardsMap"
+        f" && window._positionCardsMap['{cid}']) {{"
+        f"  window._positionCards ="
+        f" window._positionCardsMap['{cid}'];"
+        f"  window._activeDocContainerId = '{cid}';"
+        f"  requestAnimationFrame(window._positionCards);"
+        f"}}"
+    )
 
 
 def _handle_organise_tab(state: PageState) -> None:

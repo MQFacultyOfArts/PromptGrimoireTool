@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
+from uuid import UUID
 
 import structlog
 from nicegui import ui
@@ -26,30 +28,46 @@ from promptgrimoire.pages.annotation.css import _build_highlight_pseudo_css
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
-async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -> None:
-    """Switch to the Annotate tab and scroll to a highlight range.
 
-    This is the cross-tab navigation entry point: Tab 2 (Organise) and Tab 3
-    (Respond) "locate" buttons call this to warp the user back to Tab 1 and
-    scroll the highlighted text into view with a brief gold flash.
+async def _warp_to_highlight(
+    state: PageState,
+    start_char: int,
+    end_char: int,
+    document_id: str | None = None,
+) -> None:
+    """Switch to the correct source tab and scroll to a highlight range.
 
-    Per-client only -- ``set_value()`` affects only the calling client's tab
-    state, not other connected users (AC5.4).
+    This is the cross-tab navigation entry point: Organise and Respond
+    "locate" buttons call this to warp the user to the highlight's
+    source tab and scroll it into view with a brief gold flash.
 
     Args:
         state: Page state with tab_panels and annotations.
         start_char: First character index of the highlight range.
         end_char: Last character index (exclusive) of the highlight range.
+        document_id: UUID string of the document containing the highlight.
+            If provided, switches to that document's tab. Falls back to
+            the currently active source tab if not provided.
     """
-    # 1. Switch tab to the first source tab (replaces old "Annotate" tab)
+    # Switch to the correct source tab
     if state.tab_panels is not None and state.document_tabs:
-        first_doc_id = next(iter(state.document_tabs))
-        tab_name = str(first_doc_id)
-        state.tab_panels.set_value(tab_name)
-        state.active_tab = tab_name
+        target_doc_id: str | None = None
+        if document_id:
+            # Switch to the specific document's tab
+            doc_uuid = UUID(document_id) if _UUID_RE.match(document_id) else None
+            if doc_uuid is not None and doc_uuid in state.document_tabs:
+                target_doc_id = document_id
+        if target_doc_id is None:
+            # Fall back to first document tab
+            target_doc_id = str(next(iter(state.document_tabs)))
+        state.tab_panels.set_value(target_doc_id)
+        state.active_tab = target_doc_id
     elif state.tab_panels is not None:
-        # Zero-document fallback — no source tab to switch to
         pass
 
     # 2. Refresh Tab 1 annotations and highlight CSS.

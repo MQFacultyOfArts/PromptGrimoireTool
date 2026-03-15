@@ -96,9 +96,14 @@ def _build_highlight_card(
                 f"color: {tag_colour};"
             )
             if on_locate is not None:
+                hl_doc_id = highlight.get("document_id")
 
-                async def _do_locate(sc: int = start_char, ec: int = end_char) -> None:
-                    await on_locate(sc, ec)
+                async def _do_locate(
+                    sc: int = start_char,
+                    ec: int = end_char,
+                    did: str | None = hl_doc_id,
+                ) -> None:
+                    await on_locate(sc, ec, did)
 
                 ui.button(icon="my_location", on_click=_do_locate).props(
                     "flat dense size=xs"

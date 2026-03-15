@@ -88,7 +88,12 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
     }
   }
 
+  // Store per-document positionCards function. window._positionCards
+  // always delegates to the active document's function.
+  window._positionCardsMap = window._positionCardsMap || {};
+  window._positionCardsMap[docContainerId] = positionCards;
   window._positionCards = positionCards;
+  window._activeDocContainerId = docContainerId;
   window.addEventListener('scroll', onScroll, {passive: true});
 
   // Attach MutationObserver and position cards.
@@ -158,8 +163,10 @@ function initToolbarObserver() {
       var h = entries[i].target.offsetHeight;
       window._toolbarHeight = h;
       if (!isQuasarFooter) {
-        var layout = document.getElementById('annotation-layout-wrapper');
-        if (layout) layout.style.paddingBottom = h + 'px';
+        // Update all layout wrappers (one per rendered source tab)
+        document.querySelectorAll('.annotation-layout-wrapper').forEach(function(layout) {
+          layout.style.paddingBottom = h + 'px';
+        });
       }
     }
   });

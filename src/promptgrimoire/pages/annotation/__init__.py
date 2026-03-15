@@ -325,6 +325,24 @@ class PageState:
         """Build tag key -> hex colour mapping from tag_info_list."""
         return {ti.raw_key: ti.colour for ti in (self.tag_info_list or [])}
 
+    def invalidate_card_cache(self) -> None:
+        """Force the next ``refresh_annotations()`` to do a full rebuild.
+
+        Call this when tag metadata changes (rename, recolour, create,
+        delete) — the per-highlight snapshot cannot detect those because
+        the highlight's ``tag`` field (a UUID) doesn't change when the
+        tag's display name or colour does.  Also invalidates per-document
+        tab caches so deferred tabs rebuild on next visit.
+        """
+        self.annotation_cards = None
+        self.card_snapshots = {}
+        for doc_tab in self.document_tabs.values():
+            doc_tab.annotation_cards = {}
+            doc_tab.card_snapshots = {}
+            if doc_tab.rendered:
+                # Mark rendered tabs for rebuild on next visit
+                doc_tab.rendered = False
+
 
 # ---------------------------------------------------------------------------
 # Section 3: Submodule imports (types above are now available)

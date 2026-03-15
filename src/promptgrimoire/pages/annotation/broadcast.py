@@ -308,6 +308,10 @@ async def _handle_remote_update(state: PageState) -> None:
     if state.refresh_toolbar:
         await state.refresh_toolbar()
     _update_user_count(state)
+    # Remote updates may include tag metadata changes (rename, recolour,
+    # create, delete) that aren't captured in per-highlight snapshots.
+    # Invalidate the card cache so refresh does a full rebuild.
+    state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="crdt_broadcast")
     if state.active_tab == "Organise":

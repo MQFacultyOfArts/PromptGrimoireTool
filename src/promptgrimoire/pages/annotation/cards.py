@@ -54,12 +54,14 @@ def _broadcast_cards_epoch(state: PageState) -> None:
 def _snapshot_highlight(hl: dict[str, Any]) -> dict[str, Any]:
     """Create a comparable snapshot of highlight data for change detection.
 
-    Captures tag, comment count, and comment text content to detect
-    when a card needs rebuilding.
+    Captures tag, para_ref, comment count, and comment text content to
+    detect when a card needs rebuilding.  Any rendered field that can
+    change independently of the highlight ID must be included here.
     """
     comments = hl.get("comments", [])
     return {
         "tag": hl.get("tag", ""),
+        "para_ref": hl.get("para_ref", ""),
         "comment_count": len(comments),
         "comment_texts": tuple(
             c.get("text", "")

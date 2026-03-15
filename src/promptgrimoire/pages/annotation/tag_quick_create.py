@@ -226,6 +226,8 @@ async def open_quick_create(state: PageState) -> None:
     await dialog
     # Deferred rebuild: now that the dialog is closed, safely rebuild
     # annotation cards and broadcast the tag change to peers.
+    # Invalidate cache because tag creation changes the tag select options.
+    state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="tag_quick_create")
     if state.broadcast_update:

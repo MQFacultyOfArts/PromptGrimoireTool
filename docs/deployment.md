@@ -681,10 +681,17 @@ frontend fe_https
 
 backend be_promptgrimoire
     server app 127.0.0.1:8080 check
+    errorfile 503 /etc/haproxy/errors/503.http
 
     # Forward original client info
     http-request set-header X-Forwarded-Proto https
     http-request set-header X-Real-IP %[src]
+```
+
+The `errorfile` serves a branded "PromptGrimoire is restarting" page (with auto-refresh) when the backend is in maintenance mode. The source file lives in `deploy/503.http`; copy it to the server:
+
+```bash
+sudo cp deploy/503.http /etc/haproxy/errors/503.http
 ```
 
 **Key configuration points:**
@@ -1212,13 +1219,28 @@ All course/activity configuration is done through the web UI:
 ### Deploy an update
 
 ```bash
-cd /opt/promptgrimoire
-sudo -u promptgrimoire git pull
-sudo -u promptgrimoire /home/promptgrimoire/.local/bin/uv sync --no-dev
-sudo systemctl restart promptgrimoire
+sudo /opt/promptgrimoire/deploy/restart.sh              # full: pull, sync, test, restart
+sudo /opt/promptgrimoire/deploy/restart.sh --skip-tests  # skip unit tests (faster)
 ```
 
+The deploy script (`deploy/restart.sh`) runs: `git pull` → `uv sync --no-dev` → unit tests (e-stop on failure) → HAProxy drain (lets in-flight requests finish) → HAProxy maintenance mode (serves friendly 503 page) → `systemctl restart` → wait for `/healthz` → HAProxy back to ready.
+
 Alembic migrations run automatically on app start.
+
+**One-time setup** (after first deploy of the script):
+
+```bash
+sudo mkdir -p /etc/haproxy/errors
+sudo cp /opt/promptgrimoire/deploy/503.http /etc/haproxy/errors/503.http
+# Add errorfile line to backend (see § 11. HAProxy above), then:
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg && sudo systemctl reload haproxy
+```
+
+**Recovery** — if a deploy fails mid-restart and HAProxy is stuck in maintenance mode:
+
+```bash
+echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/admin.sock
+```
 
 ### View logs
 
@@ -1292,6 +1314,8 @@ Idempotent — safe to run multiple times.
 | Deploy key | `/home/promptgrimoire/.ssh/id_ed25519` |
 | systemd unit | `/etc/systemd/system/promptgrimoire.service` |
 | HAProxy config | `/etc/haproxy/haproxy.cfg` |
+| HAProxy 503 page | `/etc/haproxy/errors/503.http` (source: `deploy/503.http`) |
+| Deploy script | `/opt/promptgrimoire/deploy/restart.sh` |
 | HAProxy combined cert | `/etc/haproxy/certs/grimoire.drbbs.org.pem` |
 | Let's Encrypt certs | `/etc/letsencrypt/live/grimoire.drbbs.org/` |
 | Cert smush script | `/usr/local/bin/haproxy-cert-smush` |

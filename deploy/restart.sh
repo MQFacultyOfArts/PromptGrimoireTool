@@ -20,6 +20,8 @@ set -euo pipefail
 SOCK=/run/haproxy/admin.sock
 APP_DIR=/opt/promptgrimoire
 UV=/home/promptgrimoire/.local/bin/uv
+# PATH for sudo -u promptgrimoire commands (uv, TinyTeX binaries)
+PG_PATH="/home/promptgrimoire/.local/bin:/home/promptgrimoire/.TinyTeX/bin/x86_64-linux:/usr/local/bin:/usr/bin:/bin"
 HEALTHZ=http://127.0.0.1:8080/healthz
 MAX_WAIT=60
 DRAIN_WAIT=10
@@ -54,16 +56,16 @@ trap cleanup EXIT
 
 # 1. Pull
 step "git pull"
-sudo -u promptgrimoire git -C "$APP_DIR" pull --rebase
+PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH git -C "$APP_DIR" pull --rebase
 
 # 2. Sync dependencies
 step "uv sync --no-dev"
-sudo -u promptgrimoire "$UV" --directory "$APP_DIR" sync --no-dev
+PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH "$UV" --directory "$APP_DIR" sync --no-dev
 
 # 3. Unit tests (e-stop)
 if [[ "$SKIP_TESTS" == "false" ]]; then
     step "Running unit tests (e-stop — will abort deploy on failure)"
-    if ! sudo -u promptgrimoire "$UV" --directory "$APP_DIR" run grimoire test all; then
+    if ! PATH="$PG_PATH" sudo -u promptgrimoire --preserve-env=PATH "$UV" --directory "$APP_DIR" run grimoire test all; then
         echo "ABORT: unit tests failed — not restarting" >&2
         exit 1
     fi

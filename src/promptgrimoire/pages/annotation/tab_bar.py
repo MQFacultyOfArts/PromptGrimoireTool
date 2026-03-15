@@ -515,6 +515,11 @@ async def _handle_source_tab_switch(
     else:
         _refresh_source_tab(state)
 
+    # Sync paragraph toggle to this document's setting on every
+    # tab switch (first visit and return visit).
+    if state.paragraph_toggle is not None:
+        state.paragraph_toggle.value = state.auto_number_paragraphs
+
 
 def _save_previous_source_tab(state: PageState, prev_tab: str) -> None:
     """Save state of the previous source tab before switching away."""

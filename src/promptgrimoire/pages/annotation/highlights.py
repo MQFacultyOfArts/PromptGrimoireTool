@@ -65,27 +65,33 @@ async def _warp_to_highlight(
             target_doc_id = str(next(iter(state.document_tabs)))
 
     if target_doc_id is not None and state.tab_panels is not None:
-        # Save current source tab state before switching
-        from promptgrimoire.pages.annotation.tab_bar import (
-            _restore_source_tab_state,
-            _save_previous_source_tab,
-        )
-
-        _save_previous_source_tab(state, state.active_tab)
-
-        # Restore target tab state BEFORE set_value so all state fields
-        # are correct when we refresh/scroll below.
         target_uuid = UUID(target_doc_id)
         target_tab = state.document_tabs.get(target_uuid)
-        if target_tab is not None:
-            _restore_source_tab_state(state, target_tab)
 
-        # Mark warp in progress so the async on_change handler
-        # (triggered by set_value) skips its save/restore/refresh —
-        # we've already done it synchronously above.
-        state._warp_in_progress = True
-        state.active_tab = target_doc_id
-        state.tab_panels.set_value(target_doc_id)
+        if target_tab is not None and target_tab.rendered:
+            # Already-rendered tab: do save/restore synchronously and
+            # skip the async on_change handler to avoid the race where
+            # it clobbers state after we've already refreshed.
+            from promptgrimoire.pages.annotation.tab_bar import (
+                _restore_source_tab_state,
+                _save_previous_source_tab,
+            )
+
+            _save_previous_source_tab(state, state.active_tab)
+            _restore_source_tab_state(state, target_tab)
+            state._warp_in_progress = True
+            state.active_tab = target_doc_id
+            state.tab_panels.set_value(target_doc_id)
+        else:
+            # Unrendered tab: let the async on_change handler run so
+            # _render_source_tab_content creates the DOM first. We
+            # cannot skip it — there's no document to scroll to yet.
+            state.tab_panels.set_value(target_doc_id)
+            # Return early — the tab change handler will render the tab.
+            # The scroll-to-highlight must be deferred to after render.
+            # For now, switching to the tab is the best we can do;
+            # the user can click locate again once the tab is visible.
+            return
 
     # Refresh annotations and highlight CSS for the (now-active) tab.
     if state.refresh_annotations:

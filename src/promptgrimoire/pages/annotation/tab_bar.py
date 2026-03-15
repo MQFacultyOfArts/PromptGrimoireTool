@@ -297,8 +297,8 @@ async def _sync_respond_on_leave(state: PageState) -> None:
             )
 
 
-def _handle_annotate_tab(state: PageState) -> None:
-    """Handle switching to the Annotate tab (refresh highlights)."""
+def _refresh_source_tab(state: PageState) -> None:
+    """Refresh a source tab on return visit (highlights + cards + CSS)."""
     _push_highlights_to_client(state)
     if state.refresh_annotations:
         state.refresh_annotations()
@@ -458,7 +458,7 @@ async def _handle_source_tab_switch(
             footer=footer,
         )
     else:
-        _handle_annotate_tab(state)
+        _refresh_source_tab(state)
 
 
 def _save_previous_source_tab(state: PageState, prev_tab: str) -> None:

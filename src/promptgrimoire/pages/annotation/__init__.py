@@ -267,8 +267,13 @@ class PageState:
     document_content: str = ""
     # Current auto-number mode for paragraph toggle
     auto_number_paragraphs: bool = True
+    # Paragraph toggle switch element (updated on tab switch)
+    paragraph_toggle: ui.switch | None = None
     # Guard against duplicate highlight creation
     processing_highlight: bool = False
+    # Guard: warp-to-highlight does save/restore synchronously, so the
+    # async on_change handler must skip its own save/restore/refresh.
+    _warp_in_progress: bool = False
     # Tab container references (Phase 1: three-tab UI)
     tab_panels: ui.tab_panels | None = (
         None  # Tab panels container for programmatic switching

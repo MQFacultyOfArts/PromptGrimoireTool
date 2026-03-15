@@ -146,7 +146,7 @@ def _render_paragraph_toggle(state: PageState, document: WorkspaceDocument) -> N
         mode_label = "auto-number" if new_value else "source-number"
         ui.notify(f"Paragraph numbering: {mode_label}", type="info")
 
-    ui.switch(
+    state.paragraph_toggle = ui.switch(
         "Auto-number \u00b6",
         value=document.auto_number_paragraphs,
         on_change=lambda e: _handle_paragraph_toggle(e.value),

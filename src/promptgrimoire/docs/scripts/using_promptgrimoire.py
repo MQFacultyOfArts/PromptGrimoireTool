@@ -779,6 +779,59 @@ def _entry_word_count(guide: Guide) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Activities and Templates
+# ---------------------------------------------------------------------------
+
+
+def _entry_student_uploads(guide: Guide) -> None:
+    """How do I get students to upload their own documents?"""
+    with guide.step(
+        "How do I get students to upload their own documents?",
+        level=3,
+        text_only=True,
+    ) as g:
+        g.note("There are two approaches, depending on how much control you need.")
+        g.note(
+            "**Path A -- Empty activity template.** Create an activity but "
+            "do not upload a document to the template. When students click "
+            "**Start**, they get a blank workspace with the upload form. "
+            "You still control the tag set and other activity policies "
+            "(word limits, sharing) via the template."
+        )
+        g.note(
+            "If you want students to upload and annotate multiple sources, "
+            "create one activity per source (e.g. *Source 1*, *Source 2*, "
+            "*Source 3*). Each activity can have its own tag set. Students "
+            "upload one document into each."
+        )
+        g.note(
+            "**Path B -- Personal workspace with placement.** Students "
+            "create their own workspace from the Navigator and upload "
+            "whatever they like. They then use the **placement chip** in "
+            "the workspace header to attach it to a unit, week, and "
+            "activity. This is fully student-driven -- no tag constraints "
+            "from the activity template."
+        )
+        g.note(
+            "See [Your Personal Grimoire - Connect to Your Unit]"
+            "(your-personal-grimoire.md#connect-to-your-unit) "
+            "for a walkthrough of the placement chip."
+        )
+        g.note(
+            "**Which to choose:** Path A when you want consistent tagging "
+            "across the cohort. Path B when students are choosing their own "
+            "source material and you want maximum flexibility."
+        )
+        g.note(
+            "**Note on copy protection:** copy protection prevents students "
+            "from copying text out of their workspace. This is useful when "
+            "the source document is instructor-provided, but has no practical "
+            "purpose when students uploaded the document themselves -- they "
+            "already have the original."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Copy Protection
 # ---------------------------------------------------------------------------
 
@@ -1280,7 +1333,6 @@ def _run_screenshot_sections(
 
     guide.section("Workspaces")
     _entry_create_workspace(page, base_url, guide)
-    _entry_tags_not_visible(page, base_url, course_url, guide)
     _entry_start_vs_template(page, base_url, guide)
 
     guide.section("Tags")
@@ -1291,7 +1343,6 @@ def _run_screenshot_sections(
     _entry_highlight_text(page, base_url, guide)
     _entry_add_comment(page, guide)
     _entry_overlapping_highlights(guide)
-    _entry_copy_protection(guide)
 
     guide.section("Organising")
     _entry_organise_by_tag(page, guide)
@@ -1316,10 +1367,15 @@ def _run_management_sections(
     """Unit settings, enrolment, navigation, sharing, and reference sections."""
     guide.section("Unit Settings")
     _entry_create_unit(page, base_url, guide)
-    _entry_chip_colours(guide)
     _entry_rename_entities(guide)
     _entry_students_no_work(page, base_url, course_url, guide)
     _entry_publish_activity(guide)
+
+    guide.section("Activities and Templates")
+    _entry_chip_colours(guide)
+    _entry_tags_not_visible(page, base_url, course_url, guide)
+    _entry_copy_protection(guide)
+    _entry_student_uploads(guide)
 
     guide.section("Enrolment")
     _entry_enrol_students(page, course_url, guide)

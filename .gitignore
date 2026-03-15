@@ -4,6 +4,7 @@ docs/implementation_plans/*
 .codex
 .brainstorming*
 .commit-msg.tmp
+ai_transcripts/
 
 *.log
 

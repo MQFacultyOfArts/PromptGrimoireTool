@@ -46,7 +46,9 @@ test_app = typer.Typer(
     )
 )
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
-_TEST_ALL_MARKER_EXPRESSION = f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full"
+_TEST_ALL_MARKER_EXPRESSION = (
+    f"{_NON_UI_MARKER_EXPRESSION} and not latexmk_full and not smoke"
+)
 _SKIP_LATEXMK_ENV_VAR = "GRIMOIRE_TEST_SKIP_LATEXMK"
 
 
@@ -267,6 +269,36 @@ def _xdist_worker_count() -> str:
     clone-source DB provisioned by ``_pre_test_db_cleanup()``).
     """
     return "auto"
+
+
+def _run_collect_only(
+    default_args: list[str],
+    extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> int:
+    """Run pytest --collect-only -q — lightweight, no DB cleanup or log files.
+
+    Strips verbosity and traceback flags from *default_args* since ``--co -q``
+    needs terse output.
+    """
+    _STRIP = {"-v", "-vv", "--verbose"}
+    cleaned = [
+        a
+        for i, a in enumerate(default_args)
+        if a not in _STRIP and not a.startswith("--tb=")
+    ]
+    user_args = extra_args or []
+    all_args = ["uv", "run", "pytest", *cleaned, "--co", "-q", *user_args]
+    result = subprocess.run(
+        all_args,
+        env={
+            **os.environ,
+            "GRIMOIRE_TEST_HARNESS": "1",
+            **(extra_env or {}),
+        },
+        check=False,
+    )
+    return result.returncode
 
 
 def _run_pytest(
@@ -530,23 +562,38 @@ def all_tests(
     failed_first: bool = typer.Option(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
+    collect_only: bool = typer.Option(
+        False, "--co", "--collect-only", help="Only collect tests, don't run them"
+    ),
 ) -> None:
-    """Run unit and integration tests under xdist parallel execution."""
+    """Run unit tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
+    default_args = [
+        "tests/unit",
+        "-m",
+        _TEST_ALL_MARKER_EXPRESSION,
+    ]
+
     args = _prepend_filter(ctx.args, filter_expr)
+
+    if collect_only:
+        sys.exit(
+            _run_collect_only(
+                default_args=default_args,
+                extra_args=args,
+                extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
+            )
+        )
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
-            title=(
-                "Full Test Suite (unit + integration, excludes browser E2E, "
-                "NiceGUI UI, and latexmk compile-stage tests)"
-            ),
+            title="Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)",
             log_path=Path("test-all.log"),
             default_args=[
-                "-m",
-                _TEST_ALL_MARKER_EXPRESSION,
+                *default_args,
                 "-n",
                 _xdist_worker_count(),
                 "--dist=worksteal",
@@ -559,10 +606,10 @@ def all_tests(
 
 
 @test_app.command(
-    "all-fixtures",
+    "smoke",
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
-def all_fixtures_tests(
+def smoke_tests(
     ctx: typer.Context,
     filter_expr: str | None = typer.Option(
         None, "-k", "--filter", help="Pytest keyword filter expression"
@@ -573,18 +620,32 @@ def all_fixtures_tests(
     failed_first: bool = typer.Option(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
+    collect_only: bool = typer.Option(
+        False, "--co", "--collect-only", help="Only collect tests, don't run them"
+    ),
 ) -> None:
-    """Run full test corpus including BLNS and slow tests."""
+    """Run toolchain smoke tests (pandoc, lualatex, tlmgr) serially."""
     from promptgrimoire.cli._shared import _prepend_filter
 
+    default_args = ["-m", "smoke", "-v", "--tb=short", "-o", "addopts="]
+
     args = _prepend_filter(ctx.args, filter_expr)
+
+    if collect_only:
+        sys.exit(
+            _run_collect_only(
+                default_args=default_args,
+                extra_args=args,
+            )
+        )
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
-            title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
-            log_path=Path("test-all-fixtures.log"),
-            default_args=["-m", _NON_UI_MARKER_EXPRESSION, "-v", "--tb=short"],
+            title="Smoke Tests (toolchain: pandoc, lualatex, tlmgr)",
+            log_path=Path("test-smoke.log"),
+            default_args=default_args,
             extra_args=args,
         )
     )

@@ -225,15 +225,48 @@ Custom markers are defined in `pyproject.toml` under `[tool.pytest.ini_options]`
 
 | Marker | Purpose | Default |
 |--------|---------|---------|
-| `slow` | Long-running tests | Deselected (`-m "not slow"`) |
-| `e2e` | Playwright end-to-end tests | Excluded from `test-all` (`-m "not e2e"`) |
-| `nicegui_ui` | NiceGUI user-simulation integration lane | Excluded from `test-all` (`-m "not e2e and not nicegui_ui"`) |
-| `blns` | Big List of Naughty Strings | Opt-in (`-m blns`) |
-| `latex` | Tests requiring TinyTeX/system fonts | Included by default |
+| `slow` | Long-running tests | Deselected |
+| `e2e` | Playwright end-to-end tests | Own lane |
+| `nicegui_ui` | NiceGUI user-simulation tests | Own lane |
+| `blns` | Big List of Naughty Strings | Deselected |
+| `smoke` | External toolchains (pandoc, lualatex, tlmgr) | Own lane |
+| `latex` | Tests requiring TinyTeX/system fonts | Included in unit lane |
+| `latexmk_full` | Full compiled-PDF suites | Deselected from unit lane |
 
-Default addopts: `-ra -q -m 'not blns and not slow'`
+Default addopts: `-ra -q -m 'not blns and not slow and not perf and not smoke'`
 
-To run E2E tests: `uv run grimoire e2e run`. To include BLNS and slow tests: `uv run grimoire test all-fixtures`.
+## Test Lanes
+
+The test suite is organised into 6 lanes. Each lane is a separate `_run_pytest()` invocation producing a `LaneResult`.
+
+### Lane Definitions
+
+| Lane | Path Filter | Marker Filter | Workers | Purpose |
+|------|-------------|---------------|---------|---------|
+| unit | `tests/unit/` | `not e2e and not nicegui_ui and not latexmk_full and not smoke` | xdist auto | Fast unit tests |
+| integration | `tests/integration/` | `not e2e and not nicegui_ui and not smoke` | xdist auto | DB integration tests |
+| playwright | `tests/e2e/` | `e2e` | parallel (per-file) | Browser E2E tests |
+| nicegui | NiceGUI UI files | `nicegui_ui` | serial | In-process NiceGUI tests |
+| smoke | all paths | `smoke` | serial | External toolchain tests |
+| blns+slow | all paths | `(blns or slow) and not smoke` | serial | Naughty strings and slow tests |
+
+### Command-to-Lane Matrix
+
+| Command | unit | integration | playwright | nicegui | smoke | blns+slow |
+|---------|:----:|:-----------:|:----------:|:-------:|:-----:|:---------:|
+| `test all` | X | | | | | |
+| `test smoke` | | | | | X | |
+| `test run <path>` | auto-detected | auto-detected | auto-detected | auto-detected | | |
+| `test changed` | X | X | | | | |
+| `e2e run` | | | X | | | |
+| `e2e slow` | | | X (slow) | | | |
+| `e2e all` | X | X | X | X | X | X |
+
+### Smoke Marker Propagation
+
+The `smoke` marker is applied automatically by the `requires_pandoc`, `requires_latexmk`, and `requires_full_latexmk` decorator factories in `tests/conftest.py`. Tests with custom toolchain checks (e.g. `requires_tinytex`) carry `@pytest.mark.smoke` directly at the class level.
+
+To run E2E tests: `uv run grimoire e2e run`.
 
 ### Debug Log File
 

@@ -57,6 +57,7 @@ class TestConvertDocxToHtml:
             convert_docx_to_html(b"")
 
 
+@pytest.mark.smoke
 class TestConvertPdfToHtml:
     """Tests for PDF to HTML conversion (file-upload-109.AC2)."""
 

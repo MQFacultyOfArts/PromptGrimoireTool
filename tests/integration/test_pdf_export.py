@@ -20,18 +20,10 @@ from promptgrimoire.export.pdf_export import (
     generate_tex_only,
     markdown_to_latex_notes,
 )
-from tests.conftest import requires_latexmk
+from tests.conftest import requires_latexmk, requires_pandoc
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def _has_pandoc() -> bool:
-    """Check if Pandoc is available."""
-    return shutil.which("pandoc") is not None
-
-
-requires_pandoc = pytest.mark.skipif(not _has_pandoc(), reason="Pandoc not installed")
 
 
 @requires_pandoc

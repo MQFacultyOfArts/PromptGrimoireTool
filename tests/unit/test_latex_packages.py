@@ -68,6 +68,7 @@ def get_tlmgr_path() -> Path | None:
     return None
 
 
+@pytest.mark.smoke
 @pytest.mark.order("first")
 @pytest.mark.latex
 class TestLaTeXPackages:

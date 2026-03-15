@@ -43,7 +43,10 @@ test-failures.log
 test-all.log
 test-all-full.log
 test_all_full.log
-test-all-fixtures.log
+test-unit.log
+test-integration.log
+test-smoke.log
+test-slow.log
 test-e2e.log
 test-e2e-server.log
 test-debug.log

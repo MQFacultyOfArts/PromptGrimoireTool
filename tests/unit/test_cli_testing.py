@@ -432,8 +432,8 @@ class TestTestCommandHelp:
         result = runner.invoke(app, ["test", "changed", "--help"])
         assert result.exit_code == 0, result.output
 
-    def test_test_all_fixtures_help(self) -> None:
-        result = runner.invoke(app, ["test", "all-fixtures", "--help"])
+    def test_test_smoke_help(self) -> None:
+        result = runner.invoke(app, ["test", "smoke", "--help"])
         assert result.exit_code == 0, result.output
 
     def test_placeholder_absent(self) -> None:
@@ -457,12 +457,13 @@ class TestTestingCommands:
         result = runner.invoke(app, ["test", "all"])
 
         assert result.exit_code == 0, result.output
-        assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui and not latexmk_full"
+        default_args = _captured_default_args(captured)
+        assert _marker_expression(default_args) == (
+            "not e2e and not nicegui_ui and not latexmk_full and not smoke"
         )
+        assert "tests/unit" in default_args
         assert captured["title"] == (
-            "Full Test Suite (unit + integration, excludes browser E2E, "
-            "NiceGUI UI, and latexmk compile-stage tests)"
+            "Unit Tests (excludes smoke, E2E, NiceGUI UI, latexmk)"
         )
 
     def test_test_all_sets_latexmk_skip_guard(
@@ -492,20 +493,43 @@ class TestTestingCommands:
         assert "--depper-base-branch=abc123def456" in default_args
         assert "abc123def456" in str(captured["title"])
 
-    def test_test_all_fixtures_excludes_e2e_and_nicegui_ui(
+    def test_test_smoke_selects_smoke_marker(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured = _capture_run_pytest(monkeypatch)
 
-        result = runner.invoke(app, ["test", "all-fixtures"])
+        result = runner.invoke(app, ["test", "smoke"])
 
         assert result.exit_code == 0, result.output
-        assert _marker_expression(_captured_default_args(captured)) == (
-            "not e2e and not nicegui_ui"
-        )
-        assert captured["title"] == (
-            "Full Fixture Corpus (excluding browser E2E and NiceGUI UI)"
-        )
+        default_args = _captured_default_args(captured)
+        assert _marker_expression(default_args) == "smoke"
+
+    def test_test_smoke_runs_serial(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Smoke tests run serially — no -n flag in default args."""
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "smoke"])
+
+        assert result.exit_code == 0, result.output
+        default_args = _captured_default_args(captured)
+        assert "-n" not in default_args
+
+    def test_test_smoke_clears_addopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Smoke command clears addopts to prevent double-exclusion."""
+        captured = _capture_run_pytest(monkeypatch)
+
+        result = runner.invoke(app, ["test", "smoke"])
+
+        assert result.exit_code == 0, result.output
+        default_args = _captured_default_args(captured)
+        assert "-o" in default_args
+        addopts_idx = default_args.index("-o")
+        assert default_args[addopts_idx + 1] == "addopts="
+
+    def test_test_all_fixtures_removed(self) -> None:
+        """AC4.2: all-fixtures command no longer exists."""
+        result = runner.invoke(app, ["test", "all-fixtures"])
+        assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------
@@ -533,22 +557,6 @@ class TestPytestFlagPassthrough:
         extra = _captured_extra_args(captured)
         assert "-x" in extra
         assert "--ff" in extra
-
-    def test_test_all_fixtures_exit_first(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        captured = _capture_run_pytest(monkeypatch)
-        result = runner.invoke(app, ["test", "all-fixtures", "-x"])
-        assert result.exit_code == 0, result.output
-        assert "-x" in _captured_extra_args(captured)
-
-    def test_test_all_fixtures_failed_first(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        captured = _capture_run_pytest(monkeypatch)
-        result = runner.invoke(app, ["test", "all-fixtures", "--ff"])
-        assert result.exit_code == 0, result.output
-        assert "--ff" in _captured_extra_args(captured)
 
     def test_no_flags_no_injection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured = _capture_run_pytest(monkeypatch)

@@ -340,25 +340,40 @@ def _save_source_tab_state(
     state: PageState,
     doc_tab: DocumentTabState,
 ) -> None:
-    """Save current PageState annotation fields into a DocumentTabState.
+    """Save all document-scoped PageState fields into a DocumentTabState.
 
     Called before switching away from a source tab so the tab's card
-    registry, snapshots, and epoch are preserved for later restoration.
+    state, document content, and UI element refs are preserved.
+
+    Every field that ``_render_document_with_highlights`` writes to
+    ``PageState`` must be saved here.
     """
+    # Card state
     doc_tab.annotation_cards = state.annotation_cards or {}
     doc_tab.card_snapshots = dict(state.card_snapshots)
     doc_tab.cards_epoch = state.cards_epoch
+    # Document content
+    doc_tab.document_chars = state.document_chars
+    doc_tab.paragraph_map = dict(state.paragraph_map)
+    doc_tab.document_content = state.document_content
+    doc_tab.auto_number_paragraphs = state.auto_number_paragraphs
+    # UI element refs
+    doc_tab.doc_container = state.doc_container
+    doc_tab.highlight_style = state.highlight_style
+    doc_tab.highlight_menu = state.highlight_menu
+    doc_tab.toolbar_container = state.toolbar_container
 
 
 def _restore_source_tab_state(
     state: PageState,
     doc_tab: DocumentTabState,
 ) -> None:
-    """Restore a DocumentTabState's annotation fields into PageState.
+    """Restore all document-scoped fields from a DocumentTabState into PageState.
 
-    Called when switching to a source tab.  Sets document_id,
-    annotations_container, and card state so that refresh/diff
-    operations target the correct document.
+    Called when switching to a source tab.  Restores document_id,
+    card state, document content, and UI element refs so that all
+    operations (highlight creation, refresh, paragraph toggle) target
+    the correct document.
 
     For unrendered tabs, annotation_cards is set to None so that
     ``_refresh_annotation_cards`` performs a full build on first render.
@@ -366,6 +381,16 @@ def _restore_source_tab_state(
     state.document_id = doc_tab.document_id
     state.annotations_container = doc_tab.cards_container
     state.cards_epoch = doc_tab.cards_epoch
+    # Document content
+    state.document_chars = doc_tab.document_chars
+    state.paragraph_map = dict(doc_tab.paragraph_map)
+    state.document_content = doc_tab.document_content
+    state.auto_number_paragraphs = doc_tab.auto_number_paragraphs
+    # UI element refs
+    state.doc_container = doc_tab.doc_container
+    state.highlight_style = doc_tab.highlight_style
+    state.highlight_menu = doc_tab.highlight_menu
+    state.toolbar_container = doc_tab.toolbar_container
 
     if doc_tab.rendered:
         state.annotation_cards = doc_tab.annotation_cards

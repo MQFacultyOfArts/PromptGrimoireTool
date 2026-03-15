@@ -21,12 +21,21 @@ class TestDocumentTabState:
     def test_defaults(self) -> None:
         """Mutable defaults are isolated and correct."""
         state = DocumentTabState(document_id=uuid4(), tab=None, panel=None)
-        assert state.document_container is None
         assert state.cards_container is None
         assert state.annotation_cards == {}
         assert state.card_snapshots == {}
         assert state.rendered is False
         assert state.cards_epoch == 0
+        # Document content defaults
+        assert state.document_chars is None
+        assert state.paragraph_map == {}
+        assert state.document_content == ""
+        assert state.auto_number_paragraphs is True
+        # UI element ref defaults
+        assert state.doc_container is None
+        assert state.highlight_style is None
+        assert state.highlight_menu is None
+        assert state.toolbar_container is None
 
     def test_mutable_default_isolation(self) -> None:
         """Each instance gets its own mutable containers."""

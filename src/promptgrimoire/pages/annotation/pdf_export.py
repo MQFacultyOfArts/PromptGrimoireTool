@@ -45,6 +45,18 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
+# Per-user export locks: prevents a single user from stacking multiple
+# concurrent PDF exports (e.g. by retrying in multiple tabs).
+# Keys are user_id UUIDs, values are asyncio.Lock instances.
+_user_export_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_user_export_lock(user_id: str) -> asyncio.Lock:
+    """Get or create an asyncio.Lock for a user's PDF exports."""
+    if user_id not in _user_export_locks:
+        _user_export_locks[user_id] = asyncio.Lock()
+    return _user_export_locks[user_id]
+
 
 def _server_local_export_date() -> date:
     """Return the application server's local date for export filenames."""
@@ -271,6 +283,18 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         ui.notify("No document to export", type="warning")
         return
 
+    # Per-user mutex: if this user already has an export running, reject
+    if state.user_id is None:
+        ui.notify("Not authenticated", type="warning")
+        return
+    lock = _get_user_export_lock(str(state.user_id))
+    if lock.locked():
+        ui.notify(
+            "A PDF export is already in progress. Please wait for it to complete.",
+            type="warning",
+        )
+        return
+
     # --- Extract response markdown once (live JS path, with CRDT fallback) ---
     # This single extraction is shared by both enforcement and the export
     # pipeline, eliminating any divergence between stale CRDT and live editor
@@ -294,6 +318,22 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
     # Force UI update before starting async work
     await asyncio.sleep(0)
 
+    async with lock:
+        await _run_pdf_export(
+            state, workspace_id, notification, response_markdown, export_word_count
+        )
+
+
+async def _run_pdf_export(
+    state: PageState,
+    workspace_id: UUID,
+    notification: ui.notification,
+    response_markdown: str,
+    export_word_count: int | None,
+) -> None:
+    """Execute the PDF export pipeline under the per-user lock."""
+    if state.crdt_doc is None or state.document_id is None:  # guarded by caller
+        return
     try:
         # Get highlights for this document, anonymising if needed
         highlights = state.crdt_doc.get_highlights_for_document(str(state.document_id))
@@ -359,7 +399,12 @@ async def _handle_pdf_export(state: PageState, workspace_id: UUID) -> None:
         # Trigger download
         ui.download(pdf_path)
         ui.notify("PDF exported successfully!", type="positive")
-    except Exception as e:
+    except Exception:
         notification.dismiss()
         logger.exception("Failed to export PDF")
-        ui.notify(f"PDF export failed: {e}", type="negative", timeout=10000)
+        ui.notify(
+            "PDF export failed. Please do not retry. "
+            "Contact your unit convenor for assistance.",
+            type="negative",
+            timeout=0,
+        )

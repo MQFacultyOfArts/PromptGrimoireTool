@@ -161,18 +161,20 @@ def test_discover_lane_files_uses_explicit_nicegui_allowlist(tmp_path: Path) -> 
 
     integration_dir = tmp_path / "integration"
     integration_dir.mkdir()
-    course_admin = integration_dir / "test_instructor_course_admin_ui.py"
-    template_ui = integration_dir / "test_instructor_template_ui.py"
-    crud_ui = integration_dir / "test_crud_management_ui.py"
-    excluded = integration_dir / "test_some_other_ui.py"
-    for path in (course_admin, template_ui, crud_ui, excluded):
-        path.write_text("def test_other() -> None:\n    assert True\n")
+    # Create all allowlisted files + one excluded
+    from promptgrimoire.cli.e2e._lanes import _NICEGUI_ALLOWLIST
 
-    assert discover_nicegui_files(integration_dir) == [
-        course_admin,
-        template_ui,
-        crud_ui,
-    ]
+    allowlisted = []
+    for name in _NICEGUI_ALLOWLIST:
+        path = integration_dir / name
+        path.write_text("def test_stub() -> None:\n    assert True\n")
+        allowlisted.append(path)
+    excluded = integration_dir / "test_some_other_ui.py"
+    excluded.write_text("def test_other() -> None:\n    assert True\n")
+
+    result = discover_nicegui_files(integration_dir)
+    assert sorted(result) == sorted(allowlisted)
+    assert excluded not in result
 
     playwright_lane = LaneSpec(
         name=PLAYWRIGHT_LANE.name,
@@ -190,7 +192,7 @@ def test_discover_lane_files_uses_explicit_nicegui_allowlist(tmp_path: Path) -> 
     )
 
     assert discover_lane_files(playwright_lane) == [playwright_a, playwright_b]
-    assert discover_lane_files(nicegui_lane) == [course_admin, template_ui, crud_ui]
+    assert sorted(discover_lane_files(nicegui_lane)) == sorted(allowlisted)
 
 
 def test_discover_nicegui_files_handles_missing_allowlist_entries(

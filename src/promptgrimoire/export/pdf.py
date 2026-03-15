@@ -129,11 +129,17 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
         str(tex_path),
     ]
 
+    # cwd=output_dir: luaotfload's color-emoji harf shaper writes PNG
+    # cache files via os.tmpdir(). Under systemd ProtectSystem=strict,
+    # the service WorkingDirectory is read-only, causing a nil-index
+    # crash in harf-plug.lua:721. Setting cwd to the writable output
+    # directory resolves this.
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
+        cwd=str(output_dir),
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(

@@ -113,6 +113,7 @@ library references during development.
 
 ## postmortems
 
+- [Root Cause: luaotfload harf-plug crash on server (color emoji PNG cache)](postmortems/2026-03-15-harf-emoji-cwd-crash.md)
 - [Post-Mortem: 2026-03-15 Production OOM Outage](postmortems/2026-03-15-production-oom.md)
 
 ## prds

@@ -38,6 +38,7 @@ class DocumentTabState:
     # Per-document HTML element IDs (parameterised to prevent cross-tab collisions)
     doc_container_id: str = "doc-container"
     ann_container_id: str = "annotations-container"
+    highlight_menu_id: str = "highlight-menu"
     # UI element refs (per-document DOM elements)
     doc_container: ui.element | None = None
     highlight_style: ui.element | None = None

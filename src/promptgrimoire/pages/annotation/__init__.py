@@ -258,6 +258,7 @@ class PageState:
     # Per-document HTML element IDs (parameterised to prevent cross-tab collisions)
     doc_container_id: str = "doc-container"
     ann_container_id: str = "annotations-container"
+    highlight_menu_id: str = "highlight-menu"
     # Raw document HTML content for paragraph map rebuild
     document_content: str = ""
     # Current auto-number mode for paragraph toggle

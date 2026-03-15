@@ -133,8 +133,13 @@ def _print_all_lanes_summary(
 
 
 def run_all_lanes(user_args: list[str]) -> int:
-    """Run unit tests, then Playwright, then NiceGUI — always runs all three."""
-    from promptgrimoire.cli.testing import _run_pytest, _xdist_worker_count
+    """Run all 6 test lanes sequentially."""
+    from promptgrimoire.cli.testing import (
+        _NON_UI_MARKER_EXPRESSION,
+        _TEST_ALL_MARKER_EXPRESSION,
+        _run_pytest,
+        _xdist_worker_count,
+    )
     from promptgrimoire.config import get_current_branch
 
     _clear_lastfailed_cache()
@@ -143,15 +148,16 @@ def run_all_lanes(user_args: list[str]) -> int:
     cwd = Path.cwd()
     lane_results: list[LaneResult] = []
 
-    # --- Unit / integration lane ---
-    unit_log = Path("test-all.log")
-    console.print(f"[blue]Running unit/integration lane...[/]  log: {unit_log}")
+    # --- Lane 1: Unit (narrowed to tests/unit, excludes smoke) ---
+    unit_log = Path("test-unit.log")
+    console.print(f"[blue]Running unit lane...[/]  log: {unit_log}")
     unit_exit = _run_pytest(
-        title="Unit + Integration (xdist)",
+        title="Unit Tests (xdist)",
         log_path=unit_log,
         default_args=[
+            "tests/unit",
             "-m",
-            "not e2e and not nicegui_ui and not latexmk_full",
+            _TEST_ALL_MARKER_EXPRESSION,
             "-n",
             _xdist_worker_count(),
             "--dist=worksteal",
@@ -162,7 +168,29 @@ def run_all_lanes(user_args: list[str]) -> int:
     )
     lane_results.append(LaneResult("unit", unit_exit, log_path=unit_log))
 
-    # --- Playwright lane (parallel) ---
+    # --- Lane 2: Integration ---
+    integration_log = Path("test-integration.log")
+    console.print(f"[blue]Running integration lane...[/]  log: {integration_log}")
+    integration_exit = _run_pytest(
+        title="Integration Tests (xdist)",
+        log_path=integration_log,
+        default_args=[
+            "tests/integration",
+            "-m",
+            f"{_NON_UI_MARKER_EXPRESSION} and not smoke",
+            "-n",
+            _xdist_worker_count(),
+            "--dist=worksteal",
+            "-v",
+        ],
+        extra_args=user_args,
+        extra_env={"GRIMOIRE_TEST_SKIP_LATEXMK": "1"},
+    )
+    lane_results.append(
+        LaneResult("integration", integration_exit, log_path=integration_log)
+    )
+
+    # --- Lane 3: Playwright (unchanged) ---
     console.print("[blue]Running Playwright lane (parallel)...[/]")
     playwright_exit = run_playwright_lane(
         user_args,
@@ -172,10 +200,39 @@ def run_all_lanes(user_args: list[str]) -> int:
     )
     lane_results.append(LaneResult("playwright", playwright_exit))
 
-    # --- NiceGUI lane ---
+    # --- Lane 4: NiceGUI (unchanged) ---
     console.print("[blue]Running NiceGUI lane...[/]")
     nicegui_exit = run_nicegui_lane(user_args)
     lane_results.append(LaneResult("nicegui", nicegui_exit))
+
+    # --- Lane 5: Smoke (serial, clears addopts) ---
+    smoke_log = Path("test-smoke.log")
+    console.print(f"[blue]Running smoke lane...[/]  log: {smoke_log}")
+    smoke_exit = _run_pytest(
+        title="Smoke Tests (toolchain: pandoc, lualatex, tlmgr)",
+        log_path=smoke_log,
+        default_args=["-m", "smoke", "-v", "--tb=short", "-o", "addopts="],
+        extra_args=user_args,
+    )
+    lane_results.append(LaneResult("smoke", smoke_exit, log_path=smoke_log))
+
+    # --- Lane 6: BLNS+Slow (serial, clears addopts) ---
+    slow_log = Path("test-slow.log")
+    console.print(f"[blue]Running blns+slow lane...[/]  log: {slow_log}")
+    slow_exit = _run_pytest(
+        title="BLNS + Slow Tests (serial)",
+        log_path=slow_log,
+        default_args=[
+            "-m",
+            "(blns or slow) and not smoke",
+            "-v",
+            "--tb=short",
+            "-o",
+            "addopts=",
+        ],
+        extra_args=user_args,
+    )
+    lane_results.append(LaneResult("blns+slow", slow_exit, log_path=slow_log))
 
     # --- Summary ---
     _print_all_lanes_summary(cwd, branch, lane_results)

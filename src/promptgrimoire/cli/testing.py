@@ -442,9 +442,16 @@ def _print_footer(exit_code: int, duration: object, log_path: Path) -> None:
 
 _NICEGUI_UI_FILES: frozenset[str] = frozenset(
     {
+        "test_annotation_cards_charac.py",
+        "test_annotation_pdf_export_filename_ui.py",
+        "test_bulk_enrol_upload_ui.py",
+        "test_crud_management_ui.py",
         "test_instructor_course_admin_ui.py",
         "test_instructor_template_ui.py",
-        "test_crud_management_ui.py",
+        "test_multi_doc_tabs.py",
+        "test_organise_charac.py",
+        "test_respond_charac.py",
+        "test_tag_management_crdt_sync.py",
     }
 )
 

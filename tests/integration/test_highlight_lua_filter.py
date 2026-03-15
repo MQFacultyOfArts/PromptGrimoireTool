@@ -13,6 +13,7 @@ AC2.6: No hl attribute (pass-through)
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -384,7 +385,8 @@ class TestAnnotInTable:
         # Fall back to checking for @{} pattern if \begin{longtable} not found verbatim
         if lt_start == -1:
             lt_start = latex.find("longtable")
-            lt_end = latex.find(r"\endlastfoot") or latex.find(r"\end{longtable")
+            endlastfoot = latex.find(r"\endlastfoot")
+            lt_end = endlastfoot if endlastfoot != -1 else latex.find(r"\end{longtable")
 
         assert lt_start != -1, f"Expected longtable in output, got:\n{latex}"
 
@@ -509,8 +511,6 @@ class TestAnnotInTable:
 
         # Must not contain \annot{ (only \annotref{ is allowed)
         # Use a careful check: \annot{ but not \annotref{ or \annotendnote{
-        import re
-
         bare_annot = re.findall(r"\\annot\{(?!ref|endnote)", table_content)
         assert bare_annot == [], (
             f"Found bare \\annot inside longtable: {bare_annot}\n"

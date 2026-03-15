@@ -573,7 +573,8 @@ def _make_tab_change_handler(
         _save_previous_source_tab(state, prev_tab)
 
         if state.footer is not None:
-            state.footer.set_visibility(_is_source_tab(tab_name))
+            is_source = _is_source_tab(tab_name) or tab_name == "Source"
+            state.footer.set_visibility(is_source)
 
         if prev_tab == "Respond":
             await _sync_respond_on_leave(state)
@@ -717,8 +718,8 @@ async def _build_tab_panels(
     Stores ``state.tab_panels``, ``state.organise_panel``,
     and ``state.respond_panel`` for later use by broadcast callbacks.
     """
-    # Default selected tab: first document if any, else Organise
-    default_tab = str(documents[0].id) if documents else "Organise"
+    # Default selected tab: first document tab or "Source" placeholder
+    default_tab = str(documents[0].id) if documents else "Source"
 
     with ui.tab_panels(tabs, value=default_tab, on_change=on_tab_change).classes(
         "w-full"
@@ -751,21 +752,22 @@ async def _build_tab_panels(
                 with ui.tab_panel(str(doc.id)) as panel:
                     doc_tab = state.document_tabs[doc.id]
                     doc_tab.panel = panel
-
-        with ui.tab_panel("Organise") as organise_panel:
-            # Zero-document template: render tag toolbar in Organise panel
-            if not documents and state.can_upload:
-                from promptgrimoire.pages.annotation.workspace import (
-                    _render_empty_template_toolbar,
-                )
-
-                _render_empty_template_toolbar(
+        else:
+            # Zero-document workspace: render the first-source panel into
+            # the "Source" placeholder tab.  _build_first_source_panel
+            # handles the no-document case internally (shows upload form
+            # and empty state via @ui.refreshable document_container).
+            with ui.tab_panel("Source"):
+                await _build_first_source_panel(
                     state,
-                    on_add_tag=on_add_tag if can_create_tags else None,
+                    workspace_id,
+                    on_add_tag=on_add_tag,
                     on_manage_tags=on_manage_tags,
                     can_create_tags=can_create_tags,
                     footer=footer,
                 )
+
+        with ui.tab_panel("Organise") as organise_panel:
             state.organise_panel = organise_panel
             ui.label("Organise tab content will appear here.").classes("text-gray-400")
 
@@ -790,19 +792,28 @@ def build_tabs(
         documents: Ordered list of WorkspaceDocument objects.
         state: Page state to populate ``document_tabs``.
     """
-    from promptgrimoire.pages.annotation.tab_state import DocumentTabState
-
     with ui.row().classes("w-full items-center"), ui.tabs().classes("w-full") as tabs:
-        for i, doc in enumerate(documents):
-            label = f"Source {i + 1}: {doc.title}" if doc.title else f"Source {i + 1}"
-            tab = ui.tab(str(doc.id), label=label).props(
-                f'data-testid="tab-source-{i + 1}"'
-            )
-            state.document_tabs[doc.id] = DocumentTabState(
-                document_id=doc.id,
-                tab=tab,
-                panel=None,
-            )
+        if documents:
+            from promptgrimoire.pages.annotation.tab_state import DocumentTabState
+
+            for i, doc in enumerate(documents):
+                label = (
+                    f"Source {i + 1}: {doc.title}" if doc.title else f"Source {i + 1}"
+                )
+                tab = ui.tab(str(doc.id), label=label).props(
+                    f'data-testid="tab-source-{i + 1}"'
+                )
+                state.document_tabs[doc.id] = DocumentTabState(
+                    document_id=doc.id,
+                    tab=tab,
+                    panel=None,
+                )
+        else:
+            # No documents yet — create a placeholder "Source" tab so the
+            # workspace has somewhere to render the upload form and empty
+            # state.  Uses a fixed sentinel name (not a UUID) so it won't
+            # be treated as a source tab by _is_source_tab().
+            ui.tab("Source").props('data-testid="tab-source-1"')
         ui.tab("Organise").props('data-testid="tab-organise"')
         ui.tab("Respond").props('data-testid="tab-respond"')
     return tabs

@@ -363,7 +363,7 @@ async def _render_workspace_view(
 
     # Three-tab container (Phase 1: three-tab UI)
     # When documents exist, the first source tab replaces the old "Annotate" tab.
-    first_doc_tab_name = str(documents[0].id) if documents else "Organise"
+    first_doc_tab_name = str(documents[0].id) if documents else "Source"
     state.initialised_tabs = {first_doc_tab_name}
     state.active_tab = first_doc_tab_name
 

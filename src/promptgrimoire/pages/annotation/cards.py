@@ -35,6 +35,22 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+def _broadcast_cards_epoch(state: PageState) -> None:
+    """Increment and broadcast the cards epoch to the client.
+
+    Writes both the per-document map (``window.__cardEpochs``) and the
+    legacy scalar (``window.__annotationCardsEpoch``) so that E2E tests
+    can wait on either.
+    """
+    state.cards_epoch += 1
+    doc_key = str(state.document_id) if state.document_id else "_default"
+    ui.run_javascript(
+        f"window.__cardEpochs = window.__cardEpochs || {{}}; "
+        f"window.__cardEpochs['{doc_key}'] = {state.cards_epoch}; "
+        f"window.__annotationCardsEpoch = {state.cards_epoch}"
+    )
+
+
 def _snapshot_highlight(hl: dict[str, Any]) -> dict[str, Any]:
     """Create a comparable snapshot of highlight data for change detection.
 
@@ -626,9 +642,8 @@ def _diff_annotation_cards(state: PageState) -> None:
                 changed = True
 
     if changed:
-        state.cards_epoch += 1
         with state.annotations_container:
-            ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+            _broadcast_cards_epoch(state)
 
 
 def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> None:
@@ -683,8 +698,7 @@ def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> 
             state.annotation_cards[hl_id] = card
             state.card_snapshots[hl_id] = _snapshot_highlight(hl)
 
-        state.cards_epoch += 1
-        ui.run_javascript(f"window.__annotationCardsEpoch = {state.cards_epoch}")
+        _broadcast_cards_epoch(state)
 
     logger.debug(
         "render_phase",

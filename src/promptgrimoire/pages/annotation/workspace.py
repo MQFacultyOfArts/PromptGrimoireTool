@@ -374,7 +374,14 @@ async def _render_workspace_view(
 
     # Set up Tab 2 drag-and-drop and tab change handler
     _setup_organise_drag(state)
-    on_tab_change = _make_tab_change_handler(state, workspace_id)
+    on_tab_change = _make_tab_change_handler(
+        state,
+        workspace_id,
+        on_add_tag=on_add_tag,
+        on_manage_tags=on_manage_tags,
+        can_create_tags=can_create_tags,
+        footer=footer,
+    )
 
     await _build_tab_panels(
         state,

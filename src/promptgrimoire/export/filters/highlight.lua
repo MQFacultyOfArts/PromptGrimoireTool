@@ -186,6 +186,199 @@ function Header(el)
   return { el, pandoc.Plain(annots) }
 end
 
+--- Find the closing brace matching an opening brace at position `start`.
+--- @param str string  the string to search
+--- @param start number  position of the opening '{'
+--- @return number|nil  position of the matching '}', or nil if not found
+local function find_matching_brace(str, start)
+  local depth = 0
+  for i = start, #str do
+    local ch = str:sub(i, i)
+    if ch == '{' then
+      depth = depth + 1
+    elseif ch == '}' then
+      depth = depth - 1
+      if depth == 0 then
+        return i
+      end
+    end
+  end
+  return nil
+end
+
+--- Parse \annot{colour}{content} from a RawInline text string.
+--- Returns colour, content, and any prefix/suffix text around the \annot.
+--- @param text string  RawInline text potentially containing \annot{...}{...}
+--- @return string|nil colour
+--- @return string|nil content
+--- @return string prefix  text before \annot
+--- @return string suffix  text after \annot
+local function parse_annot(text)
+  local annot_start = text:find('\\annot{', 1, true)
+  if not annot_start then
+    return nil, nil, text, ''
+  end
+
+  local prefix = text:sub(1, annot_start - 1)
+
+  -- First brace group: {colour}
+  local brace1_start = annot_start + #'\\annot'
+  local brace1_end = find_matching_brace(text, brace1_start)
+  if not brace1_end then
+    return nil, nil, text, ''
+  end
+  local colour = text:sub(brace1_start + 1, brace1_end - 1)
+
+  -- Second brace group: {content}
+  local brace2_start = brace1_end + 1
+  if brace2_start > #text or text:sub(brace2_start, brace2_start) ~= '{' then
+    return nil, nil, text, ''
+  end
+  local brace2_end = find_matching_brace(text, brace2_start)
+  if not brace2_end then
+    return nil, nil, text, ''
+  end
+  local content = text:sub(brace2_start + 1, brace2_end - 1)
+
+  local suffix = text:sub(brace2_end + 1)
+
+  return colour, content, prefix, suffix
+end
+
+--- Table callback: move \annot out of table cells.
+--- \annot contains \par which is illegal in longtable cells and causes
+--- LuaTeX to hang when luatexja-fontspec is loaded (CJK documents).
+--- Replaces each \annot{colour}{content} with \annotref{colour} inline
+--- and defers \annotendnote{colour}{num}{content} to after the table.
+function Table(el)
+  if FORMAT ~= 'latex' then return el end
+
+  local annot_counter = 0  -- total annots found in this table
+  local deferred = {}       -- structured entries: {colour=..., content=...}
+
+  --- Process a single RawInline, splitting \annot into \annotref + deferred endnote.
+  --- Stores structured {colour, content} entries in `deferred` (NOT pre-formatted
+  --- LaTeX strings). The final \annotendnote assembly happens after all cells are
+  --- processed, using \numexpr to compute the correct counter value for each entry.
+  --- @param el pandoc.RawInline
+  --- @return pandoc.List  replacement inlines
+  local function process_rawinline(el)
+    if el.t ~= 'RawInline' or el.format ~= 'latex' then
+      return pandoc.List({el})
+    end
+
+    local text = el.text
+    if not text:find('\\annot{', 1, true) then
+      return pandoc.List({el})
+    end
+
+    local result = pandoc.List({})
+    local remaining = text
+
+    while true do
+      local colour, content, prefix, suffix = parse_annot(remaining)
+      if not colour then
+        if remaining ~= '' then
+          result:insert(pandoc.RawInline('latex', remaining))
+        end
+        break
+      end
+
+      if prefix ~= '' then
+        result:insert(pandoc.RawInline('latex', prefix))
+      end
+
+      -- Emit \annotref{colour} inline (increments annotnum counter in LaTeX)
+      result:insert(pandoc.RawInline('latex',
+        '\\annotref{' .. colour .. '}'))
+
+      -- Store structured entry for deferred assembly (NOT a pre-formatted string).
+      -- Counter value is computed after all cells are processed.
+      annot_counter = annot_counter + 1
+      table.insert(deferred, {colour = colour, content = content})
+
+      remaining = suffix
+    end
+
+    return result
+  end
+
+  --- Walk a list of blocks, replacing \annot RawInlines with \annotref.
+  --- @param blocks pandoc.List  blocks to process
+  --- @return pandoc.List  processed blocks
+  local function process_blocks(blocks)
+    local filter = {
+      RawInline = function(el)
+        local replacements = process_rawinline(el)
+        if #replacements == 1 and replacements[1] == el then
+          return el
+        end
+        return replacements
+      end
+    }
+    local new_blocks = pandoc.List({})
+    for _, block in ipairs(blocks) do
+      new_blocks:insert(block:walk(filter))
+    end
+    return new_blocks
+  end
+
+  -- Process head rows
+  if el.head and el.head.rows then
+    for _, row in ipairs(el.head.rows) do
+      for _, cell in ipairs(row.cells) do
+        cell.contents = process_blocks(cell.contents)
+      end
+    end
+  end
+
+  -- Process body rows
+  for _, body in ipairs(el.bodies) do
+    if body.body then
+      for _, row in ipairs(body.body) do
+        for _, cell in ipairs(row.cells) do
+          cell.contents = process_blocks(cell.contents)
+        end
+      end
+    end
+  end
+
+  -- Process foot rows
+  if el.foot and el.foot.rows then
+    for _, row in ipairs(el.foot.rows) do
+      for _, cell in ipairs(row.cells) do
+        cell.contents = process_blocks(cell.contents)
+      end
+    end
+  end
+
+  -- If no annots were found, return table unchanged
+  if #deferred == 0 then
+    return el
+  end
+
+  -- Assemble deferred \annotendnote commands with correct counter values.
+  --
+  -- Counter sequencing (proleptic challenge resolved):
+  -- Each \annotref{colour} inside the table calls \stepcounter{annotnum}.
+  -- After all cells are processed, the LaTeX counter annotnum = base + annot_counter.
+  -- Annot K (1-based) had counter value base + K.
+  -- So the correct number for annot K is: \the\numexpr\value{annotnum} - N + K\relax
+  -- where N = annot_counter (total annots in this table).
+  local deferred_latex = {}
+  for k, entry in ipairs(deferred) do
+    local num_expr = string.format(
+      '\\the\\numexpr\\value{annotnum}-%d+%d\\relax',
+      annot_counter, k)
+    deferred_latex[k] = string.format(
+      '\\annotendnote{%s}{%s}{%s}',
+      entry.colour, num_expr, entry.content)
+  end
+
+  -- Return table followed by deferred endnote commands
+  return {el, pandoc.RawBlock('latex', table.concat(deferred_latex, '\n'))}
+end
+
 --- Check if a Unicode codepoint is an emoji that needs AccSupp wrapping.
 --- Noto Color Emoji renders these as CBDT bitmaps — without /ActualText
 --- the codepoint is lost in the PDF.

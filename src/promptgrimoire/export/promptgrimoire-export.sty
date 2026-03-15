@@ -180,6 +180,27 @@
   \fi
 }
 
+% Table-safe annotation reference: superscript number only (no \par).
+% Used by highlight.lua Table callback when \annot appears inside longtable cells.
+% Usage: \annotref{colour-name}
+\newcommand{\annotref}[1]{%
+  \stepcounter{annotnum}%
+  \textsuperscript{\textcolor{#1}{\textbf{\theannotnum}}}%
+}
+
+% Table-safe annotation endnote: writes annotation body to the endnotes file.
+% Called with the number captured from \annotref to ensure superscript/endnote match.
+% Usage: \annotendnote{colour-name}{number}{annotation content}
+\newcommand{\annotendnote}[3]{%
+  \global\annothasendnotestrue
+  \immediate\write\annotendfile{%
+    \noexpand\par\noexpand\noindent
+    \noexpand\textcolor{#1}{\noexpand\textbf{#2.}}
+    \unexpanded{#3}%
+    \noexpand\par\noexpand\medskip
+  }%
+}
+
 % =============================================================================
 % Font setup (static portion -- dynamic font chain built by build_font_preamble())
 % =============================================================================

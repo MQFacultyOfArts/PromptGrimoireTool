@@ -18,6 +18,12 @@ import pytest
 from promptgrimoire.logging_discord import DiscordAlertProcessor
 
 
+@pytest.fixture(autouse=True)
+def _allow_discord_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove the test-harness guard so Discord processor logic runs."""
+    monkeypatch.delenv("GRIMOIRE_TEST_HARNESS", raising=False)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

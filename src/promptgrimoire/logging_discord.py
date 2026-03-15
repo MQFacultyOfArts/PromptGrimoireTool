@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import socket
 import sys
 import threading
 import time
@@ -101,6 +103,10 @@ class DiscordAlertProcessor:
         if not self._webhook_url:
             return
 
+        # Never alert during test runs
+        if os.environ.get("GRIMOIRE_TEST_HARNESS"):
+            return
+
         level = event_dict.get("level", "")
         if level not in ("error", "critical"):
             return
@@ -153,7 +159,13 @@ class DiscordAlertProcessor:
             description = _truncate(description, _DESCRIPTION_MAX)
 
         # Context fields
-        fields: list[dict[str, Any]] = []
+        fields: list[dict[str, Any]] = [
+            {
+                "name": "server",
+                "value": socket.gethostname(),
+                "inline": True,
+            },
+        ]
         for key in _CONTEXT_FIELDS:
             value = event_dict.get(key)
             if value is not None:

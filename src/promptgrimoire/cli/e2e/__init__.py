@@ -224,7 +224,7 @@ def run_all_lanes(user_args: list[str]) -> int:
         log_path=slow_log,
         default_args=[
             "-m",
-            "(blns or slow) and not smoke",
+            "blns or slow",
             "-v",
             "--tb=short",
             "-o",

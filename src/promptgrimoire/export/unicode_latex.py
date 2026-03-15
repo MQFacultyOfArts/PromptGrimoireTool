@@ -186,7 +186,13 @@ def build_font_preamble(scripts: frozenset[str]) -> str:
     has_cjk = "cjk" in scripts
     if has_cjk:
         lines.append(r"\usepackage{luatexja-fontspec}")
-        lines.append(r"\ltjsetparameter{jacharrange={-2}}")
+        # Range 2 = Greek/Cyrillic: treat as ALchar (Latin fallback)
+        # Range 100 = custom: pull Misc Symbols + Dingbats out of Range 3
+        # so emoji (e.g. U+2705 ✅) falls through to luaotfload fallback
+        # (Noto Color Emoji) instead of being claimed by the CJK font.
+        lines.append(r"\ltjdefcharrange{100}{%")
+        lines.append(r'  "2600-"26FF, "2700-"27BF}')
+        lines.append(r"\ltjsetparameter{jacharrange={-2, -100}}")
         lines.append("")
 
     # Step 2: Filter fonts -- always include latn, plus matched script tags

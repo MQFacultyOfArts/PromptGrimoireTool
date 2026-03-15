@@ -73,8 +73,8 @@ class TestTableColumnWidths:
 
     @requires_pandoc
     @pytest.mark.asyncio
-    async def test_table_without_widths_unchanged(self) -> None:
-        """Tables without width attributes are handled by Pandoc defaults."""
+    async def test_table_without_widths_gets_wrapping_columns(self) -> None:
+        """Tables without width attributes get content-aware p{} columns (#351)."""
         html = """
         <table>
             <tr>
@@ -85,10 +85,88 @@ class TestTableColumnWidths:
         """
         result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
-        # Without widths, filter doesn't intervene - Pandoc handles it
-        # Just verify it produces something reasonable
+        # Width-less tables now get wrapping p{} columns
+        assert "p{" in result
+        assert "\\textwidth" in result
         assert "Column A" in result
         assert "Column B" in result
+
+
+class TestContentAwareTableColumns:
+    """Content-aware p{} columns for width-less tables (#351)."""
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    async def test_widthless_table_uses_p_columns(self) -> None:
+        """AC3.1: Width-less tables get wrapping p{} columns."""
+        html = """<table><tr>
+            <td>Short</td>
+            <td>A much longer piece of text for wrapping</td>
+        </tr></table>"""
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        assert "\\begin{longtable}" in result
+        assert "p{" in result
+        # Must NOT have bare l columns
+        assert "@{}l" not in result
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    async def test_proportional_widths_favour_longer_content(self) -> None:
+        """AC3.2: Column widths are proportional to content length."""
+        import re
+
+        html = """<table><tr>
+            <td>Short</td>
+            <td>A much longer piece of text that causes wrapping</td>
+        </tr></table>"""
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        # Extract p{X.XX\textwidth} values
+        widths = [float(m) for m in re.findall(r"p\{(\d+\.\d+)\\textwidth\}", result)]
+        assert len(widths) == 2
+        # Second column (longer content) should have larger proportion
+        assert widths[1] > widths[0]
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    async def test_width_attributed_tables_unaffected(self) -> None:
+        """AC3.3: Tables with explicit HTML width attributes are unaffected."""
+        html = """<table><tr>
+            <td width="100">Col A</td>
+            <td width="300">Col B</td>
+        </tr></table>"""
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        # Width-attributed path: proportional p{} columns present, no \small wrapper
+        assert "\\begin{longtable}" in result
+        assert result.count("p{") == 2
+        assert "\\begingroup\\small" not in result
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    async def test_header_rows_with_booktabs(self) -> None:
+        """AC3.4: Table header rows render with booktabs rules and \\endhead."""
+        html = """<table>
+            <thead><tr><th>Header A</th><th>Header B</th></tr></thead>
+            <tbody><tr><td>Data A</td><td>Data B</td></tr></tbody>
+        </table>"""
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        assert "\\toprule" in result
+        assert "\\midrule" in result
+        assert "\\endhead" in result
+        assert "\\bottomrule" in result
+
+    @requires_pandoc
+    @pytest.mark.asyncio
+    async def test_small_font_wrapping(self) -> None:
+        """Width-less tables are wrapped in \\small for the constrained text column."""
+        html = """<table><tr><td>Content</td></tr></table>"""
+        result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
+
+        assert "\\begingroup\\small" in result
+        assert "\\endgroup" in result
 
 
 class TestMarginLeft:

@@ -202,7 +202,7 @@ def _build_highlight_menu(
     highlight_menu = (
         ui.card()
         .classes("fixed z-[110] shadow-lg p-2")
-        .props('data-testid="highlight-menu" id="highlight-menu"')
+        .props(f'data-testid="highlight-menu" id="{state.highlight_menu_id}"')
     )
     highlight_menu.set_visibility(False)
     state.highlight_menu = highlight_menu
@@ -227,6 +227,7 @@ async def _render_document_with_highlights(
     state.document_id = doc.id
     state.doc_container_id = f"doc-container-{doc.id}"
     state.ann_container_id = f"ann-container-{doc.id}"
+    state.highlight_menu_id = f"hl-menu-{doc.id}"
     state.crdt_doc = crdt_doc
     state.annotation_cards = {}
     state.card_snapshots = {}
@@ -335,7 +336,7 @@ async def _render_document_with_highlights(
             t"    applyHighlights(c, {highlight_json});"
             t"    setupAnnotationSelection('{state.doc_container_id}', function(sel) {{"
             t"      emitEvent('selection_made', sel);"
-            t"    }});"
+            t"    }}, '{state.highlight_menu_id}');"
             t"    if (window._pendingCopyProtection) {{"
             t"      setupCopyProtection(window._pendingCopyProtection);"
             t"      delete window._pendingCopyProtection;"

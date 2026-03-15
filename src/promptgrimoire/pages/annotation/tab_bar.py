@@ -359,6 +359,7 @@ def _save_source_tab_state(
     # Per-document DOM IDs
     doc_tab.doc_container_id = state.doc_container_id
     doc_tab.ann_container_id = state.ann_container_id
+    doc_tab.highlight_menu_id = state.highlight_menu_id
     # UI element refs
     doc_tab.doc_container = state.doc_container
     doc_tab.highlight_style = state.highlight_style
@@ -386,6 +387,7 @@ def _restore_source_tab_state(
     # Per-document DOM IDs
     state.doc_container_id = doc_tab.doc_container_id
     state.ann_container_id = doc_tab.ann_container_id
+    state.highlight_menu_id = doc_tab.highlight_menu_id
     # Document content
     state.document_chars = doc_tab.document_chars
     state.paragraph_map = dict(doc_tab.paragraph_map)

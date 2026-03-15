@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from promptgrimoire.db.models import Activity, Course, User
 
 console = Console()
@@ -134,9 +136,65 @@ async def _seed_enrolment_and_weeks(course: Course) -> None:
     console.print(f"[green]Created activity:[/] {activity.title} (id={activity.id})")
 
     await _seed_tags_for_activity(activity)
+    await _seed_template_document(activity.template_workspace_id)
 
     await update_course(course.id, default_copy_protection=True)
     console.print("[green]Enabled:[/] default copy protection on course")
+
+
+async def _seed_template_document(workspace_id: UUID) -> None:
+    """Add a sample source document to the template workspace.
+
+    Idempotent: skips if any documents already exist.
+    """
+    from promptgrimoire.db.workspace_documents import add_document, list_documents
+
+    existing = await list_documents(workspace_id)
+    if existing:
+        console.print("[yellow]Document exists:[/] skipping document seed")
+        return
+
+    sample_html = (
+        "<h1>Becky Bennett — Initial Client Interview</h1>"
+        "<p>The following is a transcript of the initial interview with "
+        "Becky Bennett regarding a workplace injury claim.</p>"
+        "<h2>Background</h2>"
+        "<p>Becky Bennett, aged 34, was employed as a warehouse "
+        "supervisor at QuickShip Logistics Pty Ltd in Parramatta, NSW. "
+        "On 15 March 2025, she suffered a back injury while lifting "
+        "a heavy pallet that had been incorrectly stacked by a "
+        "co-worker.</p>"
+        "<h2>Interview Notes</h2>"
+        "<p><strong>Q:</strong> Can you tell me what happened on the "
+        "day of the incident?</p>"
+        "<p><strong>A:</strong> I was doing my usual rounds checking "
+        "the loading bay. There was a pallet that looked unstable — "
+        "it was stacked way too high, maybe two metres. I tried to "
+        "restack the top boxes to make it safe before the forklift "
+        "came through. When I lifted the first box, I felt something "
+        "go in my lower back. I couldn't straighten up.</p>"
+        "<p><strong>Q:</strong> Had you reported the unsafe stacking "
+        "before?</p>"
+        "<p><strong>A:</strong> Yes, multiple times. I'd sent emails "
+        "to my manager, Dave Chen, about the stacking problems. The "
+        "casual staff weren't being trained properly. I've got copies "
+        "of those emails.</p>"
+        "<p><strong>Q:</strong> What happened after the injury?</p>"
+        "<p><strong>A:</strong> Dave called an ambulance. I was taken "
+        "to Westmead Hospital. They did scans and said I had a disc "
+        "herniation at L4-L5. I've been off work since then. My GP "
+        "says I need surgery but the workers' comp insurer is "
+        "disputing whether it's work-related.</p>"
+    )
+
+    await add_document(
+        workspace_id=workspace_id,
+        type="source",
+        content=sample_html,
+        source_type="paste",
+        title="Becky Bennett Interview Transcript",
+    )
+    console.print("[green]Seeded:[/] template document (Becky Bennett interview)")
 
 
 async def _seed_tags_for_activity(activity: Activity) -> None:
@@ -243,11 +301,28 @@ def run() -> None:
 
     async def _seed() -> None:
         from promptgrimoire.db.engine import init_db
+        from promptgrimoire.db.models import Activity
 
         await init_db()
 
         _user, course = await _seed_user_and_course()
         await _seed_enrolment_and_weeks(course)
+
+        # Seed template document (idempotent, runs even if weeks
+        # already exist — the document may be missing from earlier seeds).
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+
+        async with get_session() as session:
+            result = await session.exec(
+                select(Activity).where(
+                    Activity.title == "Annotate Becky Bennett Interview"
+                )
+            )
+            activity = result.first()
+        if activity:
+            await _seed_template_document(activity.template_workspace_id)
 
         console.print()
         console.print(

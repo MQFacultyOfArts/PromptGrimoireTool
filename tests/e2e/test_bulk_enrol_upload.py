@@ -269,7 +269,7 @@ class TestBulkEnrolUpload:
         # Quasar notifications use role="alert" natively. ui.notify() does not
         # support data-testid, so get_by_role("alert") is the accepted exception
         # to the project's data-testid locator convention.
-        first_notification = page.get_by_role("alert")
+        first_notification = page.get_by_role("alert")  # noqa: PG002
         expect(first_notification).to_be_visible(timeout=15000)
         expect(first_notification).to_contain_text("Enrolled 1 of 1")
 
@@ -277,7 +277,7 @@ class TestBulkEnrolUpload:
         # Quasar dialog buttons don't support data-testid, so
         # get_by_role("button", name="OK") is an accepted exception to the
         # project's data-testid locator convention.
-        ok_button = first_notification.get_by_role("button", name="OK")
+        ok_button = first_notification.get_by_role("button", name="OK")  # noqa: PG002
         if ok_button.is_visible(timeout=2000):
             ok_button.click()
         # Wait for notification to disappear
@@ -285,7 +285,7 @@ class TestBulkEnrolUpload:
 
         # Second upload of same data — should show already enrolled
         _upload_xlsx(page, xlsx_bytes)
-        second_notification = page.get_by_role("alert")
+        second_notification = page.get_by_role("alert")  # noqa: PG002
         expect(second_notification).to_be_visible(timeout=15000)
         expect(second_notification).to_contain_text("already enrolled")
 
@@ -352,7 +352,7 @@ class TestBulkEnrolUpload:
         # Quasar notifications use role="alert" natively. ui.notify() does not
         # support data-testid, so get_by_role("alert") is the accepted exception
         # to the project's data-testid locator convention.
-        notification = page.get_by_role("alert")
+        notification = page.get_by_role("alert")  # noqa: PG002
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("already enrolled")
 
@@ -375,7 +375,7 @@ class TestBulkEnrolUpload:
         # Quasar notifications use role="alert" natively. ui.notify() does not
         # support data-testid, so get_by_role("alert") is the accepted exception
         # to the project's data-testid locator convention.
-        notification = page.get_by_role("alert")
+        notification = page.get_by_role("alert")  # noqa: PG002
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("Enrolled")
 
@@ -383,7 +383,7 @@ class TestBulkEnrolUpload:
         # Quasar dialog buttons don't support data-testid, so
         # get_by_role("button", name="OK") is an accepted exception to the
         # project's data-testid locator convention.
-        ok_button = notification.get_by_role("button", name="OK")
+        ok_button = notification.get_by_role("button", name="OK")  # noqa: PG002
         if ok_button.is_visible(timeout=2000):
             ok_button.click()
         expect(notification).not_to_be_visible(timeout=10000)
@@ -400,7 +400,7 @@ class TestBulkEnrolUpload:
         expect(student_row).not_to_be_visible(timeout=10000)
 
         # Verify success notification
-        delete_notification = page.get_by_role("alert")
+        delete_notification = page.get_by_role("alert")  # noqa: PG002
         expect(delete_notification).to_be_visible(timeout=10000)
         expect(delete_notification).to_contain_text("removed")
 
@@ -421,7 +421,7 @@ class TestBulkEnrolUpload:
         # Quasar notifications use role="alert" natively. ui.notify() does not
         # support data-testid, so get_by_role("alert") is the accepted exception
         # to the project's data-testid locator convention.
-        notification = page.get_by_role("alert")
+        notification = page.get_by_role("alert")  # noqa: PG002
         expect(notification).to_be_visible(timeout=15000)
         expect(notification).to_contain_text("Enrollment added")
 

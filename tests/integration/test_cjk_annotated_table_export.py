@@ -127,12 +127,12 @@ class TestCjkAnnotatedTablePipeline:
 class TestCjkSlowCompilation:
     """AC1.1, AC1.2, AC4.3, AC5.1: Full compilation of CJK workspace."""
 
-    @pytest_asyncio.fixture(scope="class", loop_scope="class")
+    @pytest_asyncio.fixture(scope="module", loop_scope="module")
     async def compilation_result(
         self,
         tmp_path_factory,
     ) -> dict:
-        """Compile Yuki workspace once, reuse across class tests."""
+        """Compile Yuki workspace once, reuse across module tests."""
         from promptgrimoire.export.pdf import compile_latex
 
         output_dir = tmp_path_factory.mktemp("cjk_yuki")

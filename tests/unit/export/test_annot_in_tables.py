@@ -147,11 +147,29 @@ class TestAnnotSequentialNumbering:
             filter_paths=BOTH_FILTERS,
         )
 
-        # The fixture has 3 annotations total:
+        # The fixture has 3 annotations:
         # 2 in-table (\annotref + \annotendnote) + 1 non-table (\annot)
-        # Endnotes use \the\numexpr\value{annotnum}-N+K\relax
-        # The non-table \annot uses \textbf{3.} in its content
-        # Verify all three annotation contents appear
-        assert "Alice: Table annotation" in result
-        assert "Bob: Second annotation" in result
-        assert "Carol: Non-table annotation" in result
+        # The \textbf{N.} numbers in content are the user-visible
+        # annotation sequence. Verify they appear in order 1, 2, 3.
+        annot_numbers = re.findall(
+            r"\\textbf\{(\d+)\.\}",
+            result,
+        )
+        assert annot_numbers == ["1", "2", "3"], (
+            f"Expected sequential [1,2,3], got {annot_numbers}"
+        )
+
+        # Verify endnote counter arithmetic is consistent:
+        # \annotendnote{colour}{\the\numexpr\value{annotnum}-N+K\relax}
+        # N = total deferred count, K = 1-based index within deferred
+        endnote_counters = re.findall(
+            r"\\the\\numexpr\\value\{annotnum\}-(\d+)\+(\d+)",
+            result,
+        )
+        assert len(endnote_counters) == 2
+        # Both should reference the same total (2 deferred)
+        totals = [int(n) for n, _ in endnote_counters]
+        assert totals == [2, 2]
+        # Indices should be sequential (1, 2)
+        indices = [int(k) for _, k in endnote_counters]
+        assert indices == [1, 2]

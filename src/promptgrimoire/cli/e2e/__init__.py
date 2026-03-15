@@ -232,6 +232,9 @@ def run_all_lanes(user_args: list[str]) -> int:
         ],
         extra_args=user_args,
     )
+    # Exit code 5 = no tests collected — legitimate for optional lanes
+    if slow_exit == 5:
+        slow_exit = 0
     lane_results.append(LaneResult("blns+slow", slow_exit, log_path=slow_log))
 
     # --- Summary ---

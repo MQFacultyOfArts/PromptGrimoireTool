@@ -260,16 +260,16 @@ function Table(el)
   --- Stores structured {colour, content} entries in `deferred` (NOT pre-formatted
   --- LaTeX strings). The final \annotendnote assembly happens after all cells are
   --- processed, using \numexpr to compute the correct counter value for each entry.
-  --- @param el pandoc.RawInline
+  --- @param raw pandoc.RawInline
   --- @return pandoc.List  replacement inlines
-  local function process_rawinline(el)
-    if el.t ~= 'RawInline' or el.format ~= 'latex' then
-      return pandoc.List({el})
+  local function process_rawinline(raw)
+    if raw.t ~= 'RawInline' or raw.format ~= 'latex' then
+      return pandoc.List({raw})
     end
 
-    local text = el.text
+    local text = raw.text
     if not text:find('\\annot{', 1, true) then
-      return pandoc.List({el})
+      return pandoc.List({raw})
     end
 
     local result = pandoc.List({})
@@ -308,9 +308,7 @@ function Table(el)
   --- @return pandoc.List  processed blocks
   local function process_blocks(blocks)
     local filter = {
-      RawInline = function(el)
-        return process_rawinline(el)
-      end
+      RawInline = process_rawinline,
     }
     local new_blocks = pandoc.List({})
     for _, block in ipairs(blocks) do

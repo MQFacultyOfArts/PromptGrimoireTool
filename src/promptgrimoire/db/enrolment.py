@@ -123,12 +123,16 @@ async def _resolve_users(
         else:
             users_existing += 1
 
-        # Set student_id if absent; record conflict if different
+        # Set student_id if absent; record conflict if different.
+        # Normalise empty string to None — the unique constraint treats
+        # '' as a real value, causing conflicts when multiple users lack IDs.
+        effective_student_id = entry.student_id or None
         if user.student_id is None or user.student_id == "":
-            user.student_id = entry.student_id
-            session.add(user)
-            await session.flush()
-        elif user.student_id != entry.student_id:
+            if effective_student_id is not None:
+                user.student_id = effective_student_id
+                session.add(user)
+                await session.flush()
+        elif user.student_id != effective_student_id:
             conflicts.append(
                 (entry.email, user.student_id, entry.student_id),
             )

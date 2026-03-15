@@ -269,6 +269,26 @@ def _xdist_worker_count() -> str:
     return "auto"
 
 
+def _run_collect_only(
+    default_args: list[str],
+    extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> int:
+    """Run pytest --collect-only -q — lightweight, no DB cleanup or log files."""
+    user_args = extra_args or []
+    all_args = ["uv", "run", "pytest", *default_args, "--co", "-q", *user_args]
+    result = subprocess.run(
+        all_args,
+        env={
+            **os.environ,
+            "GRIMOIRE_TEST_HARNESS": "1",
+            **(extra_env or {}),
+        },
+        check=False,
+    )
+    return result.returncode
+
+
 def _run_pytest(
     title: str,
     log_path: Path,
@@ -530,11 +550,29 @@ def all_tests(
     failed_first: bool = typer.Option(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
+    collect_only: bool = typer.Option(
+        False, "--co", "--collect-only", help="Only collect tests, don't run them"
+    ),
 ) -> None:
     """Run unit and integration tests under xdist parallel execution."""
     from promptgrimoire.cli._shared import _prepend_filter
 
+    default_args = [
+        "-m",
+        _TEST_ALL_MARKER_EXPRESSION,
+    ]
+
     args = _prepend_filter(ctx.args, filter_expr)
+
+    if collect_only:
+        sys.exit(
+            _run_collect_only(
+                default_args=default_args,
+                extra_args=args,
+                extra_env={_SKIP_LATEXMK_ENV_VAR: "1"},
+            )
+        )
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
@@ -545,8 +583,7 @@ def all_tests(
             ),
             log_path=Path("test-all.log"),
             default_args=[
-                "-m",
-                _TEST_ALL_MARKER_EXPRESSION,
+                *default_args,
                 "-n",
                 _xdist_worker_count(),
                 "--dist=worksteal",
@@ -573,18 +610,32 @@ def all_fixtures_tests(
     failed_first: bool = typer.Option(
         False, "--ff", "--failed-first", help="Run previously failed tests first (--ff)"
     ),
+    collect_only: bool = typer.Option(
+        False, "--co", "--collect-only", help="Only collect tests, don't run them"
+    ),
 ) -> None:
     """Run full test corpus including BLNS and slow tests."""
     from promptgrimoire.cli._shared import _prepend_filter
 
+    default_args = ["-m", _NON_UI_MARKER_EXPRESSION]
+
     args = _prepend_filter(ctx.args, filter_expr)
+
+    if collect_only:
+        sys.exit(
+            _run_collect_only(
+                default_args=default_args,
+                extra_args=args,
+            )
+        )
+
     args = _prepend_pytest_flags(args, exit_first=exit_first, failed_first=failed_first)
 
     sys.exit(
         _run_pytest(
             title="Full Fixture Corpus (excluding browser E2E and NiceGUI UI)",
             log_path=Path("test-all-fixtures.log"),
-            default_args=["-m", _NON_UI_MARKER_EXPRESSION, "-v", "--tb=short"],
+            default_args=[*default_args, "-v", "--tb=short"],
             extra_args=args,
         )
     )

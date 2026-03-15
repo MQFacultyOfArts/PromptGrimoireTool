@@ -93,7 +93,11 @@ class TestCJKPreambleAC34:
         assert r"\usepackage{luatexja-fontspec}" in cjk_preamble
 
     def test_contains_ltjsetparameter(self, cjk_preamble: str) -> None:
-        assert r"\ltjsetparameter{jacharrange={-2}}" in cjk_preamble
+        assert r"\ltjsetparameter{jacharrange={-2, -100}}" in cjk_preamble
+
+    def test_emoji_range_defined(self, cjk_preamble: str) -> None:
+        """Custom range 100 routes emoji/dingbats to fallback chain."""
+        assert r"\ltjdefcharrange{100}" in cjk_preamble
 
     def test_contains_setmainjfont(self, cjk_preamble: str) -> None:
         assert r"\setmainjfont{Noto Serif CJK SC}" in cjk_preamble

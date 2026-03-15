@@ -52,9 +52,22 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 **NEVER use `@pytest.fixture` on `async def` functions.** Always use `@pytest_asyncio.fixture`. The sync decorator on async generators causes `Runner.run() cannot be called from a running event loop` under xdist. A guard test (`tests/unit/test_async_fixture_safety.py`) enforces this. See #121.
 
-### E2E Test Isolation
+### Test Lane Model
 
-E2E tests (Playwright) are excluded from `test-all` (`-m "not e2e"`) because Playwright's event loop contaminates xdist workers. E2E tests must run separately via `uv run grimoire e2e run`, which runs in parallel by default (per-file isolation with cloned databases, `--serial` for single server). See [docs/testing.md](docs/testing.md).
+The test suite is organised into 6 lanes, each a separate pytest invocation. `uv run grimoire test all` runs unit tests only (fast). `uv run grimoire e2e all` runs all 6 lanes sequentially: unit, integration, playwright, nicegui, smoke, blns+slow.
+
+- **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
+- **Integration** (`tests/integration/`, xdist) -- excludes `e2e`, `nicegui_ui`, `smoke`
+- **Playwright** (`tests/e2e/`, parallel per-file isolation with cloned databases)
+- **NiceGUI** (serial, `nicegui_ui` marker)
+- **Smoke** (serial, `smoke` marker -- external toolchain tests: pandoc, lualatex, tlmgr)
+- **BLNS+Slow** (serial, `blns` or `slow` markers)
+
+Playwright's event loop contaminates xdist workers, so E2E tests must never run in the unit/integration lanes. See [docs/testing.md](docs/testing.md).
+
+### Smoke Marker Propagation
+
+The `smoke` marker is applied automatically by the `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators in `tests/conftest.py`. Tests using these decorators are excluded from the unit lane and collected into the dedicated smoke lane. Do not apply `@pytest.mark.smoke` manually when using these decorators.
 
 ### E2E Locator Convention
 
@@ -101,6 +114,10 @@ uv run grimoire test all
 
 # Run toolchain smoke tests (pandoc, lualatex, tlmgr)
 uv run grimoire test smoke
+
+# List collected tests without running (works on test all, test smoke, e2e run)
+uv run grimoire test all --co
+uv run grimoire e2e run --co
 
 # Stop on first failure (-x) and/or run failed tests first (--ff)
 uv run grimoire test all -x --ff

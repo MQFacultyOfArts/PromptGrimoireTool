@@ -17,7 +17,8 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 ### 2. Testing Constraints (TDD Mandatory)
 - **Async Fixtures**: NEVER use `@pytest.fixture` on `async def` functions. Always use `@pytest_asyncio.fixture`. Using the sync decorator causes `Runner.run() cannot be called from a running event loop` under xdist.
-- **E2E Isolation**: E2E tests (Playwright) contaminate xdist workers. They are excluded from `test-all`. They must run separately via `uv run grimoire e2e run`.
+- **6-Lane Model**: Tests are split into 6 lanes (unit, integration, playwright, nicegui, smoke, blns+slow). `test all` runs unit only. `e2e all` runs all 6 lanes. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes.
+- **Smoke Marker**: The `smoke` marker is auto-applied by `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators. Smoke tests are excluded from the unit lane and run in their own lane.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 
 ### 3. Philosophical Testing Standard (The "Thing Itself")
@@ -40,12 +41,14 @@ Use these commands for verification and execution:
 ```bash
 # Testing
 uv run grimoire test changed           # Fast unit/integration tests based on git diff
-uv run grimoire test all                # All tests EXCEPT E2E
+uv run grimoire test all                # Unit tests only (fast, excludes smoke/E2E/integration)
+uv run grimoire test smoke              # Toolchain smoke tests (pandoc, lualatex, tlmgr)
+uv run grimoire test all --co           # List collected tests without running
 uv run grimoire test all -k "pattern"   # Filter tests by keyword expression
 uv run grimoire e2e run                 # E2E tests (parallel by default, per-file isolation)
 uv run grimoire e2e run -k "pattern"    # E2E tests filtered by keyword
 uv run grimoire e2e run --serial        # E2E tests in serial mode (single server)
-uv run grimoire e2e all                 # Run unit tests + Playwright E2E + NiceGUI lanes
+uv run grimoire e2e all                 # Run all 6 lanes: unit, integration, playwright, nicegui, smoke, blns+slow
 uv run grimoire e2e changed             # Smart selection E2E tests
 uv run grimoire e2e cards               # Card-specific E2E tests (@pytest.mark.cards)
 

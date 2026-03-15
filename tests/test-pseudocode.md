@@ -2513,6 +2513,48 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Overlap note:** test_empty_workspace_returns_empty_tag_list and test_tags_on_empty_workspace_are_retrievable overlap with tests/integration/test_workspace_tags.py (existing workspace_tags tests). The new tests specifically target workspaces created via the activity provisioning path (with zero WorkspaceDocument rows), while the existing tests use direct workspace creation.
 
+## CLI Test Harness (Unit)
+
+### test all selects unit-only marker expression
+**File:** tests/unit/test_cli_testing.py::TestTestAll::test_test_all_excludes_e2e_and_nicegui_ui
+1. Monkeypatch `_run_pytest` to capture args
+2. Invoke `test all` via Typer runner
+3. Assert marker expression is `not e2e and not nicegui_ui and not latexmk_full and not smoke`
+4. Assert `tests/unit` is in default_args (path narrowing)
+
+**Verifies:** `test all` runs only unit tests with the correct exclusion markers
+
+### test smoke selects smoke marker
+**File:** tests/unit/test_cli_testing.py::TestTestAll::test_test_smoke_selects_smoke_marker
+1. Monkeypatch `_run_pytest` to capture args
+2. Invoke `test smoke` via Typer runner
+3. Assert marker expression is `smoke`
+
+**Verifies:** `test smoke` collects only smoke-marked tests
+
+### test smoke runs serially
+**File:** tests/unit/test_cli_testing.py::TestTestAll::test_test_smoke_runs_serial
+1. Monkeypatch `_run_pytest` to capture args
+2. Invoke `test smoke`
+3. Assert `-n` is NOT in default args
+
+**Verifies:** Smoke tests do not use xdist parallelism
+
+### test smoke clears addopts
+**File:** tests/unit/test_cli_testing.py::TestTestAll::test_test_smoke_clears_addopts
+1. Monkeypatch `_run_pytest` to capture args
+2. Invoke `test smoke`
+3. Assert `-o addopts=` is in default args
+
+**Verifies:** Smoke lane overrides pyproject.toml addopts to prevent double-exclusion of smoke marker
+
+### all-fixtures command removed
+**File:** tests/unit/test_cli_testing.py::TestTestAll::test_test_all_fixtures_removed
+1. Invoke `test all-fixtures` via Typer runner
+2. Assert non-zero exit code
+
+**Verifies:** The old `all-fixtures` subcommand no longer exists (replaced by `smoke` + lane model)
+
 ## CLI Utilities (Unit)
 
 ### _allocate_ports returns distinct ports
@@ -2618,6 +2660,26 @@ It catches any divergence that would cause highlights to render at wrong positio
 **Verifies:** Dropping a non-existent database does not raise
 
 ## Database Bootstrap Helpers (Integration)
+
+### ensure_database_exists creates missing database
+**File:** tests/integration/test_settings_db.py::TestEnsureDatabaseExistsIntegration::test_creates_missing_database
+1. Build a URL pointing to a non-existent database (random name)
+2. Call `ensure_database_exists(url)`
+3. Query `pg_database` to confirm the database was created
+4. Cleanup: DROP DATABASE
+
+**Verifies:** AC10.1 -- `ensure_database_exists` creates a real PostgreSQL database when it does not exist
+
+### ensure_database_exists is idempotent
+**File:** tests/integration/test_settings_db.py::TestEnsureDatabaseExistsIntegration::test_idempotent_no_error_on_existing
+1. Build a URL pointing to a non-existent database (random name)
+2. Call `ensure_database_exists(url)` twice
+3. Assert no error on second call
+4. Cleanup: DROP DATABASE
+
+**Verifies:** AC10.2 -- calling `ensure_database_exists` twice on the same database does not raise
+
+**Overlap note:** These tests were moved from `tests/unit/test_settings.py` to integration because they connect to a real PostgreSQL server.
 
 ### clone and drop round-trip
 **File:** tests/integration/test_db_cloning.py::test_clone_and_drop_round_trip

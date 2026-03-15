@@ -126,6 +126,7 @@ function Table(tbl)
     if tbl.head and tbl.head.rows then
       for _, row in ipairs(tbl.head.rows) do
         for i, cell in ipairs(row.cells) do
+          -- stringify accepts Blocks, not Cell userdata
           local len = #pandoc.utils.stringify(cell.contents)
           if len > max_lengths[i] then
             max_lengths[i] = len
@@ -139,7 +140,8 @@ function Table(tbl)
       if body.body then
         for _, row in ipairs(body.body) do
           for i, cell in ipairs(row.cells) do
-            local len = #pandoc.utils.stringify(cell.contents)
+            -- stringify accepts Blocks, not Cell userdata
+          local len = #pandoc.utils.stringify(cell.contents)
             if len > max_lengths[i] then
               max_lengths[i] = len
             end
@@ -229,8 +231,8 @@ function Table(tbl)
     return pandoc.RawBlock('latex', table.concat(parts, '\n'))
   end
 
-  -- Build column spec with \textwidth proportions
-  -- Leave small gap for column separation
+  -- Width-attributed tables: no \small wrapper (caller controls layout via explicit widths)
+  -- Build column spec with \textwidth proportions; leave small gap for column separation
   local col_spec = ''
   local width_sum = 0
   for i = 1, num_cols do

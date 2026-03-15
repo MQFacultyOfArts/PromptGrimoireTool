@@ -138,8 +138,9 @@ class TestContentAwareTableColumns:
         </tr></table>"""
         result = await convert_html_to_latex(html, filter_paths=[LIBREOFFICE_FILTER])
 
-        # Width-attributed path: no \small wrapper, no \toprule
+        # Width-attributed path: proportional p{} columns present, no \small wrapper
         assert "\\begin{longtable}" in result
+        assert result.count("p{") == 2
         assert "\\begingroup\\small" not in result
 
     @requires_pandoc

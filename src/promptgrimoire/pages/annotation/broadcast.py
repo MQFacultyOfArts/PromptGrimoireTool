@@ -303,15 +303,17 @@ async def _handle_remote_update(state: PageState) -> None:
     Rebuilds tag state, CSS, toolbar, annotations, and any
     tab-specific views that are currently active.
     """
+    old_tag_info = state.tag_info_list
     _rebuild_tag_state_from_crdt(state)
     _update_highlight_css(state)
     if state.refresh_toolbar:
         await state.refresh_toolbar()
     _update_user_count(state)
-    # Remote updates may include tag metadata changes (rename, recolour,
-    # create, delete) that aren't captured in per-highlight snapshots.
-    # Invalidate the card cache so refresh does a full rebuild.
-    state.invalidate_card_cache()
+    # Only invalidate card cache when tag metadata actually changed
+    # (rename, recolour, create, delete). Highlight-only changes are
+    # handled by the diff algorithm's per-highlight snapshots.
+    if state.tag_info_list != old_tag_info:
+        state.invalidate_card_cache()
     if state.refresh_annotations:
         state.refresh_annotations(trigger="crdt_broadcast")
     if state.active_tab == "Organise":

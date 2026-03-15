@@ -287,7 +287,8 @@ async def _render_document_with_highlights(
     pb = "" if footer is not None else "padding-bottom: 60px; "
     layout_wrapper = (
         ui.element("div")
-        .props('id="annotation-layout-wrapper"')
+        .props(f'id="ann-layout-{doc.id}"')
+        .classes("annotation-layout-wrapper")
         .style(
             "position: relative; display: flex; gap: 1.5rem; "
             f"width: 90%; max-width: 1600px; margin: 0 auto; {pb}"

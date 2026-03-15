@@ -199,8 +199,10 @@ async def _broadcast_selection_update(
             receiver_is_privileged=presence.viewer_is_privileged,
             sender_is_privileged=state.viewer_is_privileged,
         )
+        ctnr = state.doc_container_id
         js = _render_js(
-            t"renderRemoteSelection({client_id}, {start}, {end}, {name}, {color})"
+            t"renderRemoteSelection("
+            t"{client_id}, {start}, {end}, {name}, {color}, {ctnr})"
         )
         with contextlib.suppress(Exception):
             await presence.nicegui_client.run_javascript(js, timeout=2.0)
@@ -237,10 +239,11 @@ def _replay_existing_cursors(
             s_start = presence.selection_start
             s_end = presence.selection_end
             color = presence.color
+            ctnr = state.doc_container_id
             js = _render_js(
                 t"renderRemoteSelection("
                 t"{cid}, {s_start}, {s_end},"
-                t" {resolved_name}, {color})"
+                t" {resolved_name}, {color}, {ctnr})"
             )
             ui.run_javascript(js)
 

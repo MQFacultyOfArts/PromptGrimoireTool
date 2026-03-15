@@ -96,8 +96,11 @@ uv run grimoire test run <path>::<test>
 # Run tests affected by changes (AST dependency analysis)
 uv run grimoire test changed
 
-# Run all tests (unit + integration, excludes E2E)
+# Run unit tests only (fast, excludes smoke/E2E/integration)
 uv run grimoire test all
+
+# Run toolchain smoke tests (pandoc, lualatex, tlmgr)
+uv run grimoire test smoke
 
 # Stop on first failure (-x) and/or run failed tests first (--ff)
 uv run grimoire test all -x --ff
@@ -109,7 +112,7 @@ uv run grimoire e2e run
 # Run E2E tests in serial mode (single server)
 uv run grimoire e2e run --serial
 
-# Run all lanes: unit tests + Playwright E2E + NiceGUI
+# Run all 6 lanes: unit, integration, playwright, nicegui, smoke, blns+slow
 uv run grimoire e2e all
 
 # Run E2E tests (smart selection based on changes)

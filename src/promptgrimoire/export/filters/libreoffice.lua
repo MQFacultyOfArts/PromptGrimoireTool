@@ -114,8 +114,120 @@ function Table(tbl)
     end
   end
 
-  -- If no widths found, let Pandoc handle it
-  if total_width == 0 then return tbl end
+  -- If no widths found, measure content and generate wrapping p{} columns
+  if total_width == 0 then
+    -- Measure content length per column
+    local max_lengths = {}
+    for i = 1, num_cols do
+      max_lengths[i] = 1  -- minimum 1 to avoid division by zero
+    end
+
+    -- Measure head rows
+    if tbl.head and tbl.head.rows then
+      for _, row in ipairs(tbl.head.rows) do
+        for i, cell in ipairs(row.cells) do
+          local len = #pandoc.utils.stringify(cell.contents)
+          if len > max_lengths[i] then
+            max_lengths[i] = len
+          end
+        end
+      end
+    end
+
+    -- Measure body rows
+    for _, body in ipairs(tbl.bodies) do
+      if body.body then
+        for _, row in ipairs(body.body) do
+          for i, cell in ipairs(row.cells) do
+            local len = #pandoc.utils.stringify(cell.contents)
+            if len > max_lengths[i] then
+              max_lengths[i] = len
+            end
+          end
+        end
+      end
+    end
+
+    -- Calculate proportional widths with minimum floor
+    local total_length = 0
+    for i = 1, num_cols do
+      total_length = total_length + max_lengths[i]
+    end
+
+    local min_proportion = 0.10  -- minimum 10% per column
+    -- First pass: compute raw proportions with floor
+    local proportions = {}
+    for i = 1, num_cols do
+      local raw = (max_lengths[i] / total_length) * 0.97
+      proportions[i] = raw < min_proportion and min_proportion or raw
+    end
+    -- Re-normalise so proportions sum to 0.97 after floor clamping
+    local clamped_sum = 0
+    for i = 1, num_cols do clamped_sum = clamped_sum + proportions[i] end
+    local scale = 0.97 / clamped_sum
+    local col_spec_parts = {}
+    for i = 1, num_cols do
+      table.insert(col_spec_parts, string.format('p{%.2f\\textwidth}', proportions[i] * scale))
+    end
+    local content_col_spec = table.concat(col_spec_parts, '')
+
+    -- Build header rows
+    local header_latex = {}
+    if tbl.head and tbl.head.rows then
+      for _, row in ipairs(tbl.head.rows) do
+        local cells_latex = {}
+        for _, cell in ipairs(row.cells) do
+          local cell_latex = blocks_to_latex(cell.contents)
+          cell_latex = cell_latex:gsub('\\hfill\\break', '\\newline{}')
+          cell_latex = cell_latex:gsub('\\\\\n', '\\newline{}')
+          cell_latex = cell_latex:gsub('\n\n', '\\newline{}')
+          table.insert(cells_latex, cell_latex)
+        end
+        table.insert(header_latex, table.concat(cells_latex, ' & ') .. ' \\\\')
+      end
+    end
+
+    -- Build body rows
+    local content_rows_latex = {}
+    for _, body in ipairs(tbl.bodies) do
+      if body.body then
+        for _, row in ipairs(body.body) do
+          local cells_latex = {}
+          for _, cell in ipairs(row.cells) do
+            local cell_latex = blocks_to_latex(cell.contents)
+            cell_latex = cell_latex:gsub('\\hfill\\break', '\\newline{}')
+            cell_latex = cell_latex:gsub('\\\\\n', '\\newline{}')
+            cell_latex = cell_latex:gsub('\n\n', '\\newline{}')
+            table.insert(cells_latex, cell_latex)
+          end
+          table.insert(content_rows_latex, table.concat(cells_latex, ' & ') .. ' \\\\')
+        end
+      end
+    end
+
+    -- Assemble longtable with \small wrapping
+    local parts = {'\\begingroup\\small'}
+    table.insert(parts, string.format('\\begin{longtable}{@{}%s@{}}', content_col_spec))
+
+    if #header_latex > 0 then
+      table.insert(parts, '\\toprule')
+      for _, hrow in ipairs(header_latex) do
+        table.insert(parts, hrow)
+      end
+      table.insert(parts, '\\midrule')
+      table.insert(parts, '\\endhead')
+    end
+
+    for _, brow in ipairs(content_rows_latex) do
+      table.insert(parts, brow)
+    end
+
+    table.insert(parts, '\\bottomrule')
+    table.insert(parts, '\\end{longtable}')
+    table.insert(parts, '\\endgroup')
+
+    return pandoc.RawBlock('latex', table.concat(parts, '\n'))
+  end
 
   -- Build column spec with \textwidth proportions
   -- Leave small gap for column separation

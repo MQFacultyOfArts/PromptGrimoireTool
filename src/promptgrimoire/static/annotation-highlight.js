@@ -547,11 +547,11 @@ function updateRemoteCursorPositions(container) {
  * @param {string} name - Display name (reserved for future label use)
  * @param {string} color - CSS colour for the selection background
  */
-function renderRemoteSelection(clientId, startChar, endChar, name, color) {
+function renderRemoteSelection(clientId, startChar, endChar, name, color, containerId) {
     // Remove any previous selection for this client
     removeRemoteSelection(clientId);
 
-    const container = document.getElementById('doc-container');
+    const container = document.getElementById(containerId || 'doc-container');
     if (!container) return;
 
     // Always re-walk: NiceGUI may re-render doc-container between calls,

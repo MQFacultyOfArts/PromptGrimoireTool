@@ -308,6 +308,9 @@ def _refresh_source_tab(state: PageState) -> None:
     if state.refresh_annotations:
         state.refresh_annotations()
     _update_highlight_css(state)
+    # Sync paragraph toggle to this document's auto_number setting
+    if state.paragraph_toggle is not None:
+        state.paragraph_toggle.value = state.auto_number_paragraphs
     # Restore per-document card positioning function
     cid = state.doc_container_id
     ui.run_javascript(
@@ -548,6 +551,12 @@ def _make_tab_change_handler(
         e: events.ValueChangeEventArguments,
     ) -> None:
         """Handle tab switching with deferred rendering."""
+        # _warp_to_highlight does its own save/restore synchronously
+        # before calling set_value, so skip when warp is in progress.
+        if state._warp_in_progress:
+            state._warp_in_progress = False
+            return
+
         assert state.initialised_tabs is not None
         tab_name = str(e.value)
         prev_tab = state.active_tab

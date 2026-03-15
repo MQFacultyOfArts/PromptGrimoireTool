@@ -54,25 +54,40 @@ async def _warp_to_highlight(
             If provided, switches to that document's tab. Falls back to
             the currently active source tab if not provided.
     """
-    # Switch to the correct source tab
+    # Resolve target document tab
+    target_doc_id: str | None = None
     if state.tab_panels is not None and state.document_tabs:
-        target_doc_id: str | None = None
         if document_id:
-            # Switch to the specific document's tab
             doc_uuid = UUID(document_id) if _UUID_RE.match(document_id) else None
             if doc_uuid is not None and doc_uuid in state.document_tabs:
                 target_doc_id = document_id
         if target_doc_id is None:
-            # Fall back to first document tab
             target_doc_id = str(next(iter(state.document_tabs)))
-        state.tab_panels.set_value(target_doc_id)
-        state.active_tab = target_doc_id
-    elif state.tab_panels is not None:
-        pass
 
-    # 2. Refresh Tab 1 annotations and highlight CSS.
-    # _update_highlight_css() pushes highlight ranges to the client internally,
-    # so no separate _push_highlights_to_client() call is needed.
+    if target_doc_id is not None and state.tab_panels is not None:
+        # Save current source tab state before switching
+        from promptgrimoire.pages.annotation.tab_bar import (
+            _restore_source_tab_state,
+            _save_previous_source_tab,
+        )
+
+        _save_previous_source_tab(state, state.active_tab)
+
+        # Restore target tab state BEFORE set_value so all state fields
+        # are correct when we refresh/scroll below.
+        target_uuid = UUID(target_doc_id)
+        target_tab = state.document_tabs.get(target_uuid)
+        if target_tab is not None:
+            _restore_source_tab_state(state, target_tab)
+
+        # Mark warp in progress so the async on_change handler
+        # (triggered by set_value) skips its save/restore/refresh —
+        # we've already done it synchronously above.
+        state._warp_in_progress = True
+        state.active_tab = target_doc_id
+        state.tab_panels.set_value(target_doc_id)
+
+    # Refresh annotations and highlight CSS for the (now-active) tab.
     if state.refresh_annotations:
         state.refresh_annotations()
     _update_highlight_css(state)

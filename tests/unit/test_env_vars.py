@@ -242,6 +242,8 @@ _ALLOWED_OS_ENVIRON = {
     _SRC_DIR / "cli" / "e2e" / "_browserstack.py",
     # Standalone subprocess script — sets env for isolated NiceGUI server
     _SRC_DIR / "cli" / "e2e" / "_server_script.py",
+    # Test-harness guard: suppresses Discord alerts during test runs
+    _SRC_DIR / "logging_discord.py",
 }
 
 _TESTS_DIR = PROJECT_ROOT / "tests"

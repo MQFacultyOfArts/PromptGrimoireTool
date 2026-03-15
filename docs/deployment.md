@@ -978,7 +978,91 @@ sudo systemctl restart promptgrimoire
 
 > **Ref:** [pg_dump](https://www.postgresql.org/docs/16/app-pgdump.html), [pg_restore](https://www.postgresql.org/docs/16/app-pgrestore.html), [rclone copy](https://rclone.org/commands/rclone_copy/)
 
-## 15. Verify Everything
+## 15. Monitoring
+
+Two layers: external uptime monitoring (UptimeRobot) and internal metrics trending (Beszel). Together they cover "site is unreachable" and "server is about to die".
+
+### External uptime — UptimeRobot
+
+[UptimeRobot](https://uptimerobot.com/) pings the app from outside every 5 minutes. Free tier.
+
+1. Sign up at uptimerobot.com
+2. Add a monitor:
+   - **Type:** HTTP(s)
+   - **URL:** `https://grimoire.drbbs.org/healthz`
+   - The `/healthz` endpoint accepts both GET and HEAD (added for UptimeRobot compatibility)
+3. Add alert contacts:
+   - **Pushbullet:** Settings → Alert Contacts → Add → Pushbullet (requires access token from pushbullet.com)
+   - **Email:** Added by default on signup
+
+### Internal metrics — Beszel
+
+[Beszel](https://beszel.dev/) provides system metrics trending (CPU, memory, disk, network) with 30-day retention and Discord alerting. Agent on the prod box (<15 MB RAM), hub on a separate monitoring machine.
+
+**Hub setup (Machine B — monitoring server):**
+
+```bash
+# Install hub binary (no Docker required)
+curl -sL https://get.beszel.dev/hub -o /tmp/install-hub.sh
+chmod +x /tmp/install-hub.sh
+/tmp/install-hub.sh
+
+# Open firewall for dashboard
+sudo ufw allow 8090/tcp
+
+# Verify
+sudo systemctl status beszel
+```
+
+Access the dashboard at `http://<machine-b-ip>:8090`. Create an admin account on first visit.
+
+**Agent setup (Machine A — production server):**
+
+```bash
+# Install agent binary
+curl -sL https://get.beszel.dev -o /tmp/install-agent.sh
+chmod +x /tmp/install-agent.sh
+/tmp/install-agent.sh
+```
+
+Pair with the hub: on the hub dashboard, click **Add System** and copy the preconfigured command. Run it on the production server — it configures the agent automatically.
+
+The agent communicates outbound to the hub via WebSocket (port 8090). No inbound firewall rule needed on the production server unless WebSocket fails (fallback uses SSH on port 45876).
+
+**Configure alerting:**
+
+In the hub dashboard, go to **Settings → Notifications** and add:
+
+```
+# Discord webhook
+discord://{TOKEN}@{WEBHOOK_ID}
+```
+
+Then click the bell icon on the production server's card to set alert thresholds:
+
+| Metric | Threshold | Rationale |
+|--------|-----------|-----------|
+| Memory | > 80% | OOM is imminent at 90%+ on a swapless box |
+| Disk | > 85% | LaTeX temp files and logs can fill disk |
+| CPU | > 90% sustained | Runaway LaTeX compilation |
+
+**What Beszel monitors:**
+- CPU, memory, disk, network (system-level)
+- Per-container metrics if Docker socket is mounted
+- 30-day retention (not configurable)
+- Static threshold alerts only (no rate-of-change)
+
+**What Beszel does NOT monitor:**
+- PostgreSQL-specific metrics (connections, query time, locks)
+- Application-level metrics (request latency, error rates)
+
+For the current single-server setup, system-level metrics are sufficient — the 2026-03-15 OOM would have been caught by a memory > 80% alert minutes before the crash.
+
+> **Ref:** [Beszel docs](https://beszel.dev/guide/getting-started), [Beszel security model](https://beszel.dev/guide/security)
+
+---
+
+## 16. Verify Everything
 
 ```bash
 # Services
@@ -1122,8 +1206,8 @@ sudo tail -f /var/log/promptgrimoire-backup.log
 # All services running?
 sudo systemctl status postgresql promptgrimoire haproxy fail2ban
 
-# App responds? (NiceGUI doesn't support HEAD — use GET)
-curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org
+# App responds? (/healthz supports HEAD + GET for UptimeRobot)
+curl -s -o /dev/null -w "%{http_code}" https://grimoire.drbbs.org/healthz
 
 # TLS certificate valid?
 echo | openssl s_client -connect grimoire.drbbs.org:443 -servername grimoire.drbbs.org 2>/dev/null \

@@ -681,6 +681,19 @@ async def _build_tab_panels(
                     doc_tab.panel = panel
 
         with ui.tab_panel("Organise") as organise_panel:
+            # Zero-document template: render tag toolbar in Organise panel
+            if not documents and state.can_upload:
+                from promptgrimoire.pages.annotation.workspace import (
+                    _render_empty_template_toolbar,
+                )
+
+                _render_empty_template_toolbar(
+                    state,
+                    on_add_tag=on_add_tag if can_create_tags else None,
+                    on_manage_tags=on_manage_tags,
+                    can_create_tags=can_create_tags,
+                    footer=footer,
+                )
             state.organise_panel = organise_panel
             ui.label("Organise tab content will appear here.").classes("text-gray-400")
 

@@ -1245,11 +1245,20 @@ echo "set server be_promptgrimoire/app state ready" | socat stdio /run/haproxy/a
 ### View logs
 
 ```bash
-# App (systemd journal)
+# App (systemd journal) — real-time tail
 sudo journalctl -u promptgrimoire -f
 
-# App (file logs, more detail)
-ls /opt/promptgrimoire/logs/
+# Errors only (real-time) — works regardless of logging framework
+sudo journalctl -u promptgrimoire -f -p err
+
+# Errors in a time window
+sudo journalctl -u promptgrimoire --no-pager -S "11:00" -U "11:15" | grep -A5 "error"
+
+# Structured JSON log file (see docs/logging.md for jq queries)
+sudo tail -f /opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl | jq .
+
+# Errors and criticals from structured log
+sudo tail -f /opt/promptgrimoire/logs/sessions/promptgrimoire.jsonl | jq 'select(.level == "error" or .level == "critical")'
 
 # HAProxy
 sudo tail -f /var/log/haproxy.log
@@ -1260,6 +1269,8 @@ sudo tail -f /var/log/fail2ban.log
 # Backup
 sudo tail -f /var/log/promptgrimoire-backup.log
 ```
+
+**Known gap:** Errors from third-party libraries (aiohttp, uvicorn) that log via stdlib `logging` bypass the structlog Discord alert processor. Use `journalctl -p err` to catch everything. See #359.
 
 ### Health checks
 

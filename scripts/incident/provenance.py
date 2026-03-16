@@ -54,12 +54,20 @@ def compute_sha256(file_path: Path) -> str:
 def format_to_table(filename: str) -> str:
     """Map a manifest filename to its source format string.
 
+    Uses pattern matching: anything starting with ``postgresql`` and ending
+    ``.log`` or ``.json`` maps to ``pglog``.  Exact matches are checked first.
+
     Raises ``ValueError`` for unknown filenames.
     """
-    try:
+    # Exact match first
+    if filename in _FILENAME_TO_FORMAT:
         return _FILENAME_TO_FORMAT[filename]
-    except KeyError:
-        known = ", ".join(sorted(_FILENAME_TO_FORMAT))
-        raise ValueError(
-            f"Unknown source filename '{filename}'. Known: {known}"
-        ) from None
+
+    # Pattern match for rotated PG log files (e.g. postgresql-16-main.log)
+    if filename.startswith("postgresql") and (
+        filename.endswith(".log") or filename.endswith(".json")
+    ):
+        return "pglog"
+
+    known = ", ".join(sorted(_FILENAME_TO_FORMAT))
+    raise ValueError(f"Unknown source filename '{filename}'. Known: {known}")

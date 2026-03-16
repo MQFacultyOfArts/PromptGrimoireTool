@@ -143,15 +143,15 @@ class TestTimeWindowFiltering:
         events, _ = parse_haproxy(early_line.encode(), WINDOW_START, WINDOW_END, TZ)
         assert len(events) == 0
 
-    def test_event_in_buffer(self) -> None:
-        """Event 3 minutes before window_start is included (5-min buffer)."""
+    def test_event_before_start_excluded(self) -> None:
+        """Event 3 minutes before window_start is excluded (no buffer)."""
         # 05:00 UTC - 3min = 04:57 UTC = 15:57 AEDT
-        buffer_line = FIXTURE_LINE.replace(
+        before_line = FIXTURE_LINE.replace(
             "2026-03-16T16:06:45+11:00", "2026-03-16T15:57:00+11:00"
         ).replace("16/Mar/2026:16:06:45.123 +1100", "16/Mar/2026:15:57:00.000 +1100")
 
-        events, _ = parse_haproxy(buffer_line.encode(), WINDOW_START, WINDOW_END, TZ)
-        assert len(events) == 1
+        events, _ = parse_haproxy(before_line.encode(), WINDOW_START, WINDOW_END, TZ)
+        assert len(events) == 0
 
 
 class TestEdgeCases:

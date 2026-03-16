@@ -38,7 +38,7 @@ def parse_jsonl(
     Each returned dict has keys matching the ``jsonl_events`` table columns:
     ts_utc, level, event, user_id, workspace_id, request_path, exc_info, extra_json.
 
-    Events outside ``[window_start_utc - 5min, window_end_utc + 5min]`` are discarded.
+    Events outside ``[window_start_utc, window_end_utc]`` are discarded.
     Malformed lines and lines missing ``timestamp`` are skipped with a log warning.
     """
     results: list[dict] = []
@@ -56,12 +56,15 @@ def parse_jsonl(
             continue
 
         ts = record.get("timestamp")
-        if ts is None:
+        if ts is None or not isinstance(ts, str):
             skipped += 1
-            logger.warning("Skipping JSONL line without timestamp")
+            logger.warning("Skipping JSONL line with missing or non-string timestamp")
             continue
 
-        if not in_window(ts, window_start_utc, window_end_utc):
+        # Normalise to canonical Z suffix for consistent string sorting
+        ts_normalised = ts.replace("+00:00", "Z") if ts.endswith("+00:00") else ts
+
+        if not in_window(ts_normalised, window_start_utc, window_end_utc):
             continue
 
         # Build extra_json from all keys NOT in the dedicated column set.
@@ -70,7 +73,7 @@ def parse_jsonl(
 
         results.append(
             {
-                "ts_utc": ts,
+                "ts_utc": ts_normalised,
                 "level": record.get("level"),
                 "event": record.get("event"),
                 "user_id": record.get("user_id"),

@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from scripts.incident.parsers import in_window
+from scripts.incident.parsers import in_window, normalise_utc
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def parse_journal(
 
         # Convert microsecond epoch to ISO 8601 UTC
         epoch_s = int(ts_str) / 1_000_000
-        ts_utc = datetime.fromtimestamp(epoch_s, tz=UTC).isoformat()
+        ts_utc = normalise_utc(datetime.fromtimestamp(epoch_s, tz=UTC))
 
         if not in_window(ts_utc, window_start_utc, window_end_utc):
             continue

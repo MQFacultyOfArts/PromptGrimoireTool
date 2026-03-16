@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 # Window: 2026-03-16T03:50:00Z to 2026-03-16T06:20:00Z
-# With 5-min buffer: 03:45:00Z to 06:25:00Z
+# Exact window (no buffer)
 
 # Journal lines: __REALTIME_TIMESTAMP is microseconds since epoch.
 # 2026-03-16T04:00:00Z = 1773633600 s = 1773633600000000 µs
@@ -183,9 +183,9 @@ class TestIngestWithParsers:
         assert all(r[0] == source_id for r in rows)
 
         # Verify ts_utc conversion from microsecond epoch
-        assert rows[0][1] == "2026-03-16T04:00:00+00:00"
-        assert rows[1][1] == "2026-03-16T05:00:00+00:00"
-        assert rows[2][1] == "2026-03-16T05:30:00+00:00"
+        assert rows[0][1] == "2026-03-16T04:00:00.000000Z"
+        assert rows[1][1] == "2026-03-16T05:00:00.000000Z"
+        assert rows[2][1] == "2026-03-16T05:30:00.000000Z"
 
         # Verify field extraction
         assert rows[0][2] == 3  # priority

@@ -4,8 +4,7 @@ Verifies:
 - AC2.2: __REALTIME_TIMESTAMP (µs epoch) converts to correct ISO 8601 UTC in ts_utc
 - Correct field extraction (priority as int, pid as int, message, unit)
 - raw_json contains the full original JSON line
-- Time-window filtering excludes events outside the window
-- Time-window 5-minute buffer includes events just outside the strict window
+- Time-window filtering excludes events outside the window (exact boundary, no buffer)
 - Empty input returns empty list
 - Lines with missing __REALTIME_TIMESTAMP are skipped (not fatal)
 """
@@ -76,7 +75,7 @@ class TestTimestampConversion:
         ts = result[0]["ts_utc"]
         # Must contain the correct date/time with microseconds
         assert ts.startswith("2024-03-15T21:02:15.123456")
-        assert "+00:00" in ts
+        assert ts.endswith("Z")
 
     def test_whole_second_timestamp(self) -> None:
         ts_us = _ts_us_from_iso("2024-03-15T21:30:00+00:00")
@@ -129,7 +128,7 @@ class TestFieldExtraction:
 
 
 class TestTimeWindowFiltering:
-    """Events outside the window (with buffer) are excluded."""
+    """Events outside the window are excluded (exact boundary, no buffer)."""
 
     def test_event_inside_window(self) -> None:
         ts_us = _ts_us_from_iso("2024-03-15T21:00:00+00:00")
@@ -146,24 +145,24 @@ class TestTimeWindowFiltering:
         result = parse_journal(line.encode(), WINDOW_START, WINDOW_END)
         assert len(result) == 0
 
-    def test_event_in_buffer_before_start(self) -> None:
-        """Event 3 minutes before window_start is included (within 5-min buffer)."""
+    def test_event_just_before_start_excluded(self) -> None:
+        """Event 3 minutes before window_start is excluded (no buffer)."""
         ts_us = _ts_us_from_iso("2024-03-15T19:57:00+00:00")
         line = _make_journal_line(ts_us=ts_us)
 
         result = parse_journal(line.encode(), WINDOW_START, WINDOW_END)
-        assert len(result) == 1
+        assert len(result) == 0
 
-    def test_event_in_buffer_after_end(self) -> None:
-        """Event 3 minutes after window_end is included (within 5-min buffer)."""
+    def test_event_just_after_end_excluded(self) -> None:
+        """Event 3 minutes after window_end is excluded (no buffer)."""
         ts_us = _ts_us_from_iso("2024-03-15T22:03:00+00:00")
         line = _make_journal_line(ts_us=ts_us)
 
         result = parse_journal(line.encode(), WINDOW_START, WINDOW_END)
-        assert len(result) == 1
+        assert len(result) == 0
 
-    def test_event_outside_buffer(self) -> None:
-        """Event 10 minutes after window_end is excluded (outside 5-min buffer)."""
+    def test_event_well_outside_window_excluded(self) -> None:
+        """Event 10 minutes after window_end is excluded."""
         ts_us = _ts_us_from_iso("2024-03-15T22:10:00+00:00")
         line = _make_journal_line(ts_us=ts_us)
 

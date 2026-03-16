@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 _LINE_RE = re.compile(
     r"^(\S+)"  # 1: rsyslog timestamp
     r" \S+ haproxy\[\d+\]: "  #    hostname + haproxy[pid]:
-    r"(\d+\.\d+\.\d+\.\d+)"  # 2: client IP
-    r":(\d+)"  # 3: client port
+    r"(.+?)"  # 2: client IP (IPv4 or IPv6)
+    r":(\d+)"  # 3: client port (last colon before space+[)
     r" \[[^\]]+\]"  #    [%tr] inner timestamp (skip)
     r" (\S+)"  # 4: frontend
     r" (\S+)/(\S+)"  # 5: backend / 6: server

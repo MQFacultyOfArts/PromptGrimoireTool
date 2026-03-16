@@ -183,26 +183,26 @@ class TestTimeWindowFiltering:
         results = parse_jsonl(data, _WINDOW_START, _WINDOW_END)
         assert len(results) == 0
 
-    def test_event_in_buffer_zone_included(self) -> None:
-        """5-minute buffer: event at 03:47 is within 5 min of start 03:50."""
+    def test_event_before_start_excluded(self) -> None:
+        """Event at 03:47 is before window start 03:50 — excluded (no buffer)."""
         data = _line(timestamp="2026-03-16T03:47:00Z")
         results = parse_jsonl(data, _WINDOW_START, _WINDOW_END)
-        assert len(results) == 1
+        assert len(results) == 0
 
-    def test_event_outside_buffer_excluded(self) -> None:
-        """Event at 03:44 is outside the 5-min buffer before 03:50."""
+    def test_event_well_before_start_excluded(self) -> None:
+        """Event at 03:44 is well before window start 03:50 — excluded."""
         data = _line(timestamp="2026-03-16T03:44:00Z")
         results = parse_jsonl(data, _WINDOW_START, _WINDOW_END)
         assert len(results) == 0
 
-    def test_event_after_end_buffer_included(self) -> None:
-        """5-minute buffer after end: event at 06:23 is within buffer of 06:20."""
+    def test_event_after_end_excluded(self) -> None:
+        """Event at 06:23 is after window end 06:20 — excluded (no buffer)."""
         data = _line(timestamp="2026-03-16T06:23:00Z")
         results = parse_jsonl(data, _WINDOW_START, _WINDOW_END)
-        assert len(results) == 1
+        assert len(results) == 0
 
-    def test_event_after_end_buffer_excluded(self) -> None:
-        """Event at 06:26 is outside the 5-min buffer after 06:20."""
+    def test_event_well_after_end_excluded(self) -> None:
+        """Event at 06:26 is well after window end 06:20 — excluded."""
         data = _line(timestamp="2026-03-16T06:26:00Z")
         results = parse_jsonl(data, _WINDOW_START, _WINDOW_END)
         assert len(results) == 0

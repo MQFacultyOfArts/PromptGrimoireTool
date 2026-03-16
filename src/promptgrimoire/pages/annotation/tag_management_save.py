@@ -15,6 +15,8 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.tags import DuplicateNameError
+
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)
 
@@ -135,6 +137,10 @@ async def _create_tag_or_notify(
     except PermissionError:
         logger.warning("tag_creation_denied", operation="create_tag")
         ui.notify("Tag creation not allowed", type="negative")
+        return None
+    except DuplicateNameError:
+        logger.warning("duplicate_tag_name", operation="create_tag", name=name)
+        ui.notify(f"A tag named '{name}' already exists", type="warning")
         return None
     except Exception as exc:
         from sqlalchemy.exc import IntegrityError  # noqa: PLC0415

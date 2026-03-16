@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.tags import DuplicateNameError
 from promptgrimoire.pages.annotation.tag_import import (
     _render_import_section,
 )
@@ -104,16 +105,20 @@ _PRESET_PALETTE: list[str] = [
 # ── Pure helpers ─────────────────────────────────────────────────────
 
 
-def _unique_tag_name(existing_names: set[str]) -> str:
-    """Generate a unique default tag name not in *existing_names*."""
-    name = "New tag"
-    if name not in existing_names:
-        return name
+def _unique_default_name(base: str, existing_names: set[str]) -> str:
+    """Generate a unique default name not in *existing_names*."""
+    if base not in existing_names:
+        return base
     for i in range(2, 100):
-        candidate = f"New tag {i}"
+        candidate = f"{base} {i}"
         if candidate not in existing_names:
             return candidate
-    return name  # fallback, unlikely
+    return base  # fallback, unlikely
+
+
+def _unique_tag_name(existing_names: set[str]) -> str:
+    """Generate a unique default tag name not in *existing_names*."""
+    return _unique_default_name("New tag", existing_names)
 
 
 def _highlight_count_for_tag(
@@ -394,15 +399,30 @@ def _build_group_callbacks(
         await render_tag_list()
 
     async def _add_group() -> None:
+        existing_group_names = {
+            t.group_name for t in (state.tag_info_list or []) if t.group_name
+        }
+        name = _unique_default_name("New group", existing_group_names)
         try:
             await create_tag_group(
                 workspace_id=state.workspace_id,
-                name="New group",
+                name=name,
                 crdt_doc=state.crdt_doc,
             )
         except PermissionError:
             logger.warning("tag_group_creation_denied", operation="add_group")
             ui.notify("Tag creation not allowed", type="negative")
+            return
+        except DuplicateNameError:
+            logger.warning(
+                "tag_group_duplicate_name",
+                operation="add_group",
+                name=name,
+            )
+            ui.notify(
+                f"A tag group named '{name}' already exists",
+                type="warning",
+            )
             return
         await render_tag_list()
 

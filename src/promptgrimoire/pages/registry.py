@@ -23,6 +23,7 @@ logging.getLogger(__name__).setLevel(logging.INFO)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from uuid import UUID
 
 
 @dataclass
@@ -76,6 +77,26 @@ def _is_page_visible(
             or _has_roleplay_page_access(user, roleplay_enabled),
         )
     )
+
+
+async def _check_ban(user_id: UUID, route: str) -> bool:
+    """Return True (and redirect) if the user is banned."""
+    from promptgrimoire.db.users import is_user_banned  # noqa: PLC0415, I001 -- inline to avoid circular import (registry -> db)
+
+    if await is_user_banned(user_id):
+        logger.warning("banned_user_redirected", user_id=user_id, route=route)
+        ui.navigate.to("/banned")
+        return True
+    return False
+
+
+def _register_client(user_id: UUID) -> None:
+    """Register the current NiceGUI client for real-time ban kick."""
+    from uuid import UUID as _UUID  # noqa: PLC0415
+
+    from promptgrimoire.auth import client_registry  # noqa: PLC0415
+
+    client_registry.register(_UUID(str(user_id)), ui.context.client)
 
 
 def page_route(
@@ -137,15 +158,12 @@ def page_route(
             bind_contextvars(user_id=user_id, request_path=route)
 
             # Ban check: redirect banned users to suspension page
-            if requires_auth and user_id:
-                from promptgrimoire.db.users import is_user_banned  # noqa: PLC0415, I001 -- inline to avoid circular import (registry -> db)
+            if requires_auth and user_id and await _check_ban(user_id, route):
+                return
 
-                if await is_user_banned(user_id):
-                    logger.warning(
-                        "banned_user_redirected", user_id=user_id, route=route
-                    )
-                    ui.navigate.to("/banned")
-                    return
+            # Register client for real-time ban kick
+            if user_id:
+                _register_client(user_id)
 
             await func(*args, **kwargs)
 

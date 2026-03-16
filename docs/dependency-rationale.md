@@ -424,3 +424,12 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `from openpyxl import load_workbook` in `enrol/xlsx_parser.py` (to be created in Phase 2 of bulk-enrol-320).
 **Serves:** Runtime — admin CLI and instructor UI upload both depend on XLSX parsing.
 **Why not alternatives:** `pandas` is heavyweight for simple row iteration. `xlrd` only supports `.xls` (not `.xlsx`). openpyxl is the de facto standard for `.xlsx` in Python, read-only mode is memory-efficient.
+
+### pgtoolkit
+
+**Added:** 2026-03-16
+**Design plan:** docs/design-plans/2026-03-16-incident-analysis-tools.md
+**Claim:** PostgreSQL log file parser. Used in `scripts/incident/parsers/pglog.py` to group multi-line PG log entries (ERROR + DETAIL + STATEMENT continuation lines) into single logical events.
+**Evidence:** `scripts/incident/parsers/pglog.py` imports `pgtoolkit.log`.
+**Serves:** Developers/operators (incident analysis tooling, dev-only dependency).
+**Why not alternatives:** Writing a PG log multi-line grouping state machine is error-prone. pgtoolkit is actively maintained by Dalibo and handles the format's edge cases (variable log_line_prefix, multi-line DETAIL/STATEMENT/HINT blocks).

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -129,6 +130,88 @@ def breakdown(
     data = query_breakdown(conn)
     conn.close()
     _output(data, "Breakdown", json_output=json_output, csv_output=csv_output)
+
+
+@app.command()
+def beszel(
+    start: str = typer.Option(..., help="Start time (AEDT, e.g. '2026-03-16 16:05')"),
+    end: str = typer.Option(..., help="End time (AEDT, e.g. '2026-03-16 16:14')"),
+    hub: str = typer.Option(
+        "http://localhost:8090", help="Beszel hub URL (via SSH tunnel)"
+    ),
+    db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
+) -> None:
+    """Fetch Beszel system metrics for a time window."""
+    from scripts.incident.parsers.beszel import fetch_beszel_metrics
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    # Look up timezone from first ingested source, default to Sydney.
+    row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
+    tz_name = row[0] if row else "Australia/Sydney"
+
+    start_utc = _aedt_to_utc(start, tz_name)
+    end_utc = _aedt_to_utc(end, tz_name)
+
+    if start_utc > end_utc:
+        typer.echo(f"Error: --start ({start}) is after --end ({end}).", err=True)
+        conn.close()
+        raise SystemExit(1)
+
+    metrics = fetch_beszel_metrics(hub, start_utc, end_utc)
+
+    # Insert synthetic source row for FK constraint.
+    sha = hashlib.sha256(f"{hub}:{start_utc}:{end_utc}".encode()).hexdigest()
+    conn.execute(
+        """INSERT OR IGNORE INTO sources
+           (filename, format, sha256, size, mtime, hostname, timezone,
+            window_start_utc, window_end_utc)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "beszel-api",
+            "beszel",
+            sha,
+            0,
+            0,
+            "beszel-hub",
+            tz_name,
+            start_utc,
+            end_utc,
+        ),
+    )
+    source_id = conn.execute(
+        "SELECT id FROM sources WHERE sha256 = ?", (sha,)
+    ).fetchone()[0]
+
+    # Insert metrics rows.
+    for m in metrics:
+        conn.execute(
+            """INSERT INTO beszel_metrics
+               (source_id, ts_utc, cpu, mem_used, mem_percent,
+                net_sent, net_recv, disk_read, disk_write,
+                load_1, load_5, load_15)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                source_id,
+                m["ts_utc"],
+                m["cpu"],
+                m["mem_used"],
+                m["mem_percent"],
+                m["net_sent"],
+                m["net_recv"],
+                m["disk_read"],
+                m["disk_write"],
+                m["load_1"],
+                m["load_5"],
+                m["load_15"],
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    typer.echo(f"Fetched {len(metrics)} metric data points")
 
 
 if __name__ == "__main__":

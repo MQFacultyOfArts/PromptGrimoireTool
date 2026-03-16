@@ -135,6 +135,18 @@ def page_route(
             except RuntimeError:
                 logger.debug("storage_unavailable", route=route)
             bind_contextvars(user_id=user_id, request_path=route)
+
+            # Ban check: redirect banned users to suspension page
+            if requires_auth and user_id:
+                from promptgrimoire.db.users import is_user_banned  # noqa: PLC0415, I001 -- inline to avoid circular import (registry -> db)
+
+                if await is_user_banned(user_id):
+                    logger.warning(
+                        "banned_user_redirected", user_id=user_id, route=route
+                    )
+                    ui.navigate.to("/banned")
+                    return
+
             await func(*args, **kwargs)
 
         return ui.page(route)(_with_log_context)

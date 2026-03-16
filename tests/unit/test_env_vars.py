@@ -257,6 +257,8 @@ _ALLOWED_TEST_OS_ENVIRON_GET = {
     # E2E helpers read DATABASE__URL for sync DB seeding (same pattern as conftest)
     _TESTS_DIR / "e2e" / "db_fixtures.py",
     _TESTS_DIR / "e2e" / "tag_helpers.py",
+    # Ban test reads DATABASE__URL for sync DB ban (same pattern as db_fixtures)
+    _TESTS_DIR / "e2e" / "test_banned_page.py",
     # This file itself references os.environ in test assertions/comments
     _TESTS_DIR / "unit" / "test_env_vars.py",
     # Filename E2E test reads E2E_SKIP_LATEXMK (test-runner flag, not app config)

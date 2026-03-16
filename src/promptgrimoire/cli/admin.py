@@ -323,9 +323,31 @@ async def _cmd_list_banned(
     *,
     console: Console | None = None,
 ) -> None:
-    """Display all banned users. Placeholder — implemented in Task 3."""
+    """Display all banned users."""
+    from rich.table import Table
+
+    from promptgrimoire.db.users import get_banned_users
+
     con = console or Console()
-    con.print("[dim]Not yet implemented.[/]")
+    users = await get_banned_users()
+
+    if not users:
+        con.print("[dim]No banned users.[/]")
+        return
+
+    table = Table(title="Banned Users")
+    table.add_column("Email", style="cyan")
+    table.add_column("Name")
+    table.add_column("Banned At")
+
+    for u in users:
+        table.add_row(
+            u.email,
+            u.display_name,
+            u.banned_at.strftime("%Y-%m-%d %H:%M UTC") if u.banned_at else "\u2014",
+        )
+
+    con.print(table)
 
 
 async def _cmd_enroll_bulk(

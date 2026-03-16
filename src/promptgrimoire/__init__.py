@@ -15,6 +15,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID as _UUID
 
 import structlog
+from starlette.requests import (
+    Request,  # noqa: TC002 -- used in kick_user_handler signature at runtime
+)
+from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from promptgrimoire.config import Settings
@@ -282,35 +286,38 @@ def _bootstrap_database(db_url: str) -> None:
         log.info("branch_config", branch=branch, database=db_name)
 
 
-async def kick_user_handler(request: object) -> object:
+async def kick_user_handler(request: Request) -> JSONResponse:
     """Kick a banned user's connected clients.
 
-    POST /api/admin/kick — requires Bearer token matching ADMIN__ADMIN_API_SECRET.
+    POST /api/admin/kick — requires Bearer token matching
+    ADMIN__ADMIN_API_SECRET.
     """
-    from starlette.responses import JSONResponse
-
     from promptgrimoire.config import get_settings
 
     secret = get_settings().admin.admin_api_secret.get_secret_value()
     if not secret:
         return JSONResponse(
-            {"error": "ADMIN_API_SECRET not configured"}, status_code=503
+            {"error": "ADMIN_API_SECRET not configured"},
+            status_code=503,
         )
 
-    # Validate bearer token
-    auth_header = request.headers.get("authorization", "")  # type: ignore[attr-defined]  # Starlette Request
-    if not auth_header.startswith("Bearer "):
+    # Validate bearer token (case-insensitive scheme per RFC 7235)
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
         return JSONResponse({"error": "Forbidden"}, status_code=403)
-    token = auth_header.removeprefix("Bearer ")
+    token = auth_header[len("bearer ") :]
     if not hmac.compare_digest(token, secret):
         return JSONResponse({"error": "Forbidden"}, status_code=403)
 
     # Parse user_id from body
     try:
-        body = await request.json()  # type: ignore[attr-defined]  # Starlette Request
+        body = await request.json()
         user_id = _UUID(body["user_id"])
     except KeyError, ValueError, TypeError:
-        log.warning("kick_invalid_user_id", reason="missing or malformed user_id")
+        log.warning(
+            "kick_invalid_user_id",
+            reason="missing or malformed user_id",
+        )
         return JSONResponse({"error": "Invalid or missing user_id"}, status_code=400)
 
     # Check ban state (DB is source of truth)

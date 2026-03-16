@@ -64,5 +64,5 @@ async def disconnect_user(user_id: UUID) -> int:
             )
             redirected += 1
         except Exception:
-            logger.warning("ban_redirect_failed", client_id=client.id)
+            logger.warning("ban_redirect_failed", client_id=client.id, exc_info=True)
     return redirected

@@ -49,10 +49,8 @@ class TestBannedPage:
         """Navigate to /banned directly, verify suspension text appears."""
         fresh_page.goto(f"{app_server}/banned")
 
-        expect(
-            fresh_page.locator("text=Your account has been suspended.")
-        ).to_be_visible()
-        expect(fresh_page.locator("text=Contact your instructor.")).to_be_visible()
+        expect(fresh_page.get_by_test_id("suspension-message")).to_be_visible()
+        expect(fresh_page.get_by_test_id("suspension-contact")).to_be_visible()
 
     def test_banned_user_redirected_to_banned_page(
         self, browser: Browser, app_server: str
@@ -75,9 +73,7 @@ class TestBannedPage:
             page.wait_for_url(lambda url: "/banned" in url, timeout=10000)
 
             # Verify the suspension message is shown
-            expect(
-                page.locator("text=Your account has been suspended.")
-            ).to_be_visible()
+            expect(page.get_by_test_id("suspension-message")).to_be_visible()
         finally:
             page.goto("about:blank")
             page.close()

@@ -4,6 +4,7 @@ A classroom grimoire for prompt iteration, annotation, and sharing
 in educational contexts.
 """
 
+import hmac
 import logging
 import os
 import subprocess
@@ -11,6 +12,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import UUID as _UUID
 
 import structlog
 
@@ -280,6 +282,48 @@ def _bootstrap_database(db_url: str) -> None:
         log.info("branch_config", branch=branch, database=db_name)
 
 
+async def kick_user_handler(request: object) -> object:
+    """Kick a banned user's connected clients.
+
+    POST /api/admin/kick — requires Bearer token matching ADMIN__ADMIN_API_SECRET.
+    """
+    from starlette.responses import JSONResponse
+
+    from promptgrimoire.config import get_settings
+
+    secret = get_settings().admin.admin_api_secret.get_secret_value()
+    if not secret:
+        return JSONResponse(
+            {"error": "ADMIN_API_SECRET not configured"}, status_code=503
+        )
+
+    # Validate bearer token
+    auth_header = request.headers.get("authorization", "")  # type: ignore[attr-defined]  # Starlette Request
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+    token = auth_header.removeprefix("Bearer ")
+    if not hmac.compare_digest(token, secret):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    # Parse user_id from body
+    try:
+        body = await request.json()  # type: ignore[attr-defined]  # Starlette Request
+        user_id = _UUID(body["user_id"])
+    except KeyError, ValueError, TypeError:
+        log.warning("kick_invalid_user_id", reason="missing or malformed user_id")
+        return JSONResponse({"error": "Invalid or missing user_id"}, status_code=400)
+
+    # Check ban state (DB is source of truth)
+    from promptgrimoire.auth.client_registry import disconnect_user
+    from promptgrimoire.db.users import is_user_banned
+
+    if await is_user_banned(user_id):
+        kicked = await disconnect_user(user_id)
+        return JSONResponse({"kicked": kicked, "was_banned": True})
+
+    return JSONResponse({"kicked": 0, "was_banned": False})
+
+
 def main() -> None:
     """Entry point for the PromptGrimoire application."""
     from nicegui import app, ui
@@ -304,6 +348,9 @@ def main() -> None:
         return PlainTextResponse("ok")
 
     app.routes.insert(0, Route("/healthz", healthz, methods=["GET", "HEAD"]))
+
+    # Admin kick endpoint for banning users in real time
+    app.routes.insert(0, Route("/api/admin/kick", kick_user_handler, methods=["POST"]))
 
     settings = get_settings()
 

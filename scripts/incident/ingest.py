@@ -8,15 +8,70 @@ import tarfile
 import tempfile
 from typing import TYPE_CHECKING
 
+from scripts.incident.parsers.journal import parse_journal
+from scripts.incident.parsers.jsonl import parse_jsonl
 from scripts.incident.provenance import format_to_table, parse_manifest
 from scripts.incident.schema import create_schema
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Parser dispatch: format string -> callable(conn, source_id, file_path).
-# Empty in Phase 2; parsers are registered in Phases 3-4.
-_PARSERS: dict[str, object] = {}
+# Maps format string to (parser_func, table_name, column_names).
+# Parser funcs: (data: bytes, window_start: str, window_end: str) -> list[dict]
+_PARSERS: dict[str, tuple[object, str, list[str]]] = {
+    "journal": (
+        parse_journal,
+        "journal_events",
+        ["source_id", "ts_utc", "priority", "pid", "unit", "message", "raw_json"],
+    ),
+    "jsonl": (
+        parse_jsonl,
+        "jsonl_events",
+        [
+            "source_id",
+            "ts_utc",
+            "level",
+            "event",
+            "user_id",
+            "workspace_id",
+            "request_path",
+            "exc_info",
+            "extra_json",
+        ],
+    ),
+}
+
+
+def _dispatch_parser(
+    conn: sqlite3.Connection,
+    fmt: str,
+    source_id: int,
+    file_data: bytes,
+    window_start_utc: str,
+    window_end_utc: str,
+) -> None:
+    """Run the registered parser for *fmt* and insert events."""
+    parser_entry = _PARSERS.get(fmt)
+    if parser_entry is None:
+        return
+
+    parse_fn, table_name, columns = parser_entry
+    events = parse_fn(  # type: ignore[operator]
+        file_data, window_start_utc, window_end_utc
+    )
+    if not events:
+        return
+
+    for ev in events:
+        ev["source_id"] = source_id
+    placeholders = ", ".join(f":{c}" for c in columns)
+    col_names = ", ".join(columns)
+    conn.executemany(
+        f"INSERT INTO {table_name} ({col_names}) "  # noqa: S608
+        f"VALUES ({placeholders})",
+        events,
+    )
+    print(f"  \u2192 {len(events)} events parsed")
 
 
 def run_ingest(tarball: Path, db_path: Path) -> None:
@@ -102,11 +157,16 @@ def run_ingest(tarball: Path, db_path: Path) -> None:
             )
             source_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-            # Dispatch to parser if registered (Phase 3-4 fills this in)
-            parser = _PARSERS.get(fmt)
-            if parser is not None:
-                file_path = tmp_dir / filename
-                parser(conn, source_id, file_path)  # type: ignore[operator]
+            # Dispatch to parser if registered
+            file_data = (tmp_dir / filename).read_bytes()
+            _dispatch_parser(
+                conn,
+                fmt,
+                source_id,
+                file_data,
+                window_start_utc,
+                window_end_utc,
+            )
 
             ingested += 1
 

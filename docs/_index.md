@@ -118,6 +118,7 @@ library references during development.
 - [Post-Mortem: 2026-03-16 Service Degradation and Data Loss During Live Class](postmortems/2026-03-16-gateway-failures-data-loss.md)
 - [Incident Response Commands: 2026-03-16](postmortems/2026-03-16-incident-response.md)
 - [Investigation: 2026-03-16 Gateway Failures](postmortems/2026-03-16-investigation.md)
+- [New Errors Observed 2026-03-16 ~15:00 AEDT](postmortems/2026-03-16-new-errors.md)
 
 ## prds
 

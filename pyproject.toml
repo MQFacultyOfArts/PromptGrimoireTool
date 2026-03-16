@@ -197,6 +197,13 @@ ignore = [
 "alembic/versions/*.py" = [
     "TC003",  # Alembic generates imports outside TYPE_CHECKING block
 ]
+"scripts/incident_db.py" = [
+    "B008",     # typer.Argument/Option must be called in function defaults
+    "PLC0415",  # Lazy import of ingest module (not yet created in early phases)
+]
+"scripts/incident/*.py" = [
+    "TC003",  # sqlite3 used at runtime via caller-passed Connection objects
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["promptgrimoire"]

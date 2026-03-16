@@ -93,5 +93,6 @@ log/
 
 # Git worktrees (parallel development)
 .worktrees/
+.claude/worktrees/
 .playwright-mcp/
 luatex.*/

@@ -350,6 +350,28 @@ class StytchB2BClient:
                 error=e.details.error_type,
             )
 
+    async def revoke_member_sessions(self, *, member_id: str) -> SessionResult:
+        """Revoke all active sessions for a member.
+
+        Args:
+            member_id: The Stytch member ID whose sessions to revoke.
+
+        Returns:
+            SessionResult with valid=True on success, valid=False on failure.
+        """
+        try:
+            await self._client.sessions.revoke_async(member_id=member_id)
+            return SessionResult(valid=True)
+        except StytchError as e:
+            logger.warning(
+                "Session revocation failed",
+                extra={
+                    "member_id": member_id,
+                    "error_type": e.details.error_type,
+                },
+            )
+            return SessionResult(valid=False, error=e.details.error_type)
+
     async def update_member_trusted_metadata(
         self,
         organization_id: str,

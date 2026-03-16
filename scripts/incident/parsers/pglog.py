@@ -181,3 +181,24 @@ def parse_pglog_json(
         )
 
     return results
+
+
+def parse_pglog_auto(
+    data: bytes,
+    window_start_utc: str,
+    window_end_utc: str,
+) -> list[dict]:
+    """Auto-detect PG log format and delegate to the right parser.
+
+    Sniffs the first non-empty line: if it starts with ``{``, use
+    ``parse_pglog_json``; otherwise use ``parse_pglog_text``.
+    """
+    text = data.decode("utf-8")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            if stripped.startswith("{"):
+                return parse_pglog_json(data, window_start_utc, window_end_utc)
+            return parse_pglog_text(data, window_start_utc, window_end_utc)
+    # Empty input.
+    return []

@@ -12,6 +12,7 @@ _FILENAME_TO_FORMAT: dict[str, str] = {
     "structlog.jsonl": "jsonl",
     "haproxy.log": "haproxy",
     "postgresql.log": "pglog",
+    "postgresql.json": "pglog",
 }
 
 _REQUIRED_MANIFEST_KEYS = {"hostname", "timezone", "requested_window", "files"}

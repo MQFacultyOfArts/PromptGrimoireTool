@@ -8,8 +8,10 @@ import tarfile
 import tempfile
 from typing import TYPE_CHECKING
 
+from scripts.incident.parsers.haproxy import parse_haproxy
 from scripts.incident.parsers.journal import parse_journal
 from scripts.incident.parsers.jsonl import parse_jsonl
+from scripts.incident.parsers.pglog import parse_pglog_auto
 from scripts.incident.provenance import format_to_table, parse_manifest
 from scripts.incident.schema import create_schema
 
@@ -18,11 +20,20 @@ if TYPE_CHECKING:
 
 # Maps format string to (parser_func, table_name, column_names).
 # Parser funcs: (data: bytes, window_start: str, window_end: str) -> list[dict]
+# Exception: haproxy parser returns (list[dict], int) — see _dispatch_parser.
 _PARSERS: dict[str, tuple[object, str, list[str]]] = {
     "journal": (
         parse_journal,
         "journal_events",
-        ["source_id", "ts_utc", "priority", "pid", "unit", "message", "raw_json"],
+        [
+            "source_id",
+            "ts_utc",
+            "priority",
+            "pid",
+            "unit",
+            "message",
+            "raw_json",
+        ],
     ),
     "jsonl": (
         parse_jsonl,
@@ -39,6 +50,40 @@ _PARSERS: dict[str, tuple[object, str, list[str]]] = {
             "extra_json",
         ],
     ),
+    "haproxy": (
+        parse_haproxy,
+        "haproxy_events",
+        [
+            "source_id",
+            "ts_utc",
+            "client_ip",
+            "status_code",
+            "tr_ms",
+            "tw_ms",
+            "tc_ms",
+            "tr_resp_ms",
+            "ta_ms",
+            "backend",
+            "server",
+            "method",
+            "path",
+            "bytes_read",
+        ],
+    ),
+    "pglog": (
+        parse_pglog_auto,
+        "pg_events",
+        [
+            "source_id",
+            "ts_utc",
+            "pid",
+            "level",
+            "error_type",
+            "detail",
+            "statement",
+            "message",
+        ],
+    ),
 }
 
 
@@ -49,6 +94,7 @@ def _dispatch_parser(
     file_data: bytes,
     window_start_utc: str,
     window_end_utc: str,
+    timezone: str = "",
 ) -> None:
     """Run the registered parser for *fmt* and insert events."""
     parser_entry = _PARSERS.get(fmt)
@@ -56,9 +102,19 @@ def _dispatch_parser(
         return
 
     parse_fn, table_name, columns = parser_entry
-    events = parse_fn(  # type: ignore[operator]
-        file_data, window_start_utc, window_end_utc
-    )
+
+    # HAProxy parser has a different signature: returns (events, count)
+    # and requires a timezone parameter.
+    unparseable_count = 0
+    if fmt == "haproxy":
+        events, unparseable_count = parse_fn(  # type: ignore[operator]
+            file_data, window_start_utc, window_end_utc, timezone
+        )
+    else:
+        events = parse_fn(  # type: ignore[operator]
+            file_data, window_start_utc, window_end_utc
+        )
+
     if not events:
         return
 
@@ -71,7 +127,14 @@ def _dispatch_parser(
         f"VALUES ({placeholders})",
         events,
     )
-    print(f"  \u2192 {len(events)} events parsed")
+
+    if unparseable_count:
+        print(
+            f"  \u2192 {len(events)} events parsed"
+            f" ({unparseable_count} unparseable lines skipped)"
+        )
+    else:
+        print(f"  \u2192 {len(events)} events parsed")
 
 
 def run_ingest(tarball: Path, db_path: Path) -> None:
@@ -166,6 +229,7 @@ def run_ingest(tarball: Path, db_path: Path) -> None:
                 file_data,
                 window_start_utc,
                 window_end_utc,
+                timezone=timezone,
             )
 
             ingested += 1

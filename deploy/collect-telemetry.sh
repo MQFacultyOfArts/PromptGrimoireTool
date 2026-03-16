@@ -126,17 +126,24 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 4. Copy PostgreSQL log (most recent)
+# 4. Copy PostgreSQL log (most recent .json or .log)
 # -------------------------------------------------------------------
 step "Copying PostgreSQL log..."
-PG_FILE="$WORKDIR/postgresql.log"
-# Find the most recent .log file in the PG log directory.
-PG_LATEST=$(find "$PG_LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null \
+# Prefer .json (jsonlog format, PG 15+) over .log (legacy text).
+PG_LATEST_JSON=$(find "$PG_LOG_DIR" -name "*.json" -type f -printf '%T@ %p\n' 2>/dev/null \
     | sort -rn | head -1 | cut -d' ' -f2-)
-if [[ -n "$PG_LATEST" ]]; then
-    cp "$PG_LATEST" "$PG_FILE"
+PG_LATEST_LOG=$(find "$PG_LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -1 | cut -d' ' -f2-)
+
+if [[ -n "$PG_LATEST_JSON" ]]; then
+    PG_FILE="$WORKDIR/postgresql.json"
+    cp "$PG_LATEST_JSON" "$PG_FILE"
+elif [[ -n "$PG_LATEST_LOG" ]]; then
+    PG_FILE="$WORKDIR/postgresql.log"
+    cp "$PG_LATEST_LOG" "$PG_FILE"
 else
     echo "WARNING: No PostgreSQL log found in $PG_LOG_DIR" >&2
+    PG_FILE="$WORKDIR/postgresql.log"
     touch "$PG_FILE"
 fi
 

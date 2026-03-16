@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from pydantic import model_validator
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -116,6 +117,14 @@ class User(SQLModel, table=True):
     display_name: str = Field(max_length=100)
     stytch_member_id: str | None = Field(default=None, unique=True, index=True)
     is_admin: bool = Field(default=False)
+    is_banned: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    banned_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     student_id: str | None = Field(
         default=None,
         max_length=50,

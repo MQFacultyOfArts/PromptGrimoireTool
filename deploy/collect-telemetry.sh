@@ -12,11 +12,11 @@ set -euo pipefail
 # -------------------------------------------------------------------
 # Configuration — edit these if log paths change on the server
 # -------------------------------------------------------------------
-APP_DIR="/opt/promptgrimoire"
-JSONL_LOG="$APP_DIR/logs/sessions/promptgrimoire.jsonl"
-HAPROXY_LOG="/var/log/haproxy.log"
-PG_LOG_DIR="/var/log/postgresql"
-UNIT_NAME="promptgrimoire.service"
+APP_DIR="${APP_DIR:-/opt/promptgrimoire}"
+JSONL_LOG="${JSONL_LOG:-$APP_DIR/logs/sessions/promptgrimoire.jsonl}"
+HAPROXY_LOG="${HAPROXY_LOG:-/var/log/haproxy.log}"
+PG_LOG_DIR="${PG_LOG_DIR:-/var/log/postgresql}"
+UNIT_NAME="${UNIT_NAME:-promptgrimoire.service}"
 
 # -------------------------------------------------------------------
 # Helpers (same pattern as restart.sh)
@@ -53,7 +53,7 @@ done
 # -------------------------------------------------------------------
 # Root guard (same pattern as restart.sh)
 # -------------------------------------------------------------------
-if [[ $EUID -ne 0 ]]; then
+if [[ "${COLLECT_TELEMETRY_ALLOW_NON_ROOT:-0}" != "1" && $EUID -ne 0 ]]; then
     echo "ERROR: Must run as root (need journal + log access)." >&2
     exit 1
 fi
@@ -69,13 +69,18 @@ WARNINGS=()
 step "Collecting telemetry for window: $START → $END"
 step "Working directory: $WORKDIR"
 
-# Compute filter bounds from local input times.
-# IMPORTANT: `date --utc -d "NAIVE"` treats input as UTC, not local.
-# Parse as local first (gets offset), then convert to UTC for output.
-FILTER_START_LOCAL=$(date -d "$START" +"%Y-%m-%dT%H:%M:%S%:z")
-FILTER_END_LOCAL=$(date -d "$END" +"%Y-%m-%dT%H:%M:%S%:z")
-FILTER_START_UTC=$(date -u -d "$FILTER_START_LOCAL" +"%Y-%m-%dT%H:%M:%SZ")
-FILTER_END_UTC=$(date -u -d "$FILTER_END_LOCAL" +"%Y-%m-%dT%H:%M:%SZ")
+# Compute requested UTC bounds and buffered filter bounds.
+REQUEST_START_EPOCH=$(date -d "$START" +%s)
+REQUEST_END_EPOCH=$(date -d "$END" +%s)
+FILTER_START_EPOCH=$((REQUEST_START_EPOCH - 300))
+FILTER_END_EPOCH=$((REQUEST_END_EPOCH + 300))
+
+REQUEST_START_UTC=$(date -u -d "@$REQUEST_START_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")
+REQUEST_END_UTC=$(date -u -d "@$REQUEST_END_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")
+FILTER_START_LOCAL=$(date -d "@$FILTER_START_EPOCH" +"%Y-%m-%dT%H:%M:%S%:z")
+FILTER_END_LOCAL=$(date -d "@$FILTER_END_EPOCH" +"%Y-%m-%dT%H:%M:%S%:z")
+FILTER_START_UTC=$(date -u -d "@$FILTER_START_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")
+FILTER_END_UTC=$(date -u -d "@$FILTER_END_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")
 
 step "Filter window (UTC): $FILTER_START_UTC → $FILTER_END_UTC"
 
@@ -131,14 +136,18 @@ HAPROXY_METHOD="not collected"
 HAPROXY_SOURCES=""
 if [[ -f "$HAPROXY_LOG" ]] || [[ -f "${HAPROXY_LOG}.1" ]]; then
     HAPROXY_METHOD="awk timestamp filter"
-    # Concatenate current + rotated (if exists) before filtering.
-    {
-        [[ -f "${HAPROXY_LOG}.1" ]] && cat "${HAPROXY_LOG}.1" && HAPROXY_SOURCES="${HAPROXY_LOG}.1"
-        [[ -f "$HAPROXY_LOG" ]] && cat "$HAPROXY_LOG" && HAPROXY_SOURCES="${HAPROXY_SOURCES:+$HAPROXY_SOURCES, }${HAPROXY_LOG}"
-    } | awk -v start="$FILTER_START_LOCAL" -v end="$FILTER_END_LOCAL" \
+    haproxy_inputs=()
+    if [[ -f "${HAPROXY_LOG}.1" ]]; then
+        haproxy_inputs+=("${HAPROXY_LOG}.1")
+    fi
+    if [[ -f "$HAPROXY_LOG" ]]; then
+        haproxy_inputs+=("$HAPROXY_LOG")
+    fi
+    HAPROXY_SOURCES=$(printf '%s, ' "${haproxy_inputs[@]}")
+    HAPROXY_SOURCES=${HAPROXY_SOURCES%, }
+    if ! cat "${haproxy_inputs[@]}" | awk -v start="$FILTER_START_LOCAL" -v end="$FILTER_END_LOCAL" \
         '{ ts = substr($1, 1, 25); if (ts >= start && ts <= end) print }' \
-        > "$HAPROXY_FILE" 2>"$WORKDIR/haproxy.stderr"
-    if [[ $? -ne 0 ]]; then
+        > "$HAPROXY_FILE" 2>"$WORKDIR/haproxy.stderr"; then
         warn "HAProxy awk filtering failed (see haproxy.stderr in tarball)"
         HAPROXY_METHOD="awk (failed)"
     fi
@@ -149,19 +158,26 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 4. Copy PostgreSQL log (most recent .json or .log, plus rotated)
+# 4. Copy PostgreSQL log (most recent .json or .log)
 # -------------------------------------------------------------------
 step "Copying PostgreSQL logs..."
 PG_METHOD="not collected"
 PG_SOURCE=""
 PG_COUNT=0
-# Copy ALL .json and .log files — both formats may exist during a transition.
-for pg_file in $(find "$PG_LOG_DIR" -name "*.json" -o -name "*.log" 2>/dev/null | sort); do
-    pg_basename=$(basename "$pg_file")
-    cp "$pg_file" "$WORKDIR/$pg_basename"
-    PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$pg_file"
+PG_LATEST_JSON=$(find "$PG_LOG_DIR" -name "*.json" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+PG_LATEST_LOG=$(find "$PG_LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+
+if [[ -n "$PG_LATEST_JSON" ]]; then
+    cp "$PG_LATEST_JSON" "$WORKDIR/postgresql.json"
+    PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$PG_LATEST_JSON"
     PG_COUNT=$((PG_COUNT + 1))
-done
+fi
+if [[ -n "$PG_LATEST_LOG" ]]; then
+    cp "$PG_LATEST_LOG" "$WORKDIR/postgresql.log"
+    PG_SOURCE="${PG_SOURCE:+$PG_SOURCE, }$PG_LATEST_LOG"
+    PG_COUNT=$((PG_COUNT + 1))
+fi
+
 if [[ $PG_COUNT -gt 0 ]]; then
     PG_METHOD="full copy ($PG_COUNT files)"
     step "  Copied $PG_COUNT PostgreSQL log file(s)"
@@ -180,9 +196,9 @@ SERVER_HOSTNAME=$(hostname -f)
 SERVER_TZ=$(timedatectl show --property=Timezone --value)
 COLLECTION_TS=$(date --utc +"%Y-%m-%dT%H:%M:%SZ")
 
-# UTC bounds for manifest (reuse the correctly-computed filter bounds).
-START_UTC="$FILTER_START_UTC"
-END_UTC="$FILTER_END_UTC"
+# UTC bounds for manifest reflect the requested window, not the collector buffer.
+START_UTC="$REQUEST_START_UTC"
+END_UTC="$REQUEST_END_UTC"
 
 # Build per-file metadata.
 file_entry() {

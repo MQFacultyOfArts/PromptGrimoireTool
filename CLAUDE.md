@@ -54,8 +54,9 @@ See [docs/testing.md](docs/testing.md) for full testing guidelines including E2E
 
 ### Test Lane Model
 
-The test suite is organised into 6 lanes, each a separate pytest invocation. `uv run grimoire test all` runs unit tests only (fast). `uv run grimoire e2e all` runs all 6 lanes sequentially: unit, integration, playwright, nicegui, smoke, blns+slow.
+The test suite is organised into 7 lanes: 1 BATS lane for shell scripts and 6 pytest lanes. `uv run grimoire test all` runs BATS + unit tests (fast). `uv run grimoire e2e all` runs all 7 lanes sequentially: bats, unit, integration, playwright, nicegui, smoke, blns+slow.
 
+- **BATS** (`deploy/tests/`, serial) -- shell script unit tests via bats-core (system dependency: `sudo apt install bats`)
 - **Unit** (`tests/unit/`, xdist) -- excludes `e2e`, `nicegui_ui`, `latexmk_full`, `smoke` markers
 - **Integration** (`tests/integration/`, xdist) -- excludes `e2e`, `nicegui_ui`, `smoke`
 - **Playwright** (`tests/e2e/`, parallel per-file isolation with cloned databases)
@@ -109,8 +110,11 @@ uv run grimoire test run <path>::<test>
 # Run tests affected by changes (AST dependency analysis)
 uv run grimoire test changed
 
-# Run unit tests only (fast, excludes smoke/E2E/integration)
+# Run BATS + unit tests (fast, excludes smoke/E2E/integration)
 uv run grimoire test all
+
+# Run BATS shell script tests only
+uv run grimoire test bats
 
 # Run toolchain smoke tests (pandoc, lualatex, tlmgr)
 uv run grimoire test smoke
@@ -225,6 +229,12 @@ src/promptgrimoire/
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 ├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
 └── static/              # JS/CSS assets
+
+deploy/
+├── restart.sh           # Zero-downtime deploy script
+├── collect-telemetry.sh # Incident telemetry collection
+├── 503.http             # HAProxy maintenance page
+└── tests/               # BATS shell script tests
 
 tests/
 ├── unit/                # Unit tests

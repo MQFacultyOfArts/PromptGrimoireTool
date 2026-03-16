@@ -2,15 +2,14 @@
 
 Two test classes:
 
-1. TestTagCreationRaceCondition — reproduces the current broken behaviour.
-   These document the failure mode and will be updated once the fix lands.
+1. TestTagCreationRaceCondition — verifies duplicate names raise
+   DuplicateNameError (not IntegrityError).
 
-2. TestGracefulDuplicateHandling — target-state tests defining what "fixed"
-   looks like. These currently FAIL (xfail) because the fix hasn't been
-   implemented yet. The acceptance criterion is:
-   - Duplicate tag/group name raises DuplicateNameError (domain exception)
-   - IntegrityError does NOT propagate through get_session()
-   - The generic "Database session error" logger at engine.py:300 does NOT fire
+2. TestGracefulDuplicateHandling — acceptance boundary tests verifying
+   that duplicate tag/group names:
+   - Raise DuplicateNameError (domain exception)
+   - Do NOT propagate IntegrityError through get_session()
+   - Do NOT trigger the generic "Database session error" logger
 
 See: docs/postmortems/2026-03-16-investigation.md
 """
@@ -39,199 +38,151 @@ async def _make_workspace() -> UUID:
     from promptgrimoire.db.weeks import create_week
 
     code = f"T{uuid4().hex[:6].upper()}"
-    course = await create_course(code=code, name="RaceTest", semester="2026-S1")
-    week = await create_week(course_id=course.id, week_number=1, title="Week 1")
-    activity = await create_activity(week_id=week.id, title="Race Activity")
+    course = await create_course(
+        code=code,
+        name="RaceTest",
+        semester="2026-S1",
+    )
+    week = await create_week(
+        course_id=course.id,
+        week_number=1,
+        title="Week 1",
+    )
+    activity = await create_activity(
+        week_id=week.id,
+        title="Race Activity",
+    )
     assert activity.template_workspace_id is not None
     return activity.template_workspace_id
 
 
 class TestTagCreationRaceCondition:
-    """Reproduce the 2026-03-16 incident: concurrent duplicate tag INSERTs."""
+    """Verify duplicate tag/group names raise DuplicateNameError."""
 
     @pytest.mark.asyncio
-    async def test_duplicate_tag_name_raises_integrity_error(self) -> None:
-        """Two sequential create_tag calls with the same name hit the
-        unique constraint. The IntegrityError propagates through
-        get_session() which logs "Database session error" before
-        re-raising.
-        """
-        from promptgrimoire.db.tags import create_tag
+    async def test_duplicate_tag_name_raises_domain_error(self) -> None:
+        """Sequential duplicate tag name raises DuplicateNameError."""
+        from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         ws_id = await _make_workspace()
+        await create_tag(ws_id, name="test", color="#1f77b4")
 
-        tag1 = await create_tag(ws_id, name="test", color="#1f77b4")
-        assert tag1.name == "test"
-
-        with pytest.raises(IntegrityError, match="uq_tag_workspace_name"):
+        with pytest.raises(DuplicateNameError, match="already exists"):
             await create_tag(ws_id, name="test", color="#ff0000")
 
     @pytest.mark.asyncio
-    async def test_duplicate_group_name_raises_integrity_error(
+    async def test_duplicate_group_name_raises_domain_error(
         self,
     ) -> None:
-        """Two create_tag_group calls with same name hit the unique
-        constraint. Reproduces the "New group" hardcode bug.
-        """
-        from promptgrimoire.db.tags import create_tag_group
+        """Sequential duplicate group name raises DuplicateNameError."""
+        from promptgrimoire.db.tags import (
+            DuplicateNameError,
+            create_tag_group,
+        )
 
         ws_id = await _make_workspace()
+        await create_tag_group(ws_id, name="New group")
 
-        group1 = await create_tag_group(ws_id, name="New group")
-        assert group1.name == "New group"
-
-        with pytest.raises(
-            IntegrityError,
-            match="uq_tag_group_workspace_name",
-        ):
+        with pytest.raises(DuplicateNameError, match="already exists"):
             await create_tag_group(ws_id, name="New group")
 
     @pytest.mark.asyncio
-    async def test_concurrent_tag_creation_race(self) -> None:
-        """Concurrent create_tag calls with same name produce at least
-        one IntegrityError.
+    async def test_concurrent_tag_creation_one_wins(self) -> None:
+        """Concurrent duplicate tags: one succeeds, rest get
+        DuplicateNameError.
         """
-        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         ws_id = await _make_workspace()
 
-        errors: list[Exception] = []
-
-        async def _create_and_catch() -> None:
-            try:
-                await create_tag(
-                    ws_id,
-                    name="race-tag",
-                    color="#1f77b4",
-                )
-            except IntegrityError as exc:
-                errors.append(exc)
-
-        await asyncio.gather(
-            _create_and_catch(),
-            _create_and_catch(),
+        results = await asyncio.gather(
+            create_tag(ws_id, name="race-tag", color="#1f77b4"),
+            create_tag(ws_id, name="race-tag", color="#00ff00"),
+            return_exceptions=True,
         )
 
-        assert len(errors) >= 1, (
-            "Expected at least one IntegrityError from concurrent duplicate INSERT"
-        )
-        assert "uq_tag_workspace_name" in str(errors[0])
+        successes = [r for r in results if not isinstance(r, Exception)]
+        failures = [r for r in results if isinstance(r, DuplicateNameError)]
+
+        assert len(successes) == 1
+        assert len(failures) == 1
 
     @pytest.mark.asyncio
-    async def test_concurrent_group_creation_race(self) -> None:
-        """Concurrent create_tag_group with "New group" produces at
-        least one IntegrityError.
+    async def test_concurrent_group_creation_one_wins(self) -> None:
+        """Concurrent duplicate groups: one succeeds, rest get
+        DuplicateNameError.
         """
-        from promptgrimoire.db.tags import create_tag_group
+        from promptgrimoire.db.tags import (
+            DuplicateNameError,
+            create_tag_group,
+        )
 
         ws_id = await _make_workspace()
 
-        errors: list[Exception] = []
-
-        async def _create_and_catch() -> None:
-            try:
-                await create_tag_group(ws_id, name="New group")
-            except IntegrityError as exc:
-                errors.append(exc)
-
-        await asyncio.gather(
-            _create_and_catch(),
-            _create_and_catch(),
+        results = await asyncio.gather(
+            create_tag_group(ws_id, name="race-group"),
+            create_tag_group(ws_id, name="race-group"),
+            return_exceptions=True,
         )
 
-        assert len(errors) >= 1, (
-            "Expected at least one IntegrityError from concurrent"
-            " duplicate group INSERT"
-        )
-        assert "uq_tag_group_workspace_name" in str(errors[0])
+        successes = [r for r in results if not isinstance(r, Exception)]
+        failures = [r for r in results if isinstance(r, DuplicateNameError)]
+
+        assert len(successes) == 1
+        assert len(failures) == 1
 
     @pytest.mark.asyncio
-    async def test_cascade_effect_multiple_concurrent_tags(
-        self,
-    ) -> None:
-        """5 concurrent create_tag calls with same name produce
-        exactly 1 success and 4 IntegrityErrors.
-        """
-        from promptgrimoire.db.tags import create_tag
+    async def test_cascade_multiple_concurrent_tags(self) -> None:
+        """5 concurrent same-name tags: 1 success, 4 DuplicateNameError."""
+        from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         ws_id = await _make_workspace()
 
-        errors: list[Exception] = []
-        successes: list[object] = []
-
-        async def _create_and_track() -> None:
-            try:
-                tag = await create_tag(
-                    ws_id,
-                    name="Name",
-                    color="#1f77b4",
-                )
-                successes.append(tag)
-            except IntegrityError as exc:
-                errors.append(exc)
-
-        await asyncio.gather(
-            *[_create_and_track() for _ in range(5)],
+        results = await asyncio.gather(
+            *[create_tag(ws_id, name="Name", color="#1f77b4") for _ in range(5)],
+            return_exceptions=True,
         )
+
+        successes = [r for r in results if not isinstance(r, Exception)]
+        failures = [r for r in results if isinstance(r, DuplicateNameError)]
 
         assert len(successes) == 1, f"Expected 1 success, got {len(successes)}"
-        assert len(errors) == 4, f"Expected 4 IntegrityErrors, got {len(errors)}"
+        assert len(failures) == 4, f"Expected 4 DuplicateNameError, got {len(failures)}"
 
 
 class TestGracefulDuplicateHandling:
-    """Target-state tests: what "fixed" looks like.
-
-    Acceptance criteria:
-    1. Duplicate tag/group name raises DuplicateNameError (domain exception)
-    2. IntegrityError does NOT propagate through get_session()
-    3. The generic "Database session error" logger at engine.py:300 does NOT fire
-    4. Works for both tags and groups (including concurrent "New group")
-
-    These tests are xfail until the fix is implemented.
+    """Acceptance boundary: no IntegrityError escapes, no generic
+    session error log fires.
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Fix not implemented: create_tag raises IntegrityError",
-        raises=IntegrityError,
-        strict=True,
-    )
-    async def test_duplicate_tag_raises_domain_error(
+    async def test_duplicate_tag_no_session_error_log(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Duplicate tag name raises DuplicateNameError and does NOT
-        trigger the generic session error logger.
-        """
+        """Duplicate tag does NOT trigger 'Database session error'."""
         from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         ws_id = await _make_workspace()
         await create_tag(ws_id, name="dup", color="#1f77b4")
 
         with (
-            caplog.at_level(logging.ERROR, logger="promptgrimoire.db.engine"),
+            caplog.at_level(
+                logging.ERROR,
+                logger="promptgrimoire.db.engine",
+            ),
             pytest.raises(DuplicateNameError),
         ):
             await create_tag(ws_id, name="dup", color="#ff0000")
 
-        assert "Database session error" not in caplog.text, (
-            "DuplicateNameError must not trigger the generic session"
-            " error logger (engine.py:300)"
-        )
+        assert "Database session error" not in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Fix not implemented: create_tag_group raises IntegrityError",
-        raises=(IntegrityError, ImportError),
-        strict=True,
-    )
-    async def test_duplicate_group_raises_domain_error(
+    async def test_duplicate_group_no_session_error_log(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Duplicate group name raises DuplicateNameError and does NOT
-        trigger the generic session error logger.
-        """
+        """Duplicate group does NOT trigger 'Database session error'."""
         from promptgrimoire.db.tags import (
             DuplicateNameError,
             create_tag_group,
@@ -241,29 +192,23 @@ class TestGracefulDuplicateHandling:
         await create_tag_group(ws_id, name="New group")
 
         with (
-            caplog.at_level(logging.ERROR, logger="promptgrimoire.db.engine"),
+            caplog.at_level(
+                logging.ERROR,
+                logger="promptgrimoire.db.engine",
+            ),
             pytest.raises(DuplicateNameError),
         ):
             await create_tag_group(ws_id, name="New group")
 
-        assert "Database session error" not in caplog.text, (
-            "DuplicateNameError must not trigger the generic session"
-            " error logger (engine.py:300)"
-        )
+        assert "Database session error" not in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Fix not implemented: concurrent creates raise IntegrityError",
-        raises=AssertionError,
-        strict=True,
-    )
-    async def test_concurrent_tag_duplicates_no_integrity_error(
+    async def test_concurrent_tags_no_integrity_error(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """5 concurrent same-name tag creates: exactly 1 succeeds,
-        rest raise DuplicateNameError. No IntegrityError escapes.
-        Generic session error logger does NOT fire.
+        """5 concurrent same-name tags: no IntegrityError escapes,
+        no generic session error log.
         """
         from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
@@ -295,29 +240,19 @@ class TestGracefulDuplicateHandling:
             )
 
         assert len(integrity_errors) == 0, (
-            f"IntegrityError must not escape to get_session(); "
-            f"got {len(integrity_errors)}"
+            f"IntegrityError must not escape; got {len(integrity_errors)}"
         )
         assert len(successes) == 1
         assert len(domain_errors) == 4
         assert "Database session error" not in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Fix not implemented: concurrent group creates raise IntegrityError",
-        raises=AssertionError,
-        strict=True,
-    )
-    async def test_concurrent_group_duplicates_no_integrity_error(
+    async def test_concurrent_groups_no_integrity_error(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """5 concurrent "New group" creates: exactly 1 succeeds,
-        rest raise DuplicateNameError. No IntegrityError escapes.
-        Generic session error logger does NOT fire.
-
-        Reproduces the worst offender from the incident: workspace
-        ba1a8a16 had 8 "New group" collisions.
+        """5 concurrent "New group" creates: no IntegrityError escapes,
+        no generic session error log.
         """
         from promptgrimoire.db.tags import (
             DuplicateNameError,
@@ -351,8 +286,7 @@ class TestGracefulDuplicateHandling:
             )
 
         assert len(integrity_errors) == 0, (
-            f"IntegrityError must not escape to get_session(); "
-            f"got {len(integrity_errors)}"
+            f"IntegrityError must not escape; got {len(integrity_errors)}"
         )
         assert len(successes) == 1
         assert len(domain_errors) == 4

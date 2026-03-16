@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -84,6 +85,8 @@ async def create_tag_group(
     """
     await _check_tag_creation_permission(workspace_id)
 
+    duplicate_name = False
+
     async with get_session() as session:
         result = await session.execute(
             text(
@@ -106,8 +109,25 @@ async def create_tag_group(
             order_index=order_index,
         )
         session.add(group)
-        await session.flush()
-        await session.refresh(group)
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            if "uq_tag_group_workspace_name" in str(exc):
+                logger.warning(
+                    "Duplicate tag group name",
+                    name=name,
+                    workspace_id=str(workspace_id),
+                )
+                duplicate_name = True
+                await session.rollback()
+            else:
+                raise
+        if not duplicate_name:
+            await session.refresh(group)
+
+    if duplicate_name:
+        msg = f"A tag group named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag_group(
@@ -255,6 +275,8 @@ async def create_tag(
     """
     await _check_tag_creation_permission(workspace_id)
 
+    duplicate_name = False
+
     async with get_session() as session:
         result = await session.execute(
             text(
@@ -280,8 +302,25 @@ async def create_tag(
             order_index=order_index,
         )
         session.add(tag)
-        await session.flush()
-        await session.refresh(tag)
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            if "uq_tag_workspace_name" in str(exc):
+                logger.warning(
+                    "Duplicate tag name",
+                    name=name,
+                    workspace_id=str(workspace_id),
+                )
+                duplicate_name = True
+                await session.rollback()
+            else:
+                raise
+        if not duplicate_name:
+            await session.refresh(tag)
+
+    if duplicate_name:
+        msg = f"A tag named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag(

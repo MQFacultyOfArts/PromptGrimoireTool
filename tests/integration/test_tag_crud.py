@@ -1801,21 +1801,23 @@ class TestDuplicateTagNameRejection:
     """
 
     @pytest.mark.asyncio
-    async def test_duplicate_name_raises_integrity_error(self) -> None:
-        """create_tag twice with same name and workspace_id raises IntegrityError.
+    async def test_duplicate_name_raises_duplicate_name_error(
+        self,
+    ) -> None:
+        """create_tag twice with same name raises DuplicateNameError.
 
-        Verifies AC2.7: duplicate name within same workspace is rejected.
+        Verifies AC2.7: duplicate name within same workspace is
+        rejected. Since #360, the DB layer catches IntegrityError
+        and raises DuplicateNameError instead.
         """
-        from sqlalchemy.exc import IntegrityError
-
-        from promptgrimoire.db.tags import create_tag
+        from promptgrimoire.db.tags import DuplicateNameError, create_tag
 
         _, activity = await _make_course_week_activity()
         ws_id = activity.template_workspace_id
 
         await create_tag(ws_id, name="Unique", color="#111111")
 
-        with pytest.raises(IntegrityError, match="uq_tag_workspace_name"):
+        with pytest.raises(DuplicateNameError, match="already exists"):
             await create_tag(ws_id, name="Unique", color="#222222")
 
 

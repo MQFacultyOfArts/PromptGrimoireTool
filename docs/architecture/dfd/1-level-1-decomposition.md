@@ -74,7 +74,7 @@ flowchart TB
 
 | Process | Number | Description | Decomposed in |
 |---------|--------|-------------|---------------|
-| Authenticate Users | 1 | Transforms auth tokens and identity metadata into session state, user records, and derived roles (AAF eduperson_affiliation → instructor/student). Handles magic links, passkeys, OAuth, SSO. | Leaf process |
+| Authenticate Users | 1 | Transforms auth tokens and identity metadata into session state, user records, and derived roles (AAF eduperson_affiliation → instructor/student). Handles magic links, passkeys, OAuth, SSO. Enforces user bans: checks `is_banned` at session validation, maintains in-memory client↔user registry for real-time disconnect, exposes internal `/api/admin/kick` endpoint for CLI-triggered kicks. | Leaf process |
 | Configure Activities | 2 | Transforms instructor intent into activity definitions: units, weeks, activities (annotation or wargame type), tag templates, workspace templates, wargame scenario configs, OpenRouter token provisioning. | Leaf process |
 | Provision Workspaces | 3 | Creates workspaces from multiple sources: student content uploads (HTML, text, files via input pipeline), template cloning (from activity definitions), and simulation transcript export (HTML from roleplay/wargame). Includes document processing, tag creation, and ACL grants. | Leaf process |
 | Run Simulations | 4 | Manages interactive sessions with LLM providers: roleplay (Anthropic — character cards, lorebook activation, trust mechanics), wargame (Anthropic — team turns, round management, facilitator review), LLM playground (OpenRouter — general-purpose chat). Produces transcripts that feed into Provision Workspaces. | [4-run-simulations.md](4-run-simulations.md) |
@@ -85,7 +85,7 @@ flowchart TB
 
 | Store | Description | Read by | Written by |
 |-------|-------------|---------|------------|
-| D1: Session State | Auth sessions (tokens, WebSocket bindings), user records, derived roles, course enrollments. Ephemeral session data (NiceGUI `app.storage.user`) plus persistent user/enrollment records in PostgreSQL. | All processes (identity + permissions) | P1 Authenticate Users |
+| D1: Session State | Auth sessions (tokens, WebSocket bindings), user records (including `is_banned`, `banned_at`), derived roles, course enrollments, in-memory client↔user registry. Ephemeral session data (NiceGUI `app.storage.user`) plus persistent user/enrollment records in PostgreSQL. | All processes (identity + permissions) | P1 Authenticate Users |
 | D2: Activity Configs | Course/week/activity hierarchy, tag templates, wargame configs (system prompts, scenario bootstraps, timer settings), OpenRouter provisioning state. Persistent in PostgreSQL. | P3 Provision, P4 Run Sims, P5 Annotate | P2 Configure Activities |
 | D3: Workspaces | Workspaces, workspace documents (HTML content), persisted CRDT state (binary), ACL entries, search index (materialised FTS). The central data store connecting provisioning, annotation, and export. Persistent in PostgreSQL. | P5 Annotate, P6 Exports | P3 Provision, P5 Annotate |
 | D4: Simulation State | Roleplay sessions (in-memory Turn lists, JSONL logs), wargame teams/messages/rounds (PostgreSQL). In-memory state for active roleplay; persistent state for wargame (which survives across sessions). | P4 Run Sims, P3 Provision (export) | P4 Run Simulations |

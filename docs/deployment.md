@@ -827,13 +827,60 @@ $AddUnixListenSocket /var/lib/haproxy/dev/log
 sudo systemctl restart rsyslog
 ```
 
-Fix the apparmor profile so rsyslogd can access HAProxy's chroot log socket (without this, the journal fills with `apparmor="DENIED"` spam):
+Fix the apparmor profile so rsyslogd can access HAProxy's chroot log socket. There are **two** required changes:
+
+**1. Add the local rule** for the chroot socket path:
 
 ```bash
 echo '/var/lib/haproxy/dev/log rw,' | sudo tee -a /etc/apparmor.d/local/usr.sbin.rsyslogd
+```
+
+**2. Add `attach_disconnected` flag** to the main profile. Without this, apparmor blocks rsyslogd from accessing paths inside HAProxy's chroot after a reload, with `"Failed name lookup - disconnected path"` errors. This is a [known Ubuntu bug](https://bugs.launchpad.net/ubuntu/+source/haproxy/+bug/2138647) affecting HAProxy + rsyslog on Ubuntu 24.04. The fix is included in rsyslog >= 8.2512.0-1ubuntu4, but on older versions you must apply it manually.
+
+Edit `/etc/apparmor.d/usr.sbin.rsyslogd` and change the profile declaration from:
+
+```
+/usr/sbin/rsyslogd {
+```
+
+to:
+
+```
+/usr/sbin/rsyslogd flags=(attach_disconnected) {
+```
+
+Then reload and restart:
+
+```bash
 sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.rsyslogd
 sudo systemctl restart rsyslog
 ```
+
+> **Ref:** [LP#2138647: haproxy stops logging after reload with permission denied](https://bugs.launchpad.net/ubuntu/+source/haproxy/+bug/2138647), [LP#2098148: Cannot log to bindmounted syslog socket within a chroot](https://bugs.launchpad.net/apparmor/+bug/2098148)
+
+**Validate that HAProxy logging works** (do NOT skip this):
+
+```bash
+# 1. Check the rsyslog config exists and has the right content
+cat /etc/rsyslog.d/49-haproxy.conf
+# Must show: $AddUnixListenSocket, :programname filter, /var/log/haproxy.log
+
+# 2. Check the chroot socket exists
+ls -la /var/lib/haproxy/dev/log
+# Must exist as a socket (type 's')
+
+# 3. Check apparmor is not blocking rsyslog
+sudo journalctl -u rsyslog --since "5 min ago" | grep -i denied
+# Should show nothing.
+
+# 4. Generate a test request and verify it appears in the log
+curl -sk https://localhost/ > /dev/null 2>&1; sleep 2
+sudo tail -1 /var/log/haproxy.log
+# Must show a log line with the request. If the file is empty,
+# rsyslog is not routing HAProxy's local0 facility.
+```
+
+> **Incident note (2026-03-16):** HAProxy logging was broken during a production incident -- `haproxy.log` was 0 bytes for the entire day. We had zero HTTP-level data for incident response. This validation section was added after that incident. Always verify after setup and after OS upgrades.
 
 ### fail2ban configuration
 

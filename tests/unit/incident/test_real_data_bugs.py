@@ -99,6 +99,34 @@ class TestBugPgLogFormatMismatch:
         assert result[0]["statement"] is not None
 
 
+class TestBugHaproxySslHandshakeDropped:
+    """Bug: SSL handshake failure lines counted as unparseable.
+
+    These are valid log entries with timestamps and client IPs.
+    Format: rsyslog_ts hostname haproxy[pid]: IP:port [inner_ts] frontend/bind: message
+    """
+
+    def test_ssl_handshake_failure_parsed(self) -> None:
+        line = (
+            "2026-03-16T14:51:45.407280+11:00 prompt-grimoire "
+            "haproxy[1000797]: 212.102.40.218:27290 "
+            "[16/Mar/2026:14:51:45.218] fe_https/1: "
+            "SSL handshake failure\n"
+        )
+        events, unparseable = parse_haproxy(
+            line.encode(),
+            "2026-03-16T03:00:00Z",
+            "2026-03-16T04:00:00Z",
+            "Australia/Sydney",
+        )
+        assert unparseable == 0, "SSL handshake line wrongly counted as unparseable"
+        assert len(events) == 1
+        assert events[0]["client_ip"] == "212.102.40.218"
+        assert events[0]["status_code"] == 0
+        assert events[0]["method"] is None
+        assert "SSL handshake failure" in (events[0]["path"] or "")
+
+
 class TestBugHaproxyTimestampFormat:
     """Bug: HAProxy parser uses .isoformat() producing +00:00 suffix.
 

@@ -48,6 +48,18 @@ _LINE_RE = re.compile(
     r"$",
 )
 
+# Non-HTTP lines: SSL errors, connection resets, etc.
+# Format: rsyslog_ts hostname haproxy[pid]: IP:port [inner_ts] frontend/bind: message
+_NON_HTTP_RE = re.compile(
+    r"^(\S+)"  # 1: rsyslog timestamp
+    r" \S+ haproxy\[\d+\]: "  #    hostname + haproxy[pid]:
+    r"(.+?)"  # 2: client IP
+    r":(\d+)"  # 3: client port
+    r" \[[^\]]+\]"  #    [%tr] inner timestamp (skip)
+    r" (\S+): "  # 4: frontend/bind
+    r"(.+)$",  # 5: message (e.g. "SSL handshake failure")
+)
+
 
 def parse_haproxy(
     data: bytes,
@@ -86,34 +98,55 @@ def parse_haproxy(
             continue
 
         m = _LINE_RE.match(line)
-        if m is None:
-            unparseable_count += 1
+        if m is not None:
+            ts_utc = normalise_utc(datetime.fromisoformat(m.group(1)))
+            if not in_window(ts_utc, window_start_utc, window_end_utc):
+                continue
+            events.append(
+                {
+                    "ts_utc": ts_utc,
+                    "client_ip": m.group(2),
+                    "status_code": int(m.group(12)),
+                    "tr_ms": int(m.group(7)),
+                    "tw_ms": int(m.group(8)),
+                    "tc_ms": int(m.group(9)),
+                    "tr_resp_ms": int(m.group(10)),
+                    "ta_ms": int(m.group(11)),
+                    "backend": m.group(5),
+                    "server": m.group(6),
+                    "method": m.group(14),
+                    "path": m.group(15),
+                    "bytes_read": int(m.group(13)),
+                }
+            )
             continue
 
-        # Parse rsyslog ISO 8601 prefix and convert to canonical UTC
-        ts_local = datetime.fromisoformat(m.group(1))
-        ts_utc = normalise_utc(ts_local)
-
-        if not in_window(ts_utc, window_start_utc, window_end_utc):
+        # Non-HTTP lines: SSL errors, connection resets, etc.
+        m2 = _NON_HTTP_RE.match(line)
+        if m2 is not None:
+            ts_utc = normalise_utc(datetime.fromisoformat(m2.group(1)))
+            if not in_window(ts_utc, window_start_utc, window_end_utc):
+                continue
+            events.append(
+                {
+                    "ts_utc": ts_utc,
+                    "client_ip": m2.group(2),
+                    "status_code": 0,
+                    "tr_ms": None,
+                    "tw_ms": None,
+                    "tc_ms": None,
+                    "tr_resp_ms": None,
+                    "ta_ms": None,
+                    "backend": m2.group(4),
+                    "server": None,
+                    "method": None,
+                    "path": m2.group(5),
+                    "bytes_read": None,
+                }
+            )
             continue
 
-        events.append(
-            {
-                "ts_utc": ts_utc,
-                "client_ip": m.group(2),
-                "status_code": int(m.group(12)),
-                "tr_ms": int(m.group(7)),
-                "tw_ms": int(m.group(8)),
-                "tc_ms": int(m.group(9)),
-                "tr_resp_ms": int(m.group(10)),
-                "ta_ms": int(m.group(11)),
-                "backend": m.group(5),
-                "server": m.group(6),
-                "method": m.group(14),
-                "path": m.group(15),
-                "bytes_read": int(m.group(13)),
-            }
-        )
+        unparseable_count += 1
 
     if unparseable_count:
         logger.warning("Skipped %d unparseable HAProxy lines", unparseable_count)

@@ -62,11 +62,16 @@ sudo -u promptgrimoire env PATH="$PG_PATH" git -C "$APP_DIR" pull --rebase
 step "uv sync --no-dev"
 sudo -u promptgrimoire env PATH="$PG_PATH" "$UV" --directory "$APP_DIR" sync --no-dev
 
-# 3. Unit tests (e-stop)
+# 3. Tests (e-stop)
 if [[ "$SKIP_TESTS" == "false" ]]; then
     step "Running unit tests (e-stop — will abort deploy on failure)"
     if ! grimoire-run grimoire test all; then
         echo "ABORT: unit tests failed — not restarting" >&2
+        exit 1
+    fi
+    step "Smoke-testing PDF export (CJK + emoji + annotations)"
+    if ! grimoire-run grimoire test smoke-export; then
+        echo "ABORT: PDF smoke test failed — not restarting" >&2
         exit 1
     fi
 else

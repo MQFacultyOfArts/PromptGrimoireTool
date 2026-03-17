@@ -503,7 +503,10 @@ async def _run_batch_export(
         _print_dry_run(workspace_ids)
         return
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Clear output dir to prevent stale artifacts from prior runs
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True)
 
     # --only-errors implies --with-log --with-tex for failures
     effective_with_log = with_log or only_errors

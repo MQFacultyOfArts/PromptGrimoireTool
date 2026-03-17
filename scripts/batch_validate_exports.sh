@@ -15,6 +15,7 @@
 #   4. Writes a summary report to output_dir/report.txt
 #
 # Workspaces without content or annotations are silently skipped.
+# Output dir is cleared at start to prevent stale artifacts from prior runs.
 #
 # Run from the project root:
 #   cd /path/to/PromptGrimoireTool && ./scripts/batch_validate_exports.sh
@@ -24,8 +25,11 @@ set -euo pipefail
 JSON_DIR="${1:-/tmp}"
 OUTPUT_DIR="${2:-/tmp/export_validation}"
 REPORT="$OUTPUT_DIR/report.txt"
+REHYDRATE_LOG="$OUTPUT_DIR/rehydrate.log"
 DB_NAME="${PGDATABASE:-promptgrimoire}"
 
+# Clear output dir to prevent stale artifacts from prior runs
+rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 # ── Phase 1: Rehydrate ───────────────────────────────────────────────────
@@ -35,7 +39,11 @@ echo "Source: $JSON_DIR/workspace_*.json"
 echo "Database: $DB_NAME"
 echo ""
 
+# Enable nullglob so the glob expands to empty array when no matches
+shopt -s nullglob
 json_files=("$JSON_DIR"/workspace_*.json)
+shopt -u nullglob
+
 if [ ${#json_files[@]} -eq 0 ]; then
     echo "ERROR: No workspace_*.json files found in $JSON_DIR"
     exit 1
@@ -51,11 +59,11 @@ for json_file in "${json_files[@]}"; do
     basename=$(basename "$json_file" .json)
     uuid="${basename#workspace_}"
 
-    if uv run scripts/rehydrate_workspace.py "$json_file" 2>/dev/null; then
+    if uv run scripts/rehydrate_workspace.py "$json_file" >> "$REHYDRATE_LOG" 2>&1; then
         rehydrated=$((rehydrated + 1))
         uuids+=("$uuid")
     else
-        echo "  FAIL rehydrate: $uuid"
+        echo "  FAIL rehydrate: $uuid (see $REHYDRATE_LOG)"
         rehydrate_failed=$((rehydrate_failed + 1))
     fi
 done
@@ -99,8 +107,12 @@ echo "=== Phase 3: Writing report ==="
     echo "--- Failure artifacts in $OUTPUT_DIR ---"
 
     failure_count=0
-    for tex_file in "$OUTPUT_DIR"/*.tex; do
-        [ -f "$tex_file" ] || continue
+
+    shopt -s nullglob
+    tex_files=("$OUTPUT_DIR"/*.tex)
+    shopt -u nullglob
+
+    for tex_file in "${tex_files[@]}"; do
         failure_count=$((failure_count + 1))
         stem=$(basename "$tex_file" .tex)
         uuid="${stem%%_*}"

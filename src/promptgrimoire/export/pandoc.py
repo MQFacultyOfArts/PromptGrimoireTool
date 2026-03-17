@@ -88,6 +88,21 @@ def _strip_foreignlanguage(latex: str) -> str:
     return re.sub(r"\\foreignlanguage\{[^}]*\}\{", "{", latex)
 
 
+def _strip_textquotesingle(latex: str) -> str:
+    r"""Replace ``\textquotesingle`` with a literal ASCII apostrophe.
+
+    Pandoc converts the Unicode apostrophe (U+0027, U+2019) to
+    ``\textquotesingle`` in some contexts.  This is a fragile TU-encoding
+    command that breaks inside moving arguments (``\section{}``,
+    ``\texorpdfstring{}{}``), causing ``Missing \endcsname`` errors in
+    LuaLaTeX.  A literal ``'`` is safe everywhere.
+
+    Replace the braced form first to avoid leaving stray ``{}``.
+    """
+    latex = latex.replace(r"\textquotesingle{}", "'")
+    return latex.replace(r"\textquotesingle", "'")
+
+
 # ---------------------------------------------------------------------------
 # Annotation post-processing: move \annot outside restricted contexts
 # ---------------------------------------------------------------------------
@@ -309,6 +324,7 @@ async def convert_html_to_latex(
         latex = stdout_bytes.decode()
         latex = _fix_invalid_newlines(latex)  # Fix \newline{} in table contexts
         latex = _strip_foreignlanguage(latex)  # Strip lang wrappers from HTML
+        latex = _strip_textquotesingle(latex)  # Replace fragile apostrophe (#372)
         return latex
     finally:
         html_path.unlink(missing_ok=True)

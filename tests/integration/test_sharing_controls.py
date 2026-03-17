@@ -252,7 +252,7 @@ class TestGrantShareRejection:
 
         data = await _make_sharing_data()
         with pytest.raises(
-            PermissionError, match="cannot modify owner permission via sharing"
+            SharePermissionError, match="cannot modify owner permission via sharing"
         ):
             await grant_share(
                 data["workspace_id"],
@@ -269,7 +269,7 @@ class TestGrantShareRejection:
 
         data = await _make_sharing_data()
         with pytest.raises(
-            PermissionError, match="cannot modify owner permission via sharing"
+            SharePermissionError, match="cannot modify owner permission via sharing"
         ):
             await grant_share(
                 data["workspace_id"],

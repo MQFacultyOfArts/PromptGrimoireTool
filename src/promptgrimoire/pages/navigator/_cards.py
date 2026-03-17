@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import OwnershipError
 from promptgrimoire.db.workspaces import (
     check_clone_eligibility,
     clone_workspace_from_activity,
@@ -220,7 +221,7 @@ async def _delete_workspace_from_navigator(
             async def confirm() -> None:
                 try:
                     await delete_workspace(workspace_id, user_id=user_id)
-                except PermissionError:
+                except OwnershipError:
                     logger.warning("permission_denied", operation="delete_workspace")
                     ui.notify("Permission denied", type="negative")
                     dialog.close()

@@ -18,6 +18,7 @@ from promptgrimoire.db.acl import (
     list_entries_for_workspace,
     revoke_permission,
 )
+from promptgrimoire.db.exceptions import SharePermissionError
 from promptgrimoire.db.users import get_user_by_email, get_user_by_id
 from promptgrimoire.db.workspaces import update_workspace_sharing
 
@@ -195,7 +196,7 @@ async def open_sharing_dialog(
                 ui.notify(f"Shared with {email}", type="positive")
                 email_input.value = ""
                 shares_list.refresh()
-            except PermissionError as exc:
+            except SharePermissionError as exc:
                 logger.warning("share_permission_denied", operation="share_workspace")
                 ui.notify(str(exc), type="negative")
 

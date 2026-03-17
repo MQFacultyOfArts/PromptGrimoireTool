@@ -33,7 +33,6 @@ from promptgrimoire.db.bootstrap import (
     verify_schema,
 )
 from promptgrimoire.db.courses import (
-    DuplicateEnrollmentError,
     archive_course,
     create_course,
     enroll_user,
@@ -49,8 +48,20 @@ from promptgrimoire.db.courses import (
 from promptgrimoire.db.engine import close_db, get_engine, get_session, init_db
 from promptgrimoire.db.enrolment import (
     EnrolmentReport,
-    StudentIdConflictError,
     bulk_enrol,
+)
+from promptgrimoire.db.exceptions import (
+    BusinessLogicError,
+    DeletionBlockedError,
+    DuplicateCodenameError,
+    DuplicateEnrollmentError,
+    DuplicateNameError,
+    OwnershipError,
+    ProtectedDocumentError,
+    SharePermissionError,
+    StudentIdConflictError,
+    TagCreationDeniedError,
+    ZeroEditorError,
 )
 from promptgrimoire.db.models import (
     ACLEntry,
@@ -99,9 +110,7 @@ from promptgrimoire.db.users import (
     upsert_user_on_login,
 )
 from promptgrimoire.db.wargames import (
-    DuplicateCodenameError,
     RosterReport,
-    ZeroEditorError,
     create_team,
     create_teams,
     delete_team,
@@ -143,17 +152,24 @@ from promptgrimoire.db.workspaces import (
 __all__ = [
     "ACLEntry",
     "Activity",
+    "BusinessLogicError",
     "Course",
     "CourseEnrollment",
     "CourseRoleRef",
+    "DeletionBlockedError",
     "DuplicateCodenameError",
     "DuplicateEnrollmentError",
+    "DuplicateNameError",
     "EnrolmentReport",
+    "OwnershipError",
     "Permission",
     "PlacementContext",
+    "ProtectedDocumentError",
     "RosterReport",
+    "SharePermissionError",
     "StudentIdConflictError",
     "Tag",
+    "TagCreationDeniedError",
     "TagGroup",
     "User",
     "WargameConfig",

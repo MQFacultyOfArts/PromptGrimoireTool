@@ -14,6 +14,7 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import TagCreationDeniedError
 from promptgrimoire.pages.annotation.tag_management_save import (
     _refresh_tag_state,
 )
@@ -110,7 +111,7 @@ async def _render_import_section(
                         user_id=UUID(state.user_id),
                         crdt_doc=state.crdt_doc,
                     )
-                except PermissionError as exc:
+                except TagCreationDeniedError as exc:
                     logger.warning(
                         "tag_import_permission_denied", operation="import_tags"
                     )

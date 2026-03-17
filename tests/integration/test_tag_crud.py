@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import TagCreationDeniedError
 from promptgrimoire.db.models import Activity, Course
 
 pytestmark = pytest.mark.skipif(
@@ -477,9 +478,9 @@ class TestPermissionEnforcement:
 
     @pytest.mark.asyncio
     async def test_create_tag_denied_when_tag_creation_false(self) -> None:
-        """create_tag raises PermissionError when allow_tag_creation resolves False.
+        """create_tag raises TagCreationDeniedError when denied.
 
-        Verifies AC2.9.
+        allow_tag_creation resolves False. Verifies AC2.9.
         """
         from promptgrimoire.db.tags import create_tag
         from promptgrimoire.db.workspaces import (
@@ -496,7 +497,7 @@ class TestPermissionEnforcement:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        with pytest.raises(PermissionError, match="Tag creation not allowed"):
+        with pytest.raises(TagCreationDeniedError, match="Tag creation not allowed"):
             await create_tag(ws.id, name="Should Fail", color="#000000")
 
     @pytest.mark.asyncio
@@ -524,7 +525,7 @@ class TestPermissionEnforcement:
 
     @pytest.mark.asyncio
     async def test_create_tag_group_denied_when_tag_creation_false(self) -> None:
-        """create_tag_group raises PermissionError when denied.
+        """create_tag_group raises TagCreationDeniedError when denied.
 
         Verifies AC2.9.
         """
@@ -542,7 +543,7 @@ class TestPermissionEnforcement:
         ws = await create_workspace()
         await place_workspace_in_activity(ws.id, activity.id)
 
-        with pytest.raises(PermissionError, match="Tag creation not allowed"):
+        with pytest.raises(TagCreationDeniedError, match="Tag creation not allowed"):
             await create_tag_group(ws.id, name="Should Fail")
 
 
@@ -2104,7 +2105,7 @@ class TestImportTagsFromWorkspace:
 
     @pytest.mark.asyncio
     async def test_import_no_access_raises_permission_error(self) -> None:
-        """Import from workspace user cannot access raises PermissionError."""
+        """Import from inaccessible workspace raises TagCreationDeniedError."""
         from promptgrimoire.db.tags import import_tags_from_workspace
         from promptgrimoire.db.users import create_user
 
@@ -2120,7 +2121,7 @@ class TestImportTagsFromWorkspace:
             display_name="Outsider",
         )
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(TagCreationDeniedError):
             await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
 
 

@@ -22,7 +22,7 @@ import structlog
 from nicegui import ui
 from selectolax.lexbor import LexborHTMLParser
 
-from promptgrimoire.db.exceptions import ProtectedDocumentError
+from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
 from promptgrimoire.db.workspace_documents import (
     count_document_clones,
     delete_document,
@@ -312,7 +312,7 @@ async def _do_delete_document(doc: WorkspaceDocument, state: PageState) -> None:
         return
     try:
         await delete_document(doc.id, user_id=UUID(state.user_id))
-    except PermissionError:
+    except OwnershipError:
         logger.warning("permission_denied", operation="delete_document")
         ui.notify("Permission denied", type="negative")
         return

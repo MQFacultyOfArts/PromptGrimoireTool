@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import TagCreationDeniedError
 from promptgrimoire.db.tags import DuplicateNameError
 from promptgrimoire.pages.annotation.tag_import import (
     _render_import_section,
@@ -409,7 +410,7 @@ def _build_group_callbacks(
                 name=name,
                 crdt_doc=state.crdt_doc,
             )
-        except PermissionError:
+        except TagCreationDeniedError:
             logger.warning("tag_group_creation_denied", operation="add_group")
             ui.notify("Tag creation not allowed", type="negative")
             return

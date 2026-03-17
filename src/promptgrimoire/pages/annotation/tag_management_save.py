@@ -15,6 +15,7 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db.exceptions import TagCreationDeniedError
 from promptgrimoire.db.tags import DuplicateNameError
 
 logger = structlog.get_logger()
@@ -134,7 +135,7 @@ async def _create_tag_or_notify(
             group_id=group_id,
             crdt_doc=state.crdt_doc,
         )
-    except PermissionError:
+    except TagCreationDeniedError:
         logger.warning("tag_creation_denied", operation="create_tag")
         ui.notify("Tag creation not allowed", type="negative")
         return None

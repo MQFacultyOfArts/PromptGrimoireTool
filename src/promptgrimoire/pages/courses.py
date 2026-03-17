@@ -46,7 +46,7 @@ from promptgrimoire.db.courses import (
 )
 from promptgrimoire.db.engine import init_db
 from promptgrimoire.db.enrolment import StudentIdConflictError, bulk_enrol
-from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.exceptions import DeletionBlockedError, OwnershipError
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user
 from promptgrimoire.db.weeks import (
@@ -316,7 +316,7 @@ async def _handle_delete_workspace(
                     return
                 try:
                     await delete_workspace(workspace_id, user_id=user_id)
-                except PermissionError:
+                except OwnershipError:
                     logger.warning("permission_denied", operation="delete_workspace")
                     ui.notify("Permission denied", type="negative")
                     dialog.close()

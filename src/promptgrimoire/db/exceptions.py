@@ -12,7 +12,34 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-class DeletionBlockedError(Exception):
+class BusinessLogicError(Exception):
+    """Base class for expected business logic rejections in the DB layer.
+
+    Raised for anticipated user-facing error conditions (duplicate names,
+    permission violations, protected resources). Distinguished from
+    unexpected failures by get_session() for log-level triage.
+    """
+
+
+class SharePermissionError(BusinessLogicError):
+    """Sharing policy violation.
+
+    Non-owner share attempt, sharing disabled, or owner-grant attempt.
+    """
+
+
+class OwnershipError(BusinessLogicError):
+    """Non-owner attempted an owner-only operation.
+
+    For example, workspace or document deletion.
+    """
+
+
+class TagCreationDeniedError(BusinessLogicError):
+    """Tag creation denied by placement context policy."""
+
+
+class DeletionBlockedError(BusinessLogicError):
     """Raised when force=False and student workspaces exist under the target entity.
 
     Attributes:
@@ -27,7 +54,7 @@ class DeletionBlockedError(Exception):
         )
 
 
-class ProtectedDocumentError(Exception):
+class ProtectedDocumentError(BusinessLogicError):
     """Raised when attempting to delete a template-cloned document.
 
     Documents with a non-NULL source_document_id were cloned from a template

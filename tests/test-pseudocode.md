@@ -7086,3 +7086,104 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Assert ts_utc ends with "Z"
 
 **Verifies:** PG text timestamps use normalise_utc (Z suffix, not +00:00)
+
+## CJK Annotated Table Export (Integration)
+
+### Pipeline completes without crash
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_generates_tex_without_crash
+1. Load CJK HTML fixture with annotated table cells
+2. Call generate_tex_only() with matching _TAG_COLOURS dict
+3. Assert .tex file exists and has >100 chars
+
+**Verifies:** CJK text with annotations inside table cells does not crash the export pipeline
+
+### annotref appears in generated .tex
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_annotref_in_tex
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Assert `\annotref{` appears in output
+
+**Verifies:** Table-cell annotations are split into endnote references (not inline \annot)
+
+### annotendnote appears in generated .tex
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_annotendnote_in_tex
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Assert `\annotendnote{` appears in output
+
+**Verifies:** Endnote definitions are emitted for table-cell annotations
+
+### No \annot{} inside longtable regions
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkAnnotatedTablePipeline::test_no_annot_inside_longtable
+1. Load CJK HTML fixture, generate .tex with tag colours
+2. Extract all \begin{longtable}...\end{longtable} regions via regex
+3. Assert none contain `\annot{`
+
+**Verifies:** Regression guard -- inline annotations are never emitted inside longtable (causes LaTeX crash)
+
+## CJK Slow Compilation (Integration -- slow)
+
+### Yuki workspace compiles to non-empty PDF
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkSlowCompilation::test_pdf_exists_and_nonempty
+1. Load Yuki CJK workspace fixture (JSON with HTML documents)
+2. Run generate_tex_only() then compile_latex() (module-scoped, runs once)
+3. Assert PDF exists and has size > 0
+
+**Verifies:** Full CJK workspace with real content compiles to valid PDF
+
+### Compilation completes under 30 seconds
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestCjkSlowCompilation::test_compilation_under_30_seconds
+1. Reuse module-scoped compilation result
+2. Assert elapsed time < 30s
+
+**Verifies:** Performance guard -- CJK compilation stays within acceptable bounds
+
+### CJK + emoji compiles from read-only cwd
+**File:** tests/integration/test_cjk_annotated_table_export.py::TestReadOnlyCwdCompilation::test_cjk_emoji_compiles_from_readonly_cwd
+1. Generate .tex from CJK + annotated table fixture
+2. os.chdir("/") to simulate systemd ProtectSystem=strict (read-only cwd)
+3. Call compile_latex() (which should set cwd=output_dir internally)
+4. Restore original cwd in finally block
+5. Assert PDF exists and size > 5000 bytes
+
+**Verifies:** Regression guard -- compile_latex works when process cwd is read-only (luaotfload color-emoji harf shaper writes PNG cache to temp dir)
+
+## Fixture Colour Guard (Unit)
+
+### CJK fixture colours match integration test tag_colours
+**File:** tests/unit/export/test_fixture_colour_guard.py::TestFixtureColourGuard::test_cjk_fixture_colours_match_integration_test
+1. Load workspace_cjk_annotated_table.html fixture
+2. Extract colour refs from data-annots and data-colors attributes (tag-X-dark, tag-X-light)
+3. Extract base tag names (X) from colour refs
+4. Compare against known integration test _TAG_COLOURS keys {Jurisdiction, Reasons, Decision}
+5. Assert no base names are missing from the integration test's colour dict
+
+**Verifies:** Fixture colour references stay in sync with the tag_colours dict used by integration tests, preventing silent "Undefined color" LaTeX errors that present as 120s Playwright timeouts
+
+### No UUID colour refs in fixtures
+**File:** tests/unit/export/test_fixture_colour_guard.py::TestFixtureColourGuard::test_no_uuid_colour_refs_in_fixtures
+1. Scan all HTML fixtures in tests/fixtures/ for data-annots attributes
+2. Search for UUID-pattern colour refs (tag-{uuid}-dark/light)
+3. Assert none found
+
+**Verifies:** Fixtures use human-readable tag names, not workspace-specific UUIDs that vary across test runs
+
+## CJK Export Download (E2E)
+
+### Export download completes for CJK workspace
+**File:** tests/e2e/test_cjk_export.py::TestCjkAnnotatedTableExport::test_export_download_completes
+1. Authenticate, create workspace with plain CJK + emoji HTML (no pre-baked data-annots)
+2. Navigate to annotation page, wait for text walker
+3. Trigger export, capture .tex download
+4. Assert "日本語" in exported content
+
+**Verifies:** CJK content survives the full E2E export pipeline (browser -> server -> pandoc -> .tex)
+
+### Full PDF compilation (slow E2E)
+**File:** tests/e2e/test_cjk_export.py::TestCjkAnnotatedTableExport::test_full_pdf_compilation
+1. Skip unless E2E_SKIP_LATEXMK=0 (run via `uv run grimoire e2e slow`)
+2. Authenticate, create workspace with plain CJK + emoji HTML
+3. Navigate to annotation page, wait for text walker
+4. Trigger export, capture download
+5. Assert result is PDF (not .tex fallback)
+6. Assert PDF size > 5000 bytes
+
+**Verifies:** Full CJK + emoji PDF compilation through the E2E pipeline, exercising luaotfload color-emoji cache path

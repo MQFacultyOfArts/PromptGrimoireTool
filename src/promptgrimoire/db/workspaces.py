@@ -156,10 +156,12 @@ class PlacementContext:
 
     True = protection active.
     """
-    allow_sharing: bool = False
+    allow_sharing: bool = True
     """Resolved sharing permission for this workspace.
 
     True = owner can share with other students.
+    Loose workspaces default to True (no course policy restricts them).
+    Activity/course-placed paths set this explicitly via resolve_tristate().
     """
     anonymous_sharing: bool = False
     """Resolved anonymity setting for this workspace.

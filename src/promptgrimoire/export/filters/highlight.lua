@@ -86,6 +86,17 @@ local function build_highlights(colors_list)
   return opens, closes
 end
 
+--- Underline callback: override Pandoc's default <u> → \ul{} (soul) emission.
+--- soul's \ul is fragile and crashes with nested lua-ul \underLine or \highLight
+--- commands inside it. We emit lua-ul's robust \underLine{} instead (#372).
+function Underline(el)
+  if FORMAT ~= "latex" then return el end
+  local result = pandoc.List({pandoc.RawInline("latex", "\\underLine{")})
+  result:extend(el.content)
+  result:insert(pandoc.RawInline("latex", "}"))
+  return result
+end
+
 --- Span callback: transform highlighted spans into LaTeX commands.
 function Span(el)
   if FORMAT ~= "latex" then return el end
@@ -150,40 +161,54 @@ function Span(el)
   return result
 end
 
---- Collect all RawInline elements matching \annot from an inline list.
---- Returns two lists: cleaned inlines (annots removed) and extracted annots.
---- @param inlines pandoc.List  inline elements to scan
---- @return pandoc.List, pandoc.List  cleaned inlines, extracted annot RawInlines
-local function extract_annots(inlines)
-  local cleaned = pandoc.List({})
-  local annots = pandoc.List({})
-  for _, el in ipairs(inlines) do
-    if el.t == "RawInline" and el.format == "latex"
-       and string.find(el.text, "\\annot{", 1, true) then
-      annots:insert(el)
-    else
-      cleaned:insert(el)
-    end
-  end
-  return cleaned, annots
-end
-
---- Header callback: move \annot commands out of headings.
---- \annot contains \par and \marginalia which are forbidden inside
---- \section{} (LaTeX "moving argument"). This callback extracts any
---- \annot RawInline from the header content and returns a list of blocks:
---- the cleaned Header followed by a Plain block with the annots.
+--- Header callback: strip fragile commands from headings (#372).
+--- LaTeX section headings are "moving arguments" where fragile commands
+--- (\annot with \par, \BeginAccSupp PDF literals) cause fatal errors.
+---
+--- Uses recursive :walk() to process the entire heading subtree,
+--- catching commands nested inside Strong/Emph/Span nodes that a flat
+--- loop over el.content would miss (Gemini review finding).
+---
+--- \annot commands are moved AFTER the heading (margin notes preserved).
+--- AccSupp wrappers are unwrapped: the inner emoji is kept, the PDF
+--- /ActualText wrapper is dropped (headings already have plain-text
+--- bookmarks via \texorpdfstring).
 function Header(el)
   if FORMAT ~= "latex" then return el end
 
-  local cleaned, annots = extract_annots(el.content)
-  if #annots == 0 then
-    return el  -- no annots to move
+  local extracted_annots = pandoc.List({})
+
+  el.content = el.content:walk({
+    RawInline = function(raw)
+      if raw.format ~= "latex" then return nil end
+
+      -- Extract \annot commands (move after heading)
+      if string.find(raw.text, "\\annot{", 1, true) then
+        extracted_annots:insert(raw)
+        return {}
+      end
+
+      -- Unwrap AccSupp: rescue the inner emoji, drop the wrapper
+      if string.find(raw.text, "\\BeginAccSupp", 1, true) then
+        local emoji = string.match(
+          raw.text,
+          "\\BeginAccSupp%{ActualText={.-}%}(.-)\\EndAccSupp%{%}"
+        )
+        if emoji then
+          return pandoc.RawInline("latex", emoji)
+        end
+        return {}  -- fallback removal if pattern doesn't match
+      end
+
+      return nil  -- keep other RawInlines unchanged
+    end
+  })
+
+  if #extracted_annots == 0 then
+    return el
   end
 
-  -- Return cleaned header + annots as a separate Plain block
-  el.content = cleaned
-  return { el, pandoc.Plain(annots) }
+  return { el, pandoc.Plain(extracted_annots) }
 end
 
 --- Find the closing brace matching an opening brace at position `start`.

@@ -171,8 +171,11 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
 
     log_file = output_dir / (tex_path.stem + ".log")
 
-    # On failure, log subprocess output and extract LaTeX error lines
-    if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+    # On failure, log subprocess output and extract LaTeX error lines.
+    # Check returncode first: latexmk can exit non-zero but leave a
+    # non-empty PDF from a prior pass — that PDF is corrupt/incomplete.
+    pdf_missing_or_empty = not pdf_path.exists() or pdf_path.stat().st_size == 0
+    if returncode != 0 or pdf_missing_or_empty:
         # Log captured subprocess output (truncated to last 4K chars)
         logger.error(
             "latex_subprocess_output",
@@ -191,8 +194,18 @@ async def _run_latexmk(tex_path: Path, output_dir: Path) -> Path:
                 tex_path=tex_path,
                 log_path=log_file,
             )
+        if pdf_path.stat().st_size == 0:
+            raise LaTeXCompilationError(
+                f"LaTeX compilation failed (exit {returncode}): PDF is empty",
+                tex_path=tex_path,
+                log_path=log_file,
+            )
+        # Non-zero exit but PDF exists and is non-empty — corrupt from
+        # a prior latexmk pass. Remove the corrupt file so callers
+        # don't accidentally serve it.
+        pdf_path.unlink()
         raise LaTeXCompilationError(
-            f"LaTeX compilation failed (exit {returncode}): PDF is empty",
+            f"LaTeX compilation failed (exit {returncode}): corrupt PDF removed",
             tex_path=tex_path,
             log_path=log_file,
         )

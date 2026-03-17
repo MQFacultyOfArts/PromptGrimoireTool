@@ -127,6 +127,27 @@ class TestBugHaproxySslHandshakeDropped:
         assert "SSL handshake failure" in (events[0]["path"] or "")
 
 
+class TestHaproxyAdminLines:
+    """Admin/state lines (no client IP) should parse."""
+
+    def test_server_drain_parsed(self) -> None:
+        line = (
+            "2026-03-16T15:02:19.420462+11:00 prompt-grimoire "
+            "haproxy[1000797]: Server be_promptgrimoire/app "
+            "enters drain state. 0 active and 0 backup servers online.\n"
+        )
+        events, unparseable = parse_haproxy(
+            line.encode(),
+            "2026-03-16T03:00:00Z",
+            "2026-03-16T05:00:00Z",
+            "Australia/Sydney",
+        )
+        assert unparseable == 0
+        assert len(events) == 1
+        assert events[0]["client_ip"] is None
+        assert "drain state" in events[0]["path"]
+
+
 class TestBugHaproxyTimestampFormat:
     """Bug: HAProxy parser uses .isoformat() producing +00:00 suffix.
 

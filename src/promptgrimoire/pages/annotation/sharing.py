@@ -65,8 +65,8 @@ def render_sharing_controls(
             on_change=lambda e: _handle_share_toggle(e.value),
         ).props('data-testid="share-with-class-toggle"')
 
-    # "Share with user" button -- visible to owner or privileged
-    if can_manage_sharing:
+    # "Share with user" button -- visible when sharing allowed, or staff bypass
+    if (allow_sharing or viewer_is_privileged) and can_manage_sharing:
 
         async def _open_share_dialog() -> None:
             if grantor_id is None:

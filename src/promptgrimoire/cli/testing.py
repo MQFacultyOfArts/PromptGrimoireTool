@@ -680,3 +680,50 @@ def smoke_tests(
             extra_args=args,
         )
     )
+
+
+@test_app.command("smoke-export")
+def smoke_export() -> None:
+    """Compile a CJK + emoji test document to PDF.
+
+    Post-deploy smoke test: exercises the full generate_tex_only() +
+    compile_latex() pipeline with CJK text and emoji. Verifies that
+    luaotfload's color-emoji PNG cache write succeeds in the current
+    execution context (catches ProtectSystem=strict cwd issues).
+
+    Usage on server after deploy:
+        grimoire-run grimoire test smoke-export
+    """
+    import asyncio
+    import tempfile
+    from pathlib import Path
+
+    from promptgrimoire.export.pdf import compile_latex
+    from promptgrimoire.export.pdf_export import generate_tex_only
+
+    html = (
+        "<p>日本語のテスト文書です。</p>\n"
+        "<table><tr><td>項目</td><td>内容</td></tr></table>\n"
+        "<p>✅ 完了 😊 よくできました</p>"
+    )
+    tag_colours: dict[str, str] = {"smoke": "#888888"}
+
+    async def _run() -> Path:
+        output_dir = Path(tempfile.mkdtemp(prefix="grimoire_smoke_export_"))
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours=tag_colours,
+            output_dir=output_dir,
+        )
+        return await compile_latex(tex_path, output_dir)
+
+    pdf_path = asyncio.run(_run())
+    size = pdf_path.stat().st_size
+
+    if size < 1000:
+        print(f"FAIL: PDF too small ({size} bytes): {pdf_path}")
+        sys.exit(1)
+
+    print(f"OK: {pdf_path} ({size} bytes)")
+    sys.exit(0)

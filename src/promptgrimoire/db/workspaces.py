@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import OwnershipError
 from promptgrimoire.db.models import (
     ACLEntry,
     Activity,
@@ -440,7 +441,7 @@ async def delete_workspace(workspace_id: UUID, *, user_id: UUID) -> None:
         )
         if owner_entry.first() is None:
             msg = "Only workspace owner can delete"
-            raise PermissionError(msg)
+            raise OwnershipError(msg)
 
         await session.delete(workspace)
 

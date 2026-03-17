@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import DuplicateNameError
+from promptgrimoire.db.exceptions import DuplicateNameError, TagCreationDeniedError
 from promptgrimoire.db.models import Tag, TagGroup
 
 logger = structlog.get_logger()
@@ -34,14 +34,14 @@ async def _check_tag_creation_permission(workspace_id: UUID) -> None:
         workspace_id: The workspace to check.
 
     Raises:
-        PermissionError: If allow_tag_creation resolves to False.
+        TagCreationDeniedError: If allow_tag_creation resolves to False.
     """
     from promptgrimoire.db.workspaces import get_placement_context
 
     ctx = await get_placement_context(workspace_id)
     if not ctx.allow_tag_creation:
         msg = "Tag creation not allowed on this workspace"
-        raise PermissionError(msg)
+        raise TagCreationDeniedError(msg)
 
 
 # ── TagGroup CRUD ────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ async def create_tag_group(
 ) -> TagGroup:
     """Create a TagGroup in a workspace.
 
-    Resolves PlacementContext and raises PermissionError if
+    Resolves PlacementContext and raises TagCreationDeniedError if
     allow_tag_creation is False.
 
     Order index is assigned atomically via the workspace's
@@ -237,7 +237,7 @@ async def create_tag(
 ) -> Tag:
     """Create a Tag in a workspace.
 
-    Resolves PlacementContext and raises PermissionError if
+    Resolves PlacementContext and raises TagCreationDeniedError if
     allow_tag_creation is False.
 
     Order index is assigned atomically via the workspace's
@@ -697,14 +697,14 @@ async def _check_import_access(source_workspace_id: UUID, user_id: UUID) -> None
     """Verify user has read access to the source workspace.
 
     Raises:
-        PermissionError: If user has no permission on the source workspace.
+        TagCreationDeniedError: If user has no permission on the source workspace.
     """
     from promptgrimoire.db.acl import resolve_permission
 
     permission = await resolve_permission(source_workspace_id, user_id)
     if permission is None:
         msg = "No read access to source workspace"
-        raise PermissionError(msg)
+        raise TagCreationDeniedError(msg)
 
 
 # ── CRDT cleanup ─────────────────────────────────────────────────────

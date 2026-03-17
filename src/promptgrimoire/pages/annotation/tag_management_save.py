@@ -92,7 +92,7 @@ async def _refresh_tag_state(
         # Always refresh annotation cards when tags change — card borders
         # use tag colours, so any colour/name change needs a card rebuild.
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="tag_save")
 
         # Broadcast tag state change to other connected clients
         if state.broadcast_update:

@@ -51,7 +51,7 @@ async def _warp_to_highlight(state: PageState, start_char: int, end_char: int) -
     # _update_highlight_css() pushes highlight ranges to the client internally,
     # so no separate _push_highlights_to_client() call is needed.
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="highlight_add")
     _update_highlight_css(state)
 
     # 4. Scroll to highlight and throb it. Refreshes _textNodes inline
@@ -273,7 +273,7 @@ async def _add_highlight(state: PageState, tag: str) -> None:
 
         # Refresh annotation cards to show new highlight
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="tag_apply")
 
         # Broadcast to other clients
         if state.broadcast_update:

@@ -112,7 +112,7 @@ def _build_comment_delete_btn(
         if state.save_status:
             state.save_status.text = "Saved"
         if state.refresh_annotations:
-            state.refresh_annotations()
+            state.refresh_annotations(trigger="highlight_delete")
         if state.broadcast_update:
             await state.broadcast_update()
 
@@ -193,7 +193,7 @@ def _make_add_comment_handler(
             if state.save_status:
                 state.save_status.text = "Saved"
             if state.refresh_annotations:
-                state.refresh_annotations()
+                state.refresh_annotations(trigger="comment_save")
             if state.broadcast_update:
                 await state.broadcast_update()
 
@@ -562,12 +562,14 @@ def _build_annotation_card(
     return card
 
 
-def _refresh_annotation_cards(state: PageState) -> None:
+def _refresh_annotation_cards(state: PageState, *, trigger: str = "unknown") -> None:
     """Refresh all annotation cards from CRDT state."""
     logger.debug(
-        "[CARDS] _refresh called: container=%s, crdt_doc=%s",
-        state.annotations_container is not None,
-        state.crdt_doc is not None,
+        "card_rebuild",
+        trigger=trigger,
+        cards_epoch=state.cards_epoch,
+        container_exists=state.annotations_container is not None,
+        crdt_doc_exists=state.crdt_doc is not None,
     )
     if state.annotations_container is None or state.crdt_doc is None:
         return

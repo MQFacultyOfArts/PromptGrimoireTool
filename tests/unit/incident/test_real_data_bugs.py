@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from scripts.incident.parsers.haproxy import parse_haproxy
 from scripts.incident.parsers.journal import parse_journal
 from scripts.incident.parsers.pglog import parse_pglog_text
 
@@ -96,3 +97,46 @@ class TestBugPgLogFormatMismatch:
         assert result[0]["level"] == "ERROR"
         assert result[0]["detail"] is not None
         assert result[0]["statement"] is not None
+
+
+class TestBugHaproxyTimestampFormat:
+    """Bug: HAProxy parser uses .isoformat() producing +00:00 suffix.
+
+    All other parsers use normalise_utc() producing Z suffix.
+    Mixed formats cause timeline misordering (+ < Z in ASCII).
+    """
+
+    def test_haproxy_ts_utc_ends_with_z(self) -> None:
+        line = (
+            "2026-03-16T16:06:45.123456+11:00 prompt-grimoire "
+            "haproxy[2345]: 192.0.2.100:45678 "
+            "[16/Mar/2026:16:06:45.123 +1100] "
+            "fe_https~ be_promptgrimoire/app "
+            "10/2/5/150/167 200 1234 "
+            "- - ---- 1/1/1/1/0 0/0 {|} {|} "
+            '"GET /healthz HTTP/1.1"\n'
+        )
+        events, _ = parse_haproxy(
+            line.encode(),
+            "2026-03-16T04:00:00Z",
+            "2026-03-16T06:30:00Z",
+            "Australia/Sydney",
+        )
+        assert len(events) == 1
+        ts = events[0]["ts_utc"]
+        assert ts.endswith("Z"), f"HAProxy ts_utc has wrong suffix: {ts}"
+
+
+class TestBugPgTextTimestampFormat:
+    """Bug: PG text parser hardcodes +00:00 instead of using normalise_utc."""
+
+    def test_pg_text_ts_utc_ends_with_z(self) -> None:
+        line = "2026-03-16 04:32:52.000 UTC [1234] LOG:  test\n"
+        result = parse_pglog_text(
+            line.encode(),
+            "2026-03-16T04:00:00Z",
+            "2026-03-16T05:00:00Z",
+        )
+        assert len(result) == 1
+        ts = result[0]["ts_utc"]
+        assert ts.endswith("Z"), f"PG text ts_utc has wrong suffix: {ts}"

@@ -37,7 +37,7 @@ class TestTimestampConversion:
 
         assert len(events) == 1
         assert events[0]["ts_utc"].startswith("2026-03-16T05:06:45")
-        assert "+00:00" in events[0]["ts_utc"]
+        assert events[0]["ts_utc"].endswith("Z")
 
     def test_aest_offset(self) -> None:
         """AEST (+10:00) produces different UTC than AEDT (+11:00)."""

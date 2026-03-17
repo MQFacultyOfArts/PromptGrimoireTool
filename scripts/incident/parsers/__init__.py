@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 def normalise_utc(ts: datetime) -> str:
-    """Produce canonical ``YYYY-MM-DDTHH:MM:SS.ffffffZ`` format.
+    """Convert to UTC and produce canonical ``YYYY-MM-DDTHH:MM:SS.ffffffZ``.
 
-    Strips any tzinfo offset representation and always uses trailing ``Z``.
+    Converts the input to UTC first, then formats with Z suffix.
     """
-    return ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    utc_dt = ts.astimezone(UTC)
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def in_window(ts_utc: str, window_start: str, window_end: str) -> bool:

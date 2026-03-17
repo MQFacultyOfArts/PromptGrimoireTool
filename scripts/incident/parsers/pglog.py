@@ -15,7 +15,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
-from scripts.incident.parsers import in_window
+from scripts.incident.parsers import in_window, normalise_utc
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +77,9 @@ def parse_pglog_text(
 
         ts_raw, pid_str, level, text = m.groups()
         pid = int(pid_str)
-        # Convert "2026-03-16 04:32:52" to ISO with UTC tz.
-        ts_utc = ts_raw.replace(" ", "T", 1) + "+00:00"
+        # Convert "2026-03-16 04:32:52" to canonical UTC via normalise_utc.
+        naive_dt = datetime.strptime(ts_raw, "%Y-%m-%d %H:%M:%S")
+        ts_utc = normalise_utc(naive_dt.replace(tzinfo=UTC))
 
         # Is this a continuation of the current buffer?
         if (
@@ -123,7 +124,7 @@ def _parse_pg_json_timestamp(raw: str) -> str:
         raw = raw[:-4]
     dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S.%f")
     dt = dt.replace(tzinfo=UTC)
-    return dt.isoformat()
+    return normalise_utc(dt)
 
 
 def parse_pglog_json(

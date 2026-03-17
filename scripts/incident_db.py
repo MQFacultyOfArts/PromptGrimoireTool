@@ -3,6 +3,15 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path as _Path
+
+# Ensure the project root is on sys.path so `scripts.incident` is importable
+# when invoked as `uv run scripts/incident_db.py` without PYTHONPATH.
+_project_root = str(_Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import hashlib
 import sqlite3
 from datetime import datetime

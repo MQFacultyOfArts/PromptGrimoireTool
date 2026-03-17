@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 
-from scripts.incident.parsers import in_window
+from scripts.incident.parsers import in_window, normalise_utc
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +90,9 @@ def parse_haproxy(
             unparseable_count += 1
             continue
 
-        # Parse rsyslog ISO 8601 prefix and convert to UTC
+        # Parse rsyslog ISO 8601 prefix and convert to canonical UTC
         ts_local = datetime.fromisoformat(m.group(1))
-        ts_utc_dt = ts_local.astimezone(UTC)
-        ts_utc = ts_utc_dt.isoformat()
+        ts_utc = normalise_utc(ts_local)
 
         if not in_window(ts_utc, window_start_utc, window_end_utc):
             continue

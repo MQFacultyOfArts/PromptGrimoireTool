@@ -15,20 +15,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import DuplicateNameError
 from promptgrimoire.db.models import Tag, TagGroup
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.WARNING)
-
-
-class DuplicateNameError(ValueError):
-    """A tag or tag group with this name already exists in the workspace.
-
-    Raised instead of allowing IntegrityError to propagate through
-    get_session()'s generic ERROR/Discord path.  Callers should catch
-    this and present a user-friendly message.
-    """
-
 
 if TYPE_CHECKING:
     from uuid import UUID

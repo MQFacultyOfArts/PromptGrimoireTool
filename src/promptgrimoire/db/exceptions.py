@@ -1,7 +1,8 @@
 """Centralised exceptions for the DB layer.
 
-Custom exceptions for delete guard logic, enabling the UI to display
-meaningful error messages with counts and identifiers.
+All domain exceptions live here under BusinessLogicError, enabling the
+UI to display meaningful error messages and get_session() to triage
+log levels (expected business rejection vs unexpected failure).
 """
 
 from __future__ import annotations
@@ -72,3 +73,64 @@ class ProtectedDocumentError(BusinessLogicError):
             f"Document {document_id} is a template clone "
             f"(source: {source_document_id}) and cannot be deleted"
         )
+
+
+class DuplicateNameError(BusinessLogicError):
+    """A tag or tag group with this name already exists.
+
+    Raised instead of allowing IntegrityError to propagate through
+    get_session()'s generic ERROR/Discord path.  Callers should
+    catch this and present a user-friendly message.
+    """
+
+
+class DuplicateCodenameError(BusinessLogicError):
+    """A team codename already exists within one activity."""
+
+    def __init__(self, activity_id: UUID, codename: str) -> None:
+        self.activity_id = activity_id
+        self.codename = codename
+        super().__init__(
+            f"Codename {codename!r} already exists in activity {activity_id}"
+        )
+
+
+class ZeroEditorError(BusinessLogicError):
+    """Change would leave a team without any editable member."""
+
+    def __init__(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+        current_permission: str | None,
+        attempted_permission: str | None,
+    ) -> None:
+        self.team_id = team_id
+        self.user_id = user_id
+        self.current_permission = current_permission
+        self.attempted_permission = attempted_permission
+        super().__init__(
+            "Requested team permission change would leave "
+            "the team without any member whose permission "
+            "grants can_edit = TRUE"
+        )
+
+
+class DuplicateEnrollmentError(BusinessLogicError):
+    """User is already enrolled in this course."""
+
+    def __init__(self, course_id: UUID, user_id: UUID) -> None:
+        self.course_id = course_id
+        self.user_id = user_id
+        super().__init__(f"User {user_id} is already enrolled in course {course_id}")
+
+
+class StudentIdConflictError(BusinessLogicError):
+    """User's existing student_id differs from the import."""
+
+    def __init__(self, conflicts: list[tuple[str, str, str]]) -> None:
+        self.conflicts = conflicts  # (email, existing_id, new_id)
+        details = "; ".join(
+            f"{email}: existing={old!r}, new={new!r}" for email, old, new in conflicts
+        )
+        super().__init__(f"Student ID conflicts: {details}")

@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import structlog
 from nicegui import ui
 
+from promptgrimoire.db import DuplicateNameError
 from promptgrimoire.db.exceptions import TagCreationDeniedError
-from promptgrimoire.db.tags import DuplicateNameError
 from promptgrimoire.pages.annotation.tag_import import (
     _render_import_section,
 )

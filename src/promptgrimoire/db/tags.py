@@ -15,7 +15,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import DuplicateNameError, TagCreationDeniedError
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    SharePermissionError,
+    TagCreationDeniedError,
+)
 from promptgrimoire.db.models import Tag, TagGroup
 
 logger = structlog.get_logger()
@@ -697,14 +701,14 @@ async def _check_import_access(source_workspace_id: UUID, user_id: UUID) -> None
     """Verify user has read access to the source workspace.
 
     Raises:
-        TagCreationDeniedError: If user has no permission on the source workspace.
+        SharePermissionError: If user has no permission on the source workspace.
     """
     from promptgrimoire.db.acl import resolve_permission
 
     permission = await resolve_permission(source_workspace_id, user_id)
     if permission is None:
         msg = "No read access to source workspace"
-        raise TagCreationDeniedError(msg)
+        raise SharePermissionError(msg)
 
 
 # ── CRDT cleanup ─────────────────────────────────────────────────────

@@ -6218,3 +6218,242 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Set _state.engine to mock, assert get_engine() returns the mock
 
 **Verifies:** Engine accessor reflects initialization state
+
+## User Ban System
+
+### Ban sets DB fields (is_banned, banned_at)
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_ban_user_sets_fields
+1. Create a user
+2. Call set_banned(user.id, True)
+3. Assert is_banned is True
+4. Assert banned_at is recent UTC datetime (within 5 seconds)
+
+**Verifies:** Banning sets the correct DB state with timestamp
+
+### Unban clears DB fields
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_unban_user_clears_fields
+1. Create a user, ban them
+2. Call set_banned(user.id, False)
+3. Assert is_banned is False
+4. Assert banned_at is None
+
+**Verifies:** Unbanning fully reverses ban state
+
+### set_banned returns None for non-existent user
+**File:** tests/integration/test_user_ban.py::TestSetBanned::test_set_banned_nonexistent_returns_none
+1. Call set_banned(random_uuid, True)
+2. Assert result is None
+
+**Verifies:** Graceful handling of non-existent user IDs
+
+### is_user_banned returns True for banned user
+**File:** tests/integration/test_user_ban.py::TestIsUserBanned::test_is_user_banned_returns_true
+1. Create user, ban them
+2. Call is_user_banned(user.id)
+3. Assert returns True
+
+**Verifies:** Lightweight boolean query reflects ban state
+
+### is_user_banned returns False for non-banned user
+**File:** tests/integration/test_user_ban.py::TestIsUserBanned::test_is_user_banned_returns_false
+1. Create user (not banned)
+2. Call is_user_banned(user.id)
+3. Assert returns False
+
+**Verifies:** Default state is not banned
+
+### get_banned_users returns only banned users
+**File:** tests/integration/test_user_ban.py::TestGetBannedUsers::test_get_banned_users_returns_banned
+1. Create two users, ban one
+2. Call get_banned_users()
+3. Assert banned user is in result with correct email, display_name, banned_at
+
+**Verifies:** List query filters correctly and includes expected fields
+
+### Full ban -> list -> unban -> list lifecycle
+**File:** tests/integration/test_ban_lifecycle.py::TestBanLifecycle::test_ban_list_unban_list
+1. Create user with stytch_member_id (mock Stytch, real DB)
+2. Call _cmd_ban(email) -- verify "banned" in output, DB state set, Stytch metadata updated, session revocation called
+3. Call _cmd_list_banned() -- verify email appears in output
+4. Call _cmd_unban(email) -- verify "unbanned" in output, DB state cleared
+5. Call _cmd_list_banned() again -- verify email no longer in output
+
+**Verifies:** Complete CLI ban/unban round-trip with real DB persistence
+
+### Ban CLI sets DB state and Stytch metadata
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_sets_db_state_and_stytch
+1. Mock _require_user, set_banned, _update_stytch_metadata, auth client
+2. Call _cmd_ban("target@test.com")
+3. Assert set_banned called with (user.id, True)
+4. Assert _update_stytch_metadata called with {"banned": "true"}
+
+**Verifies:** Ban command orchestrates DB and Stytch updates
+
+### Ban CLI revokes Stytch sessions
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_revokes_sessions
+1. Mock user with stytch_member_id="member-xyz"
+2. Call _cmd_ban
+3. Assert revoke_member_sessions called with member_id="member-xyz"
+
+**Verifies:** Session revocation uses correct member ID
+
+### Ban without stytch_member_id warns but continues
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_without_stytch_member_id_warns
+1. Mock user with stytch_member_id=None
+2. Call _cmd_ban
+3. Assert set_banned still called, revoke_member_sessions NOT called
+4. Assert "skipping session revocation" in console output
+
+**Verifies:** Graceful degradation when Stytch member ID missing
+
+### Ban admin user prints warning but proceeds
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_admin_user_warns
+1. Mock user with is_admin=True
+2. Call _cmd_ban
+3. Assert "admin" in output, set_banned still called
+
+**Verifies:** Admin ban warning does not block the operation
+
+### Ban calls kick endpoint when secret configured
+**File:** tests/unit/test_ban_commands.py::TestCmdBan::test_ban_with_kick_endpoint
+1. Mock admin_api_secret="test-secret", base_url="http://localhost:8080"
+2. Mock httpx.AsyncClient.post to return {"kicked": 2}
+3. Call _cmd_ban
+4. Assert POST to /api/admin/kick was called
+5. Assert kicked count appears in output
+
+**Verifies:** CLI triggers real-time kick when admin secret is available
+
+### Unban clears DB state and Stytch metadata
+**File:** tests/unit/test_ban_commands.py::TestCmdUnban::test_unban_clears_db_state_and_stytch
+1. Mock user (already banned)
+2. Call _cmd_unban
+3. Assert set_banned called with (user.id, False)
+4. Assert _update_stytch_metadata called with {"banned": ""}
+
+**Verifies:** Unban reverses both DB and Stytch state
+
+### Ban --list shows table with banned users
+**File:** tests/unit/test_ban_list.py::TestCmdListBanned::test_list_banned_shows_table
+1. Mock get_banned_users returning one user
+2. Call _cmd_list_banned
+3. Assert email, display_name, and date in output
+
+**Verifies:** List command renders tabular banned user data
+
+### Ban --list shows message when no users banned
+**File:** tests/unit/test_ban_list.py::TestCmdListBanned::test_list_banned_empty
+1. Mock get_banned_users returning empty list
+2. Call _cmd_list_banned
+3. Assert "no banned users" in output
+
+**Verifies:** Empty state message for ban list
+
+### Client registry: register adds client
+**File:** tests/unit/test_client_registry.py::TestRegister::test_register_adds_client
+1. Create mock client, register with user_id
+2. Assert client is in _registry[user_id]
+
+**Verifies:** Registration tracks client-user mapping
+
+### Client registry: register sets on_delete callback
+**File:** tests/unit/test_client_registry.py::TestRegister::test_register_sets_on_delete_callback
+1. Register a mock client
+2. Assert client.on_delete was called once
+
+**Verifies:** Auto-cleanup wiring on registration
+
+### Client registry: deregister removes client and cleans empty user
+**File:** tests/unit/test_client_registry.py::TestDeregister::test_deregister_removes_client + test_deregister_cleans_empty_user
+1. Add client to registry, deregister it
+2. Assert client removed AND user_id key removed when set is empty
+
+**Verifies:** Clean teardown prevents memory leaks
+
+### Client registry: disconnect_user redirects all clients
+**File:** tests/unit/test_client_registry.py::TestDisconnectUser::test_disconnect_calls_run_javascript
+1. Register two clients for same user
+2. Call disconnect_user(user_id)
+3. Assert run_javascript('window.location.href = "/banned"') called on both
+
+**Verifies:** All active sessions get force-redirected
+
+### Client registry: disconnect tolerates stale clients
+**File:** tests/unit/test_client_registry.py::TestDisconnectUser::test_disconnect_tolerates_stale_client
+1. Register three clients, one raises RuntimeError on run_javascript
+2. Call disconnect_user
+3. Assert count is 2 (two successful), all three attempted
+
+**Verifies:** Stale client errors don't abort the disconnect loop
+
+### Kick endpoint: missing auth header returns 403
+**File:** tests/unit/test_kick_endpoint.py::TestMissingAuth::test_no_auth_header_returns_403
+1. POST /api/admin/kick without Authorization header
+2. Assert 403 with {"error": "Forbidden"}
+
+**Verifies:** Unauthenticated requests are rejected
+
+### Kick endpoint: wrong bearer token returns 403
+**File:** tests/unit/test_kick_endpoint.py::TestWrongToken::test_wrong_token_returns_403
+1. POST with incorrect Bearer token
+2. Assert 403
+
+**Verifies:** Invalid credentials are rejected
+
+### Kick endpoint: valid token triggers disconnect
+**File:** tests/unit/test_kick_endpoint.py::TestValidKick::test_valid_token_banned_user_kicks
+1. POST with valid bearer token, user_id of banned user
+2. Mock is_user_banned=True, disconnect_user returns 3
+3. Assert 200 with {"kicked": 3, "was_banned": true}
+
+**Verifies:** Authenticated kick request triggers real-time disconnect
+
+### Kick endpoint: non-banned user skips kick
+**File:** tests/unit/test_kick_endpoint.py::TestValidKick::test_valid_token_not_banned_skips_kick
+1. POST with valid token, user_id of non-banned user
+2. Mock is_user_banned=False
+3. Assert 200 with {"kicked": 0, "was_banned": false}, disconnect_user not called
+
+**Verifies:** Kick is a no-op for non-banned users
+
+### Kick endpoint: unconfigured secret returns 503
+**File:** tests/unit/test_kick_endpoint.py::TestUnconfiguredSecret::test_empty_secret_returns_503
+1. Set admin_api_secret to empty string
+2. POST with any auth header
+3. Assert 503 with "ADMIN_API_SECRET not configured"
+
+**Verifies:** Fail-closed when secret not configured
+
+### Auth: revoke_member_sessions clears sessions
+**File:** tests/unit/test_auth_revoke.py::TestMockRevokeMemberSessions::test_revoke_clears_sessions_for_member
+1. Authenticate a user (creates session)
+2. Validate session is active
+3. Call revoke_member_sessions(member_id)
+4. Validate session is now invalid
+
+**Verifies:** Session revocation actually invalidates active sessions
+
+### Auth: revoke only affects target member
+**File:** tests/unit/test_auth_revoke.py::TestMockRevokeMemberSessions::test_revoke_only_affects_target_member
+1. Authenticate two users
+2. Revoke user1's sessions
+3. Assert user1 session invalid, user2 session still valid
+
+**Verifies:** Session revocation is scoped to the target member only
+
+### E2E: banned page displays suspension message
+**File:** tests/e2e/test_banned_page.py::TestBannedPage::test_banned_page_displays_suspension_message
+1. Navigate to /banned directly
+2. Assert suspension-message and suspension-contact test IDs are visible
+
+**Verifies:** Banned page renders correctly for direct access
+
+### E2E: banned user redirected to /banned on protected page access
+**File:** tests/e2e/test_banned_page.py::TestBannedPage::test_banned_user_redirected_to_banned_page
+1. Authenticate with unique email
+2. Ban user via direct DB update
+3. Navigate to / (protected page)
+4. Wait for URL to contain "/banned"
+5. Assert suspension message visible
+
+**Verifies:** page_route ban guard redirects banned users in real browser

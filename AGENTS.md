@@ -60,6 +60,9 @@ uvx ty check                # Type checking
 # Execution & Data
 uv run grimoire seed run            # Idempotent development data seeding
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role  # User management
+uv run grimoire admin ban <email>       # Ban a user (DB + Stytch + kick)
+uv run grimoire admin unban <email>     # Remove ban
+uv run grimoire admin ban --list        # List all banned users
 uv run grimoire admin webhook         # Test Discord webhook alerting
 uv run grimoire docs build          # Generate user-facing documentation (requires pandoc)
 uv run run.py                       # Run the application
@@ -106,3 +109,21 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **Wargame turn cycle engine** (`db/wargames.py`): `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. Teams cycle: drafting -> locked -> preprocessing -> published -> drafting (next round). PydanticAI agents (`wargame/agents.py`) produce structured TurnResult and StudentSummary. Background polling worker (`deadline_worker.py`) fires expired deadlines.
 
 **Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").
+
+### User Ban System
+
+**Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.
+
+**DB API** (`db/users.py`): `set_banned(user_id, is_banned)`, `is_user_banned(user_id)` (lightweight boolean query), `get_banned_users()`.
+
+**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for authenticated users, redirecting banned users to `/banned`. The `/banned` page uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
+
+**Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to connected NiceGUI clients. `page_route` registers clients on each page load; `disconnect_user()` redirects all of a user's clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
+
+**Kick endpoint** (`POST /api/admin/kick`): Starlette route in `__init__.py`, authenticated via `ADMIN__ADMIN_API_SECRET` bearer token (HMAC-compared). Calls `disconnect_user()` to force-redirect banned user's active sessions.
+
+**Auth protocol extension** (`auth/protocol.py`): `revoke_member_sessions(member_id)` added to `AuthClientProtocol`. Revokes all Stytch sessions for a member.
+
+**CLI** (`cli/admin.py`): `admin ban <email>` (sets DB flag, updates Stytch metadata, revokes sessions, calls kick endpoint), `admin unban <email>` (reverses all), `admin ban --list` (tabular display of banned users).
+
+**Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`.

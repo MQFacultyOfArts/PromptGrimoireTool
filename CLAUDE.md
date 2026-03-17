@@ -166,7 +166,7 @@ uvx ty check
 uv run grimoire seed run
 
 # Manage users, roles, and course enrollments
-uv run grimoire admin list|show|create|admin|enroll|unenroll|role
+uv run grimoire admin list|show|create|admin|enroll|unenroll|role|ban|unban
 
 # Ban/unban users and list banned users
 uv run grimoire admin ban <email>
@@ -195,11 +195,14 @@ src/promptgrimoire/
 ├── pages/               # NiceGUI page routes
 │   ├── annotation/      # Main annotation page (see docs/annotation-architecture.md)
 │   ├── navigator/       # Workspace navigator (route: /, see docs/database.md § Navigator)
+│   ├── registry.py      # page_route decorator, ban guard middleware, page registry
+│   ├── banned.py        # /banned suspension page (uses @ui.page, not page_route)
 │   ├── courses.py       # Course management
 │   ├── roleplay.py      # AI roleplay / client interview
 │   └── roleplay_export.py  # Session-to-HTML conversion (functional core)
 ├── export/              # PDF/LaTeX export (see docs/export.md)
-├── auth/                # Stytch integration + workspace access check
+├── auth/                # Stytch integration + workspace access check + ban system
+│   ├── client_registry.py  # NiceGUI client tracking for real-time ban disconnect
 ├── db/                  # Database (see docs/database.md)
 │   ├── acl.py           # ACL operations (grant, revoke, resolve, share) for workspaces and teams
 │   ├── activities.py    # Activity CRUD (create, get, update, delete)
@@ -312,6 +315,24 @@ ACLEntry supports two target types: `workspace_id` or `team_id`. Exactly one mus
 
 **Labelled metadata snippets:** Metadata hits return snippets with field labels ("Title: ... | Author: ... | Activity: ... | Week: ... | Unit: ...") via a separate `_META_DISPLAY` string distinct from the `_META_MATCH` string used for FTS matching.
 
+### User Ban System
+
+**Schema:** `User.is_banned` (boolean, default false) and `User.banned_at` (timestamptz, nullable). Migration `7abc07630af3`.
+
+**DB API** (`db/users.py`): `set_banned(user_id, is_banned)` toggles ban status and timestamps. `is_user_banned(user_id)` is a lightweight boolean query used by the page-route guard. `get_banned_users()` returns all banned users for the CLI list command.
+
+**Page-route ban guard** (`pages/registry.py`): The `page_route` decorator checks `is_user_banned()` on every page load for any authenticated user (regardless of `requires_auth` flag), redirecting banned users to `/banned`. The `/banned` page (`pages/banned.py`) uses `@ui.page` directly (not `page_route`) to avoid redirect loops.
+
+**Client registry** (`auth/client_registry.py`): Module-level `dict[UUID, set[Client]]` mapping users to their connected NiceGUI clients. `page_route` registers each client on page load via `client_registry.register()`. `disconnect_user(user_id)` redirects all of a user's active clients to `/banned` via `run_javascript`. Auto-deregisters on `client.on_delete`.
+
+**Kick endpoint** (`POST /api/admin/kick`): Starlette route registered in `__init__.py`. Authenticated via `ADMIN__ADMIN_API_SECRET` bearer token (constant-time HMAC comparison). Calls `disconnect_user()` to force-redirect a banned user's active browser sessions. Returns 503 if secret not configured.
+
+**Auth protocol** (`auth/protocol.py`): `revoke_member_sessions(member_id)` method added to `AuthClientProtocol`. Revokes all Stytch sessions for a member during ban. Implemented in `auth/client.py` (production) and `auth/mock.py` (test).
+
+**CLI commands** (`cli/admin.py`): `admin ban <email>` orchestrates: DB flag, Stytch metadata update, session revocation, kick endpoint call. `admin unban <email>` reverses all steps. `admin ban --list` displays tabular list of banned users.
+
+**Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+
 ### Key Rules
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations
@@ -325,6 +346,8 @@ Stytch handles magic link login, passkey authentication, RBAC, and class invitat
 `is_privileged_user(auth_user)` in `auth/__init__.py` determines whether a user bypasses copy protection. Returns `True` for org-level admins (`is_admin=True`) and users with `instructor` or `stytch_admin` roles.
 
 `check_workspace_access(workspace_id, auth_user)` in `auth/__init__.py` resolves effective permission for a workspace. Resolution order: unauthenticated returns `None`; admins get `"owner"` (bypass); others go through `resolve_permission()` which checks explicit ACL then enrollment-derived access, highest wins, default deny.
+
+**Ban enforcement:** The `page_route` decorator in `pages/registry.py` checks `is_user_banned()` before every page handler. Banned users are redirected to `/banned`. The client registry enables real-time disconnection of active sessions when a ban is applied via CLI.
 
 ## Logging
 

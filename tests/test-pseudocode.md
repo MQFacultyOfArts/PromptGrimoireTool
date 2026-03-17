@@ -6212,6 +6212,40 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** Lazy engine initialization on first use
 
+### BusinessLogicError logs warning, not exception
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_business_logic_error_logs_warning_not_exception
+1. Replace session factory with mock
+2. Raise BusinessLogicError inside get_session()
+3. Assert logger.warning called once, logger.exception NOT called
+4. Assert rollback was called
+
+**Verifies:** BusinessLogicError triage produces WARNING (AC2.1, AC2.5)
+
+### Unexpected exception logs exception, not warning
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_unexpected_exception_logs_exception_not_warning
+1. Replace session factory with mock
+2. Raise RuntimeError inside get_session()
+3. Assert logger.exception called once, logger.warning NOT called
+4. Assert rollback was called
+
+**Verifies:** Non-business exceptions produce ERROR log level (AC2.2)
+
+### BusinessLogicError uses distinct event name
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_business_logic_error_uses_distinct_event_name
+1. Replace session factory with mock
+2. Raise BusinessLogicError inside get_session()
+3. Assert event name is "Business logic error, rolling back transaction"
+4. Assert event name is NOT "Database session error, rolling back transaction"
+
+**Verifies:** Distinct log event name enables filtering (AC2.3)
+
+### Both exception branches include exc_class
+**File:** tests/unit/test_db_engine.py::TestGetSession::test_both_branches_include_exc_class
+1. Raise BusinessLogicError, assert warning kwargs contain exc_class="BusinessLogicError"
+2. Raise RuntimeError, assert exception kwargs contain exc_class="RuntimeError"
+
+**Verifies:** Structured log includes exception class name for filtering (AC2.4)
+
 ### get_engine returns None before init, engine after init
 **File:** tests/unit/test_db_engine.py::TestGetEngine
 1. Set _state.engine to None, assert get_engine() returns None
@@ -6457,3 +6491,105 @@ It catches any divergence that would cause highlights to render at wrong positio
 5. Assert suspension message visible
 
 **Verifies:** page_route ban guard redirects banned users in real browser
+
+## Exception Taxonomy (Unit)
+
+### Simple exceptions are BusinessLogicError subclasses
+**File:** tests/unit/test_exception_taxonomy.py::test_simple_exception_is_business_logic_error
+1. Parametrize over SharePermissionError, OwnershipError, TagCreationDeniedError, DuplicateNameError, TagLockedError
+2. Instantiate each with a message string
+3. Assert isinstance(exc, BusinessLogicError)
+
+**Verifies:** All simple domain exceptions inherit BusinessLogicError (AC1.1)
+
+### Complex exceptions preserve attributes and are BusinessLogicError
+**File:** tests/unit/test_exception_taxonomy.py::test_deletion_blocked_error_is_business_logic_error (and 5 similar)
+1. Instantiate each complex exception (DeletionBlockedError, ProtectedDocumentError, DuplicateCodenameError, ZeroEditorError, DuplicateEnrollmentError, StudentIdConflictError) with domain-specific kwargs
+2. Assert isinstance(exc, BusinessLogicError)
+3. Assert domain attributes (e.g. student_workspace_count, document_id, codename) are preserved
+
+**Verifies:** Complex exceptions carry structured data and inherit correctly (AC1.1)
+
+### Message preservation for UI display
+**File:** tests/unit/test_exception_taxonomy.py::test_share_permission_error_preserves_message (and 2 similar)
+1. Create SharePermissionError, OwnershipError, TagCreationDeniedError with specific message strings
+2. Assert str(exc) == original message
+
+**Verifies:** str() returns the user-facing message verbatim for UI display (AC1.5)
+
+### DuplicateNameError is not a ValueError
+**File:** tests/unit/test_exception_taxonomy.py::test_duplicate_name_error_is_not_value_error
+1. Create DuplicateNameError
+2. Assert NOT isinstance(exc, ValueError)
+
+**Verifies:** Intentional reparenting from ValueError to BusinessLogicError (AC1.6)
+
+### BusinessLogicError is not a builtin exception type
+**File:** tests/unit/test_exception_taxonomy.py::test_business_logic_error_is_not_builtin_permission_error (and 1 similar)
+1. Create SharePermissionError, assert NOT isinstance(exc, PermissionError)
+2. Create BusinessLogicError, assert NOT isinstance(exc, ValueError)
+
+**Verifies:** Exception hierarchy is distinct from Python builtins
+
+## Business Exception Triage (Integration)
+
+### grant_share with sharing disabled logs business error
+**File:** tests/integration/test_business_exception_triage.py::TestBusinessExceptionTriage::test_grant_share_rejected_logs_business_error
+1. Create course with default_allow_sharing=False, two enrolled users, a cloned workspace
+2. Patch db.engine.logger
+3. Call grant_share() with sharing_allowed=False, expect SharePermissionError
+4. Assert logger.warning called with "Business logic error" event and exc_class="SharePermissionError"
+5. Assert logger.exception NOT called
+
+**Verifies:** Domain exceptions from real DB operations produce WARNING, not ERROR (AC2.6)
+
+### delete_workspace by non-owner logs business error
+**File:** tests/integration/test_business_exception_triage.py::TestBusinessExceptionTriage::test_delete_workspace_non_owner_logs_business_error
+1. Create course, two enrolled users, a cloned workspace
+2. Patch db.engine.logger
+3. Call delete_workspace() with non-owner user_id, expect OwnershipError
+4. Assert logger.warning called with "Business logic error" event and exc_class="OwnershipError"
+5. Assert logger.exception NOT called
+
+**Verifies:** Ownership violations produce WARNING, not ERROR (AC2.7)
+
+## Share Button Visibility (Unit)
+
+### Share button guard boolean expression
+**File:** tests/unit/test_sharing_button_visibility.py::TestShareButtonVisibility::test_share_button_guard
+1. Parametrize (allow_sharing, viewer_is_privileged, can_manage_sharing, expected) over 6 cases
+2. Evaluate `(allow_sharing or viewer_is_privileged) and can_manage_sharing`
+3. Assert result matches expected
+
+**Verifies:** Share button visibility: staff bypass on allow_sharing, no bypass on can_manage_sharing (AC3.1-AC3.3)
+
+### Class toggle has no staff bypass
+**File:** tests/unit/test_sharing_button_visibility.py::TestClassToggleNoStaffBypass::test_class_toggle_false_when_sharing_disabled
+1. Set allow_sharing=False, can_manage_sharing=True, viewer_is_privileged=True
+2. Evaluate `allow_sharing and can_manage_sharing` (no staff bypass term)
+3. Assert result is False
+
+**Verifies:** "Share with class" toggle ignores staff privilege (AC3.4)
+
+### Structural guard for share button expression
+**File:** tests/unit/test_sharing_button_visibility.py::TestStructuralGuard::test_share_button_guard_expression
+1. Run ast-grep on sharing.py searching for `(allow_sharing or viewer_is_privileged) and can_manage_sharing`
+2. Assert the pattern is found (exit code 0)
+
+**Verifies:** The guard expression exists in production code (structural regression guard)
+
+## Workspace Placement -- Sharing Defaults (Integration)
+
+### Loose workspace defaults to allow_sharing=True
+**File:** tests/integration/test_workspace_placement.py::test_loose_workspace_allow_sharing_true
+1. Create PlacementContext(placement_type="loose"), assert allow_sharing=True (dataclass default)
+2. Create a workspace in DB, get_placement_context(), assert allow_sharing=True
+
+**Verifies:** Loose workspaces default to sharing enabled (AC4.1, AC4.2)
+
+### Activity-placed workspace sharing unaffected
+**File:** tests/integration/test_workspace_placement.py::test_activity_placed_sharing_unaffected
+1. Create course with default_allow_sharing, activity, and cloned workspace
+2. Get placement context, assert allow_sharing matches course default
+
+**Verifies:** Activity-placed workspaces inherit course sharing setting (AC4.3)

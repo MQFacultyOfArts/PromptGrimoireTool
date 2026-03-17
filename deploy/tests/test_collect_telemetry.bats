@@ -166,6 +166,37 @@ EOF
     [[ "$source_path" == *"$HAPROXY_FILE"* ]]
 }
 
+@test "JSONL collection merges rotated files in oldest-first order" {
+    # .2 is oldest, .1 is middle, current is newest
+    cat >"${JSONL_FILE}.2" <<'EOF'
+{"timestamp":"2026-03-16T03:46:00Z","event":"from_dot2"}
+EOF
+    cat >"${JSONL_FILE}.1" <<'EOF'
+{"timestamp":"2026-03-16T04:00:00Z","event":"from_dot1"}
+EOF
+    cat >"$JSONL_FILE" <<'EOF'
+{"timestamp":"2026-03-16T06:00:00Z","event":"from_current"}
+EOF
+    : >"$HAPROXY_FILE"
+    : >"$PG_DIR/postgresql-16-main.log"
+
+    run_collect
+    [ "$status" -eq 0 ]
+    extract_tarball
+
+    # All three in-window events should be present
+    [ "$(grep -c '"timestamp"' "$EXTRACT_DIR/structlog.jsonl")" -eq 3 ]
+    # Oldest event should appear first (from .2)
+    head -1 "$EXTRACT_DIR/structlog.jsonl" | grep -q 'from_dot2'
+    # Newest event should appear last (from current)
+    tail -1 "$EXTRACT_DIR/structlog.jsonl" | grep -q 'from_current'
+    # Provenance should list all source files
+    source_path=$(manifest_query '.files[] | select(.filename == "structlog.jsonl") | .source_path')
+    [[ "$source_path" == *".jsonl.2"* ]]
+    [[ "$source_path" == *".jsonl.1"* ]]
+    [[ "$source_path" == *"promptgrimoire.jsonl"* ]]
+}
+
 @test "PostgreSQL logs are copied to canonical ingest-compatible filenames" {
     : >"$JSONL_FILE"
     : >"$HAPROXY_FILE"

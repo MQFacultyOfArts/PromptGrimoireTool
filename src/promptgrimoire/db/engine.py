@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import BusinessLogicError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -296,7 +297,17 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         try:
             yield session
             await session.commit()
-        except Exception:
-            logger.exception("Database session error, rolling back transaction")
+        except BusinessLogicError as exc:
+            logger.warning(
+                "Business logic error, rolling back transaction",
+                exc_class=type(exc).__name__,
+            )
+            await session.rollback()
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Database session error, rolling back transaction",
+                exc_class=type(exc).__name__,
+            )
             await session.rollback()
             raise

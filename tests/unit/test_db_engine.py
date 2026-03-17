@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from promptgrimoire.config import DatabaseConfig, DevConfig, Settings
+from promptgrimoire.db.exceptions import BusinessLogicError
 
 
 def _settings_with_db(
@@ -57,6 +58,123 @@ class TestGetSession:
 
             # Verify rollback was called
             mock_session.rollback.assert_awaited_once()
+        finally:
+            _state.session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_business_logic_error_logs_warning_not_exception(self) -> None:
+        """BusinessLogicError logs warning, not exception (AC2.1, AC2.5)."""
+        from promptgrimoire.db.engine import _state, get_session
+
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        mock_factory = MagicMock(return_value=mock_session)
+        original_factory = _state.session_factory
+        _state.session_factory = mock_factory
+
+        try:
+            with patch("promptgrimoire.db.engine.logger") as mock_logger:
+                with pytest.raises(BusinessLogicError, match="not allowed"):
+                    async with get_session():
+                        raise BusinessLogicError("not allowed")
+
+                mock_logger.warning.assert_called_once()
+                mock_logger.exception.assert_not_called()
+                mock_session.rollback.assert_awaited_once()
+        finally:
+            _state.session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_logs_exception_not_warning(self) -> None:
+        """Unexpected Exception inside get_session() logs exception at ERROR (AC2.2)."""
+        from promptgrimoire.db.engine import _state, get_session
+
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        mock_factory = MagicMock(return_value=mock_session)
+        original_factory = _state.session_factory
+        _state.session_factory = mock_factory
+
+        try:
+            with patch("promptgrimoire.db.engine.logger") as mock_logger:
+                with pytest.raises(RuntimeError, match="unexpected"):
+                    async with get_session():
+                        raise RuntimeError("unexpected")
+
+                mock_logger.exception.assert_called_once()
+                mock_logger.warning.assert_not_called()
+                mock_session.rollback.assert_awaited_once()
+        finally:
+            _state.session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_business_logic_error_uses_distinct_event_name(self) -> None:
+        """BusinessLogicError uses distinct event name (AC2.3)."""
+        from promptgrimoire.db.engine import _state, get_session
+
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        mock_factory = MagicMock(return_value=mock_session)
+        original_factory = _state.session_factory
+        _state.session_factory = mock_factory
+
+        try:
+            with patch("promptgrimoire.db.engine.logger") as mock_logger:
+                with pytest.raises(BusinessLogicError):
+                    async with get_session():
+                        raise BusinessLogicError("test")
+
+                event_name = mock_logger.warning.call_args[0][0]
+                assert event_name == "Business logic error, rolling back transaction"
+                assert event_name != "Database session error, rolling back transaction"
+        finally:
+            _state.session_factory = original_factory
+
+    @pytest.mark.asyncio
+    async def test_both_branches_include_exc_class(self) -> None:
+        """Both exception branches include exc_class in structured log (AC2.4)."""
+        from promptgrimoire.db.engine import _state, get_session
+
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        mock_factory = MagicMock(return_value=mock_session)
+        original_factory = _state.session_factory
+        _state.session_factory = mock_factory
+
+        try:
+            # Test BusinessLogicError branch
+            with patch("promptgrimoire.db.engine.logger") as mock_logger:
+                with pytest.raises(BusinessLogicError):
+                    async with get_session():
+                        raise BusinessLogicError("test")
+
+                kwargs = mock_logger.warning.call_args[1]
+                assert kwargs["exc_class"] == "BusinessLogicError"
+
+            # Test generic Exception branch
+            with patch("promptgrimoire.db.engine.logger") as mock_logger:
+                with pytest.raises(RuntimeError):
+                    async with get_session():
+                        raise RuntimeError("test")
+
+                kwargs = mock_logger.exception.call_args[1]
+                assert kwargs["exc_class"] == "RuntimeError"
         finally:
             _state.session_factory = original_factory
 

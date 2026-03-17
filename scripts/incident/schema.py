@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS sources (
     timezone TEXT NOT NULL,
     window_start_utc TEXT NOT NULL,
     window_end_utc TEXT NOT NULL,
+    source_path TEXT,
+    collection_method TEXT,
     ingested_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 

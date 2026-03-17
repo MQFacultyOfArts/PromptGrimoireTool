@@ -201,11 +201,15 @@ def run_ingest(tarball: Path, db_path: Path) -> None:
 
             fmt = format_to_table(filename)
 
+            source_path = file_entry.get("source_path")
+            collection_method = file_entry.get("method")
+
             conn.execute(
                 """INSERT INTO sources
                    (filename, format, sha256, size, mtime, hostname, timezone,
-                    window_start_utc, window_end_utc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    window_start_utc, window_end_utc, source_path,
+                    collection_method)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     filename,
                     fmt,
@@ -216,6 +220,8 @@ def run_ingest(tarball: Path, db_path: Path) -> None:
                     timezone,
                     window_start_utc,
                     window_end_utc,
+                    source_path,
+                    collection_method,
                 ),
             )
             source_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]

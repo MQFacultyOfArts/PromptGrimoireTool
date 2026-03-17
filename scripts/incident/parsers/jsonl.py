@@ -14,6 +14,20 @@ from scripts.incident.parsers import in_window
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_timestamp(record: dict) -> str | None:
+    """Extract and normalise the timestamp from a JSONL record.
+
+    Returns the normalised timestamp string, or None if the record
+    should be skipped (missing, non-string, or unparseable timestamp).
+    """
+    ts = record.get("timestamp")
+    if ts is None or not isinstance(ts, str):
+        logger.warning("Skipping JSONL line with missing or non-string timestamp")
+        return None
+    return ts.replace("+00:00", "Z") if ts.endswith("+00:00") else ts
+
+
 # Fields extracted to dedicated columns (plus timestamp, which becomes ts_utc).
 _COLUMN_FIELDS = frozenset(
     {
@@ -55,16 +69,17 @@ def parse_jsonl(
             logger.warning("Skipping malformed JSONL line")
             continue
 
-        ts = record.get("timestamp")
-        if ts is None or not isinstance(ts, str):
+        ts_normalised = _extract_timestamp(record)
+        if ts_normalised is None:
             skipped += 1
-            logger.warning("Skipping JSONL line with missing or non-string timestamp")
             continue
 
-        # Normalise to canonical Z suffix for consistent string sorting
-        ts_normalised = ts.replace("+00:00", "Z") if ts.endswith("+00:00") else ts
-
-        if not in_window(ts_normalised, window_start_utc, window_end_utc):
+        try:
+            if not in_window(ts_normalised, window_start_utc, window_end_utc):
+                continue
+        except ValueError, TypeError:
+            skipped += 1
+            logger.warning("Skipping JSONL line with unparseable timestamp")
             continue
 
         # Build extra_json from all keys NOT in the dedicated column set.

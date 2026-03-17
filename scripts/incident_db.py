@@ -92,7 +92,7 @@ def _aedt_to_utc(local_str: str, tz_name: str) -> str:
 
     local_dt = naive.replace(tzinfo=ZoneInfo(tz_name))
     utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
-    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 @app.command()

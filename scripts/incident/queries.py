@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import sys
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -28,7 +29,7 @@ def query_sources(conn: sqlite3.Connection) -> list[dict]:
     """
     sql = """\
 SELECT s.id, s.filename, s.format, substr(s.sha256, 1, 12) AS sha256_prefix,
-       s.timezone, s.size,
+       s.timezone, s.size, s.source_path, s.collection_method,
        MIN(t.ts_utc) AS first_ts,
        MAX(t.ts_utc) AS last_ts,
        COUNT(t.source_id) AS event_count
@@ -48,8 +49,12 @@ def query_timeline(
     level_filter: str | None = None,
 ) -> list[dict]:
     """Return cross-source timeline events within a UTC time window."""
+    # Normalise bounds to canonical microsecond format matching stored ts_utc.
+    # Without this, '...00Z' vs '...00.000000Z' string comparison fails.
+    start_norm = _normalise_bound(start_utc)
+    end_norm = _normalise_bound(end_utc)
     sql = "SELECT * FROM timeline WHERE ts_utc >= ? AND ts_utc <= ?"
-    params: list[str] = [start_utc, end_utc]
+    params: list[str] = [start_norm, end_norm]
 
     if level_filter is not None:
         sql += " AND level_or_status = ?"
@@ -110,6 +115,20 @@ def render_csv(data: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _normalise_bound(ts: str) -> str:
+    """Pad a UTC timestamp to microsecond precision for SQLite string comparison.
+
+    Stored ts_utc values use ``YYYY-MM-DDTHH:MM:SS.ffffffZ`` (from normalise_utc).
+    Query bounds may arrive as ``...SSZ`` (no microseconds).  Without padding,
+    ``'...00.000000Z' >= '...00Z'`` evaluates false because ``'.' < 'Z'``.
+    """
+    dt = datetime.fromisoformat(ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    utc = dt.astimezone(UTC)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _dict_factory(

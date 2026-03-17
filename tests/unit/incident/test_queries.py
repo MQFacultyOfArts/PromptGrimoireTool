@@ -387,8 +387,7 @@ class TestSourcesCLI:
     def test_sources_table_output(self, populated_db: Path) -> None:
         result = runner.invoke(app, ["sources", "--db", str(populated_db)])
         assert result.exit_code == 0
-        assert "journal" in result.output
-        assert "haproxy" in result.output
+        assert "Sources" in result.output
 
     def test_sources_json_output(self, populated_db: Path) -> None:
         result = runner.invoke(

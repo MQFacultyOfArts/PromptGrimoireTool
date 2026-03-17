@@ -180,7 +180,7 @@ Activity-placed and course-placed workspaces with intact hierarchies are unaffec
 
 ## Existing Patterns
 
-**Exception handling pattern:** The codebase already has domain exceptions in `db/exceptions.py` (`DeletionBlockedError`, `ProtectedDocumentError`) and module-local exceptions (`DuplicateNameError` in `tags.py`, `DuplicateCodenameError`/`ZeroEditorError` in `wargames.py`, `DuplicateEnrollmentError` in `courses.py`, `StudentIdConflictError` in `enrolment.py`). This design consolidates them under a common base without changing their locations — exceptions stay where they're defined, just gain a shared parent.
+**Exception handling pattern:** The codebase has domain exceptions scattered across `db/exceptions.py` (`DeletionBlockedError`, `ProtectedDocumentError`) and module-local definitions (`DuplicateNameError` in `tags.py`, `DuplicateCodenameError`/`ZeroEditorError` in `wargames.py`, `DuplicateEnrollmentError` in `courses.py`, `StudentIdConflictError` in `enrolment.py`). This design **consolidates all domain exceptions into `db/exceptions.py`** under a common `BusinessLogicError` base. Original modules re-export via import for backwards compatibility. (Updated during implementation planning — consolidation provides a single authoritative location for the taxonomy.)
 
 **UI error handling pattern:** Callers catch specific exceptions and call `ui.notify(str(exc))` for user-facing messages (e.g., `sharing.py:198`, `tag_management.py:412`). This pattern is preserved — `str(exc)` continues to work because the new exceptions pass messages through unchanged.
 
@@ -201,11 +201,11 @@ Activity-placed and course-placed workspaces with intact hierarchies are unaffec
 - `TagCreationDeniedError(BusinessLogicError)` in `db/exceptions.py` — new
 - `DeletionBlockedError` in `db/exceptions.py` — reparent to `BusinessLogicError`
 - `ProtectedDocumentError` in `db/exceptions.py` — reparent to `BusinessLogicError`
-- `DuplicateNameError` in `db/tags.py` — reparent from `ValueError` to `BusinessLogicError`
-- `DuplicateCodenameError` in `db/wargames.py` — reparent to `BusinessLogicError`
-- `ZeroEditorError` in `db/wargames.py` — reparent to `BusinessLogicError`
-- `DuplicateEnrollmentError` in `db/courses.py` — reparent to `BusinessLogicError`
-- `StudentIdConflictError` in `db/enrolment.py` — reparent to `BusinessLogicError`
+- `DuplicateNameError` — **move from `db/tags.py` to `db/exceptions.py`**, reparent from `ValueError` to `BusinessLogicError`
+- `DuplicateCodenameError` — **move from `db/wargames.py` to `db/exceptions.py`**, reparent to `BusinessLogicError`
+- `ZeroEditorError` — **move from `db/wargames.py` to `db/exceptions.py`**, reparent to `BusinessLogicError`
+- `DuplicateEnrollmentError` — **move from `db/courses.py` to `db/exceptions.py`**, reparent to `BusinessLogicError`
+- `StudentIdConflictError` — **move from `db/enrolment.py` to `db/exceptions.py`**, reparent to `BusinessLogicError`
 - Replace bare `PermissionError` raises: `acl.py:417,453,456,475` → `SharePermissionError`, `workspaces.py:443` → `OwnershipError`, `workspace_documents.py:259` → `OwnershipError`, `tags.py:53,716` → `TagCreationDeniedError`
 - Update `db/__init__.py` imports and `__all__`
 - Update UI callers that catch `PermissionError`: `sharing.py:198`, `navigator/_cards.py:223`, `document_management.py:315`, `courses.py:319`, `tag_management.py:412`, `tag_management_save.py:137`, `tag_import.py:113`

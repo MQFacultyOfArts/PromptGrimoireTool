@@ -192,9 +192,7 @@ def beszel(
         conn.close()
         raise SystemExit(1)
 
-    metrics = fetch_beszel_metrics(hub, start_utc, end_utc)
-
-    # Insert synthetic source row for FK constraint (dedup by sha256).
+    # Dedup check before network fetch — avoids unnecessary HTTP calls
     sha = hashlib.sha256(f"{hub}:{start_utc}:{end_utc}".encode()).hexdigest()
     existing = conn.execute(
         "SELECT id FROM sources WHERE sha256 = ?", (sha,)
@@ -203,6 +201,8 @@ def beszel(
         conn.close()
         typer.echo("Already fetched (dedup). 0 new data points.")
         return
+
+    metrics = fetch_beszel_metrics(hub, start_utc, end_utc)
 
     conn.execute(
         """INSERT INTO sources

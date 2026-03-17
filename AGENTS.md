@@ -43,6 +43,7 @@ Use these commands for verification and execution:
 uv run grimoire test changed           # Fast unit/integration tests based on git diff
 uv run grimoire test all                # Unit tests only (fast, excludes smoke/E2E/integration)
 uv run grimoire test smoke              # Toolchain smoke tests (pandoc, lualatex, tlmgr)
+uv run grimoire test smoke-export       # Post-deploy CJK+emoji PDF compilation smoke test
 uv run grimoire test all --co           # List collected tests without running
 uv run grimoire test all -k "pattern"   # Filter tests by keyword expression
 uv run grimoire e2e run                 # E2E tests (parallel by default, per-file isolation)

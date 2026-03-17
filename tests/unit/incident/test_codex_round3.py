@@ -146,19 +146,28 @@ class TestBeszelDedup:
         conn.commit()
         conn.close()
 
-        result = runner.invoke(
-            app,
-            [
-                "beszel",
-                "--start",
-                "2026-03-16 11:00",
-                "--end",
-                "2026-03-16 12:00",
-                "--timezone",
-                "Australia/Sydney",
-                "--db",
-                str(db_path),
-            ],
-        )
-        assert result.exit_code == 0
+        from unittest.mock import patch
+
+        # Mock fetch to prevent any outbound network calls.
+        # The dedup check should short-circuit before fetch is called.
+        with patch(
+            "scripts.incident.parsers.beszel.fetch_beszel_metrics",
+        ) as mock_fetch:
+            mock_fetch.return_value = []
+            result = runner.invoke(
+                app,
+                [
+                    "beszel",
+                    "--start",
+                    "2026-03-16 11:00",
+                    "--end",
+                    "2026-03-16 12:00",
+                    "--timezone",
+                    "Australia/Sydney",
+                    "--db",
+                    str(db_path),
+                ],
+            )
+        assert result.exit_code == 0, f"exit_code={result.exit_code}\n{result.output}"
         assert "Already fetched" in result.output
+        mock_fetch.assert_not_called()  # dedup should prevent fetch

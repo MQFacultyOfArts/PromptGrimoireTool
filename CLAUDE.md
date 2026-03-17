@@ -119,6 +119,9 @@ uv run grimoire test bats
 # Run toolchain smoke tests (pandoc, lualatex, tlmgr)
 uv run grimoire test smoke
 
+# Post-deploy CJK+emoji PDF compilation smoke test
+uv run grimoire test smoke-export
+
 # List collected tests without running (works on test all, test smoke, e2e run)
 uv run grimoire test all --co
 uv run grimoire e2e run --co

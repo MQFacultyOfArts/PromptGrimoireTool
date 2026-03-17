@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import select
+from sqlmodel import col, select
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -214,6 +214,53 @@ async def set_admin(user_id: UUID, is_admin: bool) -> User | None:
         await session.flush()
         await session.refresh(user)
         return user
+
+
+async def set_banned(user_id: UUID, is_banned: bool) -> User | None:
+    """Set or remove ban status for a user.
+
+    When banning, sets banned_at to current UTC time.
+    When unbanning, clears banned_at.
+
+    Args:
+        user_id: The user's UUID.
+        is_banned: Whether user should be banned.
+
+    Returns:
+        The updated User or None if not found.
+    """
+    async with get_session() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            return None
+        user.is_banned = is_banned
+        user.banned_at = datetime.now(UTC) if is_banned else None
+        session.add(user)
+        await session.flush()
+        await session.refresh(user)
+        return user
+
+
+async def is_user_banned(user_id: UUID) -> bool:
+    """Check if a user is currently banned.
+
+    Lightweight query -- returns only the boolean flag, not the full User object.
+    Used by page_route decorator and kick endpoint.
+    """
+    async with get_session() as session:
+        result = await session.exec(select(User.is_banned).where(User.id == user_id))
+        return result.one_or_none() or False
+
+
+async def get_banned_users() -> list[User]:
+    """Return all currently banned users, ordered by banned_at descending."""
+    async with get_session() as session:
+        result = await session.exec(
+            select(User)
+            .where(User.is_banned == True)  # noqa: E712
+            .order_by(col(User.banned_at).desc())
+        )
+        return list(result.all())
 
 
 async def update_display_name(user_id: UUID, display_name: str) -> User | None:

@@ -244,6 +244,123 @@ async def _cmd_instructor(
         )
 
 
+async def _cmd_ban(
+    email: str,
+    *,
+    console: Console | None = None,
+) -> None:
+    """Ban a user: set DB flag, update Stytch metadata, revoke sessions, kick."""
+    import httpx
+
+    from promptgrimoire.auth import get_auth_client
+    from promptgrimoire.config import get_settings
+    from promptgrimoire.db.users import set_banned
+
+    con = console or Console()
+    user = await _require_user(email, con)
+
+    if user.is_admin:
+        con.print("[yellow]Warning:[/] target is an admin user")
+
+    await set_banned(user.id, True)
+    await _update_stytch_metadata(user, {"banned": "true"}, console=con)
+
+    # Revoke Stytch sessions
+    if user.stytch_member_id:
+        auth_client = get_auth_client()
+        result = await auth_client.revoke_member_sessions(
+            member_id=user.stytch_member_id
+        )
+        if not result.valid:
+            con.print(f"[yellow]Warning:[/] session revocation failed: {result.error}")
+    else:
+        con.print(
+            "[yellow]Warning:[/] No stytch_member_id, skipping session revocation."
+        )
+
+    # Kick active UI clients
+    settings = get_settings()
+    secret = settings.admin.admin_api_secret.get_secret_value()
+    if secret:
+        base_url = settings.app.base_url
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                resp = await http.post(
+                    f"{base_url}/api/admin/kick",
+                    json={"user_id": str(user.id)},
+                    headers={"Authorization": f"Bearer {secret}"},
+                )
+                if resp.status_code != 200:
+                    con.print(
+                        f"[green]Banned[/] '{email}'. "
+                        f"[yellow]Warning:[/] kick endpoint returned "
+                        f"{resp.status_code}: {resp.text}"
+                    )
+                else:
+                    kick_data = resp.json()
+                    con.print(
+                        f"[green]Banned[/] '{email}'. "
+                        f"{kick_data.get('kicked', 0)} client(s) kicked."
+                    )
+        except Exception as exc:
+            con.print(
+                f"[green]Banned[/] '{email}'. "
+                f"[yellow]Warning:[/] kick endpoint failed: {exc}"
+            )
+    else:
+        con.print(
+            f"[green]Banned[/] '{email}'. "
+            "[dim]ADMIN_API_SECRET not set, skipping kick.[/]"
+        )
+
+
+async def _cmd_unban(
+    email: str,
+    *,
+    console: Console | None = None,
+) -> None:
+    """Unban a user: clear DB flag and Stytch metadata."""
+    from promptgrimoire.db.users import set_banned
+
+    con = console or Console()
+    user = await _require_user(email, con)
+
+    await set_banned(user.id, False)
+    await _update_stytch_metadata(user, {"banned": ""}, console=con)
+    con.print(f"[green]Unbanned[/] '{email}'.")
+
+
+async def _cmd_list_banned(
+    *,
+    console: Console | None = None,
+) -> None:
+    """Display all banned users."""
+    from rich.table import Table
+
+    from promptgrimoire.db.users import get_banned_users
+
+    con = console or Console()
+    users = await get_banned_users()
+
+    if not users:
+        con.print("[dim]No banned users.[/]")
+        return
+
+    table = Table(title="Banned Users")
+    table.add_column("Email", style="cyan")
+    table.add_column("Name")
+    table.add_column("Banned At")
+
+    for u in users:
+        table.add_row(
+            u.email,
+            u.display_name,
+            u.banned_at.strftime("%Y-%m-%d %H:%M UTC") if u.banned_at else "\u2014",
+        )
+
+    con.print(table)
+
+
 async def _cmd_enroll_bulk(
     xlsx_file: Path,
     code: str,
@@ -429,6 +546,29 @@ def instructor(
 ) -> None:
     """Set or remove instructor status (updates Stytch)."""
     asyncio.run(_cmd_instructor(email, remove=remove))
+
+
+@admin_app.command("ban")
+def ban(
+    email: str = typer.Argument(None, help="User email to ban"),
+    list_banned: bool = typer.Option(False, "--list", help="List all banned users"),
+) -> None:
+    """Ban a user or list banned users."""
+    if list_banned:
+        asyncio.run(_cmd_list_banned())
+    elif email:
+        asyncio.run(_cmd_ban(email))
+    else:
+        Console().print("[red]Error:[/] Provide an email or use --list")
+        raise typer.Exit(code=1)
+
+
+@admin_app.command("unban")
+def unban(
+    email: str = typer.Argument(..., help="User email to unban"),
+) -> None:
+    """Unban a user."""
+    asyncio.run(_cmd_unban(email))
 
 
 @admin_app.command("enroll-bulk")

@@ -1023,10 +1023,18 @@ def _is_db_available() -> bool:
 
 
 async def _check_auth() -> bool:
-    """Check authentication and redirect if not logged in."""
-    if not _get_current_user():
+    """Check authentication and ban status, redirect if needed."""
+    user = _get_current_user()
+    if not user:
         ui.navigate.to("/login")
         return False
+    user_id = user.get("user_id")
+    if user_id:
+        from promptgrimoire.db.users import is_user_banned  # noqa: PLC0415
+
+        if await is_user_banned(UUID(user_id)):
+            ui.navigate.to("/banned")
+            return False
     return True
 
 

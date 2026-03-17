@@ -41,10 +41,10 @@ _LINE_RE = re.compile(
     r" (\S+)"  # 4: frontend
     r" (\S+)/(\S+)"  # 5: backend / 6: server
     r" (-?\d+)/(-?\d+)/(-?\d+)/(-?\d+)/(-?\d+)"  # 7-11: TR/Tw/Tc/Tr/Ta
-    r" (\d+)"  # 12: status code
-    r" (\d+)"  # 13: bytes read
+    r" (-?\d+)"  # 12: status code (-1 for aborted)
+    r" (-?\d+)"  # 13: bytes read
     r" .+?"  #    cookie/cache/termination/connections/queues/headers
-    r' "(\S+) (\S+) \S+"'  # 14: method, 15: path (from request line)
+    r' "(?:(\S+) (\S+) \S+|<BADREQ>)"'  # 14: method, 15: path (or BADREQ)
     r"$",
 )
 
@@ -61,11 +61,12 @@ _NON_HTTP_RE = re.compile(
 )
 
 # Admin/state lines: server state changes, warnings, alerts.
-# Format: rsyslog_ts hostname haproxy[pid]: message
+# Must start with a known admin prefix to avoid swallowing malformed lines.
 _ADMIN_RE = re.compile(
     r"^(\S+)"  # 1: rsyslog timestamp
     r" \S+ haproxy\[\d+\]: "  #    hostname + haproxy[pid]:
-    r"(.+)$",  # 2: message
+    r"((?:Server |backend |frontend |proxy |"
+    r"\[WARNING\] |\[ALERT\] |\[NOTICE\] ).+)$",  # 2: message
 )
 
 

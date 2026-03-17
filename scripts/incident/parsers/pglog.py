@@ -1,7 +1,7 @@
 """PostgreSQL log parsers — pure functions: bytes → list[dict].
 
 Two parsers for different PG log formats:
-- ``parse_pglog_text``: legacy text format (``log_line_prefix = '%t [%p]: '``)
+- ``parse_pglog_text``: text format (``log_line_prefix = '%t [%p] '``)
 - ``parse_pglog_json``: PostgreSQL 15+ jsonlog format
 
 Both return dicts matching the ``pglog_events`` schema:
@@ -19,10 +19,12 @@ from scripts.incident.parsers import in_window
 
 logger = logging.getLogger(__name__)
 
-# Matches: 2026-03-16 04:32:52 UTC [1234]: ERROR:  message text
+# Matches PG log_line_prefix = '%t [%p] ' (Ubuntu/Debian default for PG 16):
+# 2026-03-14 13:19:49.544 UTC [2482047] LOG:  checkpoint starting: time
+# Also handles without milliseconds: 2026-03-16 04:32:52 UTC [1234] ERROR:  msg
 _TEXT_LINE_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \w+"
-    r" \[(\d+)\]: (\w+):\s+(.*)$"
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.\d+)? \w+"
+    r" \[(\d+)\] (\w+):\s+(.*)$"
 )
 
 # Continuation severity levels that merge into the previous entry.

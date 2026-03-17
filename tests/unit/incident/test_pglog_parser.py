@@ -26,24 +26,24 @@ WINDOW_END = "2026-03-16T06:00:00+00:00"
 
 # Realistic multi-line PG text log (ERROR + DETAIL + STATEMENT, same PID)
 _ERR = (
-    "2026-03-16 04:32:52 UTC [1234]: ERROR:"
+    "2026-03-16 04:32:52.000 UTC [1234] ERROR:"
     "  duplicate key value violates unique constraint"
     ' "uq_tag_workspace_name"\n'
 )
 _DETAIL = (
-    "2026-03-16 04:32:52 UTC [1234]: DETAIL:"
+    "2026-03-16 04:32:52.000 UTC [1234] DETAIL:"
     "  Key (workspace_id, name)="
     "(dbf5feaa-1234-5678-9abc-def012345678,"
     " Important Info) already exists.\n"
 )
 _STMT = (
-    "2026-03-16 04:32:52 UTC [1234]: STATEMENT:"
+    "2026-03-16 04:32:52.000 UTC [1234] STATEMENT:"
     "  INSERT INTO tag (id, workspace_id, name)"
     " VALUES ($1, $2, $3)\n"
 )
 PG_TEXT_MULTILINE = _ERR + _DETAIL + _STMT
 
-PG_TEXT_FATAL = "2026-03-16 04:50:16 UTC [5678]: FATAL:  connection to client lost\n"
+PG_TEXT_FATAL = "2026-03-16 04:50:16.000 UTC [5678] FATAL:  connection to client lost\n"
 
 PG_TEXT_MIXED = PG_TEXT_MULTILINE + PG_TEXT_FATAL
 

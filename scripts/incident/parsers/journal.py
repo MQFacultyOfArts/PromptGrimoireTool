@@ -63,13 +63,19 @@ def parse_journal(
         priority_str = record.get("PRIORITY")
         pid_str = record.get("_PID")
 
+        # MESSAGE can be a string or a byte array (list of ints) when the
+        # content contains binary/ANSI data. Decode byte arrays to string.
+        raw_message = record.get("MESSAGE")
+        if isinstance(raw_message, list):
+            raw_message = bytes(raw_message).decode("utf-8", errors="replace")
+
         events.append(
             {
                 "ts_utc": ts_utc,
                 "priority": int(priority_str) if priority_str is not None else None,
                 "pid": int(pid_str) if pid_str is not None else None,
                 "unit": record.get("_SYSTEMD_UNIT"),
-                "message": record.get("MESSAGE"),
+                "message": raw_message,
                 "raw_json": line,
             }
         )

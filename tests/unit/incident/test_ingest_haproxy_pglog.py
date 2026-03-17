@@ -44,10 +44,10 @@ _HAPROXY_BYTES = _HAPROXY_LINES.encode()
 
 # PG text log — ERROR + DETAIL + STATEMENT (multi-line)
 _PG_TEXT_LOG = """\
-2026-03-16 04:32:52 UTC [1234]: ERROR:  duplicate key value violates unique constraint "uq_tag_workspace_name"
-2026-03-16 04:32:52 UTC [1234]: DETAIL:  Key (workspace_id, name)=(dbf5feaa, Important Info) already exists.
-2026-03-16 04:32:52 UTC [1234]: STATEMENT:  INSERT INTO tag (id, workspace_id, name) VALUES ($1, $2, $3)
-2026-03-16 04:50:16 UTC [5678]: FATAL:  connection to client lost
+2026-03-16 04:32:52.000 UTC [1234] ERROR:  duplicate key value violates unique constraint "uq_tag_workspace_name"
+2026-03-16 04:32:52.000 UTC [1234] DETAIL:  Key (workspace_id, name)=(dbf5feaa, Important Info) already exists.
+2026-03-16 04:32:52.000 UTC [1234] STATEMENT:  INSERT INTO tag (id, workspace_id, name) VALUES ($1, $2, $3)
+2026-03-16 04:50:16.000 UTC [5678] FATAL:  connection to client lost
 """.strip()
 _PG_TEXT_BYTES = _PG_TEXT_LOG.encode()
 

@@ -36,6 +36,8 @@ class TestTimezoneCLIValidation:
     """--timezone with invalid IANA name should give a CLI error, not crash."""
 
     def test_invalid_timezone_gives_cli_error(self) -> None:
+        from zoneinfo import ZoneInfoNotFoundError
+
         from scripts.incident_db import app
         from typer.testing import CliRunner
 
@@ -55,9 +57,15 @@ class TestTimezoneCLIValidation:
             ],
         )
         assert result.exit_code != 0
-        assert "ZoneInfoNotFoundError" not in (result.output + str(result.exception))
+        # Must be a user-facing error, not a raw exception
+        assert not isinstance(result.exception, ZoneInfoNotFoundError), (
+            "Raw ZoneInfoNotFoundError leaked to user"
+        )
+        assert "Unknown timezone" in result.output
 
     def test_beszel_invalid_timezone_gives_cli_error(self) -> None:
+        from zoneinfo import ZoneInfoNotFoundError
+
         from scripts.incident_db import app
         from typer.testing import CliRunner
 
@@ -77,7 +85,10 @@ class TestTimezoneCLIValidation:
             ],
         )
         assert result.exit_code != 0
-        assert "ZoneInfoNotFoundError" not in (result.output + str(result.exception))
+        assert not isinstance(result.exception, ZoneInfoNotFoundError), (
+            "Raw ZoneInfoNotFoundError leaked to user"
+        )
+        assert "Unknown timezone" in result.output
 
 
 class TestBeszelDedup:

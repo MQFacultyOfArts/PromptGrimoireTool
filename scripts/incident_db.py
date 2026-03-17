@@ -80,11 +80,20 @@ def _resolve_timezone(conn: sqlite3.Connection, override: str | None) -> str:
 
     Uses explicit ``--timezone`` if provided, otherwise looks up from
     the first ingested source, falling back to Australia/Sydney.
+
+    Raises ``typer.BadParameter`` for invalid IANA timezone names.
     """
-    if override:
-        return override
-    row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
-    return row[0] if row else "Australia/Sydney"
+    tz_name = override
+    if not tz_name:
+        row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
+        tz_name = row[0] if row else "Australia/Sydney"
+    try:
+        ZoneInfo(tz_name)
+    except KeyError:
+        raise typer.BadParameter(
+            f"Unknown timezone '{tz_name}'. Use an IANA name like 'Australia/Sydney'."
+        ) from None
+    return tz_name
 
 
 def _aedt_to_utc(local_str: str, tz_name: str) -> str:

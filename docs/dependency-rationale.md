@@ -69,9 +69,23 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 **Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
 **Classification:** Hard core. All application configuration flows through it.
 
-### ~~python-dotenv >= 1.0~~ (SUPERSEDED)
+### ~~python-dotenv >= 1.0~~ (REMOVED)
 
-Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-pydantic-settings-130.md`.
+Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-settings, which uses python-dotenv internally as a transitive dependency. No direct imports existed. See design plan `2026-02-13-pydantic-settings-130.md`.
+
+### cryptography >= 46.0.5
+
+**Added:** pre-2026-03 (version floor pin)
+**Claim:** Version floor pin to ensure a minimum safe version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively by authlib and google-auth. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
+**Classification:** Protective belt. Version floor for supply-chain security.
+
+### pyasn1 >= 0.6.3
+
+**Added:** 2026-03-18 (version floor pin)
+**Claim:** Version floor pin to ensure CVE-2026-30922 patched version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
+**Classification:** Protective belt. Version floor for supply-chain security.
 
 ### asyncpg >= 0.30
 
@@ -360,6 +374,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Static site generator for HTML documentation. Renders guide markdown and screenshots into a themed HTML site deployable to GitHub Pages.
 **Evidence:** `mkdocs.yml` — site configuration. `src/promptgrimoire/cli.py` — `mkdocs build` invoked by `make_docs()`.
 **Serves:** Instructors and students (browsable user guides), developers (local preview via `mkdocs serve`).
+**Revised:** 2026-03-18 — mkdocs-material entering maintenance mode. Team focusing on Zensical successor. Critical bug fixes and security updates until November 2026. Evaluate migration path before that date.
 
 ### pip-audit
 
@@ -384,6 +399,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Extracts structured Markdown from PDF files using AI-based layout analysis (via pymupdf.layout). Produces paragraph-aware output that pymupdf's raw text extraction does not.
 **Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `convert_pdf_to_html()` calls `pymupdf4llm.to_markdown()`.
 **Serves:** Runtime users (students/instructors uploading PDF files).
+**Revised:** 2026-03-18 — version jumped from 0.3.4 to 1.27.2.1 (pymupdf team realigned version scheme to match pymupdf parent). Same API, adds `tabulate` as transitive dep.
 
 ### pymupdf-layout
 

@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
-from promptgrimoire.db.exceptions import TagCreationDeniedError
+from promptgrimoire.db.exceptions import SharePermissionError, TagCreationDeniedError
 from promptgrimoire.db.models import Activity, Course
 
 pytestmark = pytest.mark.skipif(
@@ -2105,7 +2105,7 @@ class TestImportTagsFromWorkspace:
 
     @pytest.mark.asyncio
     async def test_import_no_access_raises_permission_error(self) -> None:
-        """Import from inaccessible workspace raises TagCreationDeniedError."""
+        """Import from inaccessible workspace raises SharePermissionError."""
         from promptgrimoire.db.tags import import_tags_from_workspace
         from promptgrimoire.db.users import create_user
 
@@ -2121,7 +2121,7 @@ class TestImportTagsFromWorkspace:
             display_name="Outsider",
         )
 
-        with pytest.raises(TagCreationDeniedError):
+        with pytest.raises(SharePermissionError):
             await import_tags_from_workspace(src_ws, tgt_ws, outsider.id)
 
 

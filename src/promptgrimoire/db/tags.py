@@ -707,7 +707,7 @@ async def import_tags_from_workspace(
         List of newly created Tag objects.
 
     Raises:
-        PermissionError: If user lacks read access to source workspace.
+        SharePermissionError: If user lacks read access to source workspace.
     """
     await _check_import_access(source_workspace_id, user_id)
 

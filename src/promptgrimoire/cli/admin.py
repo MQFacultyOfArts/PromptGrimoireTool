@@ -268,7 +268,11 @@ async def _cmd_ban(
     # Revoke Stytch sessions
     if user.stytch_member_id:
         auth_client = get_auth_client()
-        await auth_client.revoke_member_sessions(member_id=user.stytch_member_id)
+        result = await auth_client.revoke_member_sessions(
+            member_id=user.stytch_member_id
+        )
+        if not result.valid:
+            con.print(f"[yellow]Warning:[/] session revocation failed: {result.error}")
     else:
         con.print(
             "[yellow]Warning:[/] No stytch_member_id, skipping session revocation."
@@ -286,11 +290,18 @@ async def _cmd_ban(
                     json={"user_id": str(user.id)},
                     headers={"Authorization": f"Bearer {secret}"},
                 )
-                kick_data = resp.json()
-                con.print(
-                    f"[green]Banned[/] '{email}'. "
-                    f"{kick_data.get('kicked', 0)} client(s) kicked."
-                )
+                if resp.status_code != 200:
+                    con.print(
+                        f"[green]Banned[/] '{email}'. "
+                        f"[yellow]Warning:[/] kick endpoint returned "
+                        f"{resp.status_code}: {resp.text}"
+                    )
+                else:
+                    kick_data = resp.json()
+                    con.print(
+                        f"[green]Banned[/] '{email}'. "
+                        f"{kick_data.get('kicked', 0)} client(s) kicked."
+                    )
         except Exception as exc:
             con.print(
                 f"[green]Banned[/] '{email}'. "

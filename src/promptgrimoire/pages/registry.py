@@ -160,13 +160,14 @@ def page_route(
                 logger.debug("storage_unavailable", route=route)
             bind_contextvars(user_id=user_id, request_path=route)
 
-            # Ban check: redirect banned users to suspension page
-            if requires_auth and user_id and await _check_ban(user_id, route):
+            # Ban check: runs for any authenticated user regardless of
+            # requires_auth, so /annotation (requires_auth=False) is covered.
+            # /banned uses @ui.page directly and never enters page_route.
+            if user_id and await _check_ban(user_id, route):
                 return
 
-            # Register client for real-time ban kick (auth pages only —
-            # /banned is non-auth to avoid register→disconnect loops)
-            if requires_auth and user_id:
+            # Register client for real-time ban kick
+            if user_id:
                 _register_client(user_id)
 
             await func(*args, **kwargs)

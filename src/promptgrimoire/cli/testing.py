@@ -701,10 +701,19 @@ def smoke_export() -> None:
     from promptgrimoire.export.pdf import compile_latex
     from promptgrimoire.export.pdf_export import generate_tex_only
 
+    # Exercises: CJK text, emoji, table with annotation in cell,
+    # and non-table annotation. Tag colour "smoke" generates
+    # tag-smoke, tag-smoke-light, tag-smoke-dark in the preamble.
     html = (
         "<p>日本語のテスト文書です。</p>\n"
-        "<table><tr><td>項目</td><td>内容</td></tr></table>\n"
-        "<p>✅ 完了 😊 よくできました</p>"
+        "<table><tr>"
+        '<td><span data-hl="0" data-colors="tag-smoke-light"'
+        ' data-annots="\\annot{tag-smoke-dark}'
+        "{\\textbf{1.} Smoke test annotation}"
+        '">注釈テキスト</span></td>'
+        "<td>✅ 完了</td>"
+        "</tr></table>\n"
+        "<p>😊 よくできました</p>"
     )
     tag_colours: dict[str, str] = {"smoke": "#888888"}
 

@@ -180,8 +180,8 @@ async def init_db() -> None:
         logger.info("Using NullPool (test environment detected)")
     else:
         pool_kwargs |= {
-            "pool_size": 10,
-            "max_overflow": 20,
+            "pool_size": 80,
+            "max_overflow": 15,
             "pool_pre_ping": True,
             "pool_recycle": 3600,
         }

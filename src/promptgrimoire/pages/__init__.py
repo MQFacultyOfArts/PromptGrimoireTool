@@ -6,6 +6,7 @@ Import this module to register all page routes with NiceGUI.
 from promptgrimoire.pages import (
     annotation,
     auth,
+    banned,
     courses,
     highlight_api_demo,
     logviewer,
@@ -20,6 +21,7 @@ from promptgrimoire.pages.dialogs import show_content_type_dialog
 __all__ = [
     "annotation",
     "auth",
+    "banned",
     "courses",
     "highlight_api_demo",
     "logviewer",
@@ -36,6 +38,7 @@ __all__ = [
 _PAGES = (
     annotation,
     auth,
+    banned,
     courses,
     highlight_api_demo,
     logviewer,

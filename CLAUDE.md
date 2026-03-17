@@ -168,6 +168,11 @@ uv run grimoire seed run
 # Manage users, roles, and course enrollments
 uv run grimoire admin list|show|create|admin|enroll|unenroll|role
 
+# Ban/unban users and list banned users
+uv run grimoire admin ban <email>
+uv run grimoire admin unban <email>
+uv run grimoire admin ban --list
+
 # Test Discord webhook alerting
 uv run grimoire admin webhook
 

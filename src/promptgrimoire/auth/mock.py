@@ -314,6 +314,28 @@ class MockAuthClient:
             error="invalid_token",
         )
 
+    async def revoke_member_sessions(self, *, member_id: str) -> SessionResult:
+        """Mock revoking all active sessions for a member.
+
+        Removes all entries from _active_sessions where the session
+        belongs to the given member_id.
+
+        Args:
+            member_id: The Stytch member ID whose sessions to revoke.
+
+        Returns:
+            SessionResult with valid=True (always succeeds in mock).
+        """
+        # Find and remove all sessions belonging to this member
+        tokens_to_remove = [
+            token
+            for token, email in self._active_sessions.items()
+            if _email_to_member_id(email) == member_id
+        ]
+        for token in tokens_to_remove:
+            del self._active_sessions[token]
+        return SessionResult(valid=True)
+
     # Test helper methods
 
     def get_sent_magic_links(self) -> list[dict]:

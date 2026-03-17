@@ -360,6 +360,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Static site generator for HTML documentation. Renders guide markdown and screenshots into a themed HTML site deployable to GitHub Pages.
 **Evidence:** `mkdocs.yml` — site configuration. `src/promptgrimoire/cli.py` — `mkdocs build` invoked by `make_docs()`.
 **Serves:** Instructors and students (browsable user guides), developers (local preview via `mkdocs serve`).
+**Revised:** 2026-03-18 — mkdocs-material entering maintenance mode. Team focusing on Zensical successor. Critical bug fixes and security updates until November 2026. Evaluate migration path before that date.
 
 ### pip-audit
 
@@ -384,6 +385,7 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Claim:** Extracts structured Markdown from PDF files using AI-based layout analysis (via pymupdf.layout). Produces paragraph-aware output that pymupdf's raw text extraction does not.
 **Evidence:** `src/promptgrimoire/input_pipeline/converters.py` — `convert_pdf_to_html()` calls `pymupdf4llm.to_markdown()`.
 **Serves:** Runtime users (students/instructors uploading PDF files).
+**Revised:** 2026-03-18 — version jumped from 0.3.4 to 1.27.2.1 (pymupdf team realigned version scheme to match pymupdf parent). Same API, adds `tabulate` as transitive dep.
 
 ### pymupdf-layout
 

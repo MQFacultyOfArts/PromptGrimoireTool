@@ -83,8 +83,6 @@ async def create_tag_group(
     """
     await _check_tag_creation_permission(workspace_id)
 
-    duplicate_name = False
-
     async with get_session() as session:
         result = await session.execute(
             text(
@@ -107,19 +105,13 @@ async def create_tag_group(
             order_index=order_index,
         )
         session.add(group)
-        try:
-            await session.flush()
-        except IntegrityError as exc:
-            if "uq_tag_group_workspace_name" in str(exc):
-                logger.warning(
-                    "Duplicate tag group name",
-                    name=name,
-                    workspace_id=str(workspace_id),
-                )
-                duplicate_name = True
-                await session.rollback()
-            else:
-                raise
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_group_workspace_name",
+            "Duplicate tag group name",
+            name=name,
+            workspace_id=str(workspace_id),
+        )
         if not duplicate_name:
             await session.refresh(group)
 
@@ -147,9 +139,11 @@ async def get_tag_group(group_id: UUID) -> TagGroup | None:
 _UNSET = object()
 
 
-async def _flush_tag_group_or_raise_duplicate(
+async def _flush_or_detect_duplicate(
     session: AsyncSession,
-    group_id: UUID,
+    constraint: str,
+    log_msg: str,
+    **log_kwargs: str,
 ) -> bool:
     """Flush *session*; return True if a duplicate-name constraint fired.
 
@@ -159,11 +153,8 @@ async def _flush_tag_group_or_raise_duplicate(
     try:
         await session.flush()
     except IntegrityError as exc:
-        if "uq_tag_group_workspace_name" in str(exc):
-            logger.warning(
-                "Duplicate tag group name on update",
-                group_id=str(group_id),
-            )
+        if constraint in str(exc):
+            logger.warning(log_msg, **log_kwargs)
             await session.rollback()
             return True
         raise
@@ -206,7 +197,12 @@ async def update_tag_group(
             group.color = color  # type: ignore[assignment]  -- sentinel pattern
 
         session.add(group)
-        duplicate = await _flush_tag_group_or_raise_duplicate(session, group_id)
+        duplicate = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_group_workspace_name",
+            "Duplicate tag group name on update",
+            group_id=str(group_id),
+        )
         if not duplicate:
             await session.refresh(group)
 
@@ -304,8 +300,6 @@ async def create_tag(
     """
     await _check_tag_creation_permission(workspace_id)
 
-    duplicate_name = False
-
     async with get_session() as session:
         result = await session.execute(
             text(
@@ -331,19 +325,13 @@ async def create_tag(
             order_index=order_index,
         )
         session.add(tag)
-        try:
-            await session.flush()
-        except IntegrityError as exc:
-            if "uq_tag_workspace_name" in str(exc):
-                logger.warning(
-                    "Duplicate tag name",
-                    name=name,
-                    workspace_id=str(workspace_id),
-                )
-                duplicate_name = True
-                await session.rollback()
-            else:
-                raise
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_workspace_name",
+            "Duplicate tag name",
+            name=name,
+            workspace_id=str(workspace_id),
+        )
         if not duplicate_name:
             await session.refresh(tag)
 
@@ -474,19 +462,12 @@ async def update_tag(
         )
 
         session.add(tag)
-        duplicate_name = False
-        try:
-            await session.flush()
-        except IntegrityError as exc:
-            if "uq_tag_workspace_name" in str(exc):
-                logger.warning(
-                    "Duplicate tag name on update",
-                    tag_id=str(tag_id),
-                )
-                duplicate_name = True
-                await session.rollback()
-            else:
-                raise
+        duplicate_name = await _flush_or_detect_duplicate(
+            session,
+            "uq_tag_workspace_name",
+            "Duplicate tag name on update",
+            tag_id=str(tag_id),
+        )
         if not duplicate_name:
             await session.refresh(tag)
 

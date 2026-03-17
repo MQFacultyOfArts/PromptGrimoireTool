@@ -15,8 +15,11 @@ from uuid import UUID
 import structlog
 from nicegui import ui
 
-from promptgrimoire.db import DuplicateNameError
-from promptgrimoire.db.exceptions import TagCreationDeniedError, TagLockedError
+from promptgrimoire.db.exceptions import (
+    DuplicateNameError,
+    TagCreationDeniedError,
+    TagLockedError,
+)
 
 logger = structlog.get_logger()
 logging.getLogger(__name__).setLevel(logging.INFO)

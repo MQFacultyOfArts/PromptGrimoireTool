@@ -45,8 +45,12 @@ from promptgrimoire.db.courses import (
     update_course,
 )
 from promptgrimoire.db.engine import init_db
-from promptgrimoire.db.enrolment import StudentIdConflictError, bulk_enrol
-from promptgrimoire.db.exceptions import DeletionBlockedError, OwnershipError
+from promptgrimoire.db.enrolment import bulk_enrol
+from promptgrimoire.db.exceptions import (
+    DeletionBlockedError,
+    OwnershipError,
+    StudentIdConflictError,
+)
 from promptgrimoire.db.roles import get_all_roles, get_staff_roles
 from promptgrimoire.db.users import find_or_create_user
 from promptgrimoire.db.weeks import (

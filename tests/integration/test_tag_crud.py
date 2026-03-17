@@ -14,7 +14,11 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
-from promptgrimoire.db.exceptions import SharePermissionError, TagCreationDeniedError
+from promptgrimoire.db.exceptions import (
+    SharePermissionError,
+    TagCreationDeniedError,
+    TagLockedError,
+)
 from promptgrimoire.db.models import Activity, Course
 
 pytestmark = pytest.mark.skipif(
@@ -379,12 +383,12 @@ class TestLockEnforcement:
 
         tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
-        with pytest.raises(ValueError, match="Tag is locked"):
+        with pytest.raises(TagLockedError, match="Tag is locked"):
             await update_tag(tag.id, name="New Name")
 
     @pytest.mark.asyncio
     async def test_delete_locked_tag_raises(self) -> None:
-        """Deleting a locked tag raises ValueError.
+        """Deleting a locked tag raises TagLockedError.
 
         Verifies AC2.8.
         """
@@ -395,7 +399,7 @@ class TestLockEnforcement:
 
         tag = await create_tag(ws_id, name="Locked", color="#000000", locked=True)
 
-        with pytest.raises(ValueError, match="Tag is locked"):
+        with pytest.raises(TagLockedError, match="Tag is locked"):
             await delete_tag(tag.id)
 
     @pytest.mark.asyncio

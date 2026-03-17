@@ -154,9 +154,15 @@ def _check_stamps(action: str, project_dir: str) -> int:
     running_age = _stamp_age(STAMP_RUNNING)
     if running_age is not None and running_age < STAMP_MAX_AGE:
         mins = int(running_age // 60)
+        remaining = max(0, 10 - mins)
+        watch_cmd = f"while [ -f {STAMP_RUNNING} ]; do sleep 10; done && echo 'Done!'"
+        tail_cmd = f"tail -f {STAMP_DIR}/.e2e_output.log"
         msg = (
-            f"BLOCKED: {action} — tests already running "
-            f"({mins}m elapsed). Retry when complete."
+            f"BLOCKED: {action} — E2E tests running "
+            f"({mins}m elapsed, ~{remaining}m remaining). "
+            f"Retry this command in a minute or two.\n"
+            f"  Watch: {watch_cmd}\n"
+            f"  Tail:  {tail_cmd}"
         )
         print(msg, file=sys.stderr)
         return 2
@@ -164,9 +170,14 @@ def _check_stamps(action: str, project_dir: str) -> int:
     # No recent stamp — launch tests in background
     _clean_stamps()
     _launch_tests_background(project_dir)
+    watch_cmd = f"while [ -f {STAMP_RUNNING} ]; do sleep 10; done && echo 'Done!'"
+    tail_cmd = f"tail -f {STAMP_DIR}/.e2e_output.log"
     msg = (
-        f"BLOCKED: {action} — launched `e2e all` in background. "
-        f"Retry this command after tests complete."
+        f"BLOCKED: {action} — launched `e2e all` in "
+        f"background (~5-10 min). "
+        f"Retry this command when tests complete.\n"
+        f"  Watch: {watch_cmd}\n"
+        f"  Tail:  {tail_cmd}"
     )
     print(msg, file=sys.stderr)
     return 2

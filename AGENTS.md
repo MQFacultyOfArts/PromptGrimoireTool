@@ -17,7 +17,7 @@ PromptGrimoire is a collaborative "classroom grimoire" for prompt iteration, ann
 
 ### 2. Testing Constraints (TDD Mandatory)
 - **Async Fixtures**: NEVER use `@pytest.fixture` on `async def` functions. Always use `@pytest_asyncio.fixture`. Using the sync decorator causes `Runner.run() cannot be called from a running event loop` under xdist.
-- **6-Lane Model**: Tests are split into 6 lanes (unit, integration, playwright, nicegui, smoke, blns+slow). `test all` runs unit only. `e2e all` runs all 6 lanes. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes.
+- **7-Lane Model**: Tests are split into 7 lanes (bats, unit, integration, playwright, nicegui, smoke, blns+slow). `test all` runs BATS + unit. `e2e all` runs all 7 lanes. E2E tests (Playwright) contaminate xdist workers and must never run in unit/integration lanes. BATS tests cover shell scripts in `deploy/tests/`.
 - **Smoke Marker**: The `smoke` marker is auto-applied by `requires_latex`, `requires_full_latexmk`, and `requires_pandoc` decorators. Smoke tests are excluded from the unit lane and run in their own lane.
 - **E2E Locators**: All interactable UI elements must have `data-testid` attributes. E2E tests must use `page.get_by_test_id()`. Never locate by visible text, placeholder, or Quasar CSS classes.
 
@@ -66,6 +66,13 @@ uv run grimoire admin ban --list        # List all banned users
 uv run grimoire admin webhook         # Test Discord webhook alerting
 uv run grimoire docs build          # Generate user-facing documentation (requires pandoc)
 uv run run.py                       # Run the application
+
+# Incident analysis (standalone SQLite tooling, not part of main app)
+uv run scripts/incident_db.py ingest <tarball.tar.gz>    # Ingest telemetry tarball
+uv run scripts/incident_db.py sources                     # Show ingested sources
+uv run scripts/incident_db.py timeline --start "..." --end "..."  # Cross-source timeline
+uv run scripts/incident_db.py breakdown                   # Event counts by source/level
+uv run scripts/incident_db.py beszel --start "..." --end "..."    # Fetch Beszel metrics
 ```
 
 ## Autonomous Agent Guidelines
@@ -129,3 +136,13 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **CLI** (`cli/admin.py`): `admin ban <email>` (sets DB flag, updates Stytch metadata, revokes sessions, calls kick endpoint), `admin unban <email>` (reverses all), `admin ban --list` (tabular display of banned users).
 
 **Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`.
+
+### Incident Analysis Tooling
+
+Standalone SQLite-based tooling for post-incident telemetry analysis. Lives in `scripts/incident/` (library) and `scripts/incident_db.py` (Typer CLI). Completely independent of the main application -- no imports from `src/promptgrimoire/`.
+
+**Pipeline:** `deploy/collect-telemetry.sh` (run on production server) produces a time-windowed tarball with `manifest.json`. The CLI ingests tarballs into SQLite via format-specific parsers (journal, structlog JSONL, HAProxy, PostgreSQL text/JSON, Beszel API).
+
+**Schema:** 5 event tables (`journal_events`, `jsonl_events`, `haproxy_events`, `pg_events`, `beszel_metrics`) + `sources` provenance table + `timeline` UNION ALL view. All timestamps stored as canonical `YYYY-MM-DDTHH:MM:SS.ffffffZ` (microsecond UTC).
+
+**Key invariants:** SHA256 dedup on `sources` (re-ingest is safe). Parsers produce dicts with `ts_utc` in canonical format via `normalise_utc()`. Query bounds are padded to microsecond precision for correct SQLite string comparison.

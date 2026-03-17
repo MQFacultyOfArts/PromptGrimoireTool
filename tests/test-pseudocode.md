@@ -6593,3 +6593,496 @@ It catches any divergence that would cause highlights to render at wrong positio
 2. Get placement context, assert allow_sharing matches course default
 
 **Verifies:** Activity-placed workspaces inherit course sharing setting (AC4.3)
+||||||| parent of 37db489c (docs: update project context for incident-analysis-tools)
+
+## Incident Analysis -- Ingest & Provenance
+
+### Parse valid manifest
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_valid_manifest
+1. Build manifest JSON with hostname, timezone, requested_window, files
+2. Call parse_manifest() with bytes
+3. Assert returned dict contains all required keys
+
+**Verifies:** Manifest parser accepts well-formed input
+
+### Reject manifest with missing fields
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_missing_required_field
+1. Build manifest missing "hostname"
+2. Assert parse_manifest() raises ValueError mentioning "hostname"
+
+**Verifies:** Manifest validation catches missing required fields
+
+### Reject invalid JSON manifest
+**File:** tests/unit/incident/test_ingest.py::TestParseManifest::test_invalid_json
+1. Pass garbage bytes to parse_manifest()
+2. Assert ValueError raised
+
+**Verifies:** Manifest parser handles malformed JSON gracefully
+
+### Map known filenames to format strings
+**File:** tests/unit/incident/test_ingest.py::TestFormatToTable::test_known_formats
+1. Call format_to_table() with each known filename (journal.json, structlog.jsonl, haproxy.log, postgresql.log)
+2. Assert correct format string returned
+
+**Verifies:** Filename-to-format dispatch table is correct
+
+### Reject unknown filenames
+**File:** tests/unit/incident/test_ingest.py::TestFormatToTable::test_unknown_filename
+1. Call format_to_table("unknown.txt")
+2. Assert ValueError raised
+
+**Verifies:** Unknown filenames are rejected rather than silently ignored
+
+### SHA256 hash computation
+**File:** tests/unit/incident/test_ingest.py::TestComputeSha256::test_computes_hash
+1. Write known content to file
+2. Call compute_sha256()
+3. Assert matches hashlib.sha256 of same content
+
+**Verifies:** SHA256 dedup hash is correctly computed
+
+### Ingest populates sources table
+**File:** tests/unit/incident/test_ingest.py::TestRunIngest::test_ingest_populates_sources
+1. Create tarball with manifest + journal.json + structlog.jsonl
+2. Call run_ingest()
+3. Query sources table
+4. Assert 2 rows with correct filenames, format, sha256, hostname
+
+**Verifies:** Ingest creates source rows for each file in manifest
+
+### Re-ingest is a no-op (SHA256 dedup)
+**File:** tests/unit/incident/test_ingest.py::TestRunIngestDedup::test_reingest_is_noop
+1. Ingest tarball once
+2. Ingest same tarball again
+3. Assert sources table still has same count (no duplicates)
+
+**Verifies:** SHA256 dedup prevents duplicate source rows
+
+### Missing manifest exits with error
+**File:** tests/unit/incident/test_ingest.py::TestRunIngestNoManifest::test_missing_manifest_exits
+1. Create tarball without manifest.json
+2. Call run_ingest()
+3. Assert SystemExit(1) raised
+
+**Verifies:** Missing manifest produces clear error
+
+### Ingest dispatches journal parser
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_journal_events_populated
+1. Create tarball with manifest + journal.json containing valid journal lines
+2. Call run_ingest()
+3. Query journal_events table
+4. Assert correct event count and field values (ts_utc, priority, pid, message)
+
+**Verifies:** Journal parser is wired into ingest dispatch
+
+### Ingest dispatches JSONL parser
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_jsonl_events_populated
+1. Create tarball with manifest + structlog.jsonl containing valid JSONL lines
+2. Call run_ingest()
+3. Query jsonl_events table
+4. Assert correct event count and field values (ts_utc, level, event)
+
+**Verifies:** JSONL parser is wired into ingest dispatch
+
+### Ingest handles both formats together
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_both_formats_together
+1. Create tarball with both journal.json and structlog.jsonl
+2. Call run_ingest()
+3. Assert both journal_events and jsonl_events tables populated
+
+**Verifies:** Multiple format parsers dispatch independently
+
+### Re-ingest dedup prevents duplicate events
+**File:** tests/unit/incident/test_ingest_with_parsers.py::TestIngestWithParsers::test_reingest_dedup_no_duplicate_events
+1. Ingest tarball with parseable files
+2. Re-ingest same tarball
+3. Assert event counts unchanged
+
+**Verifies:** Source-level dedup prevents duplicate parsed events
+
+### Ingest dispatches HAProxy parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestHaproxy::test_haproxy_events_populated
+1. Create tarball with haproxy.log
+2. Ingest it
+3. Query haproxy_events table
+4. Assert events have correct fields (ts_utc, client_ip, status_code, method, path)
+
+**Verifies:** HAProxy parser is wired into ingest dispatch
+
+### HAProxy unparseable count reported
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestHaproxy::test_unparseable_count_in_output
+1. Create tarball with HAProxy log containing garbage lines + valid lines
+2. Ingest it with capsys capture
+3. Assert output mentions unparseable count
+
+**Verifies:** User gets feedback about skipped lines
+
+### Ingest dispatches PG text parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_pglog_text_events_populated
+1. Create tarball with postgresql.log (text format)
+2. Ingest it
+3. Query pg_events table
+4. Assert events with correct PID, level, message
+
+**Verifies:** PG text parser auto-detected and dispatched
+
+### Ingest dispatches PG JSON parser
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_pglog_json_events_populated
+1. Create tarball with postgresql.json (JSON format)
+2. Ingest it
+3. Query pg_events table
+4. Assert events with correct fields
+
+**Verifies:** PG JSON parser auto-detected and dispatched
+
+### All formats together in one tarball
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestIngestPglog::test_all_formats_together
+1. Create tarball with journal.json, structlog.jsonl, haproxy.log, postgresql.log
+2. Ingest it
+3. Assert all 4 event tables populated
+
+**Verifies:** Full parser dispatch chain works end-to-end
+
+### PG log auto-detection (JSON vs text)
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestPglogAuto::test_json_format_detected / test_text_format_detected
+1. Call parse_pglog_auto() with JSON-formatted PG log data
+2. Assert events returned (JSON path taken)
+3. Call parse_pglog_auto() with text-formatted PG log data
+4. Assert events returned (text path taken)
+
+**Verifies:** Auto-detection correctly routes to JSON vs text parser
+
+### Rotated PG filenames map to pglog format
+**File:** tests/unit/incident/test_ingest_haproxy_pglog.py::TestFormatToTable / tests/unit/incident/test_bugs.py::TestBugRotatedPgFilenamesRejected
+1. Call format_to_table() with "postgresql-16-main.log", "postgresql-16-main.json"
+2. Assert both return "pglog"
+
+**Verifies:** Pattern-matched PG filenames (not just exact match) are accepted
+
+## Incident Analysis -- Journal Parser
+
+### Microsecond timestamp conversion
+**File:** tests/unit/incident/test_journal_parser.py::TestTimestampConversion::test_microsecond_precision
+1. Build journal line with __REALTIME_TIMESTAMP=1710536535123456 (microseconds epoch)
+2. Parse it
+3. Assert ts_utc = "2024-03-15T21:02:15.123456Z"
+
+**Verifies:** Microsecond-epoch timestamps convert to canonical UTC format
+
+### Field extraction (priority, pid, message, unit, raw_json)
+**File:** tests/unit/incident/test_journal_parser.py::TestFieldExtraction::test_*
+1. Parse journal line with known values
+2. Assert priority is int, pid is int, message extracted, unit extracted
+3. Assert raw_json contains full original JSON
+
+**Verifies:** All journal fields correctly extracted and typed
+
+### Time window filtering
+**File:** tests/unit/incident/test_journal_parser.py::TestTimeWindowFiltering::test_event_inside_window / test_event_outside_window / test_event_just_before_start_excluded
+1. Parse journal lines with timestamps inside, outside, and at boundary of window
+2. Assert only in-window events returned
+3. Assert 1 second before start is excluded, 1 second after end is excluded
+
+**Verifies:** Strict window filtering with no buffer
+
+### Edge cases (empty input, blank lines, missing fields)
+**File:** tests/unit/incident/test_journal_parser.py::TestEdgeCases::test_*
+1. Parse empty bytes, bytes with blank lines, lines missing __REALTIME_TIMESTAMP
+2. Assert empty result for empty/blank, skip lines with missing timestamp
+
+**Verifies:** Parser handles malformed input gracefully
+
+### Byte-array MESSAGE field (production data bug)
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugJournalMessageByteArray::test_byte_array_message_decoded
+1. Build journal line where MESSAGE is a JSON array of bytes (systemd binary encoding)
+2. Parse it
+3. Assert message field is decoded to readable string
+
+**Verifies:** Binary-encoded journal messages are handled (real production format)
+
+## Incident Analysis -- JSONL Parser
+
+### Timestamp passthrough with canonical format
+**File:** tests/unit/incident/test_jsonl_parser.py::TestTimestampPassthrough::test_*
+1. Parse JSONL line with ISO 8601 timestamp
+2. Assert ts_utc matches input in canonical Z-suffix format
+
+**Verifies:** Timestamps pass through normalise_utc correctly
+
+### Field extraction (level, event, user_id, workspace_id, exc_info, extra_json)
+**File:** tests/unit/incident/test_jsonl_parser.py::TestFieldExtraction::test_*
+1. Parse JSONL line with all structlog fields
+2. Assert dedicated fields extracted, remaining fields go to extra_json
+3. Assert extracted fields excluded from extra_json
+
+**Verifies:** Structlog fields correctly mapped to schema columns
+
+### exc_info handling (null, absent, string)
+**File:** tests/unit/incident/test_jsonl_parser.py::TestExcInfoNull::test_*
+1. Parse lines with exc_info=null, absent exc_info, exc_info="traceback..."
+2. Assert null/absent -> Python None, string -> preserved
+
+**Verifies:** exc_info nullable semantics match Python convention
+
+### Malformed timestamp resilience
+**File:** tests/unit/incident/test_bugs.py::TestBugJsonlCrashOnBadTimestamp / tests/unit/incident/test_query_timestamp_bug.py::TestJsonlMalformedTimestampResilience
+1. Parse JSONL line with null timestamp, integer timestamp
+2. Assert line is skipped (not crash)
+
+**Verifies:** Bad timestamp types/shapes don't crash the parser
+
+## Incident Analysis -- HAProxy Parser
+
+### AEDT/AEST timestamp conversion
+**File:** tests/unit/incident/test_haproxy_parser.py::TestTimestampConversion::test_aedt_to_utc / test_aest_offset
+1. Parse HAProxy line with local-timezone timestamp
+2. Assert ts_utc is UTC with Z suffix
+
+**Verifies:** HAProxy's local timestamps convert to UTC correctly
+
+### Field extraction (status, timings, method, path, client_ip, backend, bytes)
+**File:** tests/unit/incident/test_haproxy_parser.py::TestFieldExtraction::test_*
+1. Parse HAProxy HTTP log line
+2. Assert all timing fields (tr, tw, tc, tr_resp, ta), status code, method, path, client_ip, backend/server, bytes_read extracted
+
+**Verifies:** HAProxy combined log format fully parsed
+
+### Unparseable lines counted
+**File:** tests/unit/incident/test_haproxy_parser.py::TestUnparseableLines::test_garbage_lines_counted / test_all_garbage_returns_empty
+1. Parse data with mix of valid + garbage lines
+2. Assert valid events returned, unparseable count is correct
+3. Parse all-garbage data: assert empty events, count = line count
+
+**Verifies:** Unparseable lines are skipped with count, not fatal
+
+### IPv6 client addresses
+**File:** tests/unit/incident/test_bugs.py::TestBugHaproxyIpv6Dropped::test_ipv6_localhost_parsed
+1. Parse HAProxy line with ::1 (IPv6 localhost) client address
+2. Assert event parsed with client_ip="::1"
+
+**Verifies:** IPv6 addresses are not dropped as unparseable
+
+### SSL handshake failure (non-HTTP line)
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugHaproxySslHandshakeDropped::test_ssl_handshake_failure_parsed
+1. Parse HAProxy SSL handshake failure line (non-standard format)
+2. Assert event parsed with appropriate fields
+
+**Verifies:** Non-HTTP HAProxy lines (SSL errors, connection resets) are captured
+
+### Admin/server state lines
+**File:** tests/unit/incident/test_real_data_bugs.py::TestHaproxyAdminLines::test_server_drain_parsed
+1. Parse HAProxy admin line (server state change)
+2. Assert event captured
+
+**Verifies:** HAProxy admin messages are included in timeline
+
+### Malformed HTTP line not misidentified as admin
+**File:** tests/unit/incident/test_codex_round3.py::TestHaproxyAdminFallbackTooBroad::test_malformed_http_line_is_unparseable_not_admin
+1. Parse truncated/malformed HTTP log line
+2. Assert it is counted as unparseable (not captured as admin event)
+
+**Verifies:** Admin regex doesn't false-positive on garbage
+
+## Incident Analysis -- PostgreSQL Parser
+
+### Text format: multi-line grouping (ERROR + DETAIL + STATEMENT)
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextMultiLineGrouping::test_error_detail_statement_grouped / test_message_contains_all_text
+1. Parse PG text log with ERROR followed by DETAIL and STATEMENT continuation lines
+2. Assert single event returned (not 3)
+3. Assert message contains all text, detail and statement fields populated
+
+**Verifies:** pgtoolkit groups multi-line PG log entries correctly
+
+### Text format: PID extraction and separate events
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextSeparatePIDs::test_two_pids_two_events
+1. Parse PG text log with two events from different PIDs
+2. Assert 2 separate events with correct PIDs
+
+**Verifies:** Events from different PIDs are kept separate
+
+### Text format: timestamp stored as UTC
+**File:** tests/unit/incident/test_pglog_parser.py::TestTextTimestamp::test_timestamp_stored_as_utc
+1. Parse PG text log entry
+2. Assert ts_utc ends with "Z" (canonical UTC format)
+
+**Verifies:** PG text timestamps normalised to UTC
+
+### JSON format: field extraction
+**File:** tests/unit/incident/test_pglog_parser.py::TestJsonFieldExtraction::test_all_fields_extracted
+1. Parse PG JSON log line with all fields (error_severity, detail, statement, message)
+2. Assert all fields extracted and mapped to schema columns
+
+**Verifies:** PG JSON log format fully parsed
+
+### JSON format: GMT timestamp conversion
+**File:** tests/unit/incident/test_pglog_parser.py::TestJsonTimestamp::test_gmt_timestamp_to_iso8601
+1. Parse PG JSON line with "Tue Mar 16 05:10:00 2026 GMT" timestamp
+2. Assert ts_utc in canonical ISO 8601 UTC format
+
+**Verifies:** PG JSON epoch-style timestamps convert correctly
+
+### Production PG log format match
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugPgLogFormatMismatch::test_actual_production_pg_line_parsed
+1. Parse actual production PG log line (with real log_line_prefix format)
+2. Assert event parsed successfully
+
+**Verifies:** Parser regex matches actual production PG log format
+
+## Incident Analysis -- Beszel Metrics
+
+### Successful fetch and field mapping
+**File:** tests/unit/incident/test_beszel.py::TestSuccessfulFetch::test_single_record
+1. Mock PocketBase API response with system metrics
+2. Call fetch_beszel_metrics()
+3. Assert returned dict has all fields (cpu, mem_used, mem_percent, net_*, disk_*, load_*)
+
+**Verifies:** Beszel API response correctly mapped to metric schema
+
+### Compact key mapping (ns->net_sent, nr->net_recv, etc.)
+**File:** tests/unit/incident/test_beszel.py::TestCompactKeyMapping::test_*
+1. Mock API response with compact keys (ns, nr, dr, dw, etc.)
+2. Assert mapped to full field names
+
+**Verifies:** Beszel's abbreviated JSON keys correctly expanded
+
+### Pagination
+**File:** tests/unit/incident/test_beszel.py::TestPagination::test_two_pages
+1. Mock API with 2 pages of results (page=1 totalPages=2)
+2. Assert all records from both pages returned
+
+**Verifies:** Multi-page API responses fully consumed
+
+### Error handling (connection error, HTTP error)
+**File:** tests/unit/incident/test_beszel.py::TestConnectionError / TestHTTPError
+1. Mock connection failure / 404 response
+2. Assert appropriate exception raised
+
+**Verifies:** API errors propagate cleanly
+
+### Beszel dedup
+**File:** tests/unit/incident/test_codex_round3.py::TestBeszelDedup::test_beszel_dedup_message
+1. Run beszel CLI command twice with same parameters
+2. Assert second run outputs "Already fetched (dedup)"
+
+**Verifies:** SHA256 dedup prevents duplicate Beszel fetches
+
+## Incident Analysis -- Queries
+
+### Sources query returns provenance
+**File:** tests/unit/incident/test_queries.py::TestQuerySources::test_*
+1. Populate DB with multi-format sources + events
+2. Call query_sources()
+3. Assert all sources returned with sha256 prefix (12 chars), event counts, first/last timestamps
+
+**Verifies:** Provenance summary includes event stats per source
+
+### Timeline interleaves events by ts_utc
+**File:** tests/unit/incident/test_queries.py::TestQueryTimeline::test_events_interleaved_by_ts / test_returns_events_in_window
+1. Populate DB with events from different sources at interleaved timestamps
+2. Call query_timeline() with time window
+3. Assert events ordered by ts_utc regardless of source
+
+**Verifies:** Cross-source timeline correctly interleaves by timestamp
+
+### Timeline level filter
+**File:** tests/unit/incident/test_queries.py::TestQueryTimeline::test_level_filter
+1. Populate DB with events at different levels
+2. Call query_timeline() with level_filter
+3. Assert only matching events returned
+
+**Verifies:** Level/status filtering works on the timeline view
+
+### Breakdown counts by source and level
+**File:** tests/unit/incident/test_queries.py::TestQueryBreakdown::test_counts_correct / test_deterministic_between_runs / test_ordered_by_count_desc
+1. Populate DB with known event distributions
+2. Call query_breakdown() twice
+3. Assert counts match expected, results identical between runs, ordered by count DESC
+
+**Verifies:** Breakdown produces deterministic, correctly ordered aggregates
+
+### Query timestamp padding bug
+**File:** tests/unit/incident/test_query_timestamp_bug.py::TestQueryStartSecondBug::test_event_at_window_start_included
+1. Store event with ts_utc "...00.000000Z"
+2. Query with bound "...00Z" (no microseconds)
+3. Assert event IS included (bounds padded by _normalise_bound)
+
+**Verifies:** Query bounds padded to microsecond precision for correct string comparison
+
+## Incident Analysis -- CLI
+
+### Sources output formats (table, JSON, CSV)
+**File:** tests/unit/incident/test_queries.py::TestSourcesCLI::test_sources_table_output / test_sources_json_output / test_sources_csv_output
+1. Invoke CLI `sources` command with --json / --csv / default
+2. Assert output parses correctly in each format
+
+**Verifies:** CLI output renderers produce valid table/JSON/CSV
+
+### Timeline CLI with start > end error
+**File:** tests/unit/incident/test_queries.py::TestTimelineCLI::test_start_after_end_exits_with_error
+1. Invoke `timeline --start "16:30" --end "16:00"`
+2. Assert exit code 1 with error message
+
+**Verifies:** Invalid time window rejected at CLI level
+
+### Timezone validation
+**File:** tests/unit/incident/test_codex_round3.py::TestTimezoneCLIValidation::test_invalid_timezone_gives_cli_error / test_beszel_invalid_timezone_gives_cli_error
+1. Invoke timeline/beszel command with --timezone "Fake/Zone"
+2. Assert BadParameter error with helpful message
+
+**Verifies:** Invalid IANA timezone names rejected with user-friendly error
+
+## Incident Analysis -- Schema Migration
+
+### Old schema upgraded with provenance columns
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_old_schema_upgraded_with_new_columns
+1. Create DB with v1 schema (no source_path, collection_method)
+2. Insert a row
+3. Call create_schema() (triggers migration)
+4. Assert source_path and collection_method columns exist
+5. Assert existing data preserved
+
+**Verifies:** Lightweight migration adds columns without data loss
+
+### Fresh schema has provenance columns
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_fresh_schema_has_provenance_columns
+1. Create fresh DB with create_schema()
+2. Assert source_path and collection_method in table_info
+
+**Verifies:** Fresh databases include v2 columns
+
+### Idempotent migration
+**File:** tests/unit/incident/test_schema_upgrade.py::TestSchemaUpgrade::test_idempotent_migration
+1. Run create_schema() twice on same DB
+2. Assert no errors
+
+**Verifies:** Schema migration is safe to re-run
+
+## Incident Analysis -- Cross-Cutting Bug Fixes
+
+### All parsers produce same ts_utc format
+**File:** tests/unit/incident/test_bugs.py::TestBugTimestampFormatMismatch::test_journal_and_jsonl_produce_same_format
+1. Parse journal line and JSONL line with equivalent timestamps
+2. Assert both ts_utc values end with "Z" (not +00:00)
+
+**Verifies:** Canonical timestamp format is consistent across parsers
+
+### in_window has no hidden buffer
+**File:** tests/unit/incident/test_bugs.py::TestBugInWindowHasHiddenBuffer::test_one_second_outside_is_excluded
+1. Call in_window() with timestamp 1 second past window end
+2. Assert returns False
+
+**Verifies:** Window filtering is strict (no hidden 5-minute buffer)
+
+### HAProxy timestamp ends with Z
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugHaproxyTimestampFormat::test_haproxy_ts_utc_ends_with_z
+1. Parse HAProxy line
+2. Assert ts_utc ends with "Z"
+
+**Verifies:** HAProxy timestamps use normalise_utc (Z suffix, not +00:00)
+
+### PG text timestamp ends with Z
+**File:** tests/unit/incident/test_real_data_bugs.py::TestBugPgTextTimestampFormat::test_pg_text_ts_utc_ends_with_z
+1. Parse PG text log line
+2. Assert ts_utc ends with "Z"
+
+**Verifies:** PG text timestamps use normalise_utc (Z suffix, not +00:00)

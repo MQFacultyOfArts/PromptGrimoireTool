@@ -1,6 +1,6 @@
 # Dependency Rationale
 
-Last reviewed: 2026-03-15
+Last reviewed: 2026-03-17
 
 Each dependency lists: what it does, why it's here (not a stdlib/transitive alternative), and where the evidence is.
 
@@ -424,6 +424,16 @@ Removed 2026-02-10. Same replacement as pylatexenc above. The Lark lexer grammar
 **Evidence:** `from openpyxl import load_workbook` in `enrol/xlsx_parser.py` (to be created in Phase 2 of bulk-enrol-320).
 **Serves:** Runtime — admin CLI and instructor UI upload both depend on XLSX parsing.
 **Why not alternatives:** `pandas` is heavyweight for simple row iteration. `xlrd` only supports `.xls` (not `.xlsx`). openpyxl is the de facto standard for `.xlsx` in Python, read-only mode is memory-efficient.
+
+### shellcheck-py >= 0.11.0
+
+**Added:** 2026-03-17
+**Design plan:** docs/design-plans/2026-03-16-incident-analysis-tools.md
+**Claim:** Python-packaged ShellCheck binary for shell script linting. Used as a pre-commit hook to lint `deploy/*.sh` scripts (collect-telemetry.sh, restart.sh).
+**Evidence:** `.pre-commit-config.yaml` — shellcheck hook configured with `--severity=warning` and `files: ^deploy/.*\.sh$`.
+**Serves:** Developers (pre-commit lint gate for shell scripts).
+**Why not alternatives:** ShellCheck is the de facto standard for shell script static analysis. The Python-packaged version (`shellcheck-py`) avoids requiring a system-level ShellCheck install and integrates cleanly with the existing pre-commit framework.
+**Classification:** Protective belt. Dev-only pre-commit hook. No runtime dependency.
 
 ### pgtoolkit
 

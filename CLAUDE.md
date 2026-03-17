@@ -96,7 +96,7 @@ All three must pass before code is considered complete.
 
 ### Pre-commit Hooks
 
-Git commits trigger ruff lint + format check and ty type check. Commits will be rejected if checks fail.
+Git commits trigger ruff lint + format check, ty type check, shellcheck on `deploy/*.sh`, and BATS shell tests on `deploy/tests/`. Commits will be rejected if checks fail.
 
 ## Key Commands
 
@@ -133,7 +133,7 @@ uv run grimoire e2e run
 # Run E2E tests in serial mode (single server)
 uv run grimoire e2e run --serial
 
-# Run all 6 lanes: unit, integration, playwright, nicegui, smoke, blns+slow
+# Run all 7 lanes: bats, unit, integration, playwright, nicegui, smoke, blns+slow
 uv run grimoire e2e all
 
 # Run E2E tests (smart selection based on changes)
@@ -186,6 +186,12 @@ uv run grimoire docs build
 # Run the app
 uv run run.py
 
+# Incident analysis (standalone SQLite tooling, not part of main app)
+uv run scripts/incident_db.py ingest <tarball.tar.gz> --db incident.db
+uv run scripts/incident_db.py sources --db incident.db
+uv run scripts/incident_db.py timeline --start "2026-03-16 16:05" --end "2026-03-16 16:14"
+uv run scripts/incident_db.py breakdown --db incident.db
+uv run scripts/incident_db.py beszel --start "2026-03-16 16:05" --end "2026-03-16 16:14" --hub http://localhost:8090
 ```
 
 ## Project Structure
@@ -229,6 +235,15 @@ src/promptgrimoire/
 ├── search_worker.py     # Background FTS extraction worker (polls search_dirty)
 ├── logging_discord.py   # Discord webhook alerting processor (ERROR/CRITICAL -> Discord embed)
 └── static/              # JS/CSS assets
+
+scripts/
+├── incident_db.py       # Typer CLI entry point for incident analysis
+└── incident/            # Incident analysis library (standalone, SQLite-based)
+    ├── schema.py        # SQLite DDL (5 event tables + timeline UNION ALL view)
+    ├── ingest.py        # Tarball extraction, manifest parsing, parser dispatch
+    ├── queries.py       # Query functions + Rich/JSON/CSV output renderers
+    ├── provenance.py    # Manifest parsing, sha256 dedup, format detection
+    └── parsers/         # Per-format parsers (journal, jsonl, haproxy, pglog, beszel)
 
 deploy/
 ├── restart.sh           # Zero-downtime deploy script

@@ -218,6 +218,7 @@ class TestCmdBan:
 
         # Mock httpx
         mock_response = MagicMock()
+        mock_response.status_code = 200
         mock_response.json.return_value = {"kicked": 2}
 
         mock_http_client = AsyncMock()

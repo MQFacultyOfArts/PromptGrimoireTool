@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import TagCreationDeniedError
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -119,7 +120,7 @@ class TestCreationGating:
 
     @pytest.mark.asyncio
     async def test_creation_denied_when_course_disallows(self) -> None:
-        """create_tag raises PermissionError when course default is False."""
+        """create_tag raises TagCreationDeniedError when course default is False."""
         from promptgrimoire.db.tags import create_tag
 
         _, activity = await _make_course_week_activity(
@@ -127,7 +128,7 @@ class TestCreationGating:
         )
         ws_id = activity.template_workspace_id
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(TagCreationDeniedError):
             await create_tag(ws_id, name="Denied", color="#ff0000")
 
     @pytest.mark.asyncio

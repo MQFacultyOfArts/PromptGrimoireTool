@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import OwnershipError
 from promptgrimoire.db.models import (
     ACLEntry,
     Activity,
@@ -155,10 +156,12 @@ class PlacementContext:
 
     True = protection active.
     """
-    allow_sharing: bool = False
+    allow_sharing: bool = True
     """Resolved sharing permission for this workspace.
 
     True = owner can share with other students.
+    Loose workspaces default to True (no course policy restricts them).
+    Activity/course-placed paths set this explicitly via resolve_tristate().
     """
     anonymous_sharing: bool = False
     """Resolved anonymity setting for this workspace.
@@ -440,7 +443,7 @@ async def delete_workspace(workspace_id: UUID, *, user_id: UUID) -> None:
         )
         if owner_entry.first() is None:
             msg = "Only workspace owner can delete"
-            raise PermissionError(msg)
+            raise OwnershipError(msg)
 
         await session.delete(workspace)
 

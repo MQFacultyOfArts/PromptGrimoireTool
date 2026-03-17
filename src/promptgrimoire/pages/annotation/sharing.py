@@ -18,6 +18,7 @@ from promptgrimoire.db.acl import (
     list_entries_for_workspace,
     revoke_permission,
 )
+from promptgrimoire.db.exceptions import SharePermissionError
 from promptgrimoire.db.users import get_user_by_email, get_user_by_id
 from promptgrimoire.db.workspaces import update_workspace_sharing
 
@@ -64,8 +65,8 @@ def render_sharing_controls(
             on_change=lambda e: _handle_share_toggle(e.value),
         ).props('data-testid="share-with-class-toggle"')
 
-    # "Share with user" button -- visible to owner or privileged
-    if can_manage_sharing:
+    # "Share with user" button -- visible when sharing allowed, or staff bypass
+    if (allow_sharing or viewer_is_privileged) and can_manage_sharing:
 
         async def _open_share_dialog() -> None:
             if grantor_id is None:
@@ -195,7 +196,7 @@ async def open_sharing_dialog(
                 ui.notify(f"Shared with {email}", type="positive")
                 email_input.value = ""
                 shares_list.refresh()
-            except PermissionError as exc:
+            except SharePermissionError as exc:
                 logger.warning("share_permission_denied", operation="share_workspace")
                 ui.notify(str(exc), type="negative")
 

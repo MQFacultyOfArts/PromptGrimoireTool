@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import ProtectedDocumentError
+from promptgrimoire.db.exceptions import OwnershipError, ProtectedDocumentError
 from promptgrimoire.db.models import ACLEntry, Workspace, WorkspaceDocument
 from promptgrimoire.input_pipeline import build_paragraph_map_for_json
 
@@ -256,7 +256,7 @@ async def delete_document(document_id: UUID, *, user_id: UUID) -> bool:
         )
         if owner_entry.first() is None:
             msg = f"user {user_id} is not the owner of workspace {doc.workspace_id}"
-            raise PermissionError(msg)
+            raise OwnershipError(msg)
 
         await session.delete(doc)
         return True

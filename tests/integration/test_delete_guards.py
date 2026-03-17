@@ -30,6 +30,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from promptgrimoire.config import get_settings
+from promptgrimoire.db.exceptions import OwnershipError
 
 pytestmark = pytest.mark.skipif(
     not get_settings().dev.test_database_url,
@@ -326,10 +327,10 @@ class TestDeleteWorkspace:
 
     @pytest.mark.asyncio
     async def test_non_owner_cannot_delete_workspace(self) -> None:
-        """Non-owner user_id raises PermissionError.
+        """Non-owner user_id raises OwnershipError.
 
         Verifies crud-management-229.AC3.5: DB-level delete_workspace()
-        raises PermissionError when user_id is not workspace owner.
+        raises OwnershipError when user_id is not workspace owner.
         """
         from promptgrimoire.db.workspaces import (
             clone_workspace_from_activity,
@@ -343,7 +344,7 @@ class TestDeleteWorkspace:
 
         workspace, _doc_map = await clone_workspace_from_activity(activity_id, owner_id)
 
-        with pytest.raises(PermissionError, match="Only workspace owner can delete"):
+        with pytest.raises(OwnershipError, match="Only workspace owner can delete"):
             await delete_workspace(workspace.id, user_id=other_id)
 
     @pytest.mark.asyncio

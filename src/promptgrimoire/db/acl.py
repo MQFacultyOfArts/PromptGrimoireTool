@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import SharePermissionError
 from promptgrimoire.db.models import (
     ACLEntry,
     Activity,
@@ -410,11 +411,11 @@ async def grant_share(
 
     Raises
     ------
-    PermissionError
+    SharePermissionError
         If sharing rules are violated.
     """
     if permission == "owner":
-        raise PermissionError("cannot grant owner permission via sharing")
+        raise SharePermissionError("cannot grant owner permission via sharing")
 
     async with get_session() as session:
         await _validate_share_grantor(
@@ -450,10 +451,10 @@ async def _validate_share_grantor(
     )
     grantor_entry = entry.one_or_none()
     if grantor_entry is None or grantor_entry.permission != "owner":
-        raise PermissionError("only workspace owners can share")
+        raise SharePermissionError("only workspace owners can share")
 
     if not sharing_allowed:
-        raise PermissionError("sharing is not allowed for this workspace")
+        raise SharePermissionError("sharing is not allowed for this workspace")
 
 
 async def _upsert_share_entry(
@@ -472,7 +473,7 @@ async def _upsert_share_entry(
     acl_entry = existing.one_or_none()
     if acl_entry is not None:
         if acl_entry.permission == "owner":
-            raise PermissionError("cannot modify owner permission via sharing")
+            raise SharePermissionError("cannot modify owner permission via sharing")
         acl_entry.permission = permission
     else:
         acl_entry = ACLEntry(

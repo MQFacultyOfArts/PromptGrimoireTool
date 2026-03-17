@@ -10,11 +10,12 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from promptgrimoire.db.courses import (
-    DuplicateEnrollmentError,
-    _enroll_user_with_session,
-)
+from promptgrimoire.db.courses import _enroll_user_with_session
 from promptgrimoire.db.engine import get_session
+from promptgrimoire.db.exceptions import (
+    DuplicateEnrollmentError,
+    StudentIdConflictError,
+)
 from promptgrimoire.db.models import StudentGroup, StudentGroupMembership, User
 from promptgrimoire.db.users import _find_or_create_user_with_session
 
@@ -26,17 +27,6 @@ if TYPE_CHECKING:
     from promptgrimoire.enrol.xlsx_parser import EnrolmentEntry
 
 logger = structlog.get_logger()
-
-
-class StudentIdConflictError(Exception):
-    """Raised when a user's existing student_id differs from the import."""
-
-    def __init__(self, conflicts: list[tuple[str, str, str]]) -> None:
-        self.conflicts = conflicts  # (email, existing_id, new_id)
-        details = "; ".join(
-            f"{email}: existing={old!r}, new={new!r}" for email, old, new in conflicts
-        )
-        super().__init__(f"Student ID conflicts: {details}")
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
+import typer.core
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -36,14 +37,44 @@ from promptgrimoire.cli._shared import (
 if TYPE_CHECKING:
     from typing import IO
 
+    import click
     from rich.progress import TaskID
 
+
+def _looks_like_test_path(arg: str) -> bool:
+    """True if *arg* looks like a test file path, not a subcommand."""
+    return (
+        arg.endswith(".py")
+        or arg.startswith("tests/")
+        or arg.startswith("tests\\")
+        or "::test_" in arg
+    )
+
+
+class _TestGroup(typer.core.TyperGroup):
+    """Auto-redirect bare test paths to the ``run`` subcommand.
+
+    ``grimoire test tests/unit/foo.py`` is treated as
+    ``grimoire test run tests/unit/foo.py``.
+    """
+
+    def resolve_command(
+        self,
+        ctx: click.Context,
+        args: list[str],
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        if args and _looks_like_test_path(args[0]):
+            args = ["run", *args]
+        return super().resolve_command(ctx, args)
+
+
 test_app = typer.Typer(
+    cls=_TestGroup,
     help=(
         "Unit and integration test commands.\n\n"
         "To bypass the conftest guard for debugging this harness, "
         "set GRIMOIRE_TEST_HARNESS=1."
-    )
+    ),
 )
 _NON_UI_MARKER_EXPRESSION = "not e2e and not nicegui_ui"
 _TEST_ALL_MARKER_EXPRESSION = (

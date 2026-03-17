@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
-from promptgrimoire.db.exceptions import DeletionBlockedError
+from promptgrimoire.db.exceptions import DeletionBlockedError, DuplicateEnrollmentError
 from promptgrimoire.db.models import (
     Activity,
     Course,
@@ -270,15 +270,6 @@ async def delete_course(
         await session.delete(course)
 
         return True
-
-
-class DuplicateEnrollmentError(Exception):
-    """Raised when attempting to enroll a user who is already enrolled."""
-
-    def __init__(self, course_id: UUID, user_id: UUID) -> None:
-        self.course_id = course_id
-        self.user_id = user_id
-        super().__init__(f"User {user_id} is already enrolled in course {course_id}")
 
 
 async def enroll_user(

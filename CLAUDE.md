@@ -281,7 +281,7 @@ Three new tables extend the Activity model for wargame scenarios:
 
 `db/wargames.py` provides the full team lifecycle: `create_team`, `create_teams`, `get_team`, `list_teams`, `rename_team`, `delete_team`. Team ACL: `grant_team_permission` (upsert), `revoke_team_permission`, `update_team_permission`, `remove_team_member`, `resolve_team_permission`, `list_team_members`. Roster ingestion: `ingest_roster` (atomic CSV import with two modes -- named-team and auto-assign).
 
-**Zero-editor invariant:** `ZeroEditorError` is raised when a grant downgrade or revoke would leave a team with no `can_edit=TRUE` member. Enforced via `SELECT FOR UPDATE` row locking.
+**Zero-editor invariant:** `ZeroEditorError` (in `db/exceptions.py`) is raised when a grant downgrade or revoke would leave a team with no `can_edit=TRUE` member. Enforced via `SELECT FOR UPDATE` row locking.
 
 **Roster ingestion modes:** Named-team mode uses explicit team names from CSV. Auto-assign mode distributes members round-robin across `team_count` buckets, mapping to real teams by `created_at` order. Re-imports are additive (existing ACL rows preserved, changed roles updated). Editor-first grant ordering prevents false zero-editor violations during handoff swaps.
 
@@ -333,6 +333,26 @@ ACLEntry supports two target types: `workspace_id` or `team_id`. Exactly one mus
 
 **Config** (`config.py`): `AdminConfig` sub-model with `admin_api_secret: SecretStr`. Env var: `ADMIN__ADMIN_API_SECRET`. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
+### Business Exception Taxonomy
+
+All domain exceptions live in `db/exceptions.py` under a single base class `BusinessLogicError`. This enables `get_session()` to triage log levels: `BusinessLogicError` subclasses are expected rejections (logged at WARNING, no Discord alert); all other exceptions are unexpected failures (logged at ERROR, trigger Discord alert).
+
+**Hierarchy:**
+
+- `BusinessLogicError` -- base class for expected business logic rejections
+  - `SharePermissionError` -- sharing policy violation (non-owner share, sharing disabled, owner-grant)
+  - `OwnershipError` -- non-owner attempted owner-only operation (delete workspace/document)
+  - `TagCreationDeniedError` -- tag creation denied by placement context policy
+  - `DeletionBlockedError` -- force=False and student workspaces exist (carries `student_workspace_count`)
+  - `ProtectedDocumentError` -- attempted deletion of template-cloned document (carries `document_id`, `source_document_id`)
+  - `DuplicateNameError` -- tag/tag group name collision (pre-empts `IntegrityError`)
+  - `TagLockedError` -- tag/group modification denied because locked
+  - `DuplicateCodenameError` -- team codename collision within activity (carries `activity_id`, `codename`)
+  - `ZeroEditorError` -- grant/revoke would leave team with no `can_edit` member (carries `team_id`, `user_id`, permissions)
+  - `DuplicateEnrollmentError` -- user already enrolled (carries `course_id`, `user_id`)
+  - `StudentIdConflictError` -- roster import student ID mismatch (carries `conflicts` list)
+
+**Contract:** DB functions must raise `BusinessLogicError` subclasses for all anticipated user-facing error conditions. Raw `PermissionError`, `ValueError`, or `IntegrityError` must not leak through `get_session()` for business logic cases. UI `except` blocks should catch specific subclasses (not the base class) and display user-friendly messages.
 ### Key Rules
 
 1. **Alembic is the ONLY way to create/modify schema** - Never use `SQLModel.metadata.create_all()` except in Alembic migrations
@@ -355,7 +375,7 @@ Structured JSON logging via structlog. Full details in [docs/logging.md](docs/lo
 
 **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging directly.
 
-**Exception handling rule:** Every `except` block must call `logger.exception()` (unexpected errors) or `logger.warning()` (expected business logic). No silent exception swallowing.
+**Exception handling rule:** Every `except` block must call `logger.exception()` (unexpected errors) or `logger.warning()` (expected business logic). No silent exception swallowing. `get_session()` enforces this automatically: `BusinessLogicError` subclasses are logged at WARNING; all other exceptions at ERROR (which triggers Discord alerting).
 
 **Context propagation:** The `page_route` decorator auto-binds `user_id` and `request_path` via `structlog.contextvars`. Workspace handlers bind `workspace_id` via `bind_contextvars(workspace_id=...)`.
 

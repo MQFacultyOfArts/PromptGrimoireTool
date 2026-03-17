@@ -82,7 +82,7 @@ When operating autonomously (e.g., executing implementation plans, working on PR
 Structured JSON logging via structlog. Full details in `docs/logging.md`.
 
 - **Logger convention:** `logger = structlog.get_logger()` at module level. All modules use structlog, not stdlib logging.
-- **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing.
+- **Exception handling rule:** Every `except` block must log (`logger.exception()` or `logger.warning()`). No silent exception swallowing. `get_session()` enforces this automatically: `BusinessLogicError` subclasses are logged at WARNING; all other exceptions at ERROR (triggering Discord alerting).
 - **Context propagation:** `page_route` decorator auto-binds `user_id` and `request_path`. Workspace handlers bind `workspace_id`.
 - **Print guard:** No `print()` in `src/promptgrimoire/` except `cli/`. Guard test enforces this.
 - **Discord alerting:** ERROR/CRITICAL events fire Discord webhook embeds (configured via `ALERTING__DISCORD_WEBHOOK_URL`). Fire-and-forget, deduplicated by `(exception_type, logger_name)` within 60s.
@@ -107,6 +107,8 @@ Before modifying core systems, reference the detailed documentation in the `docs
 **Wargame team management API** (`db/wargames.py`): Full team CRUD, ACL (grant/revoke/update with upsert), and atomic CSV roster ingestion (named-team and auto-assign modes). `ZeroEditorError` prevents leaving a team with no editable member. Pure-domain helpers (codename generation, roster parsing, turn cycle state machine) live in `wargame/`.
 
 **Wargame turn cycle engine** (`db/wargames.py`): `start_game()`, `lock_round()`, `run_preprocessing()`, `publish_all()`, `on_deadline_fired()`. Teams cycle: drafting -> locked -> preprocessing -> published -> drafting (next round). PydanticAI agents (`wargame/agents.py`) produce structured TurnResult and StudentSummary. Background polling worker (`deadline_worker.py`) fires expired deadlines.
+
+**Business exception taxonomy** (`db/exceptions.py`): All domain exceptions derive from `BusinessLogicError`. This lets `get_session()` triage log levels -- expected rejections (WARNING) vs unexpected failures (ERROR+Discord). Subclasses: `SharePermissionError`, `OwnershipError`, `TagCreationDeniedError`, `DeletionBlockedError`, `ProtectedDocumentError`, `DuplicateNameError`, `TagLockedError`, `DuplicateCodenameError`, `ZeroEditorError`, `DuplicateEnrollmentError`, `StudentIdConflictError`. DB functions must raise these (not raw `PermissionError`/`ValueError`/`IntegrityError`) for business logic cases. UI catches specific subclasses to display user-friendly messages.
 
 **Navigator FTS** (`db/navigator.py`): `search_navigator()` runs a three-leg UNION ALL: (1) document content, (2) CRDT search_text, (3) metadata (owner name, workspace/activity/week titles, course code/name). Uses prefix matching via `to_tsquery` with `:*` suffixes. Metadata snippets are labelled ("Title: ... | Author: ... | Unit: ...").
 

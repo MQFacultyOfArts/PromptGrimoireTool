@@ -219,6 +219,10 @@ def _copy_artifacts(
             shutil.copy2(log_path, output_dir / log_path.name)
 
 
+# Sentinel for "skipped" (no content / not exportable) vs real errors
+_SKIP = "SKIP"
+
+
 def _extract_error_summary(exc: LaTeXCompilationError) -> str:
     """Build a one-line error summary from a LaTeX compilation error."""
     error_summary = str(exc).split("\n")[0]
@@ -241,18 +245,19 @@ async def _export_single_workspace(
 ) -> tuple[str, str | None]:
     """Export a single workspace to PDF.
 
-    Returns (filename_stem, error_message_or_none).
+    Returns (filename_stem, error_or_none). Error is _SKIP for
+    workspaces without exportable content (no docs, no highlights).
     """
     workspace = await get_workspace(workspace_id)
     if workspace is None:
-        return str(workspace_id)[:8], f"Workspace {workspace_id} not found"
+        return str(workspace_id)[:8], _SKIP
 
     safe_stem = await _build_export_stem(workspace_id)
 
     docs = await list_documents(workspace_id)
     content_docs = [d for d in docs if d.content and d.content.strip()]
     if not content_docs:
-        return safe_stem, "No documents with content"
+        return safe_stem, _SKIP
 
     tags = await list_tags_for_workspace(workspace_id)
     tag_colours = {str(t.id): t.color for t in tags if t.color}
@@ -263,6 +268,8 @@ async def _export_single_workspace(
 
     doc = content_docs[0]
     doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
+    if not doc_highlights:
+        return safe_stem, _SKIP
 
     ws_export_dir = Path(
         tempfile.mkdtemp(
@@ -305,17 +312,18 @@ async def _export_single_workspace_tex_only(
     """Generate .tex for a workspace without compiling.
 
     Copies .tex and .sty to output_dir. Returns (stem, error_or_none).
+    Error is _SKIP for workspaces without exportable content.
     """
     workspace = await get_workspace(workspace_id)
     if workspace is None:
-        return str(workspace_id)[:8], f"Workspace {workspace_id} not found"
+        return str(workspace_id)[:8], _SKIP
 
     safe_stem = await _build_export_stem(workspace_id)
 
     docs = await list_documents(workspace_id)
     content_docs = [d for d in docs if d.content and d.content.strip()]
     if not content_docs:
-        return safe_stem, "No documents with content"
+        return safe_stem, _SKIP
 
     tags = await list_tags_for_workspace(workspace_id)
     tag_colours = {str(t.id): t.color for t in tags if t.color}
@@ -326,6 +334,8 @@ async def _export_single_workspace_tex_only(
 
     doc = content_docs[0]
     doc_highlights = [h for h in highlights if h.get("document_id") == str(doc.id)]
+    if not doc_highlights:
+        return safe_stem, _SKIP
 
     ws_export_dir = Path(
         tempfile.mkdtemp(
@@ -425,9 +435,13 @@ def _purge_successes(
     output_dir: Path,
     results: list[tuple[str, str, str | None]],
 ) -> None:
-    """Remove all artifacts for successful exports (--only-errors mode)."""
+    """Remove all artifacts for successful exports (--only-errors mode).
+
+    Skipped workspaces (error == _SKIP) produce no artifacts, so they
+    are harmless and ignored here.
+    """
     for _short_id, stem, error in results:
-        if error is None:
+        if error is None:  # success — purge
             for ext in (".pdf", ".tex", ".log"):
                 artifact = output_dir / f"{stem}{ext}"
                 if artifact.exists():
@@ -450,8 +464,11 @@ def _print_results_table(
 
     successes = 0
     failures = 0
+    skipped = 0
     for short_id, stem, error in results:
-        if error:
+        if error == _SKIP:
+            skipped += 1
+        elif error:
             failures += 1
             table.add_row(short_id, stem, "[red]FAIL[/]", error)
         else:
@@ -465,7 +482,8 @@ def _print_results_table(
     mode_label = "tex-only" if tex_only else "PDF"
     purge_note = " (successes purged)" if only_errors else ""
     console.print(
-        f"\n[bold]{successes}[/] succeeded, [bold]{failures}[/] failed. "
+        f"\n[bold]{successes}[/] succeeded, [bold]{failures}[/] failed, "
+        f"[dim]{skipped}[/] skipped (no content/annotations). "
         f"Output [{mode_label}]: {output_dir}{purge_note}"
     )
 
@@ -485,7 +503,10 @@ async def _run_batch_export(
         _print_dry_run(workspace_ids)
         return
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Clear output dir to prevent stale artifacts from prior runs
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True)
 
     # --only-errors implies --with-log --with-tex for failures
     effective_with_log = with_log or only_errors
@@ -507,7 +528,12 @@ async def _run_batch_export(
                 with_log=effective_with_log,
                 with_tex=effective_with_tex,
             )
-        console.print("[red]FAIL[/]" if error else "[green]OK[/]")
+        if error == _SKIP:
+            console.print("[dim]SKIP[/]")
+        elif error:
+            console.print("[red]FAIL[/]")
+        else:
+            console.print("[green]OK[/]")
         results.append((short_id, stem, error))
 
     if only_errors:

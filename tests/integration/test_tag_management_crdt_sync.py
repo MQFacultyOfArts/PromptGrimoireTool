@@ -111,7 +111,6 @@ class TestTagColourEditUpdatesCrdt:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
-
             _click_testid(user, "tag-settings-btn")
             await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
@@ -121,6 +120,7 @@ class TestTagColourEditUpdatesCrdt:
             color_el.set_value("#ff0000")
 
             # Click Done to trigger batch save
+            await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
             await asyncio.sleep(0.5)
 
@@ -153,7 +153,6 @@ class TestTagNameEditUpdatesCrdt:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
-
             _click_testid(user, "tag-settings-btn")
             await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
@@ -163,6 +162,7 @@ class TestTagNameEditUpdatesCrdt:
             name_el.set_value("NewName")
 
             # Click Done to trigger batch save
+            await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
             await asyncio.sleep(0.5)
 
@@ -201,7 +201,6 @@ class TestGroupColourEditUpdatesCrdt:
             await _authenticate(user, email=email)
             await user.open(f"/annotation?workspace_id={ws_id}")
             await _should_see_testid(user, "tag-settings-btn")
-
             _click_testid(user, "tag-settings-btn")
             await asyncio.sleep(0.3)
             await _should_see_testid(user, "tag-management-dialog")
@@ -213,6 +212,7 @@ class TestGroupColourEditUpdatesCrdt:
             group_color_el.set_value("#00ff00")
 
             # Click Done to trigger batch save
+            await _should_see_testid(user, "tag-management-done-btn")
             _click_testid(user, "tag-management-done-btn")
             await asyncio.sleep(0.5)
 

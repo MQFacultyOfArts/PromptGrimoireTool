@@ -102,49 +102,71 @@ fi
 
 # -------------------------------------------------------------------
 # 2. Filter application JSONL log by timestamp window
+#    Collects current log + rotated .1, .2, … files (oldest first).
 # -------------------------------------------------------------------
 step "Filtering structlog JSONL..."
 JSONL_FILE="$WORKDIR/structlog.jsonl"
 JSONL_METHOD="not collected"
+JSONL_SOURCES=""
+
+# Gather rotated files in reverse numeric order (oldest first), then current.
+# Rotated logs are named .1, .2, … — sort -rV gives highest number first (oldest).
+jsonl_inputs=()
+while IFS= read -r rotated; do
+    [[ -f "$rotated" ]] && jsonl_inputs+=("$rotated")
+done < <(printf '%s\n' "${JSONL_LOG}".[0-9]* | sort -rV)
 if [[ -f "$JSONL_LOG" ]]; then
+    jsonl_inputs+=("$JSONL_LOG")
+fi
+
+if [[ ${#jsonl_inputs[@]} -gt 0 ]]; then
+    JSONL_SOURCES=$(printf '%s, ' "${jsonl_inputs[@]}")
+    JSONL_SOURCES=${JSONL_SOURCES%, }
+    step "  Found ${#jsonl_inputs[@]} JSONL file(s): $JSONL_SOURCES"
     if command -v jq &>/dev/null; then
         JSONL_METHOD="jq timestamp filter"
-        if ! jq -c "select(.timestamp >= \"$FILTER_START_UTC\" and .timestamp <= \"$FILTER_END_UTC\")" \
-            "$JSONL_LOG" > "$JSONL_FILE" 2>"$WORKDIR/jsonl.stderr"; then
+        if ! cat "${jsonl_inputs[@]}" | jq -c \
+            "select(.timestamp >= \"$FILTER_START_UTC\" and .timestamp <= \"$FILTER_END_UTC\")" \
+            > "$JSONL_FILE" 2>"$WORKDIR/jsonl.stderr"; then
             warn "jq filtering failed (see jsonl.stderr in tarball)"
             JSONL_METHOD="jq (failed, full copy)"
-            cp "$JSONL_LOG" "$JSONL_FILE"
+            cat "${jsonl_inputs[@]}" > "$JSONL_FILE"
         fi
     else
-        warn "jq not found, copying full JSONL file"
+        warn "jq not found, copying full JSONL files"
         JSONL_METHOD="full copy (jq unavailable)"
-        cp "$JSONL_LOG" "$JSONL_FILE"
+        cat "${jsonl_inputs[@]}" > "$JSONL_FILE"
     fi
 else
-    warn "JSONL log not found at $JSONL_LOG"
+    warn "JSONL log not found at $JSONL_LOG (checked rotated files too)"
     JSONL_METHOD="missing"
     touch "$JSONL_FILE"
 fi
 
 # -------------------------------------------------------------------
 # 3. Filter HAProxy log by rsyslog timestamp prefix
-#    Collects current log + rotated .1 file if it exists.
+#    Collects current log + rotated .1, .2, … files (oldest first).
 # -------------------------------------------------------------------
 step "Filtering HAProxy log..."
 HAPROXY_FILE="$WORKDIR/haproxy.log"
 HAPROXY_METHOD="not collected"
 HAPROXY_SOURCES=""
-if [[ -f "$HAPROXY_LOG" ]] || [[ -f "${HAPROXY_LOG}.1" ]]; then
-    HAPROXY_METHOD="awk timestamp filter"
-    haproxy_inputs=()
-    if [[ -f "${HAPROXY_LOG}.1" ]]; then
-        haproxy_inputs+=("${HAPROXY_LOG}.1")
-    fi
-    if [[ -f "$HAPROXY_LOG" ]]; then
-        haproxy_inputs+=("$HAPROXY_LOG")
-    fi
+
+# Gather rotated files in reverse numeric order (oldest first), then current.
+# Excludes .gz (logrotate compressed archives). sort -rV gives highest number first.
+haproxy_inputs=()
+while IFS= read -r rotated; do
+    [[ -f "$rotated" && "$rotated" != *.gz ]] && haproxy_inputs+=("$rotated")
+done < <(printf '%s\n' "${HAPROXY_LOG}".[0-9]* | sort -rV)
+if [[ -f "$HAPROXY_LOG" ]]; then
+    haproxy_inputs+=("$HAPROXY_LOG")
+fi
+
+if [[ ${#haproxy_inputs[@]} -gt 0 ]]; then
     HAPROXY_SOURCES=$(printf '%s, ' "${haproxy_inputs[@]}")
     HAPROXY_SOURCES=${HAPROXY_SOURCES%, }
+    step "  Found ${#haproxy_inputs[@]} HAProxy file(s): $HAPROXY_SOURCES"
+    HAPROXY_METHOD="awk timestamp filter"
     if ! cat "${haproxy_inputs[@]}" | awk -v start="$FILTER_START_LOCAL" -v end="$FILTER_END_LOCAL" \
         '{ ts = substr($1, 1, 25); if (ts >= start && ts <= end) print }' \
         > "$HAPROXY_FILE" 2>"$WORKDIR/haproxy.stderr"; then
@@ -233,7 +255,7 @@ for f in "$WORKDIR"/*; do
     # Determine source path and method for each file.
     case "$fname" in
         journal.json)     FILES_JSON+=$(file_entry "$f" "journalctl" "$JOURNAL_METHOD") ;;
-        structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "$JSONL_LOG" "$JSONL_METHOD") ;;
+        structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "${JSONL_SOURCES:-$JSONL_LOG}" "$JSONL_METHOD") ;;
         haproxy.log)      FILES_JSON+=$(file_entry "$f" "${HAPROXY_SOURCES:-$HAPROXY_LOG}" "$HAPROXY_METHOD") ;;
         postgresql*)      FILES_JSON+=$(file_entry "$f" "${PG_SOURCE:-unknown}" "$PG_METHOD") ;;
         *)                FILES_JSON+=$(file_entry "$f" "unknown" "unknown") ;;

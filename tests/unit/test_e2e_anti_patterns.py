@@ -9,6 +9,7 @@ a specific guard.  The noqa code must match:
 - PG002 — text-based locators (get_by_text, get_by_role, get_by_placeholder)
 - PG003 — hardcoded char offsets in select_chars / create_highlight_with_tag
 - PG004 — invoke_callback inside _handle_client_delete
+- PG005 — sync element access without _should_see_testid gate (NiceGUI)
 
 Guard 1 (PG001) — wait_for_timeout / asyncio.sleep: Fixed timeouts in
 E2E tests are never reliable under parallel execution.  Use condition-based
@@ -298,4 +299,135 @@ def test_client_delete_uses_peer_left_not_callback() -> None:
         "invoke_callback() triggers full DOM rebuild which races with user input.\n"
         "See: commit 43d644b8\n\n"
         "Violations:\n" + "\n".join(f"  {v}" for v in violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Guard 5 (PG005): Sync element access needs _should_see_testid gate
+# ---------------------------------------------------------------------------
+
+_INTEGRATION_DIR = _REPO_ROOT / "tests" / "integration"
+
+_SYNC_ACCESS_FUNCTIONS = frozenset({"_set_input_value", "_click_testid"})
+
+
+def _extract_testid_arg(node: ast.Call) -> str | None:
+    """Extract the testid string from a helper call.
+
+    Pattern: ``_set_input_value(user, "testid", value)`` or
+    ``_click_testid(user, "testid")``.  Returns the second
+    positional argument if it is a string literal.
+    """
+    if len(node.args) < 2:
+        return None
+    arg = node.args[1]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value
+    # f-string testids (e.g. f"group-add-tag-btn-{id}") are dynamic —
+    # can't statically match them to _should_see_testid calls.
+    return None
+
+
+def _iter_calls_in_order(node: ast.AST) -> list[ast.Call]:
+    """Collect all Call nodes in source order (by line number).
+
+    ``ast.walk`` does not guarantee traversal order.  This function
+    collects every ``ast.Call`` in the subtree, then sorts by line
+    number to ensure gates are seen before the accesses they protect.
+    """
+    calls: list[ast.Call] = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call) and hasattr(child, "lineno"):
+            calls.append(child)
+    calls.sort(key=lambda c: (c.lineno, c.col_offset))
+    return calls
+
+
+def _check_ungated_sync_access(
+    func_node: ast.AsyncFunctionDef,
+    source_lines: list[str],
+) -> list[tuple[int, str]]:
+    """Find sync element accesses not preceded by _should_see_testid.
+
+    Returns list of (lineno, description) for violations.
+    """
+    gated: set[str] = set()
+    violations: list[tuple[int, str]] = []
+
+    for node in _iter_calls_in_order(func_node):
+        func = node.func
+
+        # Check for _should_see_testid(user, "testid")
+        if isinstance(func, ast.Name) and func.id == "_should_see_testid":
+            testid = _extract_testid_arg(node)
+            if testid:
+                gated.add(testid)
+
+        # Check for _set_input_value / _click_testid
+        if isinstance(func, ast.Name) and func.id in _SYNC_ACCESS_FUNCTIONS:
+            testid = _extract_testid_arg(node)
+            if testid is None:
+                # Dynamic testid — can't check statically, skip
+                continue
+            if testid not in gated:
+                lineno = node.lineno
+                if _has_noqa(source_lines, lineno, "PG005"):
+                    continue
+                violations.append(
+                    (
+                        lineno,
+                        f"{func.id}(_, {testid!r}) without "
+                        f"preceding _should_see_testid gate",
+                    )
+                )
+
+    return violations
+
+
+def test_nicegui_sync_access_has_testid_gate() -> None:
+    """NiceGUI sync element access must be preceded by _should_see_testid (PG005).
+
+    ``_set_input_value`` and ``_click_testid`` are synchronous — they
+    do not yield to the event loop.  If an async page handler has not
+    finished rendering the target element, these calls fail.
+
+    ``_should_see_testid`` polls with ``await asyncio.sleep()`` which
+    yields to the event loop, letting pending async renders complete.
+
+    Every ``_set_input_value(user, "X", ...)`` and
+    ``_click_testid(user, "X")`` must be preceded (in the same test
+    function) by ``await _should_see_testid(user, "X")``.
+
+    See: 2026-03-17 CI failure — TestEnrollStudent.test_enroll_student
+    Suppress with: # noqa: PG005
+    """
+    all_violations: list[str] = []
+
+    for py_file in _iter_py_files(_INTEGRATION_DIR):
+        tree = _parse_file(py_file)
+        if tree is None:
+            continue
+
+        source_lines = py_file.read_text().splitlines()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+
+            violations = _check_ungated_sync_access(node, source_lines)
+            rel = py_file.relative_to(_REPO_ROOT)
+            for lineno, desc in violations:
+                all_violations.append(f"{rel}:{lineno} - {desc}")
+
+    assert not all_violations, (
+        "NiceGUI integration tests: sync element access without "
+        "_should_see_testid gate.\n"
+        "_set_input_value / _click_testid are synchronous and will "
+        "fail if the async page handler\n"
+        "hasn't finished rendering. Add: await _should_see_testid"
+        '(user, "testid") before access.\n'
+        "Suppress with: # noqa: PG005\n\n"
+        "Violations:\n" + "\n".join(f"  {v}" for v in all_violations)
     )

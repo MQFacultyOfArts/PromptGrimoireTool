@@ -24,10 +24,13 @@ FIXTURE_DIR = Path(__file__).parents[1] / "fixtures"
 # Tag colours matching the fixture's data-annots attributes.
 # The exact hex values don't matter for tex generation — only
 # that entries exist so the preamble defines the colour commands.
+# Keys are tag names; generate_tag_colour_definitions() prefixes "tag-"
+# and creates -light/-dark variants. The fixture's data-annots reference
+# tag-issue-dark, tag-ratio-dark, tag-rule-dark.
 _TAG_COLOURS: dict[str, str] = {
-    "tag-issue": "#d62728",
-    "tag-ratio": "#2ca02c",
-    "tag-rule": "#9467bd",
+    "issue": "#d62728",
+    "ratio": "#2ca02c",
+    "rule": "#9467bd",
 }
 
 
@@ -188,3 +191,48 @@ class TestCjkSlowCompilation:
         """AC1.2: Total pipeline completes within 30 seconds."""
         elapsed = compilation_result["elapsed"]
         assert elapsed < 30, f"Compilation took {elapsed:.1f}s (limit: 30s)"
+
+
+@requires_full_latexmk
+@pytest.mark.slow
+class TestReadOnlyCwdCompilation:
+    """Regression guard: compile_latex works from a read-only cwd.
+
+    luaotfload's color-emoji harf shaper writes PNG cache files to a
+    temp directory. If the process cwd is read-only (as under systemd
+    ProtectSystem=strict), the cache write fails unless compile_latex
+    sets cwd=output_dir. This test simulates that constraint.
+
+    See docs/postmortems/2026-03-15-harf-emoji-cwd-crash.md
+    """
+
+    @pytest.mark.asyncio
+    async def test_cjk_emoji_compiles_from_readonly_cwd(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """CJK + emoji PDF compiles when process cwd is read-only."""
+        import os
+
+        from promptgrimoire.export.pdf import compile_latex
+
+        html = _load_minimal_html()
+        tex_path = await generate_tex_only(
+            html_content=html,
+            highlights=[],
+            tag_colours=_TAG_COLOURS,
+            output_dir=tmp_path,
+        )
+
+        # Simulate ProtectSystem=strict: chdir to a read-only directory
+        original_cwd = Path.cwd()
+        try:
+            os.chdir("/")
+            pdf_path = await compile_latex(tex_path, tmp_path)
+        finally:
+            os.chdir(original_cwd)
+
+        assert pdf_path.exists()
+        assert pdf_path.stat().st_size > 5000, (
+            f"PDF too small ({pdf_path.stat().st_size} bytes), likely corrupt"
+        )

@@ -289,6 +289,7 @@ class TestRespondTabExportFilename:
         await _should_see_testid(nicegui_user, "export-pdf-btn")
 
         # Switch to Respond tab
+        await _should_see_testid(nicegui_user, "tab-respond")
         _click_testid(nicegui_user, "tab-respond")
 
         # Small wait for tab switch

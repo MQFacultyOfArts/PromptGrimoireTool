@@ -1,7 +1,7 @@
 """Tests for the BusinessLogicError exception taxonomy.
 
 Verifies:
-- AC1.1: All 10 domain exceptions are isinstance(exc, BusinessLogicError)
+- AC1.1: All 11 domain exceptions are isinstance(exc, BusinessLogicError)
 - AC1.5: str(SharePermissionError("msg")) == "msg" (message preservation)
 - AC1.6: DuplicateNameError is NOT isinstance(exc, ValueError)
 """
@@ -23,10 +23,11 @@ from promptgrimoire.db.exceptions import (
     SharePermissionError,
     StudentIdConflictError,
     TagCreationDeniedError,
+    TagLockedError,
     ZeroEditorError,
 )
 
-# -- AC1.1: All 10 domain exceptions are BusinessLogicError subclasses --------
+# -- AC1.1: All 11 domain exceptions are BusinessLogicError subclasses --------
 
 
 _SIMPLE_EXCEPTIONS = [
@@ -34,6 +35,7 @@ _SIMPLE_EXCEPTIONS = [
     OwnershipError,
     TagCreationDeniedError,
     DuplicateNameError,
+    TagLockedError,
 ]
 
 

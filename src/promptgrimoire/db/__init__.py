@@ -61,6 +61,7 @@ from promptgrimoire.db.exceptions import (
     SharePermissionError,
     StudentIdConflictError,
     TagCreationDeniedError,
+    TagLockedError,
     ZeroEditorError,
 )
 from promptgrimoire.db.models import (
@@ -171,6 +172,7 @@ __all__ = [
     "Tag",
     "TagCreationDeniedError",
     "TagGroup",
+    "TagLockedError",
     "User",
     "WargameConfig",
     "WargameMessage",

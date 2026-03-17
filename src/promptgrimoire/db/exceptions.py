@@ -84,6 +84,10 @@ class DuplicateNameError(BusinessLogicError):
     """
 
 
+class TagLockedError(BusinessLogicError):
+    """Tag modification denied because the tag or tag group is locked."""
+
+
 class DuplicateCodenameError(BusinessLogicError):
     """A team codename already exists within one activity."""
 

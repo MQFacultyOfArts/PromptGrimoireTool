@@ -19,6 +19,7 @@ from promptgrimoire.db.exceptions import (
     DuplicateNameError,
     SharePermissionError,
     TagCreationDeniedError,
+    TagLockedError,
 )
 from promptgrimoire.db.models import Tag, TagGroup
 
@@ -27,6 +28,8 @@ logging.getLogger(__name__).setLevel(logging.WARNING)
 
 if TYPE_CHECKING:
     from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from promptgrimoire.crdt.annotation_doc import AnnotationDocument
 
@@ -144,6 +147,29 @@ async def get_tag_group(group_id: UUID) -> TagGroup | None:
 _UNSET = object()
 
 
+async def _flush_tag_group_or_raise_duplicate(
+    session: AsyncSession,
+    group_id: UUID,
+) -> bool:
+    """Flush *session*; return True if a duplicate-name constraint fired.
+
+    Returns False on clean flush (caller must then call session.refresh).
+    Raises IntegrityError for any non-duplicate constraint violation.
+    """
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if "uq_tag_group_workspace_name" in str(exc):
+            logger.warning(
+                "Duplicate tag group name on update",
+                group_id=str(group_id),
+            )
+            await session.rollback()
+            return True
+        raise
+    return False
+
+
 async def update_tag_group(
     group_id: UUID,
     name: str | None = None,
@@ -163,6 +189,9 @@ async def update_tag_group(
     Omit any parameter (or pass None) to leave it unchanged.
     ``color`` uses a sentinel default so that passing ``None`` explicitly
     clears the colour.
+
+    Raises:
+        DuplicateNameError: If *name* conflicts with an existing group name.
     """
     async with get_session() as session:
         group = await session.get(TagGroup, group_id)
@@ -177,8 +206,13 @@ async def update_tag_group(
             group.color = color  # type: ignore[assignment]  -- sentinel pattern
 
         session.add(group)
-        await session.flush()
-        await session.refresh(group)
+        duplicate = await _flush_tag_group_or_raise_duplicate(session, group_id)
+        if not duplicate:
+            await session.refresh(group)
+
+    if duplicate:
+        msg = f"A tag group named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         crdt_doc.set_tag_group(
@@ -346,7 +380,7 @@ def _enforce_tag_lock(
     description: object,
     group_id: object,
 ) -> None:
-    """Raise ValueError if a locked tag has non-lock field changes.
+    """Raise TagLockedError if a locked tag has non-lock field changes.
 
     Skipped when ``bypass_lock`` is True (instructor operations).
     """
@@ -357,7 +391,7 @@ def _enforce_tag_lock(
     )
     if has_non_lock_changes:
         msg = "Tag is locked"
-        raise ValueError(msg)
+        raise TagLockedError(msg)
 
 
 def _apply_tag_field_updates(
@@ -413,7 +447,7 @@ async def update_tag(
     Uses the Ellipsis sentinel pattern: omit a parameter to leave it
     unchanged. If the tag is locked, only the ``locked`` field itself
     may be changed (to allow instructor lock toggle); all other field
-    changes raise ``ValueError("Tag is locked")``.
+    changes raise ``TagLockedError``.
 
     Pass ``bypass_lock=True`` to allow instructors to edit locked tags.
     """
@@ -440,8 +474,25 @@ async def update_tag(
         )
 
         session.add(tag)
-        await session.flush()
-        await session.refresh(tag)
+        duplicate_name = False
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            if "uq_tag_workspace_name" in str(exc):
+                logger.warning(
+                    "Duplicate tag name on update",
+                    tag_id=str(tag_id),
+                )
+                duplicate_name = True
+                await session.rollback()
+            else:
+                raise
+        if not duplicate_name:
+            await session.refresh(tag)
+
+    if duplicate_name:
+        msg = f"A tag named '{name}' already exists in this workspace"
+        raise DuplicateNameError(msg)
 
     if crdt_doc is not None:
         _sync_tag_to_crdt(tag, crdt_doc)
@@ -477,7 +528,7 @@ async def delete_tag(
 
         if tag.locked and not bypass_lock:
             msg = "Tag is locked"
-            raise ValueError(msg)
+            raise TagLockedError(msg)
 
         workspace_id = tag.workspace_id
         tag_id_for_cleanup = tag.id

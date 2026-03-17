@@ -69,9 +69,23 @@ Each dependency lists: what it does, why it's here (not a stdlib/transitive alte
 **Why not alternatives:** pydantic-settings integrates natively with the existing Pydantic ecosystem (SQLModel, pydantic-ai). Provides type validation, SecretStr masking, and `.env` reading without manual `load_dotenv()`.
 **Classification:** Hard core. All application configuration flows through it.
 
-### ~~python-dotenv >= 1.0~~ (SUPERSEDED)
+### ~~python-dotenv >= 1.0~~ (REMOVED)
 
-Superseded 2026-02-13 by pydantic-settings, which reads `.env` files natively (using python-dotenv internally as a transitive dependency). Direct `load_dotenv()` calls eliminated. See design plan `2026-02-13-pydantic-settings-130.md`.
+Removed 2026-03-18 from `pyproject.toml`. Superseded 2026-02-13 by pydantic-settings, which uses python-dotenv internally as a transitive dependency. No direct imports existed. See design plan `2026-02-13-pydantic-settings-130.md`.
+
+### cryptography >= 46.0.5
+
+**Added:** pre-2026-03 (version floor pin)
+**Claim:** Version floor pin to ensure a minimum safe version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively by authlib and google-auth. The explicit pin was added to address CVE-2026-26007 (commit `db48c343`).
+**Classification:** Protective belt. Version floor for supply-chain security.
+
+### pyasn1 >= 0.6.3
+
+**Added:** 2026-03-18 (version floor pin)
+**Claim:** Version floor pin to ensure CVE-2026-30922 patched version across transitive dependency chains.
+**Evidence:** No direct imports in `src/promptgrimoire/`. Required transitively via pydantic-ai → google-genai → google-auth → rsa → pyasn1.
+**Classification:** Protective belt. Version floor for supply-chain security.
 
 ### asyncpg >= 0.30
 

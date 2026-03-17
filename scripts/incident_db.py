@@ -75,6 +75,18 @@ def sources(
     _output(data, "Sources", json_output=json_output, csv_output=csv_output)
 
 
+def _resolve_timezone(conn: sqlite3.Connection, override: str | None) -> str:
+    """Return the timezone to use for local→UTC conversion.
+
+    Uses explicit ``--timezone`` if provided, otherwise looks up from
+    the first ingested source, falling back to Australia/Sydney.
+    """
+    if override:
+        return override
+    row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
+    return row[0] if row else "Australia/Sydney"
+
+
 def _aedt_to_utc(local_str: str, tz_name: str) -> str:
     """Convert a local-time string to UTC ISO-8601 for SQLite comparison.
 
@@ -97,21 +109,22 @@ def _aedt_to_utc(local_str: str, tz_name: str) -> str:
 
 @app.command()
 def timeline(
-    start: str = typer.Option(..., help="Start time (AEDT, e.g. '2026-03-16 16:05')"),
-    end: str = typer.Option(..., help="End time (AEDT, e.g. '2026-03-16 16:14')"),
+    start: str = typer.Option(..., help="Start time (local, e.g. '2026-03-16 16:05')"),
+    end: str = typer.Option(..., help="End time (local, e.g. '2026-03-16 16:14')"),
     level: str | None = typer.Option(None, help="Filter by level/status"),
+    timezone: str | None = typer.Option(
+        None, "--timezone", "-tz", help="IANA timezone (default: from ingested sources)"
+    ),
     db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     csv_output: bool = typer.Option(False, "--csv", help="Output as CSV"),
 ) -> None:
-    """Show cross-source timeline for a time window (times in AEDT)."""
+    """Show cross-source timeline for a time window (times in local timezone)."""
     from scripts.incident.queries import query_timeline
 
     conn = sqlite3.connect(db)
 
-    # Look up the timezone from the first ingested source.
-    row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
-    tz_name = row[0] if row else "Australia/Sydney"
+    tz_name = _resolve_timezone(conn, timezone)
 
     start_utc = _aedt_to_utc(start, tz_name)
     end_utc = _aedt_to_utc(end, tz_name)
@@ -143,10 +156,13 @@ def breakdown(
 
 @app.command()
 def beszel(
-    start: str = typer.Option(..., help="Start time (AEDT, e.g. '2026-03-16 16:05')"),
-    end: str = typer.Option(..., help="End time (AEDT, e.g. '2026-03-16 16:14')"),
+    start: str = typer.Option(..., help="Start time (local, e.g. '2026-03-16 16:05')"),
+    end: str = typer.Option(..., help="End time (local, e.g. '2026-03-16 16:14')"),
     hub: str = typer.Option(
         "http://localhost:8090", help="Beszel hub URL (via SSH tunnel)"
+    ),
+    timezone: str | None = typer.Option(
+        None, "--timezone", "-tz", help="IANA timezone"
     ),
     db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
 ) -> None:
@@ -157,9 +173,7 @@ def beszel(
     conn = sqlite3.connect(db)
     create_schema(conn)
 
-    # Look up timezone from first ingested source, default to Sydney.
-    row = conn.execute("SELECT timezone FROM sources LIMIT 1").fetchone()
-    tz_name = row[0] if row else "Australia/Sydney"
+    tz_name = _resolve_timezone(conn, timezone)
 
     start_utc = _aedt_to_utc(start, tz_name)
     end_utc = _aedt_to_utc(end, tz_name)
@@ -171,13 +185,22 @@ def beszel(
 
     metrics = fetch_beszel_metrics(hub, start_utc, end_utc)
 
-    # Insert synthetic source row for FK constraint.
+    # Insert synthetic source row for FK constraint (dedup by sha256).
     sha = hashlib.sha256(f"{hub}:{start_utc}:{end_utc}".encode()).hexdigest()
+    existing = conn.execute(
+        "SELECT id FROM sources WHERE sha256 = ?", (sha,)
+    ).fetchone()
+    if existing is not None:
+        conn.close()
+        typer.echo("Already fetched (dedup). 0 new data points.")
+        return
+
     conn.execute(
-        """INSERT OR IGNORE INTO sources
+        """INSERT INTO sources
            (filename, format, sha256, size, mtime, hostname, timezone,
-            window_start_utc, window_end_utc)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            window_start_utc, window_end_utc, source_path,
+            collection_method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "beszel-api",
             "beszel",
@@ -188,11 +211,11 @@ def beszel(
             tz_name,
             start_utc,
             end_utc,
+            hub,
+            "pocketbase API",
         ),
     )
-    source_id = conn.execute(
-        "SELECT id FROM sources WHERE sha256 = ?", (sha,)
-    ).fetchone()[0]
+    source_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     # Insert metrics rows.
     for m in metrics:

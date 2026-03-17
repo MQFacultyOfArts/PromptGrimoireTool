@@ -101,7 +101,8 @@ CREATE INDEX IF NOT EXISTS idx_haproxy_ts ON haproxy_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_pg_ts ON pg_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_beszel_ts ON beszel_metrics(ts_utc);
 
-CREATE VIEW IF NOT EXISTS timeline AS
+DROP VIEW IF EXISTS timeline;
+CREATE VIEW timeline AS
 SELECT source_id, ts_utc, 'journal' AS source, priority AS level_or_status, message, NULL AS extra
 FROM journal_events
 UNION ALL
@@ -114,6 +115,12 @@ FROM haproxy_events
 UNION ALL
 SELECT source_id, ts_utc, 'pglog' AS source, level AS level_or_status, message, detail AS extra
 FROM pg_events
+UNION ALL
+SELECT source_id, ts_utc, 'beszel' AS source,
+       printf('cpu=%.0f%%', cpu) AS level_or_status,
+       printf('mem=%.0f%% load=%.1f', mem_percent, load_1) AS message,
+       NULL AS extra
+FROM beszel_metrics
 ORDER BY ts_utc;
 """
 

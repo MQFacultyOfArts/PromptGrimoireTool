@@ -119,7 +119,21 @@ ORDER BY ts_utc;
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
-    """Create all tables, indexes, and views. Enable WAL mode."""
+    """Create all tables, indexes, and views. Enable WAL mode.
+
+    Also runs lightweight migrations for columns added after the initial
+    schema (safe on both fresh and existing databases).
+    """
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA_DDL)
+    _migrate_sources_provenance(conn)
+
+
+def _migrate_sources_provenance(conn: sqlite3.Connection) -> None:
+    """Add source_path and collection_method columns if missing (v2 schema)."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
+    if "source_path" not in existing:
+        conn.execute("ALTER TABLE sources ADD COLUMN source_path TEXT")
+    if "collection_method" not in existing:
+        conn.execute("ALTER TABLE sources ADD COLUMN collection_method TEXT")

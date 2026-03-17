@@ -22,15 +22,13 @@ from tests.conftest import requires_full_latexmk, requires_pandoc
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures"
 
 # Tag colours matching the fixture's data-annots attributes.
-# The exact hex values don't matter for tex generation — only
-# that entries exist so the preamble defines the colour commands.
-# Keys are tag names; generate_tag_colour_definitions() prefixes "tag-"
-# and creates -light/-dark variants. The fixture's data-annots reference
-# tag-issue-dark, tag-ratio-dark, tag-rule-dark.
+# Uses Legal Case Brief tag names (same as E2E seed_tags=True).
+# generate_tag_colour_definitions() prefixes "tag-" and creates
+# -light/-dark variants matching the fixture's colour references.
 _TAG_COLOURS: dict[str, str] = {
-    "issue": "#d62728",
-    "ratio": "#2ca02c",
-    "rule": "#9467bd",
+    "Jurisdiction": "#1f77b4",
+    "Reasons": "#9467bd",
+    "Decision": "#e377c2",
 }
 
 

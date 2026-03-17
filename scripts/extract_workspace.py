@@ -63,7 +63,7 @@ _TAG_QUERY = "SELECT * FROM tag WHERE workspace_id = %s ORDER BY order_index"
 
 
 def _to_dicts(
-    cur: psycopg.Cursor[tuple],  # type: ignore[type-arg]
+    cur: psycopg.Cursor[tuple],
 ) -> list[dict]:
     """Convert cursor results to list of dicts using column descriptions."""
     cols = [desc.name for desc in (cur.description or [])]
@@ -71,7 +71,7 @@ def _to_dicts(
 
 
 def _to_dict(
-    cur: psycopg.Cursor[tuple],  # type: ignore[type-arg]
+    cur: psycopg.Cursor[tuple],
 ) -> dict | None:
     """Convert single cursor result to dict."""
     cols = [desc.name for desc in (cur.description or [])]

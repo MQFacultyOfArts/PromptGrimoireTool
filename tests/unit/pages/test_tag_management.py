@@ -53,7 +53,7 @@ class TestBuildGroupCallbacks:
         reorder_tag_groups = AsyncMock()
 
         callbacks = _build_group_callbacks(
-            state=state,  # type: ignore[arg-type]  # SimpleNamespace stub for PageState
+            state=state,  # SimpleNamespace stub for PageState
             render_tag_list=render_tag_list,
             create_tag_group=create_tag_group,
             reorder_tag_groups=reorder_tag_groups,
@@ -83,7 +83,7 @@ class TestBuildGroupCallbacks:
         reorder_tag_groups = AsyncMock()
 
         callbacks = _build_group_callbacks(
-            state=state,  # type: ignore[arg-type]  # SimpleNamespace stub for PageState
+            state=state,  # SimpleNamespace stub for PageState
             render_tag_list=render_tag_list,
             create_tag_group=create_tag_group,
             reorder_tag_groups=reorder_tag_groups,

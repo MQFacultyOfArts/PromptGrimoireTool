@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse hook: require E2E + smoke tests before PR creation or merge to main.
 
-Gates two operations:
+Gates three operations:
 1. `gh pr create` — requires full test suite to pass first
 2. `git merge` to main — same gate
+3. `git push` — same gate (any push, any branch)
 
 Uses a stamp-file approach for background execution:
 - First attempt: blocks the command, launches tests in background
@@ -28,6 +29,7 @@ STAMP_PASS = STAMP_DIR / ".e2e_passed"
 STAMP_FAIL = STAMP_DIR / ".e2e_failed"
 STAMP_RUNNING = STAMP_DIR / ".e2e_running"
 STAMP_MAX_AGE = 3600  # 1 hour
+OVERRIDE_FLAG = STAMP_DIR / ".e2e_override"
 
 
 def _extract_command(input_data: dict) -> str:
@@ -53,6 +55,10 @@ def _strip_heredocs_and_strings(command: str) -> str:
     # Strip -m '...' arguments (single-quoted commit messages)
     stripped = re.sub(r"-m\s+'[^']*'", "", stripped)
     return stripped
+
+
+def _is_push(command: str) -> bool:
+    return "git push" in _strip_heredocs_and_strings(command)
 
 
 def _is_pr_create(command: str) -> bool:
@@ -178,12 +184,25 @@ def main() -> int:
 
     is_pr = _is_pr_create(command)
     is_merge = _is_merge_to_main(command)
+    is_push = _is_push(command)
 
-    if not is_pr and not is_merge:
+    if not is_pr and not is_merge and not is_push:
         print(json.dumps({"continue": True, "suppressOutput": True}))
         return 0
 
-    action = "PR creation" if is_pr else "merge to main"
+    # Oh-shit override: touch .claude/hooks/.e2e_override to bypass once
+    if OVERRIDE_FLAG.exists():
+        OVERRIDE_FLAG.unlink()
+        print("Override flag consumed — bypassing test gate.", file=sys.stderr)
+        print(json.dumps({"continue": True}))
+        return 0
+
+    if is_pr:
+        action = "PR creation"
+    elif is_merge:
+        action = "merge to main"
+    else:
+        action = "git push"
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
     return _check_stamps(action, project_dir)
 

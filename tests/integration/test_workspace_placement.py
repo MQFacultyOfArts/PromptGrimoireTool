@@ -395,6 +395,81 @@ class TestPlacementContext:
         assert ctx.is_template is False
 
     @pytest.mark.asyncio
+    async def test_loose_workspace_allow_sharing_true(self) -> None:
+        """Loose workspace defaults to allow_sharing=True (AC4.1, AC4.2).
+
+        Verifies business-exception-handling-363.AC4.1 and AC4.2.
+        """
+        from promptgrimoire.db.workspaces import (
+            PlacementContext,
+            create_workspace,
+            get_placement_context,
+        )
+
+        # AC4.1: dataclass default
+        ctx = PlacementContext(placement_type="loose")
+        assert ctx.allow_sharing is True
+
+        # AC4.2: real DB workspace
+        ws = await create_workspace()
+        ctx = await get_placement_context(ws.id)
+        assert ctx.allow_sharing is True
+
+    @pytest.mark.asyncio
+    async def test_activity_placed_sharing_unaffected(self) -> None:
+        """Activity-placed workspace resolves sharing from course (AC4.3).
+
+        Verifies business-exception-handling-363.AC4.3: regression guard.
+        """
+        from promptgrimoire.db.activities import (
+            create_activity,
+            update_activity,
+        )
+        from promptgrimoire.db.courses import update_course
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_activity,
+        )
+
+        course, week, _ = await _setup_hierarchy()
+        await update_course(course.id, default_allow_sharing=False)
+
+        activity = await create_activity(
+            week_id=week.id,
+            title="Sharing Off",
+        )
+        await update_activity(activity.id, allow_sharing=None)
+
+        ws = await create_workspace()
+        await place_workspace_in_activity(ws.id, activity.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.allow_sharing is False
+
+    @pytest.mark.asyncio
+    async def test_course_placed_sharing_unaffected(self) -> None:
+        """Course-placed workspace resolves sharing from course (AC4.4).
+
+        Verifies business-exception-handling-363.AC4.4: regression guard.
+        """
+        from promptgrimoire.db.courses import update_course
+        from promptgrimoire.db.workspaces import (
+            create_workspace,
+            get_placement_context,
+            place_workspace_in_course,
+        )
+
+        course, _, _ = await _setup_hierarchy()
+        await update_course(course.id, default_allow_sharing=False)
+
+        ws = await create_workspace()
+        await place_workspace_in_course(ws.id, course.id)
+
+        ctx = await get_placement_context(ws.id)
+        assert ctx.allow_sharing is False
+
+    @pytest.mark.asyncio
     async def test_nonexistent_workspace(self) -> None:
         """Non-existent workspace returns loose context.
 

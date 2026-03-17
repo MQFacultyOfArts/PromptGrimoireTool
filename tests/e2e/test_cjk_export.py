@@ -93,7 +93,15 @@ class TestCjkAnnotatedTableExport:
 
         try:
             email = _authenticate_page(page, app_server)
-            html = _load_cjk_fixture()
+            # Use plain CJK + emoji HTML without pre-baked annotation
+            # colour refs — the E2E pipeline has no matching tag defs,
+            # so data-annots colour names would cause undefined-colour
+            # errors during compilation.
+            html = (
+                "<p>日本語のテスト文書です。</p>\n"
+                "<table><tr><td>項目</td><td>内容</td></tr></table>\n"
+                "<p>✅ 完了 😊 よくできました</p>"
+            )
             workspace_id = _create_workspace_via_db(
                 email,
                 html,

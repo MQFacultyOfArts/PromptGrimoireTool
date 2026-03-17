@@ -718,7 +718,12 @@ def smoke_export() -> None:
         )
         return await compile_latex(tex_path, output_dir)
 
-    pdf_path = asyncio.run(_run())
+    try:
+        pdf_path = asyncio.run(_run())
+    except Exception as exc:
+        print(f"FAIL: {type(exc).__name__}: {exc}")
+        sys.exit(1)
+
     size = pdf_path.stat().st_size
 
     if size < 1000:

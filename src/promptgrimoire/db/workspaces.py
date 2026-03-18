@@ -823,7 +823,9 @@ async def clone_workspace_from_activity(
             & 0x7FFFFFFF
         )
         await session.execute(
-            text(f"SELECT pg_advisory_xact_lock({ns_key}, {inst_key})")
+            text("SELECT pg_advisory_xact_lock(:ns, :inst)").bindparams(
+                ns=ns_key, inst=inst_key
+            )
         )
 
         # Idempotency check: return existing workspace if already cloned

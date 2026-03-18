@@ -7,7 +7,8 @@ Verifies:
 - Empty result: mock empty ``items`` array returns empty list
 - Connection error: mock ``httpx.ConnectError`` raises ``SystemExit``
 - HTTP error (e.g. 404): mock 404 response raises ``SystemExit``
-- Compact key mapping: ``ns`` -> ``net_sent``, ``nr`` -> ``net_recv``, etc.
+- Compact key mapping: ``b`` -> ``net_sent/net_recv``,
+  ``la`` -> ``load_1/5/15``, ``dr/dw`` -> ``disk_read/write``, etc.
 """
 
 from __future__ import annotations
@@ -31,18 +32,23 @@ def _make_record(
     created: str = "2026-03-16 05:30:00.000Z",
     *,
     cpu: float = 42.5,
-    m: float = 3200.0,
     mu: float = 3200.0,
     mp: float = 78.1,
-    ns: float = 1024.0,
-    nr: float = 2048.0,
+    b: list[float] | None = None,
     dr: float = 512.0,
     dw: float = 256.0,
-    l1: float = 1.2,
-    l5: float = 0.8,
-    l15: float = 0.5,
+    la: list[float] | None = None,
 ) -> dict:
-    """Build a realistic PocketBase system_stats record."""
+    """Build a realistic PocketBase system_stats record.
+
+    Uses the real Beszel v0.9+ stat key format:
+    - ``b``: bandwidth ``[sent, recv]`` in bytes/s
+    - ``la``: load average ``[1m, 5m, 15m]``
+    """
+    if b is None:
+        b = [1024.0, 2048.0]
+    if la is None:
+        la = [1.2, 0.8, 0.5]
     return {
         "id": "abc123",
         "collectionId": "xyz",
@@ -51,16 +57,12 @@ def _make_record(
         "updated": created,
         "stats": {
             "cpu": cpu,
-            "m": m,
             "mu": mu,
             "mp": mp,
-            "ns": ns,
-            "nr": nr,
+            "b": b,
             "dr": dr,
             "dw": dw,
-            "l1": l1,
-            "l5": l5,
-            "l15": l15,
+            "la": la,
         },
         "system": "system-id",
         "type": "main",
@@ -97,21 +99,57 @@ def _make_response(
     return resp
 
 
+def _make_auth_response() -> MagicMock:
+    """Build a mock auth response with a token."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"token": "mock-token-abc"}
+    return resp
+
+
+def _patch_client_with_auth(records_resp):
+    """Set up mock httpx.Client with auth + records responses.
+
+    Returns the patch context manager. The client's POST returns
+    the auth response, GET returns the records response.
+    """
+    p = patch("httpx.Client")
+
+    def setup(MockClient):
+        client_instance = MockClient.return_value.__enter__.return_value
+        client_instance.post.return_value = _make_auth_response()
+        if isinstance(records_resp, list):
+            client_instance.get.side_effect = records_resp
+        else:
+            client_instance.get.return_value = records_resp
+        return client_instance
+
+    return p, setup
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+# Patch env vars for all tests so _load_beszel_creds doesn't fail
+_CRED_ENV = {
+    "BESZEL_EMAIL": "test@example.com",
+    "BESZEL_PASSWORD": "testpass",
+}
 
 
 class TestSuccessfulFetch:
     """Fetch returns correctly normalised dicts."""
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_single_record(self) -> None:
         record = _make_record(created="2026-03-16 05:30:00.000Z")
         mock_resp = _make_response([record])
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
@@ -133,50 +171,45 @@ class TestSuccessfulFetch:
 class TestCompactKeyMapping:
     """Compact JSON keys map to normalised column names."""
 
-    def test_ns_maps_to_net_sent(self) -> None:
-        record = _make_record(ns=9999.0)
+    @patch.dict("os.environ", _CRED_ENV)
+    def test_bandwidth_maps_to_net_sent_recv(self) -> None:
+        record = _make_record(b=[9999.0, 8888.0])
         mock_resp = _make_response([record])
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
         assert result[0]["net_sent"] == 9999.0
-
-    def test_nr_maps_to_net_recv(self) -> None:
-        record = _make_record(nr=8888.0)
-        mock_resp = _make_response([record])
-
-        with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
-
-            result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
-
         assert result[0]["net_recv"] == 8888.0
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_dr_dw_map_to_disk_read_write(self) -> None:
         record = _make_record(dr=100.0, dw=200.0)
         mock_resp = _make_response([record])
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
         assert result[0]["disk_read"] == 100.0
         assert result[0]["disk_write"] == 200.0
 
-    def test_load_keys_map(self) -> None:
-        record = _make_record(l1=3.0, l5=2.0, l15=1.0)
+    @patch.dict("os.environ", _CRED_ENV)
+    def test_load_average_array_maps(self) -> None:
+        record = _make_record(la=[3.0, 2.0, 1.0])
         mock_resp = _make_response([record])
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
@@ -184,13 +217,15 @@ class TestCompactKeyMapping:
         assert result[0]["load_5"] == 2.0
         assert result[0]["load_15"] == 1.0
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_mu_maps_to_mem_used(self) -> None:
         record = _make_record(mu=4096.0)
         mock_resp = _make_response([record])
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
@@ -200,6 +235,7 @@ class TestCompactKeyMapping:
 class TestPagination:
     """Multi-page responses return all records."""
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_two_pages(self) -> None:
         page1_record = _make_record(created="2026-03-16 05:10:00.000Z", cpu=10.0)
         page2_record = _make_record(created="2026-03-16 05:20:00.000Z", cpu=20.0)
@@ -212,8 +248,9 @@ class TestPagination:
         )
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.side_effect = [resp_page1, resp_page2]
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.side_effect = [resp_page1, resp_page2]
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
@@ -225,12 +262,14 @@ class TestPagination:
 class TestEmptyResult:
     """Empty items array returns empty list."""
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_empty_items(self) -> None:
         mock_resp = _make_response([], total_items=0)
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             result = fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
 
@@ -240,10 +279,12 @@ class TestEmptyResult:
 class TestConnectionError:
     """Connection errors raise SystemExit with clear message."""
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_connect_error(self) -> None:
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.side_effect = httpx.ConnectError("Connection refused")
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.side_effect = httpx.ConnectError("Connection refused")
 
             with pytest.raises(SystemExit) as exc_info:
                 fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)
@@ -254,12 +295,14 @@ class TestConnectionError:
 class TestHTTPError:
     """HTTP errors raise SystemExit with status code in message."""
 
+    @patch.dict("os.environ", _CRED_ENV)
     def test_404_response(self) -> None:
         mock_resp = _make_response([], status_code=404)
 
         with patch("httpx.Client") as MockClient:
-            client_instance = MockClient.return_value.__enter__.return_value
-            client_instance.get.return_value = mock_resp
+            client = MockClient.return_value.__enter__.return_value
+            client.post.return_value = _make_auth_response()
+            client.get.return_value = mock_resp
 
             with pytest.raises(SystemExit) as exc_info:
                 fetch_beszel_metrics(HUB_URL, START_UTC, END_UTC)

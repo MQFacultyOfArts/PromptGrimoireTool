@@ -168,6 +168,56 @@ When students report problems, gather data in this order:
 13. **Beszel historical graphs** — CPU/memory/disk/network for the incident window
 14. **Check Discord webhook delivery** — compare alert count to actual error count (expect significant undercounting due to rate limiting)
 
+### Automated telemetry pipeline (added 2026-03-18)
+
+The manual grep patterns above work during an active incident. For post-incident analysis, use the automated pipeline:
+
+**1. Collect telemetry from the server:**
+
+```bash
+# Copy collector to server and run
+scp deploy/collect-telemetry.sh grimoire.drbbs.org:/tmp/
+ssh grimoire.drbbs.org 'sudo bash /tmp/collect-telemetry.sh --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM"'
+
+# Pull tarball back
+scp grimoire.drbbs.org:/tmp/telemetry-*.tar.gz .
+```
+
+Times are server-local (AEDT). The script collects journal (JSON), structlog JSONL (all rotated files), HAProxy logs (all rotated, excluding .gz), and PostgreSQL logs. Each file gets a SHA256, timestamp filter, and provenance metadata in `manifest.json`.
+
+**2. Ingest into incident database:**
+
+```bash
+uv run scripts/incident_db.py ingest /path/to/telemetry-*.tar.gz --db incident.db
+```
+
+Creates a local SQLite database with normalised events across all sources. SHA256 dedup prevents double-ingestion.
+
+**3. Add Beszel system metrics:**
+
+```bash
+# Requires SSH tunnel to brian.fedarch.org
+ssh -L 8090:localhost:8090 brian.fedarch.org
+
+# Credentials in ~/.config/beszel/env (BESZEL_EMAIL, BESZEL_PASSWORD)
+uv run scripts/incident_db.py beszel --start "YYYY-MM-DD HH:MM" --end "YYYY-MM-DD HH:MM" --db incident.db
+```
+
+**4. Query and analyse:**
+
+```bash
+# Source inventory (verify coverage before analysis)
+uv run scripts/incident_db.py sources --db incident.db
+
+# Cross-source timeline
+uv run scripts/incident_db.py timeline --start "HH:MM" --end "HH:MM" --db incident.db
+
+# Error breakdown by event type
+uv run scripts/incident_db.py breakdown --db incident.db
+```
+
+**5. Follow the incident analysis skill** (`.claude/skills/incident-analysis/SKILL.md`) for structured hypothesis testing, provenance discipline, and self-challenge before presenting findings.
+
 ### Data sources NOT available on this server
 
 | Source | Why | Fix |

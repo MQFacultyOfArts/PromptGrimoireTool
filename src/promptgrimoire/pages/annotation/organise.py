@@ -75,8 +75,8 @@ def _build_highlight_card(
     """
     highlight_id = highlight.get("id", "")
     raw_author = highlight.get("author", "Unknown")
-    start_char: int = highlight.get("start_char", 0)
-    end_char: int = highlight.get("end_char", 0)
+    start_char: int = int(highlight.get("start_char", 0))
+    end_char: int = int(highlight.get("end_char", 0))
     full_text = highlight.get("text", "")
     snippet = full_text[:_SNIPPET_MAX_CHARS]
     if len(full_text) > _SNIPPET_MAX_CHARS:

@@ -458,8 +458,8 @@ def _build_annotation_card(
     tag_str = highlight.get("tag", "highlight")
     author = highlight.get("author", "Unknown")
     full_text = highlight.get("text", "")
-    start_char = highlight.get("start_char", 0)
-    end_char = highlight.get("end_char", start_char)
+    start_char = int(highlight.get("start_char", 0))
+    end_char = int(highlight.get("end_char", start_char))
     para_ref = highlight.get("para_ref", "")
     comments: list[dict[str, Any]] = highlight.get("comments", [])
 

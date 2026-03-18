@@ -484,6 +484,10 @@ class TestGetAuthClientFactory:
         """AC3.3: get_auth_client() raises ValueError for empty project_id."""
         from unittest.mock import patch
 
+        from promptgrimoire.auth.factory import (
+            clear_config_cache,
+            get_auth_client,
+        )
         from promptgrimoire.config import DevConfig, Settings, StytchConfig
 
         settings = Settings(
@@ -491,6 +495,7 @@ class TestGetAuthClientFactory:
             stytch=StytchConfig(project_id=""),
             dev=DevConfig(auth_mock=False),
         )
+        clear_config_cache()
         with (
             patch(
                 "promptgrimoire.auth.factory.get_settings",
@@ -498,8 +503,6 @@ class TestGetAuthClientFactory:
             ),
             pytest.raises(ValueError, match="STYTCH__PROJECT_ID is required"),
         ):
-            from promptgrimoire.auth.factory import get_auth_client
-
             get_auth_client()
 
     def test_returns_mock_client_when_auth_mock_enabled(self):
@@ -526,6 +529,85 @@ class TestGetAuthClientFactory:
             client = get_auth_client()
 
         assert isinstance(client, MockAuthClient)
+
+    def test_mock_client_cached_across_calls(self):
+        """get_auth_client() returns same MockAuthClient on repeat calls (#378)."""
+        from unittest.mock import patch
+
+        from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
+        from promptgrimoire.config import DevConfig, Settings
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            dev=DevConfig(auth_mock=True),
+        )
+
+        clear_config_cache()
+        with patch(
+            "promptgrimoire.auth.factory.get_settings",
+            return_value=settings,
+        ):
+            first = get_auth_client()
+            second = get_auth_client()
+
+        assert first is second
+
+    def test_stytch_client_cached_across_calls(self):
+        """Cached StytchB2BClient prevents aiohttp session leaks (#378).
+
+        Without caching, each call creates a new B2BClient with a new
+        aiohttp.ClientSession — 719 leaked sessions in production.
+        """
+        from unittest.mock import patch
+
+        from pydantic import SecretStr
+
+        from promptgrimoire.auth.client import StytchB2BClient
+        from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
+        from promptgrimoire.config import DevConfig, Settings, StytchConfig
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            stytch=StytchConfig(
+                project_id="proj-test",
+                secret=SecretStr("secret-test"),
+            ),
+            dev=DevConfig(auth_mock=False),
+        )
+
+        clear_config_cache()
+        with patch(
+            "promptgrimoire.auth.factory.get_settings",
+            return_value=settings,
+        ):
+            first = get_auth_client()
+            second = get_auth_client()
+
+        assert isinstance(first, StytchB2BClient)
+        assert first is second
+
+    def test_clear_config_cache_resets_singleton(self):
+        """clear_config_cache() forces a fresh client on next call (#378)."""
+        from unittest.mock import patch
+
+        from promptgrimoire.auth.factory import clear_config_cache, get_auth_client
+        from promptgrimoire.config import DevConfig, Settings
+
+        settings = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            dev=DevConfig(auth_mock=True),
+        )
+
+        clear_config_cache()
+        with patch(
+            "promptgrimoire.auth.factory.get_settings",
+            return_value=settings,
+        ):
+            first = get_auth_client()
+            clear_config_cache()
+            third = get_auth_client()
+
+        assert first is not third
 
 
 class TestSecretStrMasking:

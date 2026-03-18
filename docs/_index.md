@@ -149,6 +149,7 @@ library references during development.
 
 ## stytch
 
+- [aiohttp session lifecycle in the Stytch Python SDK — lazy creation, external session injection, GC-based cleanup](stytch/async-session-management.md)
 - [B2B magic link token authentication - creates sessions with MFA support](stytch/b2b-authenticate.md)
 - [B2B fundamentals - Organizations, Members, settings, core flows, features](stytch/b2b-basics.md)
 - [B2B invitation emails - invite new Members to Organizations with roles](stytch/b2b-invite.md)

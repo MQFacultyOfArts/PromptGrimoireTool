@@ -349,5 +349,7 @@ class TestDuplicateDetection:
         assert len(match) == 1
         dup = match[0]
         assert dup["duplicate_count"] == 2
+        # Set comparison: ordering is by created_at, but same-transaction
+        # inserts share identical timestamps so order is non-deterministic.
         assert set(dup["workspace_ids"]) == {ws1.id, ws2.id}
         assert dup["user_email"] == user.email

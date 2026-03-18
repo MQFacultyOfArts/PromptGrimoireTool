@@ -804,17 +804,23 @@ async def clone_workspace_from_activity(
     """
     async with get_session() as session:
         # Advisory lock: prevent concurrent duplicate clones for same (activity, user)
-        ns_key = int(
-            hashlib.md5(
-                b"clone_workspace_from_activity", usedforsecurity=False
-            ).hexdigest()[:8],
-            16,
+        ns_key = (
+            int(
+                hashlib.md5(
+                    b"clone_workspace_from_activity", usedforsecurity=False
+                ).hexdigest()[:8],
+                16,
+            )
+            & 0x7FFFFFFF
         )
-        inst_key = int(
-            hashlib.md5(
-                f"{activity_id}-{user_id}".encode(), usedforsecurity=False
-            ).hexdigest()[:8],
-            16,
+        inst_key = (
+            int(
+                hashlib.md5(
+                    f"{activity_id}-{user_id}".encode(), usedforsecurity=False
+                ).hexdigest()[:8],
+                16,
+            )
+            & 0x7FFFFFFF
         )
         await session.execute(
             text(f"SELECT pg_advisory_xact_lock({ns_key}, {inst_key})")

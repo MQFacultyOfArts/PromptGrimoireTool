@@ -1,10 +1,8 @@
-"""Hypothesis tests for #364: clone idempotency and duplicate prevention.
+"""Integration tests for #364: clone idempotency.
 
-These tests verify that the TOCTOU race condition described in #364 is
-real. Each test targets a specific hypothesis about the system's behaviour.
-
-Once the fix is implemented, these tests should be replaced with tests
-asserting idempotent behaviour.
+These tests verify that clone_workspace_from_activity is idempotent --
+calling it twice for the same (activity_id, user_id) returns the same
+workspace rather than creating duplicates.
 """
 
 from __future__ import annotations
@@ -49,16 +47,17 @@ async def _setup_activity():
     return activity, user
 
 
-class TestH1SequentialDoubleClone:
-    """H1: clone_workspace_from_activity has no existence check.
+class TestSequentialIdempotency:
+    """Sequential double-clone returns the same workspace.
 
-    Calling it twice sequentially for the same (activity_id, user_id)
-    creates two separate workspaces.
+    Calling clone_workspace_from_activity twice for the same (activity, user)
+    must return the same workspace ID. The first call returns a non-empty
+    doc_id_map; the second returns an empty map.
     """
 
     @pytest.mark.asyncio
-    async def test_sequential_double_clone_creates_duplicates(self) -> None:
-        """Call clone twice for same user+activity. Expect two workspaces (the bug)."""
+    async def test_same_workspace_returned(self) -> None:
+        """Two sequential clones return the same workspace ID (AC1.1)."""
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         activity, user = await _setup_activity()
@@ -66,58 +65,43 @@ class TestH1SequentialDoubleClone:
         clone1, _ = await clone_workspace_from_activity(activity.id, user.id)
         clone2, _ = await clone_workspace_from_activity(activity.id, user.id)
 
-        # Bug demonstrated: two distinct workspaces created
-        assert clone1.id != clone2.id
-
-
-class TestH2NoDatabaseConstraint:
-    """H2: No database constraint prevents duplicate workspaces per (activity, user).
-
-    After two clones, both workspaces persist with separate owner ACL entries.
-    """
+        assert clone1.id == clone2.id
 
     @pytest.mark.asyncio
-    async def test_both_clones_persist_with_owner_acl(self) -> None:
-        """Both duplicate workspaces exist in DB with owner ACL entries."""
-        from sqlmodel import select
-
-        from promptgrimoire.db.engine import get_session
-        from promptgrimoire.db.models import ACLEntry, Workspace
+    async def test_first_call_returns_doc_id_map(self) -> None:
+        """First clone returns a non-empty doc_id_map (AC5.1)."""
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         activity, user = await _setup_activity()
 
-        clone1, _ = await clone_workspace_from_activity(activity.id, user.id)
-        clone2, _ = await clone_workspace_from_activity(activity.id, user.id)
+        _, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
 
-        async with get_session() as session:
-            ws1 = await session.get(Workspace, clone1.id)
-            ws2 = await session.get(Workspace, clone2.id)
-            assert ws1 is not None
-            assert ws2 is not None
-            assert ws1.activity_id == ws2.activity_id == activity.id
+        assert doc_id_map, "First clone must return a non-empty doc_id_map"
 
-            # Both have distinct owner ACL entries — DB doesn't prevent this
-            result = await session.exec(
-                select(ACLEntry).where(
-                    ACLEntry.user_id == user.id,
-                    ACLEntry.permission == "owner",
-                    ACLEntry.workspace_id.in_([clone1.id, clone2.id]),  # type: ignore[union-attr]
-                )
-            )
-            acl_entries = list(result.all())
-            assert len(acl_entries) == 2
+    @pytest.mark.asyncio
+    async def test_second_call_returns_empty_doc_id_map(self) -> None:
+        """Second clone returns an empty doc_id_map (AC5.2)."""
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        activity, user = await _setup_activity()
+
+        await clone_workspace_from_activity(activity.id, user.id)
+        _, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        assert doc_id_map == {}
 
 
-class TestH3ConcurrentCloneRace:
-    """H3: Concurrent clones both succeed.
+class TestConcurrentIdempotency:
+    """Concurrent double-clone returns the same workspace.
 
-    asyncio.gather simulates the double-click scenario.
+    asyncio.gather simulates the double-click scenario. Both calls must
+    resolve to the same workspace, with exactly one returning a non-empty
+    doc_id_map (the creator) and the other returning an empty map.
     """
 
     @pytest.mark.asyncio
-    async def test_concurrent_clones_both_succeed(self) -> None:
-        """Two concurrent clone calls create two workspaces."""
+    async def test_concurrent_clones_return_same_workspace(self) -> None:
+        """Two concurrent clones return the same workspace ID (AC2.1)."""
         from promptgrimoire.db.workspaces import clone_workspace_from_activity
 
         activity, user = await _setup_activity()
@@ -127,8 +111,108 @@ class TestH3ConcurrentCloneRace:
             clone_workspace_from_activity(activity.id, user.id),
         )
 
-        clone1, _ = results[0]
-        clone2, _ = results[1]
+        ws1, _ = results[0]
+        ws2, _ = results[1]
 
-        # Bug demonstrated: both clones succeed with distinct IDs
-        assert clone1.id != clone2.id
+        assert ws1.id == ws2.id
+
+    @pytest.mark.asyncio
+    async def test_exactly_one_creator_one_idempotent(self) -> None:
+        """One result has non-empty doc_id_map, the other has empty."""
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        activity, user = await _setup_activity()
+
+        results = await asyncio.gather(
+            clone_workspace_from_activity(activity.id, user.id),
+            clone_workspace_from_activity(activity.id, user.id),
+        )
+
+        maps = [doc_map for _, doc_map in results]
+        non_empty = [m for m in maps if m]
+        empty = [m for m in maps if not m]
+
+        assert len(non_empty) == 1, (
+            f"Expected exactly one creator, got {len(non_empty)}"
+        )
+        assert len(empty) == 1, f"Expected exactly one idempotent hit, got {len(empty)}"
+
+
+class TestFreshCloneReturnContract:
+    """A fresh clone returns a complete doc_id_map.
+
+    The doc_id_map must have one entry per template document, with template
+    doc IDs as keys and distinct cloned doc IDs as values.
+    """
+
+    @pytest.mark.asyncio
+    async def test_doc_id_map_covers_all_template_docs(self) -> None:
+        """doc_id_map has same length as template documents."""
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import WorkspaceDocument
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        activity, user = await _setup_activity()
+
+        async with get_session() as session:
+            result = await session.exec(
+                select(WorkspaceDocument.id).where(
+                    WorkspaceDocument.workspace_id == activity.template_workspace_id
+                )
+            )
+            template_doc_ids = set(result.all())
+
+        _, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        assert len(doc_id_map) == len(template_doc_ids)
+
+    @pytest.mark.asyncio
+    async def test_all_template_doc_ids_are_keys(self) -> None:
+        """All template document IDs appear as keys in doc_id_map."""
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import WorkspaceDocument
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        activity, user = await _setup_activity()
+
+        async with get_session() as session:
+            result = await session.exec(
+                select(WorkspaceDocument.id).where(
+                    WorkspaceDocument.workspace_id == activity.template_workspace_id
+                )
+            )
+            template_doc_ids = set(result.all())
+
+        _, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        assert set(doc_id_map.keys()) == template_doc_ids
+
+    @pytest.mark.asyncio
+    async def test_cloned_doc_ids_are_distinct_from_template(self) -> None:
+        """All cloned doc IDs are distinct from template doc IDs."""
+        from sqlmodel import select
+
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import WorkspaceDocument
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        activity, user = await _setup_activity()
+
+        async with get_session() as session:
+            result = await session.exec(
+                select(WorkspaceDocument.id).where(
+                    WorkspaceDocument.workspace_id == activity.template_workspace_id
+                )
+            )
+            template_doc_ids = set(result.all())
+
+        _, doc_id_map = await clone_workspace_from_activity(activity.id, user.id)
+
+        cloned_ids = set(doc_id_map.values())
+        assert cloned_ids.isdisjoint(template_doc_ids), (
+            "Cloned doc IDs must not overlap with template doc IDs"
+        )

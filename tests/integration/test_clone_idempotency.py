@@ -216,3 +216,89 @@ class TestFreshCloneReturnContract:
         assert cloned_ids.isdisjoint(template_doc_ids), (
             "Cloned doc IDs must not overlap with template doc IDs"
         )
+
+
+async def _setup_activity_with_entities(n_docs: int, n_groups: int, n_tags: int):
+    """Create activity with a template containing specified entity counts."""
+    from promptgrimoire.db.activities import create_activity
+    from promptgrimoire.db.courses import create_course
+    from promptgrimoire.db.tags import create_tag, create_tag_group
+    from promptgrimoire.db.users import create_user
+    from promptgrimoire.db.weeks import create_week
+    from promptgrimoire.db.workspace_documents import add_document
+
+    code = f"C{uuid4().hex[:6].upper()}"
+    course = await create_course(code=code, name="Count Test", semester="2026-S1")
+    week = await create_week(course_id=course.id, week_number=1, title="Week 1")
+    activity = await create_activity(week_id=week.id, title="Count Activity")
+
+    ws_id = activity.template_workspace_id
+    for i in range(n_docs):
+        await add_document(
+            workspace_id=ws_id,
+            type="source",
+            content=f"<p>Document {i}</p>",
+            source_type="html",
+            title=f"Doc {i}",
+        )
+
+    for i in range(n_groups):
+        await create_tag_group(workspace_id=ws_id, name=f"Group {i}")
+
+    for i in range(n_tags):
+        await create_tag(
+            workspace_id=ws_id,
+            name=f"Tag {i}",
+            color=f"#{i:06x}",
+        )
+
+    tag = uuid4().hex[:8]
+    user = await create_user(
+        email=f"count-{tag}@test.local",
+        display_name=f"Count Tester {tag}",
+    )
+    return activity, user
+
+
+class TestConstantRoundTripCount:
+    """AC4.1: Round-trip count is constant regardless of template size."""
+
+    @pytest.mark.asyncio
+    async def test_statement_count_is_constant(self) -> None:
+        from sqlalchemy import event
+
+        from promptgrimoire.db.engine import _state
+        from promptgrimoire.db.workspaces import clone_workspace_from_activity
+
+        # Setup small and large templates (this initialises the engine)
+        small_activity, small_user = await _setup_activity_with_entities(1, 1, 1)
+        large_activity, large_user = await _setup_activity_with_entities(5, 3, 10)
+
+        assert _state.engine is not None, "Engine not initialised after setup"
+        sync_engine = _state.engine.sync_engine
+
+        # Count statements for small clone
+        small_counter: list[int] = []
+
+        def count_small(*_args: object) -> None:
+            small_counter.append(1)
+
+        event.listen(sync_engine, "before_cursor_execute", count_small)
+        await clone_workspace_from_activity(small_activity.id, small_user.id)
+        event.remove(sync_engine, "before_cursor_execute", count_small)
+
+        # Count statements for large clone
+        large_counter: list[int] = []
+
+        def count_large(*_args: object) -> None:
+            large_counter.append(1)
+
+        event.listen(sync_engine, "before_cursor_execute", count_large)
+        await clone_workspace_from_activity(large_activity.id, large_user.id)
+        event.remove(sync_engine, "before_cursor_execute", count_large)
+
+        # O(1) proof: same statement count regardless of template size
+        assert len(small_counter) == len(large_counter), (
+            f"Statement count should be constant: "
+            f"small={len(small_counter)}, large={len(large_counter)}"
+        )

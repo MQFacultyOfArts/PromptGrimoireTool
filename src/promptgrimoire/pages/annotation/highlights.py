@@ -94,8 +94,8 @@ def _build_highlight_json(state: PageState) -> str:
     for hl in highlights:
         tag = hl.get("tag", "highlight")
         entry = {
-            "start_char": hl.get("start_char", 0),
-            "end_char": hl.get("end_char", 0),
+            "start_char": int(hl.get("start_char", 0)),
+            "end_char": int(hl.get("end_char", 0)),
             "id": hl.get("id", ""),
         }
         by_tag.setdefault(tag, []).append(entry)

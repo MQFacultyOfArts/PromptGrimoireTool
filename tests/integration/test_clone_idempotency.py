@@ -242,14 +242,19 @@ async def _setup_activity_with_entities(n_docs: int, n_groups: int, n_tags: int)
             title=f"Doc {i}",
         )
 
+    groups = []
     for i in range(n_groups):
-        await create_tag_group(workspace_id=ws_id, name=f"Group {i}")
+        g = await create_tag_group(workspace_id=ws_id, name=f"Group {i}")
+        groups.append(g)
 
     for i in range(n_tags):
+        # Round-robin assign tags to groups to exercise group_id remapping
+        group_id = groups[i % len(groups)].id if groups else None
         await create_tag(
             workspace_id=ws_id,
             name=f"Tag {i}",
             color=f"#{i:06x}",
+            group_id=group_id,
         )
 
     tag = uuid4().hex[:8]

@@ -307,3 +307,47 @@ class TestConstantRoundTripCount:
             f"Statement count should be constant: "
             f"small={len(small_counter)}, large={len(large_counter)}"
         )
+
+
+class TestDuplicateDetection:
+    """AC7.1: Detection query finds (activity_id, user_id) pairs with duplicates."""
+
+    @pytest.mark.asyncio
+    async def test_finds_manually_created_duplicates(self) -> None:
+        from promptgrimoire.db.engine import get_session
+        from promptgrimoire.db.models import ACLEntry, Workspace
+        from promptgrimoire.db.workspaces import find_duplicate_workspaces
+
+        activity, user = await _setup_activity()
+
+        # Manually insert two workspaces + owner ACLs (Phase 1 prevents this via clone)
+        async with get_session() as session:
+            ws1 = Workspace(activity_id=activity.id, title="Dup 1")
+            ws2 = Workspace(activity_id=activity.id, title="Dup 2")
+            session.add(ws1)
+            session.add(ws2)
+            await session.flush()
+
+            acl1 = ACLEntry(
+                workspace_id=ws1.id, team_id=None, user_id=user.id, permission="owner"
+            )
+            acl2 = ACLEntry(
+                workspace_id=ws2.id, team_id=None, user_id=user.id, permission="owner"
+            )
+            session.add(acl1)
+            session.add(acl2)
+            await session.flush()
+
+        duplicates = await find_duplicate_workspaces()
+
+        # Find our specific duplicate pair
+        match = [
+            d
+            for d in duplicates
+            if d["activity_id"] == activity.id and d["user_id"] == user.id
+        ]
+        assert len(match) == 1
+        dup = match[0]
+        assert dup["duplicate_count"] == 2
+        assert set(dup["workspace_ids"]) == {ws1.id, ws2.id}
+        assert dup["user_email"] == user.email

@@ -766,6 +766,44 @@ def _replay_crdt_state(
     clone.crdt_state = clone_doc.get_full_state()
 
 
+async def find_duplicate_workspaces() -> list[dict[str, Any]]:
+    """Find (activity_id, user_id) pairs with duplicate owner workspaces.
+
+    Returns a list of dicts with keys: activity_id, user_id, user_email,
+    user_display_name, workspace_ids (list ordered by created_at),
+    duplicate_count.
+
+    Automated deletion is unsafe — either duplicate may contain student edits.
+    Results require manual review.
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT w.activity_id, ae.user_id, u.email, u.display_name,
+                       array_agg(w.id ORDER BY w.created_at) AS workspace_ids,
+                       count(*) AS duplicate_count
+                FROM workspace w
+                JOIN acl_entry ae ON ae.workspace_id = w.id AND ae.permission = 'owner'
+                JOIN "user" u ON u.id = ae.user_id
+                WHERE w.activity_id IS NOT NULL
+                GROUP BY w.activity_id, ae.user_id, u.email, u.display_name
+                HAVING count(*) > 1
+                ORDER BY duplicate_count DESC
+            """)
+        )
+        return [
+            {
+                "activity_id": row.activity_id,
+                "user_id": row.user_id,
+                "user_email": row.email,
+                "user_display_name": row.display_name,
+                "workspace_ids": list(row.workspace_ids),
+                "duplicate_count": row.duplicate_count,
+            }
+            for row in result.fetchall()
+        ]
+
+
 async def clone_workspace_from_activity(
     activity_id: UUID,
     user_id: UUID,

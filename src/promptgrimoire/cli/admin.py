@@ -361,6 +361,43 @@ async def _cmd_list_banned(
     con.print(table)
 
 
+async def _cmd_duplicates(
+    *,
+    console: Console | None = None,
+) -> None:
+    """Find duplicate workspaces (same activity + user with multiple owner ACLs)."""
+    from rich.table import Table
+
+    from promptgrimoire.db.workspaces import find_duplicate_workspaces
+
+    con = console or Console()
+    duplicates = await find_duplicate_workspaces()
+
+    if not duplicates:
+        con.print("[green]No duplicate workspaces found.[/]")
+        return
+
+    table = Table(title="Duplicate Workspaces")
+    table.add_column("Activity ID")
+    table.add_column("User")
+    table.add_column("Count", justify="right")
+    table.add_column("Workspace IDs")
+
+    for dup in duplicates:
+        table.add_row(
+            str(dup["activity_id"]),
+            f"{dup['user_display_name']} ({dup['user_email']})",
+            str(dup["duplicate_count"]),
+            "\n".join(str(wid) for wid in dup["workspace_ids"]),
+        )
+
+    con.print(table)
+    con.print(
+        f"\n[yellow]Found {len(duplicates)} activity/user pair(s) with duplicates.[/]"
+    )
+    con.print("[yellow]Automated deletion is unsafe — review each case manually.[/]")
+
+
 async def _cmd_enroll_bulk(
     xlsx_file: Path,
     code: str,
@@ -613,6 +650,12 @@ def role(
 ) -> None:
     """Change user's role in a course."""
     asyncio.run(_cmd_role(email, code, semester, new_role))
+
+
+@admin_app.command("duplicates")
+def duplicates() -> None:
+    """Find duplicate workspaces (same activity + user with multiple owner ACLs)."""
+    asyncio.run(_cmd_duplicates())
 
 
 # ---------------------------------------------------------------------------

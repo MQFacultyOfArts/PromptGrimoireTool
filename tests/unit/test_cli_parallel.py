@@ -310,3 +310,72 @@ async def test_finalise_parallel_results_keeps_cancelled_workers_as_failure(
 
     assert all_passed is False
     assert had_flaky is True
+
+
+@pytest.mark.asyncio
+async def test_finalise_parallel_results_forwards_browser_to_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """browser= must reach _retry_parallel_failures."""
+    from promptgrimoire.cli.e2e import _parallel
+    from promptgrimoire.cli.e2e._lanes import PLAYWRIGHT_LANE, WorkerResult
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    failed_result = WorkerResult(
+        file=Path("tests/e2e/test_card_layout.py"),
+        exit_code=1,
+        duration_s=0.4,
+        artifact_dir=tmp_path / "worker-card",
+    )
+
+    captured_browser: list[str | None] = []
+
+    async def _spy_retry(
+        _lane: object,
+        _worker: object,
+        _failed: object,
+        _db_url: object,
+        _src_db: object,
+        _run_dir: object,
+        _user_args: object,
+        *,
+        browser: str | None = None,
+    ) -> tuple[list[Path], list[Path]]:
+        captured_browser.append(browser)
+        return [], [failed_result.file]
+
+    async def _unused_worker(
+        *_args: object,
+        **_kwargs: object,
+    ) -> WorkerResult:
+        msg = "worker should not be invoked"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(
+        _parallel,
+        "_retry_parallel_failures",
+        _spy_retry,
+    )
+    monkeypatch.setattr(
+        _parallel,
+        "_merge_junit_xml",
+        lambda _run_dir: _run_dir / "combined.xml",
+    )
+
+    await _parallel._finalise_parallel_results(
+        PLAYWRIGHT_LANE,
+        _unused_worker,
+        [failed_result],
+        0.0,
+        "postgresql+asyncpg://user:pass@localhost/test_db",
+        "test_db",
+        run_dir,
+        [],
+        browser="firefox",
+    )
+
+    assert captured_browser == ["firefox"], (
+        f"browser='firefox' must reach _retry, got {captured_browser}"
+    )

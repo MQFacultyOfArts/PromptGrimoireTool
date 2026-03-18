@@ -191,6 +191,7 @@ async def retry_failed_files_in_isolation(
     retry_dbs: list[tuple[str, str]],
     retry_ports: list[int],
     run_worker_for_lane: Callable[..., Awaitable[WorkerResult]],
+    browser: str | None = None,
 ) -> tuple[list[Path], list[Path]]:
     """Re-run failed files in isolation and classify flaky vs genuine failures."""
     genuine_failures: list[Path] = []
@@ -208,6 +209,7 @@ async def retry_failed_files_in_isolation(
                 worker_dir=retry_dir,
                 user_args=user_args,
                 port=retry_ports[i] if lane.needs_server else None,
+                browser=browser,
             )
         except Exception as exc:
             console.print(f"[red]Retry worker {failed_file.name} raised: {exc}[/]")

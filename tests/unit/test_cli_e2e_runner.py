@@ -276,6 +276,7 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
         worker_dir: Path,
         user_args: list[str],
         port: int | None = None,
+        browser: str | None = None,  # noqa: ARG001
     ) -> WorkerResult:
         assert port is None
         return await worker(test_file, db_url, worker_dir, user_args)
@@ -295,6 +296,77 @@ async def test_retry_failed_files_in_isolation_classifies_flaky_and_genuine(
     assert genuine_failures == [failed_genuine]
     assert (result_root / failed_flaky.stem / "retry").is_dir()
     assert (result_root / failed_genuine.stem / "retry").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_retry_forwards_browser_to_run_worker_for_lane(
+    tmp_path: Path,
+) -> None:
+    """browser= must reach run_worker_for_lane during retry."""
+    from promptgrimoire.cli.e2e._lanes import (
+        PLAYWRIGHT_LANE,
+        WorkerResult,
+    )
+    from promptgrimoire.cli.e2e._retry import (
+        retry_failed_files_in_isolation,
+    )
+
+    result_root = tmp_path / "run"
+    failed_file = Path("tests/e2e/test_card_layout.py")
+    retry_dbs = [
+        (
+            "postgresql+asyncpg://u:p@localhost/retry0",
+            "retry0",
+        ),
+    ]
+
+    captured_browser: list[str | None] = []
+
+    async def _fake_worker(
+        *_a: object,
+        **_kw: object,
+    ) -> WorkerResult:
+        return WorkerResult(
+            file=failed_file,
+            exit_code=0,
+            duration_s=0.1,
+            artifact_dir=tmp_path / "art",
+        )
+
+    async def _spy_run_worker(
+        _lane: object,
+        _worker: object,
+        *,
+        test_file: Path,  # noqa: ARG001
+        db_url: str,  # noqa: ARG001
+        worker_dir: Path,  # noqa: ARG001
+        user_args: list[str],  # noqa: ARG001
+        port: int | None = None,  # noqa: ARG001
+        browser: str | None = None,
+    ) -> WorkerResult:
+        captured_browser.append(browser)
+        return WorkerResult(
+            file=failed_file,
+            exit_code=0,
+            duration_s=0.1,
+            artifact_dir=tmp_path / "art",
+        )
+
+    await retry_failed_files_in_isolation(
+        PLAYWRIGHT_LANE,
+        _fake_worker,
+        failed_files=[failed_file],
+        result_root=result_root,
+        user_args=[],
+        retry_dbs=retry_dbs,
+        retry_ports=[0],
+        run_worker_for_lane=_spy_run_worker,
+        browser="firefox",
+    )
+
+    assert captured_browser == ["firefox"], (
+        f"browser='firefox' must reach run_worker_for_lane, got {captured_browser}"
+    )
 
 
 def test_run_serial_playwright_e2e_selects_only_playwright_path(

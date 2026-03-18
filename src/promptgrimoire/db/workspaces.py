@@ -5,13 +5,14 @@ Provides async database functions for workspace management.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -792,12 +793,47 @@ async def clone_workspace_from_activity(
         user_id: The user UUID who will own the cloned workspace.
 
     Returns:
-        Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
+        Tuple of (Workspace, doc_id_map). On fresh clone, doc_id_map is
+        ``{template_doc_id: cloned_doc_id}`` with one entry per template
+        document. On idempotent hit (workspace already exists for this
+        activity + user), returns the existing workspace with an empty
+        ``{}`` map.
 
     Raises:
         ValueError: If Activity or its template workspace is not found.
     """
     async with get_session() as session:
+        # Advisory lock: prevent concurrent duplicate clones for same (activity, user)
+        ns_key = int(
+            hashlib.md5(
+                b"clone_workspace_from_activity", usedforsecurity=False
+            ).hexdigest()[:8],
+            16,
+        )
+        inst_key = int(
+            hashlib.md5(
+                f"{activity_id}-{user_id}".encode(), usedforsecurity=False
+            ).hexdigest()[:8],
+            16,
+        )
+        await session.execute(
+            text(f"SELECT pg_advisory_xact_lock({ns_key}, {inst_key})")
+        )
+
+        # Idempotency check: return existing workspace if already cloned
+        existing = await session.exec(
+            select(Workspace)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        found = existing.first()
+        if found is not None:
+            return found, {}
+
         activity = await session.get(Activity, activity_id)
         if not activity:
             msg = f"Activity {activity_id} not found"

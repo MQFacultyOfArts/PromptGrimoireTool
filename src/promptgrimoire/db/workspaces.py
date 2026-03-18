@@ -22,12 +22,9 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
-    Tag,
-    TagGroup,
     User,
     Week,
     Workspace,
-    WorkspaceDocument,
 )
 from promptgrimoire.db.roles import get_staff_roles
 
@@ -871,81 +868,88 @@ async def clone_workspace_from_activity(
         session.add(acl_entry)
         await session.flush()
 
-        # Fetch all template documents ordered by order_index
-        result = await session.exec(
-            select(WorkspaceDocument)
-            .where(WorkspaceDocument.workspace_id == template.id)
-            .order_by(WorkspaceDocument.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        # --- Bulk-clone documents via INSERT...SELECT ---
+        doc_result = await session.execute(
+            text("""
+                INSERT INTO workspace_document
+                    (id, workspace_id, type, content, source_type,
+                     order_index, title, auto_number_paragraphs,
+                     paragraph_map, source_document_id, created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, type, content,
+                    source_type, order_index, title,
+                    auto_number_paragraphs, paragraph_map, id, now()
+                FROM workspace_document
+                WHERE workspace_id = :template_id
+                RETURNING id, source_document_id
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
         )
-        template_docs = list(result.all())
+        doc_id_map: dict[UUID, UUID] = {
+            row.source_document_id: row.id for row in doc_result.fetchall()
+        }
 
-        # Clone each document, preserving field values
-        doc_id_map: dict[UUID, UUID] = {}
-        for tmpl_doc in template_docs:
-            cloned_doc = WorkspaceDocument(
-                workspace_id=clone.id,
-                type=tmpl_doc.type,
-                content=tmpl_doc.content,
-                source_type=tmpl_doc.source_type,
-                title=tmpl_doc.title,
-                order_index=tmpl_doc.order_index,
-                auto_number_paragraphs=tmpl_doc.auto_number_paragraphs,
-                paragraph_map=tmpl_doc.paragraph_map,
-                source_document_id=tmpl_doc.id,
-            )
-            session.add(cloned_doc)
-            await session.flush()
-            doc_id_map[tmpl_doc.id] = cloned_doc.id
-
-        # --- Clone TagGroups with ID remapping ---
-        group_result = await session.exec(
-            select(TagGroup)
-            .where(TagGroup.workspace_id == template.id)
-            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        # --- Bulk-clone tag groups via INSERT...SELECT ---
+        group_result = await session.execute(
+            text("""
+                INSERT INTO tag_group
+                    (id, workspace_id, name, color, order_index,
+                     created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, name, color,
+                    order_index, now()
+                FROM tag_group
+                WHERE workspace_id = :template_id
+                RETURNING id, name
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
         )
-        template_groups = list(group_result.all())
+        new_groups_by_name = {row.name: row.id for row in group_result.fetchall()}
 
-        group_id_map: dict[UUID, UUID] = {}
-        for tmpl_group in template_groups:
-            cloned_group = TagGroup(
-                workspace_id=clone.id,
-                name=tmpl_group.name,
-                color=tmpl_group.color,
-                order_index=tmpl_group.order_index,
-            )
-            session.add(cloned_group)
-            await session.flush()
-            group_id_map[tmpl_group.id] = cloned_group.id
-
-        # --- Clone Tags with group_id and ID remapping ---
-        tag_result = await session.exec(
-            select(Tag).where(Tag.workspace_id == template.id).order_by(Tag.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        template_group_result = await session.execute(
+            text("SELECT id, name FROM tag_group WHERE workspace_id = :template_id"),
+            {"template_id": template.id},
         )
-        template_tags = list(tag_result.all())
+        group_id_map: dict[UUID, UUID] = {
+            row.id: new_groups_by_name[row.name]
+            for row in template_group_result.fetchall()
+            if row.name in new_groups_by_name
+        }
 
-        tag_id_map: dict[UUID, UUID] = {}
-        for tmpl_tag in template_tags:
-            remapped_group_id = (
-                group_id_map.get(tmpl_tag.group_id)
-                if tmpl_tag.group_id is not None
-                else None
-            )
-            cloned_tag = Tag(
-                workspace_id=clone.id,
-                name=tmpl_tag.name,
-                color=tmpl_tag.color,
-                description=tmpl_tag.description,
-                locked=tmpl_tag.locked,
-                order_index=tmpl_tag.order_index,
-                group_id=remapped_group_id,
-            )
-            session.add(cloned_tag)
-            await session.flush()
-            tag_id_map[tmpl_tag.id] = cloned_tag.id
+        # --- Bulk-clone tags via INSERT...SELECT with group remapping ---
+        tag_result = await session.execute(
+            text("""
+                INSERT INTO tag
+                    (id, workspace_id, group_id, name, description,
+                     color, locked, order_index, created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, ng.id, t.name,
+                    t.description, t.color, t.locked, t.order_index,
+                    now()
+                FROM tag t
+                LEFT JOIN tag_group og ON t.group_id = og.id
+                LEFT JOIN tag_group ng
+                    ON ng.workspace_id = :clone_id AND ng.name = og.name
+                WHERE t.workspace_id = :template_id
+                RETURNING id, name
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
+        )
+        new_tags_by_name = {row.name: row.id for row in tag_result.fetchall()}
+
+        template_tag_result = await session.execute(
+            text("SELECT id, name FROM tag WHERE workspace_id = :template_id"),
+            {"template_id": template.id},
+        )
+        tag_id_map: dict[UUID, UUID] = {
+            row.id: new_tags_by_name[row.name]
+            for row in template_tag_result.fetchall()
+            if row.name in new_tags_by_name
+        }
 
         # --- Sync workspace counter columns after cloning tags/groups ---
-        clone.next_tag_order = len(template_tags)
-        clone.next_group_order = len(template_groups)
+        clone.next_tag_order = len(tag_id_map)
+        clone.next_group_order = len(group_id_map)
         session.add(clone)
 
         # --- CRDT state cloning via API replay ---

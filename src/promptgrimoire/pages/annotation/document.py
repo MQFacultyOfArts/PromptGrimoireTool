@@ -365,13 +365,13 @@ async def _render_document_with_highlights(
         )
 
     # Set up refresh function
-    def refresh_annotations() -> None:
-        _refresh_annotation_cards(state)
+    def refresh_annotations(*, trigger: str = "unknown") -> None:
+        _refresh_annotation_cards(state, trigger=trigger)
 
     state.refresh_annotations = refresh_annotations
 
     # Load existing annotations
-    _refresh_annotation_cards(state)
+    _refresh_annotation_cards(state, trigger="initial_load")
 
     # Set up selection detection (viewers get read-only view)
     if state.can_annotate:

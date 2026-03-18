@@ -10,6 +10,7 @@ a specific guard.  The noqa code must match:
 - PG003 — hardcoded char offsets in select_chars / create_highlight_with_tag
 - PG004 — invoke_callback inside _handle_client_delete
 - PG005 — sync element access without _should_see_testid gate (NiceGUI)
+- PG006 — unguarded outbound HTTP calls in unit tests
 
 Guard 1 (PG001) — wait_for_timeout / asyncio.sleep: Fixed timeouts in
 E2E tests are never reliable under parallel execution.  Use condition-based
@@ -430,4 +431,148 @@ def test_nicegui_sync_access_has_testid_gate() -> None:
         '(user, "testid") before access.\n'
         "Suppress with: # noqa: PG005\n\n"
         "Violations:\n" + "\n".join(f"  {v}" for v in all_violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Guard 6 (PG006): No unguarded outbound HTTP calls in unit tests
+# ---------------------------------------------------------------------------
+
+_UNIT_DIR = _REPO_ROOT / "tests" / "unit"
+
+# HTTP client call patterns to flag
+_HTTP_CLIENT_CALLS = frozenset(
+    {
+        # httpx
+        "Client",
+        "AsyncClient",
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        # requests
+        "Session",
+        # urllib
+        "urlopen",
+    }
+)
+
+# Module prefixes that indicate an HTTP client call (not just any .get())
+_HTTP_MODULES = frozenset({"httpx", "requests", "urllib"})
+
+
+def _check_unguarded_http_call(node: ast.AST) -> str | None:
+    """Return description if node is an HTTP client call, else None.
+
+    Matches ``httpx.Client()``, ``httpx.get()``, ``requests.post()``,
+    ``urllib.request.urlopen()``, etc.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+
+    # httpx.Client(), httpx.get(), requests.post(), etc.
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id in _HTTP_MODULES
+        and func.attr in _HTTP_CLIENT_CALLS
+    ):
+        return f"{func.value.id}.{func.attr}()"
+
+    # urllib.request.urlopen()  -- noqa: ERA001
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Attribute)
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "urllib"
+        and func.value.attr == "request"
+        and func.attr == "urlopen"
+    ):
+        return "urllib.request.urlopen()"
+
+    return None
+
+
+def _function_has_mock(func_node: ast.AST) -> bool:
+    """Check if a function body contains patch/mock usage."""
+    for child in ast.walk(func_node):
+        if not isinstance(child, ast.Call):
+            continue
+        f = child.func
+        # Match patch() or mock.patch() calls
+        if isinstance(f, ast.Name) and f.id == "patch":
+            return True
+        if isinstance(f, ast.Attribute) and f.attr == "patch":
+            return True
+    # Also check decorators
+    if isinstance(func_node, ast.FunctionDef | ast.AsyncFunctionDef):
+        for dec in func_node.decorator_list:
+            if isinstance(dec, ast.Call):
+                df = dec.func
+                if isinstance(df, ast.Name) and df.id == "patch":
+                    return True
+                if isinstance(df, ast.Attribute) and df.attr == "patch":
+                    return True
+            elif isinstance(dec, ast.Attribute) and dec.attr == "patch":
+                return True
+    return False
+
+
+def test_no_unguarded_network_calls_in_unit_tests() -> None:
+    """Unit tests must not make outbound HTTP calls without mocking (PG006).
+
+    Direct ``httpx.Client()``, ``httpx.get()``, ``requests.post()``,
+    ``urllib.request.urlopen()`` etc. in unit tests will hit real network
+    endpoints, causing CI failures when the endpoint is unavailable and
+    making tests non-deterministic.
+
+    HTTP calls are allowed if the test function contains ``patch()`` usage
+    (indicating the call is mocked).
+
+    Root cause: ``test_beszel_dedup_message`` called ``fetch_beszel_metrics()``
+    which hit ``localhost:8090`` via ``httpx.Client``. Fixed in PR #358.
+
+    Suppress with: # noqa: PG006
+    """
+    violations: list[str] = []
+
+    for py_file in _iter_py_files(_UNIT_DIR):
+        tree = _parse_file(py_file)
+        if tree is None:
+            continue
+
+        source_lines = py_file.read_text().splitlines()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+
+            # If the function has mock/patch, HTTP calls are guarded
+            if _function_has_mock(node):
+                continue
+
+            # Check for HTTP client calls in this test function
+            for child in ast.walk(node):
+                desc = _check_unguarded_http_call(child)
+                if desc is None:
+                    continue
+                if not hasattr(child, "lineno"):
+                    continue
+                lineno: int = child.lineno  # type: ignore[assignment]  # AST node has int lineno at runtime
+                if _has_noqa(source_lines, lineno, "PG006"):
+                    continue
+                rel = py_file.relative_to(_REPO_ROOT)
+                violations.append(f"{rel}:{lineno} - {desc}")
+
+    violations.sort()
+    assert not violations, (
+        "Unit tests must not make unguarded outbound HTTP calls.\n"
+        "Either mock the HTTP client with patch() or move the test "
+        "to tests/integration/.\n"
+        "Suppress with: # noqa: PG006\n\n"
+        "Violations:\n" + "\n".join(f"  {v}" for v in violations)
     )

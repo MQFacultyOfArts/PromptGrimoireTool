@@ -9,6 +9,7 @@ protection live in ``header.py``.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode
 from uuid import UUID
@@ -376,8 +377,14 @@ async def _resolve_workspace_context(
 
     Pass a pre-fetched ``workspace`` to avoid a redundant DB round-trip.
     """
+    _t = time.monotonic()
     if workspace is None:
         workspace = await get_workspace(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_workspace",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500").props(
             'data-testid="workspace-status-msg"'
@@ -388,7 +395,13 @@ async def _resolve_workspace_context(
         return None
 
     auth_user = app.storage.user.get("auth_user")
+    _t = time.monotonic()
     permission = await check_workspace_access(workspace_id, auth_user)
+    logger.debug(
+        "resolve_step",
+        step="check_workspace_access",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
 
     if auth_user is None:
         ui.navigate.to("/login")
@@ -400,7 +413,13 @@ async def _resolve_workspace_context(
         )
         return None
 
+    _t = time.monotonic()
     ctx = await get_placement_context(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_placement_context",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     privileged = is_privileged_user(auth_user)
     protect = ctx.copy_protection and not privileged
     can_create_tags = ctx.allow_tag_creation or ctx.is_template or privileged
@@ -408,7 +427,13 @@ async def _resolve_workspace_context(
     assert permission in {"viewer", "peer", "editor", "owner"}, (
         f"Unexpected permission value: {permission!r}"
     )
+    _t = time.monotonic()
     priv_ids = await get_privileged_user_ids_for_workspace(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_privileged_user_ids",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),
@@ -493,7 +518,7 @@ def _handle_annotate_tab(state: PageState) -> None:
     """Handle switching to the Annotate tab (refresh highlights)."""
     _push_highlights_to_client(state)
     if state.refresh_annotations:
-        state.refresh_annotations()
+        state.refresh_annotations(trigger="tab_switch_annotate")
     _update_highlight_css(state)
 
 
@@ -800,10 +825,17 @@ async def _render_workspace_view(
     footer: Any | None = None,
 ) -> None:
     """Render the workspace content view with documents or add content form."""
+    t0 = time.monotonic()
+
     result = await _resolve_workspace_context(workspace_id, workspace)
     if result is None:
         return
     state, ctx, protect, can_create_tags, shared_with_class = result
+    t_ctx = time.monotonic()
+    logger.debug(
+        "page_phase", phase="resolve_context", elapsed_ms=round((t_ctx - t0) * 1000)
+    )
+
     # auth_user is guaranteed non-None: _resolve_workspace_context
     # redirects to /login when unauthenticated.
     auth_user = app.storage.user.get("auth_user")
@@ -819,6 +851,10 @@ async def _render_workspace_view(
     # Pre-load documents so the header can show the paragraph toggle
     documents = await list_documents(workspace_id)
     first_doc = documents[0] if documents else None
+    t_docs = time.monotonic()
+    logger.debug(
+        "page_phase", phase="list_documents", elapsed_ms=round((t_docs - t_ctx) * 1000)
+    )
 
     await render_workspace_header(
         state,
@@ -829,6 +865,12 @@ async def _render_workspace_view(
         can_manage_sharing=can_manage_sharing,
         user_id=_get_current_user_id(),
         document=first_doc,
+    )
+    t_header = time.monotonic()
+    logger.debug(
+        "page_phase",
+        phase="render_header",
+        elapsed_ms=round((t_header - t_docs) * 1000),
     )
 
     # Pre-load the Milkdown JS bundle so it's available when Tab 3 (Respond)
@@ -861,6 +903,13 @@ async def _render_workspace_view(
         can_create_tags=can_create_tags,
         footer=footer,
     )
+    t_panels = time.monotonic()
+    logger.debug(
+        "page_phase",
+        phase="build_tab_panels",
+        elapsed_ms=round((t_panels - t_header) * 1000),
+    )
+    logger.debug("page_load_total", elapsed_ms=round((t_panels - t0) * 1000))
 
     # Inject copy protection JS after tab container is built (Phase 4)
     if protect:

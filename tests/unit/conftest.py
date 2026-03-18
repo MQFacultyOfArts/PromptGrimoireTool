@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from uuid import UUID
 
@@ -9,6 +10,34 @@ import emoji as emoji_lib
 import pytest
 
 from promptgrimoire.db.models import User
+
+
+@pytest.fixture(autouse=True)
+def _scrub_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure a pristine environment for all unit tests by removing app config.
+
+    Prevents user sandbox variables (e.g. STYTCH__SSO_CONNECTION_ID)
+    from causing pydantic-settings validation errors in tests that
+    instantiate Settings(_env_file=None).
+    """
+    from promptgrimoire.config import Settings
+
+    # Dynamically get all top-level config groups (e.g. "STYTCH", "APP")
+    config_prefixes = {f.upper() for f in Settings.model_fields}
+
+    for key in list(os.environ):
+        if "__" in key:
+            prefix = key.split("__")[0]
+            if prefix in config_prefixes and key not in (
+                # Keep these DB variables because the test harness explicitly
+                # sets them before pytest starts to route tests to the
+                # isolated test database. Scrubbing them causes connections
+                # to fall back to the dev/production DB.
+                "DATABASE__URL",
+                "DEV__TEST_DATABASE_URL",
+            ):
+                monkeypatch.delenv(key, raising=False)
+
 
 # Standard UUIDs for test references
 SAMPLE_USER_ID = UUID("12345678-1234-5678-1234-567812345678")

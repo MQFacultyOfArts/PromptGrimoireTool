@@ -518,7 +518,7 @@ function updateRemoteCursorPositions(container) {
     const cursors = document.querySelectorAll('.remote-cursor');
     for (const cursor of cursors) {
         const charIdx = parseInt(cursor.dataset.charIdx, 10);
-        if (isNaN(charIdx)) continue;
+        if (Number.isNaN(charIdx)) continue;
 
         const rect = charOffsetToRect(textNodes, charIdx);
         if (rect.width === 0 && rect.height === 0) continue;

@@ -53,7 +53,7 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
     var annRect = ac.getBoundingClientRect();
     var cOff = annRect.top - docRect.top;
     var cardInfos = cards.map(function(card) {
-      var sc = parseInt(card.dataset.startChar);
+      var sc = parseInt(card.dataset.startChar, 10);
       var cr = charOffsetToRect(nodes, sc);
       if (cr.width === 0 && cr.height === 0) return null;
       // Cache height on the element so hidden cards (display:none,
@@ -62,7 +62,7 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
       if (h > 0) {
         card.dataset.cachedHeight = h;
       } else {
-        h = parseInt(card.dataset.cachedHeight) || 80;
+        h = parseInt(card.dataset.cachedHeight, 10) || 80;
       }
       return {card: card, startChar: sc,
         height: h,
@@ -130,8 +130,8 @@ function setupCardPositioning(docContainerId, sidebarId, minGap) {
     hoveredCard = null;
     if (!card) return;
     hoveredCard = card;
-    var sc = parseInt(card.dataset.startChar);
-    var ec = parseInt(card.dataset.endChar) || sc;
+    var sc = parseInt(card.dataset.startChar, 10);
+    var ec = parseInt(card.dataset.endChar, 10) || sc;
     var nodes = tn();
     if (nodes) showHoverHighlight(nodes, sc, ec);
   });

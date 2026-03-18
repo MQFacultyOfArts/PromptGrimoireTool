@@ -271,7 +271,10 @@ class TestCardPositioning:
         page.goto(f"{app_server}/annotation?workspace_id={workspace_id}")
 
         # Wait for the highlights-ready flag set by annotation-highlight.js
-        page.wait_for_function("() => window._highlightsReady === true", timeout=10000)
+        page.wait_for_function(
+            "() => window._highlightsReady === true",
+            timeout=10000,
+        )
 
         # Cards must be positioned without any manual scroll
         _wait_for_position_cards(page)

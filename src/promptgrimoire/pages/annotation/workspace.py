@@ -377,8 +377,14 @@ async def _resolve_workspace_context(
 
     Pass a pre-fetched ``workspace`` to avoid a redundant DB round-trip.
     """
+    _t = time.monotonic()
     if workspace is None:
         workspace = await get_workspace(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_workspace",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     if workspace is None:
         ui.label("Workspace not found").classes("text-red-500").props(
             'data-testid="workspace-status-msg"'
@@ -389,7 +395,13 @@ async def _resolve_workspace_context(
         return None
 
     auth_user = app.storage.user.get("auth_user")
+    _t = time.monotonic()
     permission = await check_workspace_access(workspace_id, auth_user)
+    logger.debug(
+        "resolve_step",
+        step="check_workspace_access",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
 
     if auth_user is None:
         ui.navigate.to("/login")
@@ -401,7 +413,13 @@ async def _resolve_workspace_context(
         )
         return None
 
+    _t = time.monotonic()
     ctx = await get_placement_context(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_placement_context",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     privileged = is_privileged_user(auth_user)
     protect = ctx.copy_protection and not privileged
     can_create_tags = ctx.allow_tag_creation or ctx.is_template or privileged
@@ -409,7 +427,13 @@ async def _resolve_workspace_context(
     assert permission in {"viewer", "peer", "editor", "owner"}, (
         f"Unexpected permission value: {permission!r}"
     )
+    _t = time.monotonic()
     priv_ids = await get_privileged_user_ids_for_workspace(workspace_id)
+    logger.debug(
+        "resolve_step",
+        step="get_privileged_user_ids",
+        elapsed_ms=round((time.monotonic() - _t) * 1000),
+    )
     state = PageState(
         workspace_id=workspace_id,
         user_name=_get_current_username(),

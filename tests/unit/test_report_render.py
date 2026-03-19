@@ -440,6 +440,38 @@ class TestErrorLandscapeRendering:
         assert "No errors" in report
 
 
+class TestMethodology:
+    def test_key_terms_present(self) -> None:
+        """AC5.1: Methodology contains key terms."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+        lower = report.lower()
+        assert "epoch" in lower
+        assert "restart" in lower
+        assert "NOSRV" in report
+        assert "normalised" in lower
+        assert "Appeared" in report
+        assert "Resolved" in report
+        assert "anomaly" in lower or "anomal" in lower
+
+    def test_citations_present(self) -> None:
+        """AC5.2: SRE Workbook and playbook cited."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+        assert "SRE Workbook" in report
+        assert "incident-analysis-playbook" in report
+
+
 class TestFmtGapDuration:
     def test_none(self) -> None:
         assert _fmt_gap_duration(None) == "—"

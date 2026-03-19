@@ -1325,6 +1325,76 @@ def _fmt_bytes_delta(n: float | int) -> str:
     return f"{sign}{_fmt_bytes(abs(n))}" if n != 0 else "±0"
 
 
+def _render_section_methodology(lines: list[str]) -> None:
+    """Render the Methodology section explaining report semantics."""
+    lines.append("## Methodology")
+    lines.append("")
+    lines.append(
+        "> **Epochs.** Server uptime is segmented into epochs — contiguous runs of"
+    )
+    lines.append(
+        "> the same git commit hash in JSONL events. A new commit hash marks a new"
+    )
+    lines.append("> epoch. Each epoch runs a single deployed version.")
+    lines.append(">")
+    lines.append(
+        "> **Restart classification.** Each epoch's start is classified by examining"
+    )
+    lines.append(
+        "> journal messages in the gap between epochs: `deploy` (commit changed),"
+    )
+    lines.append("> `crash` (non-zero exit), `oom-kill` (killed by kernel/systemd),")
+    lines.append(
+        "> `manual-restart` (same commit, clean shutdown), `unknown` (no journal"
+    )
+    lines.append(
+        "> evidence), `first` (first epoch in window). Non-deploy restarts are the"
+    )
+    lines.append("> highest-severity signal in this report.")
+    lines.append(">")
+    lines.append(
+        "> **Request-normalised ratios.** Error and 5xx counts are divided by total"
+    )
+    lines.append(
+        "> served requests (not time), enabling fair comparison across epochs with"
+    )
+    lines.append(
+        "> different traffic levels. See Google SRE Workbook ch. 2 (SLOs and Error"
+    )
+    lines.append("> Budgets) for methodology.")
+    lines.append(">")
+    lines.append(
+        "> **NOSRV exclusion.** `<NOSRV>` 503s are HAProxy responses when no backend"
+    )
+    lines.append(
+        "> was available (app restarting). These are infrastructure transients, not"
+    )
+    lines.append(
+        "> application errors — excluded from the 5xx ratio. Reported separately"
+    )
+    lines.append("> with first-60s clustering to show restart impact.")
+    lines.append(">")
+    lines.append(
+        "> **Error landscape.** Event strings are normalised (hex addresses → `<ADDR>`,"
+    )
+    lines.append(
+        "> UUIDs → `<UUID>`, task names → `Task-<N>`) to produce stable class keys."
+    )
+    lines.append('> "Appeared" = class present now, absent in ALL prior epochs.')
+    lines.append('> "Resolved" = class present in prior epochs, absent now.')
+    lines.append(">")
+    lines.append("> **Anomaly thresholds.** ⚠ flags: 5xx ratio > 1%, error ratio > 5%,")
+    lines.append(
+        "> memory peak > 3 GB, mean CPU > 50%. Pool size changes are always flagged."
+    )
+    lines.append(">")
+    lines.append(
+        "> See `docs/postmortems/incident-analysis-playbook.md` for the operational"
+    )
+    lines.append("> playbook that drives this report.")
+    lines.append("")
+
+
 def render_review_report(
     sources: list[dict],
     epochs: list[dict],
@@ -1355,23 +1425,7 @@ def render_review_report(
     lines.append(f"Generated: {generated}")
     lines.append(f"Window: {window_str}")
     lines.append("")
-    lines.append(
-        "> This report segments server uptime into **epochs** — periods of continuous"
-    )
-    lines.append(
-        "> operation between restarts. Each epoch runs a single deployed git commit."
-    )
-    lines.append(
-        "> Metrics are normalised per request (not per hour) so epochs with different"
-    )
-    lines.append(
-        "> traffic levels can be compared fairly. See Google SRE Workbook ch. 2"
-    )
-    lines.append(
-        "> (SLOs and Error Budgets) for the methodology behind"
-        " request-based error ratios."
-    )
-    lines.append("")
+    _render_section_methodology(lines)
 
     _render_section_sources(lines, sources)
 

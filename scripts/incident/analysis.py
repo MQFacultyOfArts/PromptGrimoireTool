@@ -391,22 +391,40 @@ def query_epoch_journal_anomalies(
     ]
 
 
-def _user_metrics_query(
+def _user_metrics_windowed(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+) -> dict[str, int]:
+    """User metrics within a time window."""
+    where = "ts_utc >= ? AND ts_utc <= ?"
+    params: tuple[str, ...] = (start_utc, end_utc)
+    return _user_metrics_core(conn, where, params)
+
+
+def _user_metrics_all(conn: sqlite3.Connection) -> dict[str, int]:
+    """User metrics across all JSONL data (no time bounds)."""
+    return _user_metrics_core(conn, "1=1", ())
+
+
+def _user_metrics_core(
     conn: sqlite3.Connection,
     where_clause: str,
     params: tuple[str, ...],
 ) -> dict[str, int]:
-    """Shared implementation for epoch and summative user metrics.
+    """Shared implementation for user metrics queries.
 
-    where_clause is always a hardcoded SQL fragment built by callers
-    in this module -- never from external input.
+    Both where_clause values are hardcoded constants from the two
+    callers above — never derived from external input.
     """
+    login_params = (*params, LOGIN_EVENT_PATTERN)
+
     unique_logins = conn.execute(
         "SELECT COUNT(DISTINCT user_id) FROM jsonl_events"  # noqa: S608
         f" WHERE {where_clause}"
-        f" AND event LIKE '{LOGIN_EVENT_PATTERN}'"
+        " AND event LIKE ?"
         " AND user_id IS NOT NULL",
-        params,
+        login_params,
     ).fetchone()[0]
 
     active_users = conn.execute(
@@ -445,18 +463,14 @@ def query_epoch_users(
     end_utc: str,
 ) -> dict[str, int]:
     """Query distinct user activity metrics within an epoch window."""
-    return _user_metrics_query(
-        conn,
-        "ts_utc >= ? AND ts_utc <= ?",
-        (start_utc, end_utc),
-    )
+    return _user_metrics_windowed(conn, start_utc, end_utc)
 
 
 def query_summative_users(
     conn: sqlite3.Connection,
 ) -> dict[str, int]:
     """Query distinct user activity metrics across all JSONL data (no time bounds)."""
-    return _user_metrics_query(conn, "1=1", ())
+    return _user_metrics_all(conn)
 
 
 def load_static_counts(counts_path: Path | None) -> dict | None:

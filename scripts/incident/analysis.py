@@ -266,27 +266,39 @@ def query_epoch_haproxy(
     ).fetchall()
     status_codes = [{"status_code": code, "count": cnt} for code, cnt in status_rows]
 
-    # Totals
+    # Totals — exclude <NOSRV> (HAProxy 503s during restart, not app errors).
+    # <NOSRV> means HAProxy had no backend available (app restarting).
+    # These are infrastructure transients, not application errors.
     row = conn.execute(
         "SELECT COUNT(*) AS total_requests,"
         " SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) AS count_5xx"
         " FROM haproxy_events"
-        " WHERE ts_utc >= ? AND ts_utc <= ?",
+        " WHERE ts_utc >= ? AND ts_utc <= ?"
+        " AND (server IS NULL OR server != '<NOSRV>')",
         (start_utc, end_utc),
     ).fetchone()
     total_requests = row[0]
     count_5xx = row[1] or 0
 
+    # Count restart 503s separately for the report
+    count_nosrv = conn.execute(
+        "SELECT COUNT(*) FROM haproxy_events"
+        " WHERE ts_utc >= ? AND ts_utc <= ?"
+        " AND server = '<NOSRV>'",
+        (start_utc, end_utc),
+    ).fetchone()[0]
+
     is_crash = duration_seconds < _CRASH_BOUNCE_THRESHOLD
 
-    # Percentiles
+    # Percentiles — also exclude <NOSRV> (no meaningful response time)
     p50_ms: int | None = None
     p95_ms: int | None = None
     p99_ms: int | None = None
 
     sample_count_row = conn.execute(
         "SELECT COUNT(*) FROM haproxy_events"
-        " WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL",
+        " WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL"
+        " AND (server IS NULL OR server != '<NOSRV>')",
         (start_utc, end_utc),
     ).fetchone()
     sample_count = sample_count_row[0]
@@ -296,10 +308,12 @@ def query_epoch_haproxy(
             pct_row = conn.execute(
                 "SELECT ta_ms FROM haproxy_events"
                 " WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL"
+                " AND (server IS NULL OR server != '<NOSRV>')"
                 " ORDER BY ta_ms"
                 " LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * ? AS INTEGER)"
                 "   FROM haproxy_events"
-                "   WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL)",
+                "   WHERE ts_utc >= ? AND ts_utc <= ? AND ta_ms IS NOT NULL"
+                "   AND (server IS NULL OR server != '<NOSRV>'))",
                 (start_utc, end_utc, pct, start_utc, end_utc),
             ).fetchone()
             if pct_row:
@@ -322,6 +336,7 @@ def query_epoch_haproxy(
         "p95_ms": p95_ms,
         "p99_ms": p99_ms,
         "sample_count": sample_count,
+        "count_nosrv": count_nosrv,
     }
 
 

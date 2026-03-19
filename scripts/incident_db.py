@@ -13,7 +13,9 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 import hashlib
+import re
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -253,6 +255,129 @@ def beszel(
     conn.commit()
     conn.close()
     typer.echo(f"Fetched {len(metrics)} metric data points")
+
+
+def _detect_github_repo() -> str:
+    """Extract owner/repo from git remote origin URL."""
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise typer.BadParameter(
+            "Cannot detect repo: no git remote 'origin'. Use --repo."
+        )
+    url = result.stdout.strip()
+    match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
+    if not match:
+        raise typer.BadParameter(f"Cannot parse GitHub repo from remote URL: {url}")
+    return match.group(1)
+
+
+@app.command()
+def github(
+    start: str = typer.Option(..., help="Window start (local time, YYYY-MM-DD HH:MM)"),
+    end: str = typer.Option(..., help="Window end (local time, YYYY-MM-DD HH:MM)"),
+    repo: str = typer.Option(
+        "", help="GitHub repo (owner/repo). Auto-detects from git remote if empty."
+    ),
+    token: str = typer.Option(
+        "", help="GitHub token. Falls back to GITHUB_TOKEN env, then gh auth token."
+    ),
+    force: bool = typer.Option(
+        False, help="Re-fetch even if window was previously ingested (bypass dedup)."
+    ),
+    timezone: str | None = typer.Option(None, help="IANA timezone override"),
+    db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
+) -> None:
+    """Fetch GitHub PR data for a time window."""
+    from scripts.incident.parsers.github import fetch_github_prs, resolve_github_token
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    tz_name = _resolve_timezone(conn, timezone)
+
+    start_utc = _aedt_to_utc(start, tz_name)
+    end_utc = _aedt_to_utc(end, tz_name)
+
+    if start_utc > end_utc:
+        typer.echo(f"Error: --start ({start}) is after --end ({end}).", err=True)
+        conn.close()
+        raise SystemExit(1)
+
+    # Resolve token
+    try:
+        resolved_token = resolve_github_token(token or None)
+    except RuntimeError as exc:
+        conn.close()
+        raise typer.BadParameter(str(exc)) from None
+
+    # Auto-detect repo if not provided
+    if not repo:
+        repo = _detect_github_repo()
+
+    # Dedup check
+    sha = hashlib.sha256(f"github:{repo}:{start_utc}:{end_utc}".encode()).hexdigest()
+    existing = conn.execute(
+        "SELECT id FROM sources WHERE sha256 = ?", (sha,)
+    ).fetchone()
+    if existing is not None:
+        if not force:
+            conn.close()
+            typer.echo("Already fetched (dedup). 0 new PRs.")
+            return
+        # --force: delete existing source and its events
+        conn.execute("DELETE FROM github_events WHERE source_id = ?", (existing[0],))
+        conn.execute("DELETE FROM sources WHERE id = ?", (existing[0],))
+        conn.commit()
+
+    prs = fetch_github_prs(repo, start_utc, end_utc, resolved_token)
+
+    conn.execute(
+        """INSERT INTO sources
+           (filename, format, sha256, size, mtime, hostname, timezone,
+            window_start_utc, window_end_utc, source_path,
+            collection_method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            repo,
+            "github",
+            sha,
+            0,
+            0,
+            "github.com",
+            tz_name,
+            start_utc,
+            end_utc,
+            f"https://github.com/{repo}",
+            "REST API",
+        ),
+    )
+    source_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    for pr in prs:
+        conn.execute(
+            """INSERT INTO github_events
+               (source_id, ts_utc, pr_number, title, author, commit_oid, url)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                source_id,
+                pr["ts_utc"],
+                pr["pr_number"],
+                pr["title"],
+                pr["author"],
+                pr["commit_oid"],
+                pr["url"],
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    typer.echo(f"Fetched {len(prs)} PRs")
 
 
 if __name__ == "__main__":

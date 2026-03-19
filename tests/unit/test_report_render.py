@@ -143,6 +143,8 @@ def _mock_analyses() -> list[dict]:
                 "p95_ms": 500,
                 "p99_ms": 1000,
                 "sample_count": 1003,
+                "count_nosrv": 0,
+                "nosrv_first_60s": 0,
             },
             "resources": {
                 "mean_cpu": 25.0,
@@ -361,3 +363,78 @@ class TestRenderReviewReport:
         assert "0.40%" in report  # 5xx_ratio = 0.004
         # Deltas should use pp (percentage points)
         assert "+1.00pp" in report  # error_ratio delta = 0.01
+
+
+class TestNosrvRendering:
+    def test_nosrv_displayed(self) -> None:
+        """AC1.1/AC1.2: NOSRV count and clustering shown when present."""
+        analyses = _mock_analyses()
+        analyses[0]["haproxy"]["count_nosrv"] = 72
+        analyses[0]["haproxy"]["nosrv_first_60s"] = 72
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "NOSRV" in report
+        assert "72" in report
+        assert "first 60s" in report
+
+    def test_nosrv_omitted_when_zero(self) -> None:
+        """AC1.3: Zero NOSRV events omit the NOSRV per-epoch line."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "Restart 503s (NOSRV)" not in report
+
+
+class TestErrorLandscapeRendering:
+    def test_appeared_and_resolved(self) -> None:
+        """AC2.2: Appeared and resolved error types shown."""
+        analyses = _mock_analyses()
+        analyses[0]["error_landscape"] = {
+            "appeared": {"error A", "error B"},
+            "resolved": {"error C"},
+            "current": {"error A", "error B"},
+        }
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "Appeared" in report
+        assert "error A" in report
+        assert "Resolved" in report
+        assert "error C" in report
+
+    def test_no_errors(self) -> None:
+        """AC2.4: Empty appeared and resolved shows 'No errors'."""
+        analyses = _mock_analyses()
+        analyses[0]["error_landscape"] = {
+            "appeared": set(),
+            "resolved": set(),
+            "current": set(),
+        }
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "No errors" in report

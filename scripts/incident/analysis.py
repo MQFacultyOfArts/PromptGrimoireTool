@@ -982,7 +982,9 @@ def _render_epoch_analysis(
     lines.append("")
 
     _render_epoch_errors(lines, analysis.get("errors", []))
+    _render_epoch_error_landscape(lines, analysis.get("error_landscape"))
     _render_epoch_haproxy(lines, analysis.get("haproxy", {}))
+    _render_epoch_pool_config(lines, analysis.get("pool_config"))
     _render_epoch_resources_section(lines, analysis.get("resources", {}))
     _render_epoch_pg_section(lines, analysis.get("pg", []))
     _render_epoch_journal(lines, analysis.get("journal_anomalies", []))
@@ -1009,6 +1011,47 @@ def _render_epoch_errors(lines: list[str], errors: list[dict]) -> None:
     lines.append("")
 
 
+def _render_epoch_error_landscape(lines: list[str], landscape: dict | None) -> None:
+    """Render appeared/resolved error classes for an epoch."""
+    if landscape is None:
+        return
+    appeared = landscape.get("appeared", set())
+    resolved = landscape.get("resolved", set())
+    if not appeared and not resolved:
+        lines.append("**Error Landscape:** No errors")
+        lines.append("")
+        return
+    lines.append("**Error Landscape:**")
+    lines.append("")
+    if appeared:
+        lines.append("Appeared:")
+        for cls in sorted(appeared):
+            lines.append(f"- {cls}")
+    else:
+        lines.append("Appeared: none")
+    if resolved:
+        lines.append("Resolved:")
+        for cls in sorted(resolved):
+            lines.append(f"- {cls}")
+    else:
+        lines.append("Resolved: none")
+    lines.append("")
+
+
+def _render_epoch_pool_config(lines: list[str], pool_config: dict | None) -> None:
+    """Render pool configuration for an epoch."""
+    if pool_config is not None:
+        pool_size = pool_config["pool_size"]
+        max_overflow = pool_config.get("max_overflow")
+        if max_overflow is not None:
+            lines.append(f"**Pool:** size={pool_size}, overflow={max_overflow}")
+        else:
+            lines.append(f"**Pool:** size={pool_size}")
+    else:
+        lines.append("**Pool:** not observed")
+    lines.append("")
+
+
 def _render_epoch_haproxy(lines: list[str], haproxy: dict) -> None:
     if not haproxy:
         return
@@ -1016,6 +1059,12 @@ def _render_epoch_haproxy(lines: list[str], haproxy: dict) -> None:
     lines.append("")
     lines.append(f"- Total requests: {haproxy.get('total_requests', 'N/A')}")
     lines.append(f"- 5xx count: {haproxy.get('count_5xx', 'N/A')}")
+    count_nosrv = haproxy.get("count_nosrv", 0)
+    if count_nosrv > 0:
+        nosrv_60s = haproxy.get("nosrv_first_60s", 0)
+        lines.append(
+            f"- Restart 503s (NOSRV): {count_nosrv} ({nosrv_60s} in first 60s)"
+        )
     lines.append(f"- 5xx rate/hr: {_fmt_val(haproxy.get('rate_5xx'))}")
     lines.append(f"- Requests/min: {_fmt_val(haproxy.get('requests_per_minute'))}")
     lines.append(f"- p50: {_fmt_val(haproxy.get('p50_ms'))} ms")

@@ -234,6 +234,63 @@ class TestQueryEpochHaproxy:
         assert result["rate_5xx"] is None
         assert result["requests_per_minute"] is None
 
+    def test_nosrv_clustering_first_60s(self) -> None:
+        """NOSRV events within first 60s counted separately from later ones."""
+        conn = _make_db()
+        epoch_start = "2026-03-15T10:00:00Z"
+        # 3 NOSRV within first 60s
+        for offset_s in (5, 30, 55):
+            ts = f"2026-03-15T10:00:{offset_s:02d}Z"
+            conn.execute(
+                "INSERT INTO haproxy_events"
+                " (source_id, ts_utc, status_code, server)"
+                " VALUES (1, ?, 503, '<NOSRV>')",
+                (ts,),
+            )
+        # 2 NOSRV after 60s
+        for ts in ("2026-03-15T10:02:00Z", "2026-03-15T10:05:00Z"):
+            conn.execute(
+                "INSERT INTO haproxy_events"
+                " (source_id, ts_utc, status_code, server)"
+                " VALUES (1, ?, 503, '<NOSRV>')",
+                (ts,),
+            )
+
+        result = query_epoch_haproxy(
+            conn, epoch_start, "2026-03-15T11:00:00Z", duration_seconds=3600
+        )
+
+        assert result["count_nosrv"] == 5
+        assert result["nosrv_first_60s"] == 3
+
+    def test_nosrv_all_in_first_60s(self) -> None:
+        """All NOSRV events in first 60s: nosrv_first_60s == count_nosrv."""
+        conn = _make_db()
+        for ts in ("2026-03-15T10:00:05Z", "2026-03-15T10:00:30Z"):
+            conn.execute(
+                "INSERT INTO haproxy_events"
+                " (source_id, ts_utc, status_code, server)"
+                " VALUES (1, ?, 503, '<NOSRV>')",
+                (ts,),
+            )
+
+        result = query_epoch_haproxy(
+            conn, "2026-03-15T10:00:00Z", "2026-03-15T11:00:00Z", duration_seconds=3600
+        )
+
+        assert result["count_nosrv"] == 2
+        assert result["nosrv_first_60s"] == 2
+
+    def test_nosrv_zero(self) -> None:
+        """No NOSRV events: both counts zero."""
+        conn = _make_db()
+        result = query_epoch_haproxy(
+            conn, "2026-03-15T10:00:00Z", "2026-03-15T11:00:00Z", duration_seconds=3600
+        )
+
+        assert result["count_nosrv"] == 0
+        assert result["nosrv_first_60s"] == 0
+
 
 # ── query_epoch_resources ───────────────────────────────────────────
 

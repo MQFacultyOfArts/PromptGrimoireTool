@@ -396,6 +396,34 @@ def query_epoch_errors(
     return result
 
 
+def _query_nosrv_clustering(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+) -> tuple[int, int]:
+    """Count NOSRV events total and within first 60 seconds of epoch."""
+    count_nosrv = conn.execute(
+        "SELECT COUNT(*) FROM haproxy_events"
+        " WHERE ts_utc >= ? AND ts_utc <= ?"
+        " AND server = '<NOSRV>'",
+        (start_utc, end_utc),
+    ).fetchone()[0]
+
+    if count_nosrv > 0:
+        dt_start = datetime.fromisoformat(start_utc)
+        cutoff_60s = (dt_start + timedelta(seconds=60)).isoformat()
+        nosrv_first_60s = conn.execute(
+            "SELECT COUNT(*) FROM haproxy_events"
+            " WHERE ts_utc >= ? AND ts_utc <= ?"
+            " AND server = '<NOSRV>'",
+            (start_utc, cutoff_60s),
+        ).fetchone()[0]
+    else:
+        nosrv_first_60s = 0
+
+    return count_nosrv, nosrv_first_60s
+
+
 def query_epoch_haproxy(
     conn: sqlite3.Connection,
     start_utc: str,
@@ -432,13 +460,7 @@ def query_epoch_haproxy(
     total_requests = row[0]
     count_5xx = row[1] or 0
 
-    # Count restart 503s separately for the report
-    count_nosrv = conn.execute(
-        "SELECT COUNT(*) FROM haproxy_events"
-        " WHERE ts_utc >= ? AND ts_utc <= ?"
-        " AND server = '<NOSRV>'",
-        (start_utc, end_utc),
-    ).fetchone()[0]
+    count_nosrv, nosrv_first_60s = _query_nosrv_clustering(conn, start_utc, end_utc)
 
     is_crash = duration_seconds < _CRASH_BOUNCE_THRESHOLD
 
@@ -489,6 +511,7 @@ def query_epoch_haproxy(
         "p99_ms": p99_ms,
         "sample_count": sample_count,
         "count_nosrv": count_nosrv,
+        "nosrv_first_60s": nosrv_first_60s,
     }
 
 

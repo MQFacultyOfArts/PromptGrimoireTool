@@ -488,45 +488,42 @@ def load_static_counts(counts_path: Path | None) -> dict | None:
 # ── Trend analysis ────────────────────────────────────────────────
 
 _TREND_METRICS = (
-    "error_rate",
-    "rate_5xx",
+    "5xx_ratio",
+    "error_ratio",
+    "warning_ratio",
     "memory_peak_bytes",
     "mean_cpu",
     "active_users",
 )
 
-# Anomaly detection thresholds (metric_name -> (pct_threshold, absolute_floor))
-_ANOMALY_THRESHOLDS: dict[str, tuple[float, float]] = {
-    "error_rate": (100.0, 5.0),  # >100% increase AND current > 5/hour
-    "rate_5xx": (100.0, 2.0),  # >100% increase AND current > 2/hour
-    "memory_peak_bytes": (50.0, 1_073_741_824),  # >50% increase AND current > 1GB
-    "mean_cpu": (100.0, 20.0),  # >100% increase AND current > 20%
+# Anomaly detection: absolute thresholds per metric.
+# A metric is flagged when the current value exceeds its floor.
+_ANOMALY_FLOORS: dict[str, float] = {
+    "5xx_ratio": 0.01,  # > 1% of requests returning 5xx
+    "error_ratio": 0.05,  # > 5% of requests producing errors
+    "memory_peak_bytes": 3_221_225_472,  # > 3 GB
+    "mean_cpu": 50.0,  # > 50%
 }
-# active_users is intentionally excluded — not an operational concern
+# warning_ratio and active_users are never flagged as anomalous
 
 
 def _safe_delta(
     current: float | int | None,
     previous: float | int | None,
 ) -> dict:
-    """Compute delta and percentage change, handling None and zero safely."""
+    """Compute delta between current and previous, handling None safely."""
     if current is None or previous is None:
-        return {
-            "value": current,
-            "previous": previous,
-            "delta": None,
-            "pct_change": None,
-        }
+        return {"value": current, "previous": previous, "delta": None}
     delta = current - previous
-    pct = (delta / previous) * 100 if previous != 0 else None
-    return {"value": current, "previous": previous, "delta": delta, "pct_change": pct}
+    return {"value": current, "previous": previous, "delta": delta}
 
 
 def compute_trends(epochs: list[dict]) -> list[dict]:
     """Compare consecutive non-crash-bounce epochs to detect metric trends.
 
     Returns a list of trend dicts, each containing the original epoch
-    index, commit hash, and per-metric deltas with anomaly flags.
+    index, commit hash, and per-metric values with deltas. Anomalies
+    are flagged when the current value exceeds an absolute threshold.
     """
     # Build list of (original_index, epoch) for non-crash-bounce epochs
     valid = [
@@ -542,15 +539,11 @@ def compute_trends(epochs: list[dict]) -> list[dict]:
         for metric in _TREND_METRICS:
             d = _safe_delta(current.get(metric), previous.get(metric))
 
-            is_anomaly = False
-            if (
-                metric in _ANOMALY_THRESHOLDS
-                and d["pct_change"] is not None
+            is_anomaly = (
+                metric in _ANOMALY_FLOORS
                 and d["value"] is not None
-            ):
-                pct_threshold, absolute_floor = _ANOMALY_THRESHOLDS[metric]
-                if d["pct_change"] > pct_threshold and d["value"] > absolute_floor:
-                    is_anomaly = True
+                and d["value"] > _ANOMALY_FLOORS[metric]
+            )
 
             d["is_anomaly"] = is_anomaly
             metrics[metric] = d
@@ -559,6 +552,8 @@ def compute_trends(epochs: list[dict]) -> list[dict]:
             {
                 "epoch_index": idx,
                 "commit": current["commit"],
+                "pr_title": current.get("pr_title", ""),
+                "total_requests": current.get("total_requests", 0),
                 "metrics": metrics,
             }
         )
@@ -791,7 +786,12 @@ def _render_section_users(lines: list[str], summative_users: dict) -> None:
 
 
 def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
-    """Render the Trend Analysis section."""
+    """Render the Trend Analysis section.
+
+    One row per epoch showing rate/hr for each metric with delta from
+    previous epoch. Anomalous values (exceeding absolute thresholds)
+    are flagged.
+    """
     lines.append("## Trend Analysis")
     lines.append("")
     if not trends:
@@ -799,26 +799,85 @@ def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
         lines.append("")
         return
     lines.append(
-        "| Epoch | Commit | Metric | Value | Previous | Delta | Change | Anomaly |"
+        "| # | Commit | PR | 5xx Ratio | Error Ratio | Warning Ratio"
+        " | Mem Peak | CPU % | Users | Requests |"
     )
     lines.append(
-        "|-------|--------|--------|-------|----------|-------|--------|---------|"
+        "|---|--------|----|---------:|-----------:|-------------:"
+        "|---------:|------:|------:|---------:|"
     )
     for t in trends:
-        commit = t.get("commit", "")
+        commit = t.get("commit", "")[:8]
         epoch_idx = t.get("epoch_index", "")
-        for metric_name, m in t.get("metrics", {}).items():
-            anomaly = "!!!" if m.get("is_anomaly") else ""
-            lines.append(
-                f"| {epoch_idx} | {commit}"
-                f" | {metric_name}"
-                f" | {_fmt_val(m.get('value'))}"
-                f" | {_fmt_val(m.get('previous'))}"
-                f" | {_fmt_delta(m.get('delta'))}"
-                f" | {_fmt_pct(m.get('pct_change'))}"
-                f" | {anomaly} |"
-            )
+        pr_title = t.get("pr_title", "")
+        m = t.get("metrics", {})
+        cells = [f"| {epoch_idx} | {commit} | {pr_title}"]
+        for key in (
+            "5xx_ratio",
+            "error_ratio",
+            "warning_ratio",
+            "memory_peak_bytes",
+            "mean_cpu",
+            "active_users",
+        ):
+            md = m.get(key, {})
+            cells.append(_fmt_trend_cell(key, md))
+        # total_requests is context, not trended
+        total_reqs = t.get("total_requests", "—")
+        cells.append(str(total_reqs))
+        lines.append(" | ".join(cells) + " |")
     lines.append("")
+
+
+_RATIO_METRICS = {"5xx_ratio", "error_ratio", "warning_ratio"}
+
+
+def _fmt_trend_cell(metric: str, md: dict) -> str:
+    """Format a single trend cell: value (delta) with anomaly marker."""
+    val = md.get("value")
+    delta = md.get("delta")
+    is_anomaly = md.get("is_anomaly", False)
+
+    if val is None:
+        return "—"
+
+    if metric in _RATIO_METRICS:
+        val_str = f"{val * 100:.2f}%"
+        delta_str = f" ({_fmt_ratio_delta(delta)})" if delta is not None else ""
+    elif metric == "memory_peak_bytes":
+        val_str = _fmt_bytes(val)
+        delta_str = f" ({_fmt_bytes_delta(delta)})" if delta is not None else ""
+    elif metric == "active_users":
+        val_str = str(int(val))
+        delta_str = f" ({_fmt_delta(delta)})" if delta is not None else ""
+    else:
+        val_str = f"{val:.1f}"
+        delta_str = f" ({_fmt_delta(delta)})" if delta is not None else ""
+
+    flag = " ⚠" if is_anomaly else ""
+    return f"{val_str}{delta_str}{flag}"
+
+
+def _fmt_ratio_delta(n: float) -> str:
+    """Format a ratio delta as percentage points with sign."""
+    pct = n * 100
+    sign = "+" if pct > 0 else ""
+    return f"{sign}{pct:.2f}pp"
+
+
+def _fmt_bytes(n: float | int) -> str:
+    """Format bytes as human-readable (e.g. 2.7G, 366M)."""
+    if n >= 1_073_741_824:
+        return f"{n / 1_073_741_824:.1f}G"
+    if n >= 1_048_576:
+        return f"{n / 1_048_576:.0f}M"
+    return f"{n:.0f}B"
+
+
+def _fmt_bytes_delta(n: float | int) -> str:
+    """Format a byte delta with sign."""
+    sign = "+" if n > 0 else ""
+    return f"{sign}{_fmt_bytes(abs(n))}" if n != 0 else "±0"
 
 
 def render_review_report(

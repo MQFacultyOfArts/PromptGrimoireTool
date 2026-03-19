@@ -10,21 +10,27 @@ def _epoch(
     commit: str,
     *,
     is_crash_bounce: bool = False,
-    error_rate: float | None = None,
-    rate_5xx: float | None = None,
+    error_ratio: float | None = None,
+    warning_ratio: float | None = None,
+    five_xx_ratio: float | None = None,
     memory_peak_bytes: int | None = None,
     mean_cpu: float | None = None,
     active_users: int | None = None,
+    total_requests: int = 0,
+    pr_title: str = "",
 ) -> dict:
     """Build an epoch dict with the fields compute_trends expects."""
     return {
         "commit": commit,
         "is_crash_bounce": is_crash_bounce,
-        "error_rate": error_rate,
-        "rate_5xx": rate_5xx,
+        "error_ratio": error_ratio,
+        "warning_ratio": warning_ratio,
+        "5xx_ratio": five_xx_ratio,
         "memory_peak_bytes": memory_peak_bytes,
         "mean_cpu": mean_cpu,
         "active_users": active_users,
+        "total_requests": total_requests,
+        "pr_title": pr_title,
     }
 
 
@@ -37,32 +43,23 @@ class TestSafeDelta:
         assert result["value"] == 30.0
         assert result["previous"] == 10.0
         assert result["delta"] == 20.0
-        assert result["pct_change"] == pytest.approx(200.0)
+
+    def test_no_pct_change(self) -> None:
+        """_safe_delta does not return pct_change."""
+        result = _safe_delta(30.0, 10.0)
+        assert "pct_change" not in result
 
     def test_current_none(self) -> None:
         result = _safe_delta(None, 10.0)
-        assert result["value"] is None
-        assert result["previous"] == 10.0
         assert result["delta"] is None
-        assert result["pct_change"] is None
 
     def test_previous_none(self) -> None:
         result = _safe_delta(5.0, None)
-        assert result["value"] == 5.0
-        assert result["previous"] is None
         assert result["delta"] is None
-        assert result["pct_change"] is None
 
     def test_both_none(self) -> None:
         result = _safe_delta(None, None)
         assert result["delta"] is None
-        assert result["pct_change"] is None
-
-    def test_previous_zero(self) -> None:
-        """Division by zero yields pct_change=None."""
-        result = _safe_delta(5.0, 0.0)
-        assert result["delta"] == 5.0
-        assert result["pct_change"] is None
 
 
 # -- compute_trends ---------------------------------------------------------
@@ -70,145 +67,122 @@ class TestSafeDelta:
 
 class TestComputeTrends:
     def test_three_epochs_deltas(self) -> None:
-        """Correct deltas and pct_change between consecutive non-crash epochs."""
+        """Correct deltas between consecutive non-crash epochs."""
         epochs = [
             _epoch(
                 "aaa",
-                error_rate=10.0,
-                rate_5xx=2.0,
-                memory_peak_bytes=1_000_000_000,
+                error_ratio=0.01,
+                warning_ratio=0.05,
+                five_xx_ratio=0.002,
                 mean_cpu=10.0,
                 active_users=5,
+                total_requests=10000,
             ),
             _epoch(
                 "bbb",
-                error_rate=20.0,
-                rate_5xx=4.0,
-                memory_peak_bytes=1_500_000_000,
+                error_ratio=0.02,
+                warning_ratio=0.03,
+                five_xx_ratio=0.004,
                 mean_cpu=25.0,
                 active_users=8,
+                total_requests=20000,
             ),
             _epoch(
                 "ccc",
-                error_rate=30.0,
-                rate_5xx=6.0,
-                memory_peak_bytes=2_000_000_000,
-                mean_cpu=50.0,
+                error_ratio=0.005,
+                warning_ratio=0.02,
+                five_xx_ratio=0.001,
+                mean_cpu=15.0,
                 active_users=10,
+                total_requests=30000,
             ),
         ]
 
         trends = compute_trends(epochs)
 
         assert len(trends) == 2
-        # First trend: bbb vs aaa
         t0 = trends[0]
-        assert t0["epoch_index"] == 1
         assert t0["commit"] == "bbb"
-        assert t0["metrics"]["error_rate"]["delta"] == pytest.approx(10.0)
-        assert t0["metrics"]["error_rate"]["pct_change"] == pytest.approx(100.0)
-        assert t0["metrics"]["memory_peak_bytes"]["delta"] == 500_000_000
-        # Second trend: ccc vs bbb
+        assert t0["metrics"]["error_ratio"]["delta"] == pytest.approx(0.01)
+        assert t0["total_requests"] == 20000
         t1 = trends[1]
-        assert t1["epoch_index"] == 2
-        assert t1["commit"] == "ccc"
-        assert t1["metrics"]["mean_cpu"]["delta"] == pytest.approx(25.0)
-        assert t1["metrics"]["mean_cpu"]["pct_change"] == pytest.approx(100.0)
+        assert t1["metrics"]["error_ratio"]["delta"] == pytest.approx(-0.015)
 
     def test_first_epoch_no_trend(self) -> None:
-        """First epoch produces no trend entry."""
-        epochs = [
-            _epoch("aaa", error_rate=10.0),
-        ]
-        trends = compute_trends(epochs)
-        assert trends == []
+        epochs = [_epoch("aaa", error_ratio=0.01)]
+        assert compute_trends(epochs) == []
 
     def test_crash_bounce_excluded(self) -> None:
-        """Crash-bounce epochs are skipped; trend compares around them."""
         epochs = [
-            _epoch(
-                "aaa",
-                error_rate=10.0,
-                rate_5xx=1.0,
-                memory_peak_bytes=1_000_000_000,
-                mean_cpu=10.0,
-                active_users=5,
-            ),
-            _epoch(
-                "bbb",
-                is_crash_bounce=True,
-                error_rate=99.0,
-                rate_5xx=99.0,
-                memory_peak_bytes=99,
-                mean_cpu=99.0,
-                active_users=99,
-            ),
-            _epoch(
-                "ccc",
-                error_rate=30.0,
-                rate_5xx=3.0,
-                memory_peak_bytes=2_000_000_000,
-                mean_cpu=30.0,
-                active_users=10,
-            ),
+            _epoch("aaa", error_ratio=0.01),
+            _epoch("bbb", is_crash_bounce=True, error_ratio=0.99),
+            _epoch("ccc", error_ratio=0.02),
         ]
-
         trends = compute_trends(epochs)
-
-        # Only one trend: ccc vs aaa (index 2 in original list)
         assert len(trends) == 1
-        t = trends[0]
-        assert t["epoch_index"] == 2
-        assert t["commit"] == "ccc"
-        assert t["metrics"]["error_rate"]["previous"] == pytest.approx(10.0)
-        assert t["metrics"]["error_rate"]["delta"] == pytest.approx(20.0)
+        assert trends[0]["commit"] == "ccc"
+        assert trends[0]["metrics"]["error_ratio"]["previous"] == pytest.approx(0.01)
 
     def test_none_metric_values(self) -> None:
-        """None metric values produce delta=None, pct_change=None, no error."""
         epochs = [
-            _epoch("aaa", error_rate=10.0),
-            _epoch("bbb", error_rate=None),
+            _epoch("aaa", error_ratio=0.01),
+            _epoch("bbb", error_ratio=None),
         ]
-
         trends = compute_trends(epochs)
-
-        assert len(trends) == 1
-        m = trends[0]["metrics"]["error_rate"]
-        assert m["value"] is None
-        assert m["previous"] == 10.0
+        m = trends[0]["metrics"]["error_ratio"]
         assert m["delta"] is None
-        assert m["pct_change"] is None
         assert m["is_anomaly"] is False
 
-    def test_anomaly_detected(self) -> None:
-        """error_rate >100% increase AND current > 5/hr -> is_anomaly=True."""
+    def test_anomaly_above_floor(self) -> None:
+        """error_ratio > 5% floor -> is_anomaly=True."""
         epochs = [
-            _epoch("aaa", error_rate=10.0),
-            _epoch("bbb", error_rate=25.0),  # 150% increase, current > 5
+            _epoch("aaa", error_ratio=0.01),
+            _epoch("bbb", error_ratio=0.08),  # 8% > 5% floor
         ]
-
         trends = compute_trends(epochs)
+        assert trends[0]["metrics"]["error_ratio"]["is_anomaly"] is True
 
-        assert trends[0]["metrics"]["error_rate"]["is_anomaly"] is True
-
-    def test_anomaly_below_absolute_floor(self) -> None:
-        """error_rate >100% increase but current < 5/hr -> is_anomaly=False."""
+    def test_anomaly_below_floor(self) -> None:
+        """error_ratio < 5% floor -> is_anomaly=False."""
         epochs = [
-            _epoch("aaa", error_rate=1.0),
-            _epoch("bbb", error_rate=3.0),  # 200% increase, but current=3 < floor=5
+            _epoch("aaa", error_ratio=0.01),
+            _epoch("bbb", error_ratio=0.03),  # 3% < 5% floor
         ]
-
         trends = compute_trends(epochs)
+        assert trends[0]["metrics"]["error_ratio"]["is_anomaly"] is False
 
-        assert trends[0]["metrics"]["error_rate"]["is_anomaly"] is False
+    def test_5xx_anomaly(self) -> None:
+        """5xx_ratio > 1% floor -> is_anomaly=True."""
+        epochs = [
+            _epoch("aaa", five_xx_ratio=0.001),
+            _epoch("bbb", five_xx_ratio=0.02),  # 2% > 1% floor
+        ]
+        trends = compute_trends(epochs)
+        assert trends[0]["metrics"]["5xx_ratio"]["is_anomaly"] is True
 
     def test_active_users_never_anomalous(self) -> None:
-        """active_users is never flagged as anomalous regardless of change."""
         epochs = [
             _epoch("aaa", active_users=1),
-            _epoch("bbb", active_users=1000),  # massive increase
+            _epoch("bbb", active_users=1000),
         ]
-
         trends = compute_trends(epochs)
-
         assert trends[0]["metrics"]["active_users"]["is_anomaly"] is False
+
+    def test_warning_ratio_never_anomalous(self) -> None:
+        epochs = [
+            _epoch("aaa", warning_ratio=0.001),
+            _epoch("bbb", warning_ratio=0.50),  # 50% warnings
+        ]
+        trends = compute_trends(epochs)
+        assert trends[0]["metrics"]["warning_ratio"]["is_anomaly"] is False
+
+    def test_pr_title_and_total_requests_included(self) -> None:
+        epochs = [
+            _epoch("aaa", error_ratio=0.01, pr_title="Fix login", total_requests=5000),
+            _epoch(
+                "bbb", error_ratio=0.02, pr_title="Add feature", total_requests=8000
+            ),
+        ]
+        trends = compute_trends(epochs)
+        assert trends[0]["pr_title"] == "Add feature"
+        assert trends[0]["total_requests"] == 8000

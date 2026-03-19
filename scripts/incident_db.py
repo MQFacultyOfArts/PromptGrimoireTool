@@ -436,12 +436,24 @@ def review(
             "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
             "users": query_epoch_users(conn, start, end),
         }
-        if epoch["is_crash_bounce"]:
-            epoch["error_rate"] = None
-            epoch["rate_5xx"] = None
+        total_requests = analysis["haproxy"]["total_requests"]
+        if epoch["is_crash_bounce"] or total_requests == 0:
+            epoch["error_ratio"] = None
+            epoch["warning_ratio"] = None
+            epoch["5xx_ratio"] = None
         else:
-            epoch["error_rate"] = sum(e["per_hour"] or 0 for e in analysis["errors"])
-            epoch["rate_5xx"] = analysis["haproxy"].get("rate_5xx")
+            error_count = sum(
+                e["count"]
+                for e in analysis["errors"]
+                if e["level"] in ("error", "critical")
+            )
+            warning_count = sum(
+                e["count"] for e in analysis["errors"] if e["level"] == "warning"
+            )
+            epoch["error_ratio"] = error_count / total_requests
+            epoch["warning_ratio"] = warning_count / total_requests
+            epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
+        epoch["total_requests"] = total_requests
         epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
         epoch["active_users"] = analysis["users"]["active_users"]
         epoch_analyses.append(analysis)

@@ -35,10 +35,12 @@ def _mock_epochs() -> list[dict]:
             "pr_title": "Fix login",
             "pr_author": "alice",
             "pr_url": "https://github.com/org/repo/pull/42",
-            "error_rate": 10.0,
-            "rate_5xx": 2.0,
+            "error_ratio": 0.005,
+            "warning_ratio": 0.02,
+            "5xx_ratio": 0.003,
             "mean_cpu": 25.0,
             "active_users": 5,
+            "total_requests": 1003,
         },
     ]
 
@@ -110,40 +112,43 @@ def _mock_trends() -> list[dict]:
         {
             "epoch_index": 1,
             "commit": "bbb222",
+            "pr_title": "Add feature",
+            "total_requests": 20000,
             "metrics": {
-                "error_rate": {
-                    "value": 20.0,
-                    "previous": 10.0,
-                    "delta": 10.0,
-                    "pct_change": 100.0,
+                "5xx_ratio": {
+                    "value": 0.004,
+                    "previous": 0.002,
+                    "delta": 0.002,
                     "is_anomaly": False,
                 },
-                "rate_5xx": {
-                    "value": 4.0,
-                    "previous": 2.0,
-                    "delta": 2.0,
-                    "pct_change": 100.0,
+                "error_ratio": {
+                    "value": 0.02,
+                    "previous": 0.01,
+                    "delta": 0.01,
+                    "is_anomaly": False,
+                },
+                "warning_ratio": {
+                    "value": 0.03,
+                    "previous": 0.05,
+                    "delta": -0.02,
                     "is_anomaly": False,
                 },
                 "memory_peak_bytes": {
                     "value": 2_000_000_000,
                     "previous": 1_000_000_000,
                     "delta": 1_000_000_000,
-                    "pct_change": 100.0,
-                    "is_anomaly": True,
+                    "is_anomaly": False,
                 },
                 "mean_cpu": {
                     "value": 30.0,
                     "previous": 15.0,
                     "delta": 15.0,
-                    "pct_change": 100.0,
                     "is_anomaly": False,
                 },
                 "active_users": {
                     "value": 10,
                     "previous": 5,
                     "delta": 5,
-                    "pct_change": 100.0,
                     "is_anomaly": False,
                 },
             },
@@ -268,8 +273,8 @@ class TestRenderReviewReport:
         # Should have some crash bounce indicator
         assert "CRASH" in report or "crash" in report.lower()
 
-    def test_trend_delta_formatting(self) -> None:
-        """Trend deltas are formatted with +/- signs."""
+    def test_trend_ratio_formatting(self) -> None:
+        """Trend ratios are formatted as percentages with pp deltas."""
         report = render_review_report(
             sources=_mock_sources(),
             epochs=_mock_epochs(),
@@ -278,6 +283,8 @@ class TestRenderReviewReport:
             trends=_mock_trends(),
         )
 
-        # Positive delta should have + prefix
-        assert "+10.0" in report or "+10" in report
-        assert "+100.0%" in report or "+100%" in report
+        # Ratios should be displayed as percentages
+        assert "2.00%" in report  # error_ratio = 0.02
+        assert "0.40%" in report  # 5xx_ratio = 0.004
+        # Deltas should use pp (percentage points)
+        assert "+1.00pp" in report  # error_ratio delta = 0.01

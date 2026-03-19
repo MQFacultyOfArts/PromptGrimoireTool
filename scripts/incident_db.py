@@ -257,6 +257,58 @@ def beszel(
     typer.echo(f"Fetched {len(metrics)} metric data points")
 
 
+def _analyse_epochs(
+    conn: sqlite3.Connection,
+    epochs: list[dict],
+) -> list[dict]:
+    """Run per-epoch queries and attach ratio metrics to each epoch dict."""
+    from scripts.incident.analysis import (
+        query_epoch_errors,
+        query_epoch_haproxy,
+        query_epoch_journal_anomalies,
+        query_epoch_pg,
+        query_epoch_resources,
+        query_epoch_users,
+    )
+
+    epoch_analyses: list[dict] = []
+    for epoch in epochs:
+        start = str(epoch["start_utc"])
+        end = str(epoch["end_utc"])
+        dur_raw = epoch["duration_seconds"]
+        dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
+        analysis = {
+            "errors": query_epoch_errors(conn, start, end, dur),
+            "haproxy": query_epoch_haproxy(conn, start, end, dur),
+            "resources": query_epoch_resources(conn, start, end),
+            "pg": query_epoch_pg(conn, start, end),
+            "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
+            "users": query_epoch_users(conn, start, end),
+        }
+        total_requests = analysis["haproxy"]["total_requests"]
+        if epoch["is_crash_bounce"] or total_requests == 0:
+            epoch["error_ratio"] = None
+            epoch["warning_ratio"] = None
+            epoch["5xx_ratio"] = None
+        else:
+            error_count = sum(
+                e["count"]
+                for e in analysis["errors"]
+                if e["level"] in ("error", "critical")
+            )
+            warning_count = sum(
+                e["count"] for e in analysis["errors"] if e["level"] == "warning"
+            )
+            epoch["error_ratio"] = error_count / total_requests
+            epoch["warning_ratio"] = warning_count / total_requests
+            epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
+        epoch["total_requests"] = total_requests
+        epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
+        epoch["active_users"] = analysis["users"]["active_users"]
+        epoch_analyses.append(analysis)
+    return epoch_analyses
+
+
 def _detect_github_repo() -> str:
     """Extract owner/repo from git remote origin URL."""
     result = subprocess.run(
@@ -393,14 +445,9 @@ def review(
         compute_trends,
         enrich_epochs_github,
         enrich_epochs_journal,
+        enrich_restart_reasons,
         extract_epochs,
         load_static_counts,
-        query_epoch_errors,
-        query_epoch_haproxy,
-        query_epoch_journal_anomalies,
-        query_epoch_pg,
-        query_epoch_resources,
-        query_epoch_users,
         query_summative_users,
         render_review_report,
     )
@@ -419,44 +466,11 @@ def review(
         conn.close()
         return
 
+    enrich_restart_reasons(conn, epochs)
     enrich_epochs_journal(conn, epochs)
     enrich_epochs_github(conn, epochs)
 
-    epoch_analyses: list[dict] = []
-    for epoch in epochs:
-        start = str(epoch["start_utc"])
-        end = str(epoch["end_utc"])
-        dur_raw = epoch["duration_seconds"]
-        dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
-        analysis = {
-            "errors": query_epoch_errors(conn, start, end, dur),
-            "haproxy": query_epoch_haproxy(conn, start, end, dur),
-            "resources": query_epoch_resources(conn, start, end),
-            "pg": query_epoch_pg(conn, start, end),
-            "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
-            "users": query_epoch_users(conn, start, end),
-        }
-        total_requests = analysis["haproxy"]["total_requests"]
-        if epoch["is_crash_bounce"] or total_requests == 0:
-            epoch["error_ratio"] = None
-            epoch["warning_ratio"] = None
-            epoch["5xx_ratio"] = None
-        else:
-            error_count = sum(
-                e["count"]
-                for e in analysis["errors"]
-                if e["level"] in ("error", "critical")
-            )
-            warning_count = sum(
-                e["count"] for e in analysis["errors"] if e["level"] == "warning"
-            )
-            epoch["error_ratio"] = error_count / total_requests
-            epoch["warning_ratio"] = warning_count / total_requests
-            epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
-        epoch["total_requests"] = total_requests
-        epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
-        epoch["active_users"] = analysis["users"]["active_users"]
-        epoch_analyses.append(analysis)
+    epoch_analyses = _analyse_epochs(conn, epochs)
 
     summative = query_summative_users(conn)
     conn.close()

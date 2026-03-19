@@ -85,6 +85,94 @@ def _append_epoch(
     )
 
 
+# ── Restart classification ────────────────────────────────────────
+
+# Restart reasons, ordered from most to least concerning:
+RESTART_OOM = "oom-kill"  # systemd/kernel killed the process
+RESTART_CRASH = "crash"  # process exited with non-zero status
+RESTART_UNKNOWN = "unknown"  # no journal evidence (hard kill? power loss?)
+RESTART_MANUAL = "manual-restart"  # same commit, clean shutdown
+RESTART_DEPLOY = "deploy"  # commit changed → deliberate deploy
+RESTART_FIRST = "first"  # first epoch in the window (no predecessor)
+
+_EXIT_CODE_RE = re.compile(r"Main process exited, code=(\w+), status=(\d+)(?:/\w+)?")
+
+
+def enrich_restart_reasons(
+    conn: sqlite3.Connection,
+    epochs: list[dict],
+) -> None:
+    """Classify why each epoch started (deploy, crash, OOM, manual restart).
+
+    Enriches each epoch dict in place with ``restart_reason``.
+    The classification examines whether the commit changed from the
+    previous epoch, and what journal messages appear in the gap
+    between epochs.
+    """
+    for i, epoch in enumerate(epochs):
+        if i == 0:
+            epoch["restart_reason"] = RESTART_FIRST
+            continue
+
+        prev = epochs[i - 1]
+        commit_changed = epoch["commit"] != prev["commit"]
+
+        # Look at journal messages between previous epoch end and this epoch start
+        gap_start = str(prev["end_utc"])
+        gap_end = str(epoch["start_utc"])
+
+        rows = conn.execute(
+            "SELECT message FROM journal_events"
+            " WHERE ts_utc >= ? AND ts_utc <= ?"
+            " ORDER BY ts_utc",
+            (gap_start, gap_end),
+        ).fetchall()
+
+        messages = [r[0] for r in rows if r[0]]
+        reason = _classify_gap(commit_changed, messages)
+        epoch["restart_reason"] = reason
+
+
+def _classify_gap(commit_changed: bool, messages: list[str]) -> str:
+    """Classify restart reason from commit change and journal messages."""
+    abnormal = _detect_abnormal_exit(messages)
+    if abnormal:
+        return abnormal
+
+    if commit_changed:
+        return RESTART_DEPLOY
+
+    if _has_clean_shutdown(messages):
+        return RESTART_MANUAL
+
+    return RESTART_UNKNOWN
+
+
+def _detect_abnormal_exit(messages: list[str]) -> str | None:
+    """Check messages for OOM kills or crash exit codes."""
+    for msg in messages:
+        lower = msg.lower()
+        if "oom-kill" in lower or "out of memory" in lower:
+            return RESTART_OOM
+
+    for msg in messages:
+        m = _EXIT_CODE_RE.search(msg)
+        if not m:
+            continue
+        code, status = m.group(1), int(m.group(2))
+        if code == "killed":
+            return RESTART_OOM
+        if status != 0:
+            return RESTART_CRASH
+
+    return None
+
+
+def _has_clean_shutdown(messages: list[str]) -> bool:
+    """Check if messages contain a clean systemd shutdown sequence."""
+    return any("Stopping" in msg or "Stopped" in msg for msg in messages)
+
+
 _CONSUMED_RE = re.compile(
     r"Consumed (.+?) CPU time,"
     r" (.+?) memory peak,"
@@ -643,13 +731,15 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
         lines.append("")
         return
     lines.append(
-        "| # | Commit | PR | Start | End | Duration | Events | Memory | CPU | Crash |"
+        "| # | Commit | PR | Start | End | Duration | Events | Memory | CPU | Restart |"
     )
     lines.append(
-        "|---|--------|----|-------|-----|----------|--------|--------|-----|-------|"
+        "|---|--------|----|-------|-----|----------|-------|--------|-----|---------|"
     )
     for i, e in enumerate(epochs):
-        crash_marker = "CRASH" if e.get("is_crash_bounce") else ""
+        reason = str(e.get("restart_reason", ""))
+        if e.get("is_crash_bounce"):
+            reason = f"⚡ {reason}"
         pr_info = str(e.get("pr_title", "")) or ""
         pr_num = e.get("pr_number")
         if pr_num is not None:
@@ -664,7 +754,7 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
             f" | {e.get('event_count', '')}"
             f" | {e.get('memory_peak', 'N/A')}"
             f" | {e.get('cpu_consumed', 'N/A')}"
-            f" | {crash_marker} |"
+            f" | {reason} |"
         )
     lines.append("")
 

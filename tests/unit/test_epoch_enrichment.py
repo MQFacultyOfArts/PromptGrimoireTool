@@ -223,3 +223,109 @@ class TestEnrichEpochsGithub:
         assert epochs[0]["pr_title"] == "no PR"
         assert epochs[0]["pr_author"] is None
         assert epochs[0]["pr_url"] is None
+
+
+def _make_epoch(commit: str, start_utc: str, end_utc: str) -> dict:
+    """Build a minimal epoch dict for restart classification tests."""
+    from datetime import datetime
+
+    dt_start = datetime.fromisoformat(start_utc)
+    dt_end = datetime.fromisoformat(end_utc)
+    duration = (dt_end - dt_start).total_seconds()
+    return {
+        "commit": commit,
+        "start_utc": start_utc,
+        "end_utc": end_utc,
+        "event_count": 100,
+        "duration_seconds": duration,
+        "is_crash_bounce": duration < 300,
+    }
+
+
+class TestEnrichRestartReasons:
+    """Tests for restart reason classification."""
+
+    def test_first_epoch_is_first(self) -> None:
+        from scripts.incident.analysis import RESTART_FIRST, enrich_restart_reasons
+
+        conn = _make_db()
+        epochs = [_make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z")]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[0]["restart_reason"] == RESTART_FIRST
+
+    def test_commit_change_is_deploy(self) -> None:
+        from scripts.incident.analysis import RESTART_DEPLOY, enrich_restart_reasons
+
+        conn = _make_db()
+        # Add a Stopping message in the gap
+        conn.execute(
+            "INSERT INTO journal_events (source_id, ts_utc, priority, message)"
+            " VALUES (1, '2026-03-15T12:00:30Z', 6,"
+            " 'Stopping promptgrimoire.service')",
+        )
+        epochs = [
+            _make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z"),
+            _make_epoch("bbb", "2026-03-15T12:01:00Z", "2026-03-15T14:00:00Z"),
+        ]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[1]["restart_reason"] == RESTART_DEPLOY
+
+    def test_same_commit_clean_shutdown_is_manual(self) -> None:
+        from scripts.incident.analysis import RESTART_MANUAL, enrich_restart_reasons
+
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO journal_events (source_id, ts_utc, priority, message)"
+            " VALUES (1, '2026-03-15T12:00:30Z', 6,"
+            " 'Stopping promptgrimoire.service')",
+        )
+        epochs = [
+            _make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z"),
+            _make_epoch("aaa", "2026-03-15T12:01:00Z", "2026-03-15T14:00:00Z"),
+        ]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[1]["restart_reason"] == RESTART_MANUAL
+
+    def test_crash_exit_code_is_crash(self) -> None:
+        from scripts.incident.analysis import RESTART_CRASH, enrich_restart_reasons
+
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO journal_events (source_id, ts_utc, priority, message)"
+            " VALUES (1, '2026-03-15T12:00:30Z', 3,"
+            " 'Main process exited, code=exited, status=226/NAMESPACE')",
+        )
+        epochs = [
+            _make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z"),
+            _make_epoch("aaa", "2026-03-15T12:01:00Z", "2026-03-15T14:00:00Z"),
+        ]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[1]["restart_reason"] == RESTART_CRASH
+
+    def test_oom_kill_detected(self) -> None:
+        from scripts.incident.analysis import RESTART_OOM, enrich_restart_reasons
+
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO journal_events (source_id, ts_utc, priority, message)"
+            " VALUES (1, '2026-03-15T12:00:30Z', 3,"
+            " 'Main process exited, code=killed, status=9/KILL')",
+        )
+        epochs = [
+            _make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z"),
+            _make_epoch("aaa", "2026-03-15T12:01:00Z", "2026-03-15T14:00:00Z"),
+        ]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[1]["restart_reason"] == RESTART_OOM
+
+    def test_no_journal_evidence_is_unknown(self) -> None:
+        from scripts.incident.analysis import RESTART_UNKNOWN, enrich_restart_reasons
+
+        conn = _make_db()
+        # No journal events in the gap at all
+        epochs = [
+            _make_epoch("aaa", "2026-03-15T10:00:00Z", "2026-03-15T12:00:00Z"),
+            _make_epoch("aaa", "2026-03-15T12:01:00Z", "2026-03-15T14:00:00Z"),
+        ]
+        enrich_restart_reasons(conn, epochs)
+        assert epochs[1]["restart_reason"] == RESTART_UNKNOWN

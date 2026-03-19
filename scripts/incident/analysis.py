@@ -237,6 +237,45 @@ def compute_error_landscape(
     return results
 
 
+# ── Pool configuration detection ─────────────────────────────────
+
+_POOL_SIZE_RE = re.compile(r"size=(\d+)")
+_POOL_OVERFLOW_RE = re.compile(r"overflow\s*=?\s*\d+/(\d+)")
+
+
+def detect_pool_config(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+) -> dict | None:
+    """Extract SQLAlchemy pool configuration from INVALIDATE/QueuePool events.
+
+    Queries raw (un-normalised) events to read transient pool counters.
+    Returns ``{"pool_size": int, "max_overflow": int | None}`` or ``None``.
+    """
+    row = conn.execute(
+        "SELECT event FROM jsonl_events"
+        " WHERE ts_utc >= ? AND ts_utc <= ?"
+        " AND (event LIKE '%INVALIDATE%size=%' OR event LIKE '%QueuePool limit%')"
+        " LIMIT 1",
+        (start_utc, end_utc),
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    event = row[0]
+    size_match = _POOL_SIZE_RE.search(event)
+    if not size_match:
+        return None
+
+    overflow_match = _POOL_OVERFLOW_RE.search(event)
+    return {
+        "pool_size": int(size_match.group(1)),
+        "max_overflow": int(overflow_match.group(1)) if overflow_match else None,
+    }
+
+
 _CONSUMED_RE = re.compile(
     r"Consumed (.+?) CPU time,"
     r" (.+?) memory peak,"

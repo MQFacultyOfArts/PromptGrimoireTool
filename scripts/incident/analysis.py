@@ -237,6 +237,24 @@ def compute_error_landscape(
     return results
 
 
+# ── Restart gap enrichment ────────────────────────────────────────
+
+
+def enrich_restart_gaps(epochs: list[dict]) -> None:
+    """Compute downtime duration between consecutive epochs.
+
+    Enriches each epoch dict in place with ``restart_gap_seconds``.
+    First epoch gets ``None`` (no predecessor).
+    """
+    for i, epoch in enumerate(epochs):
+        if i == 0:
+            epoch["restart_gap_seconds"] = None
+            continue
+        prev_end = datetime.fromisoformat(str(epochs[i - 1]["end_utc"]))
+        curr_start = datetime.fromisoformat(str(epoch["start_utc"]))
+        epoch["restart_gap_seconds"] = (curr_start - prev_end).total_seconds()
+
+
 # ── Pool configuration detection ─────────────────────────────────
 
 _POOL_SIZE_RE = re.compile(r"size=(\d+)")

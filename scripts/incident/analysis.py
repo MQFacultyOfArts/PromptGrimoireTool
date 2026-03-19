@@ -173,6 +173,33 @@ def _has_clean_shutdown(messages: list[str]) -> bool:
     return any("Stopping" in msg or "Stopped" in msg for msg in messages)
 
 
+# ── Event normalisation ──────────────────────────────────────────
+
+_NORMALISE_UUID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+_NORMALISE_ADDR = re.compile(r"0x[0-9a-f]+", re.IGNORECASE)
+_NORMALISE_TASK = re.compile(r"Task-\d+")
+_NORMALISE_POOL_TRANSIENT = re.compile(
+    r"\s*checked_in=\d+\s*checked_out=\d+\s*overflow=\d+/\d+",
+)
+
+
+def normalise_event(event: str) -> str:
+    """Collapse variable tokens in an event string to produce a stable class key.
+
+    Replaces UUIDs, hex addresses, asyncio task names, and transient
+    pool state counters so that structurally identical events map to
+    the same key regardless of runtime-specific values.
+    """
+    result = _NORMALISE_UUID.sub("<UUID>", event)
+    result = _NORMALISE_ADDR.sub("<ADDR>", result)
+    result = _NORMALISE_TASK.sub("Task-<N>", result)
+    result = _NORMALISE_POOL_TRANSIENT.sub("", result)
+    return result
+
+
 _CONSUMED_RE = re.compile(
     r"Consumed (.+?) CPU time,"
     r" (.+?) memory peak,"

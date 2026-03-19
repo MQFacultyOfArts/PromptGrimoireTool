@@ -57,6 +57,46 @@ scp "grimoire.drbbs.org:/tmp/haproxy-YYYYMMDD.log" /tmp/
 scp "grimoire.drbbs.org:/tmp/pglog-YYYYMMDD.log" /tmp/
 ```
 
+## Static DB Counts
+
+Snapshot the production database state for the review report. Run on the server or via ssh:
+
+```bash
+# On server (peer auth):
+sudo -u promptgrimoire psql -At promptgrimoire -c "
+SELECT json_build_object(
+  'users', (SELECT count(*) FROM \"user\"),
+  'workspaces', (SELECT count(*) FROM workspace),
+  'courses', (SELECT count(*) FROM course),
+  'enrollments', (SELECT count(*) FROM course_enrollment),
+  'activities', (SELECT count(*) FROM activity),
+  'documents', (SELECT count(*) FROM workspace_document),
+  'tags', (SELECT count(*) FROM tag),
+  'tag_groups', (SELECT count(*) FROM tag_group),
+  'acl_entries', (SELECT count(*) FROM acl_entry),
+  'wargame_configs', (SELECT count(*) FROM wargame_config),
+  'wargame_teams', (SELECT count(*) FROM wargame_team)
+);"
+
+# Via ssh, saving directly to local counts.json:
+ssh grimoire.drbbs.org 'sudo -u promptgrimoire psql -At promptgrimoire -c "
+SELECT json_build_object(
+  '\''users'\'', (SELECT count(*) FROM \"user\"),
+  '\''workspaces'\'', (SELECT count(*) FROM workspace),
+  '\''courses'\'', (SELECT count(*) FROM course),
+  '\''enrollments'\'', (SELECT count(*) FROM course_enrollment),
+  '\''activities'\'', (SELECT count(*) FROM activity),
+  '\''documents'\'', (SELECT count(*) FROM workspace_document),
+  '\''tags'\'', (SELECT count(*) FROM tag),
+  '\''tag_groups'\'', (SELECT count(*) FROM tag_group),
+  '\''acl_entries'\'', (SELECT count(*) FROM acl_entry),
+  '\''wargame_configs'\'', (SELECT count(*) FROM wargame_config),
+  '\''wargame_teams'\'', (SELECT count(*) FROM wargame_team)
+);"' > counts.json
+```
+
+Pass to the review report: `uv run scripts/incident_db.py review --counts-json counts.json`
+
 ## JSONL Analysis
 
 **The JSONL file is not windowed by default.** It accumulates across restarts. Always filter to your analysis window first.

@@ -17,6 +17,8 @@ JSONL_LOG="${JSONL_LOG:-$APP_DIR/logs/sessions/promptgrimoire.jsonl}"
 HAPROXY_LOG="${HAPROXY_LOG:-/var/log/haproxy.log}"
 PG_LOG_DIR="${PG_LOG_DIR:-/var/log/postgresql}"
 UNIT_NAME="${UNIT_NAME:-promptgrimoire.service}"
+DB_NAME="${DB_NAME:-promptgrimoire}"
+DB_USER="${DB_USER:-promptgrimoire}"
 
 # -------------------------------------------------------------------
 # Helpers (same pattern as restart.sh)
@@ -210,7 +212,85 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 5. Build manifest.json
+# 5. Snapshot application database counts
+# -------------------------------------------------------------------
+step "Snapshotting database counts..."
+DB_SNAPSHOT_FILE="$WORKDIR/db-snapshot.json"
+DB_METHOD="not collected"
+
+# Run as the app user (peer auth) to avoid password prompts.
+DB_QUERY="SELECT json_build_object(
+  'snapshot_utc', now() AT TIME ZONE 'UTC',
+  'global', (SELECT json_build_object(
+    'users', (SELECT count(*) FROM \"user\"),
+    'workspaces', (SELECT count(*) FROM workspace),
+    'courses', (SELECT count(*) FROM course),
+    'enrollments', (SELECT count(*) FROM course_enrollment),
+    'activities', (SELECT count(*) FROM activity),
+    'documents', (SELECT count(*) FROM workspace_document),
+    'tags', (SELECT count(*) FROM tag),
+    'tag_groups', (SELECT count(*) FROM tag_group),
+    'acl_entries', (SELECT count(*) FROM acl_entry)
+  )),
+  'growth_by_day', (SELECT json_agg(row_to_json(t)) FROM (
+    SELECT date(created_at AT TIME ZONE 'Australia/Sydney') as day,
+           count(*) as workspaces,
+           count(DISTINCT activity_id) as activities_used
+    FROM workspace GROUP BY 1 ORDER BY 1
+  ) t),
+  'users_by_day', (SELECT json_agg(row_to_json(t)) FROM (
+    SELECT date(created_at AT TIME ZONE 'Australia/Sydney') as day, count(*) as users
+    FROM \"user\" GROUP BY 1 ORDER BY 1
+  ) t),
+  'crdt_sizes', (SELECT json_build_object(
+    'total_with_crdt', count(*),
+    'avg_bytes', avg(length(crdt_state)),
+    'max_bytes', max(length(crdt_state)),
+    'p50_bytes', percentile_cont(0.5) WITHIN GROUP (ORDER BY length(crdt_state)),
+    'p95_bytes', percentile_cont(0.95) WITHIN GROUP (ORDER BY length(crdt_state)),
+    'p99_bytes', percentile_cont(0.99) WITHIN GROUP (ORDER BY length(crdt_state))
+  ) FROM workspace WHERE crdt_state IS NOT NULL AND length(crdt_state) > 0),
+  'by_course', (SELECT json_agg(row_to_json(t)) FROM (
+    SELECT c.code, c.name,
+           count(DISTINCT a.id) as activities,
+           count(DISTINCT ws.id) as workspaces,
+           count(DISTINCT ae.user_id) as users_with_acl,
+           count(DISTINCT tg.id) as tag_groups,
+           count(DISTINCT tag.id) as tags
+    FROM course c
+    LEFT JOIN week w ON w.course_id = c.id
+    LEFT JOIN activity a ON a.week_id = w.id
+    LEFT JOIN workspace ws ON ws.activity_id = a.id
+    LEFT JOIN acl_entry ae ON ae.workspace_id = ws.id
+    LEFT JOIN tag_group tg ON tg.workspace_id = ws.id
+    LEFT JOIN tag ON tag.group_id = tg.id
+    GROUP BY c.id, c.code, c.name ORDER BY c.code
+  ) t),
+  'tags_per_workspace', (SELECT json_build_object(
+    'avg', avg(tc),
+    'max', max(tc),
+    'p50', percentile_cont(0.5) WITHIN GROUP (ORDER BY tc),
+    'p95', percentile_cont(0.95) WITHIN GROUP (ORDER BY tc)
+  ) FROM (SELECT count(*) as tc FROM tag GROUP BY workspace_id) sub)
+);"
+
+# shellcheck disable=SC2024  # script runs as root; sudo -u de-escalates, redirect is fine
+if sudo -u "$DB_USER" psql -At "$DB_NAME" -c "$DB_QUERY" > "$DB_SNAPSHOT_FILE" 2>"$WORKDIR/db-snapshot.stderr"; then
+    DB_METHOD="psql snapshot"
+    # Pretty-print if jq available.
+    if command -v jq &>/dev/null; then
+        jq . "$DB_SNAPSHOT_FILE" > "$DB_SNAPSHOT_FILE.tmp" \
+            && mv "$DB_SNAPSHOT_FILE.tmp" "$DB_SNAPSHOT_FILE"
+    fi
+    step "  Database snapshot captured"
+else
+    warn "Database snapshot failed (see db-snapshot.stderr in tarball)"
+    DB_METHOD="failed"
+    touch "$DB_SNAPSHOT_FILE"
+fi
+
+# -------------------------------------------------------------------
+# 6. Build manifest.json
 # -------------------------------------------------------------------
 step "Building manifest.json..."
 
@@ -258,6 +338,7 @@ for f in "$WORKDIR"/*; do
         structlog.jsonl)  FILES_JSON+=$(file_entry "$f" "${JSONL_SOURCES:-$JSONL_LOG}" "$JSONL_METHOD") ;;
         haproxy.log)      FILES_JSON+=$(file_entry "$f" "${HAPROXY_SOURCES:-$HAPROXY_LOG}" "$HAPROXY_METHOD") ;;
         postgresql*)      FILES_JSON+=$(file_entry "$f" "${PG_SOURCE:-unknown}" "$PG_METHOD") ;;
+        db-snapshot.json) FILES_JSON+=$(file_entry "$f" "$DB_NAME" "$DB_METHOD") ;;
         *)                FILES_JSON+=$(file_entry "$f" "unknown" "unknown") ;;
     esac
 done
@@ -302,7 +383,7 @@ fi
 # Include any stderr files in the tarball for diagnostics.
 
 # -------------------------------------------------------------------
-# 6. Create tarball
+# 7. Create tarball
 # -------------------------------------------------------------------
 TARBALL="/tmp/telemetry-${TIMESTAMP}.tar.gz"
 step "Creating tarball: $TARBALL"
@@ -324,5 +405,18 @@ fi
 
 step "Done. Tarball: $TARBALL"
 echo ""
-echo "To copy to your local machine:"
-echo "  scp grimoire.drbbs.org:$TARBALL ."
+echo "Next steps (run locally):"
+echo ""
+echo "  # 1. Copy tarball"
+echo "  scp grimoire.drbbs.org:$TARBALL /tmp/"
+echo ""
+echo "  # 2. Fetch Beszel metrics (requires SSH tunnel: ssh -L 8090:localhost:8090 brian.fedarch.org)"
+echo "  uv run scripts/incident_db.py beszel --start \"$START\" --end \"$END\" --hub http://localhost:8090 --db incident.db"
+echo ""
+echo "  # 3. Ingest tarball + GitHub data"
+echo "  uv run scripts/incident_db.py ingest /tmp/$(basename "$TARBALL") --db incident.db"
+echo "  uv run scripts/incident_db.py github --start \"$START\" --end \"$END\" --db incident.db"
+echo ""
+echo "  # 4. Generate review (db-snapshot.json is inside the tarball)"
+echo "  tar xzf /tmp/$(basename "$TARBALL") ./db-snapshot.json -O > /tmp/db-snapshot.json"
+echo "  uv run scripts/incident_db.py review --db incident.db --counts-json /tmp/db-snapshot.json --output /tmp/review.md"

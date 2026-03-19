@@ -2,7 +2,80 @@
 
 from __future__ import annotations
 
-from scripts.incident.analysis import render_review_report
+from scripts.incident.analysis import _md_table, render_review_report
+
+
+class TestMdTable:
+    def test_basic_table(self) -> None:
+        """Generates a simple markdown table with headers and rows."""
+        result = _md_table(["A", "B"], [["1", "2"], ["3", "4"]])
+        assert result == [
+            "| A | B |",
+            "| --- | --- |",
+            "| 1 | 2 |",
+            "| 3 | 4 |",
+        ]
+
+    def test_right_alignment(self) -> None:
+        """Right-aligned columns use ---: separator."""
+        result = _md_table(["Name", "Count"], [["x", "5"]], alignments=["l", "r"])
+        assert result[1] == "| --- | ---: |"
+
+    def test_center_alignment(self) -> None:
+        """Center-aligned columns use :---: separator."""
+        result = _md_table(["A"], [["1"]], alignments=["c"])
+        assert result[1] == "| :---: |"
+
+    def test_empty_rows(self) -> None:
+        """Table with no rows produces header and separator only."""
+        result = _md_table(["X", "Y"], [])
+        assert len(result) == 2
+
+    def test_non_string_cells_converted(self) -> None:
+        """Non-string cell values are converted via str()."""
+        result = _md_table(["N"], [["42"]])
+        assert result[2] == "| 42 |"
+
+
+class TestExplanatoryProse:
+    """Verify that explanatory prose appears in the rendered report."""
+
+    def test_report_header_prose(self) -> None:
+        """Introductory prose about epochs and normalisation appears after header."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=_mock_trends(),
+        )
+        assert "epochs" in report.lower()
+        assert "SRE" in report
+
+    def test_timeline_prose(self) -> None:
+        """Epoch Timeline section includes explanatory prose."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=_mock_trends(),
+        )
+        assert "deploy" in report
+        assert "crash" in report.lower()
+
+    def test_trend_prose(self) -> None:
+        """Trend Analysis section includes metric explanation prose."""
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=_mock_trends(),
+        )
+        assert "5xx Ratio" in report
+        assert "Error Ratio" in report
+        assert "percentage" in report.lower() or "pp" in report
 
 
 def _mock_sources() -> list[dict]:

@@ -667,6 +667,37 @@ def compute_trends(epochs: list[dict]) -> list[dict]:
 # ── Report rendering ──────────────────────────────────────────────
 
 
+def _md_table(
+    headers: list[str],
+    rows: list[list[str]],
+    alignments: list[str] | None = None,
+) -> list[str]:
+    """Generate markdown table lines from headers and row data.
+
+    alignments: list of 'l', 'r', or 'c' per column. Defaults to left-aligned.
+    """
+    lines: list[str] = []
+    lines.append("| " + " | ".join(headers) + " |")
+
+    if alignments is None:
+        alignments = ["l"] * len(headers)
+
+    sep_parts: list[str] = []
+    for align in alignments:
+        if align == "r":
+            sep_parts.append("---:")
+        elif align == "c":
+            sep_parts.append(":---:")
+        else:
+            sep_parts.append("---")
+    lines.append("| " + " | ".join(sep_parts) + " |")
+
+    for row in rows:
+        lines.append("| " + " | ".join(str(cell) for cell in row) + " |")
+
+    return lines
+
+
 def _fmt_duration(seconds: float) -> str:
     """Format seconds as human-readable duration."""
     hours = int(seconds // 3600)
@@ -708,15 +739,21 @@ def _render_section_sources(lines: list[str], sources: list[dict]) -> None:
     lines.append("## Source Inventory")
     lines.append("")
     if sources:
-        lines.append("| Filename | Format | SHA256 | Size | Window |")
-        lines.append("|----------|--------|--------|------|--------|")
+        headers = ["Filename", "Format", "SHA256", "Size", "Window"]
+        rows: list[list[str]] = []
         for s in sources:
             sha = str(s.get("sha256", ""))[:12]
             window = f"{s.get('window_start_utc', '')} - {s.get('window_end_utc', '')}"
-            lines.append(
-                f"| {s.get('filename', '')} | {s.get('format', '')} "
-                f"| {sha} | {s.get('size', '')} | {window} |"
+            rows.append(
+                [
+                    str(s.get("filename", "")),
+                    str(s.get("format", "")),
+                    sha,
+                    str(s.get("size", "")),
+                    window,
+                ]
             )
+        lines.extend(_md_table(headers, rows))
     else:
         lines.append("No sources ingested.")
     lines.append("")
@@ -726,16 +763,35 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
     """Render the Epoch Timeline section."""
     lines.append("## Epoch Timeline")
     lines.append("")
+    lines.append("> Each row is one epoch. **Restart** shows why the epoch started:")
+    lines.append(
+        "> `deploy` (commit changed), `manual-restart` (same commit, clean shutdown),"
+    )
+    lines.append("> `crash` (non-zero exit), `oom-kill` (killed by kernel/systemd), or")
+    lines.append(
+        "> `unknown` (no journal evidence). ⚡ marks crash-bounce epochs (< 5 min)."
+    )
+    lines.append(
+        "> Non-deploy restarts are the highest-severity signal in this report."
+    )
+    lines.append("")
     if not epochs:
         lines.append("No epochs detected.")
         lines.append("")
         return
-    lines.append(
-        "| # | Commit | PR | Start | End | Duration | Events | Memory | CPU | Restart |"
-    )
-    lines.append(
-        "|---|--------|----|-------|-----|----------|-------|--------|-----|---------|"
-    )
+    headers = [
+        "#",
+        "Commit",
+        "PR",
+        "Start",
+        "End",
+        "Duration",
+        "Events",
+        "Memory",
+        "CPU",
+        "Restart",
+    ]
+    rows: list[list[str]] = []
     for i, e in enumerate(epochs):
         reason = str(e.get("restart_reason", ""))
         if e.get("is_crash_bounce"):
@@ -745,17 +801,21 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
         if pr_num is not None:
             pr_info = f"#{pr_num} {pr_info}"
         duration = _fmt_duration(float(e.get("duration_seconds", 0)))
-        lines.append(
-            f"| {i + 1} | {e.get('commit', '')}"
-            f" | {pr_info}"
-            f" | {e.get('start_utc', '')}"
-            f" | {e.get('end_utc', '')}"
-            f" | {duration}"
-            f" | {e.get('event_count', '')}"
-            f" | {e.get('memory_peak', 'N/A')}"
-            f" | {e.get('cpu_consumed', 'N/A')}"
-            f" | {reason} |"
+        rows.append(
+            [
+                str(i + 1),
+                str(e.get("commit", "")),
+                pr_info,
+                str(e.get("start_utc", "")),
+                str(e.get("end_utc", "")),
+                duration,
+                str(e.get("event_count", "")),
+                str(e.get("memory_peak", "N/A")),
+                str(e.get("cpu_consumed", "N/A")),
+                reason,
+            ]
         )
+    lines.extend(_md_table(headers, rows))
     lines.append("")
 
 
@@ -783,14 +843,18 @@ def _render_epoch_errors(lines: list[str], errors: list[dict]) -> None:
         return
     lines.append("**Errors/Warnings:**")
     lines.append("")
-    lines.append("| Level | Event | Count | Per Hour |")
-    lines.append("|-------|-------|-------|----------|")
+    headers = ["Level", "Event", "Count", "Per Hour"]
+    rows: list[list[str]] = []
     for err in errors:
-        per_hour = _fmt_val(err.get("per_hour"))
-        lines.append(
-            f"| {err.get('level', '')} | {err.get('event', '')}"
-            f" | {err.get('count', '')} | {per_hour} |"
+        rows.append(
+            [
+                str(err.get("level", "")),
+                str(err.get("event", "")),
+                str(err.get("count", "")),
+                _fmt_val(err.get("per_hour")),
+            ]
         )
+    lines.extend(_md_table(headers, rows))
     lines.append("")
 
 
@@ -810,10 +874,11 @@ def _render_epoch_haproxy(lines: list[str], haproxy: dict) -> None:
     status_codes = haproxy.get("status_codes", [])
     if status_codes:
         lines.append("")
-        lines.append("| Status | Count |")
-        lines.append("|--------|-------|")
-        for sc in status_codes:
-            lines.append(f"| {sc.get('status_code', '')} | {sc.get('count', '')} |")
+        sc_rows: list[list[str]] = [
+            [str(sc.get("status_code", "")), str(sc.get("count", ""))]
+            for sc in status_codes
+        ]
+        lines.extend(_md_table(["Status", "Count"], sc_rows, alignments=["l", "r"]))
     lines.append("")
 
 
@@ -842,13 +907,16 @@ def _render_epoch_pg_section(lines: list[str], pg_events: list[dict]) -> None:
         return
     lines.append("**PostgreSQL:**")
     lines.append("")
-    lines.append("| Level | Error Type | Count |")
-    lines.append("|-------|------------|-------|")
-    for pg in pg_events:
-        lines.append(
-            f"| {pg.get('level', '')} | {pg.get('error_type', '')}"
-            f" | {pg.get('count', '')} |"
-        )
+    headers = ["Level", "Error Type", "Count"]
+    rows: list[list[str]] = [
+        [
+            str(pg.get("level", "")),
+            str(pg.get("error_type", "")),
+            str(pg.get("count", "")),
+        ]
+        for pg in pg_events
+    ]
+    lines.extend(_md_table(headers, rows))
     lines.append("")
 
 
@@ -857,13 +925,17 @@ def _render_epoch_journal(lines: list[str], anomalies: list[dict]) -> None:
         return
     lines.append("**Journal Anomalies:**")
     lines.append("")
-    lines.append("| Timestamp | Priority | Unit | Message |")
-    lines.append("|-----------|----------|------|---------|")
-    for a in anomalies:
-        lines.append(
-            f"| {a.get('ts_utc', '')} | {a.get('priority', '')}"
-            f" | {a.get('unit', '')} | {a.get('message', '')} |"
-        )
+    headers = ["Timestamp", "Priority", "Unit", "Message"]
+    rows: list[list[str]] = [
+        [
+            str(a.get("ts_utc", "")),
+            str(a.get("priority", "")),
+            str(a.get("unit", "")),
+            str(a.get("message", "")),
+        ]
+        for a in anomalies
+    ]
+    lines.extend(_md_table(headers, rows))
     lines.append("")
 
 
@@ -883,6 +955,14 @@ def _render_section_users(lines: list[str], summative_users: dict) -> None:
     """Render the User Activity Summary section."""
     lines.append("## User Activity Summary")
     lines.append("")
+    lines.append(
+        "> Summative counts across the entire review window. Users active in multiple"
+    )
+    lines.append(
+        "> epochs are counted once (union, not sum). Compare with static DB counts"
+    )
+    lines.append("> (if provided) to gauge what fraction of the user base was active.")
+    lines.append("")
     lines.append(f"- Unique logins: {summative_users.get('unique_logins', 0)}")
     lines.append(f"- Active users: {summative_users.get('active_users', 0)}")
     lines.append(f"- Active workspaces: {summative_users.get('active_workspaces', 0)}")
@@ -899,24 +979,58 @@ def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
     """
     lines.append("## Trend Analysis")
     lines.append("")
+    lines.append(
+        "> Cross-epoch comparison normalised by HTTP request volume. Each ratio ="
+    )
+    lines.append(
+        "> (count / total served requests). Delta shows absolute change in percentage"
+    )
+    lines.append("> points (pp) from the previous non-crash-bounce epoch.")
+    lines.append(">")
+    lines.append("> **Metrics:**")
+    lines.append(
+        "> - **5xx Ratio**: server errors / requests. Excludes `<NOSRV>` 503s (HAProxy"
+    )
+    lines.append(
+        ">   returning errors while the app restarts"
+        " — infrastructure, not application)."
+    )
+    lines.append(
+        "> - **Error Ratio**: application error+critical log events / requests."
+    )
+    lines.append(
+        "> - **Warning Ratio**: business logic warnings / requests"
+        " (expected, not alarming)."
+    )
+    lines.append(
+        "> - **⚠ flag**: value exceeds absolute threshold (5xx > 1%, errors > 5%,"
+    )
+    lines.append(">   memory > 3GB, CPU > 50%).")
+    lines.append("")
     if not trends:
         lines.append("No trend data (fewer than 2 non-crash-bounce epochs).")
         lines.append("")
         return
-    lines.append(
-        "| # | Commit | PR | 5xx Ratio | Error Ratio | Warning Ratio"
-        " | Mem Peak | CPU % | Users | Requests |"
-    )
-    lines.append(
-        "|---|--------|----|---------:|-----------:|-------------:"
-        "|---------:|------:|------:|---------:|"
-    )
+    headers = [
+        "#",
+        "Commit",
+        "PR",
+        "5xx Ratio",
+        "Error Ratio",
+        "Warning Ratio",
+        "Mem Peak",
+        "CPU %",
+        "Users",
+        "Requests",
+    ]
+    alignments = ["l", "l", "l", "r", "r", "r", "r", "r", "r", "r"]
+    rows: list[list[str]] = []
     for t in trends:
         commit = t.get("commit", "")[:8]
-        epoch_idx = t.get("epoch_index", "")
-        pr_title = t.get("pr_title", "")
+        epoch_idx = str(t.get("epoch_index", ""))
+        pr_title = str(t.get("pr_title", ""))
         m = t.get("metrics", {})
-        cells = [f"| {epoch_idx} | {commit} | {pr_title}"]
+        row: list[str] = [epoch_idx, commit, pr_title]
         for key in (
             "5xx_ratio",
             "error_ratio",
@@ -926,11 +1040,12 @@ def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
             "active_users",
         ):
             md = m.get(key, {})
-            cells.append(_fmt_trend_cell(key, md))
+            row.append(_fmt_trend_cell(key, md))
         # total_requests is context, not trended
         total_reqs = t.get("total_requests", "—")
-        cells.append(str(total_reqs))
-        lines.append(" | ".join(cells) + " |")
+        row.append(str(total_reqs))
+        rows.append(row)
+    lines.extend(_md_table(headers, rows, alignments=alignments))
     lines.append("")
 
 
@@ -1015,21 +1130,49 @@ def render_review_report(
     lines.append(f"Generated: {generated}")
     lines.append(f"Window: {window_str}")
     lines.append("")
+    lines.append(
+        "> This report segments server uptime into **epochs** — periods of continuous"
+    )
+    lines.append(
+        "> operation between restarts. Each epoch runs a single deployed git commit."
+    )
+    lines.append(
+        "> Metrics are normalised per request (not per hour) so epochs with different"
+    )
+    lines.append(
+        "> traffic levels can be compared fairly. See Google SRE Workbook ch. 2"
+    )
+    lines.append(
+        "> (SLOs and Error Budgets) for the methodology behind"
+        " request-based error ratios."
+    )
+    lines.append("")
 
     _render_section_sources(lines, sources)
 
     if static_counts is not None:
         lines.append("## Static DB Counts")
         lines.append("")
-        lines.append("| Metric | Value |")
-        lines.append("|--------|-------|")
-        for key, value in static_counts.items():
-            lines.append(f"| {key} | {value} |")
+        sc_rows: list[list[str]] = [
+            [str(key), str(value)] for key, value in static_counts.items()
+        ]
+        lines.extend(_md_table(["Metric", "Value"], sc_rows))
         lines.append("")
 
     _render_section_timeline(lines, epochs)
 
     lines.append("## Per-Epoch Analysis")
+    lines.append("")
+    lines.append(
+        "> Detailed breakdown of each epoch's errors, HTTP traffic, resource usage,"
+    )
+    lines.append(
+        "> and user activity. Error counts are shown with per-hour rates for context."
+    )
+    lines.append(
+        "> For cross-epoch comparison, use the Trend Analysis table below which"
+    )
+    lines.append("> normalises by request volume.")
     lines.append("")
     for i, (epoch, analysis) in enumerate(
         zip(epochs, epoch_analyses, strict=False),

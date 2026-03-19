@@ -30,25 +30,15 @@ class TestResolveGithubToken:
         mock_result.returncode = 0
         mock_result.stdout = "cli-token\n"
 
+        # Remove GITHUB_TOKEN from env if present, then test gh CLI fallback
+        env_without_token = {
+            k: v for k, v in __import__("os").environ.items() if k != "GITHUB_TOKEN"
+        }
         with (
-            patch.dict("os.environ", {}, clear=False),
-            patch(
-                "os.environ.get",
-                side_effect=lambda k, d=None: (
-                    d if k == "GITHUB_TOKEN" else os.environ.get(k, d)
-                ),
-            ),
+            patch.dict("os.environ", env_without_token, clear=True),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            # Need to ensure GITHUB_TOKEN is not set
-            import os
-
-            env_backup = os.environ.pop("GITHUB_TOKEN", None)
-            try:
-                result = resolve_github_token()
-            finally:
-                if env_backup is not None:
-                    os.environ["GITHUB_TOKEN"] = env_backup
+            result = resolve_github_token()
 
         assert result == "cli-token"
         mock_run.assert_called_once_with(
@@ -66,18 +56,15 @@ class TestResolveGithubToken:
         mock_result.returncode = 1
         mock_result.stdout = ""
 
-        import os
-
-        env_backup = os.environ.pop("GITHUB_TOKEN", None)
-        try:
-            with (
-                patch("subprocess.run", return_value=mock_result),
-                pytest.raises(RuntimeError, match="GITHUB_TOKEN"),
-            ):
-                resolve_github_token()
-        finally:
-            if env_backup is not None:
-                os.environ["GITHUB_TOKEN"] = env_backup
+        env_without_token = {
+            k: v for k, v in __import__("os").environ.items() if k != "GITHUB_TOKEN"
+        }
+        with (
+            patch.dict("os.environ", env_without_token, clear=True),
+            patch("subprocess.run", return_value=mock_result),
+            pytest.raises(RuntimeError, match="GITHUB_TOKEN"),
+        ):
+            resolve_github_token()
 
     def test_env_var_preferred_over_gh_cli(self) -> None:
         """Resolution order: env var before subprocess."""

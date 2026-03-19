@@ -95,11 +95,23 @@ CREATE TABLE IF NOT EXISTS beszel_metrics (
     load_15 REAL
 );
 
+CREATE TABLE IF NOT EXISTS github_events (
+    id          INTEGER PRIMARY KEY,
+    source_id   INTEGER NOT NULL REFERENCES sources(id),
+    ts_utc      TEXT NOT NULL,
+    pr_number   INTEGER NOT NULL,
+    title       TEXT NOT NULL,
+    author      TEXT NOT NULL,
+    commit_oid  TEXT NOT NULL,
+    url         TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_jsonl_ts ON jsonl_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_haproxy_ts ON haproxy_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_pg_ts ON pg_events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_beszel_ts ON beszel_metrics(ts_utc);
+CREATE INDEX IF NOT EXISTS idx_github_events_ts ON github_events(ts_utc);
 
 DROP VIEW IF EXISTS timeline;
 CREATE VIEW timeline AS
@@ -121,6 +133,12 @@ SELECT source_id, ts_utc, 'beszel' AS source,
        printf('mem=%.0f%% load=%.1f', mem_percent, load_1) AS message,
        NULL AS extra
 FROM beszel_metrics
+UNION ALL
+SELECT source_id, ts_utc, 'github' AS source,
+       'pr' AS level_or_status,
+       '#' || pr_number || ' ' || title AS message,
+       commit_oid AS extra
+FROM github_events
 ORDER BY ts_utc;
 """
 
@@ -135,6 +153,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA_DDL)
     _migrate_sources_provenance(conn)
+    _migrate_add_github_events(conn)
 
 
 def _migrate_sources_provenance(conn: sqlite3.Connection) -> None:
@@ -144,3 +163,29 @@ def _migrate_sources_provenance(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE sources ADD COLUMN source_path TEXT")
     if "collection_method" not in existing:
         conn.execute("ALTER TABLE sources ADD COLUMN collection_method TEXT")
+
+
+def _migrate_add_github_events(conn: sqlite3.Connection) -> None:
+    """Add github_events table if missing (schema v2)."""
+    tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "github_events" not in tables:
+        conn.executescript(
+            """
+            CREATE TABLE github_events (
+                id          INTEGER PRIMARY KEY,
+                source_id   INTEGER NOT NULL REFERENCES sources(id),
+                ts_utc      TEXT NOT NULL,
+                pr_number   INTEGER NOT NULL,
+                title       TEXT NOT NULL,
+                author      TEXT NOT NULL,
+                commit_oid  TEXT NOT NULL,
+                url         TEXT NOT NULL
+            );
+            CREATE INDEX idx_github_events_ts ON github_events(ts_utc);
+            """
+        )

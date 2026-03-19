@@ -110,7 +110,7 @@ def _handle_http_error(
     else:
         msg = _STATUS_MESSAGES.get(status, f"Error: GitHub API returned HTTP {status}.")
     print(msg, file=sys.stderr)
-    raise SystemExit(1) from None
+    raise SystemExit(1) from exc
 
 
 def fetch_github_prs(

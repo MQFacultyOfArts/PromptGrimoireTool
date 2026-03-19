@@ -263,6 +263,7 @@ def _analyse_epochs(
 ) -> list[dict]:
     """Run per-epoch queries and attach ratio metrics to each epoch dict."""
     from scripts.incident.analysis import (
+        detect_pool_config,
         query_epoch_errors,
         query_epoch_haproxy,
         query_epoch_journal_anomalies,
@@ -277,6 +278,7 @@ def _analyse_epochs(
         end = str(epoch["end_utc"])
         dur_raw = epoch["duration_seconds"]
         dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
+        pool_config = detect_pool_config(conn, start, end)
         analysis = {
             "errors": query_epoch_errors(conn, start, end, dur),
             "haproxy": query_epoch_haproxy(conn, start, end, dur),
@@ -284,6 +286,7 @@ def _analyse_epochs(
             "pg": query_epoch_pg(conn, start, end),
             "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
             "users": query_epoch_users(conn, start, end),
+            "pool_config": pool_config,
         }
         total_requests = analysis["haproxy"]["total_requests"]
         if epoch["is_crash_bounce"] or total_requests == 0:
@@ -305,6 +308,7 @@ def _analyse_epochs(
         epoch["total_requests"] = total_requests
         epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
         epoch["active_users"] = analysis["users"]["active_users"]
+        epoch["pool_size"] = pool_config["pool_size"] if pool_config else None
         epoch_analyses.append(analysis)
     return epoch_analyses
 
@@ -445,6 +449,7 @@ def review(
         compute_trends,
         enrich_epochs_github,
         enrich_epochs_journal,
+        enrich_restart_gaps,
         enrich_restart_reasons,
         extract_epochs,
         load_static_counts,
@@ -469,6 +474,7 @@ def review(
     enrich_restart_reasons(conn, epochs)
     enrich_epochs_journal(conn, epochs)
     enrich_epochs_github(conn, epochs)
+    enrich_restart_gaps(epochs)
 
     epoch_analyses = _analyse_epochs(conn, epochs)
 

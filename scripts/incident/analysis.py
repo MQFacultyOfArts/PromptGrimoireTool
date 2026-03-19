@@ -741,6 +741,7 @@ _TREND_METRICS = (
     "memory_peak_bytes",
     "mean_cpu",
     "active_users",
+    "pool_size",
 )
 
 # Anomaly detection: absolute thresholds per metric.
@@ -786,11 +787,15 @@ def compute_trends(epochs: list[dict]) -> list[dict]:
         for metric in _TREND_METRICS:
             d = _safe_delta(current.get(metric), previous.get(metric))
 
-            is_anomaly = (
-                metric in _ANOMALY_FLOORS
-                and d["value"] is not None
-                and d["value"] > _ANOMALY_FLOORS[metric]
-            )
+            if metric == "pool_size":
+                # Config change: any non-zero delta is anomalous
+                is_anomaly = d["delta"] is not None and d["delta"] != 0
+            else:
+                is_anomaly = (
+                    metric in _ANOMALY_FLOORS
+                    and d["value"] is not None
+                    and d["value"] > _ANOMALY_FLOORS[metric]
+                )
 
             d["is_anomaly"] = is_anomaly
             metrics[metric] = d
@@ -1165,9 +1170,10 @@ def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
         "Mem Peak",
         "CPU %",
         "Users",
+        "Pool",
         "Requests",
     ]
-    alignments = ["l", "l", "l", "r", "r", "r", "r", "r", "r", "r"]
+    alignments = ["l", "l", "l", "r", "r", "r", "r", "r", "r", "r", "r"]
     rows: list[list[str]] = []
     for t in trends:
         commit = t.get("commit", "")[:8]
@@ -1182,6 +1188,7 @@ def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
             "memory_peak_bytes",
             "mean_cpu",
             "active_users",
+            "pool_size",
         ):
             md = m.get(key, {})
             row.append(_fmt_trend_cell(key, md))
@@ -1211,7 +1218,7 @@ def _fmt_trend_cell(metric: str, md: dict) -> str:
     elif metric == "memory_peak_bytes":
         val_str = _fmt_bytes(val)
         delta_str = f" ({_fmt_bytes_delta(delta)})" if delta is not None else ""
-    elif metric == "active_users":
+    elif metric in ("active_users", "pool_size"):
         val_str = str(int(val))
         delta_str = f" ({_fmt_delta(delta)})" if delta is not None else ""
     else:

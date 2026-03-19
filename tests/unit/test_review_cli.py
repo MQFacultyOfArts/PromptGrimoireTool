@@ -42,6 +42,13 @@ class TestReviewOrchestration:
                 "scripts.incident.analysis.enrich_epochs_github",
             ) as mock_enrich_github,
             patch(
+                "scripts.incident.analysis.enrich_restart_gaps",
+            ) as mock_enrich_gaps,
+            patch(
+                "scripts.incident.analysis.detect_pool_config",
+                return_value=None,
+            ) as mock_pool_config,
+            patch(
                 "scripts.incident.analysis.query_epoch_errors",
                 return_value=[],
             ) as mock_errors,
@@ -57,6 +64,7 @@ class TestReviewOrchestration:
                     "p95_ms": None,
                     "p99_ms": None,
                     "sample_count": 0,
+                    "nosrv_first_60s": 0,
                 },
             ) as mock_haproxy,
             patch(
@@ -120,6 +128,8 @@ class TestReviewOrchestration:
             mock_extract.assert_called_once()
             mock_enrich_journal.assert_called_once()
             mock_enrich_github.assert_called_once()
+            mock_enrich_gaps.assert_called_once()
+            mock_pool_config.assert_called_once()
             mock_errors.assert_called_once()
             mock_haproxy.assert_called_once()
             mock_resources.assert_called_once()
@@ -155,6 +165,8 @@ class TestReviewOrchestration:
             ),
             patch("scripts.incident.analysis.enrich_epochs_journal"),
             patch("scripts.incident.analysis.enrich_epochs_github"),
+            patch("scripts.incident.analysis.enrich_restart_gaps"),
+            patch("scripts.incident.analysis.detect_pool_config", return_value=None),
             patch(
                 "scripts.incident.analysis.query_epoch_errors",
                 return_value=[],
@@ -171,6 +183,7 @@ class TestReviewOrchestration:
                     "p95_ms": None,
                     "p99_ms": None,
                     "sample_count": 0,
+                    "nosrv_first_60s": 0,
                 },
             ),
             patch(

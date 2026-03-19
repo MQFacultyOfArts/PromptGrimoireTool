@@ -13,6 +13,7 @@ import structlog
 from nicegui import events, ui
 
 from promptgrimoire.db.workspace_documents import add_document
+from promptgrimoire.input_pipeline.converters import ConversionError
 from promptgrimoire.input_pipeline.html_input import (
     detect_content_type,
     process_input,
@@ -166,6 +167,15 @@ async def _handle_file_upload(
             error=str(not_impl_err),
         )
         ui.notify(f"Format not yet supported: {not_impl_err}", type="warning")
+    except ConversionError as conv_err:
+        logger.warning(
+            "file_conversion_failed",
+            operation="handle_file_upload",
+            error=str(conv_err),
+            filename=filename,
+            confirmed_type=confirmed_type,
+        )
+        ui.notify(f"Failed to process file: {conv_err}", type="negative")
     except Exception as exc:
         logger.exception("Failed to process uploaded file")
         ui.notify(f"Failed to process file: {exc}", type="negative")

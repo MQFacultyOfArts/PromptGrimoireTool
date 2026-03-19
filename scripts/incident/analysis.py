@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 _CRASH_BOUNCE_THRESHOLD = 300  # seconds
+
+LOGIN_EVENT_PATTERN = "Login successful%"
 
 
 def extract_epochs(
@@ -385,3 +389,475 @@ def query_epoch_journal_anomalies(
         {"ts_utc": ts, "priority": pri, "unit": unit, "message": msg}
         for ts, pri, unit, msg in rows
     ]
+
+
+def _user_metrics_query(
+    conn: sqlite3.Connection,
+    where_clause: str,
+    params: tuple[str, ...],
+) -> dict[str, int]:
+    """Shared implementation for epoch and summative user metrics.
+
+    where_clause is always a hardcoded SQL fragment built by callers
+    in this module -- never from external input.
+    """
+    unique_logins = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) FROM jsonl_events"  # noqa: S608
+        f" WHERE {where_clause}"
+        f" AND event LIKE '{LOGIN_EVENT_PATTERN}'"
+        " AND user_id IS NOT NULL",
+        params,
+    ).fetchone()[0]
+
+    active_users = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) FROM jsonl_events"  # noqa: S608
+        f" WHERE {where_clause}"
+        " AND user_id IS NOT NULL",
+        params,
+    ).fetchone()[0]
+
+    active_workspaces = conn.execute(
+        "SELECT COUNT(DISTINCT workspace_id) FROM jsonl_events"  # noqa: S608
+        f" WHERE {where_clause}"
+        " AND workspace_id IS NOT NULL",
+        params,
+    ).fetchone()[0]
+
+    workspace_users = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) FROM jsonl_events"  # noqa: S608
+        f" WHERE {where_clause}"
+        " AND user_id IS NOT NULL"
+        " AND workspace_id IS NOT NULL",
+        params,
+    ).fetchone()[0]
+
+    return {
+        "unique_logins": unique_logins,
+        "active_users": active_users,
+        "active_workspaces": active_workspaces,
+        "workspace_users": workspace_users,
+    }
+
+
+def query_epoch_users(
+    conn: sqlite3.Connection,
+    start_utc: str,
+    end_utc: str,
+) -> dict[str, int]:
+    """Query distinct user activity metrics within an epoch window."""
+    return _user_metrics_query(
+        conn,
+        "ts_utc >= ? AND ts_utc <= ?",
+        (start_utc, end_utc),
+    )
+
+
+def query_summative_users(
+    conn: sqlite3.Connection,
+) -> dict[str, int]:
+    """Query distinct user activity metrics across all JSONL data (no time bounds)."""
+    return _user_metrics_query(conn, "1=1", ())
+
+
+def load_static_counts(counts_path: Path | None) -> dict | None:
+    """Load static counts from a JSON file.
+
+    Returns None if counts_path is None.
+    Lets FileNotFoundError and json.JSONDecodeError propagate.
+    """
+    if counts_path is None:
+        return None
+    return json.loads(counts_path.read_text())
+
+
+# ── Trend analysis ────────────────────────────────────────────────
+
+_TREND_METRICS = (
+    "error_rate",
+    "rate_5xx",
+    "memory_peak_bytes",
+    "mean_cpu",
+    "active_users",
+)
+
+# Anomaly detection thresholds (metric_name -> (pct_threshold, absolute_floor))
+_ANOMALY_THRESHOLDS: dict[str, tuple[float, float]] = {
+    "error_rate": (100.0, 5.0),  # >100% increase AND current > 5/hour
+    "rate_5xx": (100.0, 2.0),  # >100% increase AND current > 2/hour
+    "memory_peak_bytes": (50.0, 1_073_741_824),  # >50% increase AND current > 1GB
+    "mean_cpu": (100.0, 20.0),  # >100% increase AND current > 20%
+}
+# active_users is intentionally excluded — not an operational concern
+
+
+def _safe_delta(
+    current: float | int | None,
+    previous: float | int | None,
+) -> dict:
+    """Compute delta and percentage change, handling None and zero safely."""
+    if current is None or previous is None:
+        return {
+            "value": current,
+            "previous": previous,
+            "delta": None,
+            "pct_change": None,
+        }
+    delta = current - previous
+    pct = (delta / previous) * 100 if previous != 0 else None
+    return {"value": current, "previous": previous, "delta": delta, "pct_change": pct}
+
+
+def compute_trends(epochs: list[dict]) -> list[dict]:
+    """Compare consecutive non-crash-bounce epochs to detect metric trends.
+
+    Returns a list of trend dicts, each containing the original epoch
+    index, commit hash, and per-metric deltas with anomaly flags.
+    """
+    # Build list of (original_index, epoch) for non-crash-bounce epochs
+    valid = [
+        (i, epoch) for i, epoch in enumerate(epochs) if not epoch["is_crash_bounce"]
+    ]
+
+    trends: list[dict] = []
+    for pos in range(1, len(valid)):
+        idx, current = valid[pos]
+        _, previous = valid[pos - 1]
+
+        metrics: dict[str, dict] = {}
+        for metric in _TREND_METRICS:
+            d = _safe_delta(current.get(metric), previous.get(metric))
+
+            is_anomaly = False
+            if (
+                metric in _ANOMALY_THRESHOLDS
+                and d["pct_change"] is not None
+                and d["value"] is not None
+            ):
+                pct_threshold, absolute_floor = _ANOMALY_THRESHOLDS[metric]
+                if d["pct_change"] > pct_threshold and d["value"] > absolute_floor:
+                    is_anomaly = True
+
+            d["is_anomaly"] = is_anomaly
+            metrics[metric] = d
+
+        trends.append(
+            {
+                "epoch_index": idx,
+                "commit": current["commit"],
+                "metrics": metrics,
+            }
+        )
+
+    return trends
+
+
+# ── Report rendering ──────────────────────────────────────────────
+
+
+def _fmt_duration(seconds: float) -> str:
+    """Format seconds as human-readable duration."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def _fmt_delta(value: float | int | None) -> str:
+    """Format a numeric delta with +/- sign."""
+    if value is None:
+        return "N/A"
+    prefix = "+" if value >= 0 else ""
+    if isinstance(value, float):
+        return f"{prefix}{value:.1f}"
+    return f"{prefix}{value}"
+
+
+def _fmt_pct(value: float | None) -> str:
+    """Format a percentage change with +/- sign."""
+    if value is None:
+        return "N/A"
+    prefix = "+" if value >= 0 else ""
+    return f"{prefix}{value:.1f}%"
+
+
+def _fmt_val(value: object) -> str:
+    """Format a value for table display, handling None."""
+    if value is None:
+        return "N/A"
+    if isinstance(value, float):
+        return f"{value:.1f}"
+    return str(value)
+
+
+def _render_section_sources(lines: list[str], sources: list[dict]) -> None:
+    """Render the Source Inventory section."""
+    lines.append("## Source Inventory")
+    lines.append("")
+    if sources:
+        lines.append("| Filename | Format | SHA256 | Size | Window |")
+        lines.append("|----------|--------|--------|------|--------|")
+        for s in sources:
+            sha = str(s.get("sha256", ""))[:12]
+            window = f"{s.get('window_start_utc', '')} - {s.get('window_end_utc', '')}"
+            lines.append(
+                f"| {s.get('filename', '')} | {s.get('format', '')} "
+                f"| {sha} | {s.get('size', '')} | {window} |"
+            )
+    else:
+        lines.append("No sources ingested.")
+    lines.append("")
+
+
+def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
+    """Render the Epoch Timeline section."""
+    lines.append("## Epoch Timeline")
+    lines.append("")
+    if not epochs:
+        lines.append("No epochs detected.")
+        lines.append("")
+        return
+    lines.append(
+        "| # | Commit | PR | Start | End | Duration | Events | Memory | CPU | Crash |"
+    )
+    lines.append(
+        "|---|--------|----|-------|-----|----------|--------|--------|-----|-------|"
+    )
+    for i, e in enumerate(epochs):
+        crash_marker = "CRASH" if e.get("is_crash_bounce") else ""
+        pr_info = str(e.get("pr_title", "")) or ""
+        pr_num = e.get("pr_number")
+        if pr_num is not None:
+            pr_info = f"#{pr_num} {pr_info}"
+        duration = _fmt_duration(float(e.get("duration_seconds", 0)))
+        lines.append(
+            f"| {i + 1} | {e.get('commit', '')}"
+            f" | {pr_info}"
+            f" | {e.get('start_utc', '')}"
+            f" | {e.get('end_utc', '')}"
+            f" | {duration}"
+            f" | {e.get('event_count', '')}"
+            f" | {e.get('memory_peak', 'N/A')}"
+            f" | {e.get('cpu_consumed', 'N/A')}"
+            f" | {crash_marker} |"
+        )
+    lines.append("")
+
+
+def _render_epoch_analysis(
+    lines: list[str],
+    index: int,
+    epoch: dict,
+    analysis: dict,
+) -> None:
+    """Render a single epoch's analysis subsection."""
+    commit = epoch.get("commit", "unknown")
+    lines.append(f"### Epoch {index + 1}: {commit}")
+    lines.append("")
+
+    _render_epoch_errors(lines, analysis.get("errors", []))
+    _render_epoch_haproxy(lines, analysis.get("haproxy", {}))
+    _render_epoch_resources_section(lines, analysis.get("resources", {}))
+    _render_epoch_pg_section(lines, analysis.get("pg", []))
+    _render_epoch_journal(lines, analysis.get("journal_anomalies", []))
+    _render_epoch_user_activity(lines, analysis.get("users", {}))
+
+
+def _render_epoch_errors(lines: list[str], errors: list[dict]) -> None:
+    if not errors:
+        return
+    lines.append("**Errors/Warnings:**")
+    lines.append("")
+    lines.append("| Level | Event | Count | Per Hour |")
+    lines.append("|-------|-------|-------|----------|")
+    for err in errors:
+        per_hour = _fmt_val(err.get("per_hour"))
+        lines.append(
+            f"| {err.get('level', '')} | {err.get('event', '')}"
+            f" | {err.get('count', '')} | {per_hour} |"
+        )
+    lines.append("")
+
+
+def _render_epoch_haproxy(lines: list[str], haproxy: dict) -> None:
+    if not haproxy:
+        return
+    lines.append("**HAProxy Traffic:**")
+    lines.append("")
+    lines.append(f"- Total requests: {haproxy.get('total_requests', 'N/A')}")
+    lines.append(f"- 5xx count: {haproxy.get('count_5xx', 'N/A')}")
+    lines.append(f"- 5xx rate/hr: {_fmt_val(haproxy.get('rate_5xx'))}")
+    lines.append(f"- Requests/min: {_fmt_val(haproxy.get('requests_per_minute'))}")
+    lines.append(f"- p50: {_fmt_val(haproxy.get('p50_ms'))} ms")
+    lines.append(f"- p95: {_fmt_val(haproxy.get('p95_ms'))} ms")
+    lines.append(f"- p99: {_fmt_val(haproxy.get('p99_ms'))} ms")
+
+    status_codes = haproxy.get("status_codes", [])
+    if status_codes:
+        lines.append("")
+        lines.append("| Status | Count |")
+        lines.append("|--------|-------|")
+        for sc in status_codes:
+            lines.append(f"| {sc.get('status_code', '')} | {sc.get('count', '')} |")
+    lines.append("")
+
+
+def _render_epoch_resources_section(lines: list[str], resources: dict) -> None:
+    if not resources:
+        return
+    lines.append("**Resources:**")
+    lines.append("")
+    lines.append(
+        f"- CPU: mean {_fmt_val(resources.get('mean_cpu'))}%,"
+        f" max {_fmt_val(resources.get('max_cpu'))}%"
+    )
+    lines.append(
+        f"- Memory: mean {_fmt_val(resources.get('mean_mem'))}%,"
+        f" max {_fmt_val(resources.get('max_mem'))}%"
+    )
+    lines.append(
+        f"- Load: mean {_fmt_val(resources.get('mean_load'))},"
+        f" max {_fmt_val(resources.get('max_load'))}"
+    )
+    lines.append("")
+
+
+def _render_epoch_pg_section(lines: list[str], pg_events: list[dict]) -> None:
+    if not pg_events:
+        return
+    lines.append("**PostgreSQL:**")
+    lines.append("")
+    lines.append("| Level | Error Type | Count |")
+    lines.append("|-------|------------|-------|")
+    for pg in pg_events:
+        lines.append(
+            f"| {pg.get('level', '')} | {pg.get('error_type', '')}"
+            f" | {pg.get('count', '')} |"
+        )
+    lines.append("")
+
+
+def _render_epoch_journal(lines: list[str], anomalies: list[dict]) -> None:
+    if not anomalies:
+        return
+    lines.append("**Journal Anomalies:**")
+    lines.append("")
+    lines.append("| Timestamp | Priority | Unit | Message |")
+    lines.append("|-----------|----------|------|---------|")
+    for a in anomalies:
+        lines.append(
+            f"| {a.get('ts_utc', '')} | {a.get('priority', '')}"
+            f" | {a.get('unit', '')} | {a.get('message', '')} |"
+        )
+    lines.append("")
+
+
+def _render_epoch_user_activity(lines: list[str], users: dict) -> None:
+    if not users:
+        return
+    lines.append("**User Activity:**")
+    lines.append("")
+    lines.append(f"- Unique logins: {users.get('unique_logins', 0)}")
+    lines.append(f"- Active users: {users.get('active_users', 0)}")
+    lines.append(f"- Active workspaces: {users.get('active_workspaces', 0)}")
+    lines.append(f"- Workspace users: {users.get('workspace_users', 0)}")
+    lines.append("")
+
+
+def _render_section_users(lines: list[str], summative_users: dict) -> None:
+    """Render the User Activity Summary section."""
+    lines.append("## User Activity Summary")
+    lines.append("")
+    lines.append(f"- Unique logins: {summative_users.get('unique_logins', 0)}")
+    lines.append(f"- Active users: {summative_users.get('active_users', 0)}")
+    lines.append(f"- Active workspaces: {summative_users.get('active_workspaces', 0)}")
+    lines.append(f"- Workspace users: {summative_users.get('workspace_users', 0)}")
+    lines.append("")
+
+
+def _render_section_trends(lines: list[str], trends: list[dict]) -> None:
+    """Render the Trend Analysis section."""
+    lines.append("## Trend Analysis")
+    lines.append("")
+    if not trends:
+        lines.append("No trend data (fewer than 2 non-crash-bounce epochs).")
+        lines.append("")
+        return
+    lines.append(
+        "| Epoch | Commit | Metric | Value | Previous | Delta | Change | Anomaly |"
+    )
+    lines.append(
+        "|-------|--------|--------|-------|----------|-------|--------|---------|"
+    )
+    for t in trends:
+        commit = t.get("commit", "")
+        epoch_idx = t.get("epoch_index", "")
+        for metric_name, m in t.get("metrics", {}).items():
+            anomaly = "!!!" if m.get("is_anomaly") else ""
+            lines.append(
+                f"| {epoch_idx} | {commit}"
+                f" | {metric_name}"
+                f" | {_fmt_val(m.get('value'))}"
+                f" | {_fmt_val(m.get('previous'))}"
+                f" | {_fmt_delta(m.get('delta'))}"
+                f" | {_fmt_pct(m.get('pct_change'))}"
+                f" | {anomaly} |"
+            )
+    lines.append("")
+
+
+def render_review_report(
+    sources: list[dict],
+    epochs: list[dict],
+    epoch_analyses: list[dict],
+    summative_users: dict,
+    trends: list[dict],
+    static_counts: dict | None = None,
+) -> str:
+    """Assemble a markdown operational review report.
+
+    Combines source inventory, epoch timeline, per-epoch analysis,
+    user activity summary, and trend analysis into a single markdown
+    document suitable for review.
+    """
+    lines: list[str] = []
+    generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    # Window range from epochs
+    if epochs:
+        window_start = min(str(e["start_utc"]) for e in epochs)
+        window_end = max(str(e["end_utc"]) for e in epochs)
+        window_str = f"{window_start} to {window_end}"
+    else:
+        window_str = "No data"
+
+    lines.append("# Operational Review Report")
+    lines.append("")
+    lines.append(f"Generated: {generated}")
+    lines.append(f"Window: {window_str}")
+    lines.append("")
+
+    _render_section_sources(lines, sources)
+
+    if static_counts is not None:
+        lines.append("## Static DB Counts")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        for key, value in static_counts.items():
+            lines.append(f"| {key} | {value} |")
+        lines.append("")
+
+    _render_section_timeline(lines, epochs)
+
+    lines.append("## Per-Epoch Analysis")
+    lines.append("")
+    for i, (epoch, analysis) in enumerate(
+        zip(epochs, epoch_analyses, strict=False),
+    ):
+        _render_epoch_analysis(lines, i, epoch, analysis)
+
+    _render_section_users(lines, summative_users)
+    _render_section_trends(lines, trends)
+
+    return "\n".join(lines)

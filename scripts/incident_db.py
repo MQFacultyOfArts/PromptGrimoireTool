@@ -380,5 +380,102 @@ def github(
     typer.echo(f"Fetched {len(prs)} PRs")
 
 
+@app.command()
+def review(
+    db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
+    counts_json: Path | None = typer.Option(
+        None, help="JSON file with static DB counts"
+    ),
+    output: Path | None = typer.Option(None, help="Output file (stdout if omitted)"),
+) -> None:
+    """Generate operational review report."""
+    from scripts.incident.analysis import (
+        compute_trends,
+        enrich_epochs_github,
+        enrich_epochs_journal,
+        extract_epochs,
+        load_static_counts,
+        query_epoch_errors,
+        query_epoch_haproxy,
+        query_epoch_journal_anomalies,
+        query_epoch_pg,
+        query_epoch_resources,
+        query_epoch_users,
+        query_summative_users,
+        render_review_report,
+    )
+    from scripts.incident.queries import query_sources
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    sources_data = query_sources(conn)
+    epochs = extract_epochs(conn)
+
+    if not epochs:
+        typer.echo("No epochs found. Is the database populated with JSONL events?")
+        conn.close()
+        return
+
+    enrich_epochs_journal(conn, epochs)
+    enrich_epochs_github(conn, epochs)
+
+    epoch_analyses: list[dict] = []
+    for epoch in epochs:
+        start = str(epoch["start_utc"])
+        end = str(epoch["end_utc"])
+        dur_raw = epoch["duration_seconds"]
+        dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
+        analysis = {
+            "errors": query_epoch_errors(conn, start, end, dur),
+            "haproxy": query_epoch_haproxy(conn, start, end, dur),
+            "resources": query_epoch_resources(conn, start, end),
+            "pg": query_epoch_pg(conn, start, end),
+            "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
+            "users": query_epoch_users(conn, start, end),
+        }
+        if epoch["is_crash_bounce"]:
+            epoch["error_rate"] = None
+            epoch["rate_5xx"] = None
+        else:
+            epoch["error_rate"] = sum(e["per_hour"] or 0 for e in analysis["errors"])
+            epoch["rate_5xx"] = analysis["haproxy"].get("rate_5xx")
+        epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
+        epoch["active_users"] = analysis["users"]["active_users"]
+        epoch_analyses.append(analysis)
+
+    summative = query_summative_users(conn)
+    conn.close()
+
+    trends_data = compute_trends(epochs)
+
+    static_counts = None
+    if counts_json:
+        try:
+            static_counts = load_static_counts(counts_json)
+        except FileNotFoundError:
+            typer.echo(
+                f"Warning: counts file '{counts_json}' not found, "
+                "skipping static counts.",
+                err=True,
+            )
+
+    report = render_review_report(
+        sources_data,
+        epochs,
+        epoch_analyses,
+        summative,
+        trends_data,
+        static_counts=static_counts,
+    )
+
+    if output:
+        output.write_text(report)
+        typer.echo(f"Report written to {output}", err=True)
+    else:
+        typer.echo(report)
+
+
 if __name__ == "__main__":
     app()

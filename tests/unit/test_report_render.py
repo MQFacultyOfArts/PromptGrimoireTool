@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.incident.analysis import _md_table, render_review_report
+from scripts.incident.analysis import _fmt_gap_duration, _md_table, render_review_report
 
 
 class TestMdTable:
@@ -438,3 +438,121 @@ class TestErrorLandscapeRendering:
         )
 
         assert "No errors" in report
+
+
+class TestFmtGapDuration:
+    def test_none(self) -> None:
+        assert _fmt_gap_duration(None) == "—"
+
+    def test_zero(self) -> None:
+        assert _fmt_gap_duration(0.0) == "0s"
+
+    def test_seconds(self) -> None:
+        assert _fmt_gap_duration(45.0) == "45s"
+
+    def test_minutes(self) -> None:
+        assert _fmt_gap_duration(300.0) == "5m 0s"
+
+    def test_hours_minutes(self) -> None:
+        assert _fmt_gap_duration(3900.0) == "1h 5m"
+
+
+class TestPoolConfigRendering:
+    def test_pool_displayed(self) -> None:
+        """AC3.2: Pool config shown when detected."""
+        analyses = _mock_analyses()
+        analyses[0]["pool_config"] = {"pool_size": 10, "max_overflow": 20}
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "size=10, overflow=20" in report
+
+    def test_pool_not_observed(self) -> None:
+        """AC3.3: No pool config shows 'not observed'."""
+        analyses = _mock_analyses()
+        analyses[0]["pool_config"] = None
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=_mock_epochs(),
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "not observed" in report
+
+
+class TestRestartGapRendering:
+    def test_gap_in_timeline(self) -> None:
+        """AC4.1: Gap column shows downtime duration."""
+        epochs = [
+            {
+                **_mock_epochs()[0],
+                "restart_gap_seconds": None,
+            },
+            {
+                **_mock_epochs()[0],
+                "commit": "bbb222",
+                "start_utc": "2026-03-15T16:05:00Z",
+                "end_utc": "2026-03-15T20:00:00Z",
+                "restart_gap_seconds": 300.0,
+            },
+        ]
+        analyses = [_mock_analyses()[0], _mock_analyses()[0]]
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=epochs,
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "Gap" in report
+        assert "5m 0s" in report
+
+    def test_first_epoch_dash(self) -> None:
+        """AC4.2: First epoch shows dash for gap."""
+        epochs = [{**_mock_epochs()[0], "restart_gap_seconds": None}]
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=epochs,
+            epoch_analyses=_mock_analyses(),
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "Gap" in report
+        assert "—" in report
+
+    def test_zero_gap(self) -> None:
+        """AC4.3: Zero gap displays as '0s'."""
+        epochs = [
+            {**_mock_epochs()[0], "restart_gap_seconds": None},
+            {
+                **_mock_epochs()[0],
+                "commit": "bbb222",
+                "start_utc": "2026-03-15T16:00:00Z",
+                "end_utc": "2026-03-15T20:00:00Z",
+                "restart_gap_seconds": 0.0,
+            },
+        ]
+        analyses = [_mock_analyses()[0], _mock_analyses()[0]]
+
+        report = render_review_report(
+            sources=_mock_sources(),
+            epochs=epochs,
+            epoch_analyses=analyses,
+            summative_users=_mock_summative(),
+            trends=[],
+        )
+
+        assert "0s" in report

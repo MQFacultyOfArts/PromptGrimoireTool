@@ -858,6 +858,26 @@ def _fmt_duration(seconds: float) -> str:
     return f"{minutes}m"
 
 
+def _fmt_gap_duration(seconds: float | None) -> str:
+    """Format restart gap duration for the timeline table.
+
+    None → "—", 0 → "0s", <60 → "{n}s", <3600 → "{m}m {s}s", else "{h}h {m}m".
+    """
+    if seconds is None:
+        return "—"
+    if seconds == 0.0:
+        return "0s"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f"{m}m {s}s"
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    return f"{h}h {m}m"
+
+
 def _fmt_delta(value: float | int | None) -> str:
     """Format a numeric delta with +/- sign."""
     if value is None:
@@ -937,6 +957,7 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
         "Start",
         "End",
         "Duration",
+        "Gap",
         "Events",
         "Memory",
         "CPU",
@@ -952,6 +973,7 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
         if pr_num is not None:
             pr_info = f"#{pr_num} {pr_info}"
         duration = _fmt_duration(float(e.get("duration_seconds", 0)))
+        gap = _fmt_gap_duration(e.get("restart_gap_seconds"))
         rows.append(
             [
                 str(i + 1),
@@ -960,6 +982,7 @@ def _render_section_timeline(lines: list[str], epochs: list[dict]) -> None:
                 str(e.get("start_utc", "")),
                 str(e.get("end_utc", "")),
                 duration,
+                gap,
                 str(e.get("event_count", "")),
                 str(e.get("memory_peak", "N/A")),
                 str(e.get("cpu_consumed", "N/A")),

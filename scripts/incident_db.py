@@ -411,6 +411,7 @@ def review(
     create_schema(conn)
 
     sources_data = query_sources(conn)
+    conn.row_factory = None  # reset after query_sources sets _dict_factory
     epochs = extract_epochs(conn)
 
     if not epochs:

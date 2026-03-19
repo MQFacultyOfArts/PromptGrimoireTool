@@ -196,10 +196,11 @@ def enrich_epochs_github(
         ).fetchone()
 
         if row:
-            epoch["pr_number"] = row[0]
-            epoch["pr_title"] = row[1]
-            epoch["pr_author"] = row[2]
-            epoch["pr_url"] = row[3]
+            pr_number, title, author, url = row
+            epoch["pr_number"] = pr_number
+            epoch["pr_title"] = title
+            epoch["pr_author"] = author
+            epoch["pr_url"] = url
         else:
             epoch["pr_number"] = None
             epoch["pr_title"] = "no PR"

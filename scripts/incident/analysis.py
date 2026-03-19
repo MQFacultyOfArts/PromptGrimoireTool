@@ -200,6 +200,43 @@ def normalise_event(event: str) -> str:
     return result
 
 
+def compute_error_landscape(
+    conn: sqlite3.Connection,
+    epochs: list[dict],
+) -> list[dict]:
+    """Compute appeared/resolved error classes per epoch.
+
+    For each epoch, queries distinct error/warning/critical events,
+    normalises them via ``normalise_event()``, then computes set
+    differences against all prior epochs' classes.
+    """
+    all_prior_classes: set[str] = set()
+    results: list[dict] = []
+
+    for epoch in epochs:
+        rows = conn.execute(
+            "SELECT DISTINCT event FROM jsonl_events"
+            " WHERE ts_utc >= ? AND ts_utc <= ?"
+            " AND level IN ('error', 'critical', 'warning')",
+            (epoch["start_utc"], epoch["end_utc"]),
+        ).fetchall()
+
+        current_classes = {normalise_event(row[0]) for row in rows}
+        appeared = current_classes - all_prior_classes
+        resolved = all_prior_classes - current_classes
+
+        results.append(
+            {
+                "appeared": appeared,
+                "resolved": resolved,
+                "current": current_classes,
+            }
+        )
+        all_prior_classes |= current_classes
+
+    return results
+
+
 _CONSUMED_RE = re.compile(
     r"Consumed (.+?) CPU time,"
     r" (.+?) memory peak,"

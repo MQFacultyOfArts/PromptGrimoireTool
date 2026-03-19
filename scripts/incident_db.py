@@ -13,7 +13,9 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 import hashlib
+import re
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -253,6 +255,264 @@ def beszel(
     conn.commit()
     conn.close()
     typer.echo(f"Fetched {len(metrics)} metric data points")
+
+
+def _analyse_epochs(
+    conn: sqlite3.Connection,
+    epochs: list[dict],
+) -> list[dict]:
+    """Run per-epoch queries and attach ratio metrics to each epoch dict."""
+    from scripts.incident.analysis import (
+        detect_pool_config,
+        query_epoch_errors,
+        query_epoch_haproxy,
+        query_epoch_journal_anomalies,
+        query_epoch_pg,
+        query_epoch_resources,
+        query_epoch_users,
+    )
+
+    epoch_analyses: list[dict] = []
+    for epoch in epochs:
+        start = str(epoch["start_utc"])
+        end = str(epoch["end_utc"])
+        dur_raw = epoch["duration_seconds"]
+        dur = dur_raw if isinstance(dur_raw, float) else float(str(dur_raw))
+        pool_config = detect_pool_config(conn, start, end)
+        analysis = {
+            "errors": query_epoch_errors(conn, start, end, dur),
+            "haproxy": query_epoch_haproxy(conn, start, end, dur),
+            "resources": query_epoch_resources(conn, start, end),
+            "pg": query_epoch_pg(conn, start, end),
+            "journal_anomalies": query_epoch_journal_anomalies(conn, start, end),
+            "users": query_epoch_users(conn, start, end),
+            "pool_config": pool_config,
+        }
+        total_requests = analysis["haproxy"]["total_requests"]
+        if epoch["is_crash_bounce"] or total_requests == 0:
+            epoch["error_ratio"] = None
+            epoch["warning_ratio"] = None
+            epoch["5xx_ratio"] = None
+        else:
+            error_count = sum(
+                e["count"]
+                for e in analysis["errors"]
+                if e["level"] in ("error", "critical")
+            )
+            warning_count = sum(
+                e["count"] for e in analysis["errors"] if e["level"] == "warning"
+            )
+            epoch["error_ratio"] = error_count / total_requests
+            epoch["warning_ratio"] = warning_count / total_requests
+            epoch["5xx_ratio"] = analysis["haproxy"]["count_5xx"] / total_requests
+        epoch["total_requests"] = total_requests
+        epoch["mean_cpu"] = analysis["resources"].get("mean_cpu")
+        epoch["active_users"] = analysis["users"]["active_users"]
+        epoch["pool_size"] = pool_config["pool_size"] if pool_config else None
+        epoch_analyses.append(analysis)
+    return epoch_analyses
+
+
+def _detect_github_repo() -> str:
+    """Extract owner/repo from git remote origin URL."""
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise typer.BadParameter(
+            "Cannot detect repo: no git remote 'origin'. Use --repo."
+        )
+    url = result.stdout.strip()
+    match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
+    if not match:
+        raise typer.BadParameter(f"Cannot parse GitHub repo from remote URL: {url}")
+    return match.group(1)
+
+
+@app.command()
+def github(
+    start: str = typer.Option(..., help="Window start (local time, YYYY-MM-DD HH:MM)"),
+    end: str = typer.Option(..., help="Window end (local time, YYYY-MM-DD HH:MM)"),
+    repo: str = typer.Option(
+        "", help="GitHub repo (owner/repo). Auto-detects from git remote if empty."
+    ),
+    token: str = typer.Option(
+        "", help="GitHub token. Falls back to GITHUB_TOKEN env, then gh auth token."
+    ),
+    force: bool = typer.Option(
+        False, help="Re-fetch even if window was previously ingested (bypass dedup)."
+    ),
+    timezone: str | None = typer.Option(None, help="IANA timezone override"),
+    db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
+) -> None:
+    """Fetch GitHub PR data for a time window."""
+    from scripts.incident.parsers.github import fetch_github_prs, resolve_github_token
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    tz_name = _resolve_timezone(conn, timezone)
+
+    start_utc = _aedt_to_utc(start, tz_name)
+    end_utc = _aedt_to_utc(end, tz_name)
+
+    if start_utc > end_utc:
+        typer.echo(f"Error: --start ({start}) is after --end ({end}).", err=True)
+        conn.close()
+        raise SystemExit(1)
+
+    # Resolve token
+    try:
+        resolved_token = resolve_github_token(token or None)
+    except RuntimeError as exc:
+        conn.close()
+        raise typer.BadParameter(str(exc)) from None
+
+    # Auto-detect repo if not provided
+    if not repo:
+        repo = _detect_github_repo()
+
+    # Dedup check
+    sha = hashlib.sha256(f"github:{repo}:{start_utc}:{end_utc}".encode()).hexdigest()
+    existing = conn.execute(
+        "SELECT id FROM sources WHERE sha256 = ?", (sha,)
+    ).fetchone()
+    if existing is not None:
+        if not force:
+            conn.close()
+            typer.echo("Already fetched (dedup). 0 new PRs.")
+            return
+        # --force: delete existing source and its events
+        conn.execute("DELETE FROM github_events WHERE source_id = ?", (existing[0],))
+        conn.execute("DELETE FROM sources WHERE id = ?", (existing[0],))
+        conn.commit()
+
+    prs = fetch_github_prs(repo, start_utc, end_utc, resolved_token)
+
+    conn.execute(
+        """INSERT INTO sources
+           (filename, format, sha256, size, mtime, hostname, timezone,
+            window_start_utc, window_end_utc, source_path,
+            collection_method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            repo,
+            "github",
+            sha,
+            0,
+            0,
+            "github.com",
+            tz_name,
+            start_utc,
+            end_utc,
+            f"https://github.com/{repo}",
+            "REST API",
+        ),
+    )
+    source_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    for pr in prs:
+        conn.execute(
+            """INSERT INTO github_events
+               (source_id, ts_utc, pr_number, title, author, commit_oid, url)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                source_id,
+                pr["ts_utc"],
+                pr["pr_number"],
+                pr["title"],
+                pr["author"],
+                pr["commit_oid"],
+                pr["url"],
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    typer.echo(f"Fetched {len(prs)} PRs")
+
+
+@app.command()
+def review(
+    db: Path = typer.Option(Path("incident.db"), help="SQLite database path"),
+    counts_json: Path | None = typer.Option(
+        None, help="JSON file with static DB counts"
+    ),
+    output: Path | None = typer.Option(None, help="Output file (stdout if omitted)"),
+) -> None:
+    """Generate operational review report."""
+    from scripts.incident.analysis import (
+        compute_error_landscape,
+        compute_trends,
+        enrich_epochs_github,
+        enrich_epochs_journal,
+        enrich_restart_gaps,
+        enrich_restart_reasons,
+        extract_epochs,
+        load_static_counts,
+        query_summative_users,
+        render_review_report,
+    )
+    from scripts.incident.queries import query_sources
+    from scripts.incident.schema import create_schema
+
+    conn = sqlite3.connect(db)
+    create_schema(conn)
+
+    sources_data = query_sources(conn)
+    conn.row_factory = None  # reset after query_sources sets _dict_factory
+    epochs = extract_epochs(conn)
+
+    if not epochs:
+        typer.echo("No epochs found. Is the database populated with JSONL events?")
+        conn.close()
+        return
+
+    enrich_restart_reasons(conn, epochs)
+    enrich_epochs_journal(conn, epochs)
+    enrich_epochs_github(conn, epochs)
+    enrich_restart_gaps(epochs)
+
+    epoch_analyses = _analyse_epochs(conn, epochs)
+
+    error_landscapes = compute_error_landscape(conn, epochs)
+    for i, landscape in enumerate(error_landscapes):
+        epoch_analyses[i]["error_landscape"] = landscape
+
+    summative = query_summative_users(conn)
+    conn.close()
+
+    trends_data = compute_trends(epochs)
+
+    static_counts = None
+    if counts_json:
+        try:
+            static_counts = load_static_counts(counts_json)
+        except FileNotFoundError:
+            typer.echo(
+                f"Warning: counts file '{counts_json}' not found, "
+                "skipping static counts.",
+                err=True,
+            )
+
+    report = render_review_report(
+        sources_data,
+        epochs,
+        epoch_analyses,
+        summative,
+        trends_data,
+        static_counts=static_counts,
+    )
+
+    if output:
+        output.write_text(report)
+        typer.echo(f"Report written to {output}", err=True)
+    else:
+        typer.echo(report)
 
 
 if __name__ == "__main__":

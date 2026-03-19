@@ -90,7 +90,7 @@ SQL-first analysis engine. Epoch boundaries are extracted from `jsonl_events` us
    - `query_epoch_pg()` — PG events by level and error type
    - `query_epoch_journal_anomalies()` — Journal events with priority <= 3 (ERROR+)
 5. `query_epoch_users()` — JSONL events: unique logins, active users, active workspaces per epoch
-6. `render_review_report()` — assembles all results into markdown
+6. `render_review_report(sources, epochs, epoch_analyses, summative_users, trends, static_counts)` — assembles all results into markdown
 
 **GitHub PR correlation:** The `github` subcommand fetches merged PRs via `GET /repos/{owner}/{repo}/pulls?state=closed` with httpx. Auth token sourced from `GITHUB_TOKEN` env var, falling back to `gh auth token` subprocess. Results cached in a `github_events` table in the incident SQLite DB. The `review` command reads from this cached table.
 
@@ -190,7 +190,7 @@ No new patterns introduced. No divergence from existing code.
 
 **Components:**
 - `render_review_report(epochs, trends, summative_users, static_counts)` in `analysis.py` — assembles markdown report with sections: Source Inventory, Epoch Timeline, Per-Epoch Analysis, User Activity, Trends
-- CLI subcommand `review` in `scripts/incident_db.py` — orchestrates all analysis functions, accepts `--db`, `--repo`, `--github-token`, `--counts-json`, `--output` (file or stdout)
+- CLI subcommand `review` in `scripts/incident_db.py` — orchestrates all analysis functions, accepts `--db`, `--counts-json`, `--output` (file or stdout)
 - Source inventory section auto-generated from `query_sources(conn)`
 
 **Dependencies:** All previous phases

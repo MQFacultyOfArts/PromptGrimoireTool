@@ -198,6 +198,8 @@ uv run scripts/incident_db.py sources --db incident.db
 uv run scripts/incident_db.py timeline --start "2026-03-16 16:05" --end "2026-03-16 16:14"
 uv run scripts/incident_db.py breakdown --db incident.db
 uv run scripts/incident_db.py beszel --start "2026-03-16 16:05" --end "2026-03-16 16:14" --hub http://localhost:8090
+uv run scripts/incident_db.py github --start "2026-03-15 00:00" --end "2026-03-18 20:37" --db incident.db
+uv run scripts/incident_db.py review --db incident.db --counts-json counts.json --output report.md
 ```
 
 ## Project Structure
@@ -245,11 +247,12 @@ src/promptgrimoire/
 scripts/
 ├── incident_db.py       # Typer CLI entry point for incident analysis
 └── incident/            # Incident analysis library (standalone, SQLite-based)
-    ├── schema.py        # SQLite DDL (5 event tables + timeline UNION ALL view)
+    ├── schema.py        # SQLite DDL (6 event tables + timeline UNION ALL view)
     ├── ingest.py        # Tarball extraction, manifest parsing, parser dispatch
     ├── queries.py       # Query functions + Rich/JSON/CSV output renderers
+    ├── analysis.py      # Epoch analysis queries, trend computation, report rendering
     ├── provenance.py    # Manifest parsing, sha256 dedup, format detection
-    └── parsers/         # Per-format parsers (journal, jsonl, haproxy, pglog, beszel)
+    └── parsers/         # Per-format parsers (journal, jsonl, haproxy, pglog, beszel, github)
 
 deploy/
 ├── restart.sh           # Zero-downtime deploy script

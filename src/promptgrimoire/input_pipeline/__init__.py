@@ -1,6 +1,7 @@
 """HTML input pipeline for processing various document formats."""
 
 from promptgrimoire.input_pipeline.converters import (
+    ConversionError,
     convert_docx_to_html,
     convert_pdf_to_html,
 )
@@ -23,6 +24,7 @@ from promptgrimoire.input_pipeline.paragraph_map import (
 __all__ = [
     "CONTENT_TYPES",
     "ContentType",
+    "ConversionError",
     "build_paragraph_map",
     "build_paragraph_map_for_json",
     "convert_docx_to_html",

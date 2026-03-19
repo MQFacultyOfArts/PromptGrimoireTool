@@ -5,13 +5,14 @@ Provides async database functions for workspace management.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlmodel import select
 
 from promptgrimoire.db.engine import get_session
@@ -21,12 +22,9 @@ from promptgrimoire.db.models import (
     Activity,
     Course,
     CourseEnrollment,
-    Tag,
-    TagGroup,
     User,
     Week,
     Workspace,
-    WorkspaceDocument,
 )
 from promptgrimoire.db.roles import get_staff_roles
 
@@ -768,6 +766,44 @@ def _replay_crdt_state(
     clone.crdt_state = clone_doc.get_full_state()
 
 
+async def find_duplicate_workspaces() -> list[dict[str, Any]]:
+    """Find (activity_id, user_id) pairs with duplicate owner workspaces.
+
+    Returns a list of dicts with keys: activity_id, user_id, user_email,
+    user_display_name, workspace_ids (list ordered by created_at),
+    duplicate_count.
+
+    Automated deletion is unsafe — either duplicate may contain student edits.
+    Results require manual review.
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT w.activity_id, ae.user_id, u.email, u.display_name,
+                       array_agg(w.id ORDER BY w.created_at) AS workspace_ids,
+                       count(*) AS duplicate_count
+                FROM workspace w
+                JOIN acl_entry ae ON ae.workspace_id = w.id AND ae.permission = 'owner'
+                JOIN "user" u ON u.id = ae.user_id
+                WHERE w.activity_id IS NOT NULL
+                GROUP BY w.activity_id, ae.user_id, u.email, u.display_name
+                HAVING count(*) > 1
+                ORDER BY duplicate_count DESC
+            """)
+        )
+        return [
+            {
+                "activity_id": row.activity_id,
+                "user_id": row.user_id,
+                "user_email": row.email,
+                "user_display_name": row.display_name,
+                "workspace_ids": list(row.workspace_ids),
+                "duplicate_count": row.duplicate_count,
+            }
+            for row in result.fetchall()
+        ]
+
+
 async def clone_workspace_from_activity(
     activity_id: UUID,
     user_id: UUID,
@@ -792,12 +828,55 @@ async def clone_workspace_from_activity(
         user_id: The user UUID who will own the cloned workspace.
 
     Returns:
-        Tuple of (new Workspace, mapping of {template_doc_id: cloned_doc_id}).
+        Tuple of (Workspace, doc_id_map). On fresh clone, doc_id_map is
+        ``{template_doc_id: cloned_doc_id}`` with one entry per template
+        document. On idempotent hit (workspace already exists for this
+        activity + user), returns the existing workspace with an empty
+        ``{}`` map.
 
     Raises:
         ValueError: If Activity or its template workspace is not found.
     """
     async with get_session() as session:
+        # Advisory lock: prevent concurrent duplicate clones for same (activity, user)
+        ns_key = (
+            int(
+                hashlib.md5(
+                    b"clone_workspace_from_activity", usedforsecurity=False
+                ).hexdigest()[:8],
+                16,
+            )
+            & 0x7FFFFFFF
+        )
+        inst_key = (
+            int(
+                hashlib.md5(
+                    f"{activity_id}-{user_id}".encode(), usedforsecurity=False
+                ).hexdigest()[:8],
+                16,
+            )
+            & 0x7FFFFFFF
+        )
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, :inst)").bindparams(
+                ns=ns_key, inst=inst_key
+            )
+        )
+
+        # Idempotency check: return existing workspace if already cloned
+        existing = await session.exec(
+            select(Workspace)
+            .join(ACLEntry, ACLEntry.workspace_id == Workspace.id)  # type: ignore[arg-type]  -- SQLAlchemy == returns ColumnElement, not bool
+            .where(
+                Workspace.activity_id == activity_id,
+                ACLEntry.user_id == user_id,
+                ACLEntry.permission == "owner",
+            )
+        )
+        found = existing.first()
+        if found is not None:
+            return found, {}
+
         activity = await session.get(Activity, activity_id)
         if not activity:
             msg = f"Activity {activity_id} not found"
@@ -827,81 +906,88 @@ async def clone_workspace_from_activity(
         session.add(acl_entry)
         await session.flush()
 
-        # Fetch all template documents ordered by order_index
-        result = await session.exec(
-            select(WorkspaceDocument)
-            .where(WorkspaceDocument.workspace_id == template.id)
-            .order_by(WorkspaceDocument.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        # --- Bulk-clone documents via INSERT...SELECT ---
+        doc_result = await session.execute(
+            text("""
+                INSERT INTO workspace_document
+                    (id, workspace_id, type, content, source_type,
+                     order_index, title, auto_number_paragraphs,
+                     paragraph_map, source_document_id, created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, type, content,
+                    source_type, order_index, title,
+                    auto_number_paragraphs, paragraph_map, id, now()
+                FROM workspace_document
+                WHERE workspace_id = :template_id
+                RETURNING id, source_document_id
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
         )
-        template_docs = list(result.all())
+        doc_id_map: dict[UUID, UUID] = {
+            row.source_document_id: row.id for row in doc_result.fetchall()
+        }
 
-        # Clone each document, preserving field values
-        doc_id_map: dict[UUID, UUID] = {}
-        for tmpl_doc in template_docs:
-            cloned_doc = WorkspaceDocument(
-                workspace_id=clone.id,
-                type=tmpl_doc.type,
-                content=tmpl_doc.content,
-                source_type=tmpl_doc.source_type,
-                title=tmpl_doc.title,
-                order_index=tmpl_doc.order_index,
-                auto_number_paragraphs=tmpl_doc.auto_number_paragraphs,
-                paragraph_map=tmpl_doc.paragraph_map,
-                source_document_id=tmpl_doc.id,
-            )
-            session.add(cloned_doc)
-            await session.flush()
-            doc_id_map[tmpl_doc.id] = cloned_doc.id
-
-        # --- Clone TagGroups with ID remapping ---
-        group_result = await session.exec(
-            select(TagGroup)
-            .where(TagGroup.workspace_id == template.id)
-            .order_by(TagGroup.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        # --- Bulk-clone tag groups via INSERT...SELECT ---
+        group_result = await session.execute(
+            text("""
+                INSERT INTO tag_group
+                    (id, workspace_id, name, color, order_index,
+                     created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, name, color,
+                    order_index, now()
+                FROM tag_group
+                WHERE workspace_id = :template_id
+                RETURNING id, name
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
         )
-        template_groups = list(group_result.all())
+        new_groups_by_name = {row.name: row.id for row in group_result.fetchall()}
 
-        group_id_map: dict[UUID, UUID] = {}
-        for tmpl_group in template_groups:
-            cloned_group = TagGroup(
-                workspace_id=clone.id,
-                name=tmpl_group.name,
-                color=tmpl_group.color,
-                order_index=tmpl_group.order_index,
-            )
-            session.add(cloned_group)
-            await session.flush()
-            group_id_map[tmpl_group.id] = cloned_group.id
-
-        # --- Clone Tags with group_id and ID remapping ---
-        tag_result = await session.exec(
-            select(Tag).where(Tag.workspace_id == template.id).order_by(Tag.order_index)  # type: ignore[arg-type]  # TODO(2026-Q2): Revisit when SQLModel updates type stubs
+        template_group_result = await session.execute(
+            text("SELECT id, name FROM tag_group WHERE workspace_id = :template_id"),
+            {"template_id": template.id},
         )
-        template_tags = list(tag_result.all())
+        group_id_map: dict[UUID, UUID] = {
+            row.id: new_groups_by_name[row.name]
+            for row in template_group_result.fetchall()
+            if row.name in new_groups_by_name
+        }
 
-        tag_id_map: dict[UUID, UUID] = {}
-        for tmpl_tag in template_tags:
-            remapped_group_id = (
-                group_id_map.get(tmpl_tag.group_id)
-                if tmpl_tag.group_id is not None
-                else None
-            )
-            cloned_tag = Tag(
-                workspace_id=clone.id,
-                name=tmpl_tag.name,
-                color=tmpl_tag.color,
-                description=tmpl_tag.description,
-                locked=tmpl_tag.locked,
-                order_index=tmpl_tag.order_index,
-                group_id=remapped_group_id,
-            )
-            session.add(cloned_tag)
-            await session.flush()
-            tag_id_map[tmpl_tag.id] = cloned_tag.id
+        # --- Bulk-clone tags via INSERT...SELECT with group remapping ---
+        tag_result = await session.execute(
+            text("""
+                INSERT INTO tag
+                    (id, workspace_id, group_id, name, description,
+                     color, locked, order_index, created_at)
+                SELECT
+                    gen_random_uuid(), :clone_id, ng.id, t.name,
+                    t.description, t.color, t.locked, t.order_index,
+                    now()
+                FROM tag t
+                LEFT JOIN tag_group og ON t.group_id = og.id
+                LEFT JOIN tag_group ng
+                    ON ng.workspace_id = :clone_id AND ng.name = og.name
+                WHERE t.workspace_id = :template_id
+                RETURNING id, name
+            """),
+            {"clone_id": clone.id, "template_id": template.id},
+        )
+        new_tags_by_name = {row.name: row.id for row in tag_result.fetchall()}
+
+        template_tag_result = await session.execute(
+            text("SELECT id, name FROM tag WHERE workspace_id = :template_id"),
+            {"template_id": template.id},
+        )
+        tag_id_map: dict[UUID, UUID] = {
+            row.id: new_tags_by_name[row.name]
+            for row in template_tag_result.fetchall()
+            if row.name in new_tags_by_name
+        }
 
         # --- Sync workspace counter columns after cloning tags/groups ---
-        clone.next_tag_order = len(template_tags)
-        clone.next_group_order = len(template_groups)
+        clone.next_tag_order = len(tag_id_map)
+        clone.next_group_order = len(group_id_map)
         session.add(clone)
 
         # --- CRDT state cloning via API replay ---

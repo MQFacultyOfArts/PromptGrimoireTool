@@ -180,6 +180,9 @@ uv run grimoire admin ban <email>
 uv run grimoire admin unban <email>
 uv run grimoire admin ban --list
 
+# Find duplicate workspaces (same activity + user with multiple owner ACLs)
+uv run grimoire admin duplicates
+
 # Test Discord webhook alerting
 uv run grimoire admin webhook
 

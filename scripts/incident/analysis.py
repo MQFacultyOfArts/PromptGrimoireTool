@@ -271,10 +271,12 @@ def detect_pool_config(
     Queries raw (un-normalised) events to read transient pool counters.
     Returns ``{"pool_size": int, "max_overflow": int | None}`` or ``None``.
     """
+    # Prefer INVALIDATE events (have size=N) over QueuePool limit (may not)
     row = conn.execute(
         "SELECT event FROM jsonl_events"
         " WHERE ts_utc >= ? AND ts_utc <= ?"
         " AND (event LIKE '%INVALIDATE%size=%' OR event LIKE '%QueuePool limit%')"
+        " ORDER BY (event LIKE '%INVALIDATE%size=%') DESC"
         " LIMIT 1",
         (start_utc, end_utc),
     ).fetchone()

@@ -91,3 +91,53 @@ class TestDetectPoolConfig:
         assert result is not None
         assert result["pool_size"] == 5
         assert result["max_overflow"] is None
+
+    def test_queuepool_limit_format_without_size_eq(self) -> None:
+        """QueuePool limit event without size=N syntax returns None.
+
+        The LIKE '%QueuePool limit%' SQL branch can match events that
+        don't use the size=N format. When _POOL_SIZE_RE fails to match,
+        the function correctly returns None.
+        """
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO jsonl_events"
+            " (source_id, ts_utc, level, event)"
+            " VALUES (1, '2026-03-15T10:00:00Z', 'warning',"
+            " 'QueuePool limit of size 10 overflow 20 reached')",
+        )
+
+        result = detect_pool_config(
+            conn, "2026-03-15T09:00:00Z", "2026-03-15T11:00:00Z"
+        )
+
+        assert result is None
+
+    def test_invalidate_preferred_over_queuepool(self) -> None:
+        """INVALIDATE events are preferred over QueuePool via ORDER BY.
+
+        Even when QueuePool has a lower rowid, the query orders by
+        INVALIDATE match descending so the parseable event is returned.
+        """
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO jsonl_events"
+            " (source_id, ts_utc, level, event)"
+            " VALUES (1, '2026-03-15T10:00:00Z', 'warning',"
+            " 'QueuePool limit of size 10 overflow 20 reached')",
+        )
+        conn.execute(
+            "INSERT INTO jsonl_events"
+            " (source_id, ts_utc, level, event)"
+            " VALUES (1, '2026-03-15T10:01:00Z', 'warning',"
+            " 'INVALIDATE Connection 0xabc"
+            " (Pool size=10 checked_in=5 checked_out=3 overflow=2/20)')",
+        )
+
+        result = detect_pool_config(
+            conn, "2026-03-15T09:00:00Z", "2026-03-15T11:00:00Z"
+        )
+
+        assert result is not None
+        assert result["pool_size"] == 10
+        assert result["max_overflow"] == 20

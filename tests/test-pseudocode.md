@@ -7087,6 +7087,352 @@ It catches any divergence that would cause highlights to render at wrong positio
 
 **Verifies:** PG text timestamps use normalise_utc (Z suffix, not +00:00)
 
+## Incident Analysis -- Epoch Extraction
+
+### Two commits produce two epochs
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_two_commits_two_epochs
+1. Create in-memory SQLite DB with schema
+2. Insert 3 JSONL events with commit "aaa", then 3 with commit "bbb"
+3. Call extract_epochs(conn)
+4. Assert 2 epochs returned with correct commit, start/end timestamps, and event counts
+5. Assert first epoch ends before second begins
+
+**Verifies:** Commit hash transitions are detected as epoch boundaries
+
+### Single commit produces one epoch
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_single_commit_one_epoch
+1. Insert 3 JSONL events all with commit "aaa"
+2. Call extract_epochs(conn)
+3. Assert exactly 1 epoch with event_count=3
+
+**Verifies:** Contiguous same-commit events are grouped into a single epoch
+
+### Empty database returns empty list
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_empty_db_empty_list
+1. Create schema with no JSONL events
+2. Call extract_epochs(conn)
+3. Assert empty list returned
+
+**Verifies:** Graceful handling of no data
+
+### Crash-bounce detection (short epoch)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_detection_short
+1. Insert 2 JSONL events 60s apart with same commit
+2. Call extract_epochs(conn)
+3. Assert duration_seconds=60.0 and is_crash_bounce=True
+
+**Verifies:** Epochs under 300s threshold are flagged as crash-bounce
+
+### Crash-bounce detection (long epoch)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_detection_long
+1. Insert 2 JSONL events 600s apart with same commit
+2. Call extract_epochs(conn)
+3. Assert duration_seconds=600.0 and is_crash_bounce=False
+
+**Verifies:** Epochs at or above 300s threshold are not flagged
+
+### Crash-bounce boundary (exactly 300s)
+**File:** tests/unit/test_epoch_extraction.py::TestExtractEpochs::test_crash_bounce_boundary_exactly_300
+1. Insert 2 JSONL events exactly 300s apart
+2. Assert duration_seconds=300.0 and is_crash_bounce=False
+
+**Verifies:** 300s boundary is inclusive (>=300 is not a bounce)
+
+## Incident Analysis -- Epoch Enrichment
+
+### Journal Consumed message matched
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_consumed_message_matched
+1. Create epoch from JSONL events
+2. Insert journal "Consumed 8.509s CPU time, 366.5M memory peak, 0B memory swap peak" near epoch end
+3. Call enrich_epochs_journal(conn, epochs)
+4. Assert cpu_consumed="8.509s", memory_peak="366.5M", swap_peak="0B", memory_peak_bytes=384303104
+
+**Verifies:** Journal Consumed messages are parsed and attached to epochs
+
+### No matching journal message
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_no_matching_journal_message
+1. Create epoch with no nearby journal events
+2. Call enrich_epochs_journal(conn, epochs)
+3. Assert all enrichment fields are None
+
+**Verifies:** Missing journal data produces None, not errors
+
+### Epoch end correction from journal timestamp
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsJournal::test_epoch_end_correction
+1. Create epoch, insert journal event 30s after last JSONL event
+2. Call enrich_epochs_journal(conn, epochs)
+3. Assert end_utc updated to journal timestamp, duration recalculated to 90s
+
+**Verifies:** Journal timestamps can extend epoch boundaries and recalculate duration
+
+### Memory bytes parsing (various units)
+**File:** tests/unit/test_epoch_enrichment.py::TestParseMemoryBytes::test_gigabytes/megabytes/zero_bytes/kilobytes/invalid_returns_none
+1. Call _parse_memory_bytes with "2.7G", "366.5M", "0B", "512K", "garbage"
+2. Assert correct byte values or None for invalid input
+
+**Verifies:** Human-readable memory strings are converted to byte counts
+
+### GitHub PR commit hash prefix match
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsGithub::test_commit_hash_prefix_match
+1. Create epoch with short commit hash "ba70f4fa"
+2. Insert github_event with full 40-char commit_oid starting with "ba70f4fa"
+3. Call enrich_epochs_github(conn, epochs)
+4. Assert pr_number, pr_title, pr_author, pr_url populated
+
+**Verifies:** Short commit hashes from JSONL match full GitHub commit OIDs via prefix
+
+### No matching PR
+**File:** tests/unit/test_epoch_enrichment.py::TestEnrichEpochsGithub::test_no_matching_pr
+1. Create epoch with commit "deadbeef", no matching github_events
+2. Call enrich_epochs_github(conn, epochs)
+3. Assert pr_title="no PR", all other PR fields None
+
+**Verifies:** Unmatched commits get sentinel values, not errors
+
+## Incident Analysis -- Epoch Queries
+
+### Error query filters by level
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_filters_by_level
+1. Insert JSONL events with levels error, warning, critical, info, info
+2. Call query_epoch_errors with 1-hour window
+3. Assert only error/warning/critical returned, not info
+
+**Verifies:** Info-level events are excluded from error aggregation
+
+### Error per-hour normalisation
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_per_hour_calculation
+1. Insert 5 error events in a 1-hour window
+2. Assert count=5, per_hour=5.0, is_crash_bounce=False
+
+**Verifies:** Raw counts are normalised to per-hour rates
+
+### Error crash-bounce suppresses rate
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_crash_bounce
+1. Insert error in 120s duration epoch
+2. Assert per_hour=None, is_crash_bounce=True
+
+**Verifies:** Short epochs suppress per-hour rates (not meaningful)
+
+### Error grouping by level and event
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochErrors::test_groups_by_level_and_event
+1. Insert errors with same level but different event names
+2. Assert separate rows per (level, event) pair
+
+**Verifies:** Errors are grouped by both level and event type
+
+### HAProxy status distribution and percentiles
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochHaproxy::test_status_distribution_and_totals / test_percentiles
+1. Insert HAProxy events with known status codes and ta_ms values
+2. Assert total_requests, count_5xx, rate_5xx, requests_per_minute
+3. For percentiles: insert 100 events with ta_ms 1..100, verify p50=51, p95=96, p99=100
+
+**Verifies:** HAProxy aggregation produces correct status counts, rates, and latency percentiles
+
+### HAProxy crash-bounce rates
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochHaproxy::test_crash_bounce_rates
+1. Insert HAProxy event in 120s duration epoch
+2. Assert rate_5xx=None, requests_per_minute=None
+
+**Verifies:** Short epochs suppress rate calculations
+
+### Beszel resource mean/max aggregation
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochResources::test_mean_and_max
+1. Insert 2 beszel_metrics rows with known CPU/mem/load values
+2. Assert mean and max computed correctly for each metric
+
+**Verifies:** Resource metrics are correctly aggregated
+
+### PG error grouping
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochPg::test_grouped_counts
+1. Insert PG events with various level/error_type combinations
+2. Assert grouped counts match expected values
+
+**Verifies:** PG errors are grouped by (level, error_type)
+
+### Journal anomaly priority filtering
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochJournalAnomalies::test_filters_by_priority
+1. Insert journal events with priorities 2, 3, 5, 6
+2. Assert only priority <= 3 returned (crit and err, not notice/info)
+
+**Verifies:** Only high-severity journal events are surfaced as anomalies
+
+### Journal anomaly timestamp ordering
+**File:** tests/unit/test_epoch_queries.py::TestQueryEpochJournalAnomalies::test_ordered_by_timestamp
+1. Insert anomaly events in non-chronological order
+2. Assert results are sorted by ts_utc
+
+**Verifies:** Anomalies are returned in chronological order
+
+## Incident Analysis -- GitHub Fetcher
+
+### Token resolution priority (override > env > CLI)
+**File:** tests/unit/test_github_fetcher.py::TestResolveGithubToken::test_token_override_takes_priority / test_env_var_used_when_no_override / test_gh_cli_used_when_no_env_var / test_env_var_preferred_over_gh_cli
+1. Test with explicit override: returns override value
+2. Test with GITHUB_TOKEN env var (no override): returns env value
+3. Test with gh CLI fallback (no env var): mocks subprocess.run, returns CLI stdout
+4. Test env var present with subprocess mock: subprocess never called
+
+**Verifies:** Token resolution follows documented priority chain
+
+### Missing token raises RuntimeError
+**File:** tests/unit/test_github_fetcher.py::TestResolveGithubToken::test_missing_token_raises_runtime_error
+1. Remove GITHUB_TOKEN from env, mock subprocess.run returning failure
+2. Assert RuntimeError raised matching "GITHUB_TOKEN"
+
+**Verifies:** Clear error when no token source is available
+
+### Fetch returns merged PRs in window
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_returns_merged_prs_in_window
+1. Mock httpx.Client with page of 4 PRs: 2 merged in window, 1 merged outside, 1 unmerged
+2. Call fetch_github_prs with window
+3. Assert 2 results with correct pr_number, title, author, commit_oid, url fields
+
+**Verifies:** Only merged PRs within the time window are returned
+
+### Pagination stops when past window
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_pagination_stops_when_all_before_window
+1. Mock 2 pages: page 1 has in-window PR, page 2 has all-before-window PRs
+2. Assert 1 result and exactly 2 HTTP requests (no 3rd page fetch)
+
+**Verifies:** Pagination terminates efficiently when PRs predate the window
+
+### Empty first page
+**File:** tests/unit/test_github_fetcher.py::TestFetchGithubPrs::test_empty_first_page_returns_empty
+1. Mock empty first page response
+2. Assert empty list returned
+
+**Verifies:** Graceful handling of no matching PRs
+
+## Incident Analysis -- GitHub CLI
+
+### Fetched PRs inserted into DB
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_fetched_prs_inserted_into_db
+1. Mock sqlite3.connect, resolve_github_token, fetch_github_prs with 2 sample PRs
+2. Invoke `github` CLI with --start, --end, --repo, --token
+3. Assert exit code 0, "2 PRs" in output, 2 rows in github_events table
+
+**Verifies:** CLI orchestrates fetch and DB insertion correctly
+
+### Source row fields
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_source_row_fields
+1. Invoke github CLI, check sources table
+2. Assert format="github", hostname="github.com", collection_method="REST API", filename="org/repo"
+
+**Verifies:** Source provenance metadata is correctly recorded
+
+### Events reference correct source_id
+**File:** tests/unit/test_github_cli.py::TestGithubCliOrchestration::test_github_events_have_correct_source_id
+1. Invoke github CLI, query both sources and github_events tables
+2. Assert all github_events.source_id matches the single sources.id
+
+**Verifies:** Foreign key integrity between sources and github_events
+
+### Dedup on second call
+**File:** tests/unit/test_github_cli.py::TestGithubCliDedup::test_second_call_skips_insertion
+1. Invoke github CLI twice with same params
+2. Assert second call prints dedup message, fetch_github_prs called only once, still 2 rows
+
+**Verifies:** SHA256-based dedup prevents duplicate ingestion
+
+### Force flag bypasses dedup
+**File:** tests/unit/test_github_cli.py::TestGithubCliDedup::test_force_flag_bypasses_dedup
+1. Invoke github CLI, then invoke again with --force
+2. Assert fetch called twice, still 2 rows (old deleted, new inserted)
+
+**Verifies:** --force flag deletes existing data and re-fetches
+
+### Detect GitHub repo from git remote
+**File:** tests/unit/test_github_cli.py::TestDetectGithubRepo::test_detects_ssh_url / test_detects_https_url / test_no_remote_raises
+1. Mock subprocess.run with SSH URL "git@github.com:org/repo.git": returns "org/repo"
+2. Mock with HTTPS URL: returns "org/repo"
+3. Mock with failed subprocess: raises typer.BadParameter
+
+**Verifies:** Repo slug extraction from git remote URLs with fallback error
+
+## Incident Analysis -- Report Rendering
+
+### All sections present in report
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_all_sections_present
+1. Call render_review_report with mock data for all parameters
+2. Assert section headers: Source Inventory, Epoch Timeline, Per-Epoch Analysis, User Activity Summary, Trend Analysis
+
+**Verifies:** Report structure includes all required sections
+
+### Key data included in report
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_data_included
+1. Call render_review_report with mock data containing known values
+2. Assert commit hash, PR title, error event, HAProxy stats, resource stats, user counts, trend commit all appear
+
+**Verifies:** Report content includes actual data values, not just headers
+
+### Static counts omitted when None
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_static_counts_omitted_when_none
+1. Call render_review_report with static_counts=None
+2. Assert "Static DB Counts" not in report
+
+**Verifies:** Optional section is suppressed when data unavailable
+
+### Static counts included when provided
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_static_counts_included_when_provided
+1. Call render_review_report with static_counts={"users": 42, "workspaces": 100}
+2. Assert "Static DB Counts" in report and values appear
+
+**Verifies:** Optional section renders when data is provided
+
+### Empty epochs handled
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_empty_epochs
+1. Call with empty epochs/analyses/trends lists
+2. Assert report still contains Epoch Timeline and User Activity Summary sections
+
+**Verifies:** Report renders gracefully with no epoch data
+
+### None percentiles show N/A
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_none_percentiles_show_na
+1. Set HAProxy p50/p95/p99 to None
+2. Assert "N/A" appears in report
+
+**Verifies:** Missing percentile data displays as N/A, not None
+
+### Crash-bounce epochs marked
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_crash_bounce_marker
+1. Set is_crash_bounce=True on epoch
+2. Assert "crash" appears in report (case-insensitive)
+
+**Verifies:** Crash-bounce epochs are visually flagged
+
+### Trend delta formatting
+**File:** tests/unit/test_report_render.py::TestRenderReviewReport::test_trend_delta_formatting
+1. Call with trends containing positive deltas
+2. Assert "+10" and "+100%" style formatting appears
+
+**Verifies:** Trend deltas use signed notation for clarity
+
+## Incident Analysis -- Review CLI
+
+### Orchestration calls all analysis functions
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_orchestration_calls_all_functions
+1. Mock all analysis functions (extract_epochs, enrich_*, query_epoch_*, compute_trends, render_review_report)
+2. Invoke `review --db test.db`
+3. Assert each function called exactly once
+4. Assert report output appears in stdout
+
+**Verifies:** Review command orchestrates the full analysis pipeline in correct sequence
+
+### Missing counts_json handled
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_missing_counts_json
+1. Invoke review without --counts-json flag
+2. Assert render_review_report called with static_counts=None
+
+**Verifies:** Optional counts file gracefully omitted
+
+### No epochs early exit
+**File:** tests/unit/test_review_cli.py::TestReviewOrchestration::test_no_epochs_early_exit
+1. Mock extract_epochs returning empty list
+2. Invoke review CLI
+3. Assert exit code 0 and "No epochs found" in output
+
+**Verifies:** Empty database produces helpful message, not a crash
+
 ## CJK Annotated Table Export (Integration)
 
 ### Pipeline completes without crash

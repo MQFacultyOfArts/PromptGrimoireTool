@@ -446,6 +446,7 @@ def review(
 ) -> None:
     """Generate operational review report."""
     from scripts.incident.analysis import (
+        compute_error_landscape,
         compute_trends,
         enrich_epochs_github,
         enrich_epochs_journal,
@@ -477,6 +478,10 @@ def review(
     enrich_restart_gaps(epochs)
 
     epoch_analyses = _analyse_epochs(conn, epochs)
+
+    error_landscapes = compute_error_landscape(conn, epochs)
+    for i, landscape in enumerate(error_landscapes):
+        epoch_analyses[i]["error_landscape"] = landscape
 
     summative = query_summative_users(conn)
     conn.close()

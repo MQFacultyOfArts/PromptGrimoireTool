@@ -20,6 +20,10 @@ Standalone post-incident telemetry analysis tooling. Ingests production log tarb
 - `analysis.extract_epochs(conn)` -- detect epoch boundaries from JSONL commit hash transitions
 - `analysis.enrich_epochs_journal(conn, epochs)` -- enrich epochs with journal Consumed message data (memory peak, CPU consumed)
 - `analysis.enrich_epochs_github(conn, epochs)` -- enrich epochs with GitHub PR metadata via commit hash prefix matching
+- `analysis.normalise_event(event_str)` -- collapse runtime-varying tokens (UUIDs, hex addresses, task names) to stable class keys
+- `analysis.compute_error_landscape(conn, epochs)` -- per-epoch appeared/resolved error class sets
+- `analysis.detect_pool_config(conn, start_utc, end_utc)` -- extract pool_size and max_overflow from INVALIDATE events
+- `analysis.enrich_restart_gaps(epochs)` -- compute downtime duration between consecutive epochs
 - `analysis.query_epoch_errors(conn, start, end, duration)` -- JSONL errors by level/event, normalised to per-hour
 - `analysis.query_epoch_haproxy(conn, start, end, duration)` -- HAProxy status codes and percentiles
 - `analysis.query_epoch_resources(conn, start, end)` -- Beszel mean/max CPU, memory, load

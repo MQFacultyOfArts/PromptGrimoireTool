@@ -49,6 +49,10 @@ class TestReviewOrchestration:
                 return_value=None,
             ) as mock_pool_config,
             patch(
+                "scripts.incident.analysis.compute_error_landscape",
+                return_value=[{"appeared": set(), "resolved": set(), "current": set()}],
+            ) as mock_landscape,
+            patch(
                 "scripts.incident.analysis.query_epoch_errors",
                 return_value=[],
             ) as mock_errors,
@@ -130,6 +134,7 @@ class TestReviewOrchestration:
             mock_enrich_github.assert_called_once()
             mock_enrich_gaps.assert_called_once()
             mock_pool_config.assert_called_once()
+            mock_landscape.assert_called_once()
             mock_errors.assert_called_once()
             mock_haproxy.assert_called_once()
             mock_resources.assert_called_once()
@@ -167,6 +172,10 @@ class TestReviewOrchestration:
             patch("scripts.incident.analysis.enrich_epochs_github"),
             patch("scripts.incident.analysis.enrich_restart_gaps"),
             patch("scripts.incident.analysis.detect_pool_config", return_value=None),
+            patch(
+                "scripts.incident.analysis.compute_error_landscape",
+                return_value=[{"appeared": set(), "resolved": set(), "current": set()}],
+            ),
             patch(
                 "scripts.incident.analysis.query_epoch_errors",
                 return_value=[],

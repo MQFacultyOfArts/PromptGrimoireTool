@@ -19,9 +19,9 @@ class TestNormaliseEvent:
         assert normalise_event("Task-42 failed") == "Task-<N> failed"
 
     def test_invalidate_pool_state(self) -> None:
-        """INVALIDATE strips transient counters but keeps size."""
+        """INVALIDATE strips transient counters and hex address but keeps size."""
         raw = (
-            "INVALIDATE Connection <ADDR>"
+            "INVALIDATE Connection 0xdeadbeef"
             " (Pool size=10 checked_in=5 checked_out=3 overflow=2/20)"
         )
         expected = "INVALIDATE Connection <ADDR> (Pool size=10)"
